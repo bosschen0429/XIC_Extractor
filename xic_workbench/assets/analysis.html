@@ -41,9 +41,10 @@
           </div>
           <div id="targeted-data" class="step-body"></div>
         </section>
+        <section class="card step" id="t-sample-section" data-sample-step="targeted"></section>
         <section class="card step">
           <div class="step-head">
-            <span class="step-no">2</span>
+            <span class="step-no">3</span>
             <div>
               <h2>目標清單</h2>
               <p class="subtle" id="target-count"></p>
@@ -77,7 +78,7 @@
           <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
-          <div class="step-head"><span class="step-no">3</span><div><h2>執行資源</h2><p class="subtle">同時處理多個 RAW 可縮短執行時間。</p></div></div>
+          <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2><p class="subtle">同時處理多個 RAW 可縮短執行時間。</p></div></div>
           <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>
@@ -245,50 +246,7 @@
             </details>
           </div>
         </section>
-        <section class="card step" id="sample-section">
-          <div class="step-head">
-            <span class="step-no">4</span>
-            <div>
-              <h2>樣本與上機資訊</h2>
-              <p class="subtle" id="samples-count">尚未讀取樣本</p>
-            </div>
-            <div class="button-row step-action">
-              <button type="button" id="samples-edit" class="ghost" data-analysis-idle>
-                <svg class="icon"><use href="#i-list" /></svg>樣本明細</button
-              ><button type="button" id="samples-export" class="ghost" data-analysis-idle>
-                <svg class="icon"><use href="#i-download" /></svg>匯出
-              </button>
-            </div>
-          </div>
-          <div class="step-body">
-            <div class="import-line">
-              <label for="sequence-source">上機資訊</label
-              ><input
-                id="sequence-source"
-                class="path"
-                placeholder="Word、Excel、CSV 或 TSV（選用）"
-                data-analysis-idle
-              /><button
-                type="button"
-                data-browse="sequence-source"
-                data-kind="metadata"
-                data-analysis-idle
-              >
-                瀏覽</button
-              ><button type="button" id="samples-import" data-analysis-idle>
-                匯入上機資訊
-              </button>
-            </div>
-            <div class="sample-summary">
-              <div id="role-summary" class="chip-row"></div>
-              <button type="button" id="samples-refresh" data-analysis-idle>
-                <svg class="icon"><use href="#i-vial" /></svg>讀取 RAW 樣本
-              </button>
-            </div>
-            <p id="samples-summary" class="subtle"></p>
-            <ul id="samples-conflicts" class="sequence-conflicts" hidden></ul>
-          </div>
-        </section>
+        <section class="card step" id="sample-section" data-sample-step="untargeted"></section>
       </form>
       <section id="untargeted-result" class="card result-card" hidden></section>
     </div>
@@ -319,6 +277,115 @@
     </aside>
   </div>
 </main>
+
+<template id="sample-step-template">
+  <div class="step-head">
+    <span class="step-no" data-part="step-no"></span>
+    <div>
+      <h2>樣本與上機資訊</h2>
+      <p class="subtle" data-part="samples-count">尚未讀取樣本</p>
+    </div>
+    <div class="button-row step-action">
+      <button type="button" data-part="samples-edit" class="ghost" data-analysis-idle>
+        <svg class="icon"><use href="#i-list" /></svg>樣本明細</button
+      ><button type="button" data-part="samples-export" class="ghost" data-analysis-idle>
+        <svg class="icon"><use href="#i-download" /></svg>匯出
+      </button>
+    </div>
+  </div>
+  <div class="step-body">
+    <div class="import-line">
+      <label data-part="sequence-label">上機資訊</label
+      ><input
+        data-part="sequence-source"
+        class="path"
+        placeholder="Word、Excel、CSV 或 TSV（選用）"
+        data-analysis-idle
+      /><button type="button" data-part="sequence-browse" data-kind="metadata" data-analysis-idle>
+        瀏覽</button
+      ><button type="button" data-part="samples-import" data-analysis-idle>
+        匯入上機資訊
+      </button>
+    </div>
+    <div class="import-line annotation-line">
+      <span class="subtle">組別與排除</span
+      ><button type="button" data-part="samples-table" data-analysis-idle>
+        匯入合作者樣品表</button
+      ><button type="button" data-part="samples-carry" data-analysis-idle>
+        沿用上一批分組
+      </button>
+    </div>
+    <div class="sample-summary">
+      <div data-part="role-summary" class="chip-row"></div>
+      <button type="button" data-part="samples-refresh" data-analysis-idle>
+        <svg class="icon"><use href="#i-vial" /></svg>讀取 RAW 樣本
+      </button>
+    </div>
+    <div data-part="group-cards" class="group-cards" hidden></div>
+    <p data-part="samples-source" class="subtle"></p>
+    <p data-part="samples-summary" class="subtle"></p>
+    <ul data-part="samples-conflicts" class="sequence-conflicts" hidden></ul>
+  </div>
+</template>
+
+<dialog id="annotation-dialog" class="wide-dialog" aria-labelledby="annotation-title">
+  <div class="dialog-head">
+    <div>
+      <h2 id="annotation-title">匯入合作者樣品表</h2>
+      <p class="subtle" id="annotation-help"></p>
+    </div>
+    <button
+      type="button"
+      class="dialog-close"
+      data-close="annotation-dialog"
+      aria-label="關閉"
+    >
+      <svg class="icon"><use href="#i-x" /></svg>
+    </button>
+  </div>
+  <div class="dialog-body annotation-body">
+    <div class="import-line">
+      <label for="annotation-path">檔案</label
+      ><input id="annotation-path" class="path" placeholder="Excel、CSV 或 TSV" /><button
+        type="button"
+        data-browse="annotation-path"
+        data-kind="metadata"
+      >
+        瀏覽</button
+      ><select id="annotation-confirmed" aria-label="工作區中已確認的批次"></select>
+    </div>
+    <label class="field" id="annotation-paste">或直接貼上表格（第一列是標題）<textarea
+        id="annotation-text"
+        rows="4"
+        spellcheck="false"
+      ></textarea></label>
+    <div class="button-row"><button type="button" id="annotation-read">讀取並預覽</button></div>
+    <div id="annotation-columns" class="settings-grid" hidden>
+      <label class="field">名稱欄<select id="annotation-col-name"></select></label
+      ><label class="field">組別欄<select id="annotation-col-group"></select></label
+      ><label class="field">排除欄（選用）<select id="annotation-col-excluded"></select></label
+      ><label class="field">排除原因欄（選用）<select id="annotation-col-reason"></select></label>
+    </div>
+    <div id="annotation-preview" hidden>
+      <p id="annotation-counts" role="status"></p>
+      <div class="table-scroll editor-table">
+        <table>
+          <thead>
+            <tr><th>RAW 檔名</th><th>表格中的名稱</th><th>組別</th><th>排除</th></tr>
+          </thead>
+          <tbody id="annotation-rows"></tbody>
+        </table>
+      </div>
+      <details id="annotation-unmatched"><summary></summary><p class="mono"></p></details>
+      <details id="annotation-ambiguous"><summary></summary><p class="mono"></p></details>
+      <label class="check-line"><input type="checkbox" id="annotation-overwrite" /> 覆蓋已標的組別</label>
+    </div>
+  </div>
+  <div class="dialog-foot">
+    <button type="button" data-close="annotation-dialog">取消</button
+    ><button id="annotation-apply" type="button" class="primary" disabled>套用</button>
+  </div>
+</dialog>
 
 <dialog id="target-import-preview" class="wide-dialog" aria-labelledby="target-import-title">
   <div class="dialog-head"><h2 id="target-import-title">確認匯入</h2></div>
@@ -387,9 +454,18 @@
       />
       <span class="toolbar-group"
         ><select id="sample-bulk-role" aria-label="批次角色"></select
-        ><button id="sample-apply-role" type="button">套用到勾選樣本</button></span
+        ><button id="sample-apply-role" type="button">套用角色</button></span
+      ><span class="toolbar-group"
+        ><input id="sample-bulk-group" list="sample-group-options" placeholder="組別" aria-label="批次組別"
+        /><button id="sample-apply-group" type="button">套用組別</button></span
+      ><span class="toolbar-group"
+        ><input id="sample-bulk-reason" placeholder="排除原因（必填）" aria-label="批次排除原因"
+        /><button id="sample-exclude" type="button">排除</button
+        ><button id="sample-include" type="button">取消排除</button></span
       >
     </div>
+    <p class="subtle">改動會立即存成這個 RAW 資料夾的樣品資訊；Targeted 與 Untargeted 共用。勾選的樣本才會套用批次操作；點樣品名稱中的詞可選取所有含這個詞的樣本。</p>
+    <datalist id="sample-group-options"></datalist>
     <div class="table-scroll editor-table">
       <table>
         <thead>
@@ -406,6 +482,9 @@
             <th class="num">進樣順序</th>
             <th>樣品名稱</th>
             <th>角色</th>
+            <th>組別</th>
+            <th>排除</th>
+            <th>排除原因</th>
           </tr>
         </thead>
         <tbody id="sample-rows"></tbody>

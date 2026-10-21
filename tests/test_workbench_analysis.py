@@ -108,7 +108,15 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     mode = ["succeed"]
 
     class Run:
-        def __init__(self, config_dir, *, progress, should_cancel, output_dir=None):
+        def __init__(
+            self,
+            config_dir,
+            *,
+            progress,
+            should_cancel,
+            output_dir=None,
+            sample_annotations=None,
+        ):
             self.stage = "讀取指定 RAW"
             self.output_dir = tmp_path / "output"
             self.available_outputs = ()
@@ -273,6 +281,14 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
             return {"published_paths": []}
 
     monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    # Roles saved for this folder before per-folder sample metadata existed.
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "discovery_gui.json").write_text(
+        json.dumps(
+            {"raw_dir": str(raw_dir), "custom_roles": {"Sample-A": "pooled_qc"}}
+        ),
+        encoding="utf-8",
+    )
     jobs = AnalysisJobs(tmp_path / "config")
     try:
         jobs.start(
@@ -287,7 +303,6 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
                 "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": str(sequence),
-                "custom_roles": {"Sample-A": "pooled_qc"},
                 "samples": None,
                 "overrides": {},
             },
@@ -342,7 +357,6 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
                 "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": None,
                 "overrides": {},
             },
@@ -444,7 +458,6 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
                 "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": samples,
                 "overrides": {},
             },
@@ -509,7 +522,6 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
                 "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": None,
                 "overrides": {},
             },
@@ -645,18 +657,85 @@ def test_completed_analysis_keeps_its_own_review_locations(tmp_path, monkeypatch
 
     monkeypatch.setattr("xic_workbench.targeted.TargetedRun", Run)
     monkeypatch.setattr(AnalysisJobs, "_prepare_untargeted", lambda *args: Run())
-    settings = {"data_dir": "batch-a", "dll_dir": "dll-a"}
+    settings = {
+        "data_dir": "batch-a",
+        "dll_dir": "dll-a",
+        "injection_order_source": "list-a.csv",
+    }
     values = (
         {"settings": settings, "targets": sample_target_rows()}
         if kind == "targeted"
-        else {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+        else {"raw_dir": "batch-a", "dll_dir": "dll-a", "sequence_source": "list-a.csv"}
     )
     jobs = AnalysisJobs(tmp_path)
     try:
         jobs.start(kind, values)
-        values.update(raw_dir="batch-b", dll_dir="dll-b")
-        settings.update(data_dir="batch-b", dll_dir="dll-b")
+        values.update(raw_dir="batch-b", dll_dir="dll-b", sequence_source="list-b.csv")
+        settings.update(
+            data_dir="batch-b", dll_dir="dll-b", injection_order_source="list-b.csv"
+        )
         result = _terminal(jobs)["results"][kind]
-        assert result["review_paths"] == {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+        assert result["review_paths"] == {
+            "raw_dir": "batch-a",
+            "dll_dir": "dll-a",
+            "sequence_source": "list-a.csv",
+        }
+    finally:
+        jobs.close()
+
+
+def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
+    tmp_path, monkeypatch
+):
+    from tests.raw_header_fakes import install_fake_raw_headers
+    from xic_workbench import untargeted
+    from xic_workbench.samples import read_batch_samples, save_batch_samples
+
+    install_fake_raw_headers(monkeypatch)
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    for stem in ("S1", "S2"):
+        (raw_dir / f"{stem}.raw").write_bytes(b"")
+    config = tmp_path / "config"
+    stale = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    confirmed = [dict(row) for row in stale]
+    confirmed[0].update(group="New", excluded=True, exclusion_reason="clot")
+    save_batch_samples(config, raw_dir, confirmed)
+    captured = {}
+
+    class Run:
+        stage = "done"
+        output_dir = tmp_path / "output"
+        available_outputs = ()
+
+        def __init__(self, request, *, progress, should_cancel):
+            captured["request"] = request
+
+        def execute(self):
+            return {"published_paths": []}
+
+    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    jobs = AnalysisJobs(config)
+    try:
+        # The page still holds the rows it read before another flow confirmed.
+        jobs.start(
+            "untargeted",
+            {
+                "mode": "full",
+                "preset": "dna_dr",
+                "raw_dir": str(raw_dir),
+                "raw_file": "",
+                "dll_dir": str(tmp_path),
+                "output_dir": str(tmp_path / "output"),
+                "discovery_batch_index": "",
+                "targets_csv": "",
+                "sequence_source": "",
+                "samples": stale,
+                "overrides": {},
+            },
+        )
+        assert _terminal(jobs)["job"]["status"] == "succeeded"
+        rows = {row.raw_stem: row for row in captured["request"].sample_metadata}
+        assert (rows["S1"].excluded, rows["S1"].group) == (True, "New")
     finally:
         jobs.close()

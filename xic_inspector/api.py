@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+from xic_inspector.rendering.group_colors import group_colors
 from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
@@ -458,6 +459,8 @@ def prepare_report(
 
     # Normalize sample scope
     summary_samples = summary.get("samples", [])
+    # Colours span the whole source so a narrower selection keeps them.
+    colors = group_colors(s["group"] for s in summary_samples if "group" in s)
     universe_sample_ids = {
         s["canonical_sample_identity_id"]
         for s in summary_samples
@@ -611,6 +614,11 @@ def prepare_report(
             {
                 "id": s["canonical_sample_identity_id"],
                 "label": s.get("sample_stem", s["canonical_sample_identity_id"]),
+                **(
+                    {"group": s["group"], "group_color": colors[s["group"]]}
+                    if "group" in s
+                    else {}
+                ),
             }
             for s in summary_samples
             if s.get("canonical_sample_identity_id") in normalized_set

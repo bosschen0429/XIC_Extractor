@@ -105,7 +105,6 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         "discovery_batch_index",
         "targets_csv",
         "sequence_source",
-        "custom_roles",
         "samples",
         "preset_snapshot",
         "execution_profile",

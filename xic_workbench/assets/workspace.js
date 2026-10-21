@@ -130,6 +130,8 @@ window.XicUi = (() => {
   const $ = (id) => document.getElementById(id);
   const { icon, navigation } = window.XicUi;
   const state = {
+    runFolders: new Map(),
+    runFolder: null,
     page: null,
     item: null,
     detail: null,
@@ -216,6 +218,12 @@ window.XicUi = (() => {
           if (reviewSlots.get(id) === slot && state.detail === slot.detail)
             requestCurves(request);
         },
+        // Only a run-bound result knows which RAW folder owns the exclusion.
+        ...(mode === "result" &&
+        state.page?.source_kind === "targeted_workbook" &&
+        state.runFolder
+          ? { onRequestExclusion: requestExclusion }
+          : {}),
       });
       $(id).dataset.viewId = view;
       return true;
@@ -224,6 +232,36 @@ window.XicUi = (() => {
       clearReview(id);
       if (mode === "curves") curveMessage(error.message, true);
       else status(error.message, "error");
+    }
+  }
+  // The run's RAW folder owns the exclusion; it applies on the next run.
+  async function requestExclusion({ sample_id }) {
+    const dialog = $("exclude-dialog");
+    $("exclude-message").textContent =
+      `把 ${sample_id} 標記為排除：之後分析這個 RAW 資料夾時不再分析它。`;
+    $("exclude-reason").value = "";
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    $("exclude-reason").focus();
+    const accepted = await new Promise(resolve =>
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
+    if (!accepted) return;
+    try {
+      const { raw_dir, dll_dir, sequence_source } = state.runFolder;
+      const result = await api("/api/samples/exclude", {
+        raw_dir,
+        dll_dir,
+        sequence_source,
+        raw_stem: sample_id,
+        reason: $("exclude-reason").value,
+      });
+      document.dispatchEvent(new CustomEvent("xic:samples-confirmed", {
+        detail: { raw_dir, samples: result.samples, overview: result.overview },
+      }));
+      window.XicUi.toast(
+        `已標記排除 ${sample_id}。目前結果不變；重新執行後才會套用。`, "ok");
+    } catch (error) {
+      status(error.message, "error");
     }
   }
   let serverPage = null;
@@ -883,6 +921,7 @@ window.XicUi = (() => {
     return startCurves();
   }
   async function openBatch() {
+    state.runFolder = state.runFolders.get($("source").value) || null;
     const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
     state.filters = {};
@@ -1196,11 +1235,14 @@ window.XicUi = (() => {
     $("browse-path").focus();
     browse($(state.browser.target).value);
   });
+  // A result opened from its run keeps that run's folders; the editable
+  // RAW field may later point elsewhere, for example to load curves.
   document.addEventListener("xic:open-review", (event) => {
     $("source").value = event.detail.source;
     if (event.detail.reviewPaths) {
       $("raw-dir").value = event.detail.reviewPaths.raw_dir;
       $("dll-dir").value = event.detail.reviewPaths.dll_dir;
+      state.runFolders.set(event.detail.source, { ...event.detail.reviewPaths });
     }
     action(openBatch, "正在讀取分析結果…");
   });

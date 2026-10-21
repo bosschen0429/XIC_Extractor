@@ -25,7 +25,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "discovery_batch_index": "",
     "targets_csv": "",
     "sequence_source": "",
-    "custom_roles": {},
     "overrides": {},
 }
 
@@ -70,4 +69,25 @@ def write_discovery_config(
     destination = _runtime_dir(config_dir)
     path = destination / CONFIG_NAME
     existing = _read_json_object(path)
-    _write_json_object(path, _merge_known_keys({**existing, **config}))
+    merged = _merge_known_keys({**existing, **config})
+    if existing.get("custom_roles") and merged["raw_dir"] == existing.get("raw_dir"):
+        merged["custom_roles"] = existing["custom_roles"]
+    _write_json_object(path, merged)
+
+
+def read_legacy_roles(
+    raw_dir: Path, *, config_dir: Path | None = None
+) -> dict[str, str]:
+    """Roles saved before per-folder sample metadata, for their own RAW folder.
+
+    They seed that folder until its sample metadata is confirmed and are
+    dropped once a save names another folder.
+    """
+    payload = _read_json_object(_runtime_dir(config_dir) / CONFIG_NAME)
+    roles = payload.get("custom_roles")
+    saved_dir = str(payload.get("raw_dir") or "").strip()
+    if not isinstance(roles, dict) or not saved_dir:
+        return {}
+    if Path(saved_dir).resolve() != Path(raw_dir).resolve():
+        return {}
+    return {str(stem): str(role) for stem, role in roles.items()}

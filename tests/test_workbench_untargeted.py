@@ -33,7 +33,8 @@ def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
     restored = read_discovery_config(config_dir=tmp_path)
 
     assert restored["mode"] == "align_only"
-    assert restored["custom_roles"] == {"sample-a": "qc"}
+    # Roles now live in the folder's confirmed sample metadata.
+    assert "custom_roles" not in restored
     assert "unknown" not in restored
     assert restored["output_dir"]
 
@@ -626,6 +627,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
             "review_paths": {
                 "raw_dir": str(tmp_path / "raws"),
                 "dll_dir": str(tmp_path / "dll"),
+                "sequence_source": "",
             },
         }
     finally:

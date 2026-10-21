@@ -29,6 +29,8 @@
   const instanceId = `xic-inspector-${++nextInstance}-`;
   // Hosts own acquisition and navigation; offline never exposes a live request.
   const onRequestCurves = mode !== 'offline' && typeof options.onRequestCurves === 'function' ? options.onRequestCurves : null;
+  // The host owns writes; the Inspector only asks, and never offline.
+  const onRequestExclusion = mode !== 'offline' && typeof options.onRequestExclusion === 'function' ? options.onRequestExclusion : null;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const $ = id => root.querySelector(`[data-inspector-id="${id}"]`);
   let destroyed = false;
@@ -216,6 +218,7 @@
   }
 
   function renderTargetedWorkbook(payload) {
+    const groupOf = new Map((payload.samples || []).map(sample => [sample.id, sample]));
     const element = (tag, text, className) => {
       const node = document.createElement(tag);
       if (text !== undefined) node.textContent = text;
@@ -285,8 +288,8 @@
       const head = element('tr');
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
-      const canLoadCurves = Boolean(onRequestCurves);
-      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['曲線'] : [])];
+      const canLoadCurves = Boolean(onRequestCurves), canExclude = Boolean(onRequestExclusion);
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves || canExclude ? ['操作'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
@@ -320,7 +323,14 @@
         const review = reviews.get(record.SampleName), row = element('tr');
         const sampleCell = element('td'), button = element('button', record.SampleName, 'tgt-sample');
         button.type = 'button';button.setAttribute('aria-expanded', 'false');
+        const grouped = groupOf.get(record.SampleName);
+        if (grouped?.group_color) {
+          const dot = element('span', undefined, 'sample-dot');
+          dot.style.background = grouped.group_color;
+          sampleCell.append(dot);
+        }
         sampleCell.append(button);
+        if (grouped && 'group' in grouped) sampleCell.append(element('span', grouped.group || 'Other', 'sample-group'));
         if (focusSet.has(record.SampleName)) {
           row.classList.add('focus');
           sampleCell.append(element('span', '與多數不同', 'tgt-badge attention'));
@@ -333,11 +343,21 @@
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
         row.append(element('td', reviewWhy(review), 'tgt-reason'));
-        if (canLoadCurves) {
-          const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
-          view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
-          view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
-          cell.append(view);row.append(cell);
+        if (canLoadCurves || canExclude) {
+          const cell = element('td', undefined, 'tgt-actions');
+          if (canLoadCurves) {
+            const view = element('button', '看 XIC', 'tgt-xic');
+            view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
+            view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
+            cell.append(view);
+          }
+          if (canExclude) {
+            const exclude = element('button', '標記排除', 'tgt-exclude');
+            exclude.type = 'button';exclude.setAttribute('aria-label', `標記排除 ${record.SampleName}`);
+            exclude.addEventListener('click', () => onRequestExclusion({sample_id: record.SampleName, opener: exclude}));
+            cell.append(exclude);
+          }
+          row.append(cell);
         }
         button.addEventListener('click', () => {
           const same = openRow?.row === row;
@@ -426,7 +446,7 @@
   const tickNum=v=>v===0?'0':Math.abs(v)>=1e6?v.toExponential(1):Math.abs(v)>=100?Math.round(v).toLocaleString('en-US'):num(v);
   const num=v=>finite(v)?v.toLocaleString('en-US',{maximumFractionDigits:3}):'未提供';
   const sample=id=>samples.find(s=>s.id===id), sampleName=id=>sample(id)?.label||id||'未記錄樣本名稱';
-  const color=id=>colors[Math.max(0,samples.findIndex(s=>s.id===id))%colors.length];
+  const color=id=>sample(id)?.group_color||colors[Math.max(0,samples.findIndex(s=>s.id===id))%colors.length];
   const itemRows=item=>Array.isArray(item.samples)?item.samples:[];
   const witnesses=item=>Array.isArray(item.witnesses)?item.witnesses:(Array.isArray(item.candidates)?item.candidates:[]);
   const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.canonical_sample_identity_id||w?.sample_id||'';
@@ -625,7 +645,7 @@
   }
   function sampleTable(item){
     const excluded=isCollapsedExcluded(item), evidenceLabel=excluded?'查看排除依據':'查看定量依據';
-    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本與狀態</th><th class="num">正式結果</th><th class="num"><span class="sr-only">操作</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const notices=sampleNotices(item,r),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`,origin=r.support_origin||{kind:'unavailable'},alignment=sampleAlignment(item,r),supportRefs=originRefs(origin);return `<tr class="sample-row ${notices.length?'sample-notice':''} ${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</span><div class="sample-sub"><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span>${notices.length?`<span class="sample-flags" aria-label="需要留意：${esc(notices.map(n=>n.label).join('、'))}">${notices.map(n=>`<span class="sample-flag flag-${n.kind}">${esc(n.label)}</span>`).join('')}</span>`:''}</div><div class="sample-sub sample-provenance"><span class="support-origin origin-${originClass(origin)}">${esc(originLabel(origin))}</span><span class="alignment-status alignment-${alignment.kind}">${esc(alignment.label)}</span></div></td><td class="num">${result(r)}</td><td><div class="sample-actions"><button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}${supportRefs.length?evidenceButtons(supportRefs,`${sampleName(r.sample_id)} 的${originLabel(origin)}`,'查看支持記錄'):''}</div></td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">勾選控制圖中顯示；「查看樣本」帶出候選與積分。支持來源說明樣本如何進入目前族群；校正狀態只反映保存的對齊座標。</p>`;
+    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本與狀態</th><th class="num">正式結果</th><th class="num"><span class="sr-only">操作</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const notices=sampleNotices(item,r),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`,origin=r.support_origin||{kind:'unavailable'},alignment=sampleAlignment(item,r),supportRefs=originRefs(origin);return `<tr class="sample-row ${notices.length?'sample-notice':''} ${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}${sample(r.sample_id)?.group!==undefined?`<span class="sample-group">${esc(sample(r.sample_id).group||'Other')}</span>`:''}</span><div class="sample-sub"><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span>${notices.length?`<span class="sample-flags" aria-label="需要留意：${esc(notices.map(n=>n.label).join('、'))}">${notices.map(n=>`<span class="sample-flag flag-${n.kind}">${esc(n.label)}</span>`).join('')}</span>`:''}</div><div class="sample-sub sample-provenance"><span class="support-origin origin-${originClass(origin)}">${esc(originLabel(origin))}</span><span class="alignment-status alignment-${alignment.kind}">${esc(alignment.label)}</span></div></td><td class="num">${result(r)}</td><td><div class="sample-actions"><button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}${supportRefs.length?evidenceButtons(supportRefs,`${sampleName(r.sample_id)} 的${originLabel(origin)}`,'查看支持記錄'):''}</div></td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">勾選控制圖中顯示；「查看樣本」帶出候選與積分。支持來源說明樣本如何進入目前族群；校正狀態只反映保存的對齊座標。</p>`;
   }
   function candidateControl(item){
     if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本，才會列出該樣本的候選。</p>';

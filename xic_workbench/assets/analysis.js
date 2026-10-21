@@ -5,7 +5,9 @@
   const state = {
     config: null,
     targets: [],
-    samples: [],
+    sampleSets: { targeted: null, untargeted: null },
+    pendingExclusions: new Set(),
+    editing: "untargeted",
     method: null,
     draft: null,
     analysis: { job: null, results: {} },
@@ -58,6 +60,34 @@
     inspector: "Inspector 匯出",
   };
   const jobPage = { targeted: "targeted" };
+  const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
+  // One sample step for both flows; edits confirm the RAW folder's metadata.
+  const samplePages = {
+    targeted: {
+      prefix: "t-",
+      sequence: "t-injection_order_source",
+      rawDir: "t-data_dir",
+      dll: "t-dll_dir",
+      output: "t-output_dir",
+      step: 2,
+    },
+    untargeted: {
+      prefix: "",
+      sequence: "sequence-source",
+      rawDir: "u-raw_dir",
+      dll: "u-dll_dir",
+      output: "u-output_dir",
+      step: 4,
+    },
+  };
+  const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
+  const emptySamples = () => ({
+    rows: [],
+    overview: null,
+    suggestions: {},
+    source: "",
+  });
+  state.sampleSets = { targeted: emptySamples(), untargeted: emptySamples() };
   async function api(path, values) {
     const response = await fetch(path, {
       method: values === undefined ? "GET" : "POST",
@@ -322,16 +352,7 @@
           "target-import",
         ),
       );
-      const order = $("t-injection_order_source")?.value.trim();
-      items.push(
-        checkItem(
-          "info",
-          "上機資訊（選用）",
-          order ? pathTail(order) : "未提供；依 RAW 檔案資訊判斷",
-          "t-injection_order_source",
-          Boolean(order),
-        ),
-      );
+      items.push(...sampleItems("targeted"));
     } else {
       const mode = currentMode();
       if (mode === "discovery_only")
@@ -357,17 +378,7 @@
           "u-preset",
         ),
       );
-      if (mode !== "discovery_only")
-        items.push(
-          checkItem(
-            "info",
-            "樣本與上機資訊（選用）",
-            state.samples.length
-              ? `${state.samples.length} 個樣本已讀取`
-              : "尚未讀取；可在步驟 4 讀取並指定角色",
-            "samples-refresh",
-          ),
-        );
+      if (mode !== "discovery_only") items.push(...sampleItems("untargeted"));
     }
     const list = $(`${kind === "targeted" ? "target" : "untargeted"}-checklist`);
     list.replaceChildren(
@@ -388,6 +399,74 @@
         return li;
       }),
     );
+  }
+  // Counts come from the server's group owner; this only words them.
+  function sampleItems(page) {
+    const set = state.sampleSets[page];
+    const refresh = sampleId(page, "samples-refresh");
+    const edit = sampleId(page, "samples-edit");
+    if (!set.rows.length) {
+      const order = $(samplePages[page].sequence)?.value.trim();
+      return [
+        checkItem(
+          "info",
+          "樣本與上機資訊（選用）",
+          order
+            ? `上機資訊 ${pathTail(order)}；可讀取 RAW 後確認角色、組別與排除`
+            : "尚未讀取；可讀取 RAW 後確認角色、組別與排除",
+          refresh,
+        ),
+      ];
+    }
+    const items = [
+      checkItem("ok", "樣本與上機資訊", `${set.rows.length} 個樣本已讀取`, edit),
+    ];
+    const overview = set.overview;
+    if (!overview) return items;
+    items.push(
+      checkItem(
+        "info",
+        "各組樣本數",
+        overview.groups.map((g) => `${g.group} ${g.count}`).join(" · ") ||
+          "沒有要分析的樣本",
+        edit,
+      ),
+    );
+    if (overview.unassigned_study_samples)
+      items.push(
+        checkItem(
+          "todo",
+          "未標組別的研究樣本",
+          `${overview.unassigned_study_samples} 個，會歸到 Other`,
+          edit,
+        ),
+      );
+    if (overview.single_sample_groups.length)
+      items.push(
+        checkItem(
+          "todo",
+          "只有 1 個樣本的組別",
+          overview.single_sample_groups.join("、"),
+          edit,
+        ),
+      );
+    if (overview.excluded.length) {
+      const reasons = new Map();
+      for (const row of overview.excluded) {
+        const reason = row.reason || "未填原因";
+        reasons.set(reason, (reasons.get(reason) || 0) + 1);
+      }
+      items.push(
+        checkItem(
+          "info",
+          "排除的樣本",
+          `${overview.excluded.length} 個：` +
+            [...reasons].map(([reason, n]) => `${reason} ×${n}`).join("、"),
+          edit,
+        ),
+      );
+    }
+    return items;
   }
   function focusField(id) {
     const node = $(id);
@@ -435,6 +514,11 @@
       }
       if (spec.scope === "environment")
         pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+      if (spec.key === "injection_order_source") {
+        const value = String(values[spec.key] || "");
+        $(samplePages.targeted.sequence).value = isTemplatePath(value) ? "" : value;
+        continue;
+      }
       pathField(data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
@@ -707,7 +791,6 @@
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
-      custom_roles: { ...state.config.untargeted.custom_roles },
     };
     for (const [key] of pathFields) values[key] = $(`u-${key}`).value;
     values.targets_csv = $("u-targets_csv").value;
@@ -718,9 +801,8 @@
       values.overrides[control.key] =
         input.type === "number" ? Number(input.value) : input.value;
     }
-    for (const sample of state.samples)
-      values.custom_roles[sample.raw_stem] = sample.sample_role;
-    values.samples = state.samples.length ? state.samples : null;
+    const rows = state.sampleSets.untargeted.rows;
+    values.samples = rows.length ? rows : null;
     if (state.method) {
       values.preset_snapshot = structuredClone(state.method.draft);
       const snapshotOverrides = values.preset_snapshot.overrides;
@@ -891,14 +973,35 @@
     }
     select.value = current;
   }
-  function renderRoleSummary() {
+  function mountSampleSteps() {
+    for (const [page, spec] of Object.entries(samplePages)) {
+      const section = document.querySelector(`[data-sample-step="${page}"]`);
+      section.replaceChildren($("sample-step-template").content.cloneNode(true));
+      for (const node of section.querySelectorAll("[data-part]"))
+        node.id =
+          node.dataset.part === "sequence-source"
+            ? spec.sequence
+            : sampleId(page, node.dataset.part);
+      $(sampleId(page, "step-no")).textContent = spec.step;
+      $(sampleId(page, "sequence-label")).htmlFor = spec.sequence;
+      $(sampleId(page, "sequence-browse")).dataset.browse = spec.sequence;
+    }
+  }
+  const sourceNotes = {
+    confirmed:
+      "使用這個 RAW 資料夾已確認的樣品資訊。要改用新的上機資訊，請按「匯入上機資訊」。",
+    sequence: "樣品資訊來自上機資訊；修改後會存成這個 RAW 資料夾的樣品資訊。",
+  };
+  function renderRoleSummary(page) {
+    const set = state.sampleSets[page];
     const counts = new Map();
-    for (const sample of state.samples)
+    for (const sample of set.rows)
       counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
-    $("role-summary").replaceChildren(
-      ...(state.samples.length
+    const excluded = set.rows.filter((row) => row.excluded).length;
+    $(sampleId(page, "role-summary")).replaceChildren(
+      ...(set.rows.length
         ? []
-        : [el("span", "讀取 RAW 後可檢視樣本並指定角色。", "subtle")]),
+        : [el("span", "讀取 RAW 後可檢視樣本，並指定角色、組別與排除。", "subtle")]),
       ...roles
         .filter((role) => counts.has(role))
         .map((role) =>
@@ -908,22 +1011,418 @@
             `chip${role === "study_sample" ? " accent" : ""}`,
           ),
         ),
+      ...(excluded ? [el("span", `排除 ${excluded}`, "chip warn")] : []),
+      ...(set.overview?.groups || []).map((entry) => {
+        const chip = el("span", undefined, "chip group-chip");
+        chip.dataset.group = entry.group;
+        chip.append(groupSwatch(entry.color), `${entry.group} ${entry.count}`);
+        return chip;
+      }),
     );
-    $("samples-count").textContent = state.samples.length
-      ? `${state.samples.length} 個樣本`
+    $(sampleId(page, "samples-count")).textContent = set.rows.length
+      ? `${set.rows.length} 個樣本`
       : "尚未讀取樣本";
-    checklist("untargeted");
+    $(sampleId(page, "samples-source")).textContent = set.rows.length
+      ? sourceNotes[set.source] || ""
+      : "";
+    renderGroupCards(page);
+    checklist(page);
+  }
+  function applySampleResult(page, result) {
+    state.sampleSets[page] = {
+      rows: result.samples,
+      overview: result.overview || null,
+      suggestions: result.group_suggestions || {},
+      source: result.summary?.annotation_source || "",
+    };
+    renderSampleSummary(result.summary, sampleId(page, "samples"));
+    renderRoleSummary(page);
+    if (result.summary?.confirmed) mirrorSamples(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  // The other flow on the same folder shows the same confirmed rows.
+  function mirrorSamples(page) {
+    const rawDir = $(samplePages[page].rawDir).value;
+    for (const [other, spec] of Object.entries(samplePages))
+      if (other !== page && $(spec.rawDir).value === rawDir) {
+        state.sampleSets[other] = state.sampleSets[page];
+        renderRoleSummary(other);
+      }
+  }
+  function clearSamples(page) {
+    state.sampleSets[page] = emptySamples();
+    $(sampleId(page, "samples-summary")).textContent = "";
+    $(sampleId(page, "samples-conflicts")).hidden = true;
+    renderRoleSummary(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  // Naming-pattern cards group the server's suggestions; a card is a group
+  // name until applied, and applying writes that name to its members.
+  function suggestionCards(set) {
+    if (set.cards) return set.cards;
+    const cards = new Map();
+    for (const row of set.rows) {
+      const label = set.suggestions[row.raw_stem];
+      if (!label) continue;
+      if (!cards.has(label)) cards.set(label, { label, members: [] });
+      cards.get(label).members.push(row.raw_stem);
+    }
+    set.cards = [...cards.values()].sort(
+      (a, b) => b.members.length - a.members.length,
+    );
+    return set.cards;
+  }
+  function cardRows(set, card) {
+    const members = new Set(card.members);
+    return set.rows.filter((row) => members.has(row.raw_stem));
+  }
+  // Rows a card wrote keep following it; rows labelled by hand stay as they are.
+  function relabelCard(page, card, label) {
+    const set = state.sampleSets[page];
+    let changed = false;
+    for (const row of cardRows(set, card))
+      if (row.group.trim() === card.label) {
+        row.group = label;
+        changed = true;
+      }
+    return changed;
+  }
+  async function renameCard(page, card, label) {
+    const set = state.sampleSets[page];
+    if (!label || label === card.label) return renderGroupCards(page);
+    const changed = relabelCard(page, card, label);
+    card.label = label;
+    const same = set.cards.find((other) => other !== card && other.label === label);
+    if (same) {
+      same.members.push(...card.members);
+      set.cards = set.cards.filter((other) => other !== card);
+    }
+    if (changed) await persistSamples(page);
+    else renderGroupCards(page);
+  }
+  async function mergeCard(page, card, target) {
+    const set = state.sampleSets[page];
+    const changed = relabelCard(page, card, target.label);
+    target.members.push(...card.members);
+    set.cards = set.cards.filter((other) => other !== card);
+    if (changed) await persistSamples(page);
+    else renderGroupCards(page);
+  }
+  async function applyCard(page, card, overwrite) {
+    const set = state.sampleSets[page];
+    for (const row of cardRows(set, card))
+      if (overwrite || !row.group.trim()) row.group = card.label;
+    await persistSamples(page);
+  }
+  function renderGroupCards(page) {
+    const set = state.sampleSets[page];
+    const box = $(sampleId(page, "group-cards"));
+    const cards = set.rows.length ? suggestionCards(set) : [];
+    box.hidden = !cards.length;
+    if (!cards.length) return box.replaceChildren();
+    // Study samples need a group; QC resolves by role and others are not
+    // analyzed, so their cards wait in a collapsed section.
+    const list = el("div", undefined, "group-card-list");
+    const unneeded = el("div", undefined, "group-card-list");
+    for (const card of cards) {
+      const rows = cardRows(set, card);
+      const open = rows.filter((row) => !row.group.trim()).length;
+      const applied = rows.filter((row) => row.group.trim() === card.label).length;
+      const others = rows.length - open - applied;
+      const node = el("div", undefined, "group-card");
+      node.dataset.card = card.label;
+      const head = el("div", undefined, "group-card-head");
+      const name = el("input");
+      name.value = card.label;
+      name.setAttribute("aria-label", `建議組別 ${card.label} 的名稱`);
+      name.dataset.analysisIdle = "";
+      name.addEventListener("change", () =>
+        act(() => renameCard(page, card, name.value.trim())),
+      );
+      head.append(name, el("strong", `×${rows.length}`, "group-card-count"));
+      node.append(head);
+      node.append(
+        el(
+          "small",
+          applied === rows.length
+            ? "已全部套用"
+            : `${applied ? `已套用 ${applied} · ` : ""}${open} 個尚未標組別` +
+                (others ? ` · ${others} 個已有其他組別` : ""),
+          "subtle",
+        ),
+      );
+      const actions = el("div", undefined, "group-card-actions");
+      const apply = button(`套用到 ${open} 個`, () => applyCard(page, card, false));
+      apply.disabled = !open;
+      apply.setAttribute("aria-label", `套用 ${card.label} 到尚未標組別的樣本`);
+      actions.append(apply);
+      if (others) {
+        const overwrite = button(
+          `覆蓋 ${others} 個`,
+          () => applyCard(page, card, true),
+          "ghost",
+        );
+        overwrite.title = "連同已標其他組別的樣本一起改成這個組別";
+        overwrite.setAttribute("aria-label", `以 ${card.label} 覆蓋已標組別的樣本`);
+        actions.append(overwrite);
+      }
+      if (cards.length > 1) {
+        const merge = el("select");
+        merge.setAttribute("aria-label", `把 ${card.label} 合併到`);
+        merge.append(el("option", "合併到…"));
+        merge.options[0].value = "";
+        for (const target of cards)
+          if (target !== card) {
+            const option = el("option", target.label);
+            option.value = target.label;
+            merge.append(option);
+          }
+        merge.addEventListener("change", () => {
+          const target = cards.find((other) => other.label === merge.value);
+          if (target) act(() => mergeCard(page, card, target));
+        });
+        actions.append(merge);
+      }
+      node.append(actions);
+      const members = el("details", undefined, "group-card-members");
+      members.append(
+        el("summary", "成員"),
+        el("p", card.members.join("、"), "mono"),
+      );
+      node.append(members);
+      (rows.some((row) => row.sample_role === "study_sample")
+        ? list
+        : unneeded
+      ).append(node);
+    }
+    const rest = el("details", undefined, "group-card-others");
+    rest.append(
+      el(
+        "summary",
+        `其他命名樣式（QC、Blank 等不需組別的樣本，${unneeded.children.length} 張）`,
+      ),
+      unneeded,
+    );
+    box.replaceChildren(
+      el(
+        "p",
+        "依命名樣式建議的組別：確認名稱後套用。已有組別的樣本只在按「覆蓋」時才會改。",
+        "subtle",
+      ),
+      ...(list.children.length ? [list] : []),
+      ...(unneeded.children.length ? [rest] : []),
+    );
+  }
+  // Words for click-to-group: separators, a capital after lowercase, and a
+  // code of capitals plus digits each end a word; matching is whole words.
+  const nameWords = (name) =>
+    String(name || "").match(/[A-Z]+\d+|[A-Z]+[a-z]*|[a-z]+|\d+/g) || [];
+  function wordCell(row) {
+    const td = el("td", undefined, "sample-words");
+    const name = row.sample_name || row.raw_stem || "";
+    let at = 0;
+    for (const match of name.matchAll(/[A-Z]+\d+|[A-Z]+[a-z]*|[a-z]+|\d+/g)) {
+      if (match.index > at) td.append(name.slice(at, match.index));
+      const word = el("button", match[0], "word");
+      word.type = "button";
+      word.title = `選取名稱含「${match[0]}」的所有樣本`;
+      word.addEventListener("click", () => selectWord(match[0]));
+      td.append(word);
+      at = match.index + match[0].length;
+    }
+    if (at < name.length) td.append(name.slice(at));
+    return td;
+  }
+  function selectWord(word) {
+    const wanted = word.toLowerCase();
+    const set = state.sampleSets[state.editing];
+    const hits = new Set(
+      set.rows
+        .filter((row) =>
+          nameWords(row.sample_name || row.raw_stem)
+            .map((part) => part.toLowerCase())
+            .includes(wanted),
+        )
+        .map((row) => row.raw_stem),
+    );
+    let shown = 0;
+    for (const box of $("sample-rows").querySelectorAll("input[data-sample]")) {
+      box.checked = hits.has(box.dataset.sample);
+      if (box.checked) shown += 1;
+    }
+    ui.toast(
+      `已選取 ${shown} 個名稱含「${word}」的樣本，可在上方套用組別或排除。`,
+    );
+    $("sample-bulk-group").focus();
+  }
+  // Collaborator tables and earlier batches: preview the match, then apply.
+  const annotationModes = {
+    table: {
+      title: "匯入合作者樣品表",
+      help: "選 Excel、CSV、TSV 檔或貼上表格，指定名稱欄與組別欄；對應到 RAW 的方式與上機資訊相同。",
+    },
+    carry: {
+      title: "沿用上一批分組",
+      help: "選先前匯出的樣品資訊，或工作區中已確認的批次（例如搬過的資料夾）；同一 RAW 直接對應，其餘依樣品名稱對應。",
+    },
+  };
+  const columnFields = ["name", "group", "excluded", "reason"];
+  function columnSelect(field, columns, chosen) {
+    const select = $(`annotation-col-${field}`);
+    select.replaceChildren();
+    if (field !== "name") select.append(el("option", "（不使用）"));
+    if (field !== "name") select.options[0].value = "";
+    columns.forEach((name, index) => {
+      const option = el("option", name);
+      option.value = String(index);
+      select.append(option);
+    });
+    select.value = chosen === null || chosen === undefined ? "" : String(chosen);
+  }
+  function chosenColumns() {
+    const columns = {};
+    for (const field of columnFields) {
+      const value = $(`annotation-col-${field}`).value;
+      columns[field] = value === "" ? null : Number(value);
+    }
+    return columns;
+  }
+  async function openAnnotations(page, mode, path = "") {
+    const set = state.sampleSets[page];
+    if (!set.rows.length) {
+      ui.toast("請先讀取 RAW 樣本。");
+      return;
+    }
+    state.annotation = { page, mode, preview: null };
+    $("annotation-title").textContent = annotationModes[mode].title;
+    $("annotation-help").textContent = annotationModes[mode].help;
+    $("annotation-path").value = path;
+    $("annotation-text").value = "";
+    $("annotation-paste").hidden = mode !== "table";
+    $("annotation-confirmed").hidden = mode !== "carry";
+    $("annotation-columns").hidden = true;
+    $("annotation-preview").hidden = true;
+    $("annotation-overwrite").checked = false;
+    $("annotation-apply").disabled = true;
+    $("annotation-dialog").showModal();
+    if (mode === "carry") {
+      const listed = await api("/api/samples/annotations", {});
+      const select = $("annotation-confirmed");
+      select.replaceChildren(el("option", "工作區中已確認的批次…"));
+      select.options[0].value = "";
+      for (const item of listed.confirmed) {
+        const option = el("option", item.name);
+        option.value = item.path;
+        select.append(option);
+      }
+    }
+    if (path) await readAnnotations();
+  }
+  async function readAnnotations(columns) {
+    const { page } = state.annotation;
+    const raw_stems = state.sampleSets[page].rows.map((row) => row.raw_stem);
+    const values = {
+      raw_stems,
+      path: $("annotation-path").value.trim(),
+      text: state.annotation.mode === "table" ? $("annotation-text").value : "",
+      ...(columns ? { columns } : {}),
+    };
+    let result = await api("/api/samples/annotations", values);
+    if (result.kind === "table" && !columns) {
+      for (const field of columnFields)
+        columnSelect(field, result.columns, result.guess[field]);
+      $("annotation-columns").hidden = false;
+      result = await api("/api/samples/annotations", {
+        ...values,
+        columns: chosenColumns(),
+      });
+    } else if (result.kind === "metadata") $("annotation-columns").hidden = true;
+    renderAnnotationPreview(result);
+  }
+  function renderAnnotationPreview(result) {
+    state.annotation.preview = result;
+    const matched = result.matched;
+    $("annotation-counts").textContent =
+      `對到 ${matched.length} 個 RAW · 表格中沒對到 ${result.unmatched.length} 筆 · ` +
+      `有歧義 ${result.ambiguous.length} 筆（不會套用）`;
+    $("annotation-rows").replaceChildren(
+      ...matched.map((row) => {
+        const tr = el("tr");
+        tr.append(
+          el("td", row.raw_stem, "mono"),
+          el("td", row.name),
+          el("td", row.group || "—"),
+          el(
+            "td",
+            row.excluded ? `排除${row.exclusion_reason ? `：${row.exclusion_reason}` : ""}` : "—",
+          ),
+        );
+        return tr;
+      }),
+    );
+    for (const [id, names, label] of [
+      ["annotation-unmatched", result.unmatched, "表格中沒對到的名稱"],
+      ["annotation-ambiguous", result.ambiguous, "有歧義、對到多個 RAW 的名稱"],
+    ]) {
+      $(id).hidden = !names.length;
+      $(id).querySelector("summary").textContent = `${label}（${names.length}）`;
+      $(id).querySelector("p").textContent = names.join("、");
+    }
+    $("annotation-preview").hidden = false;
+    $("annotation-apply").disabled = !matched.length;
+    $("annotation-apply").textContent = `套用到 ${matched.length} 個樣本`;
+  }
+  async function applyAnnotations() {
+    const { page, preview } = state.annotation;
+    const overwrite = $("annotation-overwrite").checked;
+    const byStem = new Map(state.sampleSets[page].rows.map((row) => [row.raw_stem, row]));
+    for (const match of preview.matched) {
+      const row = byStem.get(match.raw_stem);
+      if (!row) continue;
+      if (match.group && (overwrite || !row.group.trim())) row.group = match.group;
+      if (match.excluded) {
+        row.excluded = true;
+        row.exclusion_reason =
+          match.exclusion_reason || `${annotationModes[state.annotation.mode].title}標記排除`;
+      }
+    }
+    $("annotation-dialog").close();
+    await persistSamples(page);
+    done(`已套用 ${preview.matched.length} 個樣本的組別與排除。`);
+  }
+  // Colours come from the server's group-colour owner, shared with Inspector.
+  function groupSwatch(color) {
+    const swatch = el("span", undefined, "group-swatch");
+    if (color) swatch.style.background = color;
+    else swatch.hidden = true;
+    return swatch;
+  }
+  function sampleCell(control) {
+    const td = el("td");
+    td.append(control);
+    return td;
   }
   function renderSamples() {
-    renderRoleSummary();
+    const page = state.editing;
+    const set = state.sampleSets[page];
+    renderRoleSummary(page);
+    $("sample-group-options").replaceChildren(
+      ...(set.overview?.groups || [])
+        .filter((entry) => entry.group !== "Other")
+        .map((entry) => {
+          const option = el("option");
+          option.value = entry.group;
+          return option;
+        }),
+    );
     const filter = $("sample-filter").value.trim().toLowerCase();
     const body = $("sample-rows");
     body.replaceChildren();
     let shown = 0;
-    for (const row of state.samples) {
+    for (const row of set.rows) {
       if (
         filter &&
-        ![row.raw_stem, row.sample_name, row.batch_id]
+        ![row.raw_stem, row.sample_name, row.batch_id, row.group]
           .join(" ")
           .toLowerCase()
           .includes(filter)
@@ -931,50 +1430,137 @@
         continue;
       shown += 1;
       const tr = el("tr");
+      if (row.excluded) tr.className = "excluded";
       const selected = el("input");
       selected.type = "checkbox";
       selected.dataset.sample = row.raw_stem;
       selected.setAttribute("aria-label", `選取 ${row.raw_stem}`);
-      const check = el("td");
-      check.append(selected);
-      tr.append(check);
+      tr.append(sampleCell(selected));
       tr.append(el("td", row.raw_stem ?? "—", "mono"));
       tr.append(el("td", row.batch_id ?? "—"));
       tr.append(el("td", row.injection_order ?? "—", "num"));
-      tr.append(el("td", row.sample_name ?? "—"));
+      tr.append(wordCell(row));
       const select = el("select");
       select.setAttribute("aria-label", `${row.raw_stem} 角色`);
       roleOptions(select, row.sample_role);
       select.addEventListener("change", () => {
         row.sample_role = select.value;
-        dirty("untargeted");
-        renderRoleSummary();
+        act(() => persistSamples(page));
       });
-      const td = el("td");
-      td.append(select);
-      tr.append(td);
+      tr.append(sampleCell(select));
+      const group = el("input");
+      group.value = row.group || "";
+      group.setAttribute("list", "sample-group-options");
+      group.setAttribute("aria-label", `${row.raw_stem} 組別`);
+      group.placeholder = row.sample_role === "study_sample" ? "Other" : "";
+      group.addEventListener("change", () => {
+        row.group = group.value.trim();
+        act(() => persistSamples(page));
+      });
+      const groupCell = el("div", undefined, "group-cell");
+      groupCell.append(
+        groupSwatch(set.overview?.row_groups?.[row.raw_stem]?.color),
+        group,
+      );
+      tr.append(sampleCell(groupCell));
+      const pending = state.pendingExclusions.has(row.raw_stem);
+      const excluded = el("input");
+      excluded.type = "checkbox";
+      excluded.checked = Boolean(row.excluded) || pending;
+      excluded.setAttribute("aria-label", `${row.raw_stem} 排除`);
+      const reason = el("input");
+      reason.value = row.exclusion_reason || "";
+      reason.disabled = !excluded.checked;
+      reason.placeholder = excluded.checked ? "必填" : "";
+      reason.required = excluded.checked;
+      reason.setAttribute("aria-label", `${row.raw_stem} 排除原因`);
+      // A checked box waits as a pending mark until its reason is entered;
+      // only then does the row, which runs read, become excluded.
+      excluded.addEventListener("change", () => {
+        if (excluded.checked) {
+          state.pendingExclusions.add(row.raw_stem);
+          renderSamples();
+          $("sample-rows")
+            .querySelector(`input[aria-label="${row.raw_stem} 排除原因"]`)
+            ?.focus();
+          return;
+        }
+        state.pendingExclusions.delete(row.raw_stem);
+        const saved = row.excluded;
+        row.excluded = false;
+        row.exclusion_reason = "";
+        renderSamples();
+        if (saved) act(() => persistSamples(page));
+      });
+      reason.addEventListener("change", () => {
+        const text = reason.value.trim();
+        if (!text) {
+          reason.value = row.exclusion_reason || "";
+          ui.toast("排除原因不可空白；要取消排除請取消勾選。");
+          return;
+        }
+        state.pendingExclusions.delete(row.raw_stem);
+        row.excluded = true;
+        row.exclusion_reason = text;
+        act(() => persistSamples(page));
+      });
+      tr.append(sampleCell(excluded), sampleCell(reason));
       body.append(tr);
     }
-    if (!state.samples.length) {
+    if (!set.rows.length) {
       const tr = el("tr");
       const td = el("td", "尚未讀取樣本。關閉此視窗後按「讀取 RAW 樣本」。");
-      td.colSpan = 6;
+      td.colSpan = 9;
       td.className = "subtle";
       tr.append(td);
       body.append(tr);
     }
     $("sample-select-all").checked = false;
     $("sample-editor-count").textContent = filter
-      ? `顯示 ${shown} ／ 共 ${state.samples.length} 個樣本`
-      : `共 ${state.samples.length} 個樣本`;
+      ? `顯示 ${shown} ／ 共 ${set.rows.length} 個樣本`
+      : `共 ${set.rows.length} 個樣本`;
   }
-  async function scanSamples() {
-    const values = untargetedValues();
+  function selectedSamples() {
+    const selected = new Set(
+      [...$("sample-rows").querySelectorAll("input[data-sample]:checked")].map(
+        (node) => node.dataset.sample,
+      ),
+    );
+    if (!selected.size) ui.toast("請先勾選要套用的樣本。");
+    return state.sampleSets[state.editing].rows.filter((row) =>
+      selected.has(row.raw_stem),
+    );
+  }
+  function applyToSelected(change) {
+    const rows = selectedSamples();
+    if (!rows.length) return;
+    rows.forEach(change);
+    renderSamples();
+    act(() => persistSamples(state.editing));
+  }
+  // Edits confirm the folder's sample metadata at once; both flows read it.
+  async function persistSamples(page) {
+    const set = state.sampleSets[page];
+    if (!set.rows.length) return;
+    const rawDir = $(samplePages[page].rawDir).value;
+    const saved = await api("/api/samples/save", {
+      raw_dir: rawDir,
+      samples: set.rows,
+    });
+    set.overview = saved.overview;
+    set.source = "confirmed";
+    mirrorSamples(page);
+    renderRoleSummary(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  async function scanSamples(page, importSequence = false) {
+    const spec = samplePages[page];
     await startJob("samples", {
-      raw_dir: values.raw_dir,
-      dll_dir: values.dll_dir,
-      sequence_source: values.sequence_source,
-      custom_roles: values.custom_roles,
+      page,
+      raw_dir: $(spec.rawDir).value,
+      dll_dir: $(spec.dll).value,
+      sequence_source: $(spec.sequence).value,
+      import_sequence: importSequence,
     });
   }
 
@@ -1009,7 +1595,7 @@
   function renderActivity() {
     const job = state.analysis.job;
     const pill = $("activity");
-    const page = jobPage[job?.kind] || "untargeted";
+    const page = pageOf(job);
     const recentlyFinished =
       state.seenAt && Date.now() - state.seenAt < 20000;
     const visible =
@@ -1035,7 +1621,7 @@
     $("target-samples-review").hidden = !sampleSummary;
     if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
-    card.hidden = !job || (jobPage[job.kind] || "untargeted") !== state.view;
+    card.hidden = !job || pageOf(job) !== state.view;
     lock();
     renderActivity();
     if (!job) return;
@@ -1104,11 +1690,10 @@
     if (job.status === "succeeded") {
       if (job.kind === "samples") {
         const result = state.analysis.results.samples;
-        state.samples = result.samples;
-        renderSamples();
-        renderSampleSummary(result.summary);
-        dirty("untargeted");
-        done(`已讀取 ${state.samples.length} 個樣本。`);
+        const page = result.page || "untargeted";
+        applySampleResult(page, result);
+        if (page === "untargeted") dirty("untargeted");
+        done(`已讀取 ${result.samples.length} 個樣本。`);
       } else if (job.kind === "quality")
         done(
           `Feature Quality 匯出完成：${state.analysis.results.quality.output_dir}`,
@@ -1531,6 +2116,7 @@
       $("t-injection_order_source").value = "";
       state.config.settings.data_dir = "";
       state.config.settings.injection_order_source = "";
+      clearSamples("targeted");
       $("target-result").hidden = true;
       dirty("targeted");
       focusField("t-data_dir");
@@ -1539,6 +2125,7 @@
       if (event.target.id === "t-data_dir" && event.target.value !== event.target.dataset.batchPath) {
         $("t-injection_order_source").value = "";
         event.target.dataset.batchPath = event.target.value;
+        clearSamples("targeted");
       }
     });
     $("target-edit").onclick = () => {
@@ -1640,44 +2227,95 @@
           dirty("untargeted");
         }
       });
-    $("samples-refresh").onclick = () => act(scanSamples);
-    $("samples-import").onclick = () => act(scanSamples);
-    $("samples-edit").onclick = () => {
-      renderSamples();
-      $("sample-editor").showModal();
-    };
+    for (const [page, spec] of Object.entries(samplePages)) {
+      $(sampleId(page, "samples-refresh")).onclick = () =>
+        act(() => scanSamples(page));
+      $(sampleId(page, "samples-import")).onclick = () =>
+        act(() => scanSamples(page, true));
+      $(sampleId(page, "samples-edit")).onclick = () => {
+        state.editing = page;
+        renderSamples();
+        $("sample-editor").showModal();
+      };
+      $(sampleId(page, "samples-export")).onclick = () =>
+        act(async () => {
+          const path = await requestPath(
+            "匯出樣本資料 TSV / CSV",
+            `${$(spec.output).value}/sample_metadata.tsv`,
+          );
+          if (path) {
+            await api("/api/samples/export", {
+              samples: state.sampleSets[page].rows,
+              path,
+            });
+            done(`樣本資料已匯出：${path}`);
+          }
+        });
+      $(sampleId(page, "samples-table")).onclick = () =>
+        act(() => openAnnotations(page, "table"));
+      $(sampleId(page, "samples-carry")).onclick = () =>
+        act(() => openAnnotations(page, "carry"));
+      // A different 上機資訊 makes the loaded rows stale until read again.
+      $(spec.sequence).addEventListener("change", () => clearSamples(page));
+    }
     $("sample-filter").oninput = renderSamples;
+    // Pending marks without a reason never outlive the editor.
+    $("sample-editor").addEventListener("close", () => {
+      if (!state.pendingExclusions.size) return;
+      state.pendingExclusions.clear();
+      ui.toast("未填排除原因的勾選已取消。");
+    });
     $("sample-select-all").onchange = () =>
       $("sample-rows")
-        .querySelectorAll("input[type=checkbox]")
+        .querySelectorAll("input[data-sample]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
     roleOptions($("sample-bulk-role"), "study_sample");
-    $("sample-apply-role").onclick = () => {
-      const selected = new Set(
-        [...$("sample-rows").querySelectorAll("input:checked")].map(
-          (node) => node.dataset.sample,
-        ),
-      );
-      if (!selected.size) {
-        ui.toast("請先勾選要套用角色的樣本。");
+    // A change confirmed elsewhere, such as an exclusion marked in review.
+    document.addEventListener("xic:samples-confirmed", (event) => {
+      const { raw_dir, samples, overview } = event.detail;
+      for (const [page, spec] of Object.entries(samplePages)) {
+        const set = state.sampleSets[page];
+        if (!set.rows.length || $(spec.rawDir).value !== raw_dir) continue;
+        state.sampleSets[page] = {
+          ...set,
+          rows: samples,
+          overview,
+          source: "confirmed",
+          cards: null,
+        };
+        renderRoleSummary(page);
+      }
+    });
+    $("annotation-read").onclick = () => act(() => readAnnotations());
+    $("annotation-confirmed").onchange = () => {
+      if (!$("annotation-confirmed").value) return;
+      $("annotation-path").value = $("annotation-confirmed").value;
+      act(() => readAnnotations());
+    };
+    for (const field of columnFields)
+      $(`annotation-col-${field}`).onchange = () =>
+        act(() => readAnnotations(chosenColumns()));
+    $("annotation-apply").onclick = () => act(applyAnnotations);
+    $("sample-apply-role").onclick = () =>
+      applyToSelected((row) => (row.sample_role = $("sample-bulk-role").value));
+    $("sample-apply-group").onclick = () =>
+      applyToSelected((row) => (row.group = $("sample-bulk-group").value.trim()));
+    $("sample-exclude").onclick = () => {
+      const reason = $("sample-bulk-reason").value.trim();
+      if (!reason) {
+        ui.toast("請先填寫排除原因。");
+        $("sample-bulk-reason").focus();
         return;
       }
-      for (const row of state.samples)
-        if (selected.has(row.raw_stem))
-          row.sample_role = $("sample-bulk-role").value;
-      dirty("untargeted");
-      renderSamples();
+      applyToSelected((row) => {
+        row.excluded = true;
+        row.exclusion_reason = reason;
+      });
     };
-    $("samples-export").onclick = () =>
-      act(async () => {
-        const path = await requestPath(
-          "匯出樣本資料 TSV / CSV",
-          `${$("u-output_dir").value}/sample_metadata.tsv`,
-        );
-        if (path) {
-          await api("/api/samples/export", { samples: state.samples, path });
-          done(`樣本資料已匯出：${path}`);
-        }
+    $("sample-include").onclick = () =>
+      applyToSelected((row) => {
+        row.excluded = false;
+        row.exclusion_reason = "";
       });
     $("istd-reload").onclick = () => act(reloadIstd);
     $("u-targets_csv").addEventListener("change", () => act(reloadIstd));
@@ -1697,11 +2335,7 @@
           sampleRawDir = "";
           $("u-output_dir").value = "";
           $("sequence-source").value = "";
-          state.samples = [];
-          state.config.untargeted.custom_roles = {};
-          renderSamples();
-          $("samples-summary").textContent = "";
-          $("samples-conflicts").hidden = true;
+          clearSamples("untargeted");
           $("untargeted-result").hidden = true;
           if (id === "untargeted-clear") {
             $("u-targets_csv").value = "";
@@ -1717,11 +2351,7 @@
       sampleRawDir = nextRawDir;
       $("sequence-source").value = "";
       state.config.untargeted.sequence_source = "";
-      state.config.untargeted.custom_roles = {};
-      state.samples = [];
-      $("samples-summary").textContent = "";
-      $("samples-conflicts").hidden = true;
-      renderSamples();
+      clearSamples("untargeted");
       const name = $("u-raw_dir")
         .value.replace(/\\/g, "/")
         .replace(/\/$/, "")
@@ -1733,11 +2363,7 @@
           `${current ? current.replace(/(\/output)(?:\/[^/]+)?$/, "$1") : `${state.config.config_dir}/../output`}/${name}`;
       dirty("untargeted");
     });
-    $("sequence-source").addEventListener("change", () => {
-      state.samples = [];
-      renderSamples();
-      dirty("untargeted");
-    });
+    $("sequence-source").addEventListener("change", () => dirty("untargeted"));
     $("analysis-stop").onclick = () => act(stopJob);
     $("quality-form").onsubmit = (event) => {
       event.preventDefault();
@@ -1840,6 +2466,7 @@
     const response = await fetch("/assets/analysis.html");
     if (!response.ok) throw new Error("分析頁面無法載入。");
     $("analysis-root").innerHTML = await response.text();
+    mountSampleSteps();
     await api("/api/session");
     state.config = await api("/api/config");
     state.targets = state.config.targets;
@@ -1887,23 +2514,18 @@
     }
     bind();
     targetCount();
-    renderRoleSummary();
+    renderRoleSummary("targeted");
+    renderRoleSummary("untargeted");
     modeFields();
     state.analysis = state.config.analysis;
     const loadedSamples = state.analysis.results.samples;
+    const loadedPage = loadedSamples?.page || "untargeted";
+    const loadedSpec = samplePages[loadedPage];
     if (loadedSamples?.input_paths &&
-        loadedSamples.input_paths.raw_dir === $("u-raw_dir").value &&
-        loadedSamples.input_paths.dll_dir === $("u-dll_dir").value &&
-        loadedSamples.input_paths.sequence_source === $("sequence-source").value) {
-      // Saved role edits are newer than the cached sample-loading result.
-      const savedRoles = state.config.untargeted.custom_roles || {};
-      state.samples = loadedSamples.samples.map((sample) => ({
-        ...sample,
-        sample_role: savedRoles[sample.raw_stem] ?? sample.sample_role,
-      }));
-      renderSamples();
-      renderSampleSummary(loadedSamples.summary);
-    }
+        loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
+        loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
+        loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value)
+      applySampleResult(loadedPage, loadedSamples);
     renderResults();
     selectView(
       state.config.preferences.view ||

@@ -271,6 +271,48 @@ class AnalysisWorkspace:
                 else Path(values["path"])
             )
             return save_method(values["draft"], destination)
+        if action == "samples/save":
+            from xic_workbench.samples import save_batch_samples
+
+            saved = save_batch_samples(
+                self.config_dir, Path(values["raw_dir"]), values["samples"]
+            )
+            self.jobs.remember_samples(
+                values["raw_dir"], values["samples"], saved["overview"]
+            )
+            return saved
+        if action == "samples/exclude":
+            from xic_workbench.samples import exclude_sample
+
+            raw_dir = Path(values["raw_dir"])
+            result = exclude_sample(
+                self.config_dir,
+                raw_dir,
+                str(values["raw_stem"]),
+                str(values.get("reason") or ""),
+                dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
+                sequence_source=Path(values["sequence_source"])
+                if values.get("sequence_source")
+                else None,
+            )
+            self.jobs.remember_samples(
+                values["raw_dir"], result["samples"], result["overview"]
+            )
+            return result
+        if action == "samples/annotations":
+            from xic_workbench.samples import (
+                list_confirmed_annotations,
+                preview_annotations,
+            )
+
+            if "raw_stems" not in values:
+                return {"confirmed": list_confirmed_annotations(self.config_dir)}
+            return preview_annotations(
+                [str(stem) for stem in values["raw_stems"]],
+                path=Path(values["path"]) if values.get("path") else None,
+                text=values.get("text"),
+                columns=values.get("columns"),
+            )
         if action == "samples/export":
             from xic_workbench.samples import export_samples
 

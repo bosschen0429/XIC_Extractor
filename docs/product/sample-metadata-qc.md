@@ -181,6 +181,45 @@ sequence tables. They bind only by case-insensitive **exact `raw_stem`**, never
 by normalized sample names or repeat order. Unbound rows are reported unmatched;
 their group and exclusion flags must not migrate to a similar RAW name.
 
+### Workbench sample step
+
+Targeted and Untargeted share one sample step. Confirmed sample metadata is one
+`sample_metadata` TSV per RAW folder under the workbench config directory
+(`sample_metadata/<folder>-<path hash>.tsv`); both flows read and write it. Once
+it exists it is that folder's metadata source: a different 上機資訊 path is used
+only through **匯入上機資訊**, which takes roles from the list and keeps confirmed
+groups and exclusions the list does not supply. Edits save at once and are
+validated by `parse_sample_metadata` before writing, so an exclusion waits for
+its reason. A Targeted run reads the folder's file as its
+`injection_order_source` for that run only, and an Untargeted run reads the
+same file rather than rows a page may still hold. Roles saved in `discovery_gui.json`
+before this file existed seed their own RAW folder until it is confirmed.
+
+The pre-run checklist words `sample_overview`: per-group counts, unassigned study
+samples, one-sample groups, and exclusions over the analyzed population. Naming
+cards group `suggest_sample_groups` output; applying a card fills only samples
+without a group unless overwrite is chosen, and renaming or merging a card moves
+only the samples it wrote. Clicking a word in a sample name selects samples
+sharing that whole word. A collaborator table (Excel, CSV, TSV, or pasted) maps
+chosen name, group, and exclusion columns through `match_sample_metadata`;
+earlier confirmed metadata binds its own RAW exactly and the rest by name. Both
+preview matched, unmatched, and ambiguous rows before writing. The file is keyed
+by folder path, so a moved or renamed folder starts unconfirmed; its earlier
+file is reused through the same carry-over list, which names every confirmed
+folder.
+
+`xic_inspector.rendering.group_colors` owns group colours: each group of a batch
+takes the curve-palette slot its name hashes to, or the next free slot, and
+`QC`/`Other` stay neutral. The sample step and Targeted review use the analyzed
+population's groups, so one group shows one colour in both. Targeted review of
+a result opened from its run can mark an injection excluded; the Inspector only
+requests it, and the workbench writes the metadata of that run's RAW folder, not
+the editable review path; an unconfirmed folder is first read with the 上機資訊
+that run used, not the current batch settings. A result opened by hand has no run folder and offers
+no exclusion. An exclusion applies on the next run and does not change the
+published result; a box checked without a reason stays a pending mark that
+closing the editor drops, so it never reaches a run.
+
 Explicit exclusion has the same meaning in complete Targeted and Untargeted
 runs: the sample is not analyzed. The shared `AnalysisSet` retains excluded
 injections as context, but they are neither extracted nor emitted as analyzed

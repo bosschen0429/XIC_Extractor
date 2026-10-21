@@ -21,7 +21,7 @@
     <script src="/assets/workspace.js" defer></script>
     <script src="/assets/analysis.js" defer></script>
   </head>
-  <body class="booting">
+  <body class="booting xic-group-palette">
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <symbol id="i-folder" viewBox="0 0 24 24">
         <path
@@ -625,6 +625,27 @@
         <div class="dialog-foot">
           <button value="cancel" formnovalidate>取消</button
           ><button id="confirm-accept" value="ok" class="primary">確定</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="exclude-dialog" aria-labelledby="exclude-title">
+      <form method="dialog">
+        <div class="dialog-head">
+          <h2 id="exclude-title">標記排除</h2>
+        </div>
+        <div class="dialog-body">
+          <p id="exclude-message" class="dialog-message"></p>
+          <label class="field"
+            >排除原因<input id="exclude-reason" autocomplete="off" required
+          /></label>
+          <p class="subtle">
+            寫入這次執行所用 RAW 資料夾的樣品資訊。目前的結果不會改變；重新執行後才會套用。
+          </p>
+        </div>
+        <div class="dialog-foot">
+          <button value="cancel" formnovalidate>取消</button
+          ><button id="exclude-accept" value="ok" class="primary">標記排除</button>
         </div>
       </form>
     </dialog>

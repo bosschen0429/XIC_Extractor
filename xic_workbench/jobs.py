@@ -77,9 +77,20 @@ class AnalysisJobs:
                     write_preferences(
                         {"targeted_output_dir": output_dir}, config_dir=self.config_dir
                     )
+                from xic_workbench.samples import sample_annotations_path
+
+                data_dir = str(values["settings"].get("data_dir") or "").strip()
+                annotations = (
+                    sample_annotations_path(self.config_dir, Path(data_dir))
+                    if data_dir
+                    else None
+                )
                 self._runner = TargetedRun(
                     self.config_dir,
                     output_dir=Path(output_dir) if output_dir else None,
+                    sample_annotations=annotations
+                    if annotations is not None and annotations.is_file()
+                    else None,
                     progress=self._progress,
                     should_cancel=self._cancel.is_set,
                 )
@@ -97,8 +108,22 @@ class AnalysisJobs:
                 "available_outputs": [],
                 "cancellable": kind in {"targeted", "untargeted", "inspector"},
             }
+            if kind == "samples":
+                # Both flows read samples; the job card follows the asking page.
+                self._current["page"] = values.get("page") or "untargeted"
             self._executor.submit(self._execute, kind, values)
             return self.state()
+
+    def remember_samples(
+        self, raw_dir: str, rows: list[dict[str, Any]], overview: dict[str, Any]
+    ) -> None:
+        """Keep the restorable sample result in step with confirmed edits."""
+        with self._lock:
+            cached = self._results.get("samples")
+            if cached and cached.get("input_paths", {}).get("raw_dir") == raw_dir:
+                cached["samples"] = copy.deepcopy(rows)
+                cached["overview"] = copy.deepcopy(overview)
+                cached["summary"]["annotation_source"] = "confirmed"
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -146,37 +171,44 @@ class AnalysisJobs:
         from xic_extractor.configuration.execution_profile import (
             resolve_execution_profile,
         )
-        from xic_workbench.discovery_config_io import write_discovery_config
-        from xic_workbench.samples import apply_raw_chronology, load_samples
+        from xic_workbench.discovery_config_io import (
+            read_legacy_roles,
+            write_discovery_config,
+        )
+        from xic_workbench.samples import (
+            apply_raw_chronology,
+            read_batch_samples,
+            sample_annotations_path,
+        )
         from xic_workbench.untargeted import UntargetedRun, parse_request
 
         if (
-            values.get("samples") is None
-            and values.get("raw_dir")
-            and values.get("dll_dir")
-            and values.get("mode", "full") in {"full", "align_only"}
-            and (values.get("sequence_source") or values.get("custom_roles"))
-        ):
-            sample_result = load_samples(
-                Path(values["raw_dir"]),
-                dll_dir=Path(values["dll_dir"]),
-                sequence_source=Path(values["sequence_source"])
-                if values.get("sequence_source")
-                else None,
-                custom_roles=values.get("custom_roles"),
-            )
-            values["samples"] = sample_result["samples"]
-        elif (
-            isinstance(values.get("samples"), list)
-            and values.get("raw_dir")
+            values.get("raw_dir")
             and values.get("dll_dir")
             and values.get("mode", "full") in {"full", "align_only"}
         ):
-            values["samples"] = apply_raw_chronology(
-                values["samples"],
-                raw_dir=Path(values["raw_dir"]),
-                dll_dir=Path(values["dll_dir"]),
-            )
+            raw_dir = Path(values["raw_dir"])
+            legacy = read_legacy_roles(raw_dir, config_dir=self.config_dir)
+            # A folder's confirmed metadata decides the run, whatever rows the
+            # page still holds; without annotations the alignment owner resolves
+            # default metadata.
+            if sample_annotations_path(self.config_dir, raw_dir).is_file() or (
+                values.get("samples") is None
+                and (values.get("sequence_source") or legacy)
+            ):
+                values["samples"] = read_batch_samples(
+                    self.config_dir,
+                    raw_dir,
+                    dll_dir=Path(values["dll_dir"]),
+                    sequence_source=Path(values["sequence_source"])
+                    if values.get("sequence_source")
+                    else None,
+                    legacy_roles=legacy,
+                )["samples"]
+            elif isinstance(values.get("samples"), list):
+                values["samples"] = apply_raw_chronology(
+                    values["samples"], raw_dir=raw_dir, dll_dir=Path(values["dll_dir"])
+                )
         if values.get("execution_profile") is None:
             from xic_workbench.config_io import read_settings
 
@@ -207,23 +239,37 @@ class AnalysisJobs:
                     inputs.get("data_dir" if kind == "targeted" else "raw_dir") or ""
                 ),
                 "dll_dir": str(inputs.get("dll_dir") or ""),
+                "sequence_source": str(
+                    inputs.get(
+                        "injection_order_source"
+                        if kind == "targeted"
+                        else "sequence_source"
+                    )
+                    or ""
+                ),
             }
             return result
         if kind == "samples":
-            from xic_workbench.samples import load_samples
+            from xic_workbench.discovery_config_io import read_legacy_roles
+            from xic_workbench.samples import read_batch_samples
 
-            result = load_samples(
+            result = read_batch_samples(
+                self.config_dir,
                 Path(values["raw_dir"]),
                 dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
                 sequence_source=Path(values["sequence_source"])
                 if values.get("sequence_source")
                 else None,
-                custom_roles=values.get("custom_roles"),
+                import_sequence=bool(values.get("import_sequence")),
+                legacy_roles=read_legacy_roles(
+                    Path(values["raw_dir"]), config_dir=self.config_dir
+                ),
             )
             result["input_paths"] = {
                 key: str(values.get(key) or "")
                 for key in ("raw_dir", "dll_dir", "sequence_source")
             }
+            result["page"] = values.get("page") or "untargeted"
             return result
         if kind == "quality":
             from xic_extractor.feature_quality_io import export_feature_quality

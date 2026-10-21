@@ -139,9 +139,28 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
     assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "shared-dll"
     payload = json.loads(path.read_text())
     assert "dll_dir" not in payload
-    assert payload["custom_roles"] == {"A": "istd"}
+    # Legacy roles belong to the folder they were saved for.
+    assert "custom_roles" not in payload
     assert payload["sequence_source"] == "sequence.csv"
     assert payload["raw_dir"] == "new-batch"
+
+
+def test_untargeted_save_keeps_legacy_roles_for_their_own_folder(tmp_path):
+    from xic_workbench.discovery_config_io import read_legacy_roles
+
+    path = tmp_path / "discovery_gui.json"
+    path.write_text(
+        json.dumps({"raw_dir": str(tmp_path / "batch"), "custom_roles": {"A": "qc"}}),
+        encoding="utf-8",
+    )
+    workspace = AnalysisWorkspace(tmp_path, {})
+    try:
+        workspace.action("untargeted/save", {"raw_dir": str(tmp_path / "batch")})
+    finally:
+        workspace.jobs.close()
+
+    assert read_legacy_roles(tmp_path / "batch", config_dir=tmp_path) == {"A": "qc"}
+    assert read_legacy_roles(tmp_path / "other", config_dir=tmp_path) == {}
 
 
 def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp_path):
