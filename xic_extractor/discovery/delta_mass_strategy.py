@@ -1,57 +1,82 @@
-"""Settings and resolved strategy for Delta Mass / Pt pattern Discovery."""
+"""Preset-owned parameters for the pure delta-mass method."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass
 
-from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, DeltaMassPattern
 from xic_extractor.validation_primitives import require_finite_real
 
 
 @dataclass(frozen=True)
-class DeltaMassPatternSettings:
-    """Tunable parameters for ``match_delta_mass_pattern()``.
-
-    ``pattern`` defaults to the built-in ``PT_PATTERN`` singleton, and
-    ``mz_tolerance_ppm`` / ``rt_tolerance_sec`` default to that same pattern's
-    tolerances so that ``DeltaMassPatternSettings()`` and ``PT_PATTERN`` stay
-    numerically consistent by construction.
-    """
-
-    pattern: DeltaMassPattern = field(default=PT_PATTERN)
-    pattern_id: str = "pt"
-    method_label: str = "pt_pattern"
-    mz_tolerance_ppm: float = PT_PATTERN.mz_tolerance_ppm
-    rt_tolerance_sec: float = PT_PATTERN.rt_tolerance_sec
-    ratio_basis: str = "both"
+class DeltaMassPosition:
+    label: str
+    delta_da: float
+    ratio_min: float
+    ratio_max: float
 
     def __post_init__(self) -> None:
-        if not self.pattern_id.strip():
-            raise ValueError("pattern_id must be non-empty")
-        if not self.method_label.strip():
-            raise ValueError("method_label must be non-empty")
-        mz_tolerance_ppm = require_finite_real(
-            self.mz_tolerance_ppm,
-            name="mz_tolerance_ppm",
-        )
-        if mz_tolerance_ppm <= 0:
-            raise ValueError("mz_tolerance_ppm must be finite and > 0")
-        rt_tolerance_sec = require_finite_real(
-            self.rt_tolerance_sec,
-            name="rt_tolerance_sec",
-        )
-        if rt_tolerance_sec <= 0:
-            raise ValueError("rt_tolerance_sec must be finite and > 0")
+        if not isinstance(self.label, str) or not self.label.strip():
+            raise ValueError("position requires a non-empty text label")
+        for name in ("delta_da", "ratio_min", "ratio_max"):
+            require_finite_real(getattr(self, name), name=name)
+        if self.delta_da < 0 or not 0 < self.ratio_min <= self.ratio_max:
+            raise ValueError(
+                "position requires nonnegative delta and positive ordered ratios"
+            )
 
 
 @dataclass(frozen=True)
-class PtPatternDiscoveryStrategy:
-    """Resolved Pt pattern Discovery strategy for one run.
+class DeltaMassPatternSettings:
+    pattern_id: str
+    method_label: str
+    positions: tuple[DeltaMassPosition, ...]
+    anchor_positions: tuple[str, ...]
+    discriminating_positions: tuple[str, ...]
+    mz_tolerance_ppm: float = 20.0
+    apex_floor_sec: float = 1.0
+    scan_interval_multiplier: float = 1.25
+    shape_window_sec: float = 10.0
+    min_shape_r: float = 0.9
 
-    ``label`` names the strategy source in error messages. ``cid_nl_composite``
-    requests the CID-NL(dR) intersection join over the matched Pt candidates.
-    """
+    def __post_init__(self) -> None:
+        if not isinstance(self.method_label, str) or not self.method_label.strip():
+            raise ValueError("method_label must be non-empty text")
+        labels = [p.label for p in self.positions]
+        deltas = [p.delta_da for p in self.positions]
+        if (
+            len(labels) < 2
+            or len(set(labels)) != len(labels)
+            or deltas != sorted(set(deltas))
+            or deltas[0] != 0
+        ):
+            raise ValueError(
+                "pattern requires two or more unique ordered positions starting at zero"
+            )
+        if (
+            not self.anchor_positions
+            or not set(self.anchor_positions) <= set(labels)
+            or not set(self.discriminating_positions) <= set(labels)
+        ):
+            raise ValueError(
+                "anchor and discriminating roles must name pattern positions"
+            )
+        for value in (
+            self.mz_tolerance_ppm,
+            self.apex_floor_sec,
+            self.scan_interval_multiplier,
+            self.shape_window_sec,
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("method tolerances must be finite and positive")
+        require_finite_real(self.min_shape_r, name="min_shape_r")
+        if not -1 <= self.min_shape_r <= 1:
+            raise ValueError("min_shape_r must be between -1 and 1")
 
+
+@dataclass(frozen=True)
+class DeltaMassDiscoveryStrategy:
     label: str
     settings: DeltaMassPatternSettings
     cid_nl_composite: bool
+    smoothing_window_sec: float = 6.6

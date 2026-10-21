@@ -6,17 +6,13 @@ pattern settings or matcher.
 
 from __future__ import annotations
 
-import csv
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 from xic_extractor.tabular_io import (
     read_delimited_rows,
-    read_tsv_with_header,
-    validate_delimited_header,
     write_delimited_rows,
 )
 from xic_extractor.validation_primitives import require_finite_real
@@ -38,40 +34,7 @@ DETECTED_FEATURES_COLUMNS = (
 
 DETECTED_FEATURES_SCHEMA_VERSION = "detected_features"
 
-EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS = (
-    "external_tool",
-    "external_run_id",
-    "external_tool_version",
-    "external_adapter_version",
-    "sample_id",
-    "feature_id",
-    "mz",
-    "rt",
-    "area_or_intensity",
-    "area_or_intensity_semantics",
-    "mz_tolerance_unit",
-    "rt_tolerance_unit",
-    "duplicate_feature_policy",
-    "missing_value_policy",
-)
-
-_HEIGHT_SEMANTICS = frozenset(
-    {
-        "height",
-        "peak_height",
-        "intensity",
-        "peak_intensity",
-        "max_intensity",
-        "apex_intensity",
-    }
-)
-_AREA_SEMANTICS = frozenset({"area", "peak_area"})
-_TRACE_QUALITY_COLUMNS = ("trace_quality", "ms1_trace_quality")
-_SHAPE_SCORE_COLUMNS = ("shape_score", "ms1_shape_score")
-_SOURCE_FEATURE_ROW_ID_COLUMNS = ("source_feature_row_id", "ms1_feature_row_id")
-_UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
 LOCAL_MS1_FEATURE_SOURCE = "local_ms1_feature"
-CID_NL_SHARED_IDENTITY_SOURCE = "cid_nl_ms1_feature_handoff"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_OK = "OK"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT = "WEAK_SUPPORT"
 LOCAL_MS1_FEATURE_TRACE_QUALITIES = frozenset(
@@ -80,11 +43,6 @@ LOCAL_MS1_FEATURE_TRACE_QUALITIES = frozenset(
         LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT,
     }
 )
-_MZMINE_REQUIRED_COLUMNS = ("row ID", "row m/z", "row retention time")
-_MZMINE_PEAK_AREA_SUFFIX = " Peak area"
-_MZMINE_MZML_SUFFIX = ".mzML"
-_MZMINE_RAW_SUFFIX = ".raw"
-_MZMINE_WIDE_ADAPTER_VERSION = "mzmine_wide_area_proxy"
 
 
 @dataclass(frozen=True)
@@ -93,7 +51,7 @@ class DetectedFeature:
 
     ``source_feature_row_id`` is an optional pointer back to the originating
     row (e.g. an existing CID-NL candidate's ``ms1_feature_row_id``) used by
-    later composite/intersection strategies; it is not required for Pt-only
+    later composite/intersection strategies; it is not required for delta-mass
     matching.
     """
 
@@ -114,51 +72,10 @@ class DetectedFeature:
 DetectedFeatureIdentity = tuple[str, str]
 
 
-class DetectedFeatureIdentityNamespace(str, Enum):
-    """Namespaces whose identifiers are explicitly comparable across providers."""
-
-    CID_NL_MS1_FEATURE_ROW_ID = "cid_nl_ms1_feature_row_id"
-
-
-@dataclass(frozen=True, slots=True)
-class ComparableDetectedFeatureIdentity:
-    """A positive capability to compare one feature in a named namespace."""
-
-    namespace: DetectedFeatureIdentityNamespace
-    values: frozenset[str]
-
-
 def detected_feature_identity(feature: DetectedFeature) -> DetectedFeatureIdentity:
     """Return the canonical sample-local identity for one detected feature."""
 
     return (feature.sample_stem, feature.feature_id)
-
-
-def comparable_cid_nl_identity(
-    feature: DetectedFeature,
-) -> ComparableDetectedFeatureIdentity | None:
-    """Return CID-NL-comparable identity only for the explicit handoff source.
-
-    ``source_feature_row_id`` is otherwise only a provenance locator. A
-    non-empty detector-local ID must not silently grant cross-provider join
-    authority, so unknown, local-MS1, MZmine, OpenMS, and scan-proxy sources all
-    return ``None`` and remain eligible only for the bounded m/z/RT fallback.
-    """
-
-    if feature.source != CID_NL_SHARED_IDENTITY_SOURCE:
-        return None
-    feature_id = feature.feature_id.strip()
-    if not feature_id:
-        raise ValueError("CID-NL-comparable feature_id must be non-empty")
-    values = {feature_id}
-    if feature.source_feature_row_id is not None:
-        source_feature_row_id = feature.source_feature_row_id.strip()
-        if source_feature_row_id:
-            values.add(source_feature_row_id)
-    return ComparableDetectedFeatureIdentity(
-        namespace=DetectedFeatureIdentityNamespace.CID_NL_MS1_FEATURE_ROW_ID,
-        values=frozenset(values),
-    )
 
 
 def validate_unique_detected_feature_identities(
@@ -234,71 +151,6 @@ def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
     return features
 
 
-def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
-    """Adapt a validated external feature table into ``DetectedFeature`` rows.
-
-    This is the product-facing feature-source bridge for Delta Mass / Pt
-    matching. Rows must provide m/z, RT, and a positive area/intensity value.
-    If the source is area-only, the same positive value is used as the matcher's
-    intensity proxy while the ``area`` field preserves the original semantics.
-    Missing trace/shape support is recorded as ``UNSPECIFIED`` and must be
-    tightened later by trace-level evidence when that evidence is available.
-    External-table row IDs are preserved as provenance only; this adapter
-    does not declare them comparable to CID-NL ``ms1_feature_row_id`` values.
-    """
-
-    _header, rows = read_tsv_with_header(
-        path,
-        required_columns=EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS,
-        encoding="utf-8-sig",
-    )
-    features = tuple(
-        _parse_external_feature_table_row(row, path=path, row_index=row_index)
-        for row_index, row in enumerate(rows)
-    )
-    validate_detected_features(features, source_label=str(path))
-    return features
-
-
-def load_mzmine_wide_feature_table_csv(
-    path: Path,
-    *,
-    external_run_id: str | None = None,
-) -> tuple[DetectedFeature, ...]:
-    """Adapt a MZmine wide feature table into sample-local detected features.
-
-    Expected shape: ``row ID``, ``row m/z``, ``row retention time``, then one or
-    more ``<sample>.mzML Peak area`` columns. Blank and non-positive peak areas
-    are treated as missing for that sample. MZmine peak area is used as the
-    matcher's positive intensity proxy because this table has no apex-height
-    column.
-    """
-
-    run_id = external_run_id or path.stem
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        header = validate_delimited_header(
-            reader.fieldnames,
-            path=path,
-            required_columns=_MZMINE_REQUIRED_COLUMNS,
-        )
-        sample_area_columns = _mzmine_sample_area_columns(header, path)
-        features: list[DetectedFeature] = []
-        for row_index, row in enumerate(reader):
-            features.extend(
-                _parse_mzmine_wide_feature_table_row(
-                    row,
-                    sample_area_columns=sample_area_columns,
-                    run_id=run_id,
-                    path=path,
-                    row_index=row_index,
-                )
-            )
-    result = tuple(features)
-    validate_detected_features(result, source_label=str(path))
-    return result
-
-
 def write_detected_features_csv(
     path: Path,
     features: Sequence[DetectedFeature],
@@ -356,107 +208,6 @@ def _parse_detected_feature(
         ),
         source=source,
     )
-
-
-def _parse_external_feature_table_row(
-    row: Mapping[str, str | None], *, path: Path, row_index: int
-) -> DetectedFeature:
-    row_label = _row_label(path, row_index)
-    for column in EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS:
-        _required_text(row.get(column), column, row_label)
-
-    trace_quality = _first_optional_text(row, _TRACE_QUALITY_COLUMNS)
-    shape_score = _first_optional_finite_float(row, _SHAPE_SCORE_COLUMNS, row_label)
-
-    semantics = _normalized_text(row.get("area_or_intensity_semantics"))
-    if semantics not in _HEIGHT_SEMANTICS and semantics not in _AREA_SEMANTICS:
-        raise ValueError(
-            f"{row_label} has unsupported area_or_intensity_semantics: "
-            f"{row.get('area_or_intensity_semantics')!r}"
-        )
-    area_or_intensity = _positive_float(
-        _required_finite_float(
-            row.get("area_or_intensity"),
-            "area_or_intensity",
-            row_label,
-        ),
-        "area_or_intensity",
-        row_label,
-    )
-    height = _first_optional_positive_float(
-        row,
-        ("height", "ms1_height"),
-        row_label,
-    )
-    if height is None:
-        height = area_or_intensity
-
-    area = _first_optional_positive_float(
-        row,
-        ("area", "ms1_area"),
-        row_label,
-    )
-    if area is None and semantics in _AREA_SEMANTICS:
-        area = area_or_intensity
-
-    return DetectedFeature(
-        sample_stem=_required_text(row.get("sample_id"), "sample_id", row_label),
-        feature_id=_required_text(row.get("feature_id"), "feature_id", row_label),
-        source_feature_row_id=_first_optional_text(row, _SOURCE_FEATURE_ROW_ID_COLUMNS),
-        mz=_required_finite_float(row.get("mz"), "mz", row_label),
-        rt_apex_min=_required_finite_float(row.get("rt"), "rt", row_label),
-        rt_start_min=_first_optional_finite_float(
-            row, ("rt_start_min", "peak_start_rt"), row_label
-        ),
-        rt_end_min=_first_optional_finite_float(
-            row, ("rt_end_min", "peak_end_rt"), row_label
-        ),
-        height=height,
-        area=area,
-        trace_quality=trace_quality or _UNSPECIFIED_TRACE_QUALITY,
-        shape_score=shape_score,
-        source=_external_source_label(row, row_label),
-    )
-
-
-def _parse_mzmine_wide_feature_table_row(
-    row: Mapping[str, str | None],
-    *,
-    sample_area_columns: Sequence[str],
-    run_id: str,
-    path: Path,
-    row_index: int,
-) -> list[DetectedFeature]:
-    row_label = _row_label(path, row_index)
-    row_id = _required_text(row.get("row ID"), "row ID", row_label)
-    mz = _required_finite_float(row.get("row m/z"), "row m/z", row_label)
-    rt = _required_finite_float(
-        row.get("row retention time"), "row retention time", row_label
-    )
-    features: list[DetectedFeature] = []
-    for column in sample_area_columns:
-        area = _optional_finite_float(row.get(column), column, row_label)
-        if area is None or area <= 0:
-            continue
-        sample_stem = _mzmine_sample_stem(column)
-        source_feature_row_id = f"{run_id}|row|{row_id}"
-        features.append(
-            DetectedFeature(
-                sample_stem=sample_stem,
-                feature_id=f"{sample_stem}|mzmine_row|{row_id}",
-                source_feature_row_id=source_feature_row_id,
-                mz=mz,
-                rt_apex_min=rt,
-                rt_start_min=None,
-                rt_end_min=None,
-                height=area,
-                area=area,
-                trace_quality=_UNSPECIFIED_TRACE_QUALITY,
-                shape_score=None,
-                source=f"external_feature_table:MZmine:{_MZMINE_WIDE_ADAPTER_VERSION}",
-            )
-        )
-    return features
 
 
 def _detected_feature_row(feature: DetectedFeature) -> dict[str, object]:
@@ -556,14 +307,6 @@ def _finite_feature_value(value: float, field: str, row_label: str) -> float:
     return require_finite_real(value, name=f"{row_label} field {field!r}")
 
 
-def _external_source_label(row: Mapping[str, str | None], row_label: str) -> str:
-    tool = _required_text(row.get("external_tool"), "external_tool", row_label)
-    adapter = _required_text(
-        row.get("external_adapter_version"), "external_adapter_version", row_label
-    )
-    return f"external_feature_table:{tool}:{adapter}"
-
-
 def is_local_ms1_feature_source(source: str) -> bool:
     return source == LOCAL_MS1_FEATURE_SOURCE
 
@@ -586,26 +329,6 @@ def _validate_trace_quality_for_source(
     return trace_quality
 
 
-def _mzmine_sample_area_columns(header: Sequence[str], path: Path) -> tuple[str, ...]:
-    columns = tuple(
-        column
-        for column in header
-        if column and column.endswith(_MZMINE_PEAK_AREA_SUFFIX)
-    )
-    if not columns:
-        raise ValueError(f"{path}: no MZmine '<sample> Peak area' columns found")
-    return columns
-
-
-def _mzmine_sample_stem(column: str) -> str:
-    sample = column[: -len(_MZMINE_PEAK_AREA_SUFFIX)]
-    if sample.lower().endswith(_MZMINE_MZML_SUFFIX.lower()):
-        sample = sample[: -len(_MZMINE_MZML_SUFFIX)]
-    if sample.lower().endswith(_MZMINE_RAW_SUFFIX.lower()):
-        sample = sample[: -len(_MZMINE_RAW_SUFFIX)]
-    return sample
-
-
 def _row_label(path: Path, row_index: int) -> str:
     return f"{path} row {row_index}"
 
@@ -620,21 +343,6 @@ def _required_text(value: str | None, field: str, row_label: str) -> str:
 def _optional_text(value: str | None) -> str | None:
     text = (value or "").strip()
     return text or None
-
-
-def _normalized_text(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
-def _first_optional_text(
-    row: Mapping[str, str | None],
-    columns: Sequence[str],
-) -> str | None:
-    for column in columns:
-        value = _optional_text(row.get(column))
-        if value is not None:
-            return value
-    return None
 
 
 def _required_finite_float(value: str | None, field: str, row_label: str) -> float:
@@ -671,30 +379,6 @@ def _optional_finite_float(
             f"{row_label} has non-finite optional field {field!r}: {value!r}"
         )
     return parsed
-
-
-def _first_optional_finite_float(
-    row: Mapping[str, str | None],
-    columns: Sequence[str],
-    row_label: str,
-) -> float | None:
-    for column in columns:
-        value = _optional_finite_float(row.get(column), column, row_label)
-        if value is not None:
-            return value
-    return None
-
-
-def _first_optional_positive_float(
-    row: Mapping[str, str | None],
-    columns: Sequence[str],
-    row_label: str,
-) -> float | None:
-    for column in columns:
-        value = _optional_finite_float(row.get(column), column, row_label)
-        if value is not None:
-            return _positive_float(value, column, row_label)
-    return None
 
 
 def _positive_float(value: float, field: str, row_label: str) -> float:

@@ -55,15 +55,10 @@ decisions.
 - Composite Discovery strategies should compose evidence queries on an explicit
   anchor. For example, `pt_pattern + cid_nl(dR)` is an intersection on the same
   base peak, not two independent writers competing for the Matrix.
-- When a composite method has a natural seed, use it to reduce the query space.
-  CID-NL(dR) can seed base candidates before Pt pattern evidence checks
-  `+1.0021`, `+2.0023`, and `+4.0052`.
-- A Pt pattern detection needs both layers:
-  - a delta-pattern seed showing the expected base-relative MS1 pattern; and
-  - chromatographic co-elution evidence showing that the positions behave like
-    the same feature group.
-- A scan-level proxy may propose candidates or debug missing evidence, but it is
-  not the full Pt pattern detector and must not become Matrix authority.
+- Delta Mass starts from qualified local MS1 features, prunes table hypotheses
+  by mass, apex and height ratios, then requests one batch of missing-position
+  and discriminating-position traces per RAW. Scan-level hits are not anchors.
+  Its pure matcher does not read RAW or repeat physical qualification.
 - When two acquisition methods were designed for different roles, compare them
   by role. A high-resolution Fullscan MS1 run can be the Pt-pattern Discovery
   authority, while a lower-resolution DDMS2 or targeted/DDA run is support

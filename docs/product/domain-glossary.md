@@ -203,15 +203,10 @@ pattern in that family; `pt_pattern` is a user-facing method or preset label.
 Composites such as `pt_pattern + cid_nl(dR)` intersect evidence providers and
 do not become product authority by themselves.
 
-For Pt pattern, distinguish the science target from the current operational
-proxy. The science target is a single Pt isotope envelope represented by
-base/+1/+2/+4 positions. The operational proxy is the observable evidence shape:
-those four positions appear as a sample-local full pattern and pass close-apex
-co-elution support. Ratio fit, isotope-envelope overlap, and co-eluting
-interference are unresolved review evidence until a bounded oracle proves how
-they should change the decision. In V1, a close-apex full-pattern candidate can
-still be called `detected` when ratios look unusual; ratio and collision
-concerns explain ambiguity and review priority, not the detected call itself.
+Delta Mass combines fixed mass differences, scan-aware co-elution and preset
+height ratios; designated positions also require shape correlation. Pt is a
+provisional preset, not a separate algorithm. Candidate status is diagnostic
+method evidence, not a counted detection or a physical isotope-envelope proof.
 
 ## LC-MS/MS Terms
 
@@ -223,7 +218,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `Delta Mass`: Discovery strategy family for configured MS1 mass-difference
   patterns.
 - `Pt pattern`: the first built-in `delta_mass` pattern for Pt-related MS1
-  feature discovery. It creates candidates and review evidence.
+  feature discovery. Its provisional parameters produce diagnostic candidates.
 - `HCD`: Higher-energy Collision Dissociation. Its product-ion audit is a review
   surface unless a separate contract grants stronger decision meaning.
 - `DDA`: Data-Dependent Acquisition, where MS2 scan triggering depends on MS1

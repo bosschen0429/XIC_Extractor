@@ -122,10 +122,9 @@ numbers), with a type/version prefix. Its current content boundary is:
   contract, that content identity, and a canonical set of upstream artifact
   references. Equal bytes across attempts preserve content equality but never
   collapse artifact-instance identity;
-- the Pt Discovery evidence CSV artifact-envelope adapter is diagnostic-only.
-  Its owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV bytes and role.
-  Callers cannot supply role/schema strings; minting requires an owner-issued
-  processing attempt;
+- Delta Mass runs detection, matching, and trace confirmation in one pass.
+  Its diagnostic CSV/sidecar outputs do not create artifact-envelope or
+  processing-attempt authority;
 - canonical samples come from [Sample Metadata](sample-metadata-qc.md).
   Lineage composes owner-resolved references and snapshots rather than deriving
   IDs from display labels.
