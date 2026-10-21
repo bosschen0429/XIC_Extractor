@@ -149,6 +149,7 @@ class FakeRuns:
     outcome: str = "success"
     release: threading.Event = field(default_factory=threading.Event)
     output_dirs: list = field(default_factory=list)
+    sample_annotations: list = field(default_factory=list)
     targeted_workbook: Path | None = None
     istd_warnings: list = field(default_factory=list)
 
@@ -158,8 +159,17 @@ def fake_runs(monkeypatch, tmp_path):
     control = FakeRuns()
 
     class FakeRun:
-        def __init__(self, _inputs, *, progress, should_cancel, output_dir=None):
+        def __init__(
+            self,
+            _inputs,
+            *,
+            progress,
+            should_cancel,
+            output_dir=None,
+            sample_annotations=None,
+        ):
             control.output_dirs.append(output_dir)
+            control.sample_annotations.append(sample_annotations)
             self.progress = progress
             self.should_cancel = should_cancel
             self.stage = "Browser fake analysis"
@@ -1622,7 +1632,8 @@ def test_sample_restore_is_bound_to_current_inputs(
     _view(page, "untargeted")
     if changed_input == "saved_role":
         page.locator("#samples-edit").click()
-        page.get_by_label("S1 角色", exact=True).select_option("study_sample")
+        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+            page.get_by_label("S1 角色", exact=True).select_option("study_sample")
         page.keyboard.press("Escape")
         with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
             page.locator("#untargeted-save").click()
@@ -1644,8 +1655,7 @@ def test_sample_restore_is_bound_to_current_inputs(
     if changed_input and changed_input != "saved_role":
         assert payload["samples"] is None
         expect(page.locator("#samples-conflicts")).to_be_hidden()
-        if changed_input == "raw_dir":
-            assert payload["custom_roles"] == {}
+        assert "custom_roles" not in payload
     else:
         expected = (
             {**row, "sample_role": "study_sample"}

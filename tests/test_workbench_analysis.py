@@ -108,7 +108,15 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     mode = ["succeed"]
 
     class Run:
-        def __init__(self, config_dir, *, progress, should_cancel, output_dir=None):
+        def __init__(
+            self,
+            config_dir,
+            *,
+            progress,
+            should_cancel,
+            output_dir=None,
+            sample_annotations=None,
+        ):
             self.stage = "讀取指定 RAW"
             self.output_dir = tmp_path / "output"
             self.available_outputs = ()
@@ -273,6 +281,14 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
             return {"published_paths": []}
 
     monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    # Roles saved for this folder before per-folder sample metadata existed.
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "discovery_gui.json").write_text(
+        json.dumps(
+            {"raw_dir": str(raw_dir), "custom_roles": {"Sample-A": "pooled_qc"}}
+        ),
+        encoding="utf-8",
+    )
     jobs = AnalysisJobs(tmp_path / "config")
     try:
         jobs.start(
@@ -287,7 +303,6 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
                 "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": str(sequence),
-                "custom_roles": {"Sample-A": "pooled_qc"},
                 "samples": None,
                 "overrides": {},
             },
@@ -342,7 +357,6 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
                 "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": None,
                 "overrides": {},
             },
@@ -444,7 +458,6 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
                 "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": samples,
                 "overrides": {},
             },
@@ -509,7 +522,6 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
                 "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": "",
-                "custom_roles": {},
                 "samples": None,
                 "overrides": {},
             },

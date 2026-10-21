@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import os
+import re
+from collections.abc import Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES
 from xic_extractor.raw_reader import read_analysis_set
+from xic_extractor.sample_groups import (
+    resolve_sample_group,
+    sample_group_key,
+    suggest_sample_groups,
+)
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
     SAMPLE_ROLES,
     SampleMetadata,
     SampleRole,
+    load_sample_metadata,
 )
 
 ROLE_CHOICES = (
@@ -27,6 +38,137 @@ ROLE_CHOICES = (
     "unknown",
 )
 _SAMPLE_FIELDS = tuple(SAMPLE_METADATA_COLUMNS[1:])
+# Kept in the shared sample-metadata format so Targeted, Untargeted and the CLI
+# read confirmed annotations through the same sequence-source path.
+ANNOTATIONS_DIR = "sample_metadata"
+
+
+def sample_annotations_path(config_dir: Path, raw_dir: Path) -> Path:
+    """One confirmed sample-metadata file per RAW folder, shared by both flows."""
+    resolved = Path(raw_dir).resolve()
+    digest = hashlib.sha256(os.path.normcase(str(resolved)).encode("utf-8"))
+    name = re.sub(r"[^\w.-]+", "_", resolved.name).strip("._") or "raw"
+    return Path(config_dir) / ANNOTATIONS_DIR / f"{name}-{digest.hexdigest()[:12]}.tsv"
+
+
+def read_batch_samples(
+    config_dir: Path,
+    raw_dir: Path,
+    *,
+    dll_dir: Path | None,
+    sequence_source: Path | None = None,
+    import_sequence: bool = False,
+    legacy_roles: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Read RAW samples with the folder's confirmed annotations.
+
+    Once a folder has confirmed annotations they are its sample-metadata
+    source. Importing a sequence list re-reads that list, keeps confirmed
+    groups and exclusions it does not supply, and confirms the merged rows.
+    """
+    saved = sample_annotations_path(config_dir, raw_dir)
+    confirmed = saved.is_file()
+    importing = bool(sequence_source) and (import_sequence or not confirmed)
+    result = load_samples(
+        raw_dir,
+        dll_dir=dll_dir,
+        sequence_source=sequence_source if importing else saved if confirmed else None,
+        custom_roles=None if confirmed else legacy_roles,
+    )
+    if importing and confirmed:
+        kept = {row.raw_stem.casefold(): row for row in load_sample_metadata(saved)}
+        result["samples"] = [
+            _keep_confirmed(row, kept.get(row["raw_stem"].casefold()))
+            for row in result["samples"]
+        ]
+    if importing and import_sequence:
+        export_samples(result["samples"], saved)
+        confirmed = True
+    result["summary"]["annotation_source"] = (
+        "sequence" if importing else "confirmed" if confirmed else "raw"
+    )
+    if not confirmed:
+        result["summary"]["earlier_annotations"] = _earlier_annotations(
+            saved.parent, [row["raw_stem"] for row in result["samples"]]
+        )
+    return _with_overview(result)
+
+
+def _earlier_annotations(store: Path, raw_stems: list[str]) -> list[dict[str, Any]]:
+    """Confirmed files that cover this folder's RAW, e.g. after it was moved."""
+    wanted = {stem.casefold() for stem in raw_stems}
+    found = []
+    for path in sorted(store.glob("*.tsv")) if wanted and store.is_dir() else ():
+        try:
+            stems = {row.raw_stem.casefold() for row in load_sample_metadata(path)}
+        except ValueError:
+            continue
+        matched = len(wanted & stems)
+        if matched * 5 >= len(wanted) * 4:
+            found.append({"path": str(path), "matched": matched, "total": len(wanted)})
+    return sorted(found, key=lambda item: -item["matched"])
+
+
+def save_batch_samples(
+    config_dir: Path, raw_dir: Path, rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    path = sample_annotations_path(config_dir, raw_dir)
+    export_samples(rows, path)
+    return {"path": str(path), "overview": sample_overview(from_payload(rows) or ())}
+
+
+def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:
+    """Pre-run counts over the samples that will be analyzed."""
+    groups: dict[str, dict[str, Any]] = {}
+    unassigned = 0
+    for row in rows:
+        if row.excluded or row.sample_role not in ANALYSIS_SAMPLE_ROLES:
+            continue
+        group = resolve_sample_group(row)
+        key = sample_group_key(group) or "other"
+        entry = groups.setdefault(key, {"group": group, "count": 0})
+        entry["count"] += 1
+        if row.sample_role == "study_sample" and not sample_group_key(row.group):
+            unassigned += 1
+    return {
+        "groups": list(groups.values()),
+        "unassigned_study_samples": unassigned,
+        "single_sample_groups": [
+            entry["group"]
+            for entry in groups.values()
+            if entry["count"] == 1 and entry["group"] not in {"QC", "Other"}
+        ],
+        "excluded": [
+            {"raw_stem": row.raw_stem, "reason": row.exclusion_reason}
+            for row in rows
+            if row.excluded
+        ],
+    }
+
+
+def _keep_confirmed(
+    row: dict[str, Any], confirmed: SampleMetadata | None
+) -> dict[str, Any]:
+    if confirmed is None:
+        return row
+    kept = dict(row)
+    if not sample_group_key(row["group"]):
+        kept["group"] = confirmed.group
+    if not row["excluded"] and confirmed.excluded:
+        kept["excluded"] = True
+        kept["exclusion_reason"] = confirmed.exclusion_reason
+    return kept
+
+
+def _with_overview(result: dict[str, Any]) -> dict[str, Any]:
+    rows = from_payload(result["samples"]) or ()
+    result["overview"] = sample_overview(rows)
+    names = [row.sample_name or row.raw_stem for row in rows]
+    suggested = suggest_sample_groups(names)
+    result["group_suggestions"] = {
+        row.raw_stem: suggested[name] for row, name in zip(rows, names, strict=True)
+    }
+    return result
 
 
 def load_samples(

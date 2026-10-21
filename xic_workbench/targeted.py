@@ -42,12 +42,18 @@ class TargetedRun:
         config_dir: Path,
         *,
         output_dir: Path | None = None,
+        sample_annotations: Path | None = None,
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
+        # Confirmed sample metadata replaces the batch's 上機資訊 for this run only.
         prepared = config_loader.prepare_targeted_config(
-            config_dir, output_dir=output_dir
+            config_dir,
+            output_dir=output_dir,
+            settings_overrides={"injection_order_source": str(sample_annotations)}
+            if sample_annotations is not None
+            else None,
         )
         self._prepared = prepared
         self._config, self._targets = prepared.config, list(prepared.targets)

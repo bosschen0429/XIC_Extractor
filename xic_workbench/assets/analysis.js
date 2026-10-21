@@ -707,7 +707,6 @@
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
-      custom_roles: { ...state.config.untargeted.custom_roles },
     };
     for (const [key] of pathFields) values[key] = $(`u-${key}`).value;
     values.targets_csv = $("u-targets_csv").value;
@@ -718,8 +717,6 @@
       values.overrides[control.key] =
         input.type === "number" ? Number(input.value) : input.value;
     }
-    for (const sample of state.samples)
-      values.custom_roles[sample.raw_stem] = sample.sample_role;
     values.samples = state.samples.length ? state.samples : null;
     if (state.method) {
       values.preset_snapshot = structuredClone(state.method.draft);
@@ -947,8 +944,8 @@
       roleOptions(select, row.sample_role);
       select.addEventListener("change", () => {
         row.sample_role = select.value;
-        dirty("untargeted");
         renderRoleSummary();
+        act(persistSamples);
       });
       const td = el("td");
       td.append(select);
@@ -968,13 +965,20 @@
       ? `顯示 ${shown} ／ 共 ${state.samples.length} 個樣本`
       : `共 ${state.samples.length} 個樣本`;
   }
+  // Edits confirm the folder's sample metadata at once; both flows read it.
+  async function persistSamples() {
+    if (!state.samples.length) return;
+    await api("/api/samples/save", {
+      raw_dir: $("u-raw_dir").value,
+      samples: state.samples,
+    });
+  }
   async function scanSamples() {
     const values = untargetedValues();
     await startJob("samples", {
       raw_dir: values.raw_dir,
       dll_dir: values.dll_dir,
       sequence_source: values.sequence_source,
-      custom_roles: values.custom_roles,
     });
   }
 
@@ -1665,8 +1669,8 @@
       for (const row of state.samples)
         if (selected.has(row.raw_stem))
           row.sample_role = $("sample-bulk-role").value;
-      dirty("untargeted");
       renderSamples();
+      act(persistSamples);
     };
     $("samples-export").onclick = () =>
       act(async () => {
@@ -1698,7 +1702,6 @@
           $("u-output_dir").value = "";
           $("sequence-source").value = "";
           state.samples = [];
-          state.config.untargeted.custom_roles = {};
           renderSamples();
           $("samples-summary").textContent = "";
           $("samples-conflicts").hidden = true;
@@ -1717,7 +1720,6 @@
       sampleRawDir = nextRawDir;
       $("sequence-source").value = "";
       state.config.untargeted.sequence_source = "";
-      state.config.untargeted.custom_roles = {};
       state.samples = [];
       $("samples-summary").textContent = "";
       $("samples-conflicts").hidden = true;
@@ -1895,12 +1897,7 @@
         loadedSamples.input_paths.raw_dir === $("u-raw_dir").value &&
         loadedSamples.input_paths.dll_dir === $("u-dll_dir").value &&
         loadedSamples.input_paths.sequence_source === $("sequence-source").value) {
-      // Saved role edits are newer than the cached sample-loading result.
-      const savedRoles = state.config.untargeted.custom_roles || {};
-      state.samples = loadedSamples.samples.map((sample) => ({
-        ...sample,
-        sample_role: savedRoles[sample.raw_stem] ?? sample.sample_role,
-      }));
+      state.samples = loadedSamples.samples;
       renderSamples();
       renderSampleSummary(loadedSamples.summary);
     }

@@ -271,6 +271,14 @@ class AnalysisWorkspace:
                 else Path(values["path"])
             )
             return save_method(values["draft"], destination)
+        if action == "samples/save":
+            from xic_workbench.samples import save_batch_samples
+
+            saved = save_batch_samples(
+                self.config_dir, Path(values["raw_dir"]), values["samples"]
+            )
+            self.jobs.remember_samples(values["raw_dir"], values["samples"])
+            return saved
         if action == "samples/export":
             from xic_workbench.samples import export_samples
 
