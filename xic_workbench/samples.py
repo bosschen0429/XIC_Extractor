@@ -91,26 +91,7 @@ def read_batch_samples(
     result["summary"]["annotation_source"] = (
         "sequence" if importing else "confirmed" if confirmed else "raw"
     )
-    if not confirmed:
-        result["summary"]["earlier_annotations"] = _earlier_annotations(
-            saved.parent, [row["raw_stem"] for row in result["samples"]]
-        )
     return _with_overview(result)
-
-
-def _earlier_annotations(store: Path, raw_stems: list[str]) -> list[dict[str, Any]]:
-    """Confirmed files that cover this folder's RAW, e.g. after it was moved."""
-    wanted = {stem.casefold() for stem in raw_stems}
-    found = []
-    for path in sorted(store.glob("*.tsv")) if wanted and store.is_dir() else ():
-        try:
-            stems = {row.raw_stem.casefold() for row in load_sample_metadata(path)}
-        except ValueError:
-            continue
-        matched = len(wanted & stems)
-        if matched * 5 >= len(wanted) * 4:
-            found.append({"path": str(path), "matched": matched, "total": len(wanted)})
-    return sorted(found, key=lambda item: -item["matched"])
 
 
 def save_batch_samples(
@@ -124,13 +105,6 @@ def save_batch_samples(
 
 def _write_confirmed(path: Path, metadata: Sequence[SampleMetadata]) -> None:
     """Write a folder's confirmed metadata only as the owner can read it back."""
-    unexplained = [
-        row.raw_stem
-        for row in metadata
-        if row.excluded and not row.exclusion_reason.strip()
-    ]
-    if unexplained:
-        raise ValueError(f"排除的樣本需要填排除原因：{'、'.join(unexplained)}")
     parse_sample_metadata(_export_rows(metadata), source=str(path))
     _write_rows(path, metadata)
 
@@ -191,8 +165,6 @@ def preview_annotations(
             return {
                 "kind": "table",
                 "columns": header,
-                "preview": body[:5],
-                "row_count": len(body),
                 "guess": _guess_columns(header),
             }
         rows = _table_rows(body, columns)
@@ -230,7 +202,6 @@ def preview_annotations(
         ],
         "unmatched": list(report.unmatched_sequence_names),
         "ambiguous": list(report.ambiguous_sequence_names),
-        "unmatched_raw": list(report.unmatched_raw_stems),
     }
 
 

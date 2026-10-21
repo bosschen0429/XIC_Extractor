@@ -205,35 +205,6 @@ def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
     assert calls[1]["settings_overrides"] is None
 
 
-def test_moved_folder_points_to_its_earlier_annotations(tmp_path, monkeypatch) -> None:
-    config = tmp_path / "config"
-    stems = ("S1", "S2", "S3", "S4", "S5")
-    raw_dir = _raw_batch(tmp_path, monkeypatch, stems)
-    first = read_batch_samples(config, raw_dir, dll_dir=tmp_path)
-    assert first["summary"]["earlier_annotations"] == []
-    save_batch_samples(config, raw_dir, first["samples"])
-
-    moved = tmp_path / "moved"
-    raw_dir.rename(moved)
-    (moved / "S5.raw").unlink()
-    (moved / "New.raw").write_bytes(b"")
-    unrelated = tmp_path / "unrelated"
-    unrelated.mkdir()
-    (unrelated / "Other.raw").write_bytes(b"")
-
-    after_move = read_batch_samples(config, moved, dll_dir=tmp_path)
-    assert after_move["summary"]["annotation_source"] == "raw"
-    assert after_move["summary"]["earlier_annotations"] == [
-        {
-            "path": str(sample_annotations_path(config, raw_dir)),
-            "matched": 4,
-            "total": 5,
-        }
-    ]
-    elsewhere = read_batch_samples(config, unrelated, dll_dir=tmp_path)
-    assert elsewhere["summary"]["earlier_annotations"] == []
-
-
 def test_collaborator_table_previews_matched_unmatched_and_ambiguous(
     tmp_path,
 ) -> None:
@@ -306,7 +277,6 @@ def test_earlier_batch_metadata_carries_groups_by_sample_name(
         ("Tumor-A", "Tumor", False),
         ("Normal-A", "", True),
     ]
-    assert preview["unmatched_raw"] == ["New_B"]
     assert list_confirmed_annotations(config) == [{"path": str(saved), "name": "raws"}]
 
 
@@ -374,7 +344,8 @@ def test_an_exclusion_without_reason_is_never_written(tmp_path, monkeypatch) -> 
     save_batch_samples(config, raw_dir, rows)
 
     rows[1].update(excluded=True, exclusion_reason=" ")
-    with pytest.raises(ValueError, match="排除的樣本需要填排除原因：S2"):
+    # The shared owner rejects it before anything is written.
+    with pytest.raises(ValueError, match="excluded samples require exclusion_reason"):
         save_batch_samples(config, raw_dir, rows)
     # The folder's file stays readable and unchanged.
     reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]

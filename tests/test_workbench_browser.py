@@ -2585,7 +2585,6 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
     page.locator("#u-raw_dir").press("Tab")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
-    expect(page.locator("#samples-earlier")).to_be_hidden()
     page.locator("#samples-carry").click()
     page.locator("#annotation-confirmed").select_option(label="raw")
     expect(page.locator("#annotation-counts")).to_contain_text("對到 2 個 RAW")
@@ -2594,19 +2593,19 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
     assert rows["Liver-A1"].group == "Manual"
     assert rows["Liver-B1"].excluded is True
 
-    # A moved folder offers its earlier confirmed metadata.
+    # A moved folder starts unconfirmed; its earlier file binds each RAW
+    # exactly, so names that normalize alike (Dup_X, DupX) stay apart.
     moved = tmp_path / "moved"
     batch.rename(moved)
     page.locator("#u-raw_dir").fill(str(moved))
     page.locator("#u-raw_dir").press("Tab")
     page.locator("#samples-refresh").click()
-    earlier = page.locator("#samples-earlier")
-    expect(earlier).to_contain_text("5/5 個 RAW 對得上")
-    earlier.get_by_role("button", name="預覽並沿用").click()
+    expect(page.locator("#samples-count")).to_have_text("5 個樣本")
+    page.locator("#samples-carry").click()
+    page.locator("#annotation-confirmed").select_option(label="raw")
     expect(page.locator("#annotation-counts")).to_contain_text("對到 5 個 RAW")
     saved(lambda: page.locator("#annotation-apply").click())
     assert confirmed(moved)["LiverB1"].exclusion_reason == "clot"
-    expect(earlier).to_be_hidden()
 
 
 def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:

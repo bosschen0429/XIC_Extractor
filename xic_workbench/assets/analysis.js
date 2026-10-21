@@ -86,7 +86,6 @@
     overview: null,
     suggestions: {},
     source: "",
-    earlier: [],
   });
   state.sampleSets = { targeted: emptySamples(), untargeted: emptySamples() };
   async function api(path, values) {
@@ -1027,7 +1026,6 @@
       ? sourceNotes[set.source] || ""
       : "";
     renderGroupCards(page);
-    renderEarlierNote(page);
     checklist(page);
   }
   function applySampleResult(page, result) {
@@ -1036,7 +1034,6 @@
       overview: result.overview || null,
       suggestions: result.group_suggestions || {},
       source: result.summary?.annotation_source || "",
-      earlier: result.summary?.earlier_annotations || [],
     };
     renderSampleSummary(result.summary, sampleId(page, "samples"));
     renderRoleSummary(page);
@@ -1256,7 +1253,7 @@
     },
     carry: {
       title: "沿用上一批分組",
-      help: "選先前匯出的樣品資訊，或工作區中已確認的批次；依樣品名稱對應到這批 RAW。",
+      help: "選先前匯出的樣品資訊，或工作區中已確認的批次（例如搬過的資料夾）；同一 RAW 直接對應，其餘依樣品名稱對應。",
     },
   };
   const columnFields = ["name", "group", "excluded", "reason"];
@@ -1382,21 +1379,6 @@
     $("annotation-dialog").close();
     await persistSamples(page);
     done(`已套用 ${preview.matched.length} 個樣本的組別與排除。`);
-  }
-  function renderEarlierNote(page) {
-    const set = state.sampleSets[page];
-    const note = $(sampleId(page, "samples-earlier"));
-    const earlier = set.source !== "confirmed" ? set.earlier[0] : null;
-    note.hidden = !earlier;
-    if (!earlier) return note.replaceChildren();
-    note.replaceChildren(
-      ui.icon("info"),
-      el(
-        "span",
-        `這個資料夾還沒有確認過的樣品資訊，但找到一份先前確認的（${earlier.matched}/${earlier.total} 個 RAW 對得上），可能是資料夾搬過或改過名。`,
-      ),
-      button("預覽並沿用", () => openAnnotations(page, "carry", earlier.path), "ghost"),
-    );
   }
   // Colours come from the server's group-colour owner, shared with Inspector.
   function groupSwatch(color) {

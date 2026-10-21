@@ -202,9 +202,10 @@ only the samples it wrote. Clicking a word in a sample name selects samples
 sharing that whole word. A collaborator table (Excel, CSV, TSV, or pasted) maps
 chosen name, group, and exclusion columns through `match_sample_metadata`;
 earlier confirmed metadata binds its own RAW exactly and the rest by name. Both
-preview matched, unmatched, and ambiguous rows before writing. A folder without
-confirmed metadata is offered earlier files covering at least 80% of its RAW,
-for example after the folder moved; the path-keyed file itself is not moved.
+preview matched, unmatched, and ambiguous rows before writing. The file is keyed
+by folder path, so a moved or renamed folder starts unconfirmed; its earlier
+file is reused through the same carry-over list, which names every confirmed
+folder.
 
 `xic_inspector.rendering.group_colors` owns group colours: each group of a batch
 takes the curve-palette slot its name hashes to, or the next free slot, and
