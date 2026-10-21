@@ -180,15 +180,25 @@ def _clean_repo(root: Path) -> None:
     )
 
 
+def _git(root: Path, *args: str) -> None:
+    """Run git in a test repository, reporting git's own message on failure."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env=_isolated_git_subprocess_env(),
+    )
+    assert result.returncode == 0, (
+        f"git {' '.join(args)} exited {result.returncode} in {root}: "
+        f"{result.stderr.strip()}"
+    )
+
+
 def _init_and_stage_repo(root: Path) -> dict[str, str]:
-    git_env = _isolated_git_subprocess_env()
-    subprocess.run(
-        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
-    )
-    subprocess.run(
-        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
-    )
-    return git_env
+    _git(root, "init")
+    _git(root, "add", ".")
+    return _isolated_git_subprocess_env()
 
 
 def _clean_vault(vault: Path) -> None:
@@ -237,13 +247,7 @@ def _run_audit(
         elif not (root / ".git").exists():
             _init_and_stage_repo(root)
         else:
-            subprocess.run(
-                ["git", "add", "--all"],
-                cwd=root,
-                check=True,
-                capture_output=True,
-                env=_isolated_git_subprocess_env(),
-            )
+            _git(root, "add", "--all")
     return run_audit(
         root,
         vault,
