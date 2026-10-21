@@ -49,6 +49,7 @@ forbidden_modules =
     xic_extractor.untargeted_execution
     xic_extractor.output
     xic_extractor.peak_detection
+    xic_extractor.precursor_evidence
     xic_extractor.raw_reader
 allow_indirect_imports = False
 

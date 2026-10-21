@@ -7,6 +7,7 @@ import math
 import re
 from dataclasses import asdict, dataclass, field
 
+from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
@@ -15,7 +16,6 @@ from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
 from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
-    PrecursorReferenceRequirement,
 )
 
 SCHEMA_VERSION = "dda_cid_nl_peak_support"
