@@ -227,6 +227,7 @@ def build_local_ms1_feature_table(
     LocalMs1FeatureSummary,
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
+    """Build chromatographic features from centroid ions, not profile samples."""
     sample_stem = normalize_local_ms1_sample_stem(sample_stem)
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise ValueError("raw_path must be a non-empty string")

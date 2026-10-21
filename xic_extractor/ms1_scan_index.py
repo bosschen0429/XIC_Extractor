@@ -53,7 +53,13 @@ def build_ms1_scan_index(
     *,
     first_scan_number: int | None = None,
     last_scan_number: int | None = None,
+    centroid: bool = False,
 ) -> tuple[MS1Scan, ...]:
+    """Read MS1 scans; feature detection opts into vendor-centroided ions.
+
+    The default retains stored scan samples for existing trace consumers.
+    Profile samples must not be interpreted as independent mass peaks.
+    """
     raw = raw_file(source)
     if first_scan_number is None:
         first_scan = int(raw.RunHeaderEx.FirstSpectrum)
@@ -75,7 +81,7 @@ def build_ms1_scan_index(
             filter_obj = raw.GetFilterForScanNumber(scan_number)
             if str(getattr(filter_obj, "MSOrder", "")) != "Ms":
                 continue
-            masses, intensities = _scan_arrays(raw, scan_number)
+            masses, intensities = _scan_arrays(raw, scan_number, centroid=centroid)
             rt = float(raw.RetentionTimeFromScanNumber(scan_number))
         except Exception as exc:
             raise MS1ScanReadError(
@@ -304,8 +310,13 @@ def raw_file(source: Any) -> Any:
 def _scan_arrays(
     raw_file: Any,
     scan_number: int,
+    *,
+    centroid: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    if hasattr(raw_file, "GetSegmentedScanFromScanNumber"):
+    if centroid:
+        scan = raw_file.GetCentroidStream(scan_number, False)
+        masses = np.asarray(scan.Masses, dtype=np.float64)
+    elif hasattr(raw_file, "GetSegmentedScanFromScanNumber"):
         scan = raw_file.GetSegmentedScanFromScanNumber(scan_number, None)
         masses = np.asarray(getattr(scan, "Positions", []), dtype=np.float64)
     else:

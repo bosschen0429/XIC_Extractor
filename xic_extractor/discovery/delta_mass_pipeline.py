@@ -81,7 +81,7 @@ def run_delta_mass_discovery(
     for raw_path in raw_paths:
         started = time.perf_counter()
         with open_raw(raw_path, dll_dir=dll_dir) as reader:
-            index = build_ms1_scan_index(reader)
+            index = build_ms1_scan_index(reader, centroid=True)
             intervals = np.diff([scan.rt for scan in index]) * 60
             interval = (
                 float(np.median(intervals[intervals > 0]))
@@ -143,7 +143,10 @@ def run_delta_mass_discovery(
         "preset": strategy.label,
         "method": {
             **asdict(strategy.settings),
-            "detector": {"smoothing_window_sec": strategy.smoothing_window_sec},
+            "detector": {
+                "smoothing_window_sec": strategy.smoothing_window_sec,
+                "spectrum_mode": "vendor_centroid",
+            },
         },
         "inputs": {
             "raw_dir": str(raw_dir),

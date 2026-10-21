@@ -414,6 +414,10 @@ The pure method lives in `delta_mass_patterns`; the pipeline owns RAW access,
 local feature detection, and serialization. Table heights are detector-produced
 smoothed screening heights; missing-position heights are measured from the
 acquired XIC. These are diagnostic pattern evidence, not quantitative areas.
+The RAW adapter supplies vendor-centroided MS1 ions to the local detector:
+profile samples on the sides of a mass peak are not separate features. The
+sidecar records this spectrum mode. Other scan-index consumers retain their
+existing stored-sample behavior.
 
 ### Presets and detector settings
 

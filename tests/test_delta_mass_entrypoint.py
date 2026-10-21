@@ -101,10 +101,27 @@ smoothing_window_sec = 1
         def RetentionTimeFromScanNumber(self, scan):
             return self.times[scan - 1]
 
-        def GetSimplifiedScan(self, scan):
+        def GetCentroidStream(self, scan, _):
             return SimpleNamespace(
                 Masses=[self.base_mz, self.base_mz + 7],
                 Intensities=self.signal[scan - 1] * self.height * np.array([1, 0.5]),
+            )
+
+        def GetSimplifiedScan(self, scan):
+            # Each mass peak has two above-noise profile flanks. They are not
+            # additional ions, even though seeded m/z bins can separate them.
+            return SimpleNamespace(
+                Masses=[
+                    self.base_mz - 0.025,
+                    self.base_mz,
+                    self.base_mz + 0.025,
+                    self.base_mz + 7 - 0.025,
+                    self.base_mz + 7,
+                    self.base_mz + 7 + 0.025,
+                ],
+                Intensities=self.signal[scan - 1]
+                * self.height
+                * np.array([0.25, 1, 0.25, 0.125, 0.5, 0.125]),
             )
 
         def extract_xic_many(self, requests):
@@ -164,6 +181,7 @@ smoothing_window_sec = 1
     )
     sidecar = json.loads((output / "delta_mass_sidecar.json").read_text())
     assert sidecar["status"] == "diagnostic_only"
+    assert sidecar["method"]["detector"]["spectrum_mode"] == "vendor_centroid"
     assert [s["candidate_count"] for s in sidecar["samples"]] == [1, 1]
     assert {p.name for p in output.glob("*.*")} == {
         "delta_mass_candidates.csv",
