@@ -2513,3 +2513,84 @@ def test_naming_cards_and_name_words_group_samples(
     expect(checked).to_have_count(2)
     for stem in ("TumorBC101_DNA", "NormalBC101_DNA"):
         expect(editor.get_by_label(f"選取 {stem}", exact=True)).to_be_checked()
+
+
+def test_collaborator_table_and_earlier_batches_apply_after_preview(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("LiverA1", "LiverB1", "QC_1", "Dup_X", "DupX"))
+
+    def saved(action):
+        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+            action()
+
+    def confirmed(folder):
+        rows = load_sample_metadata(sample_annotations_path(config_dir, folder))
+        return {row.raw_stem: row for row in rows}
+
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("5 個樣本")
+    page.locator("#t-samples-edit").click()
+    manual = page.get_by_label("LiverA1 組別", exact=True)
+    saved(lambda: (manual.fill("Manual"), manual.press("Tab")))
+    page.keyboard.press("Escape")
+
+    # A pasted collaborator table previews every match state before writing.
+    page.locator("#t-samples-table").click()
+    dialog = page.locator("#annotation-dialog")
+    page.locator("#annotation-text").fill(
+        "Sample\tCondition\tExclude?\tWhy\n"
+        "Liver A1\tFibrosis\t\t\n"
+        "Liver B1\tHealthy\tyes\tclot\n"
+        "Dup X\tFibrosis\t\t\n"
+        "Kidney C1\tHealthy\t\t\n"
+    )
+    page.locator("#annotation-read").click()
+    expect(page.locator("#annotation-counts")).to_have_text(
+        "對到 2 個 RAW · 表格中沒對到 1 筆 · 有歧義 1 筆（不會套用）"
+    )
+    expect(page.locator("#annotation-col-group")).to_have_value("1")
+    expect(dialog.locator("#annotation-unmatched")).to_contain_text("Kidney C1")
+    expect(dialog.locator("#annotation-ambiguous")).to_contain_text("Dup X")
+    assert confirmed(batch)["LiverB1"].group == ""
+    saved(lambda: page.locator("#annotation-apply").click())
+    rows = confirmed(batch)
+    assert rows["LiverA1"].group == "Manual"
+    assert (rows["LiverB1"].group, rows["LiverB1"].excluded) == ("Healthy", True)
+    assert rows["LiverB1"].exclusion_reason == "clot"
+    assert rows["Dup_X"].group == rows["DupX"].group == ""
+
+    # A new batch named the same way reuses the confirmed batch by name.
+    _view(page, "untargeted")
+    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+    second = tmp_path / "second"
+    _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
+    page.locator("#u-raw_dir").fill(str(second))
+    page.locator("#u-raw_dir").press("Tab")
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-count")).to_have_text("2 個樣本")
+    expect(page.locator("#samples-earlier")).to_be_hidden()
+    page.locator("#samples-carry").click()
+    page.locator("#annotation-confirmed").select_option(label="raw")
+    expect(page.locator("#annotation-counts")).to_contain_text("對到 2 個 RAW")
+    saved(lambda: page.locator("#annotation-apply").click())
+    rows = confirmed(second)
+    assert rows["Liver-A1"].group == "Manual"
+    assert rows["Liver-B1"].excluded is True
+
+    # A moved folder offers its earlier confirmed metadata.
+    moved = tmp_path / "moved"
+    batch.rename(moved)
+    page.locator("#u-raw_dir").fill(str(moved))
+    page.locator("#u-raw_dir").press("Tab")
+    page.locator("#samples-refresh").click()
+    earlier = page.locator("#samples-earlier")
+    expect(earlier).to_contain_text("5/5 個 RAW 對得上")
+    earlier.get_by_role("button", name="預覽並沿用").click()
+    expect(page.locator("#annotation-counts")).to_contain_text("對到 5 個 RAW")
+    saved(lambda: page.locator("#annotation-apply").click())
+    assert confirmed(moved)["LiverB1"].exclusion_reason == "clot"
+    expect(earlier).to_be_hidden()

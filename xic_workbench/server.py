@@ -340,6 +340,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "method",
                 "method/save",
                 "samples/save",
+                "samples/annotations",
                 "samples/export",
                 "istd",
                 "istd/upload",

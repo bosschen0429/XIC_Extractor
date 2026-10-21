@@ -24,7 +24,9 @@ from xic_extractor.sample_metadata import (
     SAMPLE_ROLES,
     SampleMetadata,
     SampleRole,
+    is_sample_metadata_source,
     load_sample_metadata,
+    match_sample_metadata,
 )
 
 ROLE_CHOICES = (
@@ -115,6 +117,176 @@ def save_batch_samples(
     path = sample_annotations_path(config_dir, raw_dir)
     export_samples(rows, path)
     return {"path": str(path), "overview": sample_overview(from_payload(rows) or ())}
+
+
+_TABLE_HINTS = {
+    "name": ("sample", "name", "樣品", "樣本", "檔名", "file", "raw"),
+    "group": ("group", "組", "type", "類別", "condition"),
+    "excluded": ("exclu", "排除"),
+    "reason": ("reason", "why", "note", "remark", "原因", "備註"),
+}
+_EXCLUDED_WORDS = {"true", "yes", "y", "1", "x", "v", "✓", "排除", "是"}
+
+
+def list_confirmed_annotations(config_dir: Path) -> list[dict[str, Any]]:
+    """Confirmed folders in this workspace, newest first, for reuse."""
+    store = Path(config_dir) / ANNOTATIONS_DIR
+    files = sorted(
+        store.glob("*.tsv") if store.is_dir() else (),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return [{"path": str(path), "name": path.stem.rsplit("-", 1)[0]} for path in files]
+
+
+def preview_annotations(
+    raw_stems: Sequence[str],
+    *,
+    path: Path | None = None,
+    text: str | None = None,
+    columns: dict[str, int | None] | None = None,
+) -> dict[str, Any]:
+    """Match a collaborator table or earlier sample metadata to this batch.
+
+    Earlier sample metadata carries its own columns. Other tables first return
+    their columns; with the chosen name/group/exclusion columns they return
+    which RAW each row names, using the shared sequence-name matching.
+    """
+    if (
+        path is not None
+        and path.suffix.lower() in {".csv", ".tsv", ".txt"}
+        and is_sample_metadata_source(path)
+    ):
+        rows = load_sample_metadata(path)
+        kind = "metadata"
+    else:
+        header, body = _read_table(path, text)
+        if columns is None:
+            return {
+                "kind": "table",
+                "columns": header,
+                "preview": body[:5],
+                "row_count": len(body),
+                "guess": _guess_columns(header),
+            }
+        rows = _table_rows(body, columns)
+        kind = "table"
+    stems = list(raw_stems)
+    passes = []
+    if kind == "metadata":
+        # Earlier metadata binds its own RAW exactly; the rest, such as a new
+        # batch named the same way, falls back to sequence-name matching.
+        exact = match_sample_metadata(rows, stems, exact_raw_stems=True)
+        passes.append((exact, stems))
+        bound = {stem.casefold() for stem in exact.matched_raw_stems}
+        rows = tuple(row for row in rows if row.raw_stem.casefold() not in bound)
+        stems = list(exact.unmatched_raw_stems)
+    report = match_sample_metadata(rows, stems)
+    passes.append((report, stems))
+    by_stem = {
+        stem: row
+        for result, inputs in passes
+        for stem, row in zip(inputs, result.rows, strict=True)
+        if stem in set(result.matched_raw_stems)
+    }
+    return {
+        "kind": kind,
+        "matched": [
+            {
+                "raw_stem": stem,
+                "name": by_stem[stem].sample_name,
+                "group": by_stem[stem].group,
+                "excluded": by_stem[stem].excluded,
+                "exclusion_reason": by_stem[stem].exclusion_reason,
+            }
+            for stem in raw_stems
+            if stem in by_stem
+        ],
+        "unmatched": list(report.unmatched_sequence_names),
+        "ambiguous": list(report.ambiguous_sequence_names),
+        "unmatched_raw": list(report.unmatched_raw_stems),
+    }
+
+
+def _read_table(
+    path: Path | None, text: str | None
+) -> tuple[list[str], list[list[str]]]:
+    if text is not None and text.strip():
+        delimiter = "\t" if "\t" in text else ","
+        raw = list(csv.reader(text.splitlines(), delimiter=delimiter))
+    elif path is not None and path.suffix.lower() in {".xlsx", ".xlsm"}:
+        from openpyxl import load_workbook
+
+        book = load_workbook(path, read_only=True, data_only=True)
+        try:
+            raw = [
+                [_cell_text(value) for value in row]
+                for row in book.worksheets[0].iter_rows(values_only=True)
+            ]
+        finally:
+            book.close()
+    elif path is not None and path.suffix.lower() in {".csv", ".tsv", ".txt"}:
+        delimiter = "," if path.suffix.lower() == ".csv" else "\t"
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            raw = list(csv.reader(handle, delimiter=delimiter))
+    else:
+        raise ValueError("請選擇 Excel、CSV、TSV 檔，或貼上兩欄以上的表格。")
+    rows = [
+        [cell.strip() for cell in row] for row in raw if any(c.strip() for c in row)
+    ]
+    if len(rows) < 2 or len(rows[0]) < 2:
+        raise ValueError("表格需要標題列，以及至少兩欄、一列資料。")
+    width = max(len(row) for row in rows)
+    rows = [row + [""] * (width - len(row)) for row in rows]
+    header = [name or f"第 {index + 1} 欄" for index, name in enumerate(rows[0])]
+    return header, rows[1:]
+
+
+def _cell_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _guess_columns(header: Sequence[str]) -> dict[str, int | None]:
+    guess: dict[str, int | None] = {}
+    for field, hints in _TABLE_HINTS.items():
+        guess[field] = next(
+            (
+                index
+                for index, name in enumerate(header)
+                if any(hint in name.casefold() for hint in hints)
+                and index not in guess.values()
+            ),
+            None,
+        )
+    if guess["name"] is None:
+        guess["name"] = 0
+    return guess
+
+
+def _table_rows(
+    body: Sequence[Sequence[str]], columns: dict[str, int | None]
+) -> tuple[SampleMetadata, ...]:
+    name, group, excluded, reason = (
+        columns.get(key) for key in ("name", "group", "excluded", "reason")
+    )
+    if name is None or (group is None and excluded is None):
+        raise ValueError("請指定名稱欄，以及組別欄或排除欄。")
+    return tuple(
+        SampleMetadata(
+            sample_name=row[name],
+            raw_stem=row[name],
+            group=row[group] if group is not None else "",
+            excluded=excluded is not None
+            and row[excluded].casefold() in _EXCLUDED_WORDS,
+            exclusion_reason=row[reason] if reason is not None else "",
+        )
+        for row in body
+        if row[name]
+    )
 
 
 def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:

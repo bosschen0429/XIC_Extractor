@@ -1020,6 +1020,7 @@
       ? sourceNotes[set.source] || ""
       : "";
     renderGroupCards(page);
+    renderEarlierNote(page);
     checklist(page);
   }
   function applySampleResult(page, result) {
@@ -1224,6 +1225,155 @@
       `已選取 ${shown} 個名稱含「${word}」的樣本，可在上方套用組別或排除。`,
     );
     $("sample-bulk-group").focus();
+  }
+  // Collaborator tables and earlier batches: preview the match, then apply.
+  const annotationModes = {
+    table: {
+      title: "匯入合作者樣品表",
+      help: "選 Excel、CSV、TSV 檔或貼上表格，指定名稱欄與組別欄；對應到 RAW 的方式與上機資訊相同。",
+    },
+    carry: {
+      title: "沿用上一批分組",
+      help: "選先前匯出的樣品資訊，或工作區中已確認的批次；依樣品名稱對應到這批 RAW。",
+    },
+  };
+  const columnFields = ["name", "group", "excluded", "reason"];
+  function columnSelect(field, columns, chosen) {
+    const select = $(`annotation-col-${field}`);
+    select.replaceChildren();
+    if (field !== "name") select.append(el("option", "（不使用）"));
+    if (field !== "name") select.options[0].value = "";
+    columns.forEach((name, index) => {
+      const option = el("option", name);
+      option.value = String(index);
+      select.append(option);
+    });
+    select.value = chosen === null || chosen === undefined ? "" : String(chosen);
+  }
+  function chosenColumns() {
+    const columns = {};
+    for (const field of columnFields) {
+      const value = $(`annotation-col-${field}`).value;
+      columns[field] = value === "" ? null : Number(value);
+    }
+    return columns;
+  }
+  async function openAnnotations(page, mode, path = "") {
+    const set = state.sampleSets[page];
+    if (!set.rows.length) {
+      ui.toast("請先讀取 RAW 樣本。");
+      return;
+    }
+    state.annotation = { page, mode, preview: null };
+    $("annotation-title").textContent = annotationModes[mode].title;
+    $("annotation-help").textContent = annotationModes[mode].help;
+    $("annotation-path").value = path;
+    $("annotation-text").value = "";
+    $("annotation-paste").hidden = mode !== "table";
+    $("annotation-confirmed").hidden = mode !== "carry";
+    $("annotation-columns").hidden = true;
+    $("annotation-preview").hidden = true;
+    $("annotation-overwrite").checked = false;
+    $("annotation-apply").disabled = true;
+    $("annotation-dialog").showModal();
+    if (mode === "carry") {
+      const listed = await api("/api/samples/annotations", {});
+      const select = $("annotation-confirmed");
+      select.replaceChildren(el("option", "工作區中已確認的批次…"));
+      select.options[0].value = "";
+      for (const item of listed.confirmed) {
+        const option = el("option", item.name);
+        option.value = item.path;
+        select.append(option);
+      }
+    }
+    if (path) await readAnnotations();
+  }
+  async function readAnnotations(columns) {
+    const { page } = state.annotation;
+    const raw_stems = state.sampleSets[page].rows.map((row) => row.raw_stem);
+    const values = {
+      raw_stems,
+      path: $("annotation-path").value.trim(),
+      text: state.annotation.mode === "table" ? $("annotation-text").value : "",
+      ...(columns ? { columns } : {}),
+    };
+    let result = await api("/api/samples/annotations", values);
+    if (result.kind === "table" && !columns) {
+      for (const field of columnFields)
+        columnSelect(field, result.columns, result.guess[field]);
+      $("annotation-columns").hidden = false;
+      result = await api("/api/samples/annotations", {
+        ...values,
+        columns: chosenColumns(),
+      });
+    } else if (result.kind === "metadata") $("annotation-columns").hidden = true;
+    renderAnnotationPreview(result);
+  }
+  function renderAnnotationPreview(result) {
+    state.annotation.preview = result;
+    const matched = result.matched;
+    $("annotation-counts").textContent =
+      `對到 ${matched.length} 個 RAW · 表格中沒對到 ${result.unmatched.length} 筆 · ` +
+      `有歧義 ${result.ambiguous.length} 筆（不會套用）`;
+    $("annotation-rows").replaceChildren(
+      ...matched.map((row) => {
+        const tr = el("tr");
+        tr.append(
+          el("td", row.raw_stem, "mono"),
+          el("td", row.name),
+          el("td", row.group || "—"),
+          el(
+            "td",
+            row.excluded ? `排除${row.exclusion_reason ? `：${row.exclusion_reason}` : ""}` : "—",
+          ),
+        );
+        return tr;
+      }),
+    );
+    for (const [id, names, label] of [
+      ["annotation-unmatched", result.unmatched, "表格中沒對到的名稱"],
+      ["annotation-ambiguous", result.ambiguous, "有歧義、對到多個 RAW 的名稱"],
+    ]) {
+      $(id).hidden = !names.length;
+      $(id).querySelector("summary").textContent = `${label}（${names.length}）`;
+      $(id).querySelector("p").textContent = names.join("、");
+    }
+    $("annotation-preview").hidden = false;
+    $("annotation-apply").disabled = !matched.length;
+    $("annotation-apply").textContent = `套用到 ${matched.length} 個樣本`;
+  }
+  async function applyAnnotations() {
+    const { page, preview } = state.annotation;
+    const overwrite = $("annotation-overwrite").checked;
+    const byStem = new Map(state.sampleSets[page].rows.map((row) => [row.raw_stem, row]));
+    for (const match of preview.matched) {
+      const row = byStem.get(match.raw_stem);
+      if (!row) continue;
+      if (match.group && (overwrite || !row.group.trim())) row.group = match.group;
+      if (match.excluded) {
+        row.excluded = true;
+        row.exclusion_reason = match.exclusion_reason;
+      }
+    }
+    $("annotation-dialog").close();
+    await persistSamples(page);
+    done(`已套用 ${preview.matched.length} 個樣本的組別與排除。`);
+  }
+  function renderEarlierNote(page) {
+    const set = state.sampleSets[page];
+    const note = $(sampleId(page, "samples-earlier"));
+    const earlier = set.source !== "confirmed" ? set.earlier[0] : null;
+    note.hidden = !earlier;
+    if (!earlier) return note.replaceChildren();
+    note.replaceChildren(
+      ui.icon("info"),
+      el(
+        "span",
+        `這個資料夾還沒有確認過的樣品資訊，但找到一份先前確認的（${earlier.matched}/${earlier.total} 個 RAW 對得上），可能是資料夾搬過或改過名。`,
+      ),
+      button("預覽並沿用", () => openAnnotations(page, "carry", earlier.path), "ghost"),
+    );
   }
   function sampleCell(control) {
     const td = el("td");
@@ -2057,6 +2207,10 @@
             done(`樣本資料已匯出：${path}`);
           }
         });
+      $(sampleId(page, "samples-table")).onclick = () =>
+        act(() => openAnnotations(page, "table"));
+      $(sampleId(page, "samples-carry")).onclick = () =>
+        act(() => openAnnotations(page, "carry"));
       // A different 上機資訊 makes the loaded rows stale until read again.
       $(spec.sequence).addEventListener("change", () => clearSamples(page));
     }
@@ -2066,6 +2220,16 @@
         .querySelectorAll("input[type=checkbox]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
     roleOptions($("sample-bulk-role"), "study_sample");
+    $("annotation-read").onclick = () => act(() => readAnnotations());
+    $("annotation-confirmed").onchange = () => {
+      if (!$("annotation-confirmed").value) return;
+      $("annotation-path").value = $("annotation-confirmed").value;
+      act(() => readAnnotations());
+    };
+    for (const field of columnFields)
+      $(`annotation-col-${field}`).onchange = () =>
+        act(() => readAnnotations(chosenColumns()));
+    $("annotation-apply").onclick = () => act(applyAnnotations);
     $("sample-apply-role").onclick = () =>
       applyToSelected((row) => (row.sample_role = $("sample-bulk-role").value));
     $("sample-apply-group").onclick = () =>

@@ -307,6 +307,15 @@
         匯入上機資訊
       </button>
     </div>
+    <div class="import-line annotation-line">
+      <span class="subtle">組別與排除</span
+      ><button type="button" data-part="samples-table" data-analysis-idle>
+        匯入合作者樣品表</button
+      ><button type="button" data-part="samples-carry" data-analysis-idle>
+        沿用上一批分組
+      </button>
+    </div>
+    <p data-part="samples-earlier" class="earlier-note" hidden></p>
     <div class="sample-summary">
       <div data-part="role-summary" class="chip-row"></div>
       <button type="button" data-part="samples-refresh" data-analysis-idle>
@@ -319,6 +328,65 @@
     <ul data-part="samples-conflicts" class="sequence-conflicts" hidden></ul>
   </div>
 </template>
+
+<dialog id="annotation-dialog" class="wide-dialog" aria-labelledby="annotation-title">
+  <div class="dialog-head">
+    <div>
+      <h2 id="annotation-title">匯入合作者樣品表</h2>
+      <p class="subtle" id="annotation-help"></p>
+    </div>
+    <button
+      type="button"
+      class="dialog-close"
+      data-close="annotation-dialog"
+      aria-label="關閉"
+    >
+      <svg class="icon"><use href="#i-x" /></svg>
+    </button>
+  </div>
+  <div class="dialog-body annotation-body">
+    <div class="import-line">
+      <label for="annotation-path">檔案</label
+      ><input id="annotation-path" class="path" placeholder="Excel、CSV 或 TSV" /><button
+        type="button"
+        data-browse="annotation-path"
+        data-kind="metadata"
+      >
+        瀏覽</button
+      ><select id="annotation-confirmed" aria-label="工作區中已確認的批次"></select>
+    </div>
+    <label class="field" id="annotation-paste">或直接貼上表格（第一列是標題）<textarea
+        id="annotation-text"
+        rows="4"
+        spellcheck="false"
+      ></textarea></label>
+    <div class="button-row"><button type="button" id="annotation-read">讀取並預覽</button></div>
+    <div id="annotation-columns" class="settings-grid" hidden>
+      <label class="field">名稱欄<select id="annotation-col-name"></select></label
+      ><label class="field">組別欄<select id="annotation-col-group"></select></label
+      ><label class="field">排除欄（選用）<select id="annotation-col-excluded"></select></label
+      ><label class="field">排除原因欄（選用）<select id="annotation-col-reason"></select></label>
+    </div>
+    <div id="annotation-preview" hidden>
+      <p id="annotation-counts" role="status"></p>
+      <div class="table-scroll editor-table">
+        <table>
+          <thead>
+            <tr><th>RAW 檔名</th><th>表格中的名稱</th><th>組別</th><th>排除</th></tr>
+          </thead>
+          <tbody id="annotation-rows"></tbody>
+        </table>
+      </div>
+      <details id="annotation-unmatched"><summary></summary><p class="mono"></p></details>
+      <details id="annotation-ambiguous"><summary></summary><p class="mono"></p></details>
+      <label class="check-line"><input type="checkbox" id="annotation-overwrite" /> 覆蓋已標的組別</label>
+    </div>
+  </div>
+  <div class="dialog-foot">
+    <button type="button" data-close="annotation-dialog">取消</button
+    ><button id="annotation-apply" type="button" class="primary" disabled>套用</button>
+  </div>
+</dialog>
 
 <dialog id="target-import-preview" class="wide-dialog" aria-labelledby="target-import-title">
   <div class="dialog-head"><h2 id="target-import-title">確認匯入</h2></div>
