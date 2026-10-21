@@ -19,6 +19,13 @@ from xic_extractor.alignment.grouping_evidence import (
     envelope_fraction,
     pair_ppm,
 )
+from xic_extractor.alignment.grouping_rules import (
+    DuplicateContext,
+    GroupingRules,
+    IndexQuery,
+    MethodPairEvidence,
+    SeedSupportLevel,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -26,7 +33,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     supported_cid_nl_peak_ids,
 )
 
-SeedSupportLevel = Literal["strong", "moderate", "weak"]
 _DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
 
 CidNlPairFailure = Literal[
@@ -281,23 +287,6 @@ def grouping_chemistry_key(owner: SampleLocalMS1Owner) -> tuple[str, str]:
     )
 
 
-def owner_uncertainty_reason(
-    owner: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> str:
-    if owner.identity_conflict:
-        return "owner_identity_conflict"
-    if owner.is_provisional:
-        return "provisional_owner"
-    if owner.owner_area <= 0.0:
-        return "nonpositive_owner_area"
-    if "ambiguous" in owner.assignment_reason:
-        return "ambiguous_owner_assignment"
-    if classify_seed_support(owner, owner, config) == "weak":
-        return "weak_identity_evidence"
-    return ""
-
-
 def classify_seed_support(
     left: SampleLocalMS1Owner,
     right: SampleLocalMS1Owner,
@@ -353,3 +342,66 @@ def _discovery_seed_support_level(
     if min_score >= _DISCOVERY_MODERATE_EVIDENCE_SCORE and min_seed_count >= 1:
         return "moderate"
     return "weak"
+
+
+def _duplicate_context(
+    left: SampleLocalMS1Owner, right: SampleLocalMS1Owner, config: AlignmentConfig
+) -> DuplicateContext:
+    if any(
+        owner.assignment_reason == "owner_tail_assignment"
+        or any(
+            abs(event.seed_rt - owner.owner_apex_rt) * 60.0
+            > config.owner_apex_close_sec
+            for event in owner.supporting_events
+        )
+        for owner in (left, right)
+    ):
+        return "tail_assignment"
+    return (
+        "same_owner_events"
+        if left.supporting_events or right.supporting_events
+        else "none"
+    )
+
+
+def _pair_evidence(
+    left: SampleLocalMS1Owner, right: SampleLocalMS1Owner, config: AlignmentConfig
+) -> MethodPairEvidence:
+    identity, measurement = cid_nl_pair_failures(left, right, config)
+    return MethodPairEvidence(
+        identity_failure=identity,
+        measurement_failure=measurement,
+        seed_support_level=classify_seed_support(left, right, config),
+        duplicate_context=_duplicate_context(left, right, config),
+        measurement_failure_allows_rt_continuity=measurement is not None,
+    )
+
+
+def _index_query_alternatives(
+    owner: SampleLocalMS1Owner, config: AlignmentConfig
+) -> tuple[tuple[IndexQuery, ...], ...]:
+    alternatives: tuple[tuple[IndexQuery, ...], ...] = (
+        cid_nl_index_queries(owner, config),
+    )
+    if key := cid_nl_composition_index_key(owner):
+        alternatives += (((key, owner.precursor_mz, config.max_ppm),),)
+    return alternatives
+
+
+def _requires_directional_membership(owners: Sequence[SampleLocalMS1Owner]) -> bool:
+    # Composition can bridge scalar tags; ordinary window bands cannot.
+    return any(has_cid_nl_composition(owner) for owner in owners)
+
+
+CID_NL_GROUPING_RULES = GroupingRules(
+    pair_evidence=_pair_evidence,
+    support_level=classify_seed_support,
+    feature_envelope=CidNlFeatureEnvelope.from_owner,
+    index_query_alternatives=_index_query_alternatives,
+    requires_directional_membership=_requires_directional_membership,
+    trajectory_witness_eligible=has_scalar_cid_nl_identity,
+    chemistry_key=grouping_chemistry_key,
+    mass_center=cid_nl_mass_center,
+    mass_fraction=cid_nl_mass_fraction,
+    pair_mass_fraction=cid_nl_pair_mass_fraction,
+)

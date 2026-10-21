@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -182,6 +183,7 @@ def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
         )
         if pattern_seed
         else None,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(("clean-a", "clean-b")),
@@ -216,6 +218,7 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
                 "wide": 3,
             }
         ),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert sorted(len(group.owner_ids) for group in result.groups) == (
         [1, 1, 1] if bootstrap else [1, 2]
@@ -244,6 +247,7 @@ def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> N
         owners,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=orders),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert sorted(len(group.owner_ids) for group in result.groups) == [1, 15]
     assert not any({"wide", "narrow"}.issubset(g.owner_ids) for g in result.groups)
@@ -271,6 +275,7 @@ def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -
         (reference,),
         config=AlignmentConfig(),
         rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
     )
     candidate = replace(
         candidate,
@@ -285,6 +290,7 @@ def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -
         (reference,),
         config=AlignmentConfig(),
         rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
     )
 
 
@@ -325,7 +331,9 @@ def test_tissue_background_observation_does_not_join_four_localized_peaks() -> N
             0,
         )
     )
-    result = infer_feature_memberships(owners, config=AlignmentConfig(), rt_frame=frame)
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(), rt_frame=frame, rules=CID_NL_GROUPING_RULES
+    )
     by_id = {owner.owner_id: owner for owner in owners}
     assert {
         frozenset(by_id[owner_id].sample_stem for owner_id in group.owner_ids)
@@ -385,6 +393,7 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(("a:early", "b:early", "c:early")),
@@ -426,6 +435,7 @@ def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> Non
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {(group.owner_ids, group.disposition) for group in result.groups} == {
         (("a:early", "b:early", "c:early"), "assigned"),
@@ -474,6 +484,7 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
         rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcduv")}),
         peak_trajectories=geometry,
         bootstrap=bootstrap,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(("a:early", "b:early")),
@@ -537,6 +548,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcd")}),
         peak_trajectories=geometry,
+        rules=CID_NL_GROUPING_RULES,
     )
     if control.endswith("member"):
         # Weak members cannot seed an assigned Feature in the first place.
@@ -549,6 +561,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
                 injection_order={s: i for i, s in enumerate("abcd")}
             ),
             peak_trajectories=geometry,
+            rules=CID_NL_GROUPING_RULES,
         )
         assert next(g for g in result.groups if "c:late" in g.owner_ids) == next(
             g for g in without_anchor.groups if "c:late" in g.owner_ids
@@ -585,6 +598,7 @@ def test_coobserved_witness_uses_selected_integration_segments(overlap):
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcduv")}),
         peak_trajectories=geometry,
+        rules=CID_NL_GROUPING_RULES,
     )
     containing_late = next(g for g in result.groups if "c:late" in g.owner_ids)
     if overlap:
@@ -624,6 +638,7 @@ def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
             rt_frame=SampleRtFrame(injection_order=(orders or {})),
             bootstrap=bootstrap,
             peak_trajectories=trajectories,
+            rules=CID_NL_GROUPING_RULES,
         )
         assert [
             (set(group.owner_ids), group.disposition) for group in result.groups
@@ -661,6 +676,7 @@ def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {(group.owner_ids, group.disposition) for group in result.groups} == {
         (("a:p", "c:p"), "assigned"),
@@ -703,6 +719,7 @@ def test_directional_competition_does_not_demote_an_assigned_pattern_seed(
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     # b competes equally with a's two peaks before the pattern seed is complete.
     assert any(
@@ -753,6 +770,7 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=correspondence,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {group.owner_ids for group in result.groups} == {
         ("sample0:peak0", "sample2:peak0", "sample4:peak0"),
@@ -796,6 +814,7 @@ def test_never_compared_pattern_observations_do_not_split_one_band(
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert [(group.owner_ids, group.disposition) for group in result.groups] == [
         (tuple(sorted(owner.owner_id for owner in owners)), "assigned")
@@ -840,6 +859,7 @@ def test_single_peak_owner_keeps_ordinary_rt_gate(
         peak_trajectories=resolve_peak_trajectories(
             owners, contexts, config=AlignmentConfig(), injection_order=orders
         ),
+        rules=CID_NL_GROUPING_RULES,
     )
     (x_group,) = (group for group in result.groups if "x:only" in group.owner_ids)
     assert x_group.owner_ids == ("x:only",)
@@ -854,6 +874,7 @@ def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert not any(
         group.disposition == "assigned" and len(group.owner_ids) == len(owners)
@@ -864,6 +885,7 @@ def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
         tuple(reversed(owners)),
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(_warp()),
+        rules=CID_NL_GROUPING_RULES,
     )
     for group in result.groups:
         stems = [
@@ -961,6 +983,7 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({**orders, "mass-window-outlier": 0})
         ).with_warp(_warp()),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert any(
         group.disposition == "assigned"
@@ -990,6 +1013,7 @@ def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> No
         owners,
         config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(shifted),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -1033,6 +1057,7 @@ def test_equal_band_competition_marks_only_the_bridge_undecided() -> None:
         (left, bridge, right),
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(result.groups) == 3
     assert all(group.disposition == "undecided" for group in result.groups)
@@ -1080,6 +1105,7 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({"first": 1, "middle": 31, "last": 61})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -1097,6 +1123,7 @@ def test_one_sample_doublet_does_not_split_the_other_seventy_nine() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({f"s{order:02d}": order for order in range(1, 81)})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert any(
         group.disposition == "assigned"
@@ -1134,6 +1161,7 @@ def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) ->
         rt_frame=SampleRtFrame(
             injection_order=({f"s{order:02d}": order for order in range(1, 86)})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(owner.owner_id for owner in band) for band in bands
@@ -1170,6 +1198,7 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
         rt_frame=SampleRtFrame(
             injection_order=({"first": 1, "second": 2, "later": 17})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert any(
         group.disposition == "assigned"
@@ -1201,6 +1230,7 @@ def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({f"s{order:02d}": order for order in range(1, 82)})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert any(
         group.disposition == "assigned"
@@ -1251,6 +1281,7 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
         rt_frame=SampleRtFrame(
             injection_order=({f"s{order:02d}": order for order in range(1, 42)})
         ).with_warp(warp),
+        rules=CID_NL_GROUPING_RULES,
     )
 
     assert all(group.disposition == "assigned" for group in result.groups)
@@ -1315,6 +1346,7 @@ def test_separated_band_bridge_respects_indirect_peak_order(
         peak_trajectories=PeakTrajectories(
             tuple(reversed(tracks)) if reverse else tracks,
         ),
+        rules=CID_NL_GROUPING_RULES,
     )
     expected = {frozenset({"b1", "b2"})}
     if ordered_chain:
@@ -1340,6 +1372,7 @@ def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({f"s{order:02d}": order for order in range(1, 42)})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
 
     assert {frozenset(group.owner_ids) for group in result.groups} == {
@@ -1360,6 +1393,7 @@ def test_product_scatter_is_scored_within_the_precursor_search_window() -> None:
         rt_frame=SampleRtFrame(injection_order=({"first": 1, "second": 2})).with_warp(
             BatchRtWarp((), 0)
         ),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -1378,5 +1412,6 @@ def test_precursor_lookup_bound_is_independent_of_injection_order() -> None:
         rt_frame=SampleRtFrame(
             injection_order=({"first": 1, "middle": 2, "last": 3})
         ).with_warp(BatchRtWarp((), 0)),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert all(group.disposition == "undecided" for group in result.groups)

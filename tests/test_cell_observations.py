@@ -42,6 +42,7 @@ from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -122,6 +123,7 @@ def _outside_group_fixture(
         owners,
         config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(groups) == len(support_centers) + 1
     return fixture, tuple(assessments), groups

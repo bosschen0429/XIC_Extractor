@@ -4,36 +4,25 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from xic_extractor.alignment.cid_nl_grouping import (
-    SeedSupportLevel,
-    cid_nl_pair_failures,
-    classify_seed_support,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import (
     pair_ppm,
     peak_shape_union_conflict,
 )
+from xic_extractor.alignment.grouping_rules import (
+    DuplicateContext,
+    MethodPairEvidence,
+    SeedSupportLevel,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import RtFrame
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
-HardGateFailureReason = Literal[
-    "same_sample",
-    "neutral_loss_tag_mismatch",
-    "precursor_mz_out_of_tolerance",
-    "product_mz_out_of_tolerance",
-    "observed_loss_out_of_tolerance",
-    "non_detected_owner",
-    "ambiguous_owner",
-    "identity_conflict",
-    "backfill_bridge",
-    "peak_shape_mismatch",
-]
+HardGateFailureReason = str
+
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 RTEvidenceBasis = Literal["raw", "drift_corrected"]
 OwnerQuality = Literal["clean", "weak", "tail_supported", "ambiguous_nearby"]
-DuplicateContext = Literal["none", "same_owner_events", "tail_assignment"]
 
 
 @dataclass(frozen=True)
@@ -65,6 +54,7 @@ class OwnerEdgeEvidence:
     duplicate_context: DuplicateContext
     score: int
     reason: str
+    failure_allows_rt_continuity: bool
 
 
 def evaluate_owner_edge(
@@ -73,6 +63,7 @@ def evaluate_owner_edge(
     *,
     config: AlignmentConfig,
     rt_frame: RtFrame,
+    method_evidence: MethodPairEvidence,
     edge_depends_on_backfill: bool = False,
     left_detected_owner: bool = True,
     right_detected_owner: bool = True,
@@ -84,14 +75,15 @@ def evaluate_owner_edge(
     injection_order_gap = rt_frame.drift_injection_order_gap(
         left.sample_stem, right.sample_stem
     )
-    duplicate_context = _duplicate_context(left, right, config)
+    duplicate_context = method_evidence.duplicate_context
     owner_quality = _owner_quality(left, right, duplicate_context)
-    seed_support_level = classify_seed_support(left, right, config)
+    seed_support_level = method_evidence.seed_support_level
 
-    failure = _hard_gate_failure(
+    failure, failure_allows_rt_continuity = _hard_gate_failure(
         left,
         right,
         config=config,
+        method_evidence=method_evidence,
         edge_depends_on_backfill=edge_depends_on_backfill,
         left_detected_owner=left_detected_owner,
         right_detected_owner=right_detected_owner,
@@ -99,14 +91,10 @@ def evaluate_owner_edge(
         right_ambiguous_owner=right_ambiguous_owner,
     )
     if failure:
-        # Only these failures can be admitted by targeted-ISTD continuity.
+        # Method permission applies only after all shared physical gates pass.
         corrected_delta_sec = (
             rt_frame.corrected_pair_delta_sec(left, right)
-            if failure
-            in {
-                "product_mz_out_of_tolerance",
-                "observed_loss_out_of_tolerance",
-            }
+            if failure_allows_rt_continuity
             else None
         )
         return _evidence(
@@ -124,6 +112,7 @@ def evaluate_owner_edge(
             duplicate_context=duplicate_context,
             score=0,
             reason=f"blocked: {failure}",
+            failure_allows_rt_continuity=failure_allows_rt_continuity,
         )
 
     score, decision, rt_basis, reason, corrected_delta_sec = _score_and_decide(
@@ -159,30 +148,33 @@ def _hard_gate_failure(
     right: SampleLocalMS1Owner,
     *,
     config: AlignmentConfig,
+    method_evidence: MethodPairEvidence,
     edge_depends_on_backfill: bool,
     left_detected_owner: bool,
     right_detected_owner: bool,
     left_ambiguous_owner: bool,
     right_ambiguous_owner: bool,
-) -> HardGateFailureReason | None:
+) -> tuple[HardGateFailureReason | None, bool]:
     if edge_depends_on_backfill:
-        return "backfill_bridge"
+        return "backfill_bridge", False
     if not left_detected_owner or not right_detected_owner:
-        return "non_detected_owner"
+        return "non_detected_owner", False
     if left_ambiguous_owner or right_ambiguous_owner:
-        return "ambiguous_owner"
+        return "ambiguous_owner", False
     if left.identity_conflict or right.identity_conflict:
-        return "identity_conflict"
+        return "identity_conflict", False
     if left.sample_stem == right.sample_stem:
-        return "same_sample"
-    identity_failure, measurement_failure = cid_nl_pair_failures(left, right, config)
-    if identity_failure:
-        return identity_failure
+        return "same_sample", False
+    if method_evidence.identity_failure:
+        return method_evidence.identity_failure, False
     if pair_ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
-        return "precursor_mz_out_of_tolerance"
+        return "precursor_mz_out_of_tolerance", False
     if peak_shape_union_conflict((left,), (right,), config) is not None:
-        return "peak_shape_mismatch"
-    return measurement_failure
+        return "peak_shape_mismatch", False
+    return (
+        method_evidence.measurement_failure,
+        method_evidence.measurement_failure_allows_rt_continuity,
+    )
 
 
 def _owner_quality(
@@ -197,30 +189,6 @@ def _owner_quality(
     if duplicate_context == "tail_assignment":
         return "tail_supported"
     return "clean"
-
-
-def _duplicate_context(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> DuplicateContext:
-    if (
-        left.assignment_reason == "owner_tail_assignment"
-        or right.assignment_reason == "owner_tail_assignment"
-        or _has_tail_seed(left, config)
-        or _has_tail_seed(right, config)
-    ):
-        return "tail_assignment"
-    if left.supporting_events or right.supporting_events:
-        return "same_owner_events"
-    return "none"
-
-
-def _has_tail_seed(owner: SampleLocalMS1Owner, config: AlignmentConfig) -> bool:
-    return any(
-        abs(event.seed_rt - owner.owner_apex_rt) * 60.0 > config.owner_apex_close_sec
-        for event in owner.supporting_events
-    )
 
 
 def _score_and_decide(
@@ -421,6 +389,7 @@ def _evidence(
     duplicate_context: DuplicateContext,
     score: int,
     reason: str,
+    failure_allows_rt_continuity: bool = False,
 ) -> OwnerEdgeEvidence:
     return OwnerEdgeEvidence(
         left_owner_id=left.owner_id,
@@ -444,6 +413,7 @@ def _evidence(
         duplicate_context=duplicate_context,
         score=score,
         reason=reason,
+        failure_allows_rt_continuity=failure_allows_rt_continuity,
     )
 
 

@@ -4,14 +4,28 @@ from dataclasses import dataclass, replace
 
 import pytest
 
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
+from xic_extractor.alignment.edge_scoring import (
+    evaluate_owner_edge as _evaluate_owner_edge,
+)
+from xic_extractor.alignment.grouping_rules import MethodPairEvidence
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+
+
+def evaluate_owner_edge(left, right, *, config, **kwargs):
+    return _evaluate_owner_edge(
+        left,
+        right,
+        config=config,
+        method_evidence=CID_NL_GROUPING_RULES.pair_evidence(left, right, config),
+        **kwargs,
+    )
 
 
 @dataclass(frozen=True)
@@ -99,6 +113,44 @@ def test_blocked_edge_reports_neutral_loss_reason() -> None:
     assert edge.failure_reason == "neutral_loss_tag_mismatch"
     assert edge.reason == "blocked: neutral_loss_tag_mismatch"
     assert edge.score == 0
+
+
+@pytest.mark.parametrize("reason", ("product_mz_out_of_tolerance", "method_mass_gate"))
+@pytest.mark.parametrize("allows_continuity", (False, True))
+def test_method_answer_not_reason_text_controls_rt_continuity(
+    reason: str, allows_continuity: bool
+) -> None:
+    from xic_extractor.alignment.cross_sample.peak_groups import (
+        classify_cross_sample_initial_edge,
+    )
+
+    left = replace(_owner("s1"), primary_identity_event=None)
+    right = replace(_owner("s2", owner_apex_rt=10.2), primary_identity_event=None)
+    config = AlignmentConfig()
+    edge = _evaluate_owner_edge(
+        left,
+        right,
+        config=config,
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s1": 0.0, "s2": 0.1}, orders={"s1": 1, "s2": 2}
+            )
+        ),
+        method_evidence=MethodPairEvidence(
+            identity_failure=None,
+            measurement_failure=reason,
+            seed_support_level="strong",
+            duplicate_context="none",
+            measurement_failure_allows_rt_continuity=allows_continuity,
+        ),
+    )
+    assert edge.decision == "blocked_edge" and edge.failure_reason == reason
+    assert edge.rt_drift_corrected_delta_sec == (
+        pytest.approx(6.0) if allows_continuity else None
+    )
+    assert classify_cross_sample_initial_edge(
+        edge, context="targeted_istd_continuity", config=config
+    ) == ("eligible" if allows_continuity else "excluded")
 
 
 @pytest.mark.parametrize(

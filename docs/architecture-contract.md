@@ -218,6 +218,15 @@ evidence. Shared grouping keeps physical mass/RT/shape and sample uniqueness;
 shared cell composition keeps exact sample/group lineage. Final numeric and
 writer authority remain with the existing decision and projection owners.
 
+Workflow composition explicitly supplies `GroupingRules`; shared inference and
+edge scoring do not select a method or interpret method reason strings. CID-NL
+record admission binds `CellMethodEvidence` for local/recovered state, exact
+support and recovery eligibility; shared closure and conservative mapping consume
+those answers. These are in-memory seams for the current algorithms, not a
+registry or a new universal assessment schema. Existing CID-NL subjects and
+persisted records retain their owners and encodings. Another method still needs
+its own evidence adapter; no delta-mass execution is implied by these seams.
+
 Grouping and RT bootstrap are described in [Alignment](product/alignment.md#current-implementation).
 Immutable-result handoffs are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#deep-interfaces).
 A revisit does not reopen grouping, replace the partition, or mint a second

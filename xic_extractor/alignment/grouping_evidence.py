@@ -6,6 +6,7 @@ import math
 from collections.abc import Sequence
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
@@ -86,3 +87,21 @@ def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
         and snr is not None
         and snr >= QUANTITATION_LIMIT_SNR
     )
+
+
+def owner_uncertainty_reason(
+    owner: SampleLocalMS1Owner,
+    config: AlignmentConfig,
+    rules: GroupingRules,
+) -> str:
+    if owner.identity_conflict:
+        return "owner_identity_conflict"
+    if owner.is_provisional:
+        return "provisional_owner"
+    if owner.owner_area <= 0.0:
+        return "nonpositive_owner_area"
+    if "ambiguous" in owner.assignment_reason:
+        return "ambiguous_owner_assignment"
+    if rules.support_level(owner, owner, config) == "weak":
+        return "weak_identity_evidence"
+    return ""

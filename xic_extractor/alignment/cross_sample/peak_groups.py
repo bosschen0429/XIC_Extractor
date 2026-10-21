@@ -1,9 +1,8 @@
 """Cross-sample peak group construction.
 
-This module groups SampleLocalMS1Owner instances into cross-sample chemical-
-entity groups using m/z, RT, product m/z, observed neutral loss, and edge
-evidence.  The output ``CrossSamplePeakGroupHypothesis`` is the primary
-cross-sample identity unit.
+This module groups SampleLocalMS1Owner instances using shared physical rules
+and explicitly supplied method evidence. The output
+``CrossSamplePeakGroupHypothesis`` is the primary cross-sample identity unit.
 
 ``public_family_id`` is a *display label* preserved for output compatibility.
 It is NOT an identity anchor; use ``group_hypothesis_id`` for identity
@@ -45,6 +44,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     SparseFeatureDecision,
     infer_feature_memberships,
 )
+from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
@@ -162,6 +162,7 @@ def construct_cross_sample_peak_group_hypotheses(
     owners: tuple[SampleLocalMS1Owner, ...] | list[SampleLocalMS1Owner],
     *,
     config: AlignmentConfig,
+    rules: GroupingRules,
     sample_universe: frozenset[str] | None = None,
     rt_frame: RtFrame,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
@@ -200,6 +201,7 @@ def construct_cross_sample_peak_group_hypotheses(
         owners,
         config=config,
         rt_frame=rt_frame,
+        rules=rules,
         known_identity_bindings=known_identity_bindings,
         bootstrap=bootstrap,
         peak_trajectories=peak_trajectories,

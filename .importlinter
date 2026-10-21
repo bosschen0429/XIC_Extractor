@@ -142,3 +142,22 @@ source_modules =
 forbidden_modules =
     xic_extractor.instrument_qc
 allow_indirect_imports = False
+
+[importlinter:contract:grouping-and-cell-consume-method-answers]
+name = Shared grouping and cell closure do not select method interpreters
+type = forbidden
+source_modules =
+    xic_extractor.alignment.grouping_rules
+    xic_extractor.alignment.grouping_evidence
+    xic_extractor.alignment.edge_scoring
+    xic_extractor.alignment.feature_membership_inference
+    xic_extractor.alignment.cross_sample.peak_groups
+    xic_extractor.alignment.cross_sample.neighborhood_graph
+    xic_extractor.alignment.cell_observation.observations
+    xic_extractor.alignment.cell_observation.method_evidence
+forbidden_modules =
+    xic_extractor.alignment.cid_nl_grouping
+    xic_extractor.alignment.cell_observation.cid_nl_evidence
+    xic_extractor.alignment.backfill.cid_nl_evidence
+# Existing CID-NL record admission binds interpreters; shared algorithms do not.
+allow_indirect_imports = True

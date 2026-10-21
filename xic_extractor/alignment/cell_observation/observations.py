@@ -10,13 +10,12 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillPlanningPosition,
 )
-from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
-    resolve_cid_nl_cell_evidence,
-    resolve_cid_nl_recovered_evidence,
-)
 from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
+)
+from xic_extractor.alignment.cell_observation.method_evidence import (
+    FinalCellEvidenceState,
 )
 from xic_extractor.alignment.cell_observation.records import (
     CellObservationContent,
@@ -75,15 +74,6 @@ _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     serialization_format=SERIALIZATION_FORMAT,
 )
 
-FinalCellEvidenceState: TypeAlias = Literal[
-    "direct_observation",
-    "ms1_only_backfill_observation",
-    "unresolved",
-    "rejected_observation",
-    "searched_no_observation",
-    "unavailable",
-    "not_searched",
-]
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
     "searched_no_observation",
@@ -314,8 +304,8 @@ def _compose_final_group_cell_observation_population(
                     states = ("unresolved",)
                 else:
                     states = (
-                        resolve_cid_nl_recovered_evidence(
-                            recovered.method_assessment, recovered.peak_hypothesis
+                        recovered.method_evidence.recovered_state(
+                            recovered.peak_hypothesis
                         ),
                     )
             elif not associations:
@@ -453,7 +443,6 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "CrossSample successor dropped the exact source member evidence"
         )
-    assessment = source_cell.method_assessment
     if source_cell.content.unassigned_support:
         if final_member is not None:
             raise CellObservationContractError(
@@ -491,8 +480,8 @@ def _derive_lane_evidence_state(
                 "final CrossSample member cannot carry a HOLD or REJECT method lane"
             )
         return "unresolved"
-    state = resolve_cid_nl_cell_evidence(
-        assessment, source_cell.peak_observation, source_cell.peak_hypothesis
+    state = source_cell.method_evidence.local_state(
+        source_cell.peak_observation, source_cell.peak_hypothesis
     )
     if state == "direct_observation":
         if final_member is None:
@@ -505,7 +494,7 @@ def _derive_lane_evidence_state(
             canonical_sample=canonical_sample,
             terminal_variant="observed",
             terminal_hypothesis=source_cell.peak_hypothesis,
-            method_assessment=assessment,
+            method_evidence=source_cell.method_evidence,
             peak_observation=source_cell.peak_observation,
             peak_hypothesis=source_cell.peak_hypothesis,
         )

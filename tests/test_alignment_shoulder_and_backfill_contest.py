@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -122,6 +123,7 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
         config=_CONFIG,
         sample_universe=frozenset(owner.sample_stem for owner in owners),
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     by_rt = {round(group.family_center_rt, 1): group for group in groups}
     assert set(by_rt) == {8.6, 9.0}
@@ -217,6 +219,7 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
         config=_CONFIG,
         sample_universe=frozenset({"S1", "S2", "S3", "S4"}),
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     s1 = _sample_id(owners[0])
     s4 = "test-sample:S4"
@@ -246,6 +249,7 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
         config=_CONFIG,
         sample_universe=frozenset({"S1", "S2", "S3"}),
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -272,6 +276,7 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
         config=_CONFIG,
         sample_universe=frozenset({"S1", "S2", "S3"}),
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -363,6 +368,7 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
         config=_CONFIG,
         sample_universe=frozenset(owner.sample_stem for owner in owners),
         rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(groups) == 2
     assert all(group.disposition == "established" for group in groups)

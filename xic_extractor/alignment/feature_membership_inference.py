@@ -12,18 +12,6 @@ from typing import Literal, cast
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from xic_extractor.alignment.cid_nl_grouping import (
-    CidNlFeatureEnvelope,
-    cid_nl_composition_index_key,
-    cid_nl_index_queries,
-    cid_nl_mass_center,
-    cid_nl_mass_fraction,
-    cid_nl_pair_mass_fraction,
-    grouping_chemistry_key,
-    has_cid_nl_composition,
-    has_scalar_cid_nl_identity,
-    owner_uncertainty_reason,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.edge_scoring import (
     OwnerEdgeEvidence,
@@ -32,8 +20,10 @@ from xic_extractor.alignment.edge_scoring import (
 )
 from xic_extractor.alignment.grouping_evidence import (
     envelope_fraction,
+    owner_uncertainty_reason,
     peak_shape_union_conflict,
 )
+from xic_extractor.alignment.grouping_rules import GroupingRules, MethodFeatureEnvelope
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -379,12 +369,16 @@ class _FeatureTrack:
     sample_stems: set[str]
     precursor_min: float
     precursor_max: float
-    method: CidNlFeatureEnvelope
+    method: MethodFeatureEnvelope
     shape_members: list[SampleLocalMS1Owner]
 
     @classmethod
     def from_owner(
-        cls, owner: SampleLocalMS1Owner, *, direction: DecisionDirection
+        cls,
+        owner: SampleLocalMS1Owner,
+        *,
+        rules: GroupingRules,
+        direction: DecisionDirection,
     ) -> _FeatureTrack:
         return cls(
             key=f"{direction}:{owner.owner_id}",
@@ -393,7 +387,7 @@ class _FeatureTrack:
             sample_stems={owner.sample_stem},
             precursor_min=owner.precursor_mz,
             precursor_max=owner.precursor_mz,
-            method=CidNlFeatureEnvelope.from_owner(owner),
+            method=rules.feature_envelope(owner),
             shape_members=[owner] if owner.peak_shape is not None else [],
         )
 
@@ -447,23 +441,24 @@ class _FeatureIndex:
         self,
         owner: SampleLocalMS1Owner,
         *,
+        rules: GroupingRules,
         config: AlignmentConfig,
         counts: Counter[str],
     ) -> set[str]:
-        result: set[str] | None = None
-        for key, value, tolerance in cid_nl_index_queries(owner, config):
-            matches = self._matches(key, value, tolerance, counts)
-            result = matches if result is None else result.intersection(matches)
-            if not result:
-                break
-        result = result or set()
-        if composition_key := cid_nl_composition_index_key(owner):
-            result.update(
-                self._matches(
-                    composition_key, owner.precursor_mz, config.max_ppm, counts
+        candidates: set[str] = set()
+        for queries in rules.index_query_alternatives(owner, config):
+            matches: set[str] | None = None
+            for key, value, tolerance in queries:
+                axis_matches = self._matches(key, value, tolerance, counts)
+                matches = (
+                    axis_matches
+                    if matches is None
+                    else matches.intersection(axis_matches)
                 )
-            )
-        return result
+                if not matches:
+                    break
+            candidates.update(matches or ())
+        return candidates
 
     def _matches(
         self,
@@ -507,6 +502,7 @@ class _DirectionalResult:
 def infer_feature_memberships(
     owners: Sequence[SampleLocalMS1Owner],
     *,
+    rules: GroupingRules,
     config: AlignmentConfig,
     rt_frame: RtFrame,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
@@ -539,15 +535,11 @@ def infer_feature_memberships(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
     )
     trajectories = _membership_trajectories(
-        ordinary, peak_trajectories or PeakTrajectories(), config
+        ordinary, peak_trajectories or PeakTrajectories(), config, rules=rules
     )
-    trajectory_seeds = _trajectory_seeds(ordinary, trajectories, config)
+    trajectory_seeds = _trajectory_seeds(ordinary, trajectories, config, rules=rules)
 
-    # Composition can bridge scalar neutral-loss tags and retains its separate
-    # membership contract.
-    use_directional = bootstrap or any(
-        has_cid_nl_composition(owner) for owner in ordinary
-    )
+    use_directional = bootstrap or rules.requires_directional_membership(ordinary)
     if use_directional:
         seed_by_owner = {
             owner_id: index
@@ -563,6 +555,7 @@ def infer_feature_memberships(
             counts=counts,
             seed_by_owner=seed_by_owner,
             trajectories=trajectories,
+            rules=rules,
         )
         reverse = _directional_inference(
             ordinary,
@@ -572,6 +565,7 @@ def infer_feature_memberships(
             counts=counts,
             seed_by_owner=seed_by_owner,
             trajectories=trajectories,
+            rules=rules,
         )
         inferred_groups = _consensus_groups(
             ordinary, forward, reverse, counts, seeded_owner_ids=seed_by_owner.keys()
@@ -588,6 +582,7 @@ def infer_feature_memberships(
             counts=counts,
             trajectory_seeds=trajectory_seeds,
             trajectories=trajectories,
+            rules=rules,
         )
         algorithm = "whole_window_peak_trajectories"
         objective = "ordered_pattern_and_local_rt_mass_evidence_in_one_membership_graph"
@@ -619,10 +614,12 @@ def _membership_trajectories(
     owners: Sequence[SampleLocalMS1Owner],
     geometry: PeakTrajectories,
     config: AlignmentConfig,
+    *,
+    rules: GroupingRules,
 ) -> PeakTrajectories:
     """Withdraw only pattern membership claims contradicted by direct peaks.
 
-    Two disjoint, co-observed scalar owners can distinguish method envelopes.
+    Two disjoint, co-observed method-approved owners can distinguish envelopes.
     If a track spans members compatible exclusively with opposite sides, that
     track cannot authorize a common Feature. Missing or ambiguous evidence is
     not a contradiction; RT distance and shape similarity do not decide it.
@@ -636,14 +633,14 @@ def _membership_trajectories(
     supported = {
         owner.owner_id: owner
         for owner in owners
-        if has_scalar_cid_nl_identity(owner)
-        and not owner_uncertainty_reason(owner, config)
+        if rules.trajectory_witness_eligible(owner)
+        and not owner_uncertainty_reason(owner, config, rules=rules)
     }
     by_sample_chemistry: dict[
         tuple[str, tuple[str, str]], list[SampleLocalMS1Owner]
     ] = defaultdict(list)
     for owner in supported.values():
-        key = owner.sample_stem, grouping_chemistry_key(owner)
+        key = owner.sample_stem, rules.chemistry_key(owner)
         by_sample_chemistry[key].append(owner)
     witnesses = []
     for sample_owners in by_sample_chemistry.values():
@@ -665,7 +662,9 @@ def _membership_trajectories(
     # it cannot disambiguate the two direct peaks for this witness rule.
     anchors = {
         owner_id: _FeatureTrack.from_owner(
-            replace(supported[owner_id], peak_shape=None), direction="window"
+            replace(supported[owner_id], peak_shape=None),
+            direction="window",
+            rules=rules,
         )
         for owner_id in {owner_id for pair in witnesses for owner_id in pair}
     }
@@ -715,6 +714,8 @@ def _trajectory_seeds(
     owners: Sequence[SampleLocalMS1Owner],
     correspondence: PeakTrajectories | None,
     config: AlignmentConfig,
+    *,
+    rules: GroupingRules,
 ) -> tuple[FeatureMembershipGroup, ...]:
     if correspondence is None:
         return ()
@@ -727,7 +728,7 @@ def _trajectory_seeds(
         if not members:
             continue
         if (
-            len({grouping_chemistry_key(member) for member in members}) != 1
+            len({rules.chemistry_key(member) for member in members}) != 1
             or len({member.sample_stem for member in members}) != len(members)
             or not within_ppm(
                 max(member.precursor_mz for member in members),
@@ -743,7 +744,7 @@ def _trajectory_seeds(
             continue
         owner_ids = tuple(member.owner_id for member in members)
         assigned = len(members) >= 2 and not any(
-            owner_uncertainty_reason(member, config) for member in members
+            owner_uncertainty_reason(member, config, rules=rules) for member in members
         )
         reason = (
             "ordered_ms1_pattern_links_existing_owners"
@@ -870,6 +871,7 @@ def _known_identity_groups(
 def _directional_inference(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
+    rules: GroupingRules,
     direction: DecisionDirection,
     config: AlignmentConfig,
     rt_frame: RtFrame,
@@ -947,7 +949,7 @@ def _directional_inference(
         for owner in sample_owners:
             if owner.owner_id in owner_feature:
                 continue
-            weak_reason = owner_uncertainty_reason(owner, config)
+            weak_reason = owner_uncertainty_reason(owner, config, rules=rules)
             if weak_reason:
                 feature_key = f"{direction}:{owner.owner_id}"
                 place(owner.owner_id, feature_key)
@@ -966,7 +968,9 @@ def _directional_inference(
                 continue
             supported_rows.append(owner)
             counts["index_queries"] += 1
-            feature_keys = index.candidates(owner, config=config, counts=counts)
+            feature_keys = index.candidates(
+                owner, config=config, counts=counts, rules=rules
+            )
             feasible_keys = {
                 key
                 for key in feature_keys
@@ -987,6 +991,7 @@ def _directional_inference(
                     config=config,
                     rt_frame=rt_frame,
                     counts=counts,
+                    rules=rules,
                 )
                 for feature_key in sorted(feature_keys)
             )
@@ -1050,7 +1055,7 @@ def _directional_inference(
                 place(owner.owner_id, assigned_key)
                 continue
 
-            feature = _FeatureTrack.from_owner(owner, direction=direction)
+            feature = _FeatureTrack.from_owner(owner, direction=direction, rules=rules)
             tracks[feature.key] = feature
             index.add(feature)
             place(owner.owner_id, feature.key)
@@ -1087,6 +1092,7 @@ def _directional_inference(
 def _window_inference(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
+    rules: GroupingRules,
     config: AlignmentConfig,
     rt_frame: RtFrame,
     counts: Counter[str],
@@ -1123,13 +1129,13 @@ def _window_inference(
     weak = {
         owner.owner_id: reason
         for owner in owners
-        if (reason := owner_uncertainty_reason(owner, config))
+        if (reason := owner_uncertainty_reason(owner, config, rules=rules))
     }
     shape_conflicts: dict[str, set[str]] = defaultdict(set)
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in eligible:
-        by_chemistry[grouping_chemistry_key(owner)].append(owner)
+        by_chemistry[rules.chemistry_key(owner)].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):
@@ -1184,6 +1190,7 @@ def _window_inference(
                 trajectories=trajectories,
                 counts=counts,
                 shape_conflicts=shape_conflicts,
+                rules=rules,
             )
             counts["supported_candidate_arcs"] += len(arcs)
             ambiguous_window, ambiguous_arcs = _ambiguous_window_edges(
@@ -1241,6 +1248,7 @@ def _window_inference(
                 counts=counts,
                 trajectories=trajectories,
                 shape_conflicts=shape_conflicts,
+                rules=rules,
             )
             if rt_frame.has_coordinates and len(known_orders) == len(samples):
                 _bridge_separated_window_bands(
@@ -1251,6 +1259,7 @@ def _window_inference(
                     config=config,
                     counts=counts,
                     trajectories=trajectories,
+                    rules=rules,
                 )
             final_components.extend(
                 tuple(sorted(owner.owner_id for owner in group))
@@ -1274,6 +1283,7 @@ def _window_inference(
 def _window_candidate_edges(
     window: Sequence[SampleLocalMS1Owner],
     *,
+    rules: GroupingRules,
     config: AlignmentConfig,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
@@ -1355,7 +1365,7 @@ def _window_candidate_edges(
                 )
                 / config.max_ppm
             )
-            method_fraction = cid_nl_pair_mass_fraction(left, right, config)
+            method_fraction = rules.pair_mass_fraction(left, right, config)
             cost = (
                 (0.20 if sparse_fallback else 0.0)
                 + 0.70
@@ -1542,6 +1552,7 @@ def rt_trend_supports_union(
 def _bridge_separated_window_bands(
     members: dict[str, list[SampleLocalMS1Owner]],
     *,
+    rules: GroupingRules,
     weak: Mapping[str, str],
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
@@ -1576,9 +1587,7 @@ def _bridge_separated_window_bands(
             key: statistics.median(owner.precursor_mz for owner in group)
             for key, group in bands.items()
         }
-        method_centers = {
-            key: cid_nl_mass_center(group) for key, group in bands.items()
-        }
+        method_centers = {key: rules.mass_center(group) for key, group in bands.items()}
         offers: dict[str, list[tuple[float, str]]] = defaultdict(list)
         keys = sorted(bands)
         for index, left in enumerate(keys):
@@ -1615,7 +1624,7 @@ def _bridge_separated_window_bands(
                 precursor_fraction = (
                     absolute_ppm_error(left_mz, right_mz) / config.max_ppm
                 )
-                method_fraction = cid_nl_mass_fraction(
+                method_fraction = rules.mass_fraction(
                     method_centers[left], method_centers[right], config
                 )
                 cost = (
@@ -1651,6 +1660,7 @@ def _window_band_candidate(
     key: str,
     band: tuple[SampleLocalMS1Owner, ...],
     *,
+    rules: GroupingRules,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
     config: AlignmentConfig,
@@ -1707,8 +1717,8 @@ def _window_band_candidate(
     precursor_fraction = (
         absolute_ppm_error(owner.precursor_mz, precursor_median) / config.max_ppm
     )
-    method_fraction = cid_nl_mass_fraction(
-        cid_nl_mass_center((owner,)), cid_nl_mass_center(band), config
+    method_fraction = rules.mass_fraction(
+        rules.mass_center((owner,)), rules.mass_center(band), config
     )
     cost = min(
         0.999999,
@@ -1731,6 +1741,7 @@ def _window_band_candidate(
 def _assign_window_singletons(
     members: dict[str, list[SampleLocalMS1Owner]],
     *,
+    rules: GroupingRules,
     weak: dict[str, str],
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
@@ -1766,6 +1777,7 @@ def _assign_window_singletons(
                 trends=band_trends.get(key),
                 trajectories=trajectories,
                 shape_conflicts=shape_conflicts,
+                rules=rules,
             )
             if candidate is not None:
                 row_candidates.append(candidate)
@@ -1843,6 +1855,7 @@ def supports_existing_feature(
     owner: SampleLocalMS1Owner,
     members: tuple[SampleLocalMS1Owner, ...],
     *,
+    rules: GroupingRules,
     config: AlignmentConfig,
     rt_frame: RtFrame,
 ) -> bool:
@@ -1862,15 +1875,16 @@ def supports_existing_feature(
                 orders=injection_order,
                 corrected_rt=corrected_rt,
                 config=config,
+                rules=rules,
             )
             is not None
         )
     ordered = sorted(members, key=lambda item: (item.sample_stem, item.owner_id))
-    track = _FeatureTrack.from_owner(ordered[0], direction="forward")
+    track = _FeatureTrack.from_owner(ordered[0], direction="forward", rules=rules)
     for member in ordered[1:]:
         track.add(member)
     candidate = _compare_owner_to_feature(
-        owner, track, config=config, rt_frame=rt_frame, counts=Counter()
+        owner, track, config=config, rt_frame=rt_frame, counts=Counter(), rules=rules
     )
     return candidate.cost is not None and candidate.cost < _UNASSIGNED_COST
 
@@ -1879,6 +1893,7 @@ def _compare_owner_to_feature(
     owner: SampleLocalMS1Owner,
     track: _FeatureTrack,
     *,
+    rules: GroupingRules,
     config: AlignmentConfig,
     rt_frame: RtFrame,
     counts: Counter[str],
@@ -1896,7 +1911,13 @@ def _compare_owner_to_feature(
     for witness in witnesses:
         left, right = sorted((owner, witness), key=lambda item: item.owner_id)
         evidence.append(
-            evaluate_owner_edge(left, right, config=config, rt_frame=rt_frame)
+            evaluate_owner_edge(
+                left,
+                right,
+                config=config,
+                rt_frame=rt_frame,
+                method_evidence=rules.pair_evidence(left, right, config),
+            )
         )
         counts["owner_edge_evaluations"] += 1
     supported = tuple(

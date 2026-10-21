@@ -265,6 +265,7 @@ def owner_edge_evidence() -> OwnerEdgeEvidence:
         duplicate_context="none",
         score=100,
         reason="strong_edge: score=100",
+        failure_allows_rt_continuity=False,
     )
 
 

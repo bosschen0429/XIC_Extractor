@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast, final
 
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -256,6 +257,7 @@ def bootstrap_cid_nl_initial_population(
         operation_counts_sink=operation_counts_sink,
         bootstrap=True,
         peak_trajectories=correspondence,
+        rules=CID_NL_GROUPING_RULES,
     )
     if not provisional_groups and not searched_no_observation:
         raise GroupingBootstrapError(

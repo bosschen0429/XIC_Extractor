@@ -15,6 +15,7 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.cell_observation.group_context import (
     select_cid_nl_group_backfill_subject,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -174,7 +175,10 @@ def plan_subject_cid_nl_backfills(
     if not support_owners:
         return ()
     groups = construct_cross_sample_peak_group_hypotheses(
-        tuple(support_owners), config=alignment_config, rt_frame=SampleRtFrame()
+        tuple(support_owners),
+        config=alignment_config,
+        rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     return tuple(
         CidNlBackfillQuestion(sample_id, group, method_subject)
