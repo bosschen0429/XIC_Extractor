@@ -5,7 +5,8 @@
   const state = {
     config: null,
     targets: [],
-    samples: [],
+    sampleSets: { targeted: null, untargeted: null },
+    editing: "untargeted",
     method: null,
     draft: null,
     analysis: { job: null, results: {} },
@@ -58,6 +59,35 @@
     inspector: "Inspector 匯出",
   };
   const jobPage = { targeted: "targeted" };
+  const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
+  // One sample step for both flows; edits confirm the RAW folder's metadata.
+  const samplePages = {
+    targeted: {
+      prefix: "t-",
+      sequence: "t-injection_order_source",
+      rawDir: "t-data_dir",
+      dll: "t-dll_dir",
+      output: "t-output_dir",
+      step: 2,
+    },
+    untargeted: {
+      prefix: "",
+      sequence: "sequence-source",
+      rawDir: "u-raw_dir",
+      dll: "u-dll_dir",
+      output: "u-output_dir",
+      step: 4,
+    },
+  };
+  const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
+  const emptySamples = () => ({
+    rows: [],
+    overview: null,
+    suggestions: {},
+    source: "",
+    earlier: [],
+  });
+  state.sampleSets = { targeted: emptySamples(), untargeted: emptySamples() };
   async function api(path, values) {
     const response = await fetch(path, {
       method: values === undefined ? "GET" : "POST",
@@ -322,16 +352,7 @@
           "target-import",
         ),
       );
-      const order = $("t-injection_order_source")?.value.trim();
-      items.push(
-        checkItem(
-          "info",
-          "上機資訊（選用）",
-          order ? pathTail(order) : "未提供；依 RAW 檔案資訊判斷",
-          "t-injection_order_source",
-          Boolean(order),
-        ),
-      );
+      items.push(...sampleItems("targeted"));
     } else {
       const mode = currentMode();
       if (mode === "discovery_only")
@@ -357,17 +378,7 @@
           "u-preset",
         ),
       );
-      if (mode !== "discovery_only")
-        items.push(
-          checkItem(
-            "info",
-            "樣本與上機資訊（選用）",
-            state.samples.length
-              ? `${state.samples.length} 個樣本已讀取`
-              : "尚未讀取；可在步驟 4 讀取並指定角色",
-            "samples-refresh",
-          ),
-        );
+      if (mode !== "discovery_only") items.push(...sampleItems("untargeted"));
     }
     const list = $(`${kind === "targeted" ? "target" : "untargeted"}-checklist`);
     list.replaceChildren(
@@ -388,6 +399,74 @@
         return li;
       }),
     );
+  }
+  // Counts come from the server's group owner; this only words them.
+  function sampleItems(page) {
+    const set = state.sampleSets[page];
+    const refresh = sampleId(page, "samples-refresh");
+    const edit = sampleId(page, "samples-edit");
+    if (!set.rows.length) {
+      const order = $(samplePages[page].sequence)?.value.trim();
+      return [
+        checkItem(
+          "info",
+          "樣本與上機資訊（選用）",
+          order
+            ? `上機資訊 ${pathTail(order)}；可讀取 RAW 後確認角色、組別與排除`
+            : "尚未讀取；可讀取 RAW 後確認角色、組別與排除",
+          refresh,
+        ),
+      ];
+    }
+    const items = [
+      checkItem("ok", "樣本與上機資訊", `${set.rows.length} 個樣本已讀取`, edit),
+    ];
+    const overview = set.overview;
+    if (!overview) return items;
+    items.push(
+      checkItem(
+        "info",
+        "各組樣本數",
+        overview.groups.map((g) => `${g.group} ${g.count}`).join(" · ") ||
+          "沒有要分析的樣本",
+        edit,
+      ),
+    );
+    if (overview.unassigned_study_samples)
+      items.push(
+        checkItem(
+          "todo",
+          "未標組別的研究樣本",
+          `${overview.unassigned_study_samples} 個，會歸到 Other`,
+          edit,
+        ),
+      );
+    if (overview.single_sample_groups.length)
+      items.push(
+        checkItem(
+          "todo",
+          "只有 1 個樣本的組別",
+          overview.single_sample_groups.join("、"),
+          edit,
+        ),
+      );
+    if (overview.excluded.length) {
+      const reasons = new Map();
+      for (const row of overview.excluded) {
+        const reason = row.reason || "未填原因";
+        reasons.set(reason, (reasons.get(reason) || 0) + 1);
+      }
+      items.push(
+        checkItem(
+          "info",
+          "排除的樣本",
+          `${overview.excluded.length} 個：` +
+            [...reasons].map(([reason, n]) => `${reason} ×${n}`).join("、"),
+          edit,
+        ),
+      );
+    }
+    return items;
   }
   function focusField(id) {
     const node = $(id);
@@ -435,6 +514,11 @@
       }
       if (spec.scope === "environment")
         pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+      if (spec.key === "injection_order_source") {
+        const value = String(values[spec.key] || "");
+        $(samplePages.targeted.sequence).value = isTemplatePath(value) ? "" : value;
+        continue;
+      }
       pathField(data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
@@ -717,7 +801,8 @@
       values.overrides[control.key] =
         input.type === "number" ? Number(input.value) : input.value;
     }
-    values.samples = state.samples.length ? state.samples : null;
+    const rows = state.sampleSets.untargeted.rows;
+    values.samples = rows.length ? rows : null;
     if (state.method) {
       values.preset_snapshot = structuredClone(state.method.draft);
       const snapshotOverrides = values.preset_snapshot.overrides;
@@ -888,14 +973,35 @@
     }
     select.value = current;
   }
-  function renderRoleSummary() {
+  function mountSampleSteps() {
+    for (const [page, spec] of Object.entries(samplePages)) {
+      const section = document.querySelector(`[data-sample-step="${page}"]`);
+      section.replaceChildren($("sample-step-template").content.cloneNode(true));
+      for (const node of section.querySelectorAll("[data-part]"))
+        node.id =
+          node.dataset.part === "sequence-source"
+            ? spec.sequence
+            : sampleId(page, node.dataset.part);
+      $(sampleId(page, "step-no")).textContent = spec.step;
+      $(sampleId(page, "sequence-label")).htmlFor = spec.sequence;
+      $(sampleId(page, "sequence-browse")).dataset.browse = spec.sequence;
+    }
+  }
+  const sourceNotes = {
+    confirmed:
+      "使用這個 RAW 資料夾已確認的樣品資訊。要改用新的上機資訊，請按「匯入上機資訊」。",
+    sequence: "樣品資訊來自上機資訊；修改後會存成這個 RAW 資料夾的樣品資訊。",
+  };
+  function renderRoleSummary(page) {
+    const set = state.sampleSets[page];
     const counts = new Map();
-    for (const sample of state.samples)
+    for (const sample of set.rows)
       counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
-    $("role-summary").replaceChildren(
-      ...(state.samples.length
+    const excluded = set.rows.filter((row) => row.excluded).length;
+    $(sampleId(page, "role-summary")).replaceChildren(
+      ...(set.rows.length
         ? []
-        : [el("span", "讀取 RAW 後可檢視樣本並指定角色。", "subtle")]),
+        : [el("span", "讀取 RAW 後可檢視樣本，並指定角色、組別與排除。", "subtle")]),
       ...roles
         .filter((role) => counts.has(role))
         .map((role) =>
@@ -905,22 +1011,61 @@
             `chip${role === "study_sample" ? " accent" : ""}`,
           ),
         ),
+      ...(excluded ? [el("span", `排除 ${excluded}`, "chip warn")] : []),
     );
-    $("samples-count").textContent = state.samples.length
-      ? `${state.samples.length} 個樣本`
+    $(sampleId(page, "samples-count")).textContent = set.rows.length
+      ? `${set.rows.length} 個樣本`
       : "尚未讀取樣本";
-    checklist("untargeted");
+    $(sampleId(page, "samples-source")).textContent = set.rows.length
+      ? sourceNotes[set.source] || ""
+      : "";
+    checklist(page);
+  }
+  function applySampleResult(page, result) {
+    state.sampleSets[page] = {
+      rows: result.samples,
+      overview: result.overview || null,
+      suggestions: result.group_suggestions || {},
+      source: result.summary?.annotation_source || "",
+      earlier: result.summary?.earlier_annotations || [],
+    };
+    renderSampleSummary(result.summary, sampleId(page, "samples"));
+    renderRoleSummary(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  function clearSamples(page) {
+    state.sampleSets[page] = emptySamples();
+    $(sampleId(page, "samples-summary")).textContent = "";
+    $(sampleId(page, "samples-conflicts")).hidden = true;
+    renderRoleSummary(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  function sampleCell(control) {
+    const td = el("td");
+    td.append(control);
+    return td;
   }
   function renderSamples() {
-    renderRoleSummary();
+    const page = state.editing;
+    const set = state.sampleSets[page];
+    renderRoleSummary(page);
+    $("sample-group-options").replaceChildren(
+      ...(set.overview?.groups || [])
+        .filter((entry) => entry.group !== "Other")
+        .map((entry) => {
+          const option = el("option");
+          option.value = entry.group;
+          return option;
+        }),
+    );
     const filter = $("sample-filter").value.trim().toLowerCase();
     const body = $("sample-rows");
     body.replaceChildren();
     let shown = 0;
-    for (const row of state.samples) {
+    for (const row of set.rows) {
       if (
         filter &&
-        ![row.raw_stem, row.sample_name, row.batch_id]
+        ![row.raw_stem, row.sample_name, row.batch_id, row.group]
           .join(" ")
           .toLowerCase()
           .includes(filter)
@@ -928,13 +1073,12 @@
         continue;
       shown += 1;
       const tr = el("tr");
+      if (row.excluded) tr.className = "excluded";
       const selected = el("input");
       selected.type = "checkbox";
       selected.dataset.sample = row.raw_stem;
       selected.setAttribute("aria-label", `選取 ${row.raw_stem}`);
-      const check = el("td");
-      check.append(selected);
-      tr.append(check);
+      tr.append(sampleCell(selected));
       tr.append(el("td", row.raw_stem ?? "—", "mono"));
       tr.append(el("td", row.batch_id ?? "—"));
       tr.append(el("td", row.injection_order ?? "—", "num"));
@@ -944,41 +1088,100 @@
       roleOptions(select, row.sample_role);
       select.addEventListener("change", () => {
         row.sample_role = select.value;
-        renderRoleSummary();
-        act(persistSamples);
+        act(() => persistSamples(page));
       });
-      const td = el("td");
-      td.append(select);
-      tr.append(td);
+      tr.append(sampleCell(select));
+      const group = el("input");
+      group.value = row.group || "";
+      group.setAttribute("list", "sample-group-options");
+      group.setAttribute("aria-label", `${row.raw_stem} 組別`);
+      group.placeholder = row.sample_role === "study_sample" ? "Other" : "";
+      group.addEventListener("change", () => {
+        row.group = group.value.trim();
+        act(() => persistSamples(page));
+      });
+      tr.append(sampleCell(group));
+      const excluded = el("input");
+      excluded.type = "checkbox";
+      excluded.checked = Boolean(row.excluded);
+      excluded.setAttribute("aria-label", `${row.raw_stem} 排除`);
+      const reason = el("input");
+      reason.value = row.exclusion_reason || "";
+      reason.disabled = !row.excluded;
+      reason.placeholder = row.excluded ? "選填" : "";
+      reason.setAttribute("aria-label", `${row.raw_stem} 排除原因`);
+      excluded.addEventListener("change", () => {
+        row.excluded = excluded.checked;
+        if (!row.excluded) row.exclusion_reason = "";
+        renderSamples();
+        act(() => persistSamples(page));
+      });
+      reason.addEventListener("change", () => {
+        row.exclusion_reason = reason.value.trim();
+        act(() => persistSamples(page));
+      });
+      tr.append(sampleCell(excluded), sampleCell(reason));
       body.append(tr);
     }
-    if (!state.samples.length) {
+    if (!set.rows.length) {
       const tr = el("tr");
       const td = el("td", "尚未讀取樣本。關閉此視窗後按「讀取 RAW 樣本」。");
-      td.colSpan = 6;
+      td.colSpan = 9;
       td.className = "subtle";
       tr.append(td);
       body.append(tr);
     }
     $("sample-select-all").checked = false;
     $("sample-editor-count").textContent = filter
-      ? `顯示 ${shown} ／ 共 ${state.samples.length} 個樣本`
-      : `共 ${state.samples.length} 個樣本`;
+      ? `顯示 ${shown} ／ 共 ${set.rows.length} 個樣本`
+      : `共 ${set.rows.length} 個樣本`;
+  }
+  function selectedSamples() {
+    const selected = new Set(
+      [...$("sample-rows").querySelectorAll("input[data-sample]:checked")].map(
+        (node) => node.dataset.sample,
+      ),
+    );
+    if (!selected.size) ui.toast("請先勾選要套用的樣本。");
+    return state.sampleSets[state.editing].rows.filter((row) =>
+      selected.has(row.raw_stem),
+    );
+  }
+  function applyToSelected(change) {
+    const rows = selectedSamples();
+    if (!rows.length) return;
+    rows.forEach(change);
+    renderSamples();
+    act(() => persistSamples(state.editing));
   }
   // Edits confirm the folder's sample metadata at once; both flows read it.
-  async function persistSamples() {
-    if (!state.samples.length) return;
-    await api("/api/samples/save", {
-      raw_dir: $("u-raw_dir").value,
-      samples: state.samples,
+  async function persistSamples(page) {
+    const set = state.sampleSets[page];
+    if (!set.rows.length) return;
+    const rawDir = $(samplePages[page].rawDir).value;
+    const saved = await api("/api/samples/save", {
+      raw_dir: rawDir,
+      samples: set.rows,
     });
+    set.overview = saved.overview;
+    set.source = "confirmed";
+    // The other flow on the same folder shows the same confirmed rows.
+    for (const [other, spec] of Object.entries(samplePages))
+      if (other !== page && $(spec.rawDir).value === rawDir) {
+        state.sampleSets[other] = set;
+        renderRoleSummary(other);
+      }
+    renderRoleSummary(page);
+    if (state.editing === page && $("sample-editor").open) renderSamples();
   }
-  async function scanSamples() {
-    const values = untargetedValues();
+  async function scanSamples(page, importSequence = false) {
+    const spec = samplePages[page];
     await startJob("samples", {
-      raw_dir: values.raw_dir,
-      dll_dir: values.dll_dir,
-      sequence_source: values.sequence_source,
+      page,
+      raw_dir: $(spec.rawDir).value,
+      dll_dir: $(spec.dll).value,
+      sequence_source: $(spec.sequence).value,
+      import_sequence: importSequence,
     });
   }
 
@@ -1013,7 +1216,7 @@
   function renderActivity() {
     const job = state.analysis.job;
     const pill = $("activity");
-    const page = jobPage[job?.kind] || "untargeted";
+    const page = pageOf(job);
     const recentlyFinished =
       state.seenAt && Date.now() - state.seenAt < 20000;
     const visible =
@@ -1039,7 +1242,7 @@
     $("target-samples-review").hidden = !sampleSummary;
     if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
-    card.hidden = !job || (jobPage[job.kind] || "untargeted") !== state.view;
+    card.hidden = !job || pageOf(job) !== state.view;
     lock();
     renderActivity();
     if (!job) return;
@@ -1108,11 +1311,10 @@
     if (job.status === "succeeded") {
       if (job.kind === "samples") {
         const result = state.analysis.results.samples;
-        state.samples = result.samples;
-        renderSamples();
-        renderSampleSummary(result.summary);
-        dirty("untargeted");
-        done(`已讀取 ${state.samples.length} 個樣本。`);
+        const page = result.page || "untargeted";
+        applySampleResult(page, result);
+        if (page === "untargeted") dirty("untargeted");
+        done(`已讀取 ${result.samples.length} 個樣本。`);
       } else if (job.kind === "quality")
         done(
           `Feature Quality 匯出完成：${state.analysis.results.quality.output_dir}`,
@@ -1535,6 +1737,7 @@
       $("t-injection_order_source").value = "";
       state.config.settings.data_dir = "";
       state.config.settings.injection_order_source = "";
+      clearSamples("targeted");
       $("target-result").hidden = true;
       dirty("targeted");
       focusField("t-data_dir");
@@ -1543,6 +1746,7 @@
       if (event.target.id === "t-data_dir" && event.target.value !== event.target.dataset.batchPath) {
         $("t-injection_order_source").value = "";
         event.target.dataset.batchPath = event.target.value;
+        clearSamples("targeted");
       }
     });
     $("target-edit").onclick = () => {
@@ -1644,44 +1848,52 @@
           dirty("untargeted");
         }
       });
-    $("samples-refresh").onclick = () => act(scanSamples);
-    $("samples-import").onclick = () => act(scanSamples);
-    $("samples-edit").onclick = () => {
-      renderSamples();
-      $("sample-editor").showModal();
-    };
+    for (const [page, spec] of Object.entries(samplePages)) {
+      $(sampleId(page, "samples-refresh")).onclick = () =>
+        act(() => scanSamples(page));
+      $(sampleId(page, "samples-import")).onclick = () =>
+        act(() => scanSamples(page, true));
+      $(sampleId(page, "samples-edit")).onclick = () => {
+        state.editing = page;
+        renderSamples();
+        $("sample-editor").showModal();
+      };
+      $(sampleId(page, "samples-export")).onclick = () =>
+        act(async () => {
+          const path = await requestPath(
+            "匯出樣本資料 TSV / CSV",
+            `${$(spec.output).value}/sample_metadata.tsv`,
+          );
+          if (path) {
+            await api("/api/samples/export", {
+              samples: state.sampleSets[page].rows,
+              path,
+            });
+            done(`樣本資料已匯出：${path}`);
+          }
+        });
+      // A different 上機資訊 makes the loaded rows stale until read again.
+      $(spec.sequence).addEventListener("change", () => clearSamples(page));
+    }
     $("sample-filter").oninput = renderSamples;
     $("sample-select-all").onchange = () =>
       $("sample-rows")
         .querySelectorAll("input[type=checkbox]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
     roleOptions($("sample-bulk-role"), "study_sample");
-    $("sample-apply-role").onclick = () => {
-      const selected = new Set(
-        [...$("sample-rows").querySelectorAll("input:checked")].map(
-          (node) => node.dataset.sample,
-        ),
-      );
-      if (!selected.size) {
-        ui.toast("請先勾選要套用角色的樣本。");
-        return;
-      }
-      for (const row of state.samples)
-        if (selected.has(row.raw_stem))
-          row.sample_role = $("sample-bulk-role").value;
-      renderSamples();
-      act(persistSamples);
-    };
-    $("samples-export").onclick = () =>
-      act(async () => {
-        const path = await requestPath(
-          "匯出樣本資料 TSV / CSV",
-          `${$("u-output_dir").value}/sample_metadata.tsv`,
-        );
-        if (path) {
-          await api("/api/samples/export", { samples: state.samples, path });
-          done(`樣本資料已匯出：${path}`);
-        }
+    $("sample-apply-role").onclick = () =>
+      applyToSelected((row) => (row.sample_role = $("sample-bulk-role").value));
+    $("sample-apply-group").onclick = () =>
+      applyToSelected((row) => (row.group = $("sample-bulk-group").value.trim()));
+    $("sample-exclude").onclick = () =>
+      applyToSelected((row) => {
+        row.excluded = true;
+        row.exclusion_reason = $("sample-bulk-reason").value.trim();
+      });
+    $("sample-include").onclick = () =>
+      applyToSelected((row) => {
+        row.excluded = false;
+        row.exclusion_reason = "";
       });
     $("istd-reload").onclick = () => act(reloadIstd);
     $("u-targets_csv").addEventListener("change", () => act(reloadIstd));
@@ -1701,10 +1913,7 @@
           sampleRawDir = "";
           $("u-output_dir").value = "";
           $("sequence-source").value = "";
-          state.samples = [];
-          renderSamples();
-          $("samples-summary").textContent = "";
-          $("samples-conflicts").hidden = true;
+          clearSamples("untargeted");
           $("untargeted-result").hidden = true;
           if (id === "untargeted-clear") {
             $("u-targets_csv").value = "";
@@ -1720,10 +1929,7 @@
       sampleRawDir = nextRawDir;
       $("sequence-source").value = "";
       state.config.untargeted.sequence_source = "";
-      state.samples = [];
-      $("samples-summary").textContent = "";
-      $("samples-conflicts").hidden = true;
-      renderSamples();
+      clearSamples("untargeted");
       const name = $("u-raw_dir")
         .value.replace(/\\/g, "/")
         .replace(/\/$/, "")
@@ -1735,11 +1941,7 @@
           `${current ? current.replace(/(\/output)(?:\/[^/]+)?$/, "$1") : `${state.config.config_dir}/../output`}/${name}`;
       dirty("untargeted");
     });
-    $("sequence-source").addEventListener("change", () => {
-      state.samples = [];
-      renderSamples();
-      dirty("untargeted");
-    });
+    $("sequence-source").addEventListener("change", () => dirty("untargeted"));
     $("analysis-stop").onclick = () => act(stopJob);
     $("quality-form").onsubmit = (event) => {
       event.preventDefault();
@@ -1842,6 +2044,7 @@
     const response = await fetch("/assets/analysis.html");
     if (!response.ok) throw new Error("分析頁面無法載入。");
     $("analysis-root").innerHTML = await response.text();
+    mountSampleSteps();
     await api("/api/session");
     state.config = await api("/api/config");
     state.targets = state.config.targets;
@@ -1889,18 +2092,18 @@
     }
     bind();
     targetCount();
-    renderRoleSummary();
+    renderRoleSummary("targeted");
+    renderRoleSummary("untargeted");
     modeFields();
     state.analysis = state.config.analysis;
     const loadedSamples = state.analysis.results.samples;
+    const loadedPage = loadedSamples?.page || "untargeted";
+    const loadedSpec = samplePages[loadedPage];
     if (loadedSamples?.input_paths &&
-        loadedSamples.input_paths.raw_dir === $("u-raw_dir").value &&
-        loadedSamples.input_paths.dll_dir === $("u-dll_dir").value &&
-        loadedSamples.input_paths.sequence_source === $("sequence-source").value) {
-      state.samples = loadedSamples.samples;
-      renderSamples();
-      renderSampleSummary(loadedSamples.summary);
-    }
+        loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
+        loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
+        loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value)
+      applySampleResult(loadedPage, loadedSamples);
     renderResults();
     selectView(
       state.config.preferences.view ||

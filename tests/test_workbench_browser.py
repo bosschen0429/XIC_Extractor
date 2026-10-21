@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from tests.test_xic_inspector_api import _create_mock_db, _insert_link
-from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings, write_targets
+from xic_workbench.samples import sample_annotations_path
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -364,9 +366,9 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
 def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
     page = workbench
     expect(page.locator("#targeted-form .step-head h2")).to_have_text(
-        ["資料與輸出", "目標清單", "執行資源"]
+        ["資料與輸出", "樣本與上機資訊", "目標清單", "執行資源"]
     )
-    expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3"])
+    expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3", "4"])
     expect(page.locator("#target-method-state")).not_to_be_visible()
     page.locator("summary", has_text="處理策略與設定來源").click()
     expect(page.locator("#target-method-state")).to_have_text("共用 CID-NL 策略")
@@ -459,8 +461,13 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     page = workbench
     labels = page.locator("#targeted-data .path-line > label")
     expect(labels).to_have_text(
-        ["RAW 資料夾", "上機資訊", "輸出資料夾", "RawFileReader DLL 資料夾"]
+        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
     )
+    # 上機資訊 belongs to the sample step both flows share.
+    for step in ("targeted", "untargeted"):
+        expect(
+            page.locator(f'[data-sample-step="{step}"] .import-line > label')
+        ).to_have_text("上機資訊")
     expect(page.locator("#t-output_dir")).to_have_value(
         str(config_dir.parent / "output")
     )
@@ -2335,3 +2342,87 @@ def test_zero_result_history_discards_pending_query_feedback(
     expect(empty).to_contain_text("目標：ISTD")
     expect(empty).to_contain_text("優先檢閱")
     expect(page.locator("#status")).not_to_contain_text("Discarded query failure")
+
+
+def _placeholder_batch(raw_dir: Path, stems: tuple[str, ...]) -> None:
+    raw_dir.mkdir(exist_ok=True)
+    for minute, stem in enumerate(stems):
+        path = raw_dir / f"{stem}.raw"
+        path.write_bytes(b"")
+        os.utime(path, (1_767_000_000 + minute * 60,) * 2)
+
+
+def test_both_flows_confirm_groups_and_exclusions_before_a_run(
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("TumorBC1_DNA", "TumorBC2_DNA", "NormalBC1_DNA", "QC_1"))
+
+    # Targeted reads, edits and confirms the folder's sample metadata.
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("4 個樣本")
+    checklist = page.locator("#target-checklist")
+    expect(checklist).to_contain_text("未標組別的研究樣本3 個，會歸到 Other")
+    page.locator("#t-samples-edit").click()
+    editor = page.locator("#sample-editor")
+    for stem in ("TumorBC1_DNA", "TumorBC2_DNA"):
+        editor.get_by_label(f"選取 {stem}", exact=True).check()
+    page.locator("#sample-bulk-group").fill("Tumor")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        page.locator("#sample-apply-group").click()
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        editor.get_by_label("NormalBC1_DNA 組別", exact=True).fill(" normal ")
+        editor.get_by_label("NormalBC1_DNA 組別", exact=True).press("Tab")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).fill("clogged")
+        editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
+    page.keyboard.press("Escape")
+
+    expect(checklist).to_contain_text("各組樣本數Tumor 1 · normal 1 · QC 1")
+    expect(checklist).to_contain_text("只有 1 個樣本的組別Tumor、normal")
+    expect(checklist).to_contain_text("排除的樣本1 個：clogged ×1")
+    expect(checklist).not_to_contain_text("未標組別的研究樣本")
+    expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
+    saved = {
+        row.raw_stem: row
+        for row in load_sample_metadata(sample_annotations_path(config_dir, batch))
+    }
+    assert (saved["NormalBC1_DNA"].group, saved["TumorBC2_DNA"].excluded) == (
+        "normal",
+        True,
+    )
+
+    # Untargeted on the same folder reads the same confirmed metadata, even
+    # with a different 上機資訊 path entered.
+    _view(page, "untargeted")
+    page.locator("#u-raw_dir").fill(str(batch))
+    page.locator("#u-raw_dir").press("Tab")
+    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+    page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-count")).to_have_text("4 個樣本")
+    expect(page.locator("#samples-source")).to_contain_text("已確認的樣品資訊")
+    page.locator("#samples-edit").click()
+    expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).to_be_checked()
+    expect(editor.get_by_label("TumorBC1_DNA 組別", exact=True)).to_have_value("Tumor")
+    page.keyboard.press("Escape")
+    expect(page.locator("#untargeted-checklist")).to_contain_text(
+        "排除的樣本1 個：clogged ×1"
+    )
+
+    # The Targeted run reads the confirmed file for this run only.
+    _view(page, "targeted")
+    _start(page, "targeted")
+    expect(page.locator("#analysis-job-message")).to_contain_text(
+        "Browser fake progress"
+    )
+    assert fake_runs.sample_annotations[-1] == sample_annotations_path(
+        config_dir, batch
+    )
+    fake_runs.release.set()
+    _wait_for_analysis_status(page, "已完成")
+    assert read_settings(config_dir=config_dir)["injection_order_source"] == ""

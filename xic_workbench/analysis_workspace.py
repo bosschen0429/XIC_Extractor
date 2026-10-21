@@ -277,7 +277,9 @@ class AnalysisWorkspace:
             saved = save_batch_samples(
                 self.config_dir, Path(values["raw_dir"]), values["samples"]
             )
-            self.jobs.remember_samples(values["raw_dir"], values["samples"])
+            self.jobs.remember_samples(
+                values["raw_dir"], values["samples"], saved["overview"]
+            )
             return saved
         if action == "samples/export":
             from xic_workbench.samples import export_samples

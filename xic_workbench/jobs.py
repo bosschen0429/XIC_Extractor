@@ -108,15 +108,22 @@ class AnalysisJobs:
                 "available_outputs": [],
                 "cancellable": kind in {"targeted", "untargeted", "inspector"},
             }
+            if kind == "samples":
+                # Both flows read samples; the job card follows the asking page.
+                self._current["page"] = values.get("page") or "untargeted"
             self._executor.submit(self._execute, kind, values)
             return self.state()
 
-    def remember_samples(self, raw_dir: str, rows: list[dict[str, Any]]) -> None:
+    def remember_samples(
+        self, raw_dir: str, rows: list[dict[str, Any]], overview: dict[str, Any]
+    ) -> None:
         """Keep the restorable sample result in step with confirmed edits."""
         with self._lock:
             cached = self._results.get("samples")
             if cached and cached.get("input_paths", {}).get("raw_dir") == raw_dir:
                 cached["samples"] = copy.deepcopy(rows)
+                cached["overview"] = copy.deepcopy(overview)
+                cached["summary"]["annotation_source"] = "confirmed"
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -261,6 +268,7 @@ class AnalysisJobs:
                 key: str(values.get(key) or "")
                 for key in ("raw_dir", "dll_dir", "sequence_source")
             }
+            result["page"] = values.get("page") or "untargeted"
             return result
         if kind == "quality":
             from xic_extractor.feature_quality_io import export_feature_quality

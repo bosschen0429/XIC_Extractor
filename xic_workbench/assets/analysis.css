@@ -684,3 +684,12 @@
 #target-import-status:empty { display: none; }
 #target-import-status.error { color: var(--danger); }
 #target-import-preview .table-scroll { max-height: 45vh; overflow: auto; }
+
+/* Excluded injections stay listed but read as set aside. */
+#sample-rows tr.excluded td {
+  color: var(--subtle);
+  background: var(--warn-soft);
+}
+#sample-rows tr.excluded td.mono {
+  text-decoration: line-through;
+}
