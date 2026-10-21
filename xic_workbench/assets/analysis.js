@@ -6,6 +6,7 @@
     config: null,
     targets: [],
     sampleSets: { targeted: null, untargeted: null },
+    pendingExclusions: new Set(),
     editing: "untargeted",
     method: null,
     draft: null,
@@ -1470,29 +1471,45 @@
         group,
       );
       tr.append(sampleCell(groupCell));
+      const pending = state.pendingExclusions.has(row.raw_stem);
       const excluded = el("input");
       excluded.type = "checkbox";
-      excluded.checked = Boolean(row.excluded);
+      excluded.checked = Boolean(row.excluded) || pending;
       excluded.setAttribute("aria-label", `${row.raw_stem} 排除`);
       const reason = el("input");
       reason.value = row.exclusion_reason || "";
-      reason.disabled = !row.excluded;
-      reason.placeholder = row.excluded ? "必填" : "";
-      reason.required = Boolean(row.excluded);
+      reason.disabled = !excluded.checked;
+      reason.placeholder = excluded.checked ? "必填" : "";
+      reason.required = excluded.checked;
       reason.setAttribute("aria-label", `${row.raw_stem} 排除原因`);
-      // An exclusion is saved once it has a reason.
+      // A checked box waits as a pending mark until its reason is entered;
+      // only then does the row, which runs read, become excluded.
       excluded.addEventListener("change", () => {
-        row.excluded = excluded.checked;
-        if (!row.excluded) row.exclusion_reason = "";
-        renderSamples();
-        if (row.excluded)
+        if (excluded.checked) {
+          state.pendingExclusions.add(row.raw_stem);
+          renderSamples();
           $("sample-rows")
             .querySelector(`input[aria-label="${row.raw_stem} 排除原因"]`)
             ?.focus();
-        else act(() => persistSamples(page));
+          return;
+        }
+        state.pendingExclusions.delete(row.raw_stem);
+        const saved = row.excluded;
+        row.excluded = false;
+        row.exclusion_reason = "";
+        renderSamples();
+        if (saved) act(() => persistSamples(page));
       });
       reason.addEventListener("change", () => {
-        row.exclusion_reason = reason.value.trim();
+        const text = reason.value.trim();
+        if (!text) {
+          reason.value = row.exclusion_reason || "";
+          ui.toast("排除原因不可空白；要取消排除請取消勾選。");
+          return;
+        }
+        state.pendingExclusions.delete(row.raw_stem);
+        row.excluded = true;
+        row.exclusion_reason = text;
         act(() => persistSamples(page));
       });
       tr.append(sampleCell(excluded), sampleCell(reason));
@@ -2255,6 +2272,12 @@
       $(spec.sequence).addEventListener("change", () => clearSamples(page));
     }
     $("sample-filter").oninput = renderSamples;
+    // Pending marks without a reason never outlive the editor.
+    $("sample-editor").addEventListener("close", () => {
+      if (!state.pendingExclusions.size) return;
+      state.pendingExclusions.clear();
+      ui.toast("未填排除原因的勾選已取消。");
+    });
     $("sample-select-all").onchange = () =>
       $("sample-rows")
         .querySelectorAll("input[type=checkbox]")

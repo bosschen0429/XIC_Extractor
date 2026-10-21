@@ -209,10 +209,13 @@ for example after the folder moved; the path-keyed file itself is not moved.
 `xic_inspector.rendering.group_colors` owns group colours: each group of a batch
 takes the curve-palette slot its name hashes to, or the next free slot, and
 `QC`/`Other` stay neutral. The sample step and Targeted review use the analyzed
-population's groups, so one group shows one colour in both. Targeted review in
-the workbench can mark an injection excluded; the Inspector only requests it,
-and the workbench writes the run's RAW folder metadata. It applies on the next
-run and does not change the published result.
+population's groups, so one group shows one colour in both. Targeted review of
+a result opened from its run can mark an injection excluded; the Inspector only
+requests it, and the workbench writes the metadata of that run's RAW folder, not
+the editable review path. A result opened by hand has no run folder and offers
+no exclusion. An exclusion applies on the next run and does not change the
+published result; a box checked without a reason stays a pending mark that
+closing the editor drops, so it never reaches a run.
 
 Explicit exclusion has the same meaning in complete Targeted and Untargeted
 runs: the sample is not analyzed. The shared `AnalysisSet` retains excluded

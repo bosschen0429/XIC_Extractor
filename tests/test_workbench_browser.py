@@ -2375,6 +2375,14 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).fill(" normal ")
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).press("Tab")
+    # A box checked without a reason never reaches a run: closing the editor
+    # drops it, so the Untargeted payload stays as confirmed.
+    editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
+    page.keyboard.press("Escape")
+    expect(page.locator("#toasts")).to_contain_text("未填排除原因的勾選已取消")
+    expect(page.locator("#t-role-summary")).not_to_contain_text("排除")
+    page.locator("#t-samples-edit").click()
+    expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).not_to_be_checked()
     # The exclusion is saved once it has its reason.
     editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
     expect(editor.get_by_label("TumorBC2_DNA 排除原因", exact=True)).to_be_focused()
@@ -2716,6 +2724,10 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     review = page.locator("#recorded-review")
+    # Pointing the editable RAW field elsewhere, e.g. to load curves, does
+    # not move the exclusion away from the run's folder.
+    page.locator("#source-settings > summary").click()
+    page.locator("#raw-dir").fill(str(tmp_path / "curves-copy"))
     review.get_by_role("button", name="標記排除 TumorBC102_DNA", exact=True).click()
     dialog = page.locator("#exclude-dialog")
     expect(dialog).to_contain_text("重新執行後才會套用")
@@ -2740,6 +2752,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     )
 
     assert not sample_annotations_path(config_dir, tmp_path / "next-batch").exists()
+    assert not sample_annotations_path(config_dir, tmp_path / "curves-copy").exists()
 
     # The sample step on that folder shows it, and its export carries it.
     _view(page, "targeted")
@@ -2766,3 +2779,16 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
         dialog.get_by_role("button", name="標記排除", exact=True).click()
     _view(page, "targeted")
     expect(page.locator("#t-role-summary")).to_contain_text("排除 2")
+
+
+def test_a_result_opened_without_its_run_offers_no_exclusion(workbench, tmp_path):
+    page = workbench
+    workbook = _grouped_workbook(tmp_path / "manual.xlsx", {"S1": "", "S2": ""})
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form").evaluate("form => form.requestSubmit()")
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    review = page.locator("#recorded-review")
+    expect(review.locator(".tgt-sample")).to_have_count(2)
+    # No run says which RAW folder owns these samples.
+    expect(review.locator(".tgt-exclude")).to_have_count(0)

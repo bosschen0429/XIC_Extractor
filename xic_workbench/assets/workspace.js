@@ -130,6 +130,8 @@ window.XicUi = (() => {
   const $ = (id) => document.getElementById(id);
   const { icon, navigation } = window.XicUi;
   const state = {
+    runFolders: new Map(),
+    runFolder: null,
     page: null,
     item: null,
     detail: null,
@@ -216,7 +218,10 @@ window.XicUi = (() => {
           if (reviewSlots.get(id) === slot && state.detail === slot.detail)
             requestCurves(request);
         },
-        ...(mode === "result" && state.page?.source_kind === "targeted_workbook"
+        // Only a run-bound result knows which RAW folder owns the exclusion.
+        ...(mode === "result" &&
+        state.page?.source_kind === "targeted_workbook" &&
+        state.runFolder
           ? { onRequestExclusion: requestExclusion }
           : {}),
       });
@@ -242,10 +247,10 @@ window.XicUi = (() => {
       dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
     if (!accepted) return;
     try {
-      const raw_dir = $("raw-dir").value;
+      const { raw_dir, dll_dir } = state.runFolder;
       const result = await api("/api/samples/exclude", {
         raw_dir,
-        dll_dir: $("dll-dir").value,
+        dll_dir,
         raw_stem: sample_id,
         reason: $("exclude-reason").value,
       });
@@ -915,6 +920,7 @@ window.XicUi = (() => {
     return startCurves();
   }
   async function openBatch() {
+    state.runFolder = state.runFolders.get($("source").value) || null;
     const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
     state.filters = {};
@@ -1228,11 +1234,14 @@ window.XicUi = (() => {
     $("browse-path").focus();
     browse($(state.browser.target).value);
   });
+  // A result opened from its run keeps that run's folders; the editable
+  // RAW field may later point elsewhere, for example to load curves.
   document.addEventListener("xic:open-review", (event) => {
     $("source").value = event.detail.source;
     if (event.detail.reviewPaths) {
       $("raw-dir").value = event.detail.reviewPaths.raw_dir;
       $("dll-dir").value = event.detail.reviewPaths.dll_dir;
+      state.runFolders.set(event.detail.source, { ...event.detail.reviewPaths });
     }
     action(openBatch, "正在讀取分析結果…");
   });
