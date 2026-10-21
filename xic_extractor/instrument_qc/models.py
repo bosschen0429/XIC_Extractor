@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from xic_extractor.sequence_document import ActivationMethod as ActivationMethod
+
 TrendConfidence = Literal["clean", "warning", "low"]
 InstrumentQCStatus = Literal["detected", "not_detected", "error"]
-ActivationMethod = Literal["CID", "wHCD", "HCD", "CIDwHCD", "unknown"]
 HCDAuditStatus = Literal[
     "hcd_supported",
     "hcd_partial",

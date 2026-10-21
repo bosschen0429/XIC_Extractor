@@ -5,11 +5,6 @@ from pathlib import Path
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
-from xic_extractor.sample_groups import classify_sample_group
-
-
-def _sample_group(name: str) -> str:
-    return classify_sample_group(name)
 
 
 def _read_diagnostics(path: Path) -> list[dict[str, str]]:

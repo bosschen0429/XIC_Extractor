@@ -31,6 +31,7 @@ from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
 from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 @dataclass(frozen=True)
@@ -177,6 +178,7 @@ class FileResult:
     results: dict[str, ExtractionResult]
     group: str | None = None
     error: str | None = None
+    sample_metadata: SampleMetadata | None = None
 
     @property
     def extraction_results(self) -> list[ExtractionResult]:

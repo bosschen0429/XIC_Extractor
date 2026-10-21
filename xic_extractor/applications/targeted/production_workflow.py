@@ -457,7 +457,13 @@ def _build_publication_output(
             )
             cells[(file_result.sample_name, target_label)] = cell
             rendered[target_label] = cell.render()
-        files.append((sample.metadata.injection_order, file_result, rendered))
+        files.append(
+            (
+                sample.metadata.injection_order,
+                replace(file_result, sample_metadata=sample.metadata),
+                rendered,
+            )
+        )
     if consumed != set(decisions):
         raise TargetedOutputBoundaryError(
             "finalized Targeted decisions crossed the acquisition sample population"
@@ -850,7 +856,6 @@ def _prepare_targeted_production_workflow(
             sample_name=file_result.sample_name,
             raw_stem=raw_path.stem,
             injection_order=resolved_inputs.injection_order[raw_path.stem],
-            group=file_result.group or "",
         )
         for raw_path, file_result in results_by_raw_path
     )

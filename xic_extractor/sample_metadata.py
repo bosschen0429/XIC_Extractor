@@ -5,9 +5,12 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
+
+from xic_extractor.sample_groups import SAMPLE_CODE as _SAMPLE_CODE
+from xic_extractor.sample_groups import canonicalize_sample_groups
 
 SAMPLE_METADATA_SCHEMA_VERSION = "sample_metadata"
 SAMPLE_METADATA_COLUMNS: tuple[str, ...] = (
@@ -287,7 +290,7 @@ def normalize_for_matching(s: str) -> str:
 
 def _parse_docx_sequence_table(docx_path: Path) -> list[dict[str, Any]]:
     """Adapt the shared CLI Word-sequence owner to sample metadata rows."""
-    from xic_extractor.instrument_qc.sequence_manifest import parse_sequence_docx
+    from xic_extractor.sequence_document import parse_sequence_docx
 
     if not docx_path.is_file():
         raise SampleMetadataError(f"{docx_path}: file not found")
@@ -591,7 +594,6 @@ def _metadata_from_sequence_entries(
 ) -> tuple[SampleMetadata, ...]:
     metadata_rows: list[SampleMetadata] = []
     seen_names: set[str] = set()
-    seen_stems: set[str] = set()
 
     for idx, entry in enumerate(raw_entries, start=1):
         raw_stem = Path(entry["raw_stem"]).stem if entry["raw_stem"] else ""
@@ -607,10 +609,6 @@ def _metadata_from_sequence_entries(
         if not raw_stem:
             raw_stem = sample_name
 
-        if raw_stem in seen_stems:
-            raw_stem = f"{raw_stem}_{entry['order'] or idx}"
-        seen_stems.add(raw_stem)
-
         role = infer_sample_role(
             entry.get("sample_role"),
             sample_name=sample_name,
@@ -618,16 +616,6 @@ def _metadata_from_sequence_entries(
         )
 
         group = entry.get("group", "")
-        if not group:
-            search_text = f"{sample_name} {raw_stem}".lower()
-            if "tumor" in search_text:
-                group = "Tumor"
-            elif "normal" in search_text:
-                group = "Normal"
-            elif "benign" in search_text:
-                group = "Benign"
-            elif role == "pooled_qc":
-                group = "QC"
 
         metadata_rows.append(
             SampleMetadata(
@@ -644,7 +632,7 @@ def _metadata_from_sequence_entries(
             )
         )
 
-    return tuple(metadata_rows)
+    return _canonical_group_rows(metadata_rows)
 
 
 def load_and_match_sample_metadata(
@@ -652,72 +640,128 @@ def load_and_match_sample_metadata(
     raw_stems: Sequence[str],
 ) -> SequenceMatchReport:
     """Load a sequence source and project it onto the active RAW stems."""
-    if path.suffix.lower() != ".docx":
-        if path.suffix.lower() in {".csv", ".tsv", ".txt"} and (
-            is_sample_metadata_source(path)
-        ):
-            metadata = load_sample_metadata(path)
-            written = [
-                {
-                    "order": row.injection_order,
-                    "raw_stem": row.raw_stem,
-                    "sample_name": row.sample_name,
-                }
-                for row in metadata
-            ]
-        else:
-            written = _sequence_entries(path)
-            metadata = _metadata_from_sequence_entries(written)
-        return match_sequence_to_raw_stems_report(
-            metadata, raw_stems, conflicts=_sequence_conflicts(written)
+    if path.suffix.lower() in {".csv", ".tsv", ".txt"} and is_sample_metadata_source(
+        path
+    ):
+        return match_sample_metadata(
+            load_sample_metadata(path), raw_stems, exact_raw_stems=True
         )
-
-    from xic_extractor.instrument_qc.sequence_manifest import (
-        ManifestMatchStatus,
-        build_sequence_manifest_from_entries,
-        parse_sequence_docx,
+    written = _sequence_entries(path)
+    return match_sample_metadata(
+        _metadata_from_sequence_entries(written),
+        raw_stems,
+        conflicts=_sequence_conflicts(written),
     )
 
-    if not path.is_file():
-        raise SampleMetadataError(f"{path}: file not found")
-    try:
-        entries = parse_sequence_docx(path)
-    except ValueError as exc:
-        raise SampleMetadataError(str(exc)) from exc
-    if not entries:
-        raise SampleMetadataError(f"{path.name}: 未在 Word 文件中找到有效的進樣序列表")
-    doc_rows = _sequence_doc_entries_as_rows(entries)
-    metadata = _metadata_from_sequence_entries(doc_rows)
 
-    manifest = build_sequence_manifest_from_entries(
-        entries,
-        raw_stems=tuple(raw_stems),
+def _canonical_group_rows(rows: Sequence[SampleMetadata]) -> tuple[SampleMetadata, ...]:
+    groups = canonicalize_sample_groups(row.group for row in rows)
+    return tuple(
+        replace(row, group=group) for row, group in zip(rows, groups, strict=True)
     )
-    metadata_by_source = {
-        entry.source_section: row for entry, row in zip(entries, metadata, strict=True)
-    }
-    matched_by_raw: dict[str, SampleMetadata] = {}
-    unmatched_sequence_names: list[str] = []
-    ambiguous_sequence_names: list[str] = []
-    for manifest_row in manifest:
-        source_row = metadata_by_source.get(manifest_row.source_section)
-        if source_row is None:
+
+
+def match_sample_metadata(
+    sequence_rows: Sequence[SampleMetadata],
+    raw_stems: Sequence[str],
+    *,
+    exact_raw_stems: bool = False,
+    conflicts: tuple[SequenceConflict, ...] = (),
+) -> SequenceMatchReport:
+    """Match all sequence formats; persisted metadata uses exact RAW identity.
+
+    Repeated names are paired by injection order with numbered RAW suffixes
+    only when both populations have equal cardinality and unique orders.
+    Other one-to-many matches remain ambiguous, never selected arbitrarily.
+    """
+    key = str.casefold if exact_raw_stems else normalize_for_matching
+    normalized_raws: dict[str, list[str]] = {}
+    repeated_raws: dict[str, list[str]] = {}
+    for stem in raw_stems:
+        normalized_raws.setdefault(key(stem), []).append(stem)
+    repeated_rows: dict[str, list[int]] = {}
+    ordered_matches: dict[int, str] = {}
+    if not exact_raw_stems:
+        for stem in raw_stems:
+            repeated_raws.setdefault(_repeated_name_key(stem), []).append(stem)
+        for index, row in enumerate(sequence_rows):
+            repeated_rows.setdefault(normalize_for_matching(row.raw_stem), []).append(
+                index
+            )
+        for base, indices in repeated_rows.items():
+            repeated_candidates = repeated_raws.get(base, [])
+            orders = [sequence_rows[i].injection_order for i in indices]
+            suffixes = [
+                _repeated_name_sort_key(stem)[0] for stem in repeated_candidates
+            ]
+            if (
+                len(indices) > 1
+                and len(indices) == len(repeated_candidates)
+                and None not in orders
+                and len(set(orders)) == len(orders)
+                and len(set(suffixes)) == len(suffixes)
+            ):
+                indices = sorted(
+                    indices, key=lambda i: sequence_rows[i].injection_order or 0
+                )
+                ordered_matches.update(
+                    zip(
+                        indices,
+                        sorted(repeated_candidates, key=_repeated_name_sort_key),
+                        strict=True,
+                    )
+                )
+    candidates_by_row: list[set[str]] = []
+    for index, row in enumerate(sequence_rows):
+        if index in ordered_matches:
+            candidates_by_row.append({ordered_matches[index]})
             continue
-        if manifest_row.match_status == ManifestMatchStatus.MATCHED:
-            matched_by_raw[manifest_row.raw_stem] = source_row
-        elif manifest_row.match_status == ManifestMatchStatus.AMBIGUOUS:
-            ambiguous_sequence_names.append(source_row.raw_stem)
-        elif manifest_row.match_status == ManifestMatchStatus.UNMATCHED:
-            unmatched_sequence_names.append(source_row.raw_stem)
-
+        values = (row.raw_stem,) if exact_raw_stems else (row.raw_stem, row.sample_name)
+        candidates = {
+            stem
+            for value in values
+            if value
+            for stem in normalized_raws.get(key(value), ())
+        }
+        if not exact_raw_stems:
+            base = normalize_for_matching(row.raw_stem)
+            repeated = repeated_raws.get(base, [])
+            if len(repeated_rows[base]) > 1 or (not candidates and len(repeated) > 1):
+                candidates.update(repeated)
+        candidates_by_row.append(candidates)
+    # Colliding source rows must not claim a RAW based on iteration order.
+    claims: dict[str, int] = {}
+    for candidates in candidates_by_row:
+        for stem in candidates:
+            claims[stem] = claims.get(stem, 0) + 1
+    matched_by_raw: dict[str, SampleMetadata] = {}
+    unmatched: list[str] = []
+    ambiguous: list[str] = []
+    for row, candidates in zip(sequence_rows, candidates_by_row, strict=True):
+        name = row.raw_stem or row.sample_name
+        if len(candidates) == 1 and claims[next(iter(candidates))] == 1:
+            matched_by_raw[next(iter(candidates))] = row
+        elif candidates:
+            ambiguous.append(name)
+        else:
+            unmatched.append(name)
     return _sequence_match_report(
-        metadata,
+        sequence_rows,
         raw_stems,
         matched_by_raw=matched_by_raw,
-        unmatched_sequence_names=unmatched_sequence_names,
-        ambiguous_sequence_names=ambiguous_sequence_names,
-        conflicts=_sequence_conflicts(doc_rows),
+        unmatched_sequence_names=unmatched,
+        ambiguous_sequence_names=ambiguous,
+        conflicts=conflicts,
     )
+
+
+def _repeated_name_key(value: str) -> str:
+    return normalize_for_matching(re.sub(r"[_-]\d+$", "", value))
+
+
+def _repeated_name_sort_key(value: str) -> tuple[int, str]:
+    match = re.search(r"[_-](\d+)$", value)
+    return (int(match.group(1)) if match else 0, value)
 
 
 def match_sequence_to_raw_stems_report(
@@ -726,42 +770,8 @@ def match_sequence_to_raw_stems_report(
     *,
     conflicts: tuple[SequenceConflict, ...] = (),
 ) -> SequenceMatchReport:
-    """Match a non-Word sequence source and retain ambiguity/unmatched evidence."""
-    raw_stem_order = tuple(raw_stems)
-    normalized_raws: dict[str, list[str]] = {}
-    for stem in raw_stem_order:
-        normalized_raws.setdefault(normalize_for_matching(stem), []).append(stem)
-
-    matched_by_raw: dict[str, SampleMetadata] = {}
-    unmatched_sequence_names: list[str] = []
-    ambiguous_sequence_names: list[str] = []
-    for row in sequence_rows:
-        keys = {
-            normalize_for_matching(value)
-            for value in (row.raw_stem, row.sample_name)
-            if value
-        }
-        candidates = {
-            stem
-            for key in keys
-            for stem in normalized_raws.get(key, ())
-            if stem not in matched_by_raw
-        }
-        if len(candidates) == 1:
-            matched_by_raw[candidates.pop()] = row
-        elif len(candidates) > 1:
-            ambiguous_sequence_names.append(row.raw_stem or row.sample_name)
-        else:
-            unmatched_sequence_names.append(row.raw_stem or row.sample_name)
-
-    return _sequence_match_report(
-        sequence_rows,
-        raw_stem_order,
-        matched_by_raw=matched_by_raw,
-        unmatched_sequence_names=unmatched_sequence_names,
-        ambiguous_sequence_names=ambiguous_sequence_names,
-        conflicts=conflicts,
-    )
+    """Report projection retained for existing sequence consumers."""
+    return match_sample_metadata(sequence_rows, raw_stems, conflicts=conflicts)
 
 
 def match_sequence_to_raw_stems(
@@ -833,11 +843,6 @@ def _sequence_match_report(
         ambiguous_sequence_names=tuple(ambiguous_sequence_names),
         conflicts=conflicts,
     )
-
-
-# Sample codes such as BC2312: up to three capitals, then at least three
-# digits, so "TumorBC2312_DNA" yields BC2312 and dates such as 20260103 none.
-_SAMPLE_CODE = re.compile(r"[A-Z]{1,3}\d{3,}")
 
 
 def _sequence_conflicts(
@@ -927,7 +932,7 @@ def parse_sample_metadata(
                 index,
             )
         parsed.append(item)
-    return tuple(parsed)
+    return _canonical_group_rows(parsed)
 
 
 def mint_canonical_sample_identity(

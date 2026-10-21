@@ -88,9 +88,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         metadata_path = args.sample_metadata.resolve()
         try:
             # 上機資訊 annotates; the RAW owner supplies names and order.
-            sample_metadata = read_analysis_set(
+            analysis_set = read_analysis_set(
                 raw_dir, dll_dir, sequence_source=metadata_path
-            ).sample_metadata
+            )
+            sample_metadata = tuple(entry.metadata for entry in analysis_set.analyzed)
         except (SampleMetadataError, RawReaderError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2

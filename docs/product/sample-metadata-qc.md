@@ -151,6 +151,45 @@ and retains them with the result. Reloading the workbench restores these checks
 and the last loaded Untargeted sample summary. Queued Targeted work retains its
 frozen sequence and membership.
 
+### Sample groups and exclusions
+
+`sample_groups.resolve_sample_group` is the group decision owner: an explicit
+metadata `group` wins; otherwise `qc` and `pooled_qc` roles display `QC`, and
+all other roles display `Other`. Sample-name keywords do not assign groups.
+Targeted's `Group` column consumes the resolved sample metadata, not an
+independent filename classifier.
+
+Group names have surrounding whitespace removed and internal whitespace
+collapsed. `sample_group_key` supplies the case-insensitive identity for all
+group comparisons; `canonicalize_sample_groups` retains the first encountered
+display spelling. Blank and case-insensitive `Other` mean unassigned; `QC` is
+also a valid explicit group. `suggest_sample_groups` is an opt-in pure naming
+suggestion: it removes the extension, sample codes (one to three capital letters
+followed by at least three digits), and a trailing `_N` or `-N` repeat number,
+then collapses underscores, hyphens, and whitespace. Suggestions do not change
+roles or apply themselves to metadata.
+
+Word, Excel, and ordinary delimited sequence tables share
+`sample_metadata.match_sample_metadata`. It uses `normalize_for_matching` and
+pairs repeated names by injection order with numerically ordered RAW suffixes
+only when that pairing is unambiguous. Reports distinguish matched, unmatched,
+and ambiguous names. Word table parsing belongs to `sequence_document`; the
+instrument-QC trend tool retains its own matching and classification rules.
+
+Files with a `schema_version` column are persisted sample metadata, not fuzzy
+sequence tables. They bind only by case-insensitive **exact `raw_stem`**, never
+by normalized sample names or repeat order. Unbound rows are reported unmatched;
+their group and exclusion flags must not migrate to a similar RAW name.
+
+Explicit exclusion has the same meaning in complete Targeted and Untargeted
+runs: the sample is not analyzed. The shared `AnalysisSet` retains excluded
+injections as context, but they are neither extracted nor emitted as analyzed
+result rows/columns. Targeted accepts the TSV through `--injection-order-source`;
+Untargeted applies it when selecting Discovery inputs and passes the same TSV
+through Alignment's `--sample-metadata`. Alignment's CLI passes only analyzed
+metadata to its Discovery-batch input. Role inference and the RAW-owned
+injection timeline are unchanged.
+
 This input-preparation contract can change resolved order relative to legacy
 mtime or document ordering. It is distinct from the no-value-change canonical
 identity projection above and requires a real-data expected-diff comparison.

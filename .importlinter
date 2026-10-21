@@ -133,3 +133,12 @@ forbidden_modules =
     xic_extractor.untargeted_execution
     xic_extractor.output
 allow_indirect_imports = False
+
+[importlinter:contract:sample-metadata-no-instrument-qc]
+name = Sample metadata does not depend on instrument QC
+type = forbidden
+source_modules =
+    xic_extractor.sample_metadata
+forbidden_modules =
+    xic_extractor.instrument_qc
+allow_indirect_imports = False

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from zipfile import BadZipFile, ZipFile
 
+from xic_extractor import sequence_document
 from xic_extractor.instrument_qc.classification import InstrumentQCClass
 from xic_extractor.instrument_qc.models import ActivationMethod
 
@@ -22,18 +21,6 @@ class ManifestMatchConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
-
-
-@dataclass(frozen=True)
-class SequenceDocEntry:
-    source_doc: str
-    source_section: str
-    doc_display_name: str
-    injection_order: int
-    instrument_method: str
-    sample_description: str
-    injection_volume: str
-    activation_method: ActivationMethod = "unknown"
 
 
 @dataclass(frozen=True)
@@ -57,7 +44,7 @@ def build_sequence_manifest(
     raw_dir: Path,
 ) -> tuple[SequenceManifestRow, ...]:
     """Build an auditable docs-derived sequence manifest."""
-    entries = parse_sequence_docx(method_doc)
+    entries = sequence_document.parse_sequence_docx(method_doc)
     raw_stems = discover_raw_stems(raw_dir)
     return build_sequence_manifest_from_entries(
         entries,
@@ -65,59 +52,8 @@ def build_sequence_manifest(
     )
 
 
-def parse_sequence_docx(path: Path) -> tuple[SequenceDocEntry, ...]:
-    """Parse sequence table rows from a Word method / sequence document."""
-    try:
-        tables = _docx_tables(path)
-    except (BadZipFile, KeyError, ET.ParseError) as exc:
-        raise ValueError(f"unable to parse method DOCX: {path}") from exc
-    return parse_sequence_tables(tables, source_doc=str(path))
-
-
-def parse_sequence_tables(
-    tables: list[list[list[str]]],
-    *,
-    source_doc: str,
-) -> tuple[SequenceDocEntry, ...]:
-    method_activation_map = _method_activation_map(tables)
-    entries: list[SequenceDocEntry] = []
-    for table_index, table in enumerate(tables, start=1):
-        if not table:
-            continue
-        header = [_normalize_header(cell) for cell in table[0]]
-        if header[:5] != ["id", "file name", "instrument method", "sample", "inj"]:
-            continue
-        source_section = f"table:{table_index}"
-        for row_index, cells in enumerate(table[1:], start=2):
-            if len(cells) < 5:
-                continue
-            row_id = cells[0].strip()
-            if not row_id.isdigit():
-                continue
-            file_name = _clean_cell(cells[1])
-            if not file_name:
-                continue
-            instrument_method = _clean_cell(cells[2])
-            entries.append(
-                SequenceDocEntry(
-                    source_doc=source_doc,
-                    source_section=f"{source_section}:row:{row_index}",
-                    doc_display_name=file_name,
-                    injection_order=int(row_id),
-                    instrument_method=instrument_method,
-                    activation_method=method_activation_map.get(
-                        _method_key(instrument_method),
-                        activation_method_from_instrument_method(instrument_method),
-                    ),
-                    sample_description=_clean_cell(cells[3]),
-                    injection_volume=_clean_cell(cells[4]),
-                )
-            )
-    return tuple(entries)
-
-
 def build_sequence_manifest_from_entries(
-    entries: tuple[SequenceDocEntry, ...],
+    entries: tuple[sequence_document.SequenceDocEntry, ...],
     *,
     raw_stems: tuple[str, ...],
 ) -> tuple[SequenceManifestRow, ...]:
@@ -222,7 +158,9 @@ def discover_raw_stems(raw_dir: Path) -> tuple[str, ...]:
     return tuple(sorted({path.stem for path in raw_dir.rglob("*.raw")}))
 
 
-def classify_sequence_entry(entry: SequenceDocEntry) -> InstrumentQCClass:
+def classify_sequence_entry(
+    entry: sequence_document.SequenceDocEntry,
+) -> InstrumentQCClass:
     return _classify_name(
         entry.doc_display_name,
         entry.instrument_method,
@@ -230,37 +168,8 @@ def classify_sequence_entry(entry: SequenceDocEntry) -> InstrumentQCClass:
     )
 
 
-def activation_method_from_instrument_method(method: str) -> ActivationMethod:
-    """Parse acquisition activation from method-doc text only."""
-    return _activation_method_from_text(method)
-
-
-def activation_method_from_method_detail(
-    method: str,
-    detail_text: str,
-) -> ActivationMethod:
-    """Prefer method detail tables when the short method name lacks activation."""
-    detail_activation = _activation_method_from_text(detail_text)
-    if detail_activation != "unknown":
-        return detail_activation
-    return activation_method_from_instrument_method(method)
-
-
-def _activation_method_from_text(text: str) -> ActivationMethod:
-    normalized = re.sub(r"[^a-z0-9]+", "", text.casefold())
-    if "cidwhcd" in normalized or ("cid" in normalized and "whcd" in normalized):
-        return "CIDwHCD"
-    if "whcd" in normalized:
-        return "wHCD"
-    if "hcd" in normalized:
-        return "HCD"
-    if "cid" in normalized:
-        return "CID"
-    return "unknown"
-
-
 def normalize_doc_display_name(name: str) -> str:
-    value = _clean_cell(name)
+    value = re.sub(r"\s+", " ", name).strip()
     value = value.replace("*", "")
     value = re.sub(r"\s*_\s*", "_", value)
     value = re.sub(r"\s+", " ", value).strip()
@@ -292,7 +201,7 @@ def normalize_doc_display_name(name: str) -> str:
 
 
 def _manifest_row(
-    entry: SequenceDocEntry,
+    entry: sequence_document.SequenceDocEntry,
     *,
     raw_stem: str,
     instrument_qc_class: InstrumentQCClass,
@@ -315,73 +224,6 @@ def _manifest_row(
     )
 
 
-def _docx_tables(path: Path) -> list[list[list[str]]]:
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    with ZipFile(path) as zf:
-        document_xml = zf.read("word/document.xml")
-    root = ET.fromstring(document_xml)
-    tables: list[list[list[str]]] = []
-    for table in root.findall(".//w:tbl", ns):
-        rows: list[list[str]] = []
-        for table_row in table.findall("./w:tr", ns):
-            cells = [_cell_text(cell, ns) for cell in table_row.findall("./w:tc", ns)]
-            rows.append(cells)
-        tables.append(rows)
-    return tables
-
-
-def _cell_text(cell: ET.Element, ns: dict[str, str]) -> str:
-    paragraphs: list[str] = []
-    for paragraph in cell.findall(".//w:p", ns):
-        text = "".join(node.text or "" for node in paragraph.findall(".//w:t", ns))
-        text = _clean_cell(text)
-        if text:
-            paragraphs.append(text)
-    return " ".join(paragraphs)
-
-
-def _clean_cell(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def _normalize_header(value: str) -> str:
-    return _clean_cell(value).casefold()
-
-
-def _method_activation_map(
-    tables: list[list[list[str]]],
-) -> dict[str, ActivationMethod]:
-    values: dict[str, ActivationMethod] = {}
-    for table in tables:
-        if not table or not table[0] or len(table[0]) < 2:
-            continue
-        method_slot = _clean_cell(table[0][0]).casefold()
-        if not method_slot.startswith("method-"):
-            continue
-        method_name = _clean_cell(table[0][1])
-        if not method_name:
-            continue
-        detail_text = " ".join(_clean_table_cells(table))
-        activation = activation_method_from_method_detail(method_name, detail_text)
-        if activation != "unknown":
-            values[_method_key(method_name)] = activation
-    return values
-
-
-def _clean_table_cells(table: list[list[str]]) -> tuple[str, ...]:
-    values: list[str] = []
-    for row in table:
-        for cell in row:
-            text = _clean_cell(cell)
-            if text:
-                values.append(text)
-    return tuple(values)
-
-
-def _method_key(value: str) -> str:
-    return _match_key(value)
-
-
 def _raw_stem_index(raw_stems: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
     values: dict[str, list[str]] = {}
     for raw_stem in raw_stems:
@@ -399,7 +241,9 @@ def _repeated_raw_stem_index(raw_stems: tuple[str, ...]) -> dict[str, tuple[str,
     }
 
 
-def _duplicate_doc_counts(entries: tuple[SequenceDocEntry, ...]) -> dict[str, int]:
+def _duplicate_doc_counts(
+    entries: tuple[sequence_document.SequenceDocEntry, ...],
+) -> dict[str, int]:
     counts: dict[str, int] = {}
     for entry in entries:
         key = _match_key(normalize_doc_display_name(entry.doc_display_name))
@@ -408,7 +252,7 @@ def _duplicate_doc_counts(entries: tuple[SequenceDocEntry, ...]) -> dict[str, in
 
 
 def _class_method_defaults(
-    entries: tuple[SequenceDocEntry, ...],
+    entries: tuple[sequence_document.SequenceDocEntry, ...],
 ) -> dict[InstrumentQCClass, tuple[str, ActivationMethod]]:
     values: dict[InstrumentQCClass, set[tuple[str, ActivationMethod]]] = {}
     for entry in entries:
