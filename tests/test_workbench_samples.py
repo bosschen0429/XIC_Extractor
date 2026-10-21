@@ -156,12 +156,19 @@ def test_overview_counts_analyzed_samples_by_group_key() -> None:
 
     overview = sample_overview(rows)
 
-    assert overview["groups"] == [
-        {"group": "Tumor", "count": 2},
-        {"group": "Normal", "count": 1},
-        {"group": "Other", "count": 1},
-        {"group": "QC", "count": 1},
+    assert [(g["group"], g["count"]) for g in overview["groups"]] == [
+        ("Tumor", 2),
+        ("Normal", 1),
+        ("Other", 1),
+        ("QC", 1),
     ]
+    colors = {g["group"]: g["color"] for g in overview["groups"]}
+    assert colors["Other"] == "var(--group-other)"
+    assert colors["QC"] == "var(--group-qc)"
+    assert colors["Tumor"] != colors["Normal"]
+    # Every analyzed row carries its group's colour, whatever its spelling.
+    assert overview["row_groups"]["b"] == {"group": "tumor", "color": colors["Tumor"]}
+    assert "f" not in overview["row_groups"] and "g" not in overview["row_groups"]
     assert overview["unassigned_study_samples"] == 1
     assert overview["single_sample_groups"] == ["Normal"]
     assert overview["excluded"] == [{"raw_stem": "g", "reason": "clogged"}]

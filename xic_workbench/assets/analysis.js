@@ -1012,6 +1012,12 @@
           ),
         ),
       ...(excluded ? [el("span", `排除 ${excluded}`, "chip warn")] : []),
+      ...(set.overview?.groups || []).map((entry) => {
+        const chip = el("span", undefined, "chip group-chip");
+        chip.dataset.group = entry.group;
+        chip.append(groupSwatch(entry.color), `${entry.group} ${entry.count}`);
+        return chip;
+      }),
     );
     $(sampleId(page, "samples-count")).textContent = set.rows.length
       ? `${set.rows.length} 個樣本`
@@ -1375,6 +1381,13 @@
       button("預覽並沿用", () => openAnnotations(page, "carry", earlier.path), "ghost"),
     );
   }
+  // Colours come from the server's group-colour owner, shared with Inspector.
+  function groupSwatch(color) {
+    const swatch = el("span", undefined, "group-swatch");
+    if (color) swatch.style.background = color;
+    else swatch.hidden = true;
+    return swatch;
+  }
   function sampleCell(control) {
     const td = el("td");
     td.append(control);
@@ -1435,7 +1448,12 @@
         row.group = group.value.trim();
         act(() => persistSamples(page));
       });
-      tr.append(sampleCell(group));
+      const groupCell = el("div", undefined, "group-cell");
+      groupCell.append(
+        groupSwatch(set.overview?.row_groups?.[row.raw_stem]?.color),
+        group,
+      );
+      tr.append(sampleCell(groupCell));
       const excluded = el("input");
       excluded.type = "checkbox";
       excluded.checked = Boolean(row.excluded);

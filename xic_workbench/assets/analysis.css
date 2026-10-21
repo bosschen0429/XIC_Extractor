@@ -788,3 +788,22 @@
   font-family: var(--mono);
   font-size: 12px;
 }
+
+/* Group colours: the same swatch the Inspector uses for that group. */
+.group-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+}
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.group-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

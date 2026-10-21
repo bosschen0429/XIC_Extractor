@@ -2594,3 +2594,96 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
     saved(lambda: page.locator("#annotation-apply").click())
     assert confirmed(moved)["LiverB1"].exclusion_reason == "clot"
     expect(earlier).to_be_hidden()
+
+
+def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
+    from openpyxl import Workbook
+
+    book = Workbook()
+    targets = book.active
+    targets.title = "Targets"
+    targets.append(["Label", "Role", "ISTD Pair", "m/z", "RT min", "RT max"])
+    targets.append(["Analyte", "Analyte", None, 258.1085, 8, 10])
+    results = book.create_sheet("XIC Results")
+    results.append(
+        [
+            "SampleName",
+            "Group",
+            "Target",
+            "RT",
+            "Area",
+            "PeakStart",
+            "PeakEnd",
+            "Review",
+            "Review Reason",
+            "Reason",
+            "Counted Detection",
+        ]
+    )
+    for sample, group in groups.items():
+        results.append(
+            [sample, group, "Analyte", 9.0, 10.0, 8.9, 9.1, None, None, None, "TRUE"]
+        )
+    metadata = book.create_sheet("Run Metadata")
+    metadata.append(["Key", "Value"])
+    metadata.append(["targeted_output_schema_version", "targeted_output"])
+    metadata.append(["targeted_workbook_layout_version", 2])
+    book.save(path)
+    book.close()
+    return path
+
+
+def test_group_colours_match_between_samples_and_inspector(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("TumorBC101_DNA", "NormalBC101_DNA", "TumorBC102_DNA"))
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
+    cards = page.locator("#t-group-cards")
+    for label in ("Tumor DNA", "Normal DNA"):
+        name = cards.get_by_label(f"建議組別 {label} 的名稱")
+        name.fill(label.split()[0])
+        name.press("Tab")
+        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+            cards.get_by_label(f"套用 {label.split()[0]} 到尚未標組別的樣本").click()
+
+    def colour(locator):
+        return locator.evaluate("node => node.style.background")
+
+    chips = page.locator("#t-role-summary .group-chip")
+    tumor = colour(chips.filter(has_text="Tumor 2").locator(".group-swatch"))
+    normal = colour(chips.filter(has_text="Normal 1").locator(".group-swatch"))
+    assert tumor.startswith("var(--curve-") and normal.startswith("var(--curve-")
+    assert tumor != normal
+    page.locator("#t-samples-edit").click()
+    row = page.locator("#sample-rows tr", has_text="TumorBC102_DNA")
+    assert colour(row.locator(".group-swatch")) == tumor
+    page.keyboard.press("Escape")
+
+    # The run's recorded groups colour the Inspector rows the same way.
+    fake_runs.targeted_workbook = _grouped_workbook(
+        tmp_path / "run.xlsx",
+        {
+            "TumorBC101_DNA": "Tumor",
+            "NormalBC101_DNA": "Normal",
+            "TumorBC102_DNA": "Tumor",
+        },
+    )
+    fake_runs.release.set()
+    _start(page, "targeted")
+    _wait_for_analysis_status(page, "已完成")
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    review = page.locator("#recorded-review")
+    for sample, expected in (
+        ("TumorBC101_DNA", tumor),
+        ("NormalBC101_DNA", normal),
+    ):
+        cell = review.locator("tr", has_text=sample)
+        expect(cell.locator(".sample-group")).to_have_text(
+            "Tumor" if expected == tumor else "Normal"
+        )
+        assert colour(cell.locator(".sample-dot")) == expected

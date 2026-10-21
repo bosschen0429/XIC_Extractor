@@ -147,6 +147,10 @@ class TargetedWorkbookSource:
         for row in self.queue:
             self._queue_by_target[row["Target"]].append(row)
         overview = summarize_targeted_results(self.records, self.queue)
+        # Group is recorded per sample; it colours that sample in every view.
+        sample_groups: dict[str, str] = {}
+        for row in self.records:
+            sample_groups.setdefault(row["SampleName"], str(row.get("Group") or ""))
         self._focus = {target.label: target for target in overview.targets}
         self._records_by_key = {
             (row["SampleName"], row["Target"]): row for row in self.records
@@ -163,8 +167,12 @@ class TargetedWorkbookSource:
             "review_record_count": len(self.queue),
             "overview": asdict(overview),
             "samples": [
-                {"canonical_sample_identity_id": name, "sample_stem": name}
-                for name in dict.fromkeys(row["SampleName"] for row in self.records)
+                {
+                    "canonical_sample_identity_id": name,
+                    "sample_stem": name,
+                    "group": str(group or ""),
+                }
+                for name, group in sample_groups.items()
             ],
         }
 

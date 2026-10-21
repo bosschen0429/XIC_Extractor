@@ -323,7 +323,9 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
         )
         assert (scoped["run_total"], scoped["matched_count"]) == (2, 1)
         assert scoped["overview"] == overview  # The landing summary is always full-run.
-        assert scoped["samples"] == [{"id": "Sample B", "label": "Sample B"}]
+        assert [(s["id"], s["label"], s["group"]) for s in scoped["samples"]] == [
+            ("Sample B", "Sample B", "")
+        ]
         assert len(scoped["all_samples"]) == 2
         _, detail, _ = request("/api/detail", {"item_id": scoped["items"][0]["id"]})
         _, html, _ = request(f"/reports/{detail['view_id']}.html")
@@ -664,3 +666,46 @@ def test_workspace_role_query_roundtrips_and_all_restores_legacy_targets(
     finally:
         workspace.close()
     assert role_workbook.read_bytes() == before
+
+
+def test_group_colors_follow_names_not_order_or_case() -> None:
+    from xic_inspector.rendering.group_colors import PALETTE_SIZE, group_colors
+
+    names = [f"Group {index}" for index in range(PALETTE_SIZE)]
+    forward = group_colors(names)
+    backward = group_colors(reversed(names))
+
+    assert forward == backward
+    assert len(set(forward.values())) == PALETTE_SIZE
+    # A colour comes from the group's own name: without a collision, adding
+    # another group to the batch leaves it unchanged.
+    alone = {name: group_colors([name])[name] for name in ("Tumor", "Normal")}
+    assert alone["Tumor"] != alone["Normal"]
+    assert group_colors(["Normal", "Tumor"]) == alone
+    assert (
+        group_colors(["Tumor", "TUMOR "])["TUMOR"] == group_colors(["Tumor"])["Tumor"]
+    )
+    assert group_colors(["qc", "Other", ""]) == {
+        "qc": "var(--group-qc)",
+        "Other": "var(--group-other)",
+        "": "var(--group-other)",
+    }
+
+
+def test_samples_carry_their_recorded_group_colour(workbook):
+    from xic_inspector.rendering.group_colors import group_colors
+
+    report = prepare_report(
+        workbook, SelectionRequest(strategy="sample", sample_ids=("Sample B",))
+    )
+
+    # Colours span the whole workbook, so a one-sample selection keeps them.
+    colors = group_colors(["A", ""])
+    assert report.payload["samples"] == [
+        {
+            "id": "Sample B",
+            "label": "Sample B",
+            "group": "",
+            "group_color": colors[""],
+        }
+    ]
