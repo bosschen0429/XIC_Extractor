@@ -315,7 +315,7 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
         "pooled_qc",
         "blank",
     )
-    assert rows["TumorBC001_DNA"].group == "Tumor"
+    assert rows["TumorBC001_DNA"].group == ""
     assert rows["Old_S1"].sample_role == "study_sample"
     assert result.sequence is not None and result.sequence.matched_count == 4
 

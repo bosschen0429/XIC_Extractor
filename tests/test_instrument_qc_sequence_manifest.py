@@ -8,10 +8,7 @@ from xic_extractor.instrument_qc import sequence_manifest_writers
 from xic_extractor.instrument_qc.classification import InstrumentQCClass
 from xic_extractor.instrument_qc.sequence_manifest import (
     ManifestMatchStatus,
-    SequenceDocEntry,
     build_sequence_manifest_from_entries,
-    parse_sequence_docx,
-    parse_sequence_tables,
 )
 from xic_extractor.instrument_qc.sequence_manifest_writers import (
     INJECTION_ORDER_COLUMNS,
@@ -24,6 +21,11 @@ from xic_extractor.instrument_qc.sequence_manifest_writers import (
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_SCHEMA_VERSION,
     load_sample_metadata,
+)
+from xic_extractor.sequence_document import (
+    SequenceDocEntry,
+    parse_sequence_docx,
+    parse_sequence_tables,
 )
 
 

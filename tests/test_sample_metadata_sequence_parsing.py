@@ -147,18 +147,18 @@ def test_parse_docx_sequence(tmp_path: Path) -> None:
     assert rows[2].injection_order == 3
     assert rows[2].raw_stem == "Tumor tissue BC001_DNA"
     assert rows[2].sample_role == "study_sample"
-    assert rows[2].group == "Tumor"
+    assert rows[2].group == ""
 
     # Row 4: Normal
     assert rows[3].injection_order == 4
-    assert rows[3].group == "Normal"
+    assert rows[3].group == ""
 
 
 def test_word_sequence_uses_shared_match_statuses(tmp_path: Path, monkeypatch) -> None:
     docx_file = tmp_path / "test_run.docx"
     _create_synthetic_docx(docx_file)
 
-    from xic_extractor.instrument_qc import sequence_manifest
+    from xic_extractor import sequence_document as sequence_manifest
 
     owner_parse = sequence_manifest.parse_sequence_docx
     parse_calls = 0

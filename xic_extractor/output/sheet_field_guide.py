@@ -52,7 +52,13 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ),
     ("XIC Results", "NL Evidence / Reason", "中性丟失觀察與完整判定說明。", ""),
     ("XIC Results", "Review Evidence", "檢閱註記的來源事件代碼，供追查用。", ""),
-    ("XIC Results", "Role / Group", "ISTD 或 Analyte；依樣本名稱判斷的樣本組別。", ""),
+    (
+        "XIC Results",
+        "Role / Group",
+        "ISTD 或 Analyte；樣品資訊明確組別優先，"
+        "其次 QC／pooled_qc 角色歸 QC，其餘 Other。",
+        "",
+    ),
     ("XIC Results", "NL / Confidence", "中性丟失摘要與信心分級，供追查用。", ""),
     ("XIC Results", "Int / PeakWidth", "原始峰頂強度與峰寬。", "counts / min"),
     ("Targets", "Label / Role", "目標名稱；ISTD 或 Analyte。", ""),

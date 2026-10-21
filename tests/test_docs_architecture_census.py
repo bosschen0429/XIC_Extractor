@@ -1265,6 +1265,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:targeted-untargeted-independent",
         "importlinter:contract:main-chain-layers",
         "importlinter:contract:acquisition-stays-inner",
+        "importlinter:contract:sample-metadata-no-instrument-qc",
     }
     independence_section = "importlinter:contract:targeted-untargeted-independent"
     layers_section = "importlinter:contract:main-chain-layers"

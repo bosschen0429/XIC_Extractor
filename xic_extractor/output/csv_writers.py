@@ -14,7 +14,8 @@ from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult
-from xic_extractor.sample_groups import classify_sample_group
+from xic_extractor.sample_groups import resolve_sample_group
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class ExtractionResultLike(Protocol):
@@ -84,6 +85,9 @@ class ExtractionResultLike(Protocol):
 
 class FileResultLike(Protocol):
     @property
+    def sample_metadata(self) -> SampleMetadata | None: ...
+
+    @property
     def sample_name(self) -> str: ...
 
     @property
@@ -103,7 +107,7 @@ def _long_output_rows(
     for target in targets:
         row = {
             "SampleName": file_result.sample_name,
-            "Group": _sample_group(file_result.sample_name),
+            "Group": resolve_sample_group(file_result.sample_metadata),
             "Target": target.label,
             "Role": "ISTD" if target.is_istd else "Analyte",
             "ISTD Pair": target.istd_pair,
@@ -248,7 +252,3 @@ def _format_peak_decimal(value: float | None, *, digits: int) -> str:
     if value is None:
         return "ND"
     return f"{value:.{digits}f}"
-
-
-def _sample_group(name: str) -> str:
-    return classify_sample_group(name)

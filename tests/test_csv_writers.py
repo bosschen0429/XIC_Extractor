@@ -513,3 +513,32 @@ def test_long_csv_reports_file_processing_error() -> None:
     assert row["Reason"] == "RAW 檔無法處理。"
     assert row["Area"] == "ERROR"
     assert row["Counted Detection"] == "FALSE"
+
+
+@pytest.mark.parametrize(
+    ("group", "role", "expected"),
+    [
+        ("Control", "qc", "Control"),
+        ("", "qc", "QC"),
+        ("other", "pooled_qc", "QC"),
+        ("", "study_sample", "Other"),
+    ],
+)
+def test_long_output_group_uses_resolved_metadata(group, role, expected):
+    from xic_extractor.sample_metadata import SampleMetadata
+
+    target = _target("WithNL")
+    result = FileResult(
+        "Tumor_A",
+        {target.label: _result(nl=None)},
+        sample_metadata=SampleMetadata(
+            "Tumor_A", "Tumor_A", group=group, sample_role=role
+        ),
+    )
+    assert _long_output_rows(result, [target])[0]["Group"] == expected
+
+
+def test_missing_metadata_does_not_guess_group_from_sample_name():
+    target = _target("WithNL")
+    result = FileResult("TumorQC_1", {target.label: _result(nl=None)})
+    assert _long_output_rows(result, [target])[0]["Group"] == "Other"
