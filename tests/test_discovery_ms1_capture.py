@@ -39,6 +39,44 @@ NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
 
 
+def test_physical_capture_accepts_search_coordinates_without_method_evidence() -> None:
+    from xic_extractor.acquisition.physical_capture import (
+        PhysicalPeakCapture,
+        PhysicalPeakSearch,
+    )
+
+    rt = np.linspace(8.60, 9.40, 161)
+    raw = _FakeRaw(
+        rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000.0)
+    )
+    capture = PhysicalPeakCapture(
+        raw,
+        acquisition_source=raw.acquisition_source,
+        adapter_namespace="tests.physical_capture",
+        profile=TEST_PROFILE,
+    )
+    search = PhysicalPeakSearch(
+        selection_subject_id="feature:sample-a:500",
+        query_rt_min=9.0,
+        request=XICRequest(mz=500.0, rt_min=8.4, rt_max=9.6, ppm_tol=20.0),
+        allow_sparse_reacquisition=True,
+    )
+    first, repeated = capture.capture((search, search))
+
+    assert first.work_ordinal == repeated.work_ordinal
+    assert first.evaluation == repeated.evaluation
+    assert len(raw.requests) == 1
+    facts = first.evaluation.facts
+    assert facts is not None
+    assert facts.apex_rt_min == pytest.approx(9.02)
+    # Gaussian integral, converted from counts*minutes to counts*seconds.
+    assert facts.area_counts_seconds == pytest.approx(
+        1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
+    )
+    assert first.evaluation.question.selection_subject_id == search.selection_subject_id
+    assert first.trace_quality == "clean"
+
+
 def test_capture_runs_physical_peak_detection() -> None:
     group = _group((_seed(scan_number=10, rt=9.00),))
     rt = np.linspace(8.60, 9.40, 161)

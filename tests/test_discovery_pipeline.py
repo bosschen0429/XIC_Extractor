@@ -73,6 +73,107 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 NEUTRAL_LOSS_DA = 116.0474
 
 
+@pytest.mark.parametrize(
+    "selection", ["single_dr", "single_r", "union", "intersection"]
+)
+def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection: str
+) -> None:
+    from scripts.run_discovery import main
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+
+    available_tags = (("custom_dR", 116.0473), ("custom_R", 132.0423))
+    tags = (
+        available_tags[:1]
+        if selection == "single_dr"
+        else available_tags[1:]
+        if selection == "single_r"
+        else available_tags
+    )
+    combine_mode = "single" if selection.startswith("single") else selection
+    preset_path = tmp_path / "method.toml"
+    preset_path.write_text(
+        'name = "User method"\ndescription = "Selected custom losses"\n'
+        f'combine_mode = "{combine_mode}"\n'
+        + "".join(
+            f'[[tag]]\nstrategy = "neutral_loss"\nname = "{name}"\nvalue = {loss}\n'
+            for name, loss in tags
+        )
+        + "[discovery]\nprecursor_mz_tolerance_ppm = 12.0\n"
+        "ms1_search_padding_min = 0.7\n",
+        encoding="utf-8",
+    )
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    raws = {}
+
+    def open_raw(path, _dll_dir, *, expected_acquisition_source, **_kwargs):
+        raw = raws[path.stem]
+        raw.acquisition_source = expected_acquisition_source
+        return raw
+
+    # Only instrument I/O is substituted: CLI binding, search, physical processing,
+    # evidence composition and both writers all execute their production paths.
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
+    for sample, apex, height in (("a", 8.0, 1000.0), ("b", 9.0, 2300.0)):
+        raw_path = tmp_path / f"{sample}.raw"
+        raw_path.write_bytes(f"sample:{sample}".encode())
+        raw = _FakeRawHandle(
+            [
+                _scan_event(
+                    scan_number=scan,
+                    rt=apex + offset,
+                    precursor_mz=500.0,
+                    masses=[500.0 - loss for _, loss in available_tags],
+                    intensities=[9000.0, 8000.0],
+                )
+                for scan, offset in ((100, 0.0), (101, 0.01))
+            ],
+            **_peak_kwargs(apex, height),
+        )
+        raws[sample] = raw
+        output_dir = tmp_path / sample
+        assert (
+            main(
+                [
+                    "--raw",
+                    str(raw_path),
+                    "--dll-dir",
+                    str(dll_dir),
+                    "--output-dir",
+                    str(output_dir),
+                    "--preset",
+                    str(preset_path),
+                    "--no-blank-qualification",
+                ]
+            )
+            == 0
+        )
+        (candidate,) = read_discovery_candidates_csv(
+            output_dir / "discovery_candidates.csv"
+        )
+        assert candidate.sample_stem == sample
+        assert candidate.matched_tag_names == tuple(name for name, _ in tags)
+        assert candidate.tag_combine_mode == combine_mode
+        assert candidate.tag_intersection_status == (
+            "complete" if selection == "intersection" else "not_required"
+        )
+        assert candidate.configured_neutral_loss_da == tags[0][1]
+        assert candidate.product_mz == pytest.approx(500.0 - tags[0][1])
+        assert candidate.seed_scan_ids == (100, 101)
+        assert candidate.ms1_apex_rt == pytest.approx(apex)
+        assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
+        assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
+        assert candidate.ms1_area == pytest.approx(
+            height * 0.1 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.01
+        )
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+        (review,) = _read_csv(output_dir / "discovery_review.csv")
+        assert review["candidate_id"] == candidate.candidate_id
+        assert float(review["ms1_area"]) == pytest.approx(candidate.ms1_area)
+        assert raw.entered and raw.closed
+
+
 @pytest.mark.parametrize("parallel", [False, True])
 def test_cancelled_batch_retains_completed_samples_without_publishing_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parallel: bool
@@ -960,14 +1061,13 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     recorder = TimingRecorder("discovery")
     observed_receipts = []
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.collect_strict_nl_seeds",
+        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_seeds",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
     )
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _acquire_discovery_sample(
             raw_path,
-            settings=_settings(),
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
@@ -1012,7 +1112,6 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
     with pytest.raises(RuntimeError, match="peak failed"):
         _acquire_discovery_sample(
             raw_path,
-            settings=_settings(),
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
@@ -1047,14 +1146,13 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
     raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.collect_strict_nl_seeds",
+        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_seeds",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
     )
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _acquire_discovery_sample(
             raw_path,
-            settings=_settings(),
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
