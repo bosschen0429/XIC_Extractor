@@ -38,6 +38,11 @@ class DeltaMassPatternSettings:
     scan_interval_multiplier: float = 1.25
     shape_window_sec: float = 10.0
     min_shape_r: float = 0.9
+    lowest_position: str = ""
+    background_inner_sec: float = 20.0
+    background_outer_sec: float = 30.0
+    min_height_above_background: float = 25_000.0
+    min_background_sigma: float = 5.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.method_label, str) or not self.method_label.strip():
@@ -61,6 +66,25 @@ class DeltaMassPatternSettings:
             raise ValueError(
                 "anchor and discriminating roles must name pattern positions"
             )
+        if not isinstance(self.lowest_position, str) or (
+            self.lowest_position and self.lowest_position not in labels
+        ):
+            raise ValueError("lowest_position must name a pattern position or be empty")
+        for name in (
+            "background_inner_sec",
+            "background_outer_sec",
+            "min_height_above_background",
+            "min_background_sigma",
+        ):
+            value = require_finite_real(getattr(self, name), name=name)
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.lowest_position and not (
+            self.shape_window_sec
+            < self.background_inner_sec
+            < self.background_outer_sec
+        ):
+            raise ValueError("background flanks must lie outside the shape window")
         for value in (
             self.mz_tolerance_ppm,
             self.apex_floor_sec,

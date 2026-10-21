@@ -284,6 +284,19 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
         ),
         shape_window_sec=_positive_float_setting(overrides, "shape_window_sec", 10),
         min_shape_r=cast(float, overrides.get("min_shape_r", 0.9)),
+        lowest_position=_str_setting(overrides, "lowest_position", ""),
+        background_inner_sec=_positive_float_setting(
+            overrides, "background_inner_sec", 20
+        ),
+        background_outer_sec=_positive_float_setting(
+            overrides, "background_outer_sec", 30
+        ),
+        min_height_above_background=_positive_float_setting(
+            overrides, "min_height_above_background", 25_000
+        ),
+        min_background_sigma=_positive_float_setting(
+            overrides, "min_background_sigma", 5
+        ),
     )
 
 

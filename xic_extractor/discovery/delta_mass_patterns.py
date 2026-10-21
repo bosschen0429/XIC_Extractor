@@ -11,7 +11,7 @@ import numpy as np
 from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
-from xic_extractor.xic_models import XICRequest, XICTrace
+from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 
 @dataclass
@@ -34,6 +34,13 @@ class DeltaMassPositionResult:
     shape_r: float | None = None
     shape_r_threshold: float | None = None
     position_status: str = "skipped"
+    raw_peak_height: float | None = None
+    local_background: float | None = None
+    background_noise: float | None = None
+    height_above_background: float | None = None
+    required_height_above_background: float | None = None
+    signal_status: str = "not_required"
+    lowest_status: str = "not_required"
 
 
 @dataclass
@@ -183,11 +190,17 @@ def prepare_delta_mass_candidates(
     counts["layer_2_passed"] = len(candidates)
     requests = []
     request_positions = []
+    window_sec = (
+        settings.background_outer_sec
+        if settings.lowest_position
+        else settings.shape_window_sec
+    )
     for index, candidate in enumerate(candidates):
         needed = {
             i
             for i, p in enumerate(candidate.positions)
-            if p.partner_source == "missing"
+            if settings.lowest_position
+            or p.partner_source == "missing"
             or p.position_label in settings.discriminating_positions
         }
         if needed:
@@ -205,8 +218,8 @@ def prepare_delta_mass_candidates(
             requests.append(
                 XICRequest(
                     p.expected_mz,
-                    max(0, candidate.base_rt_apex_min - settings.shape_window_sec / 60),
-                    candidate.base_rt_apex_min + settings.shape_window_sec / 60,
+                    max(0, candidate.base_rt_apex_min - window_sec / 60),
+                    candidate.base_rt_apex_min + window_sec / 60,
                     settings.mz_tolerance_ppm,
                 )
             )
@@ -222,7 +235,23 @@ def complete_delta_mass_candidates(
     settings: DeltaMassPatternSettings,
 ) -> tuple[DeltaMassCandidate, ...]:
     """Consume the single acquisition batch; confirm missing positions then shape."""
-    trace_map = dict(zip(prepared.request_positions, traces, strict=True))
+    full_trace_map = dict(zip(prepared.request_positions, traces, strict=True))
+    # Background context must not widen the existing apex/shape decision window.
+    trace_map = (
+        {
+            key: crop_xic_trace_by_rt(
+                trace,
+                prepared.candidates[key[0]].base_rt_apex_min
+                - settings.shape_window_sec / 60,
+                prepared.candidates[key[0]].base_rt_apex_min
+                + settings.shape_window_sec / 60,
+                assume_sorted_rt=True,
+            )
+            for key, trace in full_trace_map.items()
+        }
+        if settings.lowest_position
+        else full_trace_map
+    )
     for index, candidate in enumerate(prepared.candidates):
         if candidate.status == "rejected":
             continue
@@ -292,7 +321,80 @@ def complete_delta_mass_candidates(
             if position.shape_r is None or position.shape_r < settings.min_shape_r:
                 position.position_status = "fail"
                 _reject(candidate, 5, "discriminating_shape_below_threshold")
+        if candidate.status != "rejected" and settings.lowest_position:
+            _apply_signal_gate(candidate, index, full_trace_map, settings)
     return prepared.candidates
+
+
+def _apply_signal_gate(
+    candidate: DeltaMassCandidate,
+    candidate_index: int,
+    traces: dict[tuple[int, int], XICTrace],
+    settings: DeltaMassPatternSettings,
+) -> None:
+    """Compare all positions on raw, locally background-subtracted peak heights."""
+    for i, position in enumerate(candidate.positions):
+        trace = traces[candidate_index, i]
+        # Round sub-nanosecond subtraction error at inclusive window boundaries.
+        seconds = np.round((trace.rt - candidate.base_rt_apex_min) * 60, 9)
+        flanks = [
+            trace.intensity[
+                (seconds >= -settings.background_outer_sec)
+                & (seconds <= -settings.background_inner_sec)
+            ],
+            trace.intensity[
+                (seconds >= settings.background_inner_sec)
+                & (seconds <= settings.background_outer_sec)
+            ],
+        ]
+        flanks = [values for values in flanks if len(values) >= 3]
+        peak = trace.intensity[np.abs(seconds) <= settings.shape_window_sec]
+        if not flanks or not len(peak):
+            continue
+        # A neighboring peak/tail on one side must not set the background.
+        flank = min(flanks, key=lambda values: float(np.median(values)))
+        background = float(np.median(flank))
+        position.raw_peak_height = float(np.max(peak))
+        position.local_background = background
+        position.background_noise = float(
+            1.4826 * np.median(np.abs(flank - background))
+        )
+        position.height_above_background = position.raw_peak_height - background
+    lowest = next(
+        p for p in candidate.positions if p.position_label == settings.lowest_position
+    )
+    if any(p.height_above_background is None for p in candidate.positions):
+        lowest.lowest_status = "unavailable"
+        lowest.signal_status = "unavailable"
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "local_background_unavailable")
+        return
+    assert lowest.height_above_background is not None
+    assert lowest.background_noise is not None
+    lowest.required_height_above_background = max(
+        settings.min_height_above_background,
+        settings.min_background_sigma * lowest.background_noise,
+    )
+    lowest.signal_status = (
+        "pass"
+        if lowest.height_above_background >= lowest.required_height_above_background
+        else "fail"
+    )
+    lowest.lowest_status = (
+        "pass"
+        if all(
+            lowest.height_above_background <= p.height_above_background
+            for p in candidate.positions
+            if p.height_above_background is not None
+        )
+        else "fail"
+    )
+    if lowest.signal_status == "fail":
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "peak_not_above_background")
+    if lowest.lowest_status == "fail":
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "lowest_position_not_lowest")
 
 
 def _record_ratio(position: DeltaMassPositionResult, base_height: float | None) -> None:

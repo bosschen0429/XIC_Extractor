@@ -1,5 +1,7 @@
 """Synthetic patterns exercise the method independently of provisional presets."""
 
+import pytest
+
 from xic_extractor.discovery.delta_mass_patterns import prepare_delta_mass_candidates
 from xic_extractor.discovery.delta_mass_strategy import (
     DeltaMassPatternSettings,
@@ -386,3 +388,93 @@ def test_table_base_owns_partner_mass_windows_even_from_a_heavy_anchor():
     )
     assert prepared.candidates[0].positions[2].partner_source == "missing"
     assert {r.mz for r in prepared.requests} == {300, 313}
+
+
+@pytest.mark.parametrize(
+    "heights,noise,expected_reason",
+    [
+        ([100, 80, 90, 30], 1, ""),
+        ([100, 80, 90, 120], 1, "lowest_position_not_lowest"),
+        ([100, 80, 90, 20], 0, "peak_not_above_background"),
+        ([200, 250, 220, 100], 20, "peak_not_above_background"),
+        ([100, 80, 90, 30], 1, "discriminating_shape_below_threshold"),
+        ([100, 80, 90, 30], 1, "local_background_unavailable"),
+    ],
+)
+def test_lowest_position_requires_measured_net_height_and_background_support(
+    heights, noise, expected_reason
+):
+    from dataclasses import replace
+
+    import numpy as np
+
+    from xic_extractor.discovery.delta_mass_patterns import (
+        complete_delta_mass_candidates,
+    )
+    from xic_extractor.xic_models import XICTrace
+
+    settings = DeltaMassPatternSettings(
+        pattern_id="signal",
+        method_label="signal",
+        positions=tuple(
+            DeltaMassPosition(label, delta, 0.1, 2)
+            for label, delta in [("base", 0), ("one", 1), ("two", 2), ("four", 4)]
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=("four",),
+        lowest_position="four",
+        min_height_above_background=25,
+    )
+    prepared = prepare_delta_mass_candidates(
+        tuple(
+            replace(
+                feature(label, 300 + delta, height=100),
+                trace_quality="OK" if delta == 0 else "WEAK_SUPPORT",
+            )
+            for label, delta in [("base", 0), ("one", 1), ("two", 2), ("four", 4)]
+        ),
+        settings,
+        scan_interval_sec=1,
+    )
+    assert len(prepared.requests) == 4
+    assert prepared.requests[0].rt_min == 0.5
+    seconds = np.arange(-30, 31, dtype=float)
+    times = 1 + seconds / 60
+    traces = []
+    for i, h in enumerate(heights):
+        baseline = 1000 if i == 3 else 100
+        sign = (
+            -1
+            if i == 3 and expected_reason == "discriminating_shape_below_threshold"
+            else 1
+        )
+        y = baseline + sign * h * np.exp(-0.5 * (seconds / 3) ** 2)
+        y[seconds <= -20] = baseline + np.arange(-5, 6) * noise
+        # An adjacent peak must not become this peak's background or shape input.
+        y[seconds >= 20] = 1e6
+        mask = (
+            abs(seconds) < 20
+            if expected_reason == "local_background_unavailable"
+            else np.ones(len(times), dtype=bool)
+        )
+        traces.append(XICTrace(times[mask], y[mask]))
+    candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
+    assert candidate.reject_reason == expected_reason
+    assert candidate.status == ("rejected" if expected_reason else "candidate")
+    four = candidate.positions[3]
+    if expected_reason in {
+        "local_background_unavailable",
+        "discriminating_shape_below_threshold",
+    }:
+        assert four.height_above_background is None
+        return
+    assert four.height_above_background == pytest.approx(heights[3])
+    assert four.local_background == 1000
+    if not expected_reason:
+        assert (
+            candidate.positions[1].height_above_background
+            < candidate.positions[0].height_above_background
+        )
+        assert four.lowest_status == "pass"
+        assert four.signal_status == "pass"
+        assert four.shape_r > 0.99

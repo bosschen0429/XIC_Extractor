@@ -54,6 +54,13 @@ POSITION_COLUMNS = (
     "shape_r",
     "shape_r_threshold",
     "position_status",
+    "raw_peak_height",
+    "local_background",
+    "background_noise",
+    "height_above_background",
+    "required_height_above_background",
+    "signal_status",
+    "lowest_status",
 )
 
 

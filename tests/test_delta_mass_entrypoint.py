@@ -12,12 +12,13 @@ from xic_extractor.discovery import delta_mass_pipeline
 from xic_extractor.xic_models import XICTrace
 
 
+@pytest.mark.parametrize("signal_gate", [False, True])
 @pytest.mark.parametrize("composite", [False, True])
 @pytest.mark.parametrize(
     "ratio_max, expected_ratio_status", [(0.6, "within_range"), (0.45, "above_range")]
 )
 def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
-    tmp_path, monkeypatch, composite, ratio_max, expected_ratio_status
+    tmp_path, monkeypatch, composite, ratio_max, expected_ratio_status, signal_gate
 ):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -48,6 +49,13 @@ smoothing_window_sec = 1
     preset.write_text(
         preset.read_text().replace("ratio_max=0.6", f"ratio_max={ratio_max}")
     )
+    if signal_gate:
+        preset.write_text(
+            preset.read_text().replace(
+                'discriminating_positions = ["heavy"]',
+                'discriminating_positions = ["heavy"]\nlowest_position = "heavy"',
+            )
+        )
     extra_args = []
     if composite:
         text = preset.read_text().replace(
@@ -132,10 +140,16 @@ smoothing_window_sec = 1
 
         def extract_xic_many(self, requests):
             batches.append((self.base_mz, len(requests)))
+            times = self.times
+            signal = self.signal
+            if signal_gate:
+                seconds = np.arange(-30, 31, dtype=float)
+                times = 1 + 4 / 60 + seconds / 60
+                signal = np.exp(-0.5 * (seconds / 2) ** 2)
             return tuple(
                 XICTrace(
-                    self.times,
-                    self.signal * self.height * (1 if r.mz == self.base_mz else 0.5),
+                    times,
+                    signal * self.height * (1 if r.mz == self.base_mz else 0.5),
                 )
                 for r in requests
             )
@@ -180,6 +194,11 @@ smoothing_window_sec = 1
     ) as handle:
         positions = list(csv.DictReader(handle))
     assert len(positions) == 4
+    if signal_gate:
+        heavy = [r for r in positions if r["position_label"] == "heavy"]
+        assert [float(r["height_above_background"]) for r in heavy] == [5e5, 1e6]
+        assert all(r["signal_status"] == r["lowest_status"] == "pass" for r in heavy)
+
     assert all(
         row["ratio_status"] == expected_ratio_status
         and row["position_status"] == "pass"

@@ -66,6 +66,11 @@ DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
         "scan_interval_multiplier",
         "shape_window_sec",
         "min_shape_r",
+        "lowest_position",
+        "background_inner_sec",
+        "background_outer_sec",
+        "min_height_above_background",
+        "min_background_sigma",
         "detector",
     }
 )

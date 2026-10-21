@@ -387,8 +387,10 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
 Delta Mass finds sample-local MS1 peak combinations at preset-defined mass
 separations. A candidate must satisfy mass differences and co-elution;
 designated discriminating positions additionally satisfy apex-region shape
-correlation. Height ratios are additional evidence, never admission gates. The method supports two or more positions and
-has no built-in chemical pattern.
+correlation. Presets can additionally require a designated lowest position with
+clear local-background support. Height ratios are additional evidence, never
+admission gates. The method supports two or more positions and has no built-in
+chemical pattern.
 
 ### One-pass method
 
@@ -407,8 +409,31 @@ has no built-in chemical pattern.
    Confirm missing positions by apex alignment and apex-region Pearson correlation,
    without the shared physical evaluator. A two-position method requires its
    partner in the table; RAW never fills a solitary seed.
-5. Evaluate shape only for the preset's discriminating positions, in addition to
+5. Evaluate shape for the preset's discriminating positions, in addition to
    missing-position confirmation. An empty discriminating list is supported.
+   If `lowest_position` is configured, also require that position to have the
+   lowest locally background-subtracted RAW peak height and clear background
+   support. These checks share the same final confirmation stage, not a new
+   chemical-identity claim.
+
+The optional lowest-position check acquires all positions in the same RAW batch
+with wider background context. Apex/shape checks retain their central
+`shape_window_sec` window. Every position's comparison height is its raw maximum
+in that central window minus its local background; no table/smoothed height is
+mixed into this ordering decision. Background is the median of the lower-median
+flank, using the two configured `background_inner_sec`–`background_outer_sec`
+intervals around the base apex. A usable flank needs at least three samples;
+without a usable flank the hypothesis cannot pass. Selecting the lower flank
+reduces contamination from a neighboring peak or tail on one side.
+
+Background variation is `1.4826 × MAD` on that same flank. The designated lowest
+position must have net height at least
+`max(min_height_above_background, min_background_sigma × background variation)`.
+The absolute floor remains necessary when sparse RAW flanks have zero MAD;
+zero variation is not reported as infinite signal-to-noise. Net heights,
+background, variation, required height, and independent signal/lowest statuses
+are published in position evidence. This local screening statistic is not a
+calibrated detection limit.
 
 The pure method lives in `delta_mass_patterns`; the pipeline owns RAW access,
 local feature detection, and serialization. Table heights are detector-produced
@@ -436,7 +461,13 @@ per RAW to the nearest positive odd number of scan points. A 6.6 s setting with
 TOMLs own all numerical choices, including natural-abundance ratio bounds with
 factor-two tolerance. The abundance reference is
 [NIST platinum isotope composition](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Pt).
-Changing these provisional parameters does not change the generic method.
+The Pt presets require +4 to be the lowest net peak and to exceed the larger
+of 25,000 intensity units or five robust background deviations, using 20–30 s
+flanks. The absolute floor matches the detector noise setting; it does not
+establish instrument-wide sensitivity. +1 being highest is not required.
+All these choices are configurable; an empty `lowest_position` disables the
+optional signal/order gate. Changing these provisional parameters does not
+change the generic method.
 
 ### Inputs and results
 
