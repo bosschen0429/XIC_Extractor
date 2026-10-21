@@ -280,6 +280,8 @@ def test_collaborator_table_previews_matched_unmatched_and_ambiguous(
     book.save(workbook)
     from_file = preview_annotations(raw_stems, path=workbook)
     assert from_file["guess"]["name"] == 0 and from_file["guess"]["group"] == 1
+    cohort = preview_annotations(raw_stems, text="Sample ID\tCohort\nLiver A1\t1\n")
+    assert cohort["guess"]["group"] == 1
     matched = preview_annotations(
         raw_stems, path=workbook, columns={"name": 0, "group": 1}
     )["matched"]

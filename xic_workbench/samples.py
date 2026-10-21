@@ -137,7 +137,17 @@ def _write_confirmed(path: Path, metadata: Sequence[SampleMetadata]) -> None:
 
 _TABLE_HINTS = {
     "name": ("sample", "name", "樣品", "樣本", "檔名", "file", "raw"),
-    "group": ("group", "組", "type", "類別", "condition"),
+    "group": (
+        "group",
+        "組",
+        "type",
+        "類別",
+        "condition",
+        "cohort",
+        "class",
+        "category",
+        "arm",
+    ),
     "excluded": ("exclu", "排除"),
     "reason": ("reason", "why", "note", "remark", "原因", "備註"),
 }
