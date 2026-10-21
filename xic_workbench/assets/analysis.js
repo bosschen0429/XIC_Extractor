@@ -1112,7 +1112,10 @@
     const cards = set.rows.length ? suggestionCards(set) : [];
     box.hidden = !cards.length;
     if (!cards.length) return box.replaceChildren();
+    // Study samples need a group; QC resolves by role and others are not
+    // analyzed, so their cards wait in a collapsed section.
     const list = el("div", undefined, "group-card-list");
+    const unneeded = el("div", undefined, "group-card-list");
     for (const card of cards) {
       const rows = cardRows(set, card);
       const open = rows.filter((row) => !row.group.trim()).length;
@@ -1179,15 +1182,27 @@
         el("p", card.members.join("、"), "mono"),
       );
       node.append(members);
-      list.append(node);
+      (rows.some((row) => row.sample_role === "study_sample")
+        ? list
+        : unneeded
+      ).append(node);
     }
+    const rest = el("details", undefined, "group-card-others");
+    rest.append(
+      el(
+        "summary",
+        `其他命名樣式（QC、Blank 等不需組別的樣本，${unneeded.children.length} 張）`,
+      ),
+      unneeded,
+    );
     box.replaceChildren(
       el(
         "p",
         "依命名樣式建議的組別：確認名稱後套用。已有組別的樣本只在按「覆蓋」時才會改。",
         "subtle",
       ),
-      list,
+      ...(list.children.length ? [list] : []),
+      ...(unneeded.children.length ? [rest] : []),
     );
   }
   // Words for click-to-group: separators, a capital after lowercase, and a

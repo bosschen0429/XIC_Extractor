@@ -2450,6 +2450,10 @@ def test_naming_cards_and_name_words_group_samples(
     expect(page.locator("#t-samples-count")).to_have_text("6 個樣本")
     cards = page.locator("#t-group-cards .group-card")
     expect(cards).to_have_count(4)
+    # QC resolves by role, so its card waits in the collapsed section.
+    folded = page.locator("#t-group-cards .group-card-others .group-card")
+    expect(folded).to_have_count(1)
+    expect(folded).to_have_attribute("data-card", "QC")
     expect(page.locator('#t-group-cards [data-card="Tumor DNA"]')).to_contain_text("×2")
 
     def saved(action):

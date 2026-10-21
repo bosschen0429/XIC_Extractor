@@ -807,3 +807,21 @@
   align-items: center;
   gap: 6px;
 }
+.group-card-others > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.group-card-others > .group-card-list {
+  margin-top: 8px;
+}
+.annotation-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.annotation-line > span {
+  margin-right: 4px;
+  font-size: 13px;
+}

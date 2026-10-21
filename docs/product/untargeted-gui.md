@@ -81,8 +81,10 @@ directory-level Discovery followed by Alignment.
   that same header owner. Saved acquisition metadata and role corrections also
   apply when an analysis starts without opening the sample editor first.
 - The sample editor retains undisplayed metadata fields. Filters change only
-  visibility. Role corrections and the source locator persist in
-  `discovery_gui.json`.
+  visibility. Role, group, and exclusion edits save at once to the RAW folder's
+  confirmed sample metadata, shared with Targeted (see
+  [sample metadata](sample-metadata-qc.md#workbench-sample-step)); the source
+  locator persists in `discovery_gui.json`.
 - The internal-standard list shares Targeted XLSX (`Targets`, with optional
   `Method`), CSV and TSV intake. Choose a file, browse its local path, or drop
   it onto the list area; the adjacent link downloads the shared XLSX example.
