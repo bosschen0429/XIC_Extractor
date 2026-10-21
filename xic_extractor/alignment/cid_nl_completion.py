@@ -92,6 +92,7 @@ class _CellCoveragePlan:
     conservative_positions: tuple[
         tuple[ResolvedCanonicalSampleIdentity, ConservativeBackfillGroupFacts], ...
     ]
+    backfill_enabled: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +168,7 @@ def prepare_cid_nl_workset(
         backfilled_positions,
         evidence.group_backfills,
         samples=samples,
+        backfill_enabled=alignment_config.backfill_enabled,
     )
     return CidNlWorksetCompletion(
         _scope=grouping.scope,
@@ -301,6 +303,7 @@ def _prepare_cell_coverage(
     ],
     *,
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    backfill_enabled: bool,
 ) -> _CellCoveragePlan:
     cell_by_key = {}
     cells_by_group: dict[str, list[CellObservationRef]] = {}
@@ -312,6 +315,8 @@ def _prepare_cell_coverage(
     ordered_samples = tuple(
         sorted(samples, key=lambda sample: sample.identity.sample_identity_id)
     )
+    if not backfill_enabled:
+        return _CellCoveragePlan(cell_by_key, (), False)
     conservative_positions = []
     for group in grouping_result.initial_population:
         group_cells = tuple(cells_by_group[group.group_hypothesis_id])
@@ -349,12 +354,14 @@ def _prepare_cell_coverage(
                 ):
                     continue
             conservative_positions.append((sample, facts))
-    return _CellCoveragePlan(cell_by_key, tuple(conservative_positions))
+    return _CellCoveragePlan(cell_by_key, tuple(conservative_positions), True)
 
 
 def _cell_planning_reason(
     cell: CellObservationRef | None,
     no_request: BackfillNoRequestDecision | None = None,
+    *,
+    backfill_enabled: bool = True,
 ) -> BackfillPlanningReason:
     if cell is None:
         return "no_discovery_input"
@@ -362,6 +369,13 @@ def _cell_planning_reason(
         return no_request.planning_reason
     if cell.content.outside_group is not None:
         return "local_owner_not_supersedable"
+    if (
+        not backfill_enabled
+        and cell.content.method_result == "HOLD"
+        and cell.peak_observation is None
+        and not cell.method_assessment.candidate_peaks
+    ):
+        return "backfill_disabled"
     if (
         cell.content.technical_state == "evaluated"
         and cell.content.method_result == "HOLD"
@@ -417,7 +431,9 @@ def _close_cell_coverage(
         BackfillPlanningPosition(
             group_identity=group,
             sample=sample,
-            planning_reason=_cell_planning_reason(cell, no_request),
+            planning_reason=_cell_planning_reason(
+                cell, no_request, backfill_enabled=plan.backfill_enabled
+            ),
             no_request_decision=no_request,
         )
         for group in repair_groups

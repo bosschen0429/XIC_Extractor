@@ -979,9 +979,11 @@ def test_pure_cid_nl_targets_csv_integration(
     assert closed == [True]
 
 
+@pytest.mark.parametrize("backfill_enabled", (True, False))
 def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    backfill_enabled: bool,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     raw_paths = (Path("sample-a.raw"), Path("sample-b.raw"))
@@ -1075,7 +1077,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             output_dir=tmp_path / "alignment",
-            alignment_config=AlignmentConfig(),
+            alignment_config=AlignmentConfig(backfill_enabled=backfill_enabled),
             peak_config=_discovery_peak_config(tmp_path),
             discovery_settings=settings,
             execution=UntargetedExecutionPolicy(
@@ -1120,6 +1122,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
                 str(cli_output),
                 "--preset",
                 "dna_dr",
+                "--backfill" if backfill_enabled else "--no-backfill",
                 "--allow-uncorrected",
                 "--output-level",
                 "machine",
@@ -1133,6 +1136,13 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         == 0
     )
 
+    if not backfill_enabled:
+        metadata = json.loads(
+            (cli_output / "alignment_run_metadata.json").read_text(encoding="utf-8")
+        )
+        assert metadata["backfill_execution"] == "not_run"
+    else:
+        assert not (cli_output / "alignment_run_metadata.json").exists()
     assert alignment.matrix_tsv is not None
     assert alignment.cells_tsv is not None
     with alignment.matrix_tsv.open(encoding="utf-8", newline="") as handle:

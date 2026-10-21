@@ -1,4 +1,4 @@
-"""Cell observation predecessor records and canonical artifact encoding."""
+"""CID-NL cell predecessor records and compatible canonical artifact encoding."""
 
 from __future__ import annotations
 
@@ -6,6 +6,9 @@ import json
 from dataclasses import asdict, dataclass, fields
 from typing import Literal
 
+from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
+    cid_nl_supported_observation_ids,
+)
 from xic_extractor.alignment.cell_observation.group_context import (
     _ARTIFACT_SEMANTIC_CONTRACT,
     SCHEMA_VERSION,
@@ -126,14 +129,9 @@ def _direct_member_integration(
                 "direct hypothesis does not mint the exact final member"
             )
         if method_assessment is not None:
-            if method_assessment.content.method_result != "SUPPORT":
-                raise CellObservationContractError(
-                    "direct member assessment must be SUPPORT"
-                )
-            supported_observation_ids = {
-                relation.content.peak_observation_content_id
-                for relation in method_assessment.individual_support_refs
-            }
+            supported_observation_ids = cid_nl_supported_observation_ids(
+                method_assessment
+            )
             if not set(member.physical_observation_ids).issubset(
                 supported_observation_ids
             ):

@@ -224,7 +224,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             output_dir=output_dir,
-            alignment_config=recipe.alignment_config,
+            alignment_config=replace(
+                recipe.alignment_config, backfill_enabled=args.backfill
+            ),
             peak_config=_peak_config(
                 raw_dir,
                 dll_dir,
@@ -539,6 +541,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "emit flags for additional artifacts."
         ),
     )
+    parser.add_argument(
+        "--backfill",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Revisit missing group cells (default: enabled); "
+            "--no-backfill leaves them unsearched."
+        ),
+    )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
         "--retain-acquisition-cache",
@@ -777,6 +788,7 @@ def _print_preflight_summary(
     print(f"Output dir: {output_dir}")
     print(f"Output level: {args.output_level}")
     print(f"Alignment worker budget: {args.raw_workers}")
+    print(f"Backfill: {'enabled' if args.backfill else 'disabled (not searched)'}")
     print(f"Input indexing / RAW backend: {args.raw_worker_backend}")
     print("Source fingerprint backend: thread")
     _print_owner_build_route_preflight(owner_build_xic_backend)

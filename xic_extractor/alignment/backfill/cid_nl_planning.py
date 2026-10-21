@@ -6,6 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from xic_extractor.alignment.backfill.cid_nl_evidence import (
+    decide_cid_nl_backfill_revisit,
+)
 from xic_extractor.alignment.backfill.conservative import (
     plan_conservative_backfill_targets,
 )
@@ -26,8 +29,6 @@ from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    is_cid_nl_missing_ms1_rejection,
-    is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -73,36 +74,6 @@ class CidNlBackfillDecision:
     question: CidNlBackfillQuestion
     assessment: CidNlMethodAssessmentRef
     action: Literal["reuse", "search", "skip"]
-
-
-def decide_cid_nl_backfill_revisit(
-    assessment: CidNlMethodAssessmentRef,
-    *,
-    observed_rt: float | None = None,
-    apex_tolerance_sec: float = 0.0,
-) -> Literal["reuse", "search", "skip"]:
-    """Reuse HOLD evidence unless an observed pattern locates a different peak.
-
-    SUPPORT outside this group belongs to another peak and requires a search.
-    A forecast alone does not establish a different observed peak.
-    """
-    if assessment.content.method_result == "SUPPORT":
-        return "search"
-    if not (
-        assessment.content.method_result == "HOLD"
-        or is_unsearched_cid_nl_discovery_assessment(assessment)
-        or is_cid_nl_missing_ms1_rejection(assessment)
-    ):
-        return "skip"
-    if not assessment.candidate_peaks:
-        return "search"
-    if observed_rt is not None and not any(
-        abs(peak.content.integration.rt_apex_min - observed_rt) * 60.0
-        <= apex_tolerance_sec
-        for peak in assessment.candidate_peaks
-    ):
-        return "search"
-    return "reuse"
 
 
 def plan_grouped_cid_nl_backfills(

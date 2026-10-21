@@ -4,11 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.alignment.cid_nl_grouping import (
+    SeedSupportLevel,
+    cid_nl_pair_failures,
+    classify_seed_support,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import (
-    SeedSupportLevel,
-    classify_seed_support,
-    compatible_composite_owners,
+    pair_ppm,
     peak_shape_union_conflict,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -172,34 +175,14 @@ def _hard_gate_failure(
         return "identity_conflict"
     if left.sample_stem == right.sample_stem:
         return "same_sample"
-    left_event = left.primary_identity_event
-    right_event = right.primary_identity_event
-    composite_compatible = compatible_composite_owners(left, right)
-    if (left_event is None) != (right_event is None):
-        return "neutral_loss_tag_mismatch"
-    if not composite_compatible and left.neutral_loss_tag != right.neutral_loss_tag:
-        return "neutral_loss_tag_mismatch"
-    if _ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
+    identity_failure, measurement_failure = cid_nl_pair_failures(left, right, config)
+    if identity_failure:
+        return identity_failure
+    if pair_ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance"
     if peak_shape_union_conflict((left,), (right,), config) is not None:
         return "peak_shape_mismatch"
-
-    if left_event is None or composite_compatible:
-        return None
-    assert right_event is not None
-    if _ppm(left_event.product_mz, right_event.product_mz) > (
-        config.product_mz_tolerance_ppm
-    ):
-        return "product_mz_out_of_tolerance"
-    if (
-        _ppm(
-            left_event.observed_neutral_loss_da,
-            right_event.observed_neutral_loss_da,
-        )
-        > config.observed_loss_tolerance_ppm
-    ):
-        return "observed_loss_out_of_tolerance"
-    return None
+    return measurement_failure
 
 
 def _owner_quality(
@@ -466,8 +449,3 @@ def _evidence(
 
 def _pass_reason(decision: EdgeDecision, score: int) -> str:
     return f"{decision}: score={score}"
-
-
-def _ppm(left: float, right: float) -> float:
-    denominator = max(abs(left), 1e-12)
-    return abs(left - right) / denominator * 1_000_000.0

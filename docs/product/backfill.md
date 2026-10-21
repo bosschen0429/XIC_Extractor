@@ -54,7 +54,8 @@ expand the acquired trace or silently search another RAW window.
 1. Normal Untargeted HTML runs, Alignment CLI runs, and preset runs enter the
    retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
 2. `alignment.backfill.cid_nl_planning` owns eligible sample/group questions,
-   subject and trajectory localization, and reuse/search/skip decisions. Sparse
+   subject and trajectory localization; `alignment.backfill.cid_nl_evidence`
+   owns method-specific reuse/search/skip and competing-attribution decisions. Sparse
    runtime execution obtains any missing initial assessment before resolving a
    question; `untargeted_execution.partition.workers` only adapts those decisions
    into bounded per-sample acquisition work.
@@ -62,6 +63,14 @@ expand the acquired trace or silently search another RAW window.
    resulting evidence through the conservative Backfill decision.
 4. The Untargeted route does not execute the retained `ObservationRevisit`
    transaction.
+
+Backfill is enabled by default. The Workbench switch, Alignment CLI
+`--no-backfill`, and `AlignmentConfig(backfill_enabled=False)` skip revisit
+planning and acquisition, not just publication. Completion retains existing
+sample-local evidence and exact no-input coverage. An otherwise empty local
+lane records `backfill_disabled` and becomes `not_searched`; it cannot mint a
+completed-empty receipt, zero value, or SUPPORT. Run metadata records
+`backfill_execution=not_run`. Existing direct observations remain available.
 
 Cross-subject groups retain each SUPPORT cell's exact assessment and hypothesis
 binding. The supporting subject nearest the formal group center is the canonical

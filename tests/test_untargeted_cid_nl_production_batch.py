@@ -2399,9 +2399,11 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         cid_nl_alignment_subject_worksets((first, first))
 
 
+@pytest.mark.parametrize("backfill_enabled", (True, False))
 def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    backfill_enabled: bool,
 ) -> None:
     physical_records = {}
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
@@ -2476,6 +2478,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     alignment_config = AlignmentConfig(
         anchor_min_seed_events=1,
         product_mz_tolerance_ppm=30.0,
+        backfill_enabled=backfill_enabled,
     )
     runtime = execute_dense_partition(
         batch,
@@ -2512,8 +2515,36 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         if position.sample.metadata.raw_stem == "Missing"
         and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
     )
-    assert position.no_request_decision is not None
-    assert position.no_request_decision.variant == "completed_backfill_empty"
+    if backfill_enabled:
+        assert position.no_request_decision is not None
+        assert position.no_request_decision.variant == "completed_backfill_empty"
+    else:
+        assert not any(item.backfill_attempts for item in runtime.sample_results)
+        assert position.no_request_decision is None
+        assert position.planning_reason == "no_discovery_input"
+        missing = next(
+            cell
+            for cell in child.scientific_core.cell_observations
+            if cell.canonical_sample.metadata.raw_stem == "Missing"
+        )
+        assert missing.evidence_state == "not_searched"
+        assert not missing.direct_hypotheses and not missing.integrations
+        assert all(
+            ref.content.method_result != "SUPPORT" for ref in missing.method_assessments
+        )
+        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
+
+        writer = project_completed_untarget_batch_writer_inputs(
+            completed.application_result
+        )
+        destination = tmp_path / "no-backfill-matrix.tsv"
+        write_alignment_matrix_tsv(
+            destination, writer.matrix, production_decisions=writer.production_decisions
+        )
+        with destination.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+        assert rows and all(row["Missing"] == "" for row in rows)
+        assert all(float(rows[0][stem]) > 0 for stem in stems[:4])
 
 
 @pytest.mark.parametrize(

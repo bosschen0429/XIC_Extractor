@@ -18,6 +18,8 @@ CONFIG_DIR = ROOT / "config"
 CONFIG_NAME = "discovery_gui.json"
 DEFAULT_CONFIG: dict[str, Any] = {
     "mode": "full",
+    "alignment_enabled": True,
+    "backfill_enabled": True,
     "preset": "dna_dr",
     "raw_dir": "",
     "raw_file": "",

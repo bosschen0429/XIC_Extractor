@@ -488,7 +488,10 @@ def write_streamed_untargeted_outputs_atomic(
         if outputs.run_metadata_json is not None:
             _write_metadata_json(
                 temp_paths[outputs.run_metadata_json],
-                _metadata_bound_to_peak_fact_provenance(metadata, row_count=0),
+                _metadata_bound_to_peak_fact_provenance(
+                    metadata,
+                    row_count=len(EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows),
+                ),
             )
 
     fingerprints = _write_artifacts_atomic(

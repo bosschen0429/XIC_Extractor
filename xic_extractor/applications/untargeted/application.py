@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.alignment.backfill.peak_fact_provenance import (
@@ -74,6 +75,11 @@ def run_untargeted_application(
         configured_backend=request.legacy.owner_build_xic_backend,
     )
     outputs = request.publication.output_paths(request.output_dir)
+    if not request.alignment_config.backfill_enabled:
+        outputs = replace(
+            outputs,
+            run_metadata_json=request.output_dir / "alignment_run_metadata.json",
+        )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
     if request.known_istd_reference is not None:
         resolved_known_istd_reference = request.known_istd_reference
@@ -129,6 +135,8 @@ def run_untargeted_application(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
         ),
     )
+    if not request.alignment_config.backfill_enabled:
+        metadata["backfill_execution"] = "not_run"
     metadata.update(
         {
             "alignment_route": "untargeted_cid_nl_finalized",

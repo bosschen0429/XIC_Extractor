@@ -12,6 +12,18 @@ from typing import Literal, cast
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from xic_extractor.alignment.cid_nl_grouping import (
+    CidNlFeatureEnvelope,
+    cid_nl_composition_index_key,
+    cid_nl_index_queries,
+    cid_nl_mass_center,
+    cid_nl_mass_fraction,
+    cid_nl_pair_mass_fraction,
+    grouping_chemistry_key,
+    has_cid_nl_composition,
+    has_scalar_cid_nl_identity,
+    owner_uncertainty_reason,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.edge_scoring import (
     OwnerEdgeEvidence,
@@ -19,10 +31,7 @@ from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.grouping_evidence import (
-    compatible_composite_owners,
-    grouping_chemistry_key,
-    owner_composite_subject_id,
-    owner_uncertainty_reason,
+    envelope_fraction,
     peak_shape_union_conflict,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -370,19 +379,13 @@ class _FeatureTrack:
     sample_stems: set[str]
     precursor_min: float
     precursor_max: float
-    product_min: float
-    product_max: float
-    loss_min: float
-    loss_max: float
-    neutral_loss_tag: str
-    composite_subject_id: str | None
+    method: CidNlFeatureEnvelope
     shape_members: list[SampleLocalMS1Owner]
 
     @classmethod
     def from_owner(
         cls, owner: SampleLocalMS1Owner, *, direction: DecisionDirection
     ) -> _FeatureTrack:
-        event = owner.primary_identity_event
         return cls(
             key=f"{direction}:{owner.owner_id}",
             seed=owner,
@@ -390,31 +393,17 @@ class _FeatureTrack:
             sample_stems={owner.sample_stem},
             precursor_min=owner.precursor_mz,
             precursor_max=owner.precursor_mz,
-            product_min=0.0 if event is None else event.product_mz,
-            product_max=0.0 if event is None else event.product_mz,
-            loss_min=0.0 if event is None else event.observed_neutral_loss_da,
-            loss_max=0.0 if event is None else event.observed_neutral_loss_da,
-            neutral_loss_tag=owner.neutral_loss_tag,
-            composite_subject_id=owner_composite_subject_id(owner),
+            method=CidNlFeatureEnvelope.from_owner(owner),
             shape_members=[owner] if owner.peak_shape is not None else [],
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
-        event = owner.primary_identity_event
+        self.method.add(owner)
         if owner.peak_shape is not None:
             self.shape_members.append(owner)
-        if self.composite_subject_id is not None and not compatible_composite_owners(
-            owner, self.seed
-        ):
-            self.composite_subject_id = None
         self.sample_stems.add(owner.sample_stem)
         self.precursor_min = min(self.precursor_min, owner.precursor_mz)
         self.precursor_max = max(self.precursor_max, owner.precursor_mz)
-        if event is not None:
-            self.product_min = min(self.product_min, event.product_mz)
-            self.product_max = max(self.product_max, event.product_mz)
-            self.loss_min = min(self.loss_min, event.observed_neutral_loss_da)
-            self.loss_max = max(self.loss_max, event.observed_neutral_loss_da)
         self.last = owner
 
     @property
@@ -461,42 +450,17 @@ class _FeatureIndex:
         config: AlignmentConfig,
         counts: Counter[str],
     ) -> set[str]:
-        event = owner.primary_identity_event
         result: set[str] | None = None
-        axes = [("precursor", owner.precursor_mz, config.max_ppm)]
-        if event is not None:
-            axes.extend(
-                (
-                    ("product", event.product_mz, config.product_mz_tolerance_ppm),
-                    (
-                        "loss",
-                        event.observed_neutral_loss_da,
-                        config.observed_loss_tolerance_ppm,
-                    ),
-                )
-            )
-        for axis, value, tolerance in axes:
-            matches = self._matches(
-                (owner.neutral_loss_tag, axis), value, tolerance, counts
-            )
+        for key, value, tolerance in cid_nl_index_queries(owner, config):
+            matches = self._matches(key, value, tolerance, counts)
             result = matches if result is None else result.intersection(matches)
             if not result:
                 break
         result = result or set()
-        assessment = owner.cid_nl_composite_assessment
-        if assessment is not None:
-            # A composition may be supported by different scalar losses. This
-            # range lookup only proposes candidates; exact owner/assessment
-            # binding remains the hard gate before any membership decision.
+        if composition_key := cid_nl_composition_index_key(owner):
             result.update(
                 self._matches(
-                    (
-                        assessment.content.method_subject.method_subject_id,
-                        "composition",
-                    ),
-                    owner.precursor_mz,
-                    config.max_ppm,
-                    counts,
+                    composition_key, owner.precursor_mz, config.max_ppm, counts
                 )
             )
         return result
@@ -515,30 +479,9 @@ class _FeatureIndex:
         counts["index_entries_scanned"] += last - first
         return {feature_key for _, feature_key in items[first:last]}
 
-    @classmethod
-    def _entries(
-        cls,
-        track: _FeatureTrack,
-    ) -> tuple[tuple[tuple[str, str], float], ...]:
-        entries = tuple(
-            ((track.neutral_loss_tag, axis), value)
-            for axis, value in cls._values(track)
-        )
-        if track.composite_subject_id is not None:
-            entries += (
-                ((track.composite_subject_id, "composition"), track.precursor_min),
-            )
-        return entries
-
     @staticmethod
-    def _values(track: _FeatureTrack) -> tuple[tuple[str, float], ...]:
-        if track.seed.primary_identity_event is None:
-            return (("precursor", track.precursor_min),)
-        return (
-            ("precursor", track.precursor_min),
-            ("product", track.product_min),
-            ("loss", track.loss_min),
-        )
+    def _entries(track: _FeatureTrack) -> tuple[tuple[tuple[str, str], float], ...]:
+        return track.method.index_entries(track.precursor_min)
 
 
 @dataclass(frozen=True, slots=True)
@@ -603,7 +546,7 @@ def infer_feature_memberships(
     # Composition can bridge scalar neutral-loss tags and retains its separate
     # membership contract.
     use_directional = bootstrap or any(
-        owner.cid_nl_composite_assessment is not None for owner in ordinary
+        has_cid_nl_composition(owner) for owner in ordinary
     )
     if use_directional:
         seed_by_owner = {
@@ -693,8 +636,7 @@ def _membership_trajectories(
     supported = {
         owner.owner_id: owner
         for owner in owners
-        if owner.primary_identity_event is not None
-        and owner.cid_nl_composite_assessment is None
+        if has_scalar_cid_nl_identity(owner)
         and not owner_uncertainty_reason(owner, config)
     }
     by_sample_chemistry: dict[
@@ -1378,8 +1320,6 @@ def _window_candidate_edges(
                 config.max_ppm,
             ):
                 continue
-            left_event = left.primary_identity_event
-            right_event = right.primary_identity_event
             same_track = left.owner_id in track_indices and track_indices[
                 left.owner_id
             ] == track_indices.get(right.owner_id)
@@ -1415,15 +1355,7 @@ def _window_candidate_edges(
                 )
                 / config.max_ppm
             )
-            product_fraction = 0.0
-            if left_event is not None and right_event is not None:
-                product_fraction = (
-                    absolute_ppm_error(
-                        max(left_event.product_mz, right_event.product_mz),
-                        min(left_event.product_mz, right_event.product_mz),
-                    )
-                    / config.product_mz_tolerance_ppm
-                )
+            method_fraction = cid_nl_pair_mass_fraction(left, right, config)
             cost = (
                 (0.20 if sparse_fallback else 0.0)
                 + 0.70
@@ -1434,7 +1366,7 @@ def _window_candidate_edges(
                     else config.preferred_rt_sec + 3.0 * gap
                 )
                 + 0.15 * min(precursor_fraction, 2.0)
-                + 0.15 * min(product_fraction, 2.0)
+                + 0.15 * min(method_fraction, 2.0)
             )
             arcs.append((cost, left.owner_id, right.owner_id))
     return arcs
@@ -1644,14 +1576,8 @@ def _bridge_separated_window_bands(
             key: statistics.median(owner.precursor_mz for owner in group)
             for key, group in bands.items()
         }
-        product_centers = {
-            key: statistics.median(
-                owner.primary_identity_event.product_mz
-                for owner in group
-                if owner.primary_identity_event is not None
-            )
-            for key, group in bands.items()
-            if any(owner.primary_identity_event is not None for owner in group)
+        method_centers = {
+            key: cid_nl_mass_center(group) for key, group in bands.items()
         }
         offers: dict[str, list[tuple[float, str]]] = defaultdict(list)
         keys = sorted(bands)
@@ -1689,16 +1615,13 @@ def _bridge_separated_window_bands(
                 precursor_fraction = (
                     absolute_ppm_error(left_mz, right_mz) / config.max_ppm
                 )
-                product_fraction = (
-                    absolute_ppm_error(product_centers[left], product_centers[right])
-                    / config.product_mz_tolerance_ppm
-                    if left in product_centers and right in product_centers
-                    else 0.0
+                method_fraction = cid_nl_mass_fraction(
+                    method_centers[left], method_centers[right], config
                 )
                 cost = (
                     0.70 * rt_delta_sec / config.preferred_rt_sec
                     + 0.15 * min(precursor_fraction, 2.0)
-                    + 0.15 * min(product_fraction, 2.0)
+                    + 0.15 * min(method_fraction, 2.0)
                 )
                 offers[left].append((cost, right))
                 offers[right].append((cost, left))
@@ -1751,12 +1674,6 @@ def _window_band_candidate(
         for item in band
     ):
         return None
-    event = owner.primary_identity_event
-    products = tuple(
-        item.primary_identity_event.product_mz
-        for item in band
-        if item.primary_identity_event is not None
-    )
     if len(band) >= 10:
         expected = (
             trends or _NearestInjectionMedians.prepare(band, orders, corrected_rt)
@@ -1790,17 +1707,14 @@ def _window_band_candidate(
     precursor_fraction = (
         absolute_ppm_error(owner.precursor_mz, precursor_median) / config.max_ppm
     )
-    product_fraction = (
-        absolute_ppm_error(event.product_mz, statistics.median(products))
-        / config.product_mz_tolerance_ppm
-        if event is not None and products
-        else 0.0
+    method_fraction = cid_nl_mass_fraction(
+        cid_nl_mass_center((owner,)), cid_nl_mass_center(band), config
     )
     cost = min(
         0.999999,
         0.70 * rt_delta_sec / tolerance_sec
         + 0.15 * min(precursor_fraction, 2.0)
-        + 0.15 * min(product_fraction, 2.0),
+        + 0.15 * min(method_fraction, 2.0),
     )
     return _Candidate(
         feature_key=key,
@@ -2039,60 +1953,19 @@ def _feature_hard_reason(
     track: _FeatureTrack,
     config: AlignmentConfig,
 ) -> tuple[str, float]:
-    event = owner.primary_identity_event
     if owner.sample_stem in track.sample_stems:
         return "same_sample", math.inf
-    if (event is None) != (track.seed.primary_identity_event is None):
-        return "identity_evidence_type_mismatch", math.inf
-    composite_compatible = (
-        track.composite_subject_id is not None
-        and compatible_composite_owners(owner, track.seed)
-    )
-    if not composite_compatible and owner.neutral_loss_tag != track.neutral_loss_tag:
-        return "neutral_loss_tag_mismatch", math.inf
-    mass_fraction = _envelope_fraction(
+    identity_failure, measurement_failure = track.method.failures(owner, config)
+    if identity_failure:
+        return identity_failure, math.inf
+    mass_fraction = envelope_fraction(
         track.precursor_min, track.precursor_max, owner.precursor_mz, config.max_ppm
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction
     if peak_shape_union_conflict((owner,), track.shape_members, config):
         return "peak_shape_mismatch", mass_fraction
-    if event is None or composite_compatible:
-        return "", mass_fraction
-    if (
-        _envelope_fraction(
-            track.product_min,
-            track.product_max,
-            event.product_mz,
-            config.product_mz_tolerance_ppm,
-        )
-        > 1.0
-    ):
-        return "product_envelope", mass_fraction
-    if (
-        _envelope_fraction(
-            track.loss_min,
-            track.loss_max,
-            event.observed_neutral_loss_da,
-            config.observed_loss_tolerance_ppm,
-        )
-        > 1.0
-    ):
-        return "observed_loss_envelope", mass_fraction
-    return "", mass_fraction
-
-
-def _envelope_fraction(
-    current_min: float,
-    current_max: float,
-    value: float,
-    tolerance_ppm: float,
-) -> float:
-    lower = min(current_min, value)
-    upper = max(current_max, value)
-    if lower <= 0.0:
-        return math.inf
-    return absolute_ppm_error(upper, lower) / tolerance_ppm
+    return measurement_failure, mass_fraction
 
 
 def _edge_cost(
