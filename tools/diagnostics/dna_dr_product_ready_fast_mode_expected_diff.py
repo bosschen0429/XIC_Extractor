@@ -10,7 +10,7 @@ import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 SCHEMA_VERSION = "dna_dr_product_ready_fast_mode_expected_diff"
 PUBLIC_FILES = (
@@ -403,13 +403,18 @@ def _timing_diff(
     }
 
 
+class _TimingRecord(TypedDict):
+    stage: str
+    elapsed_sec: float
+
+
 def _timing_summary(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"stage_max_sec": {}, "top_records": []}
     payload = json.loads(path.read_text(encoding="utf-8"))
     records = payload.get("records", [])
     stage_max: dict[str, float] = defaultdict(float)
-    simple_records = []
+    simple_records: list[_TimingRecord] = []
     for record in records:
         stage = _text(record.get("stage"))
         elapsed = _float_or_none(record.get("elapsed_sec")) or 0.0

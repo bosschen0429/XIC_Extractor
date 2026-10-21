@@ -8,6 +8,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -20,6 +21,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_INDEX_REL,
+    DocClassification,
     classify_doc,
     classify_doc_path,
     doc_placement_is_non_repo,
@@ -766,7 +768,7 @@ def _is_superpowers_spec_path(path: str) -> bool:
     return classify_doc_path(path).is_superpowers_spec
 
 
-def _topic_role(classification: object, disposition: str) -> str:
+def _topic_role(classification: DocClassification, disposition: str) -> str:
     placement = classification.placement
     if classification.is_specs_index:
         return "repo_supporting_artifact"
@@ -857,7 +859,74 @@ def _infer_doc_kind(path: str) -> str:
     return infer_doc_kind_from_path(path)
 
 
-def _lifecycle_metadata(path: str, text: str) -> dict[str, str]:
+class _LifecycleMetadata(TypedDict):
+    doc_kind: str
+    doc_kind_source: str
+    doc_lifecycle: str
+    doc_exit_rule: str
+    lifecycle_status: str
+
+
+class _RoutingMetadata(_LifecycleMetadata):
+    metadata_status: str
+    metadata_missing_fields: str
+    wiki_skill_route: str
+    wiki_next_action: str
+    doc_route: str
+    repo_body_role: str
+    digestion_status: str
+    digestion_next_action: str
+    support_retention_reason: str
+    support_next_action: str
+    information_value: str
+    repo_owner_hint: str
+    topic_key: str
+    topic_role: str
+    topic_owner_claim: str
+    topic_subcontract_claim: str
+    topic_cluster_size: int
+    topic_cluster_status: str
+    topic_cluster_sample: str
+    obsidian_lane: str
+    obsidian_original_hint: str
+    repo_pointer_required: str
+    referrer_status: str
+    exact_referrers: int
+    sample_referrers: str
+    destructive_allowed_now: str
+
+
+class DocsRoutingReview(TypedDict):
+    scanned_files: int
+    candidate_files: int
+    route_retained_files: int
+    route_retained_review_files: int
+    metadata_review_files: int
+    kept_files: int
+    all_disposition_counts: dict[str, int]
+    disposition_counts: dict[str, int]
+    all_doc_route_counts: dict[str, int]
+    doc_route_counts: dict[str, int]
+    all_doc_kind_counts: dict[str, int]
+    all_digestion_status_counts: dict[str, int]
+    route_retained_digestion_status_counts: dict[str, int]
+    candidate_digestion_status_counts: dict[str, int]
+    all_lifecycle_status_counts: dict[str, int]
+    metadata_status_counts: dict[str, int]
+    lifecycle_status_counts: dict[str, int]
+    all_topic_cluster_counts: dict[str, int]
+    topic_cluster_group_counts: dict[str, int]
+    topic_clusters: list[dict[str, object]]
+    top_topic_clusters: list[dict[str, object]]
+    candidates: list[dict[str, object]]
+    top_candidates: list[dict[str, object]]
+    route_retained_reviews: list[dict[str, object]]
+    top_route_retained_reviews: list[dict[str, object]]
+    metadata_reviews: list[dict[str, object]]
+    top_metadata_reviews: list[dict[str, object]]
+
+
+def _lifecycle_metadata(path: str, text: str) -> _LifecycleMetadata:
     classification = classify_doc(path, text)
     return {
         "doc_kind": classification.doc_kind,
@@ -868,7 +937,7 @@ def _lifecycle_metadata(path: str, text: str) -> dict[str, str]:
     }
 
 
-def _routing_metadata(path: str, text: str, disposition: str) -> dict[str, object]:
+def _routing_metadata(path: str, text: str, disposition: str) -> _RoutingMetadata:
     classification = classify_doc(path, text)
     information_value, repo_owner_hint = _topic_hint(path, text)
     route = _doc_route(disposition)
@@ -1349,7 +1418,7 @@ def _classify_docs_routing_candidate(
 
 def docs_routing_review(
     repository_view: _docs_scan.RepositoryTextView,
-) -> dict[str, object]:
+) -> DocsRoutingReview:
     _docs_scan.require_repository_text_view(repository_view.root, repository_view)
     records = [
         record

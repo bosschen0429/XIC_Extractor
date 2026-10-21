@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import asdict, replace
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 from xic_extractor.alignment.grouping_experiment import (
     calibrate_grouping,
@@ -218,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             inputs, provenance = read_grouping_inputs(args.inputs)
             config_values = asdict(inputs.alignment_config)
-            overrides = {}
+            overrides: dict[str, Any] = {}
             for setting in args.set:
                 key, value = setting.split("=", 1)
                 if key not in config_values:

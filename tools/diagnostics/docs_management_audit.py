@@ -20,6 +20,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -37,6 +38,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
 from tools.diagnostics.docs_routing_review import (  # noqa: E402
     ROUTING_MANIFEST_FIELDS,
     TOPIC_CLUSTER_MANIFEST_FIELDS,
+    DocsRoutingReview,
     docs_routing_review,
 )
 from tools.diagnostics.docs_topic_indexes import (  # noqa: E402
@@ -80,10 +82,43 @@ class AuditMessage:
     message: str
 
 
+class DocsStructureReview(TypedDict):
+    root_scatter_files: int
+    root_scatter: list[str]
+    top_root_scatter: list[str]
+    retired_lane_files: int
+    retired_lanes: list[dict[str, str]]
+    top_retired_lanes: list[dict[str, str]]
+
+
+class CanonicalMetadataReview(TypedDict):
+    reviewed_files: int
+    missing_metadata_files: int
+    missing_metadata: list[dict[str, object]]
+    top_missing_metadata: list[dict[str, object]]
+
+
+class RepoAuditSummary(TypedDict):
+    repo_markdown_files: int
+    docs_by_top_level: dict[str, int]
+    local_path_files: int
+    local_path_hits: int
+    top_local_path_files: list[dict[str, object]]
+    docs_routing_review: DocsRoutingReview
+    docs_structure_review: DocsStructureReview
+    completed_transient_review: dict[str, object]
+    canonical_metadata_review: CanonicalMetadataReview
+
+
+class AuditSummary(TypedDict):
+    repo: RepoAuditSummary
+    vault: dict[str, object]
+
+
 @dataclass(frozen=True)
 class AuditResult:
     messages: tuple[AuditMessage, ...]
-    summary: dict[str, object]
+    summary: AuditSummary
 
     @property
     def blockers(self) -> tuple[AuditMessage, ...]:
@@ -162,7 +197,7 @@ def resolve_vault(root: Path, explicit: Path | None) -> Path | None:
 
 def audit_repo(
     root: Path,
-) -> tuple[list[AuditMessage], dict[str, object]]:
+) -> tuple[list[AuditMessage], RepoAuditSummary]:
     messages: list[AuditMessage] = []
     repository_view = _docs_scan.load_repository_text_view(root)
     docs = tuple(
@@ -327,7 +362,7 @@ def audit_repo(
             )
         )
 
-    summary: dict[str, object] = {
+    summary: RepoAuditSummary = {
         "repo_markdown_files": len(docs),
         "docs_by_top_level": dict(sorted(docs_by_top.items())),
         "local_path_files": len(local_path_counts),
@@ -377,7 +412,7 @@ def completed_transient_review_for_repo(
     }
 
 
-def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, object]:
+def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> DocsStructureReview:
     root_scatter: list[str] = []
     retired_lanes: list[dict[str, str]] = []
     for rel_path in sorted(scan_paths):
@@ -405,7 +440,7 @@ def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, objec
 
 def canonical_metadata_review_for_repo(
     repository_view: _docs_scan.RepositoryTextView,
-) -> dict[str, object]:
+) -> CanonicalMetadataReview:
     rows: list[dict[str, object]] = []
     for rel_path in sorted(DOC_CANONICAL_OWNER_FILES):
         if not is_markdown_path(rel_path):
@@ -719,7 +754,7 @@ def run_audit(
             "vault_skipped": True,
         }
     messages = [*repo_messages, *vault_messages]
-    summary = {"repo": repo_summary, "vault": vault_summary}
+    summary: AuditSummary = {"repo": repo_summary, "vault": vault_summary}
     return AuditResult(tuple(messages), summary)
 
 
