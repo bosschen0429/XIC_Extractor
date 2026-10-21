@@ -386,7 +386,8 @@ The second source is `xic_curve_bundle`. A diagnostic can construct
 UTF-8 JSON. Inspector accepts the resulting `.json` through the same CLI and
 `generate_report` API. The bundle is bound by its file SHA-256, with no Matrix
 dependency. A transition is one selectable review item. The key of a
-transition is the group query ID. Each trace ID is a candidate query ID.
+transition is the group query ID. Each trace ID is a candidate query ID, and
+its role names the channel it measures.
 
 - Each transition carries a fixed `review_rt_window` and a `quality_flags`
   JSON object. `quality_flags` preserves transition-level gate labels,
@@ -512,6 +513,11 @@ Inspector.
 - An explicit return beside the sample heading restores the all-sample view.
   The return does not reset the display settings of the item.
 - Viewing a candidate does not change the recorded decision.
+- Traces of one sample with distinct roles, such as Delta Mass `base` and
+  `plus_n` channels, are channels of that sample rather than competing
+  candidates. They raise no multiple-candidate notice; the role names each
+  channel and a line style tells the channels apart. Traces that share a role
+  remain candidates.
 - Integration boundaries, peak time, and raw-count area are shown with the
   selected capture. That area does not replace the final quantitative value.
 
@@ -540,11 +546,21 @@ Inspector.
 
 ### Curve signals
 
-- Curves default to the saved smoothed signal.
-- Selecting raw or another available signal replaces the curve. The selection
-  does not overlay raw underneath the curve.
+- One page-level raw/smoothed choice draws every curve view: the item plots,
+  cross-sample lanes, and differential views. In an offline report it sits in
+  the header; a hosted view shows it above its content.
+- The choice holds across items, samples, candidates, and views mounted later
+  on the same page, including side-by-side views and a view a host replaces for
+  another group. It defaults to the saved smoothed signal and is not persisted
+  across page loads.
+- Selecting raw replaces the curve. Raw is not drawn underneath the smoothed
+  curve.
+- Where an item retains baseline or baseline-positive signals, local
+  checkboxes overlay them on the selected signal. The overlay choice also holds
+  across items.
 - Cross-sample lanes scale each sample to the maximum of its selected signal.
-- Missing selected-signal data does not fall back to raw.
+- Missing selected-signal data is stated as unavailable for that item. It does
+  not fall back to the other signal or change the page choice.
 - The display does not prepare or smooth data again.
 
 ### Time axes

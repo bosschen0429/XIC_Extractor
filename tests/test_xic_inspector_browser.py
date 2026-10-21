@@ -16,6 +16,7 @@ from tests.test_workbench_browser import browser as browser
 from tests.test_xic_inspector_curve_bundle import _fixture_bundle
 from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
 from xic_inspector.api import SelectionRequest, prepare_report
+from xic_inspector.rendering.html_builder import build_report_html
 from xic_inspector.sources.curve_bundle import (
     CurveBundle,
     SampleQuantification,
@@ -295,3 +296,144 @@ def test_cli_report_interacts_offline_without_server_or_network(
         expect(root.locator(".tgt-xic")).to_have_count(0)
     assert not network_requests
     assert hashlib.sha256(source.read_bytes()).hexdigest() == source_digest
+
+
+def _signal_payload():
+    """Items whose raw and smoothed curves differ; the last retains raw only."""
+
+    def item(index, *, smoothed=True):
+        rows, curves = [], []
+        for sample in ("S1", "S2"):
+            ref = f"curve-{index}-{sample}"
+            rows.append(
+                {
+                    "sample_id": sample,
+                    "support_origin": {"kind": "unavailable", "capture_refs": [ref]},
+                }
+            )
+            processed = [{"kind": "baseline", "intensities": [0.0, 1.0, 0.0]}]
+            if smoothed:
+                processed.append({"kind": "smoothed", "intensities": [1.0, 6.0, 1.0]})
+            curves.append(
+                {
+                    "sample_id": sample,
+                    "evidence_ref": ref,
+                    "raw_rts": [1.0, 1.1, 1.2],
+                    "raw_intensities": [0.0, 10.0 + index, 0.0],
+                    "processed_curves": processed,
+                }
+            )
+        return {
+            "id": f"item-{index}",
+            "kind": "group",
+            "title": f"Item {index}",
+            "samples": rows,
+            "curves": curves,
+        }
+
+    return {
+        "samples": [
+            {"id": "S1", "label": "Sample 1"},
+            {"id": "S2", "label": "Sample 2"},
+        ],
+        "items": [item(1), item(2), item(3, smoothed=False)],
+    }
+
+
+def _drawn_kinds(root):
+    return set(
+        _control(root, "svg-raw")
+        .locator("polyline")
+        .evaluate_all("nodes => nodes.map(node => node.dataset.kind)")
+    )
+
+
+def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_path):
+    payload = _signal_payload()
+    output = tmp_path / "signals.html"
+    output.write_text(
+        build_report_html(
+            title="Signals",
+            evidence_capability="retained_curves",
+            strategy="sample",
+            request_id="signals",
+            run_total=3,
+            eligible_count=3,
+            selected_count=3,
+            source_db_name="signals.json",
+            payload_data=payload,
+        ),
+        encoding="utf-8",
+    )
+    page = review_page
+    page.goto(output.as_uri())
+    root = page.locator("#inspector-root")
+    switch = root.get_by_role("group", name=re.compile("曲線訊號"))
+    raw, smoothed = (
+        switch.get_by_role("button", name="原始", exact=True),
+        switch.get_by_role("button", name="平滑", exact=True),
+    )
+    lanes = root.locator(".lane-raw")
+    expect(smoothed).to_have_attribute("aria-pressed", "true")
+    assert _drawn_kinds(root) == {"smoothed"}
+
+    raw.click()
+    expect(raw).to_have_attribute("aria-pressed", "true")
+    assert _drawn_kinds(root) == {"raw"}
+    expect(lanes.first).to_have_attribute("data-kind", "raw")
+    expect(root.locator(".plot-card h4").first).to_contain_text("原始訊號")
+    root.get_by_role("checkbox", name="疊加基線").check()
+    assert _drawn_kinds(root) == {"raw", "baseline"}
+
+    for title in ("Item 2", "Item 1"):
+        root.locator(".record-button", has_text=title).click()
+        expect(raw).to_have_attribute("aria-pressed", "true")
+        assert _drawn_kinds(root) == {"raw", "baseline"}
+        expect(lanes.first).to_have_attribute("data-kind", "raw")
+    root.locator('[data-focus="S1"]').click()
+    assert _drawn_kinds(root) == {"raw", "baseline"}
+
+    root.locator(".record-button", has_text="Item 3").click()
+    expect(raw).to_have_attribute("aria-pressed", "true")
+    assert _drawn_kinds(root) == {"raw", "baseline"}
+    smoothed.click()
+    expect(smoothed).to_have_attribute("aria-pressed", "true")
+    expect(_control(root, "svg-raw").locator("polyline")).to_have_count(0)
+    expect(_control(root, "svg-raw")).to_contain_text("未保存平滑訊號")
+    expect(lanes).to_have_count(0)
+    expect(root.locator(".lane-missing").first).to_contain_text("未保存平滑")
+    root.locator(".record-button", has_text="Item 2").click()
+    assert _drawn_kinds(root) == {"smoothed", "baseline"}
+
+
+def test_hosted_views_share_signal_choice_across_remounts(review_page):
+    page = review_page
+    page.set_content('<div id="left"></div><div id="right"></div>')
+    _load_view_assets(page)
+    payload = _signal_payload()
+    page.evaluate(
+        """payload => {
+            window.views = ['left', 'right'].map(id => XicInspector.mount(
+                document.getElementById(id), payload, {mode:'curves'}));
+        }""",
+        payload,
+    )
+    left, right = page.locator("#left"), page.locator("#right")
+    left.get_by_role("button", name="原始", exact=True).click()
+    assert _drawn_kinds(left) == _drawn_kinds(right) == {"raw"}
+    expect(right.get_by_role("button", name="原始", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    # A host replaces the view when the reviewer opens another group.
+    page.evaluate(
+        """payload => {
+            window.views[0].destroy();
+            window.views[0] = XicInspector.mount(
+                document.getElementById('left'), payload, {mode:'curves'});
+        }""",
+        payload,
+    )
+    assert _drawn_kinds(left) == {"raw"}
+    expect(left.get_by_role("button", name="原始", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )

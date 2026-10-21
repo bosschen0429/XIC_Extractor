@@ -512,6 +512,7 @@ class CurveBundleSource:
                 if trace.sample_id in item.sample_ids
             ]
             quantifications = {q.sample_id: q for q in transition.quantifications}
+            roles = {trace.trace_id: trace.role for trace in traces}
             projected_curves = []
             for trace in traces:
                 if trace.raw is None:
@@ -723,7 +724,10 @@ class CurveBundleSource:
                     ),
                     "relationship_availability": "unavailable",
                     "samples": samples,
-                    "witnesses": [asdict(w) for w in item.witnesses],
+                    "witnesses": [
+                        {**asdict(w), "role": roles[w.candidate_id]}
+                        for w in item.witnesses
+                    ],
                     "details": {"readable_records": records},
                     "review_summary": item.details["review_summary"],
                     "curves": projected_curves,

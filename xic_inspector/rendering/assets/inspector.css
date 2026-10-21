@@ -253,6 +253,16 @@
 .xic-inspector .axis-switch button:last-child { border-radius:0 6px 6px 0;margin-left:-1px; }
 .xic-inspector .axis-switch button[aria-pressed="true"] { background:var(--accent-soft);color:var(--accent-ink);border-color:#8fb4c2;font-weight:600; }
 .xic-inspector .relationship-workbench summary { color:var(--accent);font-size:13px; }
+.xic-inspector .signal-switch { display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted); }
+.xic-inspector .signal-bar { display:flex;justify-content:flex-end;margin-bottom:10px; }
+.xic-inspector .signal-switch[hidden], .xic-inspector .signal-bar[hidden], .xic-inspector .selection-controls:empty { display:none; }
+.xic-inspector .overlay-controls label { display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:13px; }
+.xic-inspector .channel-key { display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;color:var(--muted); }
+.xic-inspector .channel-key span { display:inline-flex;align-items:center;gap:6px; }
+.xic-inspector .relationship-workbench.compact { display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap;padding:10px 18px; }
+.xic-inspector .relationship-workbench.compact .relation-section-heading { padding:0; }
+.xic-inspector .relationship-workbench.compact .relation-section-heading h3 { font-size:14px; }
+.xic-inspector .relationship-workbench.compact .relation-empty { padding:0; }
 
     @media(max-width:1100px){.xic-inspector .relationship-top {grid-template-columns:minmax(0,1fr) 210px}
 .xic-inspector .relationship-detail {padding:16px}

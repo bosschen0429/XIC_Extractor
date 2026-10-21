@@ -1,6 +1,7 @@
 """The portable curve source must survive a file handoff without RAW access."""
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import replace
@@ -438,3 +439,51 @@ def test_invalid_saved_result_projection_is_rejected(tmp_path, mutation):
     with pytest.raises(InspectorError, match="Invalid curve bundle"):
         generate_report(source, SelectionRequest(), tmp_path / "review.html")
     assert not (tmp_path / "review.html").exists()
+
+
+def test_distinct_trace_roles_read_as_channels_of_one_sample(tmp_path):
+    transition = _fixture_bundle().transitions[0]
+    base = replace(transition.traces[0], trace_id="s1-base", role="base")
+    plus = replace(base, trace_id="s1-plus_1", role="plus_1", mz=502.2)
+    # Two traces sharing a role in one sample remain competing candidates.
+    first = replace(transition.traces[1], trace_id="s2-a", role="reacquisition")
+    second = replace(first, trace_id="s2-b", mz=501.3)
+    source, output = tmp_path / "channels.json", tmp_path / "review.html"
+    write_curve_bundle(
+        CurveBundle((replace(transition, traces=(base, plus, first, second)),)),
+        source,
+    )
+    generate_report(source, SelectionRequest(), output)
+    content = output.read_text(encoding="utf-8")
+    payload = json.loads(
+        content.split(
+            '<script id="inspector-data" type="application/json">',
+            1,
+        )[1].split("</script>", 1)[0]
+    )
+    rendered = _evaluate_report_functions(
+        content,
+        payload,
+        "const item=items[0];"
+        "return JSON.stringify({notices:Object.fromEntries(item.samples.map(r=>"
+        "[r.sample_id,sampleNotices(item,r).map(n=>n.kind)])),"
+        "summary:summary(item),plot:plot(item,'raw'),key:channelKey(item),"
+        "labels:candidates(item,'sample-1').map(candidateLabel)});",
+    )
+    assert "candidates" not in rendered["notices"]["sample-1"]
+    assert "candidates" in rendered["notices"]["sample-2"]
+    assert "<dt>多個候選</dt><dd>1<small>個樣本</small>" in rendered["summary"]
+    assert 'title="sample-two"' in rendered["summary"]
+    dashes = dict(
+        re.findall(
+            r'data-curve-ref="([^"]+)"[^>]*stroke-dasharray="([^"]*)"',
+            rendered["plot"],
+        )
+    )
+    assert dashes["s1-base"] != dashes["s1-plus_1"]
+    assert dashes["s2-a"] == dashes["s2-b"] == ""
+    assert re.findall(r"</svg>([^<]+)</span>", rendered["key"]) == ["base", "plus_1"]
+    assert [label.split(" · ")[0] for label in rendered["labels"]] == [
+        "base",
+        "plus_1",
+    ]
