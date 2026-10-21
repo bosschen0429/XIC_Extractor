@@ -247,10 +247,11 @@ window.XicUi = (() => {
       dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
     if (!accepted) return;
     try {
-      const { raw_dir, dll_dir } = state.runFolder;
+      const { raw_dir, dll_dir, sequence_source } = state.runFolder;
       const result = await api("/api/samples/exclude", {
         raw_dir,
         dll_dir,
+        sequence_source,
         raw_stem: sample_id,
         reason: $("exclude-reason").value,
       });

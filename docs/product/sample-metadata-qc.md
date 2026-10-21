@@ -191,7 +191,8 @@ only through **匯入上機資訊**, which takes roles from the list and keeps c
 groups and exclusions the list does not supply. Edits save at once and are
 validated by `parse_sample_metadata` before writing, so an exclusion waits for
 its reason. A Targeted run reads the folder's file as its
-`injection_order_source` for that run only. Roles saved in `discovery_gui.json`
+`injection_order_source` for that run only, and an Untargeted run reads the
+same file rather than rows a page may still hold. Roles saved in `discovery_gui.json`
 before this file existed seed their own RAW folder until it is confirmed.
 
 The pre-run checklist words `sample_overview`: per-group counts, unassigned study
@@ -213,7 +214,8 @@ takes the curve-palette slot its name hashes to, or the next free slot, and
 population's groups, so one group shows one colour in both. Targeted review of
 a result opened from its run can mark an injection excluded; the Inspector only
 requests it, and the workbench writes the metadata of that run's RAW folder, not
-the editable review path. A result opened by hand has no run folder and offers
+the editable review path; an unconfirmed folder is first read with the 上機資訊
+that run used, not the current batch settings. A result opened by hand has no run folder and offers
 no exclusion. An exclusion applies on the next run and does not change the
 published result; a box checked without a reason stays a pending mark that
 closing the editor drops, so it never reaches a run.

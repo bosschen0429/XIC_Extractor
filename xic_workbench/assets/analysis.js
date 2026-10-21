@@ -1037,7 +1037,17 @@
     };
     renderSampleSummary(result.summary, sampleId(page, "samples"));
     renderRoleSummary(page);
+    if (result.summary?.confirmed) mirrorSamples(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  // The other flow on the same folder shows the same confirmed rows.
+  function mirrorSamples(page) {
+    const rawDir = $(samplePages[page].rawDir).value;
+    for (const [other, spec] of Object.entries(samplePages))
+      if (other !== page && $(spec.rawDir).value === rawDir) {
+        state.sampleSets[other] = state.sampleSets[page];
+        renderRoleSummary(other);
+      }
   }
   function clearSamples(page) {
     state.sampleSets[page] = emptySamples();
@@ -1539,12 +1549,7 @@
     });
     set.overview = saved.overview;
     set.source = "confirmed";
-    // The other flow on the same folder shows the same confirmed rows.
-    for (const [other, spec] of Object.entries(samplePages))
-      if (other !== page && $(spec.rawDir).value === rawDir) {
-        state.sampleSets[other] = set;
-        renderRoleSummary(other);
-      }
+    mirrorSamples(page);
     renderRoleSummary(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
   }
@@ -2262,7 +2267,7 @@
     });
     $("sample-select-all").onchange = () =>
       $("sample-rows")
-        .querySelectorAll("input[type=checkbox]")
+        .querySelectorAll("input[data-sample]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
     roleOptions($("sample-bulk-role"), "study_sample");
     // A change confirmed elsewhere, such as an exclusion marked in review.

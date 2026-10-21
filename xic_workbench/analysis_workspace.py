@@ -291,7 +291,9 @@ class AnalysisWorkspace:
                 str(values["raw_stem"]),
                 str(values.get("reason") or ""),
                 dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
-                sequence_source=self._batch_sequence_source(raw_dir),
+                sequence_source=Path(values["sequence_source"])
+                if values.get("sequence_source")
+                else None,
             )
             self.jobs.remember_samples(
                 values["raw_dir"], result["samples"], result["overview"]
@@ -372,26 +374,6 @@ class AnalysisWorkspace:
             os.startfile(str(path))  # noqa: S606
             return {"path": str(path)}
         raise ValueError("不支援此操作。")
-
-    def _batch_sequence_source(self, raw_dir: Path) -> Path | None:
-        """The 上機資訊 a saved batch on this RAW folder names, if any."""
-        from xic_workbench.config_io import read_settings
-        from xic_workbench.discovery_config_io import read_discovery_config
-
-        targeted = read_settings(config_dir=self.config_dir)
-        untargeted = read_discovery_config(config_dir=self.config_dir)
-        for folder, source in (
-            (targeted.get("data_dir"), targeted.get("injection_order_source")),
-            (untargeted.get("raw_dir"), untargeted.get("sequence_source")),
-        ):
-            if (
-                folder
-                and source
-                and Path(folder).resolve() == raw_dir.resolve()
-                and Path(source).is_file()
-            ):
-                return Path(source)
-        return None
 
     def close(self) -> None:
         self.jobs.close()

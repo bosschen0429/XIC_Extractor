@@ -91,6 +91,7 @@ def read_batch_samples(
     result["summary"]["annotation_source"] = (
         "sequence" if importing else "confirmed" if confirmed else "raw"
     )
+    result["summary"]["confirmed"] = confirmed
     return _with_overview(result)
 
 
@@ -297,8 +298,8 @@ def exclude_sample(
 ) -> dict[str, Any]:
     """Mark one injection of a reviewed run excluded for the folder's next run.
 
-    A folder without confirmed metadata is read first, with the 上機資訊 its
-    batch settings name, so the exclusion does not drop its roles or groups.
+    A folder without confirmed metadata is read first with the 上機資訊 the
+    reviewed run used, so the exclusion keeps that run's roles and groups.
     """
     path = sample_annotations_path(config_dir, raw_dir)
     rows = (

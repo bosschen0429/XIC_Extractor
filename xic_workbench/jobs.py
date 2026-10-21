@@ -183,18 +183,18 @@ class AnalysisJobs:
         from xic_workbench.untargeted import UntargetedRun, parse_request
 
         if (
-            values.get("samples") is None
-            and values.get("raw_dir")
+            values.get("raw_dir")
             and values.get("dll_dir")
             and values.get("mode", "full") in {"full", "align_only"}
         ):
             raw_dir = Path(values["raw_dir"])
             legacy = read_legacy_roles(raw_dir, config_dir=self.config_dir)
-            # Without annotations the alignment owner resolves default metadata.
-            if (
-                values.get("sequence_source")
-                or legacy
-                or sample_annotations_path(self.config_dir, raw_dir).is_file()
+            # A folder's confirmed metadata decides the run, whatever rows the
+            # page still holds; without annotations the alignment owner resolves
+            # default metadata.
+            if sample_annotations_path(self.config_dir, raw_dir).is_file() or (
+                values.get("samples") is None
+                and (values.get("sequence_source") or legacy)
             ):
                 values["samples"] = read_batch_samples(
                     self.config_dir,
@@ -205,17 +205,10 @@ class AnalysisJobs:
                     else None,
                     legacy_roles=legacy,
                 )["samples"]
-        elif (
-            isinstance(values.get("samples"), list)
-            and values.get("raw_dir")
-            and values.get("dll_dir")
-            and values.get("mode", "full") in {"full", "align_only"}
-        ):
-            values["samples"] = apply_raw_chronology(
-                values["samples"],
-                raw_dir=Path(values["raw_dir"]),
-                dll_dir=Path(values["dll_dir"]),
-            )
+            elif isinstance(values.get("samples"), list):
+                values["samples"] = apply_raw_chronology(
+                    values["samples"], raw_dir=raw_dir, dll_dir=Path(values["dll_dir"])
+                )
         if values.get("execution_profile") is None:
             from xic_workbench.config_io import read_settings
 
@@ -246,6 +239,14 @@ class AnalysisJobs:
                     inputs.get("data_dir" if kind == "targeted" else "raw_dir") or ""
                 ),
                 "dll_dir": str(inputs.get("dll_dir") or ""),
+                "sequence_source": str(
+                    inputs.get(
+                        "injection_order_source"
+                        if kind == "targeted"
+                        else "sequence_source"
+                    )
+                    or ""
+                ),
             }
             return result
         if kind == "samples":

@@ -657,18 +657,85 @@ def test_completed_analysis_keeps_its_own_review_locations(tmp_path, monkeypatch
 
     monkeypatch.setattr("xic_workbench.targeted.TargetedRun", Run)
     monkeypatch.setattr(AnalysisJobs, "_prepare_untargeted", lambda *args: Run())
-    settings = {"data_dir": "batch-a", "dll_dir": "dll-a"}
+    settings = {
+        "data_dir": "batch-a",
+        "dll_dir": "dll-a",
+        "injection_order_source": "list-a.csv",
+    }
     values = (
         {"settings": settings, "targets": sample_target_rows()}
         if kind == "targeted"
-        else {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+        else {"raw_dir": "batch-a", "dll_dir": "dll-a", "sequence_source": "list-a.csv"}
     )
     jobs = AnalysisJobs(tmp_path)
     try:
         jobs.start(kind, values)
-        values.update(raw_dir="batch-b", dll_dir="dll-b")
-        settings.update(data_dir="batch-b", dll_dir="dll-b")
+        values.update(raw_dir="batch-b", dll_dir="dll-b", sequence_source="list-b.csv")
+        settings.update(
+            data_dir="batch-b", dll_dir="dll-b", injection_order_source="list-b.csv"
+        )
         result = _terminal(jobs)["results"][kind]
-        assert result["review_paths"] == {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+        assert result["review_paths"] == {
+            "raw_dir": "batch-a",
+            "dll_dir": "dll-a",
+            "sequence_source": "list-a.csv",
+        }
+    finally:
+        jobs.close()
+
+
+def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
+    tmp_path, monkeypatch
+):
+    from tests.raw_header_fakes import install_fake_raw_headers
+    from xic_workbench import untargeted
+    from xic_workbench.samples import read_batch_samples, save_batch_samples
+
+    install_fake_raw_headers(monkeypatch)
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    for stem in ("S1", "S2"):
+        (raw_dir / f"{stem}.raw").write_bytes(b"")
+    config = tmp_path / "config"
+    stale = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    confirmed = [dict(row) for row in stale]
+    confirmed[0].update(group="New", excluded=True, exclusion_reason="clot")
+    save_batch_samples(config, raw_dir, confirmed)
+    captured = {}
+
+    class Run:
+        stage = "done"
+        output_dir = tmp_path / "output"
+        available_outputs = ()
+
+        def __init__(self, request, *, progress, should_cancel):
+            captured["request"] = request
+
+        def execute(self):
+            return {"published_paths": []}
+
+    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    jobs = AnalysisJobs(config)
+    try:
+        # The page still holds the rows it read before another flow confirmed.
+        jobs.start(
+            "untargeted",
+            {
+                "mode": "full",
+                "preset": "dna_dr",
+                "raw_dir": str(raw_dir),
+                "raw_file": "",
+                "dll_dir": str(tmp_path),
+                "output_dir": str(tmp_path / "output"),
+                "discovery_batch_index": "",
+                "targets_csv": "",
+                "sequence_source": "",
+                "samples": stale,
+                "overrides": {},
+            },
+        )
+        assert _terminal(jobs)["job"]["status"] == "succeeded"
+        rows = {row.raw_stem: row for row in captured["request"].sample_metadata}
+        assert (rows["S1"].excluded, rows["S1"].group) == (True, "New")
     finally:
         jobs.close()
