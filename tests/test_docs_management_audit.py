@@ -197,6 +197,8 @@ def _git(root: Path, *args: str) -> None:
 
 def _init_and_stage_repo(root: Path) -> dict[str, str]:
     _git(root, "init")
+    # Fixture docs paths under a deep runner temp root pass Windows' 260-char limit.
+    _git(root, "config", "core.longpaths", "true")
     _git(root, "add", ".")
     return _isolated_git_subprocess_env()
 
