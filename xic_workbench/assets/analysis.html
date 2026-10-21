@@ -313,6 +313,7 @@
         <svg class="icon"><use href="#i-vial" /></svg>讀取 RAW 樣本
       </button>
     </div>
+    <div data-part="group-cards" class="group-cards" hidden></div>
     <p data-part="samples-source" class="subtle"></p>
     <p data-part="samples-summary" class="subtle"></p>
     <ul data-part="samples-conflicts" class="sequence-conflicts" hidden></ul>
@@ -396,7 +397,7 @@
         ><button id="sample-include" type="button">取消排除</button></span
       >
     </div>
-    <p class="subtle">改動會立即存成這個 RAW 資料夾的樣品資訊；Targeted 與 Untargeted 共用。勾選的樣本才會套用批次操作。</p>
+    <p class="subtle">改動會立即存成這個 RAW 資料夾的樣品資訊；Targeted 與 Untargeted 共用。勾選的樣本才會套用批次操作；點樣品名稱中的詞可選取所有含這個詞的樣本。</p>
     <datalist id="sample-group-options"></datalist>
     <div class="table-scroll editor-table">
       <table>

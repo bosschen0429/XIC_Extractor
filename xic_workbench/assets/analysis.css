@@ -693,3 +693,71 @@
 #sample-rows tr.excluded td.mono {
   text-decoration: line-through;
 }
+
+/* Naming-pattern cards: one suggested group each, applied on request. */
+.group-cards {
+  display: grid;
+  gap: 8px;
+}
+.group-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.group-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.group-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.group-card-head input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.group-card-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.group-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.group-card-actions select {
+  flex: 1;
+  min-width: 110px;
+}
+.group-card-members summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.group-card-members p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  word-break: break-all;
+}
+/* Words in sample names select every sample sharing that word. */
+.sample-words .word {
+  min-height: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.sample-words .word:hover,
+.sample-words .word:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

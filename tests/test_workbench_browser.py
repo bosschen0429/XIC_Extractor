@@ -2426,3 +2426,90 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
     assert read_settings(config_dir=config_dir)["injection_order_source"] == ""
+
+
+def test_naming_cards_and_name_words_group_samples(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(
+        batch,
+        (
+            "TumorBC101_DNA",
+            "TumorBC102_DNA",
+            "NormalBC101_DNA",
+            "NormalBC102_DNA",
+            "abnormal_A1",
+            "QC_1",
+        ),
+    )
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("6 個樣本")
+    cards = page.locator("#t-group-cards .group-card")
+    expect(cards).to_have_count(4)
+    expect(page.locator('#t-group-cards [data-card="Tumor DNA"]')).to_contain_text("×2")
+
+    def saved(action):
+        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+            action()
+
+    def groups():
+        rows = load_sample_metadata(sample_annotations_path(config_dir, batch))
+        return {row.raw_stem: row.group for row in rows}
+
+    # A hand-labelled row is kept unless the card is applied with overwrite.
+    page.locator("#t-samples-edit").click()
+    editor = page.locator("#sample-editor")
+    manual = editor.get_by_label("TumorBC102_DNA 組別", exact=True)
+    saved(lambda: (manual.fill("Manual"), manual.press("Tab")))
+    page.keyboard.press("Escape")
+    tumor = page.locator('#t-group-cards [data-card="Tumor DNA"]')
+    expect(tumor).to_contain_text("1 個尚未標組別 · 1 個已有其他組別")
+    saved(lambda: tumor.get_by_label("套用 Tumor DNA 到尚未標組別的樣本").click())
+    assert groups()["TumorBC101_DNA"] == "Tumor DNA"
+    assert groups()["TumorBC102_DNA"] == "Manual"
+    saved(lambda: tumor.get_by_label("以 Tumor DNA 覆蓋已標組別的樣本").click())
+    assert groups()["TumorBC102_DNA"] == "Tumor DNA"
+    expect(tumor).to_contain_text("已全部套用")
+
+    # Renaming changes the group name; rows the card wrote follow it.
+    normal = page.locator('#t-group-cards [data-card="Normal DNA"]')
+    name = normal.get_by_label("建議組別 Normal DNA 的名稱")
+    name.fill("Normal")
+    name.press("Tab")
+    normal = page.locator('#t-group-cards [data-card="Normal"]')
+    saved(lambda: normal.get_by_label("套用 Normal 到尚未標組別的樣本").click())
+    name = normal.get_by_label("建議組別 Normal 的名稱")
+    saved(lambda: (name.fill("Normal tissue"), name.press("Tab")))
+    assert groups()["NormalBC101_DNA"] == groups()["NormalBC102_DNA"] == "Normal tissue"
+
+    # Merging moves members; applying writes the target's name.
+    merge = page.locator('#t-group-cards [data-card="abnormal A1"]').get_by_label(
+        "把 abnormal A1 合併到"
+    )
+    merge.select_option("Normal tissue")
+    expect(cards).to_have_count(3)
+    merged = page.locator('#t-group-cards [data-card="Normal tissue"]')
+    expect(merged).to_contain_text("×3")
+    saved(lambda: merged.get_by_label("套用 Normal tissue 到尚未標組別的樣本").click())
+    assert groups()["abnormal_A1"] == "Normal tissue"
+
+    # Clicking a word selects whole-word matches only: abnormal is not normal.
+    page.locator("#t-samples-edit").click()
+    editor.locator("#sample-rows tr", has_text="NormalBC101_DNA").get_by_role(
+        "button", name="Normal", exact=True
+    ).click()
+    checked = editor.locator("#sample-rows input[data-sample]:checked")
+    expect(checked).to_have_count(2)
+    for stem in ("NormalBC101_DNA", "NormalBC102_DNA"):
+        expect(editor.get_by_label(f"選取 {stem}", exact=True)).to_be_checked()
+    expect(editor.get_by_label("選取 abnormal_A1", exact=True)).not_to_be_checked()
+    editor.locator("#sample-rows tr", has_text="TumorBC101_DNA").get_by_role(
+        "button", name="BC101", exact=True
+    ).click()
+    # A patient code selects that patient's Tumor and Normal injections.
+    expect(checked).to_have_count(2)
+    for stem in ("TumorBC101_DNA", "NormalBC101_DNA"):
+        expect(editor.get_by_label(f"選取 {stem}", exact=True)).to_be_checked()

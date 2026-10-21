@@ -1019,6 +1019,7 @@
     $(sampleId(page, "samples-source")).textContent = set.rows.length
       ? sourceNotes[set.source] || ""
       : "";
+    renderGroupCards(page);
     checklist(page);
   }
   function applySampleResult(page, result) {
@@ -1039,6 +1040,190 @@
     $(sampleId(page, "samples-conflicts")).hidden = true;
     renderRoleSummary(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  // Naming-pattern cards group the server's suggestions; a card is a group
+  // name until applied, and applying writes that name to its members.
+  function suggestionCards(set) {
+    if (set.cards) return set.cards;
+    const cards = new Map();
+    for (const row of set.rows) {
+      const label = set.suggestions[row.raw_stem];
+      if (!label) continue;
+      if (!cards.has(label)) cards.set(label, { label, members: [] });
+      cards.get(label).members.push(row.raw_stem);
+    }
+    set.cards = [...cards.values()].sort(
+      (a, b) => b.members.length - a.members.length,
+    );
+    return set.cards;
+  }
+  function cardRows(set, card) {
+    const members = new Set(card.members);
+    return set.rows.filter((row) => members.has(row.raw_stem));
+  }
+  // Rows a card wrote keep following it; rows labelled by hand stay as they are.
+  function relabelCard(page, card, label) {
+    const set = state.sampleSets[page];
+    let changed = false;
+    for (const row of cardRows(set, card))
+      if (row.group.trim() === card.label) {
+        row.group = label;
+        changed = true;
+      }
+    return changed;
+  }
+  async function renameCard(page, card, label) {
+    const set = state.sampleSets[page];
+    if (!label || label === card.label) return renderGroupCards(page);
+    const changed = relabelCard(page, card, label);
+    card.label = label;
+    const same = set.cards.find((other) => other !== card && other.label === label);
+    if (same) {
+      same.members.push(...card.members);
+      set.cards = set.cards.filter((other) => other !== card);
+    }
+    if (changed) await persistSamples(page);
+    else renderGroupCards(page);
+  }
+  async function mergeCard(page, card, target) {
+    const set = state.sampleSets[page];
+    const changed = relabelCard(page, card, target.label);
+    target.members.push(...card.members);
+    set.cards = set.cards.filter((other) => other !== card);
+    if (changed) await persistSamples(page);
+    else renderGroupCards(page);
+  }
+  async function applyCard(page, card, overwrite) {
+    const set = state.sampleSets[page];
+    for (const row of cardRows(set, card))
+      if (overwrite || !row.group.trim()) row.group = card.label;
+    await persistSamples(page);
+  }
+  function renderGroupCards(page) {
+    const set = state.sampleSets[page];
+    const box = $(sampleId(page, "group-cards"));
+    const cards = set.rows.length ? suggestionCards(set) : [];
+    box.hidden = !cards.length;
+    if (!cards.length) return box.replaceChildren();
+    const list = el("div", undefined, "group-card-list");
+    for (const card of cards) {
+      const rows = cardRows(set, card);
+      const open = rows.filter((row) => !row.group.trim()).length;
+      const applied = rows.filter((row) => row.group.trim() === card.label).length;
+      const others = rows.length - open - applied;
+      const node = el("div", undefined, "group-card");
+      node.dataset.card = card.label;
+      const head = el("div", undefined, "group-card-head");
+      const name = el("input");
+      name.value = card.label;
+      name.setAttribute("aria-label", `建議組別 ${card.label} 的名稱`);
+      name.dataset.analysisIdle = "";
+      name.addEventListener("change", () =>
+        act(() => renameCard(page, card, name.value.trim())),
+      );
+      head.append(name, el("strong", `×${rows.length}`, "group-card-count"));
+      node.append(head);
+      node.append(
+        el(
+          "small",
+          applied === rows.length
+            ? "已全部套用"
+            : `${applied ? `已套用 ${applied} · ` : ""}${open} 個尚未標組別` +
+                (others ? ` · ${others} 個已有其他組別` : ""),
+          "subtle",
+        ),
+      );
+      const actions = el("div", undefined, "group-card-actions");
+      const apply = button(`套用到 ${open} 個`, () => applyCard(page, card, false));
+      apply.disabled = !open;
+      apply.setAttribute("aria-label", `套用 ${card.label} 到尚未標組別的樣本`);
+      actions.append(apply);
+      if (others) {
+        const overwrite = button(
+          `覆蓋 ${others} 個`,
+          () => applyCard(page, card, true),
+          "ghost",
+        );
+        overwrite.title = "連同已標其他組別的樣本一起改成這個組別";
+        overwrite.setAttribute("aria-label", `以 ${card.label} 覆蓋已標組別的樣本`);
+        actions.append(overwrite);
+      }
+      if (cards.length > 1) {
+        const merge = el("select");
+        merge.setAttribute("aria-label", `把 ${card.label} 合併到`);
+        merge.append(el("option", "合併到…"));
+        merge.options[0].value = "";
+        for (const target of cards)
+          if (target !== card) {
+            const option = el("option", target.label);
+            option.value = target.label;
+            merge.append(option);
+          }
+        merge.addEventListener("change", () => {
+          const target = cards.find((other) => other.label === merge.value);
+          if (target) act(() => mergeCard(page, card, target));
+        });
+        actions.append(merge);
+      }
+      node.append(actions);
+      const members = el("details", undefined, "group-card-members");
+      members.append(
+        el("summary", "成員"),
+        el("p", card.members.join("、"), "mono"),
+      );
+      node.append(members);
+      list.append(node);
+    }
+    box.replaceChildren(
+      el(
+        "p",
+        "依命名樣式建議的組別：確認名稱後套用。已有組別的樣本只在按「覆蓋」時才會改。",
+        "subtle",
+      ),
+      list,
+    );
+  }
+  // Words for click-to-group: separators, a capital after lowercase, and a
+  // code of capitals plus digits each end a word; matching is whole words.
+  const nameWords = (name) =>
+    String(name || "").match(/[A-Z]+\d+|[A-Z]+[a-z]*|[a-z]+|\d+/g) || [];
+  function wordCell(row) {
+    const td = el("td", undefined, "sample-words");
+    const name = row.sample_name || row.raw_stem || "";
+    let at = 0;
+    for (const match of name.matchAll(/[A-Z]+\d+|[A-Z]+[a-z]*|[a-z]+|\d+/g)) {
+      if (match.index > at) td.append(name.slice(at, match.index));
+      const word = el("button", match[0], "word");
+      word.type = "button";
+      word.title = `選取名稱含「${match[0]}」的所有樣本`;
+      word.addEventListener("click", () => selectWord(match[0]));
+      td.append(word);
+      at = match.index + match[0].length;
+    }
+    if (at < name.length) td.append(name.slice(at));
+    return td;
+  }
+  function selectWord(word) {
+    const wanted = word.toLowerCase();
+    const set = state.sampleSets[state.editing];
+    const hits = new Set(
+      set.rows
+        .filter((row) =>
+          nameWords(row.sample_name || row.raw_stem)
+            .map((part) => part.toLowerCase())
+            .includes(wanted),
+        )
+        .map((row) => row.raw_stem),
+    );
+    let shown = 0;
+    for (const box of $("sample-rows").querySelectorAll("input[data-sample]")) {
+      box.checked = hits.has(box.dataset.sample);
+      if (box.checked) shown += 1;
+    }
+    ui.toast(
+      `已選取 ${shown} 個名稱含「${word}」的樣本，可在上方套用組別或排除。`,
+    );
+    $("sample-bulk-group").focus();
   }
   function sampleCell(control) {
     const td = el("td");
@@ -1082,7 +1267,7 @@
       tr.append(el("td", row.raw_stem ?? "—", "mono"));
       tr.append(el("td", row.batch_id ?? "—"));
       tr.append(el("td", row.injection_order ?? "—", "num"));
-      tr.append(el("td", row.sample_name ?? "—"));
+      tr.append(wordCell(row));
       const select = el("select");
       select.setAttribute("aria-label", `${row.raw_stem} 角色`);
       roleOptions(select, row.sample_role);
