@@ -763,3 +763,34 @@ def test_invalid_module_switches_fail_before_execution(tmp_path):
     values["backfill_enabled"] = "false"
     with pytest.raises(TypeError, match="backfill_enabled must be a boolean"):
         parse_request(values)
+
+
+@pytest.mark.parametrize("policy", ("none", "easy_ic_probe"))
+def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
+    from dataclasses import replace
+
+    from xic_extractor.configuration.mass_recalibration import (
+        resolve_mass_recalibration,
+    )
+    from xic_extractor.presets import apply_to_discovery
+
+    request = parse_request(
+        dict(
+            mode="discovery_only",
+            raw_dir=str(tmp_path),
+            dll_dir=str(tmp_path),
+            output_dir=str(tmp_path / "out"),
+            preset="dna_dr",
+        )
+    )
+    run = UntargetedRun(
+        request, progress=lambda *args: None, should_cancel=lambda: False
+    )
+    settings = replace(
+        apply_to_discovery(load_preset("dna_dr")),
+        mass_recalibration=resolve_mass_recalibration(policy),
+    )
+    assert (
+        run._alignment_peak_config(settings).mass_recalibration
+        is settings.mass_recalibration
+    )

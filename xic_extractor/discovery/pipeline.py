@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -11,6 +11,10 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
+)
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    MassRecalibrationResult,
 )
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.blank_qualification import (
@@ -78,6 +82,7 @@ class _DiscoverySampleResult:
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...]
+    mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
 
 @lru_cache(maxsize=2)
@@ -135,7 +140,6 @@ def run_discovery(
 ) -> DiscoveryRunOutputs:
     raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
-    sample_stem = raw_path.stem
     (acquisition_input,) = validate_processing_run_spec_call(
         run_spec,
         (raw_path,),
@@ -151,17 +155,26 @@ def run_discovery(
         acquisition_input=acquisition_input,
     )
     raise_if_discovery_cancelled(should_cancel)
-    return output_publication.write_dual_csvs(
-        output_dir,
+    publication = output_publication.publish_discovery_batch_sample(
+        raw_path,
         discovery_result.candidates,
+        output_dir=output_dir,
+        sample_output_dir=output_dir,
+        acquisition_source=acquisition_input.acquisition_source,
         timing_recorder=recorder,
-        sample_stem=sample_stem,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
         physical_work_manifest=discovery_result.physical_work_manifest,
         physical_evaluations=discovery_result.physical_evaluations,
         physical_bindings=discovery_result.physical_bindings,
+        mass_recalibration_result=discovery_result.mass_recalibration_result,
     )
+    receipt_index = output_publication.write_batch_index(
+        output_dir / "discovery_batch_index.csv",
+        [publication.index_row],
+        timing_recorder=recorder,
+    )
+    return replace(publication.outputs, batch_index_csv=receipt_index)
 
 
 def run_discovery_batch(
@@ -235,6 +248,7 @@ def run_discovery_batch(
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
+            mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         per_sample.append(publication.outputs)
         index_rows.append(publication.index_row)
@@ -270,6 +284,7 @@ def _discover_sample(
         opener = _owner_bound_raw_opener(
             acquisition_source,
             raw_session_capability,
+            settings.mass_recalibration,
         )
     else:
         raw_session_capability = None
@@ -403,6 +418,7 @@ def _discover_completed_sample(
         physical_work_manifest=acquired.physical_work_manifest,
         physical_evaluations=acquired.physical_evaluations,
         physical_bindings=physical_bindings,
+        mass_recalibration_result=acquired.mass_recalibration_result,
     )
 
 
@@ -470,6 +486,9 @@ def _acquire_discovery_sample(
                 physical_work_manifest=acquisition_result.physical_work_manifest,
                 physical_evaluations=acquisition_result.physical_evaluations,
                 physical_bindings=acquisition_result.physical_bindings,
+                mass_recalibration_result=getattr(
+                    raw, "mass_recalibration_result", MassRecalibrationResult("none")
+                ),
             )
         finally:
             if not completed:
@@ -519,6 +538,7 @@ def _owner_bound_raw_open_receipt(
 def _owner_bound_raw_opener(
     acquisition_source: AcquisitionSourceIdentity,
     raw_session_capability: RawAcquisitionSessionCapability,
+    mass_recalibration: MassRecalibration,
 ) -> RawOpener:
     """Bind the production batch reader to the content identity it will receipt."""
 
@@ -533,6 +553,7 @@ def _owner_bound_raw_opener(
             open_raw(
                 raw_path,
                 dll_dir,
+                mass_recalibration=mass_recalibration,
                 expected_acquisition_source=acquisition_source,
                 _raw_session_capability=raw_session_capability,
             ),
@@ -556,6 +577,7 @@ def discover_sample_for_process_job(
         raw_opener=_owner_bound_raw_opener(
             job.acquisition_source,
             job.raw_session_capability,
+            job.settings.mass_recalibration,
         ),
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,

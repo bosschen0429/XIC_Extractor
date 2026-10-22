@@ -19,6 +19,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
 )
+from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
@@ -138,6 +139,9 @@ class DiscoveredSample(Protocol):
 
     @property
     def physical_bindings(self) -> tuple[DiscoveryCandidatePhysicalBinding, ...]: ...
+
+    @property
+    def mass_recalibration_result(self) -> MassRecalibrationResult: ...
 
 
 class SampleDiscoverer(Protocol):
@@ -425,6 +429,7 @@ def run_discovery_sample_process_job(
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
+            mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,

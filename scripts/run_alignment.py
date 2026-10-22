@@ -39,6 +39,7 @@ from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
     load_execution_profile,
 )
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.paths import targets_template_path
 from xic_extractor.configuration.signal_processing_profile import (
@@ -235,6 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
+                mass_recalibration=recipe.discovery_settings.mass_recalibration,
             ),
             discovery_settings=recipe.discovery_settings,
             signal_processing_profile=signal_processing_profile,
@@ -904,6 +906,7 @@ def _peak_config(
     baseline_integration_method: str = "asls",
     signal_processing_profile: SignalProcessingProfile | None = None,
     nl_min_intensity_ratio: float | None = None,
+    mass_recalibration: MassRecalibration = MassRecalibration.NONE,
 ) -> ExtractionConfig:
     profile = signal_processing_profile or resolve_signal_processing_profile()
     return ExtractionConfig(
@@ -926,6 +929,7 @@ def _peak_config(
         ),
         resolver_mode=resolver_mode,
         baseline_integration_method=baseline_integration_method,
+        mass_recalibration=mass_recalibration,
     )
 
 

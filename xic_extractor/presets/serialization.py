@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.presets.apply import (
     apply_to_alignment,
     apply_to_delta_mass_discovery,
@@ -38,6 +39,7 @@ _NL_DISCOVERY_FIELDS = (
     "rt_min",
     "rt_max",
     "resolver_mode",
+    "mass_recalibration",
 )
 
 
@@ -75,10 +77,22 @@ def serialize_preset(
         discovery_fields: tuple[str, ...] = tuple(effective)
     else:
         discovery_settings = apply_to_discovery(effective_preset)
+        recalibration = discovery_settings.mass_recalibration
+        # Human presets omit only the new default; explicit none is rollback.
+        discovery_fields = tuple(
+            field
+            for field in _NL_DISCOVERY_FIELDS
+            if field != "mass_recalibration"
+            or recalibration is not MassRecalibration.EASY_IC_PROBE
+        )
         discovery_values = {
-            field: getattr(discovery_settings, field) for field in _NL_DISCOVERY_FIELDS
+            field: (
+                recalibration.value
+                if field == "mass_recalibration"
+                else getattr(discovery_settings, field)
+            )
+            for field in discovery_fields
         }
-        discovery_fields = _NL_DISCOVERY_FIELDS
 
     _, runtime_options = apply_to_alignment(effective_preset)
     rendered = _render_preset(

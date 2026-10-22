@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
-    SCIENTIFIC_SETTING_FIELDS,
+    scientific_settings_payload,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -24,7 +24,11 @@ from xic_extractor.discovery.batch_contract import (
     validate_candidate_universe_payload,
     validate_discovery_candidate_universe,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import (
+    DiscoveryCandidate,
+    DiscoverySettings,
+    discovery_settings_identity_fields,
+)
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
@@ -342,10 +346,7 @@ def compose_partition_context(
             REQUEST_INPUT_KEY: method_subject.request_payload(),
             DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
             CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe,
-            PEAK_SETTINGS_INPUT_KEY: {
-                field: getattr(peak_config, field)
-                for field in SCIENTIFIC_SETTING_FIELDS
-            },
+            PEAK_SETTINGS_INPUT_KEY: scientific_settings_payload(peak_config),
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture,
             **(
                 {ALIGNMENT_FEATURE_INPUT_KEY: list(feature_candidate_ids)}
@@ -388,7 +389,7 @@ def discovery_settings_payload(settings: DiscoverySettings) -> dict[str, object]
     return _canonical_json_mapping(
         {
             "schema_version": DISCOVERY_SETTINGS_SCHEMA_VERSION,
-            "settings": asdict(settings),
+            "settings": discovery_settings_identity_fields(settings),
         },
         subject="Discovery settings",
     )

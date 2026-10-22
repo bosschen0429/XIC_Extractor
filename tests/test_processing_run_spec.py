@@ -489,14 +489,17 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
     assert spec.discovery_method.settings == settings
 
 
-def test_signal_profile_changes_run_identity_not_discovery_method(
+def test_signal_profile_changes_run_identity_not_legacy_vendor_method(
     tmp_path: Path,
 ) -> None:
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+
     raws = _raws(tmp_path)
-    spec = _compile_paths(raws)
+    settings = replace(_settings(), mass_recalibration=MassRecalibration.NONE)
+    spec = _compile_paths(raws, settings=settings)
     wider = compile_discovery_processing_run_spec(
         raws,
-        discovery_settings=_settings(),
+        discovery_settings=settings,
         signal_processing_profile=SignalProcessingProfile(window_points=21),
     )
 

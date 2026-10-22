@@ -426,6 +426,7 @@ class UntargetedRun:
             ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
             nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
             resolver_mode=settings.resolver_mode,
+            mass_recalibration=settings.mass_recalibration,
         )
 
     def _raw_paths(self, raw_dir: Path | None) -> tuple[Path, ...]:

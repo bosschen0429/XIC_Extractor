@@ -25,6 +25,7 @@ from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -55,22 +56,37 @@ class CachedUntargetedRaw:
         *,
         source: AcquisitionSourceIdentity,
         cache_dir: Path,
+        mass_recalibration: MassRecalibration = MassRecalibration.NONE,
     ) -> None:
         self._opener = raw if callable(raw) else None
+        self._mass_recalibration = mass_recalibration
         self._handle = (
-            None if callable(raw) else require_owner_bound_raw_handle(raw, source)
+            None
+            if callable(raw)
+            else self._require_policy(require_owner_bound_raw_handle(raw, source))
         )
         self.native_open_attempted = self._handle is not None
         self.native_opened = self._handle is not None
         self._source = source
-        self._cache = _FactCache(cache_dir, source.acquisition_source_id)
+        self._cache = _FactCache(
+            cache_dir, source.acquisition_source_id, mass_recalibration
+        )
+
+    def _require_policy(self, handle: RawFileHandle) -> RawFileHandle:
+        if handle.mass_recalibration is not self._mass_recalibration:
+            raise UntargetedAcquisitionCacheError(
+                "RAW handle mass recalibration differs from its fact cache"
+            )
+        return handle
 
     @property
     def _raw(self) -> RawFileHandle:
         if self._handle is None:
             assert self._opener is not None
             self.native_open_attempted = True
-            self._handle = require_owner_bound_raw_handle(self._opener(), self._source)
+            self._handle = self._require_policy(
+                require_owner_bound_raw_handle(self._opener(), self._source)
+            )
             self.native_opened = True
         return self._handle
 
@@ -261,7 +277,12 @@ def bind_untargeted_acquisition_cache(
 
     if cache_dir is None:
         return require_owner_bound_raw_handle(raw, source)
-    return CachedUntargetedRaw(raw, source=source, cache_dir=cache_dir)
+    return CachedUntargetedRaw(
+        raw,
+        source=source,
+        cache_dir=cache_dir,
+        mass_recalibration=raw.mass_recalibration,
+    )
 
 
 def require_owner_bound_untargeted_raw(
@@ -288,10 +309,21 @@ def acquire_untargeted_trace_batch(
 
 
 class _FactCache:
-    def __init__(self, root: Path, source_id: str) -> None:
+    def __init__(
+        self,
+        root: Path,
+        source_id: str,
+        mass_recalibration: MassRecalibration = MassRecalibration.NONE,
+    ) -> None:
         if not isinstance(root, Path):
             raise TypeError("acquisition cache directory must be a Path")
-        self._root = root / hashlib.sha256(source_id.encode("utf-8")).hexdigest()
+        # Recalibrated facts never share entries with vendor-mass facts.
+        namespace = (
+            source_id
+            if mass_recalibration is MassRecalibration.NONE
+            else f"{source_id}|mass_recalibration={mass_recalibration.value}"
+        )
+        self._root = root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
         self._source_id = source_id
 
     def _path(self, kind: str, key: bytes) -> Path:

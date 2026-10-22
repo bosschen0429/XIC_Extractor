@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.configuration.execution_profile import default_parallel_workers
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
@@ -48,8 +52,14 @@ class ExtractionConfig:
     signal_processing_window_points: int = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     )
+    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_PROBE
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "mass_recalibration",
+            resolve_mass_recalibration(self.mass_recalibration),
+        )
         object.__setattr__(
             self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
         )

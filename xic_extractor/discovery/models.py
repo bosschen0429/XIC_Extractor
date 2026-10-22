@@ -1,11 +1,15 @@
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.cid_nl_profile import (
     NeutralLossProfile as NeutralLossProfile,
+)
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
 )
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
@@ -172,8 +176,14 @@ class DiscoverySettings:
     blank_library_path: str | None = None
     blank_ppm_tol: float = 10.0
     blank_fold_change_threshold: float = 3.0
+    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_PROBE
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "mass_recalibration",
+            resolve_mass_recalibration(self.mass_recalibration),
+        )
         object.__setattr__(
             self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
         )
@@ -194,6 +204,18 @@ class DiscoverySettings:
                 "selected_tag_names",
                 tuple(profile.tag for profile in profiles),
             )
+
+
+def discovery_settings_identity_fields(
+    settings: DiscoverySettings,
+) -> dict[str, object]:
+    """Every Discovery setting; the vendor-mass policy is recorded by omission."""
+    fields = asdict(settings)
+    if settings.mass_recalibration is MassRecalibration.NONE:
+        del fields["mass_recalibration"]
+    else:
+        fields["mass_recalibration"] = settings.mass_recalibration.value
+    return fields
 
 
 @dataclass(frozen=True)
@@ -569,6 +591,7 @@ class DiscoveryRunOutputs:
     candidates_csv: Path
     review_csv: Path
     physical_facts_json: Path
+    batch_index_csv: Path | None = None
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
 
 

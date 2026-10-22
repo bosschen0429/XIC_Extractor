@@ -20,6 +20,7 @@ _DESCRIPTIONS = {
         "已保存結果的資料格式，供 Inspector 與其他讀取工具使用。"
     ),
     "targeted_workbook_layout_version": "活頁簿欄位契約版本。版面樣式不改變量測數值。",
+    "mass_recalibration": "質量校正政策；檢閱沿用此值，舊結果缺值為 none。",
     "targeted_strategy": "Targeted 選峰與計入規則的完整設定（JSON），供追查使用。",
     "parallel_mode": "樣本處理方式；serial 表示循序處理。",
     "parallel_workers": "平行處理的 worker 設定；循序模式不會使用此數量。",

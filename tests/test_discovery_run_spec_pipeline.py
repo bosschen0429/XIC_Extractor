@@ -307,7 +307,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     }
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, raw_session_capability: (
+        lambda acquisition_source, raw_session_capability, _mass_recalibration: (
             lambda path, dll_dir: process_handles[path]
         ),
     )
@@ -447,7 +447,7 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
     capability = mint_raw_acquisition_session_capability(source)
     opener_requests: list[Path] = []
 
-    def _rejecting_owner_opener(_source, _capability):
+    def _rejecting_owner_opener(_source, _capability, _mass_recalibration):
         def _open(path: Path, _dll_dir: Path):
             opener_requests.append(path)
             raise RuntimeError("owner boom")

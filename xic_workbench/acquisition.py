@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -65,6 +70,7 @@ def export_explanation_curves(
         raise FileExistsError(f"Curve output must be a new file: {output}")
 
     summary = read_cid_nl_explanation(report)
+    mass_policies = _review_mass_policies(report, summary)
     sample_labels = {
         row["canonical_sample_identity_id"]: row["sample_stem"]
         for row in summary["samples"]
@@ -160,6 +166,7 @@ def export_explanation_curves(
             raw_path,
             dll_dir,
             expected_acquisition_source=expected_source,
+            mass_recalibration=mass_policies.get(stem, MassRecalibration.NONE),
         ) as raw:
             for oid, observation in observations:
                 _check_cancel(is_cancelled)
@@ -322,3 +329,31 @@ __all__ = [
     "CurveAcquisitionCancelled",
     "export_explanation_curves",
 ]
+
+
+def _review_mass_policies(
+    report: Path, summary: dict[str, Any]
+) -> dict[str, MassRecalibration]:
+    """Replay co-published policy, never infer it from the current defaults.
+
+    Legacy results without policy metadata retain vendor coordinates. A policy
+    sidecar belongs to this review only when both run identities agree.
+    """
+    path = report.parent / "alignment_run_metadata.json"
+    if not path.is_file():
+        return {}
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    payload = metadata.get("mass_recalibration_by_sample")
+    if payload is None:
+        return {}
+    if any(
+        metadata.get(key) != summary[key]
+        for key in ("processing_request_id", "processing_attempt_id")
+    ):
+        raise ExplanationError(
+            "Alignment metadata 不屬於這份檢閱結果，請使用同次執行的檔案。"
+        )
+    return {
+        sample: resolve_mass_recalibration(result["policy"])
+        for sample, result in json.loads(payload).items()
+    }

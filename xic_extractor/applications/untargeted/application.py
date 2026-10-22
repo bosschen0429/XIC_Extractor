@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from xic_extractor.alignment.backfill.peak_fact_provenance import (
@@ -74,12 +75,10 @@ def run_untargeted_application(
     owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
         configured_backend=request.legacy.owner_build_xic_backend,
     )
-    outputs = request.publication.output_paths(request.output_dir)
-    if not request.alignment_config.backfill_enabled:
-        outputs = replace(
-            outputs,
-            run_metadata_json=request.output_dir / "alignment_run_metadata.json",
-        )
+    outputs = replace(
+        request.publication.output_paths(request.output_dir),
+        run_metadata_json=request.output_dir / "alignment_run_metadata.json",
+    )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
     if request.known_istd_reference is not None:
         resolved_known_istd_reference = request.known_istd_reference
@@ -134,6 +133,17 @@ def run_untargeted_application(
         owner_backfill_peak_fact_provenance_row_count=len(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
         ),
+    )
+    # Source-bound Discovery receipts carry each RAW's fitted probe result.
+    # Publication renders these facts; it never rescans RAW or refits coefficients.
+    metadata["mass_recalibration_by_sample"] = json.dumps(
+        {
+            sample: asdict(receipt.mass_recalibration_result)
+            for sample, receipt in batch.candidate_receipts.items()
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
     )
     if not request.alignment_config.backfill_enabled:
         metadata["backfill_execution"] = "not_run"

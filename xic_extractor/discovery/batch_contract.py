@@ -13,6 +13,13 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
+    MassRecalibration,
+    MassRecalibrationResult,
+    deserialize_mass_recalibration_result,
+    serialize_mass_recalibration_result,
+)
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
@@ -66,6 +73,7 @@ class DiscoveryCandidateUniverseReceipt:
     candidate_artifact_sha256: str
     candidate_artifact_byte_size: int
     candidate_payload_sha256: str
+    mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
     def __post_init__(self) -> None:
         _required_text(self.sample_stem, field="sample_stem")
@@ -125,6 +133,9 @@ def mint_discovery_candidate_universe_receipt(
     acquisition_source: AcquisitionSourceIdentity,
     candidate_csv: Path,
     candidates: Sequence[DiscoveryCandidate],
+    mass_recalibration_result: MassRecalibrationResult = (
+        VENDOR_MASS_RECALIBRATION_RESULT
+    ),
 ) -> DiscoveryCandidateUniverseReceipt:
     """Mint a receipt after the Discovery candidate writer has committed bytes."""
 
@@ -153,6 +164,7 @@ def mint_discovery_candidate_universe_receipt(
         candidate_artifact_sha256=artifact.content_sha256,
         candidate_artifact_byte_size=artifact.byte_size,
         candidate_payload_sha256=payload_sha256,
+        mass_recalibration_result=mass_recalibration_result,
     )
 
 
@@ -248,6 +260,15 @@ def discovery_receipt_index_fields(
         "acquisition_byte_size": str(source.byte_size),
         "acquisition_format": source.acquisition_format,
         "observation_namespace": source.observation_namespace,
+        **(
+            {
+                "mass_recalibration": serialize_mass_recalibration_result(
+                    receipt.mass_recalibration_result
+                )
+            }
+            if receipt.mass_recalibration_result.policy is not MassRecalibration.NONE
+            else {}
+        ),
     }
 
 
@@ -284,6 +305,9 @@ def discovery_receipt_from_index_fields(
                 field="candidate_artifact_byte_size",
             ),
             candidate_payload_sha256=row["candidate_payload_sha256"],
+            mass_recalibration_result=deserialize_mass_recalibration_result(
+                row.get("mass_recalibration", "")
+            ),
         )
     except KeyError as exc:
         raise IdentityContractError(

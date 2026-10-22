@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.mass_recalibration import resolve_mass_recalibration
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
@@ -206,6 +207,11 @@ def apply_to_discovery(
         rt_min=_optional_float_setting(tuning, "rt_min", baseline.rt_min),
         rt_max=_optional_float_setting(tuning, "rt_max", baseline.rt_max),
         resolver_mode=_str_setting(tuning, "resolver_mode", baseline.resolver_mode),
+        mass_recalibration=resolve_mass_recalibration(
+            _str_setting(
+                tuning, "mass_recalibration", baseline.mass_recalibration.value
+            )
+        ),
     )
 
 
@@ -416,6 +422,12 @@ def _validate_discovery_tuning(
         ):
             modes = ", ".join(RESOLVER_MODES)
             raise PresetError(f"resolver_mode must be one of: {modes}")
+
+    if "mass_recalibration" in tuning:
+        try:
+            resolve_mass_recalibration(tuning["mass_recalibration"])
+        except ValueError as exc:
+            raise PresetError(str(exc)) from None
 
     rt_min = _optional_float_setting(tuning, "rt_min", baseline.rt_min)
     rt_max = _optional_float_setting(tuning, "rt_max", baseline.rt_max)

@@ -423,7 +423,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
             return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
 
     @contextmanager
-    def raw(path, dll, *, expected_acquisition_source):
+    def raw(path, dll, *, expected_acquisition_source, mass_recalibration):
         opened.append(path.name)
         assert expected_acquisition_source.content_sha256
         yield Raw()
@@ -485,7 +485,7 @@ def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None):
             return result
 
     @contextmanager
-    def raw(path, dll, *, expected_acquisition_source):
+    def raw(path, dll, *, expected_acquisition_source, mass_recalibration):
         opened.append((path.name, expected_acquisition_source.acquisition_source_id))
         yield Raw(path.stem)
 
@@ -656,3 +656,69 @@ def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw
             candidate_id=candidate_id,
             sample_ids=(sample_ids["S2"],),
         )
+
+
+@pytest.mark.parametrize("saved", (False, True))
+def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch, saved):
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.output.alignment.pipeline_outputs import _write_metadata_json
+
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    summary = read_cid_nl_explanation(review)
+    policies = {"S1": "easy_ic_probe" if saved else "none", "S2": "none"}
+    if saved:
+        _write_metadata_json(
+            tmp_path / "alignment_run_metadata.json",
+            {
+                "processing_request_id": summary["processing_request_id"],
+                "processing_attempt_id": summary["processing_attempt_id"],
+                "mass_recalibration_by_sample": json.dumps(
+                    {s: {"policy": p} for s, p in policies.items()}
+                ),
+            },
+        )
+
+    else:
+        _write_metadata_json(tmp_path / "alignment_run_metadata.json", {})
+
+    @contextmanager
+    def raw(path, dll, *, mass_recalibration=MassRecalibration.NONE, **kwargs):
+        class Raw:
+            def extract_xic(self, mz, lower, upper, ppm):
+                rt = np.linspace(lower, upper, 51)
+                amplitude = 1000 if path.stem == "S1" else 2000
+                return rt, amplitude * (
+                    mass_recalibration.value == policies[path.stem]
+                ) * np.exp(-(((rt - 8) / 0.08) ** 2))
+
+        yield Raw()
+
+    monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
+    output = tmp_path / "policy-curves.json"
+    export_explanation_curves(
+        review,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id=group_id,
+        sample_ids=tuple(sample_ids.values()),
+    )
+    traces = {
+        t.sample_label: t for t in read_curve_bundle(output).transitions[0].traces
+    }
+    assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
+    assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
+
+    if saved:
+        sidecar = tmp_path / "alignment_run_metadata.json"
+        metadata = json.loads(sidecar.read_text())
+        metadata["processing_attempt_id"] = "another-run"
+        _write_metadata_json(sidecar, metadata)
+        with pytest.raises(ExplanationError, match="metadata"):
+            export_explanation_curves(
+                review,
+                tmp_path / "wrong-run.json",
+                raw_dir=tmp_path,
+                dll_dir=tmp_path,
+                group_id=group_id,
+            )

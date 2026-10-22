@@ -194,7 +194,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
 
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda source, _capability: (
+        lambda source, _capability, _mass_recalibration: (
             lambda path, dll_dir: _with_source(opener(path, dll_dir), source)
         ),
     )
@@ -570,7 +570,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     parallel_handles = _handles()
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, raw_session_capability: (
+        lambda acquisition_source, raw_session_capability, _mass_recalibration: (
             lambda path, dll_dir: _with_source(
                 parallel_handles[path], acquisition_source
             )
@@ -1479,6 +1479,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.write_review_csv",
         "discover.write_physical_facts_sidecar",
         "discover.publish_outputs",
+        "discover.write_batch_index",
     }
     assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
     assert records_by_stage["discover.ms2_seeds"].metrics["seed_count"] == 1
@@ -1560,6 +1561,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
         *,
         expected_acquisition_source: object = None,
         _raw_session_capability: object = None,
+        mass_recalibration: object = None,
     ) -> _FakeRawHandle:
         calls.append(
             (
