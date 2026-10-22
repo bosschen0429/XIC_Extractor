@@ -3,7 +3,7 @@ import math
 import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
@@ -20,6 +20,10 @@ from xic_extractor.analysis_set import (
     AnalysisSet,
     discover_raw_files,
     select_analysis_set,
+)
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
 )
 from xic_extractor.injection_timeline import (
     InjectionHeader,
@@ -48,6 +52,9 @@ EXPECTED_THERMO_DLLS = (
 )
 THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
 THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
+_LM_CORRECTION_TRAILER = "lm correction (ppm)"
+# MS2 headers round the selected precursor to 1e-4 m/z.
+_RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
 
 _ASSEMBLIES_LOADED = False
 
@@ -121,20 +128,40 @@ class RawFileHandle:
         "_raw_chromatogram_call_count",
         "_precursor_trailer_indices",
         "_acquisition_rt_bounds",
+        "_mass_recalibration",
+        "_lm_trailer_index",
+        "_mass_scale_by_scan",
+        "_recalibrated_ms1",
     )
 
-    def __init__(self, raw_file: Any, thermo: _ThermoApi) -> None:
+    def __init__(
+        self,
+        raw_file: Any,
+        thermo: _ThermoApi,
+        mass_recalibration: MassRecalibration = MassRecalibration.NONE,
+    ) -> None:
         self._raw_file = raw_file
         self._thermo = thermo
         self._raw_chromatogram_call_count = 0
         self._precursor_trailer_indices: dict[str, int] | None = None
         self._acquisition_rt_bounds: tuple[float, float] | None = None
+        self._mass_recalibration = resolve_mass_recalibration(mass_recalibration)
+        self._lm_trailer_index: int | None = None
+        self._mass_scale_by_scan: dict[int, float] = {}
+        # Per MS1 scan: RT, recalibrated sorted masses and their intensities.
+        self._recalibrated_ms1: dict[
+            int, tuple[float, np.ndarray, np.ndarray] | None
+        ] = {}
 
     def __enter__(self) -> "RawFileHandle":
         return self
 
     def __exit__(self, *_args: object) -> None:
         self._raw_file.Dispose()
+
+    @property
+    def mass_recalibration(self) -> MassRecalibration:
+        return self._mass_recalibration
 
     @property
     def raw_chromatogram_call_count(self) -> int:
@@ -198,6 +225,8 @@ class RawFileHandle:
     ) -> tuple[XICTrace, ...]:
         if not requests:
             return ()
+        if self._mass_recalibration is not MassRecalibration.NONE:
+            return tuple(self._recalibrated_xic(request) for request in requests)
         grouped: dict[tuple[int, int], list[tuple[int, Any]]] = defaultdict(list)
         for index, request in enumerate(requests):
             start_scan, end_scan = self.scan_window_for_request(request)
@@ -243,11 +272,17 @@ class RawFileHandle:
             == self._thermo.ms2_order
         ):
             return None
-        centroids = raw.GetCentroidStream(scan_number, False)
-        masses = np.asarray(getattr(centroids, "Masses", None) or [], dtype=float)
-        intensities = np.asarray(
-            getattr(centroids, "Intensities", None) or [], dtype=float
-        )
+        if self._mass_recalibration is not MassRecalibration.NONE:
+            spectrum = self._recalibrated_ms1_spectrum(scan_number)
+            if spectrum is None:
+                return None
+            _, masses, intensities = spectrum
+        else:
+            centroids = raw.GetCentroidStream(scan_number, False)
+            masses = np.asarray(getattr(centroids, "Masses", None) or [], dtype=float)
+            intensities = np.asarray(
+                getattr(centroids, "Intensities", None) or [], dtype=float
+            )
         inside = (masses >= mz_min) & (masses <= mz_max)
         if not inside.any():
             return None
@@ -263,6 +298,17 @@ class RawFileHandle:
         results: list[Ms1PrecursorObservation | None] = [None] * len(requests)
         raw = self._raw_file
         for scan_number, windows in by_scan.items():
+            if self._mass_recalibration is not MassRecalibration.NONE:
+                recalibrated = self._recalibrated_ms1_spectrum(scan_number)
+                if recalibrated is None:
+                    continue
+                rt, masses, _ = recalibrated
+                for index, low, high in windows:
+                    inside = (masses >= low) & (masses <= high)
+                    results[index] = Ms1PrecursorObservation(
+                        scan_number, rt, tuple(float(mz) for mz in masses[inside])
+                    )
+                continue
             if (
                 self._thermo.ms1_order is None
                 or getattr(raw.GetFilterForScanNumber(scan_number), "MSOrder", None)
@@ -379,6 +425,16 @@ class RawFileHandle:
                     getattr(scan_data, "Intensities", []), dtype=float
                 )
                 base_peak = float(np.max(intensities)) if len(intensities) else 0.0
+                precursor_metadata = _read_precursor_metadata(
+                    self._raw_file,
+                    filter_obj,
+                    scan_number,
+                    self._precursor_trailer_indices,
+                )
+                if self._mass_recalibration is not MassRecalibration.NONE:
+                    masses, precursor_mz, precursor_metadata = self._recalibrate_ms2(
+                        scan_number, masses, precursor_mz, precursor_metadata
+                    )
                 yield Ms2ScanEvent(
                     scan=Ms2Scan(
                         scan_number=scan_number,
@@ -387,12 +443,7 @@ class RawFileHandle:
                         masses=masses,
                         intensities=intensities,
                         base_peak=base_peak,
-                        precursor_metadata=_read_precursor_metadata(
-                            self._raw_file,
-                            filter_obj,
-                            scan_number,
-                            self._precursor_trailer_indices,
-                        ),
+                        precursor_metadata=precursor_metadata,
                     ),
                     parse_error=None,
                     scan_number=scan_number,
@@ -403,6 +454,117 @@ class RawFileHandle:
                     parse_error=str(exc),
                     scan_number=scan_number,
                 )
+
+    def _mass_scale(self, scan_number: int) -> float:
+        """Measured m/z divided by true m/z for one scan under the policy."""
+        scale = self._mass_scale_by_scan.get(scan_number)
+        if scale is not None:
+            return scale
+        raw = self._raw_file
+        if self._lm_trailer_index is None:
+            labels = [
+                str(item.Label).strip().rstrip(":").casefold()
+                for item in raw.GetTrailerExtraHeaderInformation()
+            ]
+            if _LM_CORRECTION_TRAILER not in labels:
+                raise RawReaderError(
+                    "mass recalibration requires the vendor "
+                    "'LM Correction (ppm)' scan trailer"
+                )
+            self._lm_trailer_index = labels.index(_LM_CORRECTION_TRAILER)
+        values = getattr(raw.GetTrailerExtraInformation(scan_number), "Values", ())
+        correction_ppm = (
+            _finite_float_or_none(values[self._lm_trailer_index])
+            if self._lm_trailer_index < len(values)
+            else None
+        )
+        if correction_ppm is None:
+            raise RawReaderError(
+                f"scan {scan_number} lacks a finite 'LM Correction (ppm)' value"
+            )
+        scale = 1.0 + 2.0 * correction_ppm * 1e-6
+        self._mass_scale_by_scan[scan_number] = scale
+        return scale
+
+    def _recalibrated_ms1_spectrum(
+        self, scan_number: int
+    ) -> tuple[float, np.ndarray, np.ndarray] | None:
+        """Cache one MS1 centroid spectrum on true m/z; None for other scans."""
+        if scan_number in self._recalibrated_ms1:
+            return self._recalibrated_ms1[scan_number]
+        raw = self._raw_file
+        if self._thermo.ms1_order is None:
+            raise RawReaderError("mass recalibration requires the vendor MS1 order")
+        spectrum: tuple[float, np.ndarray, np.ndarray] | None = None
+        if (
+            getattr(raw.GetFilterForScanNumber(scan_number), "MSOrder", None)
+            == self._thermo.ms1_order
+        ):
+            centroids = raw.GetCentroidStream(scan_number, False)
+            masses = np.asarray(getattr(centroids, "Masses", None) or [], dtype=float)
+            intensities = np.asarray(
+                getattr(centroids, "Intensities", None) or [], dtype=float
+            )
+            valid = (
+                np.isfinite(masses)
+                & np.isfinite(intensities)
+                & (masses > 0)
+                & (intensities > 0)
+            )
+            order = np.argsort(masses[valid], kind="stable")
+            spectrum = (
+                float(raw.RetentionTimeFromScanNumber(scan_number)),
+                masses[valid][order] / self._mass_scale(scan_number),
+                intensities[valid][order],
+            )
+        self._recalibrated_ms1[scan_number] = spectrum
+        return spectrum
+
+    def _recalibrated_xic(self, request: XICRequest) -> XICTrace:
+        """Sum MS1 centroids per scan, as the vendor XIC does, on true m/z."""
+        start_scan, end_scan = self.scan_window_for_request(request)
+        tolerance = request.mz * request.ppm_tol / 1e6
+        rts: list[float] = []
+        values: list[float] = []
+        for scan_number in range(start_scan, end_scan + 1):
+            spectrum = self._recalibrated_ms1_spectrum(scan_number)
+            if spectrum is None:
+                continue
+            rt, masses, intensities = spectrum
+            low = np.searchsorted(masses, request.mz - tolerance, side="left")
+            high = np.searchsorted(masses, request.mz + tolerance, side="right")
+            rts.append(rt)
+            values.append(float(intensities[low:high].sum()))
+        return XICTrace.from_arrays(rts, values) if rts else XICTrace.empty()
+
+    def _recalibrate_ms2(
+        self,
+        scan_number: int,
+        masses: np.ndarray,
+        precursor_mz: float,
+        metadata: Ms2PrecursorMetadata,
+    ) -> tuple[np.ndarray, float, Ms2PrecursorMetadata]:
+        """Fragments use this scan; precursor readings use their parent MS1.
+
+        The filter precursor is a parent measurement only when it repeats the
+        recorded monoisotopic m/z; a targeted inclusion mass is left unchanged.
+        """
+        recalibrated_masses = masses / self._mass_scale(scan_number)
+        monoisotopic = metadata.monoisotopic_mz
+        if monoisotopic is None:
+            return recalibrated_masses, precursor_mz, metadata
+        if metadata.master_scan_number is None:
+            raise RawReaderError(
+                f"MS2 scan {scan_number} records a precursor without its parent MS1"
+            )
+        parent_scale = self._mass_scale(metadata.master_scan_number)
+        if abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ:
+            precursor_mz = precursor_mz / parent_scale
+        return (
+            recalibrated_masses,
+            precursor_mz,
+            replace(metadata, monoisotopic_mz=monoisotopic / parent_scale),
+        )
 
     def _build_chromatogram_settings(self, mz: float, ppm_tol: float) -> Any:
         tolerance = mz * ppm_tol / 1e6
@@ -431,6 +593,7 @@ def _owner_bound_raw_handle_support() -> tuple[
             _ThermoApi,
             AcquisitionSourceIdentity,
             RawAcquisitionSessionReceipt | None,
+            MassRecalibration,
         ],
         RawFileHandle,
     ],
@@ -448,6 +611,7 @@ def _owner_bound_raw_handle_support() -> tuple[
             thermo: _ThermoApi,
             source: AcquisitionSourceIdentity,
             raw_open_receipt: RawAcquisitionSessionReceipt | None,
+            mass_recalibration: MassRecalibration,
             *,
             _mint_token: object,
         ) -> None:
@@ -455,7 +619,7 @@ def _owner_bound_raw_handle_support() -> tuple[
                 raise RawReaderError(
                     "owner-bound RAW handles must be minted by open_raw"
                 )
-            super().__init__(raw_file, thermo)
+            super().__init__(raw_file, thermo, mass_recalibration)
             self._bound_acquisition_source = source
             self._raw_open_receipt = raw_open_receipt
 
@@ -465,6 +629,7 @@ def _owner_bound_raw_handle_support() -> tuple[
                 "_thermo",
                 "_bound_acquisition_source",
                 "_raw_open_receipt",
+                "_mass_recalibration",
             } and hasattr(self, name):
                 raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
             super().__setattr__(name, value)
@@ -475,6 +640,7 @@ def _owner_bound_raw_handle_support() -> tuple[
                 "_thermo",
                 "_bound_acquisition_source",
                 "_raw_open_receipt",
+                "_mass_recalibration",
             }:
                 raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
             super().__delattr__(name)
@@ -495,12 +661,14 @@ def _owner_bound_raw_handle_support() -> tuple[
         thermo: _ThermoApi,
         source: AcquisitionSourceIdentity,
         raw_open_receipt: RawAcquisitionSessionReceipt | None,
+        mass_recalibration: MassRecalibration,
     ) -> RawFileHandle:
         return OwnerBoundRawFileHandle(
             raw_file,
             thermo,
             source,
             raw_open_receipt,
+            mass_recalibration,
             _mint_token=mint_token,
         )
 
@@ -528,6 +696,7 @@ def open_raw(
     path: Path,
     dll_dir: Path,
     *,
+    mass_recalibration: MassRecalibration = MassRecalibration.NONE,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
     _expected_path_identity: tuple[int, int, int, int, int] | None = None,
     _raw_session_capability: RawAcquisitionSessionCapability | None = None,
@@ -538,6 +707,7 @@ def open_raw(
         _raw_session_capability,
         expected_acquisition_source=expected_acquisition_source,
     )
+    mass_recalibration = resolve_mass_recalibration(mass_recalibration)
     errors = preflight_raw_reader(dll_dir, import_module_func=_import_module)
     if errors:
         raise RawReaderError(" ".join(errors))
@@ -587,7 +757,7 @@ def open_raw(
             ) from exc
         raise RawReaderOpenError(str(exc), cleanup_failed=False) from exc
     if source_binding is None:
-        return RawFileHandle(raw_file, thermo)
+        return RawFileHandle(raw_file, thermo, mass_recalibration)
     raw_open_receipt = (
         None
         if _raw_session_capability is None
@@ -598,6 +768,7 @@ def open_raw(
         thermo,
         source_binding.source,
         raw_open_receipt,
+        mass_recalibration,
     )
 
 
