@@ -49,14 +49,10 @@ def compare_physical_peak_views(
     lower = max(left.left_rt_min, right.left_rt_min)
     upper = min(left.right_rt_min, right.right_rt_min)
     apices = (left.apex_rt_min, right.apex_rt_min)
-    if (
-        left.acquisition_source_id != right.acquisition_source_id
-        or max(left_mass[0], right_mass[0]) > min(left_mass[1], right_mass[1])
-        or upper <= lower
-    ):
+    if left.acquisition_source_id != right.acquisition_source_id or max(
+        left_mass[0], right_mass[0]
+    ) > min(left_mass[1], right_mass[1]):
         return "distinct"
-    if not all(lower < apex < upper for apex in apices):
-        return "unresolved"
     if left.apex_centroids or right.apex_centroids:
         scans = left.apex_centroids
         if (
@@ -88,13 +84,37 @@ def compare_physical_peak_views(
         tuple(point for point in trace if lower <= point[0] <= upper)
         for trace in traces
     )
-    if not overlaps[0] or overlaps[0] != overlaps[1]:
-        return "unresolved"
-    if apices[0] == apices[1]:
-        return "same"
-    if len(overlaps[0]) < 5 or not all(
-        overlaps[0][0][0] < apex < overlaps[0][-1][0] for apex in apices
+    if (
+        apices[0] == apices[1]
+        and lower < apices[0] < upper
+        and overlaps[0]
+        and overlaps[0] == overlaps[1]
     ):
+        return "same"
+    selected_traces = tuple(
+        tuple(
+            point
+            for point in trace
+            if view.left_rt_min <= point[0] <= view.right_rt_min
+        )
+        for trace, view in zip(traces, (left, right), strict=True)
+    )
+    # A shared selected lobe is sufficient evidence. Unrelated ions outside
+    # these selections must not erase it merely because more context is kept.
+    selected_relation = _compare_measured_lobes(selected_traces, apices)
+    if selected_relation != "unresolved":
+        return selected_relation
+    # Integration bounds belong to quantitation, not view identity. If they
+    # lack shared context around both apices, use the already acquired context
+    # rather than treating the cropped selections as proof of separation.
+    return _compare_measured_lobes(traces, apices)
+
+
+def _compare_measured_lobes(
+    traces: tuple[tuple[tuple[float, float], ...], ...],
+    apices: tuple[float, float],
+) -> Literal["same", "distinct", "unresolved"]:
+    if not all(traces):
         return "unresolved"
     shared_lower = max(traces[0][0][0], traces[1][0][0])
     shared_upper = min(traces[0][-1][0], traces[1][-1][0])
@@ -102,7 +122,13 @@ def compare_physical_peak_views(
         tuple(point for point in trace if shared_lower <= point[0] <= shared_upper)
         for trace in traces
     )
-    if full_overlap[0] != full_overlap[1]:
+    if (
+        len(full_overlap[0]) < 5
+        or full_overlap[0] != full_overlap[1]
+        or not all(
+            full_overlap[0][0][0] < apex < full_overlap[0][-1][0] for apex in apices
+        )
+    ):
         return "unresolved"
     combined = dict((*traces[0], *traces[1]))
     rt = sorted(combined)

@@ -634,8 +634,8 @@ def _observation_physical_view(peak: PeakObservationRef) -> PhysicalPeakView:
         right_rt_min=integration.rt_right_min,
         xic_mz=content.mz,
         xic_ppm_tol=provenance.query_ppm_tol,
-        rt=content.rt,
-        raw=content.intensity,
+        rt=peak.source_trace.rt,
+        raw=peak.source_trace.intensity,
     )
 
 

@@ -46,7 +46,10 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
     physical_peak_observation_integration,
 )
-from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
+from xic_extractor.peak_detection.physical_peak_equivalence import (
+    PhysicalPeakView,
+    compare_physical_peak_views,
+)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -55,10 +58,18 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
-def _view(fixture, stem, *, center, crop=0, support=True):
+def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
     sample = fixture.sample(stem)
     rt = np.linspace(7.0, 9.2, 221)[crop:]
     raw = 1000 * np.exp(-0.5 * ((rt - center) / 0.25) ** 2) + 100 * (rt - 7) ** 2
+    if broad_context:
+        # Overlapping shoulders share one lobe in complete acquired context.
+        # Cropping the right context changes baseline, apex and selected bounds.
+        full_rt = np.linspace(7.0, 13.0, 301)
+        full_raw = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
+        full_raw += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
+        selected = (full_rt >= 9.0) & (full_rt <= (11.5 if crop else 11.0))
+        rt, raw = full_rt[selected] + center - 9.8, full_raw[selected]
     prepared = prepare_physical_signal(rt, raw)
     evaluation = evaluate_physical_peak(
         prepared, selection_subject_id=stem, query_rt_min=center
@@ -117,14 +128,21 @@ def _view(fixture, stem, *, center, crop=0, support=True):
     "direct", [False, True], ids=["backfill-backfill", "direct-backfill"]
 )
 @pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("broad_context", [False, True])
 def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
-    tmp_path, support, direct, reverse
+    tmp_path, support, direct, reverse, broad_context
 ):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("A", "B", "C", "D", "S")
     )
     pairs = {
-        stem: _view(fixture, stem, center=center)
+        stem: _view(
+            fixture,
+            stem,
+            center=center,
+            crop=int(broad_context and stem in {"C", "D"}),
+            broad_context=broad_context,
+        )
         for stem, center in (
             ("A", 8.0),
             ("B", 8.0),
@@ -175,8 +193,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             fixture,
             "S",
             center=8.06,
-            crop=45 + 15 * index,
+            crop=index if broad_context else 45 + 15 * index,
             support=support,
+            broad_context=broad_context,
         )
         assert assessment.content.method_result == ("SUPPORT" if support else "HOLD")
         backfills[
@@ -194,6 +213,11 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         len({peak.content.peak_observation_content_id for peak in comparison_peaks})
         == 2
     )
+    if broad_context:
+        integrations = [peak.content.integration for peak in comparison_peaks]
+        lower = max(i.rt_left_min for i in integrations)
+        upper = min(i.rt_right_min for i in integrations)
+        assert not all(lower < i.rt_apex_min < upper for i in integrations)
     # Method planning must recognize the same views as the claim owner, rather
     # than keeping an exact-apex prefilter ahead of the shared evidence rule.
     units = group_cid_nl_physical_subject_units(
@@ -209,8 +233,8 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
                     right_rt_min=peak.content.integration.rt_right_min,
                     xic_mz=peak.content.mz,
                     xic_ppm_tol=peak.generation_provenance.query_ppm_tol,
-                    rt=peak.content.rt,
-                    raw=peak.content.intensity,
+                    rt=peak.source_trace.rt,
+                    raw=peak.source_trace.intensity,
                 ),
             )
             for index, peak in enumerate(comparison_peaks)
@@ -264,3 +288,43 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
     assert len(numeric_sources) == int(direct)
     if direct:
         assert numeric_sources == list(pairs["S"][1].candidate_peaks)
+
+
+@pytest.mark.parametrize("second_apex, expected", [(5.2, "same"), (7.0, "distinct")])
+def test_full_acquired_lobes_not_selected_interval_overlap_define_identity(
+    second_apex, expected
+):
+    # One broad lobe plus a separated second peak. Context-dependent selections
+    # may put apices outside the other view's integral; identity uses the full
+    # acquired signal without changing either reported integral.
+    rt = np.linspace(3.0, 9.0, 301)
+    raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.35) ** 2)
+    raw += 800 * np.exp(-0.5 * ((rt - 7.0) / 0.2) ** 2)
+
+    def view(apex, lower, upper):
+        return PhysicalPeakView(
+            acquisition_source_id="sample-source",
+            apex_rt_min=apex,
+            left_rt_min=lower,
+            right_rt_min=upper,
+            xic_mz=500.0,
+            xic_ppm_tol=20.0,
+            rt=rt,
+            raw=raw,
+        )
+
+    left = view(4.8, 4.3, 5.1)
+    right = view(second_apex, 4.9, 7.5)
+    assert compare_physical_peak_views(left, right) == expected
+    assert compare_physical_peak_views(right, left) == expected
+
+
+def test_unrelated_acquired_tail_does_not_erase_shared_selected_lobe_evidence():
+    rt = np.linspace(3.0, 9.0, 301)
+    raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.35) ** 2)
+    other_raw = raw.copy()
+    other_raw[-10] += 20.0
+    left = PhysicalPeakView("source", 4.8, 4.0, 6.0, 500.0, 20.0, rt, raw)
+    right = PhysicalPeakView("source", 5.2, 4.1, 6.1, 500.001, 20.0, rt, other_raw)
+    assert compare_physical_peak_views(left, right) == "same"
+    assert compare_physical_peak_views(right, left) == "same"
