@@ -24,6 +24,9 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
@@ -195,6 +198,7 @@ def _candidate(
         # These view-only fixtures have no context beyond their measured points.
         # The minted completion fixtures exercise separately retained context.
         source_trace=content,
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         generation_provenance=SimpleNamespace(
             query_ppm_tol=query_ppm, acquisition_source_id="source"
         ),

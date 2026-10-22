@@ -35,9 +35,10 @@ trace edge lacks observed boundary context and has no numeric physical answer.
 
 ### Edge-reaching intervals
 
-For fresh selection, an edge-reaching interval can instead use a fully observed
-return at the greater of 0.1% of its apex residual and the local original-signal
-noise MAD, with the return samples retained. This
+Fresh boundaries stop at the first observed return to 10% of the canonical
+apex residual, bounded by adjacent separating valleys. An edge-reaching interval
+can instead use a fully observed return at the greater of that same 10% level
+and the local original-signal noise MAD, with the return samples retained. This
 alternative must keep the same apex and lie within the original interval;
 both ends must be inside the acquired trace. Already complete intervals and
 their values remain exact, and no candidate is dropped to resolve ambiguity.
@@ -59,8 +60,11 @@ second covered peak answer or a compatibility area source.
 
 Ordinary physical peaks require original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence.
-The selected interval needs an adjacent pair of original XIC values above the
-owner baseline; constant background is not peak support.
+The contiguous canonical core around the selected apex is bounded by half of
+its whole-interval prominence. Within that core, an adjacent pair of original
+XIC values after subtracting the owner baseline must reach the same half-top
+level. Low neighbors elsewhere in a long envelope cannot certify an impulse;
+constant background is not peak support.
 Ordinary support does not additionally require an above-baseline run spanning
 the configured Gaussian window or hit-density enrichment. Those conditions
 must not erase a morphology peak with adjacent acquired support and sufficient
@@ -87,7 +91,7 @@ Low-contrast maxima inside a supported envelope must not first become artificial
 integration boundaries. The physical owner uses an RT envelope with a minimum
 Gaussian sigma of 0.08 minutes to identify supported lobes and valleys, while
 preserving supported clear valleys already visible on the canonical signal.
-To split a coarse envelope, the canonical valley must remain below 30% of the
+To split a coarse envelope, the canonical valley must remain below 50% of the
 smaller lobe for at least one configured Gaussian support footprint. A short
 dropout notch cannot create separate quantitative peaks. Only the
 additional smoothing needed beyond the configured scan-point Gaussian is
@@ -97,7 +101,7 @@ signal, and the final apex is its maximum within the supported interval.
 
 The physical owner measures each interior maximum's
 topographic prominence over the RT envelope, before adjacent
-maxima truncate its interval. It compares that prominence with twice the raw
+maxima truncate its interval. It compares that prominence with four times the raw
 three-point noise MAD between the prominence bases. A subordinate lobe also
 uses the contour toward its adjacent higher lobe, so distant zero background
 cannot dilute its noise estimate. Within a group connected
@@ -111,12 +115,10 @@ make a window question unique. Edge maxima also remain subject to the existing
 context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
-Shoulder-connected lobes form one complete quantitative envelope unless a
-supported clear valley separates its area, or independently supported coarse
-lobes retain a shallow valley across one configured smoothing footprint. The
-latter remain separate intervals at the envelope valley. A brief canonical
-notch on a descending shoulder cannot move this boundary; sustained canonical
-clear splits retain their canonical valley. Canonical contour maxima reaching
+Shoulder-connected lobes form one quantitative envelope unless a supported
+clear valley separates their area. Persistence alone does not turn a shallow
+valley into an independent split. Sustained canonical clear splits retain their
+canonical valley. Canonical contour maxima reaching
 the same 4% prominence floor remain review evidence even when they do not
 qualify as independent seeds. The complete envelope does not establish one
 chemical component or individual component areas.
@@ -134,8 +136,13 @@ selection question.
 
 Sampling support alone also accepts shallow ripples on a background plateau.
 Fresh qualification therefore compares the selected canonical peak's relief
-above its two local valleys with fluctuations in the same original interval.
-The relief must be at least twice the unscaled MAD of normalized local
+above its nearest left and right canonical valleys with fluctuations in the
+same original interval. These valleys are found between adjacent canonical
+maxima before seed filtering or envelope merging; an endpoint's actual value
+is used when that side has no neighboring maximum. One flat top is not its
+own neighbor. The higher valley supplies the reference level, not the deepest
+minimum anywhere in the selected envelope.
+The relief must be at least four times the unscaled MAD of normalized local
 three-point differences in the original signal. Each interior point is compared
 with linear interpolation between its immediate neighbors, using actual RT
 spacing and the coefficient norm. This normalized difference removes constant
@@ -146,12 +153,12 @@ would confuse resolved neighboring peaks with noise.
 The local-relief rule is a local contrast requirement, not the full residual
 height above an AsLS floor. The rule uses the existing prepared arrays without
 recomputation.
-The local-relief construction follows the surrounding-contour interpretation
-of [peak prominence](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.peak_prominences.html),
-bounded here by the selected interval. The factor 2 is an explicit minimum
-qualification policy, not a calibrated false-positive probability. Broad,
-narrow, background-shifted and jagged positive controls guard retention;
-retained-input results alone do not establish cross-dataset detection accuracy.
+Unlike whole-contour topographic prominence, this nearest-valley relief cannot
+borrow height from a distant trough. The half-top sampling core still uses
+whole-interval prominence; replacing the final contrast numerator does not
+move that core or change the noise estimator. The factor 4 is an explicit
+minimum qualification policy, not a calibrated false-positive probability.
+Retained-input results alone do not establish cross-dataset detection accuracy.
 The difference construction is related to the normalized three-point
 estimators discussed by [Brown and Levine (2007)](https://faculty.wharton.upenn.edu/wp-content/uploads/2012/04/2007b-Variance-estimation-in-nonparametric-regression-via-the-difference-sequence-method.pdf).
 The robust MAD aggregation and qualification factor here are product policy;
@@ -161,8 +168,14 @@ The versioned selection policy in
 owns that eligibility check; the profile continues to own the quantitative
 signal and its scan-support count.
 These checks address missing acquired support and insufficient local contrast,
-not every form of noise or
-chemical identity. Historical policies keep their recorded interpretation.
+not every form of noise or chemical identity.
+
+Known limits are conservative false negatives, not proof of signal absence.
+In very short peaks the three-point noise estimate can include peak curvature;
+small canonical ripples can give a broad real peak very little nearest-valley
+relief. A dropout can also suppress a weaker lobe's seed and merge an otherwise
+resolved pair. These limitations remain explicit regression cases, not
+exceptions or alternate calculations in the owner.
 
 ## What The Canonical Signal Establishes
 
@@ -212,13 +225,13 @@ satisfy the retained-evaluation replay contract. Until a replacement has both
 appropriate method evidence and reproducible persisted answers, the current
 Gaussian/AsLS definition remains the operational owner.
 
-## Migration Boundary
+## Consumer Boundary
 
 `smooth_window`, `smooth_polyorder`, and `resolver_mode` belong to legacy
 resolver behavior. They are not aliases for the canonical signal profile and
 cannot change profile-covered physical facts. The only canonical public method
 is `gaussian`; its public point count is
-`signal_processing_window_points` (default 15, odd integer 3–999).
+`signal_processing_window_points` (default 9, odd integer 3–999).
 
 Untargeted Backfill was the first bounded consumer of the canonical profile
 and shared physical owner. Current normal Untargeted Discovery, Alignment
@@ -251,16 +264,19 @@ These alternatives are not equivalent because AsLS is nonlinear. The formula
 and all fixed mechanism versions are part of profile identity; changing the
 order requires a new profile version and evidence contract.
 The RT baseline and envelope parameters are bound into profile identity.
-Retained Discovery facts with a different profile cannot be used as current
-physical answers; they must be regenerated through the existing acquisition
-route.
+Retained Discovery facts with unsupported profile semantics cannot be used as
+current physical answers. The strict reader rejects them; there is no old/new
+algorithm dispatcher or automatic result conversion. Existing files remain
+unchanged and new work uses the current owner. Physical comparison consumes
+the capture's explicit profile, not an implicit current default; absent or
+different profiles leave an otherwise overlapping comparison unresolved.
 
 ## Parameters
 
 | Parameter | Default | Derived | Scope |
 | --- | --- | --- | --- |
 | `signal_processing_method` | `gaussian` only | AsLS remains a fixed baseline mechanism | Canonical profile |
-| `signal_processing_window_points` | 15 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, area, shape |
+| `signal_processing_window_points` | 9 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, area, shape |
 | `baseline_lam` | 1.0 minute^4 (fixed) | RT-aware AsLS penalty | Canonical baseline |
 | `boundary_min_sigma_rt` | 0.08 minutes (fixed) | Additional Gaussian smoothing only if needed | Lobe and valley evidence |
 | `segment_min_prominence_fraction` | 0.04 (fixed) | Fraction of shoulder-connected envelope maximum | Independent seed evidence |
@@ -270,7 +286,7 @@ Sigma is not independently configurable; it is derived from window size. The
 legacy settings key `ms1_morphology_smoothing_window_points` is accepted only
 as a one-way load-time alias to `signal_processing_window_points`. Canonical
 and legacy values may coexist only when equal. Savitzky–Golay and resolver
-settings are not aliases. The 15-point default is scan-rate sensitive — non-default windows require
+settings are not aliases. The 9-point default is scan-rate sensitive — non-default windows require
 a method-appropriate area-ratio and smoothing-duration review per
 [`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md).
 
@@ -284,8 +300,8 @@ a method-appropriate area-ratio and smoothing-duration review per
   its qualitative peak choice.
 - PT-pattern discovery: explicit `TRACE_DECISION_BASIS =
   "gaussian15_smoothed_trace"` constant.
-- Scoring layer: `ScoringContext.intensity_array` is Gaussian15-smoothed; all
-  severity and confidence computations use smoothed values.
+- Profile-covered scoring and relative-shape comparison consume the resolved
+  canonical signal, rather than assuming a fixed 15-point trace.
 - Canonical signal migration follows the
   [quantitative, qualitative, and required non-change gates](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner).
   Until the required evidence gate and the registered selected-area authority

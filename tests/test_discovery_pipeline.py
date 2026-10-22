@@ -1,6 +1,7 @@
 import ast
 import concurrent.futures
 import csv
+import math
 import multiprocessing
 import pickle
 from collections.abc import Iterator, Sequence
@@ -165,7 +166,12 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
         assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
         assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
         assert candidate.ms1_area == pytest.approx(
-            height * 0.1 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.01
+            height
+            * 0.1
+            * np.sqrt(2.0 * np.pi)
+            * 60.0
+            * math.erf(math.sqrt(math.log(10))),
+            rel=0.01,
         )
         assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
         (review,) = _read_csv(output_dir / "discovery_review.csv")
@@ -294,7 +300,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     assert rows[0]["seed_event_count"] == "2"
     assert rows[0]["ms1_peak_found"] == "FALSE"
     assert rows[0]["discovery_candidate_state"] == "review_only_orphan_nl"
-    assert "FC 2.00x < 3.0x" in rows[0]["reason"]
+    assert "FC 2.04x < 3.0x" in rows[0]["reason"]
     review_rows = _read_csv(outputs.review_csv)
     assert len(review_rows) == 1
     assert review_rows[0]["candidate_id"] == (
@@ -493,9 +499,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         tmp_path / "out" / "NormalBC2257_DNA" / "discovery_candidates.csv"
     )
     assert first_rows[0]["ms1_peak_found"] == "FALSE"
-    assert "FC 2.00x < 3.0x" in first_rows[0]["reason"]
+    assert "FC 2.04x < 3.0x" in first_rows[0]["reason"]
     assert second_rows[0]["ms1_peak_found"] == "TRUE"
-    assert "high abundance tissue signal (3.0x)" in second_rows[0]["reason"]
+    assert "high abundance tissue signal (3.1x)" in second_rows[0]["reason"]
     assert [row["candidate_id"] for row in first_rows] == [
         "TumorBC2312_DNA#101@mz258.1085_p142.0611"
     ]
@@ -1412,7 +1418,12 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
     )
 
     rows = _read_csv(outputs.candidates_csv)
-    assert rows[0]["ms1_scan_support_score"] == "0.5"
+    start, end = (
+        float(rows[0][name]) for name in ("ms1_peak_rt_start", "ms1_peak_rt_end")
+    )
+    count = np.count_nonzero((raw._rt >= start) & (raw._rt <= end))
+    assert 0 < count < 150
+    assert float(rows[0]["ms1_scan_support_score"]) == pytest.approx(count / 150)
 
 
 def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(

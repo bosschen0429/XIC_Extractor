@@ -130,15 +130,6 @@ def enumerate_chrom_peak_segments(
         return _empty_result("NO_SIGNAL", rt, active_policy)
 
     morphology_trace = _morphology_trace(rt, residual, active_policy)
-    # Match the RT envelope's scale decision once for the whole trace. When
-    # canonical smoothing already covers that scale, its valley needs no repair.
-    additional_envelope_smoothing = (
-        active_policy.morphology_trace_method == "rt_envelope"
-        and max(float(active_policy.morphology_min_sigma_rt), 0.0)
-        > float(np.median(np.diff(rt)))
-        * float(active_policy.morphology_trace_window_points)
-        / 6.0
-    )
     morphology_effective_points = _morphology_trace_effective_points(
         len(rt),
         active_policy,
@@ -209,9 +200,8 @@ def enumerate_chrom_peak_segments(
                 seeds, seeds[1:], relations, envelope_relations, strict=False
             )
         )
-    # Supported lobes with a persistent valley remain separate components
-    # even without baseline resolution. Their shoulder relation still
-    # requires overlap review; short dropouts cannot supply that boundary.
+    # Only clear valleys establish independent RT-envelope components.
+    # A sustained but shallow shoulder remains one unresolved envelope.
     seed_groups: list[tuple[int, int]] = []
     group_start = 0
     for index in range(len(seeds)):
@@ -219,19 +209,6 @@ def enumerate_chrom_peak_segments(
             active_policy.morphology_trace_method != "rt_envelope"
             or index == len(seeds) - 1
             or relations[index].relation_class == "clear_split"
-            or (
-                seeds[index].index in envelope_seed_indices
-                and seeds[index + 1].index in envelope_seed_indices
-                and _sustained_envelope_valley(
-                    relation_trace,
-                    rt,
-                    seeds[index],
-                    seeds[index + 1],
-                    relations[index].valley_index,
-                    active_policy,
-                    additional_envelope_smoothing=additional_envelope_smoothing,
-                )
-            )
         ):
             seed_groups.append((group_start, index))
             group_start = index + 1
@@ -640,61 +617,6 @@ def _restore_rt_envelope_clear_splits(
     return tuple(restored[index] for index in sorted(restored))
 
 
-def _sustained_envelope_valley(
-    signal: np.ndarray,
-    rt: np.ndarray,
-    left: _ApexSeed,
-    right: _ApexSeed,
-    valley_index: int,
-    policy: ChromPeakSegmentPolicy,
-    *,
-    additional_envelope_smoothing: bool,
-) -> bool:
-    """Measure a supported lobe pair's valley width at half its dip depth.
-
-    A broad decrease and recovery can separate overlapping components without
-    returning to baseline. Requiring one canonical smoothing footprint rejects
-    a brief acquired dropout that also creates two coarse-envelope maxima.
-    """
-    spacing = float(np.median(np.diff(rt[left.index : right.index + 1])))
-    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
-    weaker_height = min(float(signal[left.index]), float(signal[right.index]))
-    valley_height = float(signal[valley_index])
-    # An accepted canonical valley already separates these components. A
-    # coarser-scale rescue may add separation evidence, never remove it.
-    for use_supported_floor in (False, True):
-        if use_supported_floor:
-            if not additional_envelope_smoothing:
-                return False
-            # A finer canonical notch cannot set the depth of a broader RT valley.
-            support_left = max(
-                left.index,
-                int(
-                    np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")
-                ),
-            )
-            support_right = min(
-                right.index + 1,
-                int(
-                    np.searchsorted(
-                        rt, rt[valley_index] + 0.5 * footprint, side="right"
-                    )
-                ),
-            )
-            valley_height = float(np.max(signal[support_left:support_right]))
-        if weaker_height <= valley_height:
-            continue
-        threshold = valley_height + 0.5 * (weaker_height - valley_height)
-        start = end = valley_index
-        while start > left.index and signal[start - 1] <= threshold:
-            start -= 1
-        while end < right.index and signal[end + 1] <= threshold:
-            end += 1
-        if rt[end] - rt[start] >= footprint:
-            return True
-    return False
-
-
 def _sustained_canonical_valley(
     signal: np.ndarray,
     rt: np.ndarray,
@@ -761,6 +683,31 @@ def _valley_index(values: np.ndarray, left_peak: int, right_peak: int) -> int:
     return int(start + np.argmin(values[start:end]))
 
 
+def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
+    """Measure relief against immediate canonical valleys in a complete segment.
+
+    Use every canonical maximum before seed qualification or envelope merging.
+    A side without another maximum uses the existing segment endpoint's value;
+    a distant lower background must not deepen a nearer shallow valley.
+    """
+    peaks = _local_peak_indices(signal)
+    # argmax selects the first flat-top sample; find_peaks selects its middle.
+    # Those representations are one apex, not neighboring components.
+    plateau_left = plateau_right = apex_index
+    while plateau_left > 0 and signal[plateau_left - 1] == signal[apex_index]:
+        plateau_left -= 1
+    while (
+        plateau_right + 1 < len(signal)
+        and signal[plateau_right + 1] == signal[apex_index]
+    ):
+        plateau_right += 1
+    before = [index for index in peaks if index < plateau_left]
+    after = [index for index in peaks if index > plateau_right]
+    left = _valley_index(signal, before[-1], apex_index) if before else 0
+    right = _valley_index(signal, apex_index, after[0]) if after else len(signal) - 1
+    return float(signal[apex_index]) - max(float(signal[left]), float(signal[right]))
+
+
 def _segment_from_seed(
     rt: np.ndarray,
     intensity: np.ndarray,
@@ -798,6 +745,21 @@ def _segment_from_seed(
         right_relation,
         policy,
     )
+    apex_index = seed.index
+    if policy.morphology_trace_method == "rt_envelope":
+        apex_index = left + int(np.argmax(boundary_signal[left:right]))
+        # The envelope locates the basin, not its quantitative return height.
+        # Trim its outer tails against the selected canonical apex, preserving
+        # interior dropout notches and the separating-valley limits above.
+        threshold = policy.baseline_return_threshold(float(boundary_signal[apex_index]))
+        basin_left, basin_right = left, right
+        while left < apex_index and boundary_signal[left] <= threshold:
+            left += 1
+        while right > apex_index + 1 and boundary_signal[right - 1] <= threshold:
+            right -= 1
+        if policy.include_baseline_return_samples:
+            left = max(basin_left, left - 1)
+            right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":
         # Qualification may discard a lobe as an independent candidate, but
@@ -828,14 +790,6 @@ def _segment_from_seed(
         interval.start_index,
         interval.end_index,
     )
-    apex_index = seed.index
-    if policy.morphology_trace_method == "rt_envelope":
-        segment_residual = np.maximum(
-            intensity[interval.start_index : interval.end_index]
-            - baseline[interval.start_index : interval.end_index],
-            0.0,
-        )
-        apex_index = interval.start_index + int(np.argmax(segment_residual))
     apex_residual = (
         float(boundary_signal[apex_index])
         if policy.morphology_trace_method == "rt_envelope"

@@ -523,7 +523,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=_signal_processing_window_points,
         default=DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
         metavar="ODD_POINTS",
-        help="Canonical Gaussian window: odd integer 3-999 (default 15).",
+        help="Canonical Gaussian window: odd integer 3-999 (default 9).",
     )
     parser.add_argument(
         "--output-level",

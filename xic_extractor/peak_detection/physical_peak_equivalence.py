@@ -11,6 +11,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
@@ -36,6 +39,7 @@ class PhysicalPeakView:
     rt: Iterable[float]
     raw: Iterable[float]
     comparison_trace: tuple[Iterable[float], Iterable[float]] | None = None
+    profile: SignalProcessingProfile | None = None
 
 
 def physical_peak_view_from_observation(peak: PeakObservationRef) -> PhysicalPeakView:
@@ -51,6 +55,7 @@ def physical_peak_view_from_observation(peak: PeakObservationRef) -> PhysicalPea
         xic_ppm_tol=provenance.query_ppm_tol,
         rt=peak.source_trace.rt,
         raw=peak.source_trace.intensity,
+        profile=peak.signal_processing_profile,
     )
 
 
@@ -72,6 +77,10 @@ def compare_physical_peak_views(
         left_mass[0], right_mass[0]
     ) > min(left_mass[1], right_mass[1]):
         return "distinct"
+    # A lobe must be interpreted using the producing method, never today's
+    # default. Missing or different methods do not establish lobe identity.
+    if left.profile is None or left.profile != right.profile:
+        return "unresolved"
     traces = tuple(
         tuple((float(t), float(v)) for t, v in zip(view.rt, view.raw, strict=True))
         for view in (left, right)
@@ -97,13 +106,15 @@ def compare_physical_peak_views(
     )
     # A shared selected lobe is sufficient evidence. Unrelated ions outside
     # these selections must not erase it merely because more context is kept.
-    selected_relation = _compare_measured_lobes(selected_traces, apices)
+    selected_relation = _compare_measured_lobes(
+        selected_traces, apices, profile=left.profile
+    )
     if selected_relation != "unresolved":
         return selected_relation
     # Integration bounds belong to quantitation, not view identity. If they
     # lack shared context around both apices, use the already acquired context
     # rather than treating the cropped selections as proof of separation.
-    acquired_relation = _compare_measured_lobes(traces, apices)
+    acquired_relation = _compare_measured_lobes(traces, apices, profile=left.profile)
     if acquired_relation != "unresolved" or not any(
         view.comparison_trace is not None for view in (left, right)
     ):
@@ -125,7 +136,7 @@ def compare_physical_peak_views(
         for view in (left, right)
     )
     relation = _compare_measured_lobes(
-        comparison_traces, apices, require_qualified=True
+        comparison_traces, apices, profile=left.profile, require_qualified=True
     )
     if relation != "unresolved":
         return relation
@@ -143,6 +154,7 @@ def compare_physical_peak_views(
             for view in (left, right)
         ),
         apices,
+        profile=left.profile,
         require_qualified=True,
     )
 
@@ -151,6 +163,7 @@ def _compare_measured_lobes(
     traces: tuple[tuple[tuple[float, float], ...], ...],
     apices: tuple[float, float],
     *,
+    profile: SignalProcessingProfile,
     require_qualified: bool = False,
 ) -> Literal["same", "distinct", "unresolved"]:
     if not all(traces):
@@ -171,7 +184,7 @@ def _compare_measured_lobes(
         return "unresolved"
     combined = dict((*traces[0], *traces[1]))
     rt = sorted(combined)
-    prepared = prepare_physical_signal(rt, [combined[t] for t in rt])
+    prepared = prepare_physical_signal(rt, [combined[t] for t in rt], profile=profile)
     universe = enumerate_physical_segment_universe(prepared)
     qualified = (
         {

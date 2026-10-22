@@ -79,6 +79,13 @@ def test_real_raw_sample_header_if_available() -> None:
     dll_dir = Path(r"C:\Xcalibur\system\programs")
     if not raw_path.is_file() or not dll_dir.is_dir():
         pytest.skip("Local Thermo RAW and DLL environment not available")
+    # A service account can see file metadata without permission to read the
+    # private RAW. Check that prerequisite before entering the vendor loader.
+    try:
+        with raw_path.open("rb") as stream:
+            stream.read(1)
+    except PermissionError:
+        pytest.skip("Local Thermo RAW is not readable by this account")
 
     environment_errors = preflight_raw_reader(dll_dir)
     if environment_errors:

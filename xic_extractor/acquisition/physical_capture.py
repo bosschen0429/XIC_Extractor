@@ -25,7 +25,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
-from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -35,7 +34,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
 )
@@ -183,11 +181,7 @@ class PhysicalPeakCapture:
             query_rt_min=search.query_rt_min,
             request_context_rt_start_min=search.request.rt_min,
             request_context_rt_end_min=search.request.rt_max,
-            selection_policy_version=(
-                DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-                if self._profile.window_points == DEFAULT_GAUSSIAN15_WINDOW_POINTS
-                else PHYSICAL_PEAK_POINT_POLICY
-            ),
+            selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )
         return CapturedPhysicalPeak(
             work_ordinal=ordinal,

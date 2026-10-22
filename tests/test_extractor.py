@@ -1,4 +1,5 @@
 import csv
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -233,15 +234,15 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
-        # Both analytic components have acquired support and local contrast.
-        # Keep them available without changing ranking or shape review.
+        # The interrupted component fails the stronger local contrast gate;
+        # only the supported main peak participates in ranking and shape review.
         assert projection.product_state == "detected_flagged"
         assert projection.counted_detection is True
         assert "trace_morphology_review" in projection.review_reasons
         assert projection.conflict_reasons == ()
         assert sorted(
             candidate.selection_apex_rt for candidate in result.peak_result.candidates
-        ) == pytest.approx([4.7, 6.0], abs=0.04)
+        ) == pytest.approx([4.7], abs=0.04)
         assert long_rows[0]["Counted Detection"] == "TRUE"
     else:
         # A dense hit cluster with empty flanks is acquired censored support.
@@ -348,7 +349,7 @@ def test_retained_apex_outside_rt_hint_is_measured_without_inventing_nl_support(
         for segment in evaluation.segment_universe.segments
     )
     assert any(
-        segment.left_rt_min < 10.8 < segment.right_rt_min
+        segment.left_rt_min < target.rt_max < segment.right_rt_min
         for segment in evaluation.segment_universe.segments
     )
     assert evaluation.state == "available"
@@ -523,7 +524,13 @@ def test_rt_recovery_keeps_supported_physical_candidate_identity(
     assert file_result.error is None
     result = file_result.results[target.label]
     assert result.reported_rt == pytest.approx(9.0, abs=0.02)
-    known_area = weak_height * 0.08 * np.sqrt(2 * np.pi) * 60
+    known_area = (
+        weak_height
+        * 0.08
+        * np.sqrt(2 * np.pi)
+        * 60
+        * math.erf(math.sqrt(math.log(10.0)))
+    )
     assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
     assert result.selected_cid_nl_supported is True
     assert result.targeted_product_projection.counted_detection is True

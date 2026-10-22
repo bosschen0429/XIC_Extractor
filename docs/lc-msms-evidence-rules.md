@@ -72,16 +72,18 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   uses its existing bounded reacquisition pass to recover missing context;
   unresolved clipped segments remain unavailable. The profile binds the formula;
   the physical question and segment universe bind the selection policy. Persisted
-  evaluations replay their recorded policy and retain their exact identity.
+  evaluations retain their exact identity and are readable only under supported
+  profile semantics. Unsupported profiles are rejected, not silently reinterpreted
+  by the current method. No migration or old-algorithm dispatch is provided.
 - Before constructing physical intervals, interior apex candidates use an RT
   envelope with minimum sigma 0.08 minutes. Supported clear valleys on the
   canonical signal preserve separated groups, each with one apex representative.
-  A canonical valley hidden by the coarser envelope must stay below 30% of
+  A canonical valley hidden by the coarser envelope must stay below 50% of
   the smaller lobe for one configured Gaussian support footprint before it can
   restore a split. A short dropout notch is insufficient.
   Candidate support uses topographic prominence and the original three-point
   noise MAD over the prominence bases and, for subordinate shoulder lobes,
-  the contour toward adjacent higher lobes. A candidate with prominence below twice that MAD
+  the contour toward adjacent higher lobes. A candidate with prominence below four times that MAD
   is subordinate ripple only when its shoulder-connected group contains an
   independently supported apex. It cannot truncate that envelope. Clear valleys
   separate groups; entirely unsupported groups and edge maxima remain for the
@@ -91,20 +93,18 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Clear valleys separate groups before that comparison. Seed eligibility does
   not depend on a fraction of the entire acquired context maximum. The envelope only
   supplies lobe/valley evidence; boundary walks, final apex, and area use the
-  canonical signal. Shoulder-connected lobes share one complete envelope and
-  area unless independently supported coarse lobes have a persistent shallow
-  valley across one configured smoothing footprint. Those lobes retain separate
-  intervals at the envelope valley, so a brief deeper notch on a descending
-  shoulder cannot move that boundary. Sustained canonical clear splits retain
+  canonical signal. Shoulder-connected lobes share one quantitative envelope
+  and area unless a supported clear valley separates them. Persistence alone
+  does not turn a shallow valley into a split. Sustained canonical clear splits retain
   their canonical valley. Multiple canonical lobes above the 4% prominence floor retain review
   evidence even when they cannot claim independent quantitative intervals.
   An unresolved shoulder carries `physical_shoulder_overlap`
   into Targeted review reasons and Untargeted provisional evidence; it cannot
   claim independent Untargeted owner quantification.
-- Current physical selection then uses the complete positive peak interval
-  through the first baseline-return samples, bounded by adjacent valleys.
+- Current physical selection uses the canonical interval through the first
+  observed return to 10% of the apex residual, bounded by separating valleys.
   Only an interval reaching an acquired edge may use an observed return at
-  the greater of 0.1% of its apex residual and original-signal noise MAD.
+  the greater of that same 10% level and original-signal noise MAD.
   This alternative must have the same apex, be fully
   interior, and lie within the original interval. Already complete intervals
   retain their exact boundaries and values; every original candidate remains
@@ -115,8 +115,11 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   share the selected bounds, including inter-scan peak tails. Group-guided
   recovery uses `unique_baseline_peak_in_context`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
-  ambiguous and nonnumeric. Ordinary continuous peaks require at least two
-  original XIC values above the owner baseline, including an adjacent pair.
+  ambiguous and nonnumeric. Ordinary peaks require an adjacent pair of original
+  XIC values, after owner-baseline subtraction, reaching the half-prominence
+  level inside the contiguous canonical core around the selected apex. The
+  core uses whole-interval prominence; low neighbors outside it cannot certify
+  an impulse. At least two such original observations must support the top.
   Missing support gives `insufficient_original_xic_support`; no adjacent pair
   gives `insufficient_original_xic_continuity`. Gaussian spread and constant
   background cannot supply independent acquired support.
@@ -132,7 +135,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   cluster bypasses adjacency and intensity-shape checks, uses its observed
   trapezoid area, and carries `local_hit_density_enrichment` and
   `near_detection_limit`. Censored values are not imputed.
-  A selected peak also needs local relief at least twice a local fluctuation
+  A selected peak also needs local relief at least four times a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean
   norm of those three coefficients. Use the unscaled MAD of these differences
@@ -140,30 +143,32 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   `diff(raw, n=2) / sqrt(6)`; RT-weighted interpolation also removes linear
   trends on irregular grids. Fewer than three points or zero MAD supplies no
   additional noise rejection; original-support requirements still apply.
-  Relief is the canonical apex
-  height minus the higher of the minima on its two sides, including the apex
-  and the recorded interval endpoints. Insufficient relief gives
+  Relief is the canonical apex height minus the higher of its nearest left
+  and right valleys. Valleys lie between adjacent canonical maxima before
+  filtering or merging, not at distant whole-envelope minima. A flat top is
+  one maximum; a side without a neighboring maximum uses the existing
+  interval endpoint's actual residual. Insufficient relief gives
   `insufficient_local_peak_contrast`, without numeric facts or integration.
   This uses the already prepared arrays; it does not refit the baseline or
   smoothing or interpret smoothing bias as measurement noise. Background
   offset and intensity units cannot supply local relief
-  relative to fluctuations. The fixed factor 2 is a minimum contrast policy,
+  relative to fluctuations. The fixed factor 4 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   These checks are necessary lower bounds, not sufficient proof of chemical
   identity or quantification readiness. Discovery uses the same original-support
-  and local-contrast qualification as Targeted. Alternating acquired amplitudes,
-  elevated valley floors, or poor agreement with a monotone peak shape do not
-  independently establish peak absence. Existing overlap and provisional-quality
+  and local-contrast qualification as Targeted, for every supported smoothing
+  window. Alternating low/high acquired values can fail top continuity even
+  when their smoothed contour looks like a peak. Short-interval curvature can
+  inflate noise, and small ripples can deny a broad peak local relief; these
+  accepted limitations do not establish chemical absence. Existing overlap and provisional-quality
   evidence remains available for review; an available overlapping interval does
   not establish a pure constituent area. Qualification neither
-  changes integration nor removes weak segments to resolve ambiguity. Fresh
-  policies use segment-universe-v3; questions cannot cross boundary-policy
-  families. Legacy
-  `closed_segment_contains_query` receipts retain their original 2%-height
-  bounds. Explicit fresh evaluation uses the current policy and new answer
-  identity; replay never rewrites a saved answer.
+  changes integration nor removes weak segments to resolve ambiguity.
+  Questions cannot cross profile-bound segment universes. Fresh evaluation uses
+  the current policy and answer identity; unsupported boundary semantics are
+  rejected, and saved answers are never rewritten in place.
 - The canonical public profile fields are `signal_processing_method`
-  (`gaussian` only) and `signal_processing_window_points` (default 15; non-bool
+  (`gaussian` only) and `signal_processing_window_points` (default 9; non-bool
   odd integer 3–999). The legacy settings spelling
   `ms1_morphology_smoothing_window_points` is a one-way load-time alias only;
   equal canonical/legacy values migrate with a deprecation receipt and conflicts
@@ -174,7 +179,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Covered Owner Backfill work has no raw/legacy compatibility fallback: apex,
   boundaries, height, area, scan support, and relative shape share one profile-
   bound canonical signal and fact identity.
-- Gaussian15 morphology improves boundary readability and MS1 shape/pattern
+- Canonical Gaussian morphology supplies boundary and MS1 shape/pattern
   evidence. It is not identity authority by itself: paired RT, target window,
   product/NL/MS2 acquisition opportunity, method-specific CID-NL evidence, and
   CrossSample identity gates still decide whether a candidate is accepted,
@@ -184,7 +189,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   direction for the bounded Owner Backfill migration, with profile/fact/value
   provenance. Numeric area differences from legacy integration are accepted
   quantitative expected differences; parity must not be manufactured by a
-  second calculation. The default 15-point smoothing is scan-rate sensitive, and non-default
+  second calculation. The default 9-point smoothing is scan-rate sensitive, and non-default
   windows must be treated as method parameters. Production-ready claims across
   batches must include a method-appropriate review of raw-vs-Gaussian area
   ratios and estimated smoothing duration, using retained numerical evidence.
@@ -199,9 +204,9 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   hard-zero expected differences. A qualitative mismatch is HOLD, never a
   reason to restore legacy computation to force parity.
 - For accepted candidates, `ChromPeakSegment` is the active chromatographic
-  boundary owner when a Gaussian15 morphology segment contains the selected
+  boundary owner when a canonical morphology segment contains the selected
   apex. It can replace an over-wide legacy resolver interval with an explicit
-  segment boundary and Gaussian15 positive AsLS residual area.
+  segment boundary and canonical positive AsLS residual area.
 - `selected_full_envelope` remains a diagnostic/fallback boundary source. It may
   promote only when no segment-native boundary is available; its
   split/neighbor-apex, stronger context-apex, blank-like, edge/tail, width,

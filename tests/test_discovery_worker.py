@@ -156,7 +156,7 @@ def test_single_file_discovery_only_summary_and_run_spec(
     assert not settings.enable_blank_qualification
     assert run_spec.acquisition_inputs[0].blank_library_sha256 is None
     assert run_spec.acquisition_inputs[0].sample_stem == raw_file.stem
-    assert run_spec.signal_processing_profile.window_points == 15
+    assert run_spec.signal_processing_profile.window_points == 9
 
 
 @pytest.mark.parametrize("mode", ["align_only", "full"])

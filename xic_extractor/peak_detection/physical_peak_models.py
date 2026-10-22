@@ -32,8 +32,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
-_PHYSICAL_EDGE_RETURN_FRACTION = 0.001
-_PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 2.0
+_PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 4.0
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
     "asls_baseline",

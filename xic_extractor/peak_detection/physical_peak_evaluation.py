@@ -20,10 +20,10 @@ from xic_extractor.peak_detection.baseline import (
 from xic_extractor.peak_detection.chrom_peak_segments import (
     ChromPeakSegmentPolicy,
     enumerate_chrom_peak_segments,
+    local_apex_prominence,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
-    DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     canonical_gaussian_signal_traces,
 )
 from xic_extractor.peak_detection.physical_peak_identity import (
@@ -45,7 +45,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
     validate_prepared_signal_identity,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    _PHYSICAL_EDGE_RETURN_FRACTION,
     _PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
@@ -253,12 +252,6 @@ def enumerate_physical_segment_universe(
     reason = prepared_result.projection.reason
     physical_segments: tuple[PhysicalSegment, ...] = ()
     prepared = prepared_result.prepared
-    if (
-        prepared is not None
-        and selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-        and prepared.profile.window_points != DEFAULT_GAUSSIAN15_WINDOW_POINTS
-    ):
-        raise ValueError("background qualification requires a Gaussian15 profile")
     if state == "available" and prepared is not None:
         rt = np.asarray(prepared.rt, dtype=float)
         signal = np.asarray(prepared.positive_signal, dtype=float)
@@ -269,9 +262,10 @@ def enumerate_physical_segment_universe(
             min_apex_fraction_of_context=0.0,
             morphology_trace_window_points=prepared.profile.window_points,
             morphology_min_sigma_rt=prepared.profile.boundary_min_sigma_rt,
-            baseline_return_fraction=0.0,
+            baseline_return_fraction=0.10,
             baseline_return_min_residual=0.0,
             include_baseline_return_samples=True,
+            clear_valley_max_fraction=0.50,
             min_prominence_noise_mad=_PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
             min_prominence_fraction_of_envelope=(
                 prepared.profile.segment_min_prominence_fraction
@@ -303,7 +297,6 @@ def enumerate_physical_segment_universe(
                     quantitation_context_rt_end=context_end,
                     policy=replace(
                         segment_policy,
-                        baseline_return_fraction=_PHYSICAL_EDGE_RETURN_FRACTION,
                         baseline_return_min_residual=short_scale_noise_mad(
                             rt, acquired
                         ),
@@ -791,6 +784,24 @@ def _physical_segment_support_failure(
         ),
         0.0,
     )
+    left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
+    signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
+    apex_offset = apex - left
+    prominence = float(signal[apex_offset]) - max(
+        float(np.min(signal[: apex_offset + 1])),
+        float(np.min(signal[apex_offset:])),
+    )
+    # Only acquired observations in this apex's half-prominence core support
+    # its top. Low neighbors elsewhere in a long envelope cannot certify an
+    # impulse. Keep this core separate from the local-valley contrast below.
+    top_level = float(signal[apex_offset]) - 0.5 * prominence
+    top_left = top_right = apex_offset
+    while top_left > 0 and signal[top_left - 1] >= top_level:
+        top_left -= 1
+    while top_right + 1 < len(signal) and signal[top_right + 1] >= top_level:
+        top_right += 1
+    original = original[top_left : top_right + 1]
+    original = np.where(original >= top_level, original, 0.0)
     if sum(value > 0.0 for value in original) < 2:
         return "insufficient_original_xic_support"
     if not any(
@@ -800,13 +811,7 @@ def _physical_segment_support_failure(
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
     # establish the absence of an already observed morphology peak.
-    left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
-    signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
-    apex_offset = apex - left
-    prominence = float(signal[apex_offset]) - max(
-        float(np.min(signal[: apex_offset + 1])),
-        float(np.min(signal[apex_offset:])),
-    )
+    prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_mad = short_scale_noise_mad(rt, acquired)
     minimum_contrast = (

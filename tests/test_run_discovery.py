@@ -99,7 +99,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert settings.resolver_mode == "local_minimum"
     assert settings.rt_min is None and settings.rt_max is None
     assert captured["dll_dir"] == dll_dir.resolve()
-    assert captured["run_spec"].signal_processing_profile.window_points == 15
+    assert captured["run_spec"].signal_processing_profile.window_points == 9
     assert captured["run_spec"].discovery_method.settings == settings
     assert captured["run_spec"].acquisition_inputs[0].sample_stem == raw_path.stem
     stdout = capsys.readouterr().out

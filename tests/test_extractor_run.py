@@ -572,7 +572,9 @@ class _FakeRaw:
     def extract_xic(
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
     ) -> tuple[np.ndarray, np.ndarray]:
-        rt = np.linspace(rt_min, rt_max, 101)
+        # The worker/serialization fixture supplies a resolved physical peak,
+        # not a sparsely sampled pulse whose qualification is under test.
+        rt = np.linspace(rt_min, rt_max, 1001)
         return rt, 1.0 + 1000.0 * np.exp(-0.5 * ((rt - 8.5) / 0.08) ** 2)
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float):

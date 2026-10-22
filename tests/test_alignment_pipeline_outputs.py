@@ -70,7 +70,7 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     assert metadata["signal_processing_profile_id"].startswith("signal-profile:")
     assert len(metadata["signal_processing_profile_hash"]) == 64
     assert metadata["signal_processing_method"] == "gaussian"
-    assert metadata["signal_processing_window_points"] == "15"
+    assert metadata["signal_processing_window_points"] == "9"
     assert metadata["physical_signal_formula"] == (
         "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )

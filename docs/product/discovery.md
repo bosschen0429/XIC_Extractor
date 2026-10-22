@@ -120,15 +120,18 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 
 ### Physical qualification
 
-- Discovery's Gaussian15 physical point policy rejects an irregular background
-  maximum only when both the acquired trace and its existing, unclipped
-  baseline residual lack sufficient rise/fall shape or local apex relief.
-  The physical owner qualifies the already selected interval; surviving peaks
-  keep their original boundaries, apex and integrated area. Saved policies
-  retain their original answer semantics, and other callers or smoothing-window
-  settings keep their existing selection policies. This local qualification does
-  not prove chemical identity or replace cross-sample support and Backfill
-  eligibility.
+- Discovery uses the shared physical point qualification for every supported
+  Gaussian window (default 9). An ordinary candidate needs two adjacent acquired
+  observations supporting its half-prominence top and canonical relief above
+  the nearest valleys of at least four times the local raw noise MAD. Clear
+  valleys at or below half the smaller apex can separate peaks; shallow
+  shoulders remain one envelope. Boundaries use a 10% apex-residual return.
+  Qualification consumes the prepared arrays without another baseline, area
+  calculation, or caller-specific judge. It can reject short or rippled real
+  signals; it is not chemical identity or a replacement for cross-sample support
+  and Backfill eligibility. Unsupported saved profiles are rejected rather than
+  converted or replayed through a second algorithm; see
+  [the method owner](signal-processing-rationale.md).
 - Discovery retains provisional qualification when it reuses a physical result.
   Candidate CSV carries the final `is_provisional` decision through Alignment
   replay, including merged candidates. Legacy CSVs without provisional evidence
@@ -472,7 +475,8 @@ The preset owns ordered positions, anchor/discriminating roles, height-ratio
 ranges, ppm tolerance, apex floor, scan-interval multiplier, shape window, and
 minimum correlation. Local MS1 smoothing is configured in seconds and converted
 per RAW to the nearest positive odd number of scan points. A 6.6 s setting with
-1.31 s scans gives five points. The shared Gaussian15 default is unchanged.
+1.31 s scans gives five points. This screening setting is separate from the
+shared canonical Gaussian profile's 9-point default.
 
 `pt_pattern` and `pt_pattern_cid_nl_dr` are **provisional** applications: positions
 0/+1.002111/+2.002271/+4.005213, base/+1 anchors, and +4 discrimination. Their
