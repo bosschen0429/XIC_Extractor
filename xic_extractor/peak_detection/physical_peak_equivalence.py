@@ -18,7 +18,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     qualified_physical_segments,
     unique_physical_segment_at_rt,
 )
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.observations import PeakObservationRef
@@ -36,7 +35,6 @@ class PhysicalPeakView:
     xic_ppm_tol: float
     rt: Iterable[float]
     raw: Iterable[float]
-    apex_centroids: tuple[Ms1PrecursorObservation, ...] = ()
     comparison_trace: tuple[Iterable[float], Iterable[float]] | None = None
 
 
@@ -59,7 +57,7 @@ def physical_peak_view_from_observation(peak: PeakObservationRef) -> PhysicalPea
 def compare_physical_peak_views(
     left: PhysicalPeakView, right: PhysicalPeakView
 ) -> Literal["same", "distinct", "unresolved"]:
-    """Use ion evidence first, then measured overlap and resolved lobe identity.
+    """Use extraction mass windows first, then measured overlap and lobe identity.
 
     ``unresolved`` is not evidence of distinct peaks and never authorizes merging.
     The same source and overlapping extraction windows are necessary, not proof.
@@ -74,29 +72,6 @@ def compare_physical_peak_views(
         left_mass[0], right_mass[0]
     ) > min(left_mass[1], right_mass[1]):
         return "distinct"
-    if left.apex_centroids or right.apex_centroids:
-        scans = left.apex_centroids
-        if (
-            len(scans) == 3
-            and scans == right.apex_centroids
-            and lower <= scans[0].rt_min < apices[0]
-            and scans[1].rt_min == apices[0] == apices[1]
-            and apices[0] < scans[2].rt_min <= upper
-            and len({scan.scan_number for scan in scans}) == 3
-            and all(len(scan.centroid_mzs) == 1 for scan in scans)
-        ):
-            return "same"
-        # Different singleton ions on the same scans are positive separation
-        # evidence; missing or multiply occupied scans are merely inconclusive.
-        if len(scans) == len(right.apex_centroids) == 3 and all(
-            a.scan_number == b.scan_number
-            and a.rt_min == b.rt_min
-            and len(a.centroid_mzs) == len(b.centroid_mzs) == 1
-            and a.centroid_mzs != b.centroid_mzs
-            for a, b in zip(scans, right.apex_centroids, strict=True)
-        ):
-            return "distinct"
-        return "unresolved"
     traces = tuple(
         tuple((float(t), float(v)) for t, v in zip(view.rt, view.raw, strict=True))
         for view in (left, right)

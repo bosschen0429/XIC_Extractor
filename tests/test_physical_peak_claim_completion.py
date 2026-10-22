@@ -38,10 +38,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment_ref,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlPhysicalCandidateFact,
-    group_cid_nl_physical_subject_units,
-)
 from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
     physical_peak_observation_integration,
@@ -304,32 +300,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         assert all(
             view.comparison_trace is not None for view in comparison_views.values()
         )
-    # Method planning must recognize the same views as the claim owner, rather
-    # than keeping an exact-apex prefilter ahead of the shared evidence rule.
-    units = group_cid_nl_physical_subject_units(
-        tuple(
-            CidNlPhysicalCandidateFact(
-                str(index),
-                peak.content.mz,
-                116.0474,
-                comparison_views.get(peak.content.peak_observation_content_id)
-                or PhysicalPeakView(
-                    acquisition_source_id=peak.generation_provenance.acquisition_source_id,
-                    apex_rt_min=peak.content.integration.rt_apex_min,
-                    left_rt_min=peak.content.integration.rt_left_min,
-                    right_rt_min=peak.content.integration.rt_right_min,
-                    xic_mz=peak.content.mz,
-                    xic_ppm_tol=peak.generation_provenance.query_ppm_tol,
-                    rt=peak.source_trace.rt,
-                    raw=peak.source_trace.intensity,
-                ),
-            )
-            for index, peak in enumerate(comparison_peaks)
-        ),
-        composition=None,
-        precursor_tolerance_ppm=20.0,
-    )
-    assert len(units) == 1
     if reverse:
         backfills = dict(reversed(tuple(backfills.items())))
         groups = tuple(reversed(groups))

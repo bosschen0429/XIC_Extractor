@@ -17,9 +17,9 @@ from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
     group_cid_nl_physical_subject_units,
 )
-from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.xic_models import XICTrace
 
@@ -28,8 +28,8 @@ from xic_extractor.xic_models import XICTrace
     "centroids, expected",
     [
         ((500.013,), 1),
-        ((500.013, 500.019), 3),
-        ((), 3),
+        ((500.013, 500.019), 2),
+        ((), 2),
     ],
 )
 def test_representative_change_closes_only_centroid_proven_duplicate_views(
@@ -93,7 +93,7 @@ def test_representative_change_closes_only_centroid_proven_duplicate_views(
     )
     assert len(result.candidates) == expected
     assert len(batches) == 1
-    assert len(batches[0]) == 9
+    assert len(batches[0]) == 6
     assert len({scan for scan, _, _ in batches[0]}) == 3
     published = read_discovery_candidates_csv(
         write_discovery_candidates_csv(tmp_path / "candidates.csv", result.candidates)
@@ -139,7 +139,7 @@ def test_physical_unit_uses_acquired_centroids_not_raw_equality_or_correlation(
         Ms1PrecursorObservation(i + 1, rt, centroid)
         for i, rt in enumerate((8.99, 9.0, 9.01))
     )
-    left = PhysicalPeakView(
+    left = CidNlPhysicalProof(
         acquisition_source_id="sample-a",
         apex_rt_min=9.0,
         left_rt_min=8.9,

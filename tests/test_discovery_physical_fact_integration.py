@@ -485,24 +485,11 @@ def test_merged_physical_candidate_persists_representative_search_window(
             parent_batches.append(requests)
             return tuple(
                 Ms1PrecursorObservation(
-                    scan,
-                    7.75 if scan == 9 else float(self.rt[scan - 1000]),
-                    (500.015 if scan == 9 else 500.005,)
-                    if lower <= (500.015 if scan == 9 else 500.005) <= upper
-                    else (),
+                    scan, 7.75, (500.015,) if lower <= 500.015 <= upper else ()
                 )
                 for scan, lower, upper in requests
             )
 
-        original_window = _OwnerBoundBatchRaw.scan_window_for_request
-
-        def scan_window(self, request):
-            if request.rt_min == request.rt_max:
-                scan = 1000 + int(np.argmin(abs(self.rt - request.rt_min)))
-                return scan, scan
-            return original_window(self, request)
-
-        monkeypatch.setattr(_OwnerBoundBatchRaw, "scan_window_for_request", scan_window)
         monkeypatch.setattr(
             _OwnerBoundBatchRaw, "read_ms1_mass_windows", read_windows, raising=False
         )
@@ -524,7 +511,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     assert binding.representative_work_ordinal == (1 if fallback else 0)
     assert candidate.best_ms2_scan_id == (20 if fallback else 10)
     if fallback:
-        assert [len(batch) for batch in parent_batches] == [6, 2]
+        assert len(parent_batches) == 1 and len(parent_batches[0]) == 2
         assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.matched_tag_names == ("dR", "R")
     assert candidate.seed_scan_ids == (10, 20)

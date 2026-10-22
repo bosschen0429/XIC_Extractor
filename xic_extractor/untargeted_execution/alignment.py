@@ -15,7 +15,6 @@ from threading import Lock
 from typing import Any
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
-from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
@@ -68,9 +67,6 @@ from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
     prepare_eager_untargeted_plan,
     prepare_indexed_untargeted_plan,
-)
-from xic_extractor.untargeted_execution.physical_comparison_context import (
-    PhysicalComparisonPreparation,
 )
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
@@ -255,7 +251,6 @@ def prepare_untargeted_alignment_inputs(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
-    acquisition_cache_dir: Path | None = None,
 ) -> PreparedUntargetedAlignmentInputs:
     """Prepare Discovery-backed inputs without scheduling Backfill or outputs."""
     raw_paths = existing_raw_paths(
@@ -325,26 +320,6 @@ def prepare_untargeted_alignment_inputs(
 
     physical_sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
     physical_spool_dir: Path | None = None
-    physical_comparison: PhysicalComparisonPreparation | None = None
-
-    def comparison_preparation(
-        expectations: tuple[AcquisitionSourceExpectation, ...],
-    ) -> PhysicalComparisonPreparation:
-        return PhysicalComparisonPreparation(
-            {
-                expectation.source.acquisition_source_id: (path, expectation)
-                for path, expectation in zip(
-                    ordered_raw_paths, expectations, strict=True
-                )
-            },
-            dll_dir=dll_dir,
-            # Two existing padded sample contexts can share a comparison span.
-            # This limits acquisition only; equality still needs measured lobes.
-            context_budget_min=2.0 * CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0,
-            cache_dir=acquisition_cache_dir,
-            should_cancel=should_cancel,
-        )
-
     try:
         physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         acquisition_source_expectations: (
@@ -402,8 +377,7 @@ def prepare_untargeted_alignment_inputs(
                 stage.metrics["discovery_record_count"] = len(
                     candidates_by_sample.locations
                 )
-            physical_comparison = comparison_preparation(expectations)
-            with recorder.stage("alignment.prepare_feature_inputs") as stage:
+            with recorder.stage("alignment.prepare_feature_inputs"):
                 plan = prepare_indexed_untargeted_plan(
                     source=candidates_by_sample,
                     physical_sources=physical_sources,
@@ -416,10 +390,6 @@ def prepare_untargeted_alignment_inputs(
                     acquisition_source_expectations=expectations,
                     sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
                     restore_candidate=_restore_physical_candidate,
-                    physical_comparison=physical_comparison,
-                )
-                stage.metrics["comparison_xic_request_count"] = (
-                    physical_comparison.logical_request_count
                 )
         else:
             with recorder.stage("alignment.load_physical_facts"):
@@ -437,31 +407,19 @@ def prepare_untargeted_alignment_inputs(
                     retained_records_sink=retain_records,
                 )
         if not isinstance(candidates_by_sample, DiscoveryInputSource):
-            assert acquisition_source_expectations is not None
-            physical_comparison = comparison_preparation(
-                acquisition_source_expectations
+            plan = prepare_eager_untargeted_plan(
+                raw_paths=ordered_raw_paths,
+                sample_metadata=retained_sample_metadata,
+                settings=settings,
+                peak_config=peak_config,
+                candidates_by_sample=candidates_by_sample,
+                discovery_receipts_by_sample=receipts,
+                dll_dir=dll_dir,
+                sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+                signal_processing_profile=signal_processing_profile,
+                physical_records_by_candidate=physical_records,
+                acquisition_source_expectations=acquisition_source_expectations,
             )
-            with recorder.stage("alignment.prepare_feature_inputs") as stage:
-                plan = prepare_eager_untargeted_plan(
-                    raw_paths=ordered_raw_paths,
-                    sample_metadata=retained_sample_metadata,
-                    settings=settings,
-                    peak_config=peak_config,
-                    candidates_by_sample=candidates_by_sample,
-                    discovery_receipts_by_sample=receipts,
-                    dll_dir=dll_dir,
-                    sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
-                    signal_processing_profile=signal_processing_profile,
-                    physical_records_by_candidate=physical_records,
-                    acquisition_source_expectations=acquisition_source_expectations,
-                    physical_comparison=physical_comparison,
-                )
-                stage.metrics["comparison_xic_request_count"] = (
-                    physical_comparison.logical_request_count
-                )
-
-        if physical_comparison is not None:
-            physical_comparison.close()
 
         return PreparedUntargetedAlignmentInputs(
             plan,
@@ -471,8 +429,6 @@ def prepare_untargeted_alignment_inputs(
             _resources=resources,
         )
     except BaseException:
-        if physical_comparison is not None:
-            physical_comparison.close()
         resources.close()
         raise
 
@@ -515,7 +471,6 @@ def complete_untargeted_alignment(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         should_cancel=should_cancel,
-        acquisition_cache_dir=acquisition_cache_dir,
     )
     plan = prepared.plan
     recorder = timing_recorder or TimingRecorder.disabled("alignment")

@@ -52,7 +52,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
         (False, "inferred"),
     ],
 )
-def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
+def test_changed_physical_query_evaluates_once_and_preserves_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fresh_available: bool,
@@ -137,7 +137,7 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
         _settings(),
         neutral_loss_profile=None,
         seed_rt_gap_min=0.01,
-        # Build two seed groups with overlapping MS1 capture contexts.
+        # Retain two chemical hypotheses while their MS1 capture contexts overlap.
         product_mz_tolerance_ppm=1.0,
         rt_min=12.8,
         rt_max=13.4,
@@ -197,25 +197,16 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
     seeds = collect_strict_nl_seeds(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
     )
-    # Persisted Discovery inputs may retain separate views of the same peak.
-    # Capture them independently to exercise that supported adapter input;
-    # fresh Discovery now closes these views before publishing candidates.
-    source_captures = tuple(
-        capture_ms1_candidates(
-            raw,
-            (group,),
-            acquisition_source=source,
-            run_spec_id="processing-run:" + "0" * 64,
-            settings=settings,
-            signal_processing_profile=profile,
-            ms1_centroid_mz=lambda *_: None,
-        )
-        for group in group_discovery_seeds(seeds, settings=settings)
+    discovery = capture_ms1_candidates(
+        raw,
+        group_discovery_seeds(seeds, settings=settings),
+        acquisition_source=source,
+        run_spec_id="processing-run:" + "0" * 64,
+        settings=settings,
+        signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
-    candidates = tuple(
-        candidate for capture in source_captures for candidate in capture.candidates
-    )
-    assert len(candidates) == 2
+    assert len(discovery.candidates) == 2
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
             work_item=record.work_item,
@@ -237,8 +228,7 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
                 selection_policy_version="baseline_peak_contains_query",
             ),
         )
-        for capture in source_captures
-        for record in capture.physical_evaluations
+        for record in discovery.physical_evaluations
     )
     old_request = fixture.owners.request
     request = build_processing_request_identity(
@@ -276,7 +266,7 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=candidates,
+        candidates=discovery.candidates,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -305,7 +295,9 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
     assert prepare.call_count == 2 + shared_reads
     for record in legacy_records:
         candidate = next(
-            item for item in candidates if item.candidate_id == record.candidate_id
+            item
+            for item in discovery.candidates
+            if item.candidate_id == record.candidate_id
         )
         acquired = next(
             item
@@ -406,7 +398,7 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
-        candidates=candidates,
+        candidates=discovery.candidates,
         settings=settings,
         raw=raw,
         signal_processing_profile=profile,
@@ -417,7 +409,7 @@ def test_retained_views_with_changed_query_evaluate_once_and_preserve_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=candidates,
+        candidates=discovery.candidates,
         settings=settings,
         peak_config=peak_config,
         raw=raw,

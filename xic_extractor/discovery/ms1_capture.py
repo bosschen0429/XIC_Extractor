@@ -49,9 +49,9 @@ from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
     group_cid_nl_physical_subject_units,
 )
-from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     mint_physical_peak_question,
 )
@@ -250,15 +250,24 @@ def capture_ms1_candidates(
             candidates.append(candidate)
             candidate_plans.append(candidate_plan)
             physical_indices.append(index)
-    merge_result = _merge_physical_views(
-        raw,
+    merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
         candidates,
-        tuple(physical_fact_by_index[index] for index in physical_indices),
         settings=settings,
+        ms1_centroid_mz=ms1_centroid_mz,
     )
     merge_result = _verify_precursor_evidence(
         raw, merge_result, candidate_plans, candidates, settings=settings
     )
+    closed = _close_duplicate_physical_views(
+        raw,
+        merge_result,
+        tuple(physical_fact_by_index[index] for index in physical_indices),
+        settings=settings,
+    )
+    if len(closed.candidates) < len(merge_result.candidates):
+        merge_result = _verify_precursor_evidence(
+            raw, closed, candidate_plans, candidates, settings=settings
+        )
     doubly_charged_by_source = tuple(
         apex_readings.get(index, (None, False))[1] for index in physical_indices
     )
@@ -325,28 +334,31 @@ def _selection_subject_id(group: DiscoverySeedGroup) -> str:
     )
 
 
-def _merge_physical_views(
+def _close_duplicate_physical_views(
     raw: BatchXICAdapter,
-    candidates: Sequence[DiscoveryCandidate],
+    merged: candidate_merge.DiscoveryCandidateMergeResult,
     records: Sequence[DiscoveryPhysicalFactRecord],
     *,
     settings: DiscoverySettings,
 ) -> candidate_merge.DiscoveryCandidateMergeResult:
-    """Acquire ion evidence, then let the shared physical owner form units.
+    """Acquire bounded ion evidence for representatives left by greedy merging.
 
-    Compare original views before choosing a representative. A representative
-    change can neither lose a duplicate nor bridge distinct measured peaks.
-    Centroid I/O stays batched here, outside the in-memory equivalence owner.
+    A later member can move a group's representative into another retained
+    group's peak. Only same-apex, overlapping windows need this reconciliation;
+    centroid acquisition stays here, while the physical owner decides identity.
     """
     read_windows = getattr(raw, "read_ms1_mass_windows", None)
-    proofs: dict[str, PhysicalPeakView] = {}
+    if not callable(read_windows):
+        return merged
+    proofs: dict[str, CidNlPhysicalProof] = {}
     buckets: dict[float, list[tuple[float, float, str]]] = {}
-    for index, record in enumerate(records):
+    for candidate, binding in zip(merged.candidates, merged.bindings, strict=True):
+        record = records[binding.representative_source_ordinal]
         peak = record.evaluation.facts
         if peak is None:
             continue
         work = record.work_item
-        proof = PhysicalPeakView(
+        proof = CidNlPhysicalProof(
             acquisition_source_id=work.acquisition_source_id,
             apex_rt_min=peak.apex_rt_min,
             left_rt_min=peak.left_rt_min,
@@ -356,10 +368,10 @@ def _merge_physical_views(
             rt=record.acquired_trace.trace.rt,
             raw=record.acquired_trace.trace.intensity,
         )
-        proofs[str(index)] = proof
+        proofs[candidate.candidate_id] = proof
         radius = proof.xic_mz * proof.xic_ppm_tol * 1e-6
         buckets.setdefault(proof.apex_rt_min, []).append(
-            (proof.xic_mz - radius, proof.xic_mz + radius, str(index))
+            (proof.xic_mz - radius, proof.xic_mz + radius, candidate.candidate_id)
         )
     eligible: set[str] = set()
     for intervals in buckets.values():
@@ -371,7 +383,7 @@ def _merge_physical_views(
             if high > upper:
                 upper, previous = high, candidate_id
     windows_by_id: dict[str, tuple[tuple[int, float, float], ...]] = {}
-    for candidate_id in sorted(eligible) if callable(read_windows) else ():
+    for candidate_id in sorted(eligible):
         proof = proofs[candidate_id]
         rt = np.asarray(proof.rt)
         apex = int(np.searchsorted(rt, proof.apex_rt_min))
@@ -399,11 +411,9 @@ def _merge_physical_views(
             window for windows in windows_by_id.values() for window in windows
         )
     )
-    observations = (
-        dict(zip(requests, read_windows(requests), strict=True))
-        if requests and callable(read_windows)
-        else {}
-    )
+    if not requests:
+        return merged
+    observations = dict(zip(requests, read_windows(requests), strict=True))
     acquired_proofs = {}
     for candidate_id, windows in windows_by_id.items():
         scans = tuple(observations[window] for window in windows)
@@ -425,22 +435,18 @@ def _merge_physical_views(
     units = group_cid_nl_physical_subject_units(
         tuple(
             CidNlPhysicalCandidateFact(
-                str(index),
+                candidate.candidate_id,
                 candidate.physical_mz,
                 candidate.configured_neutral_loss_da,
-                acquired_proofs.get(str(index))
-                if str(index) in eligible and callable(read_windows)
-                else proofs.get(str(index)),
+                acquired_proofs.get(candidate.candidate_id),
             )
-            for index, candidate in enumerate(candidates)
+            for candidate in merged.candidates
         ),
         composition=composition,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
-    return candidate_merge.merge_candidates_by_physical_units(
-        candidates,
-        tuple(tuple(int(index) for index in ids) for _, ids in units),
-        settings=settings,
+    return candidate_merge.close_physical_candidate_units(
+        merged, units, settings=settings
     )
 
 

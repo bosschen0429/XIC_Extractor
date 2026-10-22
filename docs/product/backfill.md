@@ -212,7 +212,7 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 5. A member of an archive row writes no value and does not hold the peak.
 6. If the windows of two rows resolve the same peak, the cell stays unresolved
    in both rows. The peak does not supply one value twice.
-7. Discovery views, Direct observations and Backfill observations use the shared
+7. Direct observations and Backfill observations use the shared
    [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
    Different bounds, content IDs or context-dependent apices do not establish
    different peaks. A Matrix row's Direct member keeps its existing value;

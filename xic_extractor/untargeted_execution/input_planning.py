@@ -37,13 +37,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
     CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_alignment_subject_worksets,
     cid_nl_method_center_interval,
     group_cid_nl_physical_subject_units,
     mint_cid_nl_subject_membership_from_physical_units,
 )
-from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
@@ -57,9 +57,6 @@ from xic_extractor.untargeted_execution.partition.request import (
     UntargetedPartitionContext,
     build_partition_context,
     compose_partition_context,
-)
-from xic_extractor.untargeted_execution.physical_comparison_context import (
-    PhysicalComparisonPreparation,
 )
 
 
@@ -252,7 +249,7 @@ def _physical_subject_candidate_fact(
     proof = None
     if facts is not None:
         trace = record.acquired_trace.trace
-        proof = PhysicalPeakView(
+        proof = CidNlPhysicalProof(
             acquisition_source_id=record.work_item.acquisition_source_id,
             apex_rt_min=facts.apex_rt_min,
             left_rt_min=facts.left_rt_min,
@@ -275,7 +272,6 @@ def prepare_untargeted_subject_membership(
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
     settings: DiscoverySettings,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
-    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedCidNlMethodSubjectBatch:
     """Resolve exact subject membership for a closed precursor working set."""
     candidates = tuple(
@@ -301,16 +297,13 @@ def prepare_untargeted_subject_membership(
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
     physical_records = physical_records_by_candidate
-    facts = tuple(
-        _physical_subject_candidate_fact(
-            candidate, physical_records[candidate.candidate_id]
-        )
-        for candidate in candidates
-    )
-    if physical_comparison is not None:
-        facts = physical_comparison.resolve(facts)
     subject_units = group_cid_nl_physical_subject_units(
-        facts,
+        tuple(
+            _physical_subject_candidate_fact(
+                candidate, physical_records[candidate.candidate_id]
+            )
+            for candidate in candidates
+        ),
         composition=composition,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
@@ -359,7 +352,6 @@ def prepare_eager_untargeted_plan(
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
-    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedInputPlan:
     """Seal exact candidate membership before any subject-local runtime work."""
 
@@ -373,7 +365,6 @@ def prepare_eager_untargeted_plan(
         candidates_by_sample=candidates_by_sample,
         settings=settings,
         physical_records_by_candidate=physical_records_by_candidate,
-        physical_comparison=physical_comparison,
     )
     candidates = tuple(
         candidate for values in candidates_by_sample.values() for candidate in values
@@ -390,9 +381,6 @@ def prepare_eager_untargeted_plan(
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
         acquisition_source_expectations=acquisition_source_expectations,
-        comparison_capture_requests=(
-            physical_comparison.capture_requests if physical_comparison else None
-        ),
     )
     candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
     eligible_subject_ids = {
@@ -493,7 +481,6 @@ def prepare_indexed_untargeted_plan(
     restore_candidate: Callable[
         [DiscoveryCandidate, DiscoveryPhysicalFactRecord], DiscoveryCandidate
     ],
-    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
@@ -542,7 +529,7 @@ def prepare_indexed_untargeted_plan(
         return candidates, records, support
 
     units: list[tuple[float | None, tuple[str, ...]]] = []
-    buckets: dict[tuple[str, float | None], list[str]] = defaultdict(list)
+    buckets: dict[tuple[str, float | None, float], list[str]] = defaultdict(list)
     source_ids = {
         path.stem: expectation.source.acquisition_source_id
         for path, expectation in zip(
@@ -558,33 +545,29 @@ def prepare_indexed_untargeted_plan(
         if apex is None:
             units.append((requirement, (cid,)))
         else:
-            buckets[source_ids[location.sample_stem], requirement].append(cid)
+            buckets[source_ids[location.sample_stem], requirement, apex].append(cid)
 
     def close_physical_cohort(requirement: float | None, ids: list[str]) -> None:
         if len(ids) == 1:
             units.append((requirement, (ids[0],)))
             return
         candidates, records = load_inputs(tuple(ids))
-        facts = tuple(
-            _physical_subject_candidate_fact(
-                candidate, records.get(candidate.candidate_id)
-            )
-            for values in candidates.values()
-            for candidate in values
-        )
-        if physical_comparison is not None:
-            facts = physical_comparison.resolve(facts)
         local_units = group_cid_nl_physical_subject_units(
-            facts,
+            tuple(
+                _physical_subject_candidate_fact(
+                    candidate, records.get(candidate.candidate_id)
+                )
+                for values in candidates.values()
+                for candidate in values
+            ),
             composition=composition,
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         )
         units.extend(local_units)
 
-    # Only same-source, overlapping m/z cohorts can share a physical peak.
-    # Different apices need measured lobe evidence, not an identity prefilter.
-    # Isolated entries require no curve hydration during planning.
-    for (_, requirement), ids in buckets.items():
+    # Only same-source, same-apex, overlapping m/z cohorts can share a physical
+    # core. Isolated entries require no curve hydration during planning.
+    for (_, requirement, _), ids in buckets.items():
         cohort: list[str] = []
         upper = float("-inf")
         for cid in sorted(ids, key=lambda key: (precursor_by_id[key], key)):
@@ -639,9 +622,6 @@ def prepare_indexed_untargeted_plan(
         )
     }
     context = compose_partition_context(
-        comparison_capture_requests=(
-            physical_comparison.capture_requests if physical_comparison else None
-        ),
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,
