@@ -25,14 +25,16 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import (
-    MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
     DiscoverySettings,
 )
 from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
 )
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryPhysicalFactRecord,
+    admits_cid_nl_alignment,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
@@ -278,9 +280,10 @@ def prepare_untargeted_subject_membership(
         candidate
         for sample_candidates in candidates_by_sample.values()
         for candidate in sample_candidates
+        if admits_cid_nl_alignment(
+            candidate, physical_records_by_candidate.get(candidate.candidate_id)
+        )
     )
-    if not candidates:
-        raise ValueError("Untargeted CID-NL production requires candidates")
     candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
     if len(candidate_ids) != len(set(candidate_ids)):
         raise ValueError("Discovery candidate identity must be globally unique")
@@ -366,9 +369,6 @@ def prepare_eager_untargeted_plan(
         settings=settings,
         physical_records_by_candidate=physical_records_by_candidate,
     )
-    candidates = tuple(
-        candidate for values in candidates_by_sample.values() for candidate in values
-    )
     context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=sample_metadata,
@@ -381,39 +381,9 @@ def prepare_eager_untargeted_plan(
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
         acquisition_source_expectations=acquisition_source_expectations,
-    )
-    candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
-    eligible_subject_ids = {
-        subject_id
-        for candidate_id, subject_id in subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].ms1_peak_found
-        and candidate_by_id[candidate_id].discovery_candidate_state
-        in MS1_FEATURE_BACKED_STATES
-    }
-    # Keep the complete membership and fixed query centers as request identity.
-    # Only subjects backed by an MS1 feature can seed cross-sample assessment.
-    runtime_subjects = tuple(
-        subject
-        for subject in subject_batch.subjects
-        if subject.method_subject_id in eligible_subject_ids
-    )
-    sample_ids = {
-        sample.metadata.raw_stem: sample.identity.sample_identity_id
-        for sample in context.samples
-    }
-    excluded_candidates = tuple(
-        UntargetedCandidateExclusion(
-            candidate_id=candidate_id,
-            method_subject_id=subject_id,
-            canonical_sample_identity_id=sample_ids[
-                candidate_by_id[candidate_id].sample_stem
-            ],
-            discovery_candidate_state=(
-                candidate_by_id[candidate_id].discovery_candidate_state
-            ),
-        )
-        for candidate_id, subject_id in subject_batch.candidate_memberships
-        if subject_id not in eligible_subject_ids
+        feature_candidate_ids=tuple(
+            cid for cid, _ in subject_batch.candidate_memberships
+        ),
     )
     ordered_physical_records = tuple(
         record
@@ -461,8 +431,8 @@ def prepare_eager_untargeted_plan(
         subject_batch=subject_batch,
         context=context,
         sample_job_templates=templates,
-        runtime_subjects=runtime_subjects,
-        excluded_candidates=excluded_candidates,
+        runtime_subjects=subject_batch.subjects,
+        excluded_candidates=(),
     )
 
 
@@ -484,7 +454,13 @@ def prepare_indexed_untargeted_plan(
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
-    feature_ids = source.feature_candidate_ids()
+    feature_ids = tuple(
+        cid
+        for cid in source.feature_candidate_ids()
+        if cid
+        in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
+    )
+    admitted_ids = frozenset(feature_ids)
     precursor_by_id = {
         cid: source.ms1_apex_mz_by_candidate.get(
             cid, source.locations[cid].precursor_mz
@@ -512,21 +488,7 @@ def prepare_indexed_untargeted_plan(
 
     def load_partition(candidate_ids: tuple[str, ...]):
         candidates, records = load_inputs(candidate_ids)
-        fraction = settings.precursor_mz_tolerance_ppm / 1_000_000.0
-        intervals = tuple(
-            (
-                precursor_by_id[cid] * (1.0 - fraction) ** 2 - 1e-6,
-                precursor_by_id[cid] * (1.0 + fraction) ** 2 + 1e-6,
-            )
-            for cid in candidate_ids
-        )
-        support = source.load_review_support(
-            intervals,
-            sample_stems=frozenset(
-                stem for stem, values in candidates.items() if values
-            ),
-        )
-        return candidates, records, support
+        return candidates, records, {stem: () for stem in source}
 
     units: list[tuple[float | None, tuple[str, ...]]] = []
     buckets: dict[tuple[str, float | None, float], list[str]] = defaultdict(list)
@@ -647,6 +609,7 @@ def prepare_indexed_untargeted_plan(
                 cid: identity
                 for physical_source in physical_sources.values()
                 for cid, identity in physical_source.physical_identities.items()
+                if cid in admitted_ids
             },
         },
         feature_candidate_ids=feature_ids,

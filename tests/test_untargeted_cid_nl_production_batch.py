@@ -314,63 +314,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         assert partition_models._request_subject_physical_records(direct_job) == records
 
 
-def _assert_single_unsupported_exclusion(
-    completed, runtime_result, batch, tmp_path: Path, *, populated: bool
-) -> None:
-
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    result = completed.application_result
-    exclusions = result.excluded_candidates
-    expected_candidate_ids = {
-        candidate_id
-        for candidate_id, subject_id in batch.subject_batch.candidate_memberships
-        if subject_id in {item.method_subject_id for item in exclusions}
-    }
-    assert len(exclusions) == len(expected_candidate_ids)
-    subject_ids = {item.method_subject_id for item in exclusions}
-    assert len(subject_ids) == 1
-    retained = tuple(
-        sorted(
-            (
-                fixture_assessment(item)
-                for item in runtime_result.sample_results
-                if item.job.method_subject.method_subject_id in subject_ids
-            ),
-            key=lambda ref: ref.content.canonical_sample_identity_id,
-        )
-    )
-    assert len(retained) == 2
-    assert all(
-        item.reason_code == "cid_nl_requirement_not_supported"
-        and not item.composite_assessments
-        and item.method_assessments == retained
-        and all(
-            left is right
-            for left, right in zip(item.method_assessments, retained, strict=True)
-        )
-        for item in exclusions
-    )
-    assert {item.candidate_id for item in exclusions} == expected_candidate_ids
-    assert len(result.children) == int(populated)
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    destination = tmp_path / "single-unsupported-matrix.tsv"
-    write_alignment_matrix_tsv(
-        destination, writer.matrix, production_decisions=writer.production_decisions
-    )
-    with destination.open(encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        assert {"Support", "Hold"}.issubset(reader.fieldnames)
-        rows = list(reader)
-    assert len(rows) == int(populated)
-    if populated:
-        assert all(float(rows[0][stem]) > 0 for stem in ("Support", "Hold"))
-    else:
-        assert not writer.matrix.clusters and not writer.matrix.cells
-
-
 def _assert_composite_no_input_exclusion_coverage(
     completed, runtime_result, batch
 ) -> None:
@@ -2063,11 +2006,13 @@ def _subject_proof_record(
             xic_ppm_tol=xic_ppm,
         ),
         evaluation=SimpleNamespace(
+            state="available",
+            requires_overlap_review=False,
             facts=SimpleNamespace(
                 apex_rt_min=apex,
                 left_rt_min=bounds[0],
                 right_rt_min=bounds[1],
-            )
+            ),
         ),
         acquired_trace=SimpleNamespace(trace=SimpleNamespace(rt=rt, intensity=raw)),
     )
@@ -2975,10 +2920,6 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
             },
             "peak settings",
         ),
-        (
-            {"candidates": (replace(candidates[0], reason="changed"), *candidates[1:])},
-            "candidate universe",
-        ),
     ):
         with pytest.raises(UntargetedPartitionError, match=message):
             build_sample_jobs(**(shared | changed), subject_work_units=work_units)
@@ -3330,7 +3271,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "ambiguous_hold_above_threshold",
     ),
 )
-def test_production_composition_closes_observation_only_hold_without_membership(
+def test_discovery_review_rows_cannot_become_alignment_roots(
     tmp_path: Path,
     monkeypatch,
     scenario: str,
@@ -3342,7 +3283,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
-    # The other-support case must keep its independently rejected workset.
+    # Nearby rejected and supported observations must not share admission.
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
@@ -3433,7 +3374,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             settings=settings,
             physical_records=physical_records,
         )
-    batch = build_dense_partition(
+    from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
+    from xic_extractor.untargeted_execution.input_planning import (
+        prepare_eager_untargeted_plan,
+    )
+
+    plan = prepare_eager_untargeted_plan(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -3467,296 +3413,54 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         tmp_path=tmp_path,
     )
 
-    runtime_result = execute_dense_partition(
-        batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "hold.runtime.json",
-            "production-hold",
-        ),
-    )
-    hold_observation_ids = tuple(
-        peak.content.peak_observation_content_id
-        for result in runtime_result.sample_results
-        for peak in fixture_assessment(result).candidate_peaks
-        if fixture_assessment(result).content.method_result == "HOLD"
-    )
-    assert runtime_result.succeeded
+    admitted = {
+        c.candidate_id
+        for values in candidates_by_sample.values()
+        for c in values
+        if c.discovery_candidate_state == "ms1_feature_nl_supported"
+    }
+    rejected = {
+        c.candidate_id for values in candidates_by_sample.values() for c in values
+    } - admitted
     assert (
-        len(hold_observation_ids)
+        len(admitted)
         == {
             "mixed": 1,
-            "all_hold": 2,
-            "hold_no_input": 1,
-            "support_no_input": 0,
+            "all_hold": 0,
+            "hold_no_input": 0,
+            "support_no_input": 1,
             "all_reject": 0,
-            "hold_reject": 1,
+            "hold_reject": 0,
             "other_support": 2,
-            "ambiguous_hold_below_threshold": 2,
+            "ambiguous_hold_below_threshold": 1,
             "ambiguous_hold_above_threshold": 2,
         }[scenario]
     )
-    if scenario in {"hold_no_input", "support_no_input"}:
-        assessments_by_stem = {
-            result.job.sample.metadata.raw_stem: fixture_assessment(result)
-            for result in runtime_result.sample_results
-        }
-        assert assessments_by_stem["Support"].content.technical_state == "evaluated"
-        assert assessments_by_stem["Support"].content.method_result == (
-            "HOLD" if scenario == "hold_no_input" else "SUPPORT"
-        )
-        no_input = assessments_by_stem["Hold"].content
-        assert no_input.technical_state == "not_evaluated"
-        assert no_input.method_result is None
-        assert no_input.reason_codes == ("no_search_eligible_discovery_input",)
-        assert no_input.evaluation_receipt.search_completed is False
-
-    opens_before_composition = sum(map(len, opened.values()))
-    completed = complete_dense_partition(
-        batch,
-        runtime_result,
+    assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == admitted
+    opens_before = sum(map(len, opened.values()))
+    completed = execute_untargeted_plan(
+        plan,
+        output_dir=tmp_path / "admission-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "admission.json", "admission"
+        ),
+        raw_workers=1,
     )
-    _assert_partition_composition_parity(
-        batch,
-        runtime_result,
-        completed,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-    )
-
-    assert not set(hold_observation_ids) & set(
-        completed.application_result.physical_observation_ids
-    )
-    writer_inputs = project_completed_untarget_batch_writer_inputs(
+    assert set(completed.application_result.candidate_ids) == admitted
+    assert not completed.application_result.excluded_candidates
+    writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    assert writer_inputs.matrix.sample_order == stems
-    if scenario == "hold_no_input":
-        assert completed.application_result.children == ()
-        assert writer_inputs.matrix.clusters == ()
-        assert writer_inputs.matrix.cells == ()
-        assert len(completed.application_result.excluded_candidates) == 1
-    if scenario == "support_no_input":
-        assert completed.application_result.excluded_candidates == ()
-        (child,) = completed.application_result.children
-        assert len(child.scientific_core.final_population) == 1
-        assert len(writer_inputs.matrix.clusters) == 1
-        cells = {
-            cell.canonical_sample.metadata.raw_stem: cell
-            for cell in child.scientific_core.cell_observations
-        }
-        assert cells["Support"].integrations
-        assert cells["Hold"].evidence_state == "not_searched"
-        assert cells["Hold"].predecessor_cells == ()
-        assert cells["Hold"].method_assessments == ()
-        assert cells["Hold"].integrations == ()
-        (association,) = cells["Hold"].position_associations
-        assert association.position.planning_reason == "no_discovery_input"
-        for decision in writer_inputs.production_decisions.cells.values():
-            assert decision.write_matrix_value is (decision.sample_stem == "Support")
-            assert (decision.matrix_value is None) is (decision.sample_stem == "Hold")
-        return
-    if scenario == "mixed":
-        (child,) = completed.application_result.children
-        (group,) = child.scientific_core.final_population
-        member_ids = {
-            physical_id
-            for member in group.member_subjects
-            for physical_id in member.physical_observation_ids
-        }
-        retained_observations = {
-            observation.content.peak_observation_content_id: observation
-            for cell in child.scientific_core.cell_observations
-            for observation in cell.direct_observations
-        }
-        assert set(hold_observation_ids) <= set(retained_observations)
-        assert not set(hold_observation_ids) & member_ids
-        (row,) = writer_inputs.matrix.clusters
-        assert row.physical_observation_ids == tuple(sorted(member_ids))
-        member_observations = tuple(
-            retained_observations[physical_id] for physical_id in sorted(member_ids)
-        )
-        assert row.family_center_mz == pytest.approx(
-            sum(observation.content.mz for observation in member_observations)
-            / len(member_observations)
-        )
-        assert row.family_center_rt == pytest.approx(
-            sum(
-                observation.content.integration.rt_apex_min
-                for observation in member_observations
-            )
-            / len(member_observations)
-        )
-    if above_threshold:
-        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-        (child,) = completed.application_result.children
-        scientific = child.scientific_core
-        assert {subject.candidate_id for subject in scientific.terminal_subjects} == {
-            candidate.candidate_id
-            for values in candidates_by_sample.values()
-            for candidate in values
-        }
-        hold_cell = next(
-            cell
-            for cell in scientific.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "Hold"
-        )
-        (source,) = hold_cell.predecessor_cells
-        assessment = next(
-            fixture_assessment(result)
-            for result in runtime_result.sample_results
-            if result.job.sample.metadata.raw_stem == "Hold"
-        )
-        assert source.method_assessment is assessment
-        assert assessment.content.method_result == "HOLD"
-        assert len(assessment.candidate_peaks) == 2
-        assert source.peak_observation is source.peak_hypothesis is None
-        position = next(
-            item
-            for item in scientific.cell_observation_handoff.coverage.positions
-            if item.sample.metadata.raw_stem == "Hold"
-        )
-        assert position.no_request_decision is None
-        assert all(
-            not result.backfill_attempts for result in runtime_result.sample_results
-        )
-        assert sum(map(len, opened.values())) == opens_before_composition == 3
-        cells = {cell.sample_stem: cell for cell in writer_inputs.matrix.cells}
-        assert cells["Hold"].status == "ambiguous_ms1_owner"
-        for stem in stems:
-            decision = writer_inputs.production_decisions.cell(
-                cells[stem].cluster_id, stem
-            )
-            assert decision.write_matrix_value is (stem != "Hold")
-            assert (decision.matrix_value is None) is (stem == "Hold")
-        matrix_path = tmp_path / "qualified-ambiguous-hold.tsv"
-        write_alignment_matrix_tsv(
-            matrix_path,
-            writer_inputs.matrix,
-            production_decisions=writer_inputs.production_decisions,
-        )
-        with matrix_path.open(encoding="utf-8", newline="") as handle:
-            (row,) = tuple(csv.DictReader(handle, delimiter="\t"))
-        assert row["Hold"] == ""
-        assert float(row["Support"]) > 0 and float(row["Support2"]) > 0
-        return
-    if scenario == "ambiguous_hold_below_threshold":
-        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-        assert all(
-            not result.backfill_attempts for result in runtime_result.sample_results
-        )
-        assert sum(map(len, opened.values())) == opens_before_composition == 2
-        (child,) = completed.application_result.children
-        scientific = child.scientific_core
-        handoff = scientific.cell_observation_handoff
-        coverage = handoff.coverage
-        position = next(
-            item
-            for item in coverage.positions
-            if item.sample.metadata.raw_stem == "Hold"
-        )
-        proof = position.no_request_decision
-        assert proof.variant == "threshold_not_met"
-        assert proof.completion is None
-        assert proof.decision.group_facts.direct_support_count_s == 1
-        assert proof.decision.group_facts.minimum_support_k == 2
-        assert not proof.decision.group_facts.may_attempt_backfill
-        assert proof.decision.reason_codes == ("direct_support_threshold_not_met",)
-        hold_cell = next(
-            cell
-            for cell in scientific.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "Hold"
-        )
-        assert hold_cell.evidence_states == ("not_searched",)
-        (source,) = hold_cell.predecessor_cells
-        assert source is proof.decision.target_cell
-        assert source.content.method_result == "HOLD"
-        assert len(source.method_assessment.candidate_peaks) == 2
-        assert source.method_assessment is next(
-            result.adapter_result.assessment_input.assessment
-            for result in runtime_result.sample_results
-            if result.job.sample.metadata.raw_stem == "Hold"
-        )
-        assert source.peak_observation is source.peak_hypothesis is None
-        assert all(
-            not item.write_matrix_value and item.matrix_value is None
-            for item in writer_inputs.production_decisions.cells.values()
-            if item.sample_stem == "Hold"
-        )
-        matrix_path = tmp_path / "ambiguous-hold-matrix.tsv"
-        write_alignment_matrix_tsv(
-            matrix_path,
-            writer_inputs.matrix,
-            production_decisions=writer_inputs.production_decisions,
-        )
-        with matrix_path.open(encoding="utf-8", newline="") as handle:
-            assert all(
-                row["Hold"] == "" for row in csv.DictReader(handle, delimiter="\t")
-            )
-        _assert_conservative_completion_projection(
-            proof, position, coverage, handoff, hold_cell, batch, runtime_result
-        )
-        # Without Backfill there is no threshold decision; local candidates remain.
-        disabled_config = AlignmentConfig(
-            anchor_min_seed_events=1, backfill_enabled=False
-        )
-        disabled = complete_dense_partition(
-            batch,
-            execute_dense_partition(
-                batch,
-                telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-                recovery_marker=OwnerPathRuntimeMarker(
-                    tmp_path / "hold-backfill-disabled.runtime.json",
-                    "production-hold-backfill-disabled",
-                ),
-                alignment_config=disabled_config,
-            ),
-            alignment_config=disabled_config,
-        )
-        (disabled_child,) = disabled.application_result.children
-        disabled_core = disabled_child.scientific_core
-        disabled_hold = next(
-            cell
-            for cell in disabled_core.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "Hold"
-        )
-        (disabled_position,) = (
-            item.position for item in disabled_hold.position_associations
-        )
-        assert disabled_position.no_request_decision is None
-        assert disabled_position.planning_reason == "retained_unresolved_candidates"
-        assert disabled_hold.evidence_states == ("unresolved",)
-        assert not disabled_hold.integrations
-        disabled_inputs = project_completed_untarget_batch_writer_inputs(
-            disabled.application_result
-        )
-        assert all(
-            not item.write_matrix_value and item.matrix_value is None
-            for item in disabled_inputs.production_decisions.cells.values()
-            if item.sample_stem == "Hold"
-        )
-        return
-    if scenario != "mixed":
-        _assert_single_unsupported_exclusion(
-            completed,
-            runtime_result,
-            batch,
-            tmp_path,
-            populated=scenario == "other_support",
-        )
-        return
-    assert len(writer_inputs.matrix.clusters) == 1
-    assert tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == (
-        "Support",
-        "Hold",
+    assert writer.matrix.sample_order == stems
+    assert not rejected.intersection(
+        cell.source_candidate_id for cell in writer.matrix.cells
     )
-    decisions = writer_inputs.production_decisions
-    cluster_id = writer_inputs.matrix.cells[0].cluster_id
-    assert decisions.cell(cluster_id, "Support").write_matrix_value is True
-    assert decisions.cell(cluster_id, "Hold").write_matrix_value is False
-    assert decisions.cell(cluster_id, "Hold").blank_reason != ""
+    if not admitted:
+        assert not completed.application_result.children
+        assert not writer.matrix.clusters and not writer.matrix.cells
+        assert sum(map(len, opened.values())) == opens_before
 
 
 @pytest.mark.parametrize("supported_samples", [2, 3])
@@ -4733,129 +4437,3 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert cell_rows["NoPeak"]["status"] == "absent"
     assert cell_rows["NoPeak"]["source_candidate_id"] == ""
     assert cell_rows["NoPeak"]["missing_observation_state"] == "unavailable"
-
-
-@pytest.mark.parametrize("exclude_all", (False, True))
-def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
-    tmp_path: Path,
-    monkeypatch,
-    exclude_all: bool,
-) -> None:
-    physical_records = {}
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"production-orphan:S1")
-    # Isolate the orphan's method rejection from the acquired candidate.
-    settings = replace(
-        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
-    )
-    peak_config = _peak_config(tmp_path)
-    source_raw, initial_candidates = _nearby_subject_candidates(
-        raw_path,
-        settings=settings,
-        peak_config=peak_config,
-        physical_records=physical_records,
-    )
-    excluded_source_ids = {
-        candidate.candidate_id
-        for candidate in (initial_candidates if exclude_all else initial_candidates[1:])
-    }
-    candidates = tuple(
-        replace(
-            candidate,
-            ms1_peak_found=False,
-            ms1_apex_rt=None,
-            ms1_area=None,
-            ms1_peak_rt_start=None,
-            ms1_peak_rt_end=None,
-            ms1_height=None,
-            ms1_trace_quality="not_found",
-            ms1_scan_support_score=None,
-            discovery_candidate_state="review_only_orphan_nl",
-            ms1_feature_row_id="",
-        )
-        if candidate.candidate_id in excluded_source_ids
-        else candidate
-        for candidate in initial_candidates
-    )
-    batch = build_dense_partition(
-        raw_paths=(raw_path,),
-        sample_metadata=(
-            SampleMetadata(
-                sample_name="S1",
-                raw_stem="S1",
-                injection_order=1,
-                sample_role="study_sample",
-            ),
-        ),
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": candidates},
-        ),
-        dll_dir=tmp_path,
-        sample_identity_namespace="study:production-orphan",
-        signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in ({"S1": candidates}).values()
-            for c in values
-        },
-    )
-    _install_runtime_raw(
-        monkeypatch,
-        source_raw=source_raw,
-        raw_path=raw_path,
-        tmp_path=tmp_path,
-    )
-
-    runtime_result = execute_dense_partition(
-        batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json",
-            "production-orphan",
-        ),
-    )
-    completed = complete_dense_partition(
-        batch,
-        runtime_result,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-    )
-    _assert_partition_composition_parity(
-        batch,
-        runtime_result,
-        completed,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-    )
-
-    assert completed.application_result.candidate_ids == tuple(
-        candidate_id
-        for subject in batch.subject_batch.subjects
-        for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if method_subject_id == subject.method_subject_id
-    )
-    exclusions = completed.application_result.excluded_candidates
-    assert {item.candidate_id for item in exclusions} == excluded_source_ids
-    assert all(
-        item.method_subject_id
-        == dict(batch.subject_batch.candidate_memberships)[item.candidate_id]
-        and item.discovery_candidate_state == "review_only_orphan_nl"
-        and item.reason_code == "cid_nl_requirement_not_supported"
-        and len(item.method_assessments) == 1
-        and item.method_assessments[0].content.method_result == "REJECT"
-        for item in exclusions
-    )
-    if exclude_all:
-        assert completed.application_result.children == ()
-        assert completed.application_result.subject_ids == tuple(
-            subject.method_subject_id for subject in batch.subject_batch.subjects
-        )
-        assert completed.application_result.canonical_samples == tuple(
-            sorted(
-                batch.context.samples,
-                key=lambda sample: sample.identity.sample_identity_id,
-            )
-        )

@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 import math
-from bisect import bisect_left, bisect_right
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,8 +19,8 @@ from xic_extractor.discovery.csv_reader import (
     _require_columns,
 )
 from xic_extractor.discovery.models import (
+    CID_NL_ALIGNMENT_STATES,
     DISCOVERY_CANDIDATE_COLUMNS,
-    MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
 )
 
@@ -69,7 +68,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
         self._headers: dict[str, tuple[str, ...]] = {}
         self._stats: dict[str, tuple[int, int]] = {}
         self._feature_ids: dict[str, tuple[str, ...]] = {}
-        self._review_mass_index: dict[str, tuple[list[float], list[str]]] = {}
         # Discovery's apex MS1 readings; they only set the reported row m/z.
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}
         for stem in batch.sample_order:
@@ -129,19 +127,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
                 for cid in self._sample_ids[stem]
                 if self.locations[cid].ms1_peak_found
                 and self.locations[cid].discovery_candidate_state
-                in MS1_FEATURE_BACKED_STATES
-            )
-            feature_ids = frozenset(self._feature_ids[stem])
-            support_rows = sorted(
-                (self.locations[cid].precursor_mz, cid)
-                for cid in ids
-                if cid not in feature_ids
-                and self.locations[cid].precursor_mz_basis
-                in {"scan_precursor", "scan_monoisotopic", "mixed"}
-            )
-            self._review_mass_index[stem] = (
-                [mz for mz, _ in support_rows],
-                [cid for _, cid in support_rows],
+                in CID_NL_ALIGNMENT_STATES
             )
 
     @staticmethod
@@ -197,21 +183,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
         if stem is not None:
             return self._feature_ids[stem]
         return tuple(sorted(cid for ids in self._feature_ids.values() for cid in ids))
-
-    def load_review_support(
-        self,
-        mz_intervals: Sequence[tuple[float, float]],
-        *,
-        sample_stems: frozenset[str],
-    ) -> dict[str, tuple[DiscoveryCandidate, ...]]:
-        selected: set[str] = set()
-        for stem in sample_stems:
-            masses, ids = self._review_mass_index[stem]
-            for lower, upper in mz_intervals:
-                selected.update(
-                    ids[bisect_left(masses, lower) : bisect_right(masses, upper)]
-                )
-        return self.load_candidates(tuple(sorted(selected)))
 
     def feature_view(self) -> Mapping[str, tuple[DiscoveryCandidate, ...]]:
         return _FeatureCandidateView(self)

@@ -523,7 +523,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 @pytest.mark.parametrize(
     "outcome", ["support", "empty", "below-quorum", "blank", "failed"]
 )
-def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
+def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
     physical_records = {}
@@ -626,18 +626,15 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         r for r in result.sample_results if r.job.sample.metadata.raw_stem == "Rejected"
     )
     initial = rejected.adapter_result.assessment_input.assessment
-    assert initial.content.method_result == "REJECT"
-    assert initial.content.reason_codes == (
-        "qualifying_cid_nl_without_usable_ms1_peak",
-    )
+    assert initial.content.method_result is None
+    assert initial.content.technical_state == "not_evaluated"
+    assert initial.content.reason_codes == ("no_search_eligible_discovery_input",)
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    assert initial in completed.method_assessments
-    assert any(
-        exclusion.candidate_id == candidates["Rejected"][0].candidate_id
-        for exclusion in completed.application_result.excluded_candidates
-    )
+    rejected_id = candidates["Rejected"][0].candidate_id
+    assert rejected_id not in completed.application_result.candidate_ids
+    assert not completed.application_result.excluded_candidates
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -649,102 +646,15 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     if outcome == "support":
         assert decision.write_matrix_value and decision.matrix_value > 0
         (recovery,) = rejected.backfill_attempts
-        assert recovery.assessment.content.method_result == "SUPPORT"
-        assert recovery.assessment in completed.method_assessments
-        assert recovery.assessment is not initial
-        assert recovery.assessment.evidence_refs == initial.evidence_refs
-        assert recovery.assessment.individual_support_refs
+        assert recovery.assessment.content.method_result == "HOLD"
+        assert not recovery.assessment.evidence_refs
+        assert not recovery.assessment.individual_support_refs
         assert (
             next(
                 c for c in writer.matrix.cells if c.sample_stem == "Rejected"
             ).source_candidate_id
             is None
         )
-
-        from xic_extractor.diagnostics.alignment_explanation import (
-            read_cid_nl_explanation,
-        )
-        from xic_extractor.diagnostics.alignment_explanation_projection import (
-            write_cid_nl_explanation,
-        )
-        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-        matrix_path = tmp_path / "matrix.tsv"
-        config = AlignmentConfig(anchor_min_seed_events=1)
-        write_alignment_matrix_tsv(
-            matrix_path,
-            writer.matrix,
-            alignment_config=config,
-            production_decisions=writer.production_decisions,
-        )
-        report = write_cid_nl_explanation(
-            tmp_path / "explanation.sqlite",
-            full_audit=True,
-            completed=completed,
-            writer_inputs=writer,
-            candidates_by_sample=candidates,
-            matrix_path=matrix_path,
-            alignment_config=config,
-        )
-        records = read_cid_nl_explanation(
-            report, candidate_id=candidates["Rejected"][0].candidate_id
-        )["records"]
-        assert {r["method_result"] for r in records["method_assessments"]} == {
-            "REJECT",
-            "SUPPORT",
-        }
-        assert {
-            r["artifact"]["evidence_artifact_id"] for r in records["method_assessments"]
-        } == {
-            initial.artifact.evidence_artifact_id,
-            recovery.assessment.artifact.evidence_artifact_id,
-        }
-        assert records["exclusions"]
-        assert (
-            next(
-                record["value"]
-                for record in records["cell_decisions"]
-                if record["canonical_sample_identity_id"]
-                == rejected.job.sample.identity.sample_identity_id
-            )
-            == decision.matrix_value
-        )
-
-        from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-            backfill_untargeted_cid_nl_sample_subject,
-        )
-
-        # An immutable assessment from another sample/source cannot authorize
-        # the new relation, even when its method and coordinates look identical.
-        with pytest.raises(ValueError, match="sample|acquisition"):
-            backfill_untargeted_cid_nl_sample_subject(
-                processing_owners=batch.context.processing_owners,
-                sample=batch.context.sample("S1"),
-                method_subject=initial.content.method_subject,
-                group_center_rt=8.0,
-                group_center_mz=initial.content.method_subject.precursor_mz,
-                support_policy=initial.content.evaluation_receipt.support_policy,
-                peak_config=peak_config,
-                raw=None,
-                initial_assessment=initial,
-                signal_processing_profile=TEST_PROFILE,
-            )
-        with pytest.raises(ValueError, match="support policy"):
-            backfill_untargeted_cid_nl_sample_subject(
-                processing_owners=batch.context.processing_owners,
-                sample=rejected.job.sample,
-                method_subject=initial.content.method_subject,
-                group_center_rt=8.0,
-                group_center_mz=initial.content.method_subject.precursor_mz,
-                support_policy=replace(
-                    initial.content.evaluation_receipt.support_policy,
-                    precursor_tolerance_da=0.25,
-                ),
-                peak_config=peak_config,
-                raw=None,
-                initial_assessment=initial,
-                signal_processing_profile=TEST_PROFILE,
-            )
     elif outcome == "empty":
         (recovery,) = rejected.backfill_attempts
         assert recovery.assessment.content.method_result == "HOLD"
@@ -756,9 +666,9 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     assert recovery_calls == (
         [] if outcome in {"blank", "below-quorum"} else ["Rejected"]
     )
-    assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == (
-        0 if outcome in {"blank", "below-quorum"} else 2
-    )
+    assert sum(
+        sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
+    ) == (0 if outcome in {"blank", "below-quorum"} else 2)
 
 
 @pytest.mark.parametrize("batched", [False, True], ids=["direct", "sample-batched"])
@@ -1008,8 +918,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             for attempt in missing.backfill_attempts
         )
         if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
-            assert recovery_is_support, tuple(
-                attempt.assessment.content.method_result
+            # Discarded local rows cannot supply NL to the new observations.
+            assert all(
+                attempt.assessment.content.method_result == "HOLD"
                 for attempt in missing.backfill_attempts
             )
         if (
@@ -1517,7 +1428,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         tuple(group.group_center_rt for group in completed.initial_groups),
     )
     assert all(
-        attempt.assessment.content.method_result == "SUPPORT"
+        attempt.assessment.content.method_result == "HOLD"
         for attempt in missing.backfill_attempts
     )
     physical_ids = tuple(
@@ -1536,7 +1447,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    assert all(cell.backfill_cell is not None for cell in missing_cells)
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result

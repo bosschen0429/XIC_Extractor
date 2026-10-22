@@ -93,19 +93,21 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   an Untargeted-only implementation. Targeted narrows the accepted target/row
   universe without forking capture mechanics.
 - Discovery candidate state is an execution boundary as well as a review
-  label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
-  MS1-feature-backed inputs to Alignment RAW owner build. Candidate and review
-  CSVs retain every candidate with a measured MS1 peak, including candidates
-  held for ambiguous precursor evidence. Rows without an MS1 peak are retained
-  only with a `scan_precursor`, `scan_monoisotopic`, or `mixed` precursor basis.
-  These review-only rows do not
-  independently authorize another RAW XIC search, cross-sample grouping,
-  Matrix identity, or Backfill. Pure CID-NL production planning preserves the complete canonical
-  subject membership and query centers, but excludes subjects with no
-  MS1-feature-backed candidate before sample-by-subject scheduling. Their
-  candidates close with Discovery eligibility exclusions without method
-  assessments. Each eligible subject still assesses the complete sample
-  universe, including samples without a local candidate, for Backfill.
+  label. Only `ms1_feature_nl_supported` with an available, resolved physical
+  evaluation enters Alignment. `ms1_feature_nl_rescued` retains a measurable
+  MS1 peak without independent same-peak NL support; it is diagnostic only.
+  `review_only_unresolved_peak_attribution` retains an unresolved shoulder or
+  overlapping envelope without attributing its MS2 to one constituent peak.
+  Candidate and review CSVs retain measured MS1 peaks, including held rows.
+  Rows without an MS1 peak are retained only with a `scan_precursor`,
+  `scan_monoisotopic`, or `mixed` precursor basis.
+  Rejected rows cannot choose query centers, merge into admitted candidates,
+  mint method subjects, supply review-support scans, or authorize Backfill.
+  The complete Discovery receipt remains intact; eager and indexed Alignment
+  select admitted IDs before physical grouping and subject membership.
+  An all-rejected batch completes with no subjects, RAW jobs, or Matrix rows.
+  Each admitted subject still assesses the complete sample universe, including
+  samples without a local candidate, for group-authorized Backfill.
 - Persistence filtering does not change classification or product-plus-neutral-loss
   precursor inference. `discovery_physical_facts.json` retains physical records
   for candidates with a measured MS1 peak, including held candidates and their
@@ -185,23 +187,24 @@ Producing a library alone does not enable qualification.
   eligibility; it does not undo the physical trace-shape result or change the
   selected peak's boundaries, apex, or integrated area.
 
-Alignment selects MS1-feature-backed persisted candidates before minting method
-subjects. Review-only observations do not choose feature query centers or receive
-a second RAW XIC search. Direct/mixed precursor NL observations can contribute
-local scan evidence through `load_review_support`, but their physical facts are
-not persisted. Physical-fact replay uses only feature-backed records;
-non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts.
+Alignment checks the persisted physical evaluation as well as the candidate
+state, so an older CSV's supported label cannot admit an unresolved envelope.
+Review-only observations remain available to diagnostic readers, not local
+scan-support or runtime candidate loaders. A legitimate group may recover a
+new MS1-only observation in another sample through the existing Backfill owner;
+that observation cannot resurrect a rejected candidate or create a new root.
 
 ### Precursor inference
 
-- CID-NL Discovery runs in this order: acquire MS2 search seeds, group nearby
-  seeds, capture and qualify their MS1 peaks, merge candidates sharing a peak,
-  verify precursor evidence against the retained peak, then persist candidates.
-  Search provenance does not
-  decide the final support label. A feature with an independently compatible
-  precursor and product inside its peak interval is `ms1_feature_nl_supported`;
-  a feature lacking that relation remains `ms1_feature_nl_rescued`. These labels
-  authorize downstream assessment, not detection or Matrix publication.
+- CID-NL Discovery acquires MS2 search seeds, groups nearby seeds, captures and
+  qualifies their MS1 peaks, then verifies each candidate's independent
+  precursor/NL relation and isotope hold before merging. Only independently
+  admitted candidates may merge; the resulting representative is rechecked
+  against the retained member evidence. A feature with a compatible independent
+  precursor and product inside its resolved peak is `ms1_feature_nl_supported`.
+  A feature lacking that relation remains `ms1_feature_nl_rescued` for review,
+  not downstream assessment. Admission itself grants neither detection nor
+  Matrix publication.
 - CID-NL mass references use either the selected scan precursor (`scan_precursor`)
   or a distinguishable vendor-recorded monoisotopic precursor
   (`scan_monoisotopic`). The latter is recorded evidence independent of the
@@ -255,8 +258,9 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
   whose MS1 ion is read with a centroid one doubly charged 13C spacing
   (0.50168 m/z, within the 5 ppm reading spread) above it, in most of the
   scans where the ion is read, becomes `review_only_ambiguous_coisolation` with
-  a reason naming the doubly charged isotope, unless a singly charged seed on
-  the same peak carries it. The held peak, area and reason remain in the
+  a reason naming the doubly charged isotope. A separate singly charged seed
+  keeps its own admission; it cannot carry the held candidate through merging.
+  The held peak, area and reason remain in the
   candidate/review outputs and physical sidecar without authorizing Alignment
   search or a Matrix value. Selected precursors are not tested.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
@@ -328,9 +332,11 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
   Intermediate masses cannot bridge separate peaks through chained matches;
   multiple hypotheses for the same peak remain allowed. The label must not be
   treated as cross-sample identity, selected-peak truth, or Backfill promotion
-  authority by itself.
-- Candidates of one sample whose MS1 traces share the apex scan are one
-  Discovery peak when their precursor m/z agree within
+  authority by itself. A review-only row may retain the same physical feature
+  row ID as an admitted row; only admitted rows require uniqueness in that
+  sample/tag scope. Candidate IDs still identify separate seed hypotheses.
+- Independently admitted candidates of one sample whose MS1 traces share the
+  apex scan are one Discovery peak when their precursor m/z agree within
   `precursor_mz_tolerance_ppm`. A precursor inferred as product + loss carries
   the MS2 product error, so two candidates of one ion can differ by more. A
   window that clips the ion shows only part of its peak, such as the tail, and

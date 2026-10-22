@@ -9,6 +9,7 @@ from xic_extractor.acquisition_contract import (
     acquired_trace_content_id,
 )
 from xic_extractor.discovery.models import (
+    CID_NL_ALIGNMENT_STATES,
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
     build_discovery_physical_selection_subject_id,
@@ -22,6 +23,19 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+
+
+def admits_cid_nl_alignment(
+    candidate: DiscoveryCandidate, record: DiscoveryPhysicalFactRecord | None
+) -> bool:
+    """Bind method support to a resolved physical peak before input grouping."""
+    return (
+        candidate.ms1_peak_found
+        and candidate.discovery_candidate_state in CID_NL_ALIGNMENT_STATES
+        and record is not None
+        and record.evaluation.state == "available"
+        and not record.evaluation.requires_overlap_review
+    )
 
 
 @dataclass(frozen=True, slots=True)

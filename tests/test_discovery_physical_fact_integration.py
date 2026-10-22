@@ -515,6 +515,19 @@ def test_merged_physical_candidate_persists_representative_search_window(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
+    if fallback:
+        # Only the second inferred seed has its own parent-ion NL proof.
+        # The first cannot borrow that support through a physical merge.
+        assert [c.discovery_candidate_state for c in result.candidates] == [
+            "ms1_feature_nl_rescued",
+            "ms1_feature_nl_supported",
+        ]
+        assert [b.member_source_ordinals for b in result.physical_bindings] == [
+            (0,),
+            (1,),
+        ]
+        assert len(parent_batches) == 1 and len(parent_batches[0]) == 2
+        return
     (candidate,) = result.candidates
     (binding,) = result.physical_bindings
     assert binding.candidate is candidate
@@ -1415,6 +1428,10 @@ def test_discovery_publishes_physical_qualification(
         assert query_rt < evaluation.facts.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert (
+            candidate.discovery_candidate_state
+            == "review_only_unresolved_peak_attribution"
+        )
         assert candidate.is_provisional
         assert candidate.review_priority == "MEDIUM"
         assert "physical_shoulder_overlap" in candidate.reason
@@ -1828,12 +1845,27 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         tmp_path, _two_ions, basis=basis, companion_basis=companion_basis
     )
 
-    (candidate,) = result.candidates
-    assert candidate.ms1_peak_found is True
-    assert candidate.discovery_candidate_state in {
-        "ms1_feature_nl_supported",
-        "ms1_feature_nl_rescued",
-    }
+    assert all(candidate.ms1_peak_found for candidate in result.candidates)
+    assert (
+        sum(
+            c.discovery_candidate_state == "ms1_feature_nl_supported"
+            for c in result.candidates
+        )
+        == 1
+    )
+    if companion_basis is not None:
+        assert len(result.candidates) == 2
+        assert (
+            sum(
+                c.discovery_candidate_state == "ms1_feature_nl_rescued"
+                for c in result.candidates
+            )
+            == 1
+        )
+        assert all(
+            len(binding.member_source_ordinals) == 1
+            for binding in result.physical_bindings
+        )
 
 
 @pytest.mark.parametrize("has_isotope", [False, True])

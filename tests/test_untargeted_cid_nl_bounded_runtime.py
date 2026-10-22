@@ -203,7 +203,11 @@ def _plan(
         workbook.save(reference_path)
         reference = read_known_istd_reference(reference_path)
     assert len(plan.subject_batch.subjects) == (
-        2 if scenario == "cross_subject_recovery" else 3
+        0
+        if scenario == "ineligible"
+        else 2
+        if scenario in {"cross_subject_recovery", "mixed_eligibility"}
+        else 3
     )
     return plan, reference
 
@@ -1016,21 +1020,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         assessment.content.method_subject.method_subject_id
         for assessment in result.method_assessments
     } == eligible_subject_ids
-    skipped = {
-        candidate_id
-        for candidate_id, subject_id in plan.subject_batch.candidate_memberships
-        if subject_id not in eligible_subject_ids
-    }
-    exclusions = {
-        exclusion.candidate_id: exclusion
-        for exclusion in result.application_result.excluded_candidates
-    }
-    assert skipped <= exclusions.keys()
-    for candidate_id in skipped:
-        exclusion = exclusions[candidate_id]
-        assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
-        assert not exclusion.method_assessments
-        assert not exclusion.composite_assessments
+    assert not result.application_result.excluded_candidates
     assert bool(result.application_result.children) is bool(eligible_subject_ids)
     writer = project_completed_untarget_batch_writer_inputs(result.application_result)
     if eager is not None:

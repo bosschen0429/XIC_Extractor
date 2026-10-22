@@ -73,6 +73,8 @@ def build_discovery_review_note(candidate: DiscoveryCandidate) -> str:
     )
     if candidate.discovery_candidate_state == "review_only_ambiguous_coisolation":
         return f"review-only ambiguous inferred precursor; {evidence_summary}"
+    if candidate.discovery_candidate_state == "review_only_unresolved_peak_attribution":
+        return f"review-only unresolved peak/MS2 attribution; {evidence_summary}"
     return evidence_summary
 
 
