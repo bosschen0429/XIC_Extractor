@@ -192,16 +192,20 @@ def test_a_shoulder_separated_by_a_gap_is_not_split_from_the_peak() -> None:
 def _candidate(
     content_id: str, *, apex: float, mz: float = _MZ, query_ppm: float = 20.0
 ):
-    return SimpleNamespace(
-        content=SimpleNamespace(
-            peak_observation_content_id=content_id,
-            mz=mz,
-            rt=(apex - 0.2, apex - 0.1, apex, apex + 0.1, apex + 0.2),
-            intensity=(1.0, 100.0, 1000.0, 100.0, 1.0),
-            integration=SimpleNamespace(
-                rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
-            ),
+    content = SimpleNamespace(
+        peak_observation_content_id=content_id,
+        mz=mz,
+        rt=(apex - 0.2, apex - 0.1, apex, apex + 0.1, apex + 0.2),
+        intensity=(1.0, 100.0, 1000.0, 100.0, 1.0),
+        integration=SimpleNamespace(
+            rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
         ),
+    )
+    return SimpleNamespace(
+        content=content,
+        # These view-only fixtures have no context beyond their measured points.
+        # The minted completion fixtures exercise separately retained context.
+        source_trace=content,
         generation_provenance=SimpleNamespace(
             query_ppm_tol=query_ppm, acquisition_source_id="source"
         ),
