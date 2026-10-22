@@ -191,11 +191,13 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     monkeypatch.setattr(
         application, "complete_untargeted_alignment", lambda **kwargs: object()
     )
-    monkeypatch.setattr(
-        application,
-        "publish_untargeted_outputs",
-        lambda completed, **kwargs: kwargs["metadata"],
-    )
+    metadata_paths = []
+
+    def capture_publication(completed, **kwargs):
+        metadata_paths.append(kwargs["outputs"].run_metadata_json)
+        return kwargs["metadata"]
+
+    monkeypatch.setattr(application, "publish_untargeted_outputs", capture_publication)
     metadata = application.run_untargeted_application(
         UntargetedRequest(
             discovery_batch_index=index,
@@ -208,6 +210,7 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
         )
     )
     assert json.loads(metadata["mass_recalibration_by_sample"]) == expected
+    assert metadata_paths == [tmp_path / "out" / "alignment_run_metadata.json"]
 
 
 def test_standalone_discovery_publishes_readable_probe_receipt(tmp_path):

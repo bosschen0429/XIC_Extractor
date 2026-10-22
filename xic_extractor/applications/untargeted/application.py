@@ -75,12 +75,10 @@ def run_untargeted_application(
     owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
         configured_backend=request.legacy.owner_build_xic_backend,
     )
-    outputs = request.publication.output_paths(request.output_dir)
-    if not request.alignment_config.backfill_enabled:
-        outputs = replace(
-            outputs,
-            run_metadata_json=request.output_dir / "alignment_run_metadata.json",
-        )
+    outputs = replace(
+        request.publication.output_paths(request.output_dir),
+        run_metadata_json=request.output_dir / "alignment_run_metadata.json",
+    )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
     if request.known_istd_reference is not None:
         resolved_known_istd_reference = request.known_istd_reference

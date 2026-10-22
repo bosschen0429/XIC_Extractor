@@ -55,8 +55,8 @@ Probe executions intentionally have a different scientific identity.
 
 Discovery sample receipts carry each RAW's probe result in the optional
 `mass_recalibration` column of `discovery_batch_index.csv` (including standalone
-Discovery). Alignment copies these source-bound results into
-`mass_recalibration_by_sample` in its run metadata. This audit provenance does
+Discovery). Alignment always publishes `alignment_run_metadata.json` and copies
+these source-bound results into `mass_recalibration_by_sample`. This provenance does
 not select values or grant writer authority. Cache namespaces separate probe
 facts from vendor facts. Direct `open_raw` callers still default to `none`;
 Delta Mass, QC, diagnostic, and blank-library acquisition are unchanged.
