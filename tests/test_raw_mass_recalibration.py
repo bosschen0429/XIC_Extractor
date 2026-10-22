@@ -1,11 +1,13 @@
 """Per-RAW probe and independent analytical mass/path oracles."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
+from xic_extractor.precursor_evidence import supports_direct_nl
 from xic_extractor.raw_reader import RawFileHandle
 from xic_extractor.xic_models import XICRequest
 
@@ -99,13 +101,20 @@ def test_recalibrated_ms1_centroid_reads_return_true_masses():
 
 
 @pytest.mark.parametrize("outcome", ("applied", "none", "unavailable", "not_needed"))
-def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(outcome):
+@pytest.mark.parametrize("isotope_number,charge", ((0, 1), (1, 1), (2, 1), (1, 2)))
+def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
+    outcome, isotope_number, charge, monkeypatch
+):
+    monkeypatch.setitem(LM_BY_SCAN, 1, 12.5)
     labels = (
         "LM Correction (ppm):",
         "Monoisotopic M/Z:",
         "Master Scan Number:",
+        "Charge State:",
     )
     true_precursor, true_product = 500.0, 383.9526
+    selected_true = true_precursor + isotope_number * 1.0033548 / charge
+    selected_reading = round(_recorded(selected_true, 1), 4)
     parent_reading = round(_recorded(true_precursor, 1), 4)
     product_reading = _recorded(true_product, 2)
 
@@ -124,7 +133,7 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(outcome)
         values.update(
             {
                 1: [str(LM_BY_SCAN[1]), "0", "0"],
-                2: [str(LM_BY_SCAN[2]), str(parent_reading), "1"],
+                2: [str(LM_BY_SCAN[2]), str(parent_reading), "1", str(charge)],
             }
         )
         vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
@@ -145,18 +154,28 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(outcome)
         return next(iter(handle.iter_ms2_scan_subset(9.0, 11.0, frozenset({2})))).scan
 
     # A data-dependent pick records the parent reading in both header fields.
-    scan = run(parent_reading)
+    scan = run(selected_reading)
     expected_product = true_product if outcome == "applied" else product_reading
     expected_precursor = true_precursor if outcome == "applied" else parent_reading
     assert scan.masses[0] == pytest.approx(expected_product, abs=1e-6)
     assert scan.precursor_metadata.monoisotopic_mz == pytest.approx(
         expected_precursor, abs=1e-4
     )
-    assert scan.precursor_mz == pytest.approx(expected_precursor, abs=1e-4)
+    assert scan.precursor_mz == pytest.approx(
+        selected_true if outcome == "applied" else selected_reading, abs=1e-4
+    )
+
+    if charge == 1 and isotope_number >= 1:
+        metadata = replace(
+            scan.precursor_metadata, isolation_width_da=1.6, isolation_offset_da=0.0
+        )
+        assert supports_direct_nl(
+            "scan_monoisotopic", metadata.monoisotopic_mz, scan.precursor_mz, metadata
+        )
 
     # A targeted inclusion mass is a method value, not a parent measurement.
-    scan = run(true_precursor)
-    assert scan.precursor_mz == true_precursor
+    scan = run(selected_true)
+    assert scan.precursor_mz == selected_true
     assert scan.precursor_metadata.monoisotopic_mz == pytest.approx(
         expected_precursor, abs=1e-4
     )

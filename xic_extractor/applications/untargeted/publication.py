@@ -71,6 +71,11 @@ def publish_untargeted_outputs(
     """Publish completed owner results and close their private stores on every exit."""
     with closing(completed), ExitStack() as output_stack:
         _ensure_output_publication_not_cancelled(should_cancel)
+        metadata = {
+            **metadata,
+            "processing_request_id": completed.processing_request_id,
+            "processing_attempt_id": completed.processing_attempt_id,
+        }
         inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv
         write_explanation = (

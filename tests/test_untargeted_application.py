@@ -58,6 +58,8 @@ from xic_extractor.xic_models import XICTrace
 
 
 def _bind_mock_publication_inputs(completed, kwargs):
+    completed.processing_request_id = "request-test"
+    completed.processing_attempt_id = "attempt-test"
     candidates = kwargs["candidates_by_sample"]
     reference = kwargs.get("known_istd_reference")
     completed.publication_inputs = SimpleNamespace(
@@ -1140,6 +1142,8 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         (cli_output / "alignment_run_metadata.json").read_text(encoding="utf-8")
     )
     assert "mass_recalibration_by_sample" in metadata
+    assert metadata["processing_request_id"]
+    assert metadata["processing_attempt_id"]
     if not backfill_enabled:
         assert metadata["backfill_execution"] == "not_run"
     assert alignment.matrix_tsv is not None

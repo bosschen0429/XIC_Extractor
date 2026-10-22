@@ -709,3 +709,60 @@ def test_samples_carry_their_recorded_group_colour(workbook):
             "group_color": colors[""],
         }
     ]
+
+
+@pytest.mark.parametrize("policy", (None, "none", "easy_ic_probe"))
+def test_targeted_review_replays_saved_mass_policy(
+    workbook, tmp_path, monkeypatch, policy
+):
+    from contextlib import contextmanager
+    from dataclasses import replace
+
+    import numpy as np
+
+    from tests.test_output_metadata import _config
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.output.metadata import build_metadata_rows
+    from xic_inspector.sources.curve_bundle import read_curve_bundle
+    from xic_workbench.targeted_curves import export_targeted_curves
+
+    expected = MassRecalibration(policy or "none")
+    if policy is not None:
+        book = load_workbook(workbook)
+        rows = dict(
+            build_metadata_rows(replace(_config(tmp_path), mass_recalibration=expected))
+        )
+        book["Run Metadata"].append(["mass_recalibration", rows["mass_recalibration"]])
+        book.save(workbook)
+        book.close()
+    for sample in ("Sample A", "Sample B"):
+        (tmp_path / f"{sample}.raw").write_bytes(sample.encode())
+
+    @contextmanager
+    def raw(path, dll, *, mass_recalibration=MassRecalibration.NONE, **kwargs):
+        class Raw:
+            def acquisition_rt_bounds(self):
+                return 0.0, 12.0
+
+            def extract_xic(self, mz, lower, upper, ppm):
+                rt = np.linspace(lower, upper, 1201)
+                amplitude = 100 if path.stem == "Sample A" else 300
+                # A mismatched coordinate system misses the ion in a 5 ppm window.
+                return rt, amplitude * (mass_recalibration == expected) * np.exp(
+                    -(((rt - 9) / 0.1) ** 2)
+                )
+
+        yield Raw()
+
+    monkeypatch.setattr("xic_workbench.targeted_curves.open_raw", raw)
+    output = tmp_path / "policy-curves.json"
+    export_targeted_curves(
+        workbook,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        target_id="Analyte",
+        sample_ids=("Sample A", "Sample B"),
+    )
+    traces = read_curve_bundle(output).transitions[0].traces
+    assert [max(t.raw.intensity) for t in traces] == pytest.approx([100, 100, 300, 300])

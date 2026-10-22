@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any, Callable, cast
 
 from xic_extractor.analysis_set import discover_raw_files
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -89,6 +93,9 @@ def export_targeted_curves(
     if not samples or any((sample, target_id) not in records for sample in samples):
         raise ExplanationError("所選樣本沒有此 Target 的結果紀錄。")
     metadata = dict(cast(list[tuple[str, Any]], source.summary["method_context"]))
+    mass_policy = resolve_mass_recalibration(
+        metadata.get("mass_recalibration", MassRecalibration.NONE)
+    )
     profile = resolve_signal_processing_profile(
         signal_processing_method=metadata.get("signal_processing_method") or "gaussian",
         signal_processing_window_points=metadata.get("signal_processing_window_points")
@@ -142,7 +149,12 @@ def export_targeted_curves(
         except FingerprintCancelledError as exc:
             raise CurveAcquisitionCancelled("已取消曲線載入。") from exc
         raw_sources[sample] = identity.acquisition_source_id
-        with open_raw(path, dll_dir, expected_acquisition_source=identity) as raw:
+        with open_raw(
+            path,
+            dll_dir,
+            expected_acquisition_source=identity,
+            mass_recalibration=mass_policy,
+        ) as raw:
             lower, upper = raw.acquisition_rt_bounds()
             for spec in selected_targets:
                 check_cancel()

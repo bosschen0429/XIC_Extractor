@@ -58,6 +58,7 @@ THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
 _LM_CORRECTION_TRAILER = "lm correction (ppm)"
 # MS2 headers round the selected precursor to 1e-4 m/z.
 _RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
+_CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 _ASSEMBLIES_LOADED = False
 
@@ -617,8 +618,8 @@ class RawFileHandle:
     ) -> tuple[np.ndarray, float, Ms2PrecursorMetadata]:
         """Fragments use this scan; precursor readings use their parent MS1.
 
-        The filter precursor is a parent measurement only when it repeats the
-        recorded monoisotopic m/z; a targeted inclusion mass is left unchanged.
+        A filter precursor matching the recorded mono or a charge-resolved M+n
+        reading is a parent measurement; inclusion-list setpoints stay unchanged.
         """
         recalibrated_masses = masses / self._mass_scale(scan_number)
         monoisotopic = metadata.monoisotopic_mz
@@ -629,7 +630,20 @@ class RawFileHandle:
                 f"MS2 scan {scan_number} records a precursor without its parent MS1"
             )
         parent_scale = self._mass_scale(metadata.master_scan_number)
-        if abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ:
+        measured_precursor = (
+            abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
+        )
+        if metadata.charge is not None:
+            # Compare in the recorded coordinate system, before correcting M.
+            # Both measured masses share the parent scale, including spacing.
+            spacing = _CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
+            isotope_number = round((precursor_mz - monoisotopic) / spacing)
+            if isotope_number >= 1:
+                measured_precursor = (
+                    abs(precursor_mz - (monoisotopic + isotope_number * spacing))
+                    <= _RECORDED_PRECURSOR_ROUNDING_MZ
+                )
+        if measured_precursor:
             precursor_mz = precursor_mz / parent_scale
         return (
             recalibrated_masses,

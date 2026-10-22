@@ -53,6 +53,7 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "targeted_output_schema_version",
         "parallel_mode",
         "parallel_workers",
+        "mass_recalibration",
         "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
