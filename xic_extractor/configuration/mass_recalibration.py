@@ -1,10 +1,4 @@
-"""Opt-in per-scan m/z recalibration policy applied by the RAW reader.
-
-On the instruments this policy targets, the residual m/z error of every scan is
-about twice the internal-calibration correction the vendor records for that
-scan (``LM Correction (ppm)``). The reader removes it before any XIC, centroid
-or MS2 consumer sees a mass; downstream algorithms never apply it themselves.
-"""
+"""RAW adapter mass policy; fitted coefficients belong to each opened RAW."""
 
 from __future__ import annotations
 
@@ -13,7 +7,7 @@ from enum import Enum
 
 class MassRecalibration(str, Enum):
     NONE = "none"
-    EASY_IC_DOUBLED_LM = "easy_ic_doubled_lm"
+    EASY_IC_PROBE_V1 = "easy_ic_probe_v1"
 
 
 def resolve_mass_recalibration(value: object) -> MassRecalibration:

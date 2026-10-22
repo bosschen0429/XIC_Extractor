@@ -73,6 +73,21 @@ class RawReaderOpenError(RawReaderError):
         self.cleanup_failed = cleanup_failed
 
 
+@dataclass(frozen=True, slots=True)
+class MassRecalibrationResult:
+    """Per-file probe provenance; only applied results carry coefficients."""
+
+    outcome: str
+    reason: str | None = None
+    a: float | None = None
+    b: float | None = None
+    n_fit: int = 0
+    n_val: int = 0
+    val_raw_p95: float | None = None
+    val_corrected_p95: float | None = None
+    policy: MassRecalibration = MassRecalibration.NONE
+
+
 @dataclass(frozen=True)
 class _ThermoApi:
     raw_file_reader_adapter: Any
@@ -130,6 +145,7 @@ class RawFileHandle:
         "_acquisition_rt_bounds",
         "_mass_recalibration",
         "_lm_trailer_index",
+        "_mass_recalibration_result",
         "_mass_scale_by_scan",
         "_recalibrated_ms1",
     )
@@ -147,6 +163,7 @@ class RawFileHandle:
         self._acquisition_rt_bounds: tuple[float, float] | None = None
         self._mass_recalibration = resolve_mass_recalibration(mass_recalibration)
         self._lm_trailer_index: int | None = None
+        self._mass_recalibration_result: MassRecalibrationResult | None = None
         self._mass_scale_by_scan: dict[int, float] = {}
         # Per MS1 scan: RT, recalibrated sorted masses and their intensities.
         self._recalibrated_ms1: dict[
@@ -162,6 +179,87 @@ class RawFileHandle:
     @property
     def mass_recalibration(self) -> MassRecalibration:
         return self._mass_recalibration
+
+    @property
+    def mass_recalibration_result(self) -> MassRecalibrationResult:
+        if self._mass_recalibration_result is None:
+            self._mass_recalibration_result = (
+                MassRecalibrationResult(outcome="none")
+                if self._mass_recalibration is MassRecalibration.NONE
+                else self._probe_mass_recalibration()
+            )
+        return self._mass_recalibration_result
+
+    def _probe_mass_recalibration(self) -> MassRecalibrationResult:
+        """Frozen EASY-IC v1: fit siloxane, independently validate DIOP."""
+        raw = self._raw_file
+        lm_values: list[float | None] = []
+        fit: list[tuple[float | None, float]] = []
+        val: list[tuple[float | None, float]] = []
+        labels = [
+            str(item.Label).strip().rstrip(":").casefold()
+            for item in raw.GetTrailerExtraHeaderInformation()
+        ]
+        if _LM_CORRECTION_TRAILER in labels:
+            self._lm_trailer_index = labels.index(_LM_CORRECTION_TRAILER)
+        for scan in range(
+            raw.RunHeaderEx.FirstSpectrum, raw.RunHeaderEx.LastSpectrum + 1
+        ):
+            if (
+                getattr(raw.GetFilterForScanNumber(scan), "MSOrder", None)
+                != self._thermo.ms1_order
+            ):
+                continue
+            lm = self._scan_lm(scan) if self._lm_trailer_index is not None else None
+            lm_values.append(lm)
+            stream = raw.GetCentroidStream(scan, False)
+            masses = np.asarray(getattr(stream, "Masses", None) or [], dtype=float)
+            intensities = np.asarray(
+                getattr(stream, "Intensities", None) or [], dtype=float
+            )
+            for reference, observations in ((371.101233, fit), (391.284286, val)):
+                errors = (masses - reference) / reference * 1e6
+                inside = (np.abs(errors) <= 40.0) & np.isfinite(intensities)
+                if inside.any():
+                    error = float(errors[inside][np.argmax(intensities[inside])])
+                    observations.append((lm, error))
+        result = MassRecalibrationResult(
+            "unavailable",
+            n_fit=len(fit),
+            n_val=len(val),
+            policy=self._mass_recalibration,
+        )
+        if len(fit) < 50 or len(val) < 50:
+            return replace(result, reason="insufficient_references")
+        val_errors = np.array([error for _, error in val])
+        raw_p95 = float(np.percentile(np.abs(val_errors), 95))
+        result = replace(result, val_raw_p95=raw_p95)
+        if raw_p95 <= 3.0:
+            return replace(result, outcome="not_needed")
+        if (
+            any(lm is None for lm in lm_values)
+            or np.ptp(np.array(lm_values, dtype=float)) == 0
+        ):
+            return replace(result, reason="no_correction_signal")
+        design = np.column_stack((np.ones(len(fit)), [lm for lm, _ in fit]))
+        a, b = np.linalg.lstsq(design, [error for _, error in fit], rcond=None)[0]
+        residuals = val_errors - (a + b * np.array([lm for lm, _ in val]))
+        corrected_p95 = float(np.percentile(np.abs(residuals), 95))
+        result = replace(result, val_corrected_p95=corrected_p95)
+        if corrected_p95 <= 3.0 and corrected_p95 < raw_p95:
+            return replace(result, outcome="applied", a=float(a), b=float(b))
+        return replace(result, reason="validation_failed")
+
+    def _scan_lm(self, scan_number: int) -> float | None:
+        values = getattr(
+            self._raw_file.GetTrailerExtraInformation(scan_number), "Values", ()
+        )
+        index = self._lm_trailer_index
+        return (
+            _finite_float_or_none(values[index])
+            if index is not None and index < len(values)
+            else None
+        )
 
     @property
     def raw_chromatogram_call_count(self) -> int:
@@ -225,7 +323,7 @@ class RawFileHandle:
     ) -> tuple[XICTrace, ...]:
         if not requests:
             return ()
-        if self._mass_recalibration is not MassRecalibration.NONE:
+        if self.mass_recalibration_result.outcome == "applied":
             return tuple(self._recalibrated_xic(request) for request in requests)
         grouped: dict[tuple[int, int], list[tuple[int, Any]]] = defaultdict(list)
         for index, request in enumerate(requests):
@@ -272,7 +370,7 @@ class RawFileHandle:
             == self._thermo.ms2_order
         ):
             return None
-        if self._mass_recalibration is not MassRecalibration.NONE:
+        if self.mass_recalibration_result.outcome == "applied":
             spectrum = self._recalibrated_ms1_spectrum(scan_number)
             if spectrum is None:
                 return None
@@ -298,7 +396,7 @@ class RawFileHandle:
         results: list[Ms1PrecursorObservation | None] = [None] * len(requests)
         raw = self._raw_file
         for scan_number, windows in by_scan.items():
-            if self._mass_recalibration is not MassRecalibration.NONE:
+            if self.mass_recalibration_result.outcome == "applied":
                 recalibrated = self._recalibrated_ms1_spectrum(scan_number)
                 if recalibrated is None:
                     continue
@@ -431,7 +529,7 @@ class RawFileHandle:
                     scan_number,
                     self._precursor_trailer_indices,
                 )
-                if self._mass_recalibration is not MassRecalibration.NONE:
+                if self.mass_recalibration_result.outcome == "applied":
                     masses, precursor_mz, precursor_metadata = self._recalibrate_ms2(
                         scan_number, masses, precursor_mz, precursor_metadata
                     )
@@ -460,29 +558,14 @@ class RawFileHandle:
         scale = self._mass_scale_by_scan.get(scan_number)
         if scale is not None:
             return scale
-        raw = self._raw_file
-        if self._lm_trailer_index is None:
-            labels = [
-                str(item.Label).strip().rstrip(":").casefold()
-                for item in raw.GetTrailerExtraHeaderInformation()
-            ]
-            if _LM_CORRECTION_TRAILER not in labels:
-                raise RawReaderError(
-                    "mass recalibration requires the vendor "
-                    "'LM Correction (ppm)' scan trailer"
-                )
-            self._lm_trailer_index = labels.index(_LM_CORRECTION_TRAILER)
-        values = getattr(raw.GetTrailerExtraInformation(scan_number), "Values", ())
-        correction_ppm = (
-            _finite_float_or_none(values[self._lm_trailer_index])
-            if self._lm_trailer_index < len(values)
-            else None
-        )
+        result = self.mass_recalibration_result
+        correction_ppm = self._scan_lm(scan_number)
         if correction_ppm is None:
             raise RawReaderError(
                 f"scan {scan_number} lacks a finite 'LM Correction (ppm)' value"
             )
-        scale = 1.0 + 2.0 * correction_ppm * 1e-6
+        assert result.a is not None and result.b is not None
+        scale = 1.0 + (result.a + result.b * correction_ppm) * 1e-6
         self._mass_scale_by_scan[scan_number] = scale
         return scale
 

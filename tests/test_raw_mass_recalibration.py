@@ -1,9 +1,4 @@
-"""Per-scan EASY-IC m/z recalibration at the RAW reader boundary.
-
-Expected masses come from the policy's analytical model: a scan whose vendor
-trailer reports an internal correction of ``c`` ppm records every m/z
-``2 * c`` ppm high, so true m/z = recorded m/z / (1 + 2c * 1e-6).
-"""
+"""Per-RAW probe and independent analytical mass/path oracles."""
 
 from types import SimpleNamespace
 
@@ -11,7 +6,7 @@ import numpy as np
 import pytest
 
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.raw_reader import RawFileHandle, RawReaderError
+from xic_extractor.raw_reader import RawFileHandle
 from xic_extractor.xic_models import XICRequest
 
 TRUE_MZ = 500.0
@@ -22,7 +17,7 @@ RT_BY_SCAN = {1: 10.0, 2: 10.01, 3: 10.02}
 
 
 def _recorded(true_mz: float, scan: int) -> float:
-    return true_mz * (1.0 + 2.0 * LM_BY_SCAN[scan] * 1e-6)
+    return true_mz * (1.0 + (0.7 + 1.9 * LM_BY_SCAN[scan]) * 1e-6)
 
 
 class _Vendor:
@@ -30,12 +25,22 @@ class _Vendor:
         self.trailer_labels = list(trailer_labels)
         self.ms2 = ms2 or {}
         self.chromatogram_calls = 0
+        self.RunHeaderEx = SimpleNamespace(FirstSpectrum=1, LastSpectrum=63)
+        self.centroid_reads = 0
         self.centroids = {
             # The analyte at its recorded mass, plus a neighbour 20 ppm above
             # the true analyte mass that a 5 ppm window must exclude.
             1: ([_recorded(TRUE_MZ, 1), _recorded(NEIGHBOUR_MZ, 1)], [100.0, 7.0]),
             3: ([_recorded(TRUE_MZ, 3), _recorded(NEIGHBOUR_MZ, 3)], [300.0, 7.0]),
         }
+
+        for scan in range(4, 64):
+            LM_BY_SCAN[scan] = float(scan % 14)
+            RT_BY_SCAN[scan] = 11.0 + scan * 0.01
+            self.centroids[scan] = ([], [])
+        for scan, (masses, intensities) in self.centroids.items():
+            masses.extend([_recorded(371.101233, scan), _recorded(391.284286, scan)])
+            intensities.extend([1000.0, 2000.0])
 
     def ScanNumberFromRetentionTime(self, rt):
         return 1 if rt <= 10.0 else 3
@@ -47,6 +52,7 @@ class _Vendor:
         return SimpleNamespace(MSOrder="Ms2" if scan == 2 else "Ms1")
 
     def GetCentroidStream(self, scan, _refresh):
+        self.centroid_reads += 1
         masses, intensities = self.centroids[scan]
         return SimpleNamespace(Masses=masses, Intensities=intensities)
 
@@ -63,7 +69,7 @@ class _Vendor:
         )
 
 
-def _handle(vendor, policy=MassRecalibration.EASY_IC_DOUBLED_LM):
+def _handle(vendor, policy="easy_ic_probe_v1"):
     thermo = SimpleNamespace(ms1_order="Ms1", ms2_order="Ms2")
     return RawFileHandle(vendor, thermo, policy)
 
@@ -105,7 +111,7 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1():
     def run(filter_precursor):
         vendor = _Vendor(trailer_labels=labels)
         vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
-            MSOrder="Ms2",
+            MSOrder="Ms2" if scan == 2 else "Ms1",
             Filter=SimpleNamespace(
                 Reactions=[SimpleNamespace(PrecursorMass=filter_precursor)]
             ),
@@ -113,10 +119,13 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1():
         vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
             Masses=[product_reading], Intensities=[50.0]
         )
-        values = {
-            1: [str(LM_BY_SCAN[1]), "0", "0"],
-            2: [str(LM_BY_SCAN[2]), str(parent_reading), "1"],
-        }
+        values = {s: [str(lm), "0", "0"] for s, lm in LM_BY_SCAN.items()}
+        values.update(
+            {
+                1: [str(LM_BY_SCAN[1]), "0", "0"],
+                2: [str(LM_BY_SCAN[2]), str(parent_reading), "1"],
+            }
+        )
         vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
             Labels=list(labels), Values=values[scan]
         )
@@ -140,13 +149,70 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1():
     )
 
 
-def test_recalibration_requires_the_vendor_correction_trailer():
-    handle = _handle(_Vendor(trailer_labels=("Charge State:",)))
-
-    with pytest.raises(RawReaderError, match="LM Correction"):
-        handle.extract_xic_many(
-            (XICRequest(mz=TRUE_MZ, rt_min=9.9, rt_max=10.05, ppm_tol=5.0),)
+@pytest.mark.parametrize(
+    ("case", "outcome", "reason"),
+    [
+        ("clean", "not_needed", None),
+        ("few", "unavailable", "insufficient_references"),
+        ("missing_lm", "unavailable", "no_correction_signal"),
+        ("constant_lm", "unavailable", "no_correction_signal"),
+        ("bad_validation", "unavailable", "validation_failed"),
+    ],
+)
+def test_probe_fallback_preserves_every_vendor_mass_path(case, outcome, reason):
+    vendor = _Vendor()
+    if case == "clean":
+        for masses, _ in vendor.centroids.values():
+            masses[-1] = 391.284286 * (1 + 2e-6)
+    elif case == "few":
+        vendor.RunHeaderEx.LastSpectrum = 3
+    elif case == "missing_lm":
+        vendor.trailer_labels = ["Charge State:"]
+    elif case == "constant_lm":
+        vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(Values=["1"])
+    elif case == "bad_validation":
+        for masses, _ in vendor.centroids.values():
+            masses[-1] = 391.284286 * (1 + 38e-6)
+    probe = _handle(vendor)
+    vendor_handle = _handle(vendor, MassRecalibration.NONE)
+    for handle in (probe, vendor_handle):
+        handle._thermo = SimpleNamespace(
+            ms1_order="Ms1",
+            ms2_order="Ms2",
+            mass_range_factory=lambda low, high: (low, high),
+            trace_settings_factory=lambda *args: SimpleNamespace(),
+            mass_range_trace_type="MassRange",
         )
+    vendor.GetChromatogramData = lambda *args: SimpleNamespace(
+        PositionsArray=[[10.0, 10.02]], IntensitiesArray=[[107.0, 7.0]]
+    )
+    request = XICRequest(TRUE_MZ, 9.9, 10.05, 5.0)
+    assert np.array_equal(
+        probe.extract_xic_many((request,))[0].intensity,
+        vendor_handle.extract_xic_many((request,))[0].intensity,
+    )
+    assert probe.ms1_centroid_mz(10.05, 499, 501) == vendor_handle.ms1_centroid_mz(
+        10.05, 499, 501
+    )
+    assert probe.read_ms1_mass_windows(
+        ((3, 499, 501),)
+    ) == vendor_handle.read_ms1_mass_windows(((3, 499, 501),))
+    result = probe.mass_recalibration_result
+    assert (result.outcome, result.reason) == (outcome, reason)
+    assert result.a is None and result.b is None
+
+
+def test_probe_fits_this_raw_once_and_exposes_coefficients():
+    vendor = _Vendor()
+    handle = _handle(vendor)
+    result = handle.mass_recalibration_result
+    assert result.outcome == "applied"
+    assert result.a == pytest.approx(0.7)
+    assert result.b == pytest.approx(1.9)
+    assert result.n_fit == result.n_val == 62
+    reads = vendor.centroid_reads
+    assert handle.mass_recalibration_result is result
+    assert vendor.centroid_reads == reads
 
 
 def test_default_policy_keeps_the_vendor_xic():
