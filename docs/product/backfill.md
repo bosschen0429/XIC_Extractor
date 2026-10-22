@@ -222,9 +222,9 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    before new members or numeric cells are created. A SUPPORT proposal that
    cannot join its requested feature does not veto an otherwise valid recovery.
    Each view uses its actual extraction m/z interval, not a second preferred-ppm
-   occupancy rule. Same-apex overlapping views without sufficient separation
-   evidence also remain contested; this conservative non-writing decision does
-   not authorize Discovery to merge unproven views. No RT epsilon joins apices.
+   occupancy rule. Same apex plus overlapping windows is not sufficient to
+   block a distinct ion's recovery. Unresolved comparison evidence neither
+   merges views nor invents a competing claim. No RT epsilon joins apices.
 8. When Backfill independently assesses a cell with an initial missing-MS1
    `REJECT`, the Backfill assessment retains the initial `REJECT`. The Backfill
    assessment must earn SUPPORT through the normal relation owner before the

@@ -58,9 +58,9 @@ physical peak. Comparison never changes a selected integral or grants membership
 - Discovery collapses only mutually proven views and retains one representative
   measurement plus lineage. Alignment applies role-specific occupancy to the
   same evidence: existing Direct values remain; competing eligible Backfills do
-  not create duplicate members or numeric cells. Same-apex overlapping claims
-  with unresolved evidence conservatively stay nonnumeric, without granting a
-  Discovery merge. Archive rows do not occupy Matrix peaks.
+  not create duplicate members or numeric cells. Unresolved comparison evidence
+  does not establish a competing claim: same-apex overlapping windows can contain
+  different ions. Archive rows do not occupy Matrix peaks.
 
 ## MS1 Morphology And Area Owner
 

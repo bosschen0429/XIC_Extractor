@@ -611,14 +611,14 @@ def contested_backfill_peaks(
         for index, (group_id, observation_id, view) in enumerate(entries):
             key = (sample_id, observation_id)
             if key in occupied or any(
-                _physical_views_compete(view, member_view)
+                compare_physical_peak_views(view, member_view) == "same"
                 for _, member_view in members_by_sample[sample_id]
             ):
                 contested.add(key)
             for other_group, other_id, other_view in entries[:index]:
                 if other_group != group_id and (
                     observation_id == other_id
-                    or _physical_views_compete(view, other_view)
+                    or compare_physical_peak_views(view, other_view) == "same"
                 ):
                     contested.update((key, (sample_id, other_id)))
     return frozenset(contested)
@@ -636,16 +636,6 @@ def _observation_physical_view(peak: PeakObservationRef) -> PhysicalPeakView:
         xic_ppm_tol=provenance.query_ppm_tol,
         rt=content.rt,
         raw=content.intensity,
-    )
-
-
-def _physical_views_compete(left: PhysicalPeakView, right: PhysicalPeakView) -> bool:
-    relation = compare_physical_peak_views(left, right)
-    # Same-apex overlapping queries with insufficient evidence remain ambiguous:
-    # they cannot publish two independent values. This is conservative claim
-    # handling, not proof that Discovery may collapse the views into one owner.
-    return relation == "same" or (
-        relation == "unresolved" and left.apex_rt_min == right.apex_rt_min
     )
 
 

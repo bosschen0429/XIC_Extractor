@@ -196,8 +196,8 @@ def _candidate(
         content=SimpleNamespace(
             peak_observation_content_id=content_id,
             mz=mz,
-            rt=(),
-            intensity=(),
+            rt=(apex - 0.2, apex - 0.1, apex, apex + 0.1, apex + 0.2),
+            intensity=(1.0, 100.0, 1000.0, 100.0, 1.0),
             integration=SimpleNamespace(
                 rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
             ),
@@ -216,14 +216,23 @@ def _backfill(*peaks):
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize(
     "case",
-    ["same-lobe", "two-peaks", "different-raw", "short", "source", "sample", "mass"],
+    [
+        "same-lobe",
+        "two-peaks",
+        "different-raw",
+        "same-apex-different-raw",
+        "short",
+        "source",
+        "sample",
+        "mass",
+    ],
 )
 def test_backfill_different_apices_require_measured_same_lobe(
     case, reverse, role
 ) -> None:
     rt = np.linspace(8.0, 10.0, 101)
     raw = 1000 * np.exp(-(((rt - 9.0) / 0.18) ** 2))
-    apices = (9.0, 9.02)
+    apices = (9.0, 9.0) if case == "same-apex-different-raw" else (9.0, 9.02)
     if case == "two-peaks":
         raw = 1000 * np.exp(-(((rt - 8.7) / 0.08) ** 2)) + 1000 * np.exp(
             -(((rt - 9.3) / 0.08) ** 2)
@@ -236,7 +245,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
         selection = slice(index, -2 + index)
         peak.content.rt = tuple(rt[selection])
         peak.content.intensity = tuple(raw[selection])
-        if case == "different-raw" and index:
+        if case in {"different-raw", "same-apex-different-raw"} and index:
             peak.content.intensity = tuple(value * 1.01 for value in raw[selection])
         if case == "short":
             peak.content.rt = (8.99, 9.0, 9.02)
