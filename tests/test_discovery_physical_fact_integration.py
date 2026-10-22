@@ -256,7 +256,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     ("fixture_name", "expected_apices", "representative_scan"),
     (
         ("discovery_normal_single_peak", (18.4,), 14922),
-        ("discovery_same_peak_seeds", (38.2,), None),
+        ("discovery_same_peak_seeds", (), None),
         ("discovery_true_double_peak", (), None),
         ("discovery_non_peak_background", (), None),
     ),
@@ -363,6 +363,20 @@ def test_discovery_retained_physical_peak_cardinality(
         if c.ms1_peak_found and (representative_scan is None or not c.is_provisional)
     ) == pytest.approx(expected_apices, abs=0.06)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
+    if fixture_name == "discovery_same_peak_seeds":
+        # The physical peak remains, but both recorded MS2 queries are outside
+        # its canonical tenth-height interval. They cannot claim a detection.
+        for record in result.physical_evaluations:
+            evaluation = record.evaluation
+            assert evaluation.reason == "no_selection"
+            assert evaluation.facts is None
+            (segment,) = evaluation.segment_universe.segments
+            assert segment.apex_rt_min == pytest.approx(38.2, abs=0.06)
+            assert not (
+                segment.left_rt_min
+                <= evaluation.question.query_rt_min
+                <= segment.right_rt_min
+            )
     if fixture_name == "discovery_true_double_peak":
         # Under the current segmentation this remains a morphology candidate
         # and fails local contrast rather than receiving a censored-cluster area.

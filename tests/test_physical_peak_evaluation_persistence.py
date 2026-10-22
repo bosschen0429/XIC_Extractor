@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -865,9 +866,15 @@ def test_compact_continuous_doublet_keeps_component_areas(
         assert result.facts is not None and result.integration is not None
         facts = result.facts
         assert facts.apex_rt_min == pytest.approx(center, abs=scan_spacing)
-        # Independent untruncated Gaussian area. Thresholding discards small
-        # tails; neither signal smoothing nor the gap hit may add the other peak.
-        expected_area = height * sigma * np.sqrt(2.0 * np.pi) * 60.0
+        # The analytical tenth-height Gaussian interval retains erf(sqrt(log 10))
+        # of its mass; neither smoothing nor the gap hit may add the other peak.
+        expected_area = (
+            height
+            * sigma
+            * np.sqrt(2.0 * np.pi)
+            * 60.0
+            * math.erf(math.sqrt(math.log(10.0)))
+        )
         assert facts.area_counts_seconds == pytest.approx(expected_area, rel=0.03)
         assert "near_detection_limit" not in result.integration.boundary_sources
         focused = evaluate_physical_peak(
@@ -1065,6 +1072,9 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw *= 1.0 + 0.08 * np.cos(rt * 12.0)
     prepared = prepare_physical_signal(rt, raw)
+    assert prepared.prepared is not None
+    canonical = np.asarray(prepared.prepared.positive_signal)
+    above_return = np.flatnonzero(canonical > 0.1 * np.max(canonical))
     answers = [
         evaluate_physical_peak(
             prepared,
@@ -1077,8 +1087,8 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     for answer in answers:
         assert answer.state == "available", answer.reason
         assert answer.facts is not None
-        assert answer.facts.left_rt_min <= 3.4
-        assert answer.facts.right_rt_min >= 6.5
+        assert answer.facts.left_rt_min == rt[above_return[0] - 1]
+        assert answer.facts.right_rt_min == rt[above_return[-1] + 1]
         observed_area = float(np.trapezoid(raw, rt)) * 60
         assert answer.facts.area_counts_seconds > 0.85 * observed_area
     assert answers[0].integration == answers[1].integration
@@ -1526,6 +1536,39 @@ def test_tail_beyond_relative_return_does_not_select_the_peak(
     )
     assert peak.state == "available" and peak.facts is not None
     assert peak.facts.apex_rt_min == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("sigma", [0.02, 0.2])
+def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> None:
+    rt = np.linspace(0.0, 4.0, 4001)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 2.0) / sigma) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    assert prepared.prepared is not None
+    signal = np.asarray(prepared.prepared.positive_signal)
+    # An isolated Gaussian has one contiguous region above its canonical 10%
+    # level. Include exactly the acquired samples bracketing that return.
+    above = np.flatnonzero(signal > 0.1 * np.max(signal))
+    left, right = int(above[0]) - 1, int(above[-1]) + 1
+    peak = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="canonical-tenth-height",
+        query_rt_min=2.0,
+        selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    )
+    assert peak.state == "available" and peak.facts is not None
+    assert peak.facts.left_rt_min == rt[left]
+    assert peak.facts.right_rt_min == rt[right]
+    assert peak.facts.area_counts_seconds == pytest.approx(
+        np.trapezoid(signal[left : right + 1], rt[left : right + 1]) * 60.0
+    )
+    tail = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="outside-canonical-tenth-height",
+        query_rt_min=float(rt[right + 1]),
+        selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    )
+    assert tail.state == "unavailable" and tail.reason == "no_selection"
+    assert tail.facts is None
 
 
 @pytest.mark.parametrize(

@@ -745,6 +745,21 @@ def _segment_from_seed(
         right_relation,
         policy,
     )
+    apex_index = seed.index
+    if policy.morphology_trace_method == "rt_envelope":
+        apex_index = left + int(np.argmax(boundary_signal[left:right]))
+        # The envelope locates the basin, not its quantitative return height.
+        # Trim its outer tails against the selected canonical apex, preserving
+        # interior dropout notches and the separating-valley limits above.
+        threshold = policy.baseline_return_threshold(float(boundary_signal[apex_index]))
+        basin_left, basin_right = left, right
+        while left < apex_index and boundary_signal[left] <= threshold:
+            left += 1
+        while right > apex_index + 1 and boundary_signal[right - 1] <= threshold:
+            right -= 1
+        if policy.include_baseline_return_samples:
+            left = max(basin_left, left - 1)
+            right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":
         # Qualification may discard a lobe as an independent candidate, but
@@ -775,14 +790,6 @@ def _segment_from_seed(
         interval.start_index,
         interval.end_index,
     )
-    apex_index = seed.index
-    if policy.morphology_trace_method == "rt_envelope":
-        segment_residual = np.maximum(
-            intensity[interval.start_index : interval.end_index]
-            - baseline[interval.start_index : interval.end_index],
-            0.0,
-        )
-        apex_index = interval.start_index + int(np.argmax(segment_residual))
     apex_residual = (
         float(boundary_signal[apex_index])
         if policy.morphology_trace_method == "rt_envelope"

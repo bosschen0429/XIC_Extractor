@@ -1,4 +1,5 @@
 import csv
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -523,7 +524,13 @@ def test_rt_recovery_keeps_supported_physical_candidate_identity(
     assert file_result.error is None
     result = file_result.results[target.label]
     assert result.reported_rt == pytest.approx(9.0, abs=0.02)
-    known_area = weak_height * 0.08 * np.sqrt(2 * np.pi) * 60
+    known_area = (
+        weak_height
+        * 0.08
+        * np.sqrt(2 * np.pi)
+        * 60
+        * math.erf(math.sqrt(math.log(10.0)))
+    )
     assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
     assert result.selected_cid_nl_supported is True
     assert result.targeted_product_projection.counted_detection is True

@@ -303,14 +303,17 @@ def test_single_seed_with_ms1_peak_is_medium_priority() -> None:
     assert candidate.reason == "single MS2 NL seed; MS1 peak found"
 
 
-def test_ms1_peak_far_from_best_seed_is_not_high_priority() -> None:
+@pytest.mark.parametrize("sigma, peak_found", [(0.12, False), (0.15, True)])
+def test_far_ms1_peak_requires_query_containment_before_priority(
+    sigma: float, peak_found: bool
+) -> None:
     group = _group(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
             _seed(scan_number=20, rt=7.90, product_intensity=9000.0),
         )
     )
-    raw = _peak_raw(center=8.16, sigma=0.12, height=100)
+    raw = _peak_raw(center=8.16, sigma=sigma, height=100)
 
     candidate = _candidates_from_raw(
         raw,
@@ -318,9 +321,16 @@ def test_ms1_peak_far_from_best_seed_is_not_high_priority() -> None:
         settings=_settings(ms1_search_padding_min=0.20),
     )[0]
 
-    assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
-    assert candidate.review_priority == "MEDIUM"
-    assert candidate.reason == "MS1 peak offset from seed RT"
+    assert candidate.ms1_peak_found == peak_found
+    if peak_found:
+        # The wider peak contains the query but its apex is still offset.
+        assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
+        assert candidate.review_priority == "MEDIUM"
+        assert candidate.reason == "MS1 peak offset from seed RT"
+    else:
+        # The narrower peak's 10% return excludes the query altogether.
+        assert candidate.ms1_seed_delta_min is None
+        assert candidate.ms1_area is None
 
 
 def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
