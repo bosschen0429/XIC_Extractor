@@ -700,7 +700,12 @@ def _membership_trajectories(
             retained.append(track)
     if len(retained) == len(geometry.tracks):
         return geometry
-    return PeakTrajectories(tuple(retained))
+    return PeakTrajectories(
+        tuple(retained),
+        geometry.pattern_comparisons,
+        geometry.source_contexts,
+        physical_order=geometry.physical_order,
+    )
 
 
 def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:

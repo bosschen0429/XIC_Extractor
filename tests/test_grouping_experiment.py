@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from tests.alignment_pipeline_helpers import _owner
+from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
 from tests.test_untargeted_cid_nl_bounded_runtime import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig
@@ -20,10 +20,6 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
     write_grouping_inputs,
-)
-from xic_extractor.peak_detection.elution_context import (
-    ElutionLandmark,
-    SampleElutionContext,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 from xic_extractor.untargeted_execution.grouping_experiment import (
@@ -62,15 +58,8 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
             )
         )
         contexts.append(
-            SampleElutionContext(
-                sample,
-                500.0,
-                8.0,
-                11.0,
-                (
-                    ElutionLandmark(9.0 + shift, 100.0, 0.2),
-                    ElutionLandmark(9.6 + shift, 100.0, 0.2),
-                ),
+            resolved_elution_context(
+                sample, ((9.0 + shift, 100.0), (9.6 + shift, 100.0))
             )
         )
     inputs = GroupingInputs(
@@ -319,13 +308,10 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
     owners = tuple(owners)
     contexts = tuple(
-        SampleElutionContext(
+        resolved_elution_context(
             sample,
-            500.0,
-            8.0,
-            15.0,
             tuple(
-                ElutionLandmark(rt + offset, height, 0.25)
+                (rt + offset, height)
                 for rt, height in (
                     ((8.4, 100.0), (9.0, 10.0), (10.0, 10.0), (10.7, 100.0))
                     if sample in {"a", "c"}

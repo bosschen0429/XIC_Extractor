@@ -58,7 +58,17 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
-def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
+def _view(
+    fixture,
+    stem,
+    *,
+    center,
+    crop=0,
+    support=True,
+    broad_context=False,
+    narrow_context=False,
+    mz=500.0,
+):
     sample = fixture.sample(stem)
     rt = np.linspace(7.0, 9.2, 221)[crop:]
     raw = 1000 * np.exp(-0.5 * ((rt - center) / 0.25) ** 2) + 100 * (rt - 7) ** 2
@@ -68,11 +78,16 @@ def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
         full_rt = np.linspace(7.0, 13.0, 301)
         full_raw = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
         full_raw += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
-        selected = (full_rt >= 9.0) & (full_rt <= (11.5 if crop else 11.0))
+        selected = (
+            (full_rt >= (9.8 if crop else 8.7)) & (full_rt <= (11.0 if crop else 9.9))
+            if narrow_context
+            else (full_rt >= 9.0) & (full_rt <= (11.5 if crop else 11.0))
+        )
         rt, raw = full_rt[selected] + center - 9.8, full_raw[selected]
     prepared = prepare_physical_signal(rt, raw)
+    query_rt = center + ((0.6 if crop else -0.5) if narrow_context else 0.0)
     evaluation = evaluate_physical_peak(
-        prepared, selection_subject_id=stem, query_rt_min=center
+        prepared, selection_subject_id=stem, query_rt_min=query_rt
     )
     assert evaluation.facts is not None
     peak = mint_peak_observation_ref(
@@ -80,7 +95,7 @@ def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
         sample=sample,
         trace=Trace.from_arrays(
             sample_name=stem,
-            mz=500.0,
+            mz=mz,
             rt=rt,
             intensity=raw,
             rt_min=float(rt[0]),
@@ -97,7 +112,7 @@ def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum", "gaussian15"),
     )
-    evidence = cid_nl_evidence(fixture, stem, scan_number=101, scan_rt_min=center)
+    evidence = cid_nl_evidence(fixture, stem, scan_number=101, scan_rt_min=query_rt)
     assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=sample,
@@ -128,9 +143,13 @@ def _view(fixture, stem, *, center, crop=0, support=True, broad_context=False):
     "direct", [False, True], ids=["backfill-backfill", "direct-backfill"]
 )
 @pytest.mark.parametrize("reverse", [False, True])
-@pytest.mark.parametrize("broad_context", [False, True])
+@pytest.mark.parametrize(
+    "broad_context,fresh_context",
+    [(False, False), (True, False), (True, True)],
+    ids=["selected-overlap", "retained-envelope", "fresh-envelope"],
+)
 def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
-    tmp_path, support, direct, reverse, broad_context
+    tmp_path, support, direct, reverse, broad_context, fresh_context
 ):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("A", "B", "C", "D", "S")
@@ -142,6 +161,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             center=center,
             crop=int(broad_context and stem in {"C", "D"}),
             broad_context=broad_context,
+            narrow_context=fresh_context,
         )
         for stem, center in (
             ("A", 8.0),
@@ -196,6 +216,8 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             crop=index if broad_context else 45 + 15 * index,
             support=support,
             broad_context=broad_context,
+            narrow_context=fresh_context,
+            mz=500.001 if fresh_context and index else 500.0,
         )
         assert assessment.content.method_result == ("SUPPORT" if support else "HOLD")
         backfills[
@@ -218,6 +240,70 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         lower = max(i.rt_left_min for i in integrations)
         upper = min(i.rt_right_min for i in integrations)
         assert not all(lower < i.rt_apex_min < upper for i in integrations)
+    comparison_views = {}
+    if fresh_context:
+        from xic_extractor.acquisition_contract import (
+            TraceCoordinateKind,
+            acquire_trace_batch,
+            mint_trace_acquisition_capability,
+        )
+        from xic_extractor.peak_detection.physical_peak_equivalence import (
+            physical_peak_view_from_observation,
+        )
+        from xic_extractor.untargeted_execution.physical_comparison_context import (
+            comparison_views_from_acquisitions,
+        )
+        from xic_extractor.xic_models import XICRequest, XICTrace
+
+        assert (
+            compare_physical_peak_views(
+                *(physical_peak_view_from_observation(p) for p in comparison_peaks)
+            )
+            == "unresolved"
+        )
+        source = resolve_request_acquisition_source(
+            processing_owners=fixture.owners, sample=fixture.sample("S")
+        )
+        full_rt = np.linspace(7.0, 13.0, 301)
+        full_raw = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
+        full_raw += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
+        shifted_rt = full_rt + 8.06 - 9.8
+
+        class ComparisonRaw:
+            raw_chromatogram_call_count = 0
+
+            def extract_xic_many(self, requests):
+                self.raw_chromatogram_call_count += 1
+                result = []
+                for request in requests:
+                    raw = full_raw.copy()
+                    if request.mz > 500.0:
+                        # A different ion far outside the original questions is
+                        # not part of this comparison, even in a shared batch.
+                        raw[-10] += 2000.0
+                    result.append(XICTrace.from_arrays(shifted_rt, raw))
+                return tuple(result)
+
+        acquisition = acquire_trace_batch(
+            mint_trace_acquisition_capability(
+                source,
+                adapter_namespace="test:comparison-context",
+                coordinate_kind=TraceCoordinateKind.RT_ONLY,
+            ),
+            tuple(
+                XICRequest(
+                    peak.content.mz, float(shifted_rt[0]), float(shifted_rt[-1]), 20.0
+                )
+                for peak in comparison_peaks
+            ),
+            ComparisonRaw(),
+        )
+        comparison_views = comparison_views_from_acquisitions(
+            ((tuple(comparison_peaks), acquisition),)
+        )
+        assert all(
+            view.comparison_trace is not None for view in comparison_views.values()
+        )
     # Method planning must recognize the same views as the claim owner, rather
     # than keeping an exact-apex prefilter ahead of the shared evidence rule.
     units = group_cid_nl_physical_subject_units(
@@ -226,7 +312,8 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
                 str(index),
                 peak.content.mz,
                 116.0474,
-                PhysicalPeakView(
+                comparison_views.get(peak.content.peak_observation_content_id)
+                or PhysicalPeakView(
                     acquisition_source_id=peak.generation_provenance.acquisition_source_id,
                     apex_rt_min=peak.content.integration.rt_apex_min,
                     left_rt_min=peak.content.integration.rt_left_min,
@@ -256,6 +343,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             for _, assessment in pairs.values()
             for peak in assessment.candidate_peaks
         },
+        physical_peak_views=comparison_views,
     )
     assert result.partition_transition.admitted_members == ()
     assert {g.group_hypothesis_id for g in successors} == {

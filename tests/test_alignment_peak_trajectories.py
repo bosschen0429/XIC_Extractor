@@ -643,6 +643,58 @@ def test_landmarks_exclude_clipped_edge_and_keep_interior_maxima() -> None:
     assert prepared.prepared == before
 
 
+@pytest.mark.parametrize("shared_lobe", [True, False])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, reverse):
+    rt = np.linspace(8.0, 12.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 9.5) / (0.3 if shared_lobe else 0.08)) ** 2)
+    raw += 500.0 * np.exp(-0.5 * ((rt - 9.85) / 0.08) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    contexts = [
+        project_elution_context(prepared, sample_stem=sample, mz=500.0)
+        for sample in ("a", "b", "ms1_only")
+    ]
+    assert all(
+        context is not None and len(context.landmarks) == 2 for context in contexts
+    )
+    owners = [
+        _owner("a", "early", contexts[0].landmarks[0].apex_rt),
+        _owner("b", "late", contexts[1].landmarks[1].apex_rt),
+    ]
+    if shared_lobe:
+        owners = [
+            replace(owner, owner_peak_start_rt=8.58, owner_peak_end_rt=10.45)
+            for owner in owners
+        ]
+    unrelated_signal = sum(
+        1000.0 * np.exp(-0.5 * ((rt - peak.apex_rt) / 0.035) ** 2)
+        for peak in contexts[0].landmarks
+    )
+    unrelated = prepare_physical_signal(rt, unrelated_signal)
+    # A production partition also carries other ions' contexts on these same
+    # native scan coordinates. Their resolved doublets are not this ion's proof.
+    contexts.extend(
+        project_elution_context(unrelated, sample_stem=sample, mz=700.0)
+        for sample in ("a", "b", "ms1_only")
+    )
+    model = resolve_peak_trajectories(
+        owners[::-1] if reverse else owners,
+        contexts[::-1] if reverse else contexts,
+        config=AlignmentConfig(),
+        injection_order={"a": 1, "b": 2, "ms1_only": 3},
+    )
+    assert len(model.tracks) == 2
+    # Correspondence can retain two useful landmarks within one lobe. Only
+    # the physical segment owner can make their tracks mutually exclusive.
+    assert model.permits_membership(owner.owner_id for owner in owners) is shared_lobe
+    if shared_lobe:
+        # Allowing membership does not pick an arbitrary shoulder as the
+        # missing sample's observed Backfill position. Direct apices survive.
+        assert dict(model.trajectory_for(owners).sample_apices) == {
+            owner.sample_stem: owner.owner_apex_rt for owner in owners
+        }
+
+
 def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None:
     warp = BatchRtWarp(
         (

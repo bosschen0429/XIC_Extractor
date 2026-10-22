@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import _owner
+from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -24,10 +24,6 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.peak_detection.elution_context import (
-    ElutionLandmark,
-    SampleElutionContext,
-)
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
@@ -54,15 +50,8 @@ def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
             )
         )
         contexts.append(
-            SampleElutionContext(
-                sample,
-                _MZ,
-                8.0,
-                11.0,
-                (
-                    ElutionLandmark(9.0 + shift, 100.0, 0.2),
-                    ElutionLandmark(9.6 + shift, 100.0, 0.2),
-                ),
+            resolved_elution_context(
+                sample, ((9.0 + shift, 100.0), (9.6 + shift, 100.0)), mz=_MZ
             )
         )
     orders = {sample: index for index, sample in enumerate(("A", "B", "C", "D"))}

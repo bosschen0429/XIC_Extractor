@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
@@ -52,6 +52,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -83,6 +84,7 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
+    physical_peak_views: Mapping[str, PhysicalPeakView] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +247,7 @@ def _complete_cell_observations(
         backfills=group_backfills,
         alignment_config=alignment_config,
         member_observations=member_observations,
+        physical_peak_views=evidence.physical_peak_views,
     )
     backfilled_positions = frozenset(
         (group_id, sample_id)

@@ -3005,6 +3005,9 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from xic_extractor.processing_identity import AcquisitionSourceExpectation
+    from xic_extractor.raw_reader import stat_identity
+
     raw_path = tmp_path / "S1.raw"
     raw_path.write_bytes(b"alignment-adapter:S1")
     settings = _settings()
@@ -3070,7 +3073,15 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     monkeypatch.setattr(
         alignment_adapter,
         "_load_physical_replay_inputs",
-        lambda **kwargs: (kwargs["candidates_by_sample"], {}, None),
+        lambda **kwargs: (
+            kwargs["candidates_by_sample"],
+            {},
+            (
+                AcquisitionSourceExpectation(
+                    receipts["S1"].acquisition_source, stat_identity(raw_path.stat())
+                ),
+            ),
+        ),
     )
 
     result = alignment_adapter.complete_untargeted_alignment(

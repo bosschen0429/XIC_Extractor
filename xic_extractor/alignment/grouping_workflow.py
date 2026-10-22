@@ -61,6 +61,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.peak_detection.physical_peak_equivalence import (
     PhysicalPeakView,
     compare_physical_peak_views,
+    physical_peak_view_from_observation,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -312,6 +313,7 @@ def admit_cid_nl_group_backfills(
     ],
     alignment_config: AlignmentConfig,
     member_observations: Mapping[str, PeakObservationRef],
+    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -378,6 +380,7 @@ def admit_cid_nl_group_backfills(
         groups=groups,
         backfills=claim_backfills,
         member_observations=member_observations,
+        physical_peak_views=physical_peak_views,
     )
     cell_claims: dict[tuple[str, str], int] = defaultdict(int)
     for group_id, physical_key, *_ in proposals:
@@ -573,6 +576,7 @@ def contested_backfill_peaks(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     member_observations: Mapping[str, PeakObservationRef],
+    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
 ) -> frozenset[tuple[str, str]]:
     """Resolve physical claims once, before SUPPORT admission or cell creation.
 
@@ -581,6 +585,14 @@ def contested_backfill_peaks(
     member writes no value and cannot occupy a peak. The caller supplies retained
     observations, not reconstructed peak-shape summaries or rounded coordinates.
     """
+
+    def view_for(peak: PeakObservationRef) -> PhysicalPeakView:
+        if physical_peak_views is not None:
+            view = physical_peak_views.get(peak.content.peak_observation_content_id)
+            if view is not None:
+                return view
+        return physical_peak_view_from_observation(peak)
+
     members_by_sample: dict[str, list[tuple[str, PhysicalPeakView]]] = defaultdict(list)
     occupied = set()
     for group in groups:
@@ -592,7 +604,7 @@ def contested_backfill_peaks(
                 occupied.add((sample_id, observation_id))
                 observation = member_observations[observation_id]
                 members_by_sample[sample_id].append(
-                    (observation_id, _observation_physical_view(observation))
+                    (observation_id, view_for(observation))
                 )
     backfills_by_sample: dict[str, list[tuple[str, str, PhysicalPeakView]]] = (
         defaultdict(list)
@@ -603,7 +615,7 @@ def contested_backfill_peaks(
                 (
                     group_id,
                     peak.content.peak_observation_content_id,
-                    _observation_physical_view(peak),
+                    view_for(peak),
                 )
             )
     contested = set()
@@ -622,21 +634,6 @@ def contested_backfill_peaks(
                 ):
                     contested.update((key, (sample_id, other_id)))
     return frozenset(contested)
-
-
-def _observation_physical_view(peak: PeakObservationRef) -> PhysicalPeakView:
-    content, provenance = peak.content, peak.generation_provenance
-    integration = content.integration
-    return PhysicalPeakView(
-        acquisition_source_id=provenance.acquisition_source_id,
-        apex_rt_min=integration.rt_apex_min,
-        left_rt_min=integration.rt_left_min,
-        right_rt_min=integration.rt_right_min,
-        xic_mz=content.mz,
-        xic_ppm_tol=provenance.query_ppm_tol,
-        rt=peak.source_trace.rt,
-        raw=peak.source_trace.intensity,
-    )
 
 
 def _partition_transition(

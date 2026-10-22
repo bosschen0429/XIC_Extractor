@@ -58,6 +58,9 @@ from xic_extractor.untargeted_execution.partition.request import (
     build_partition_context,
     compose_partition_context,
 )
+from xic_extractor.untargeted_execution.physical_comparison_context import (
+    PhysicalComparisonPreparation,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +275,7 @@ def prepare_untargeted_subject_membership(
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
     settings: DiscoverySettings,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedCidNlMethodSubjectBatch:
     """Resolve exact subject membership for a closed precursor working set."""
     candidates = tuple(
@@ -297,13 +301,16 @@ def prepare_untargeted_subject_membership(
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
     physical_records = physical_records_by_candidate
+    facts = tuple(
+        _physical_subject_candidate_fact(
+            candidate, physical_records[candidate.candidate_id]
+        )
+        for candidate in candidates
+    )
+    if physical_comparison is not None:
+        facts = physical_comparison.resolve(facts)
     subject_units = group_cid_nl_physical_subject_units(
-        tuple(
-            _physical_subject_candidate_fact(
-                candidate, physical_records[candidate.candidate_id]
-            )
-            for candidate in candidates
-        ),
+        facts,
         composition=composition,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
@@ -352,6 +359,7 @@ def prepare_eager_untargeted_plan(
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
+    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedInputPlan:
     """Seal exact candidate membership before any subject-local runtime work."""
 
@@ -365,6 +373,7 @@ def prepare_eager_untargeted_plan(
         candidates_by_sample=candidates_by_sample,
         settings=settings,
         physical_records_by_candidate=physical_records_by_candidate,
+        physical_comparison=physical_comparison,
     )
     candidates = tuple(
         candidate for values in candidates_by_sample.values() for candidate in values
@@ -381,6 +390,9 @@ def prepare_eager_untargeted_plan(
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
         acquisition_source_expectations=acquisition_source_expectations,
+        comparison_capture_requests=(
+            physical_comparison.capture_requests if physical_comparison else None
+        ),
     )
     candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
     eligible_subject_ids = {
@@ -481,6 +493,7 @@ def prepare_indexed_untargeted_plan(
     restore_candidate: Callable[
         [DiscoveryCandidate, DiscoveryPhysicalFactRecord], DiscoveryCandidate
     ],
+    physical_comparison: PhysicalComparisonPreparation | None = None,
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
@@ -552,14 +565,17 @@ def prepare_indexed_untargeted_plan(
             units.append((requirement, (ids[0],)))
             return
         candidates, records = load_inputs(tuple(ids))
+        facts = tuple(
+            _physical_subject_candidate_fact(
+                candidate, records.get(candidate.candidate_id)
+            )
+            for values in candidates.values()
+            for candidate in values
+        )
+        if physical_comparison is not None:
+            facts = physical_comparison.resolve(facts)
         local_units = group_cid_nl_physical_subject_units(
-            tuple(
-                _physical_subject_candidate_fact(
-                    candidate, records.get(candidate.candidate_id)
-                )
-                for values in candidates.values()
-                for candidate in values
-            ),
+            facts,
             composition=composition,
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         )
@@ -623,6 +639,9 @@ def prepare_indexed_untargeted_plan(
         )
     }
     context = compose_partition_context(
+        comparison_capture_requests=(
+            physical_comparison.capture_requests if physical_comparison else None
+        ),
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,

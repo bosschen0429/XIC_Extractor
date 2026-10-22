@@ -9,15 +9,19 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
-    mint_physical_peak_question,
     prepare_physical_signal,
+    qualified_physical_segments,
+    unique_physical_segment_at_rt,
 )
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+if TYPE_CHECKING:
+    from xic_extractor.peak_detection.observations import PeakObservationRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +37,23 @@ class PhysicalPeakView:
     rt: Iterable[float]
     raw: Iterable[float]
     apex_centroids: tuple[Ms1PrecursorObservation, ...] = ()
+    comparison_trace: tuple[Iterable[float], Iterable[float]] | None = None
+
+
+def physical_peak_view_from_observation(peak: PeakObservationRef) -> PhysicalPeakView:
+    """Project authoritative integration bounds and the original acquired trace."""
+    content, provenance = peak.content, peak.generation_provenance
+    integration = content.integration
+    return PhysicalPeakView(
+        acquisition_source_id=provenance.acquisition_source_id,
+        apex_rt_min=integration.rt_apex_min,
+        left_rt_min=integration.rt_left_min,
+        right_rt_min=integration.rt_right_min,
+        xic_mz=content.mz,
+        xic_ppm_tol=provenance.query_ppm_tol,
+        rt=peak.source_trace.rt,
+        raw=peak.source_trace.intensity,
+    )
 
 
 def compare_physical_peak_views(
@@ -107,12 +128,55 @@ def compare_physical_peak_views(
     # Integration bounds belong to quantitation, not view identity. If they
     # lack shared context around both apices, use the already acquired context
     # rather than treating the cropped selections as proof of separation.
-    return _compare_measured_lobes(traces, apices)
+    acquired_relation = _compare_measured_lobes(traces, apices)
+    if acquired_relation != "unresolved" or not any(
+        view.comparison_trace is not None for view in (left, right)
+    ):
+        return acquired_relation
+    # Compare the original acquisition questions on one common RT envelope.
+    # Batched context can be much wider: feeding all of it to baseline/lobe
+    # evaluation would change the question and can split or hide the lobe.
+    # The extra samples are comparison evidence, never a replacement integral.
+    lower = min(trace[0][0] for trace in traces)
+    upper = max(trace[-1][0] for trace in traces)
+    comparison_traces = tuple(
+        tuple(
+            (float(t), float(v))
+            for t, v in zip(
+                *(view.comparison_trace or (view.rt, view.raw)), strict=True
+            )
+            if lower <= t <= upper
+        )
+        for view in (left, right)
+    )
+    relation = _compare_measured_lobes(
+        comparison_traces, apices, require_qualified=True
+    )
+    if relation != "unresolved":
+        return relation
+    # A cropped context can join two edge-truncated tails without establishing
+    # a complete peak. Reuse the wider acquired envelope when it can close the
+    # owner support gate; never turn an incomplete lobe into identity proof.
+    return _compare_measured_lobes(
+        tuple(
+            tuple(
+                (float(t), float(v))
+                for t, v in zip(
+                    *(view.comparison_trace or (view.rt, view.raw)), strict=True
+                )
+            )
+            for view in (left, right)
+        ),
+        apices,
+        require_qualified=True,
+    )
 
 
 def _compare_measured_lobes(
     traces: tuple[tuple[tuple[float, float], ...], ...],
     apices: tuple[float, float],
+    *,
+    require_qualified: bool = False,
 ) -> Literal["same", "distinct", "unresolved"]:
     if not all(traces):
         return "unresolved"
@@ -134,15 +198,18 @@ def _compare_measured_lobes(
     rt = sorted(combined)
     prepared = prepare_physical_signal(rt, [combined[t] for t in rt])
     universe = enumerate_physical_segment_universe(prepared)
+    qualified = (
+        {
+            s.physical_segment_id
+            for s in qualified_physical_segments(prepared.prepared, universe.segments)
+        }
+        if require_qualified and prepared.prepared is not None
+        else set()
+    )
     selected = []
     for apex in apices:
-        question = mint_physical_peak_question(
-            prepared.projection,
-            universe,
-            selection_subject_id="physical-view-equivalence",
-            query_rt_min=apex,
-        )
-        if len(question.admissible_segment_ids) != 1:
+        segment_id = unique_physical_segment_at_rt(universe, apex)
+        if segment_id is None or (require_qualified and segment_id not in qualified):
             return "unresolved"
-        selected.append(question.admissible_segment_ids[0])
+        selected.append(segment_id)
     return "same" if selected[0] == selected[1] else "distinct"

@@ -2010,6 +2010,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         project_completed_untarget_batch_writer_inputs,
     )
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from xic_extractor.processing_identity import AcquisitionSourceExpectation
+    from xic_extractor.raw_reader import stat_identity
     from xic_extractor.untargeted_execution import execution as bounded_runtime
     from xic_extractor.untargeted_execution.alignment import (
         complete_untargeted_alignment,
@@ -2045,7 +2047,15 @@ def _assert_alignment_uses_configured_recovery_groups(
         lambda **options: (
             options["candidates_by_sample"],
             kwargs["physical_records_by_candidate"],
-            None,
+            tuple(
+                AcquisitionSourceExpectation(
+                    kwargs["discovery_receipts_by_sample"][
+                        path.stem
+                    ].acquisition_source,
+                    stat_identity(path.stat()),
+                )
+                for path in options["raw_paths"]
+            ),
         ),
     )
     completed = complete_untargeted_alignment(

@@ -123,6 +123,9 @@ from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
     require_owner_bound_untargeted_raw,
 )
+from xic_extractor.untargeted_execution.physical_comparison_context import (
+    PHYSICAL_COMPARISON_INPUT_KEY,
+)
 from xic_extractor.xic_models import XICRequest
 
 VALIDATION_STATUS = "diagnostic_only"
@@ -491,6 +494,17 @@ def _sample_capture_requests(
         )
         for item in candidates
     }
+    comparison_requests = json.loads(
+        processing_owners.request.normalized_scientific_inputs_json
+    ).get(PHYSICAL_COMPARISON_INPUT_KEY, {})
+    for candidate_id, request in tuple(requests.items()):
+        if candidate_id in comparison_requests:
+            comparison = XICRequest(**comparison_requests[candidate_id])
+            requests[candidate_id] = replace(
+                request,
+                rt_min=min(request.rt_min, comparison.rt_min),
+                rt_max=max(request.rt_max, comparison.rt_max),
+            )
     subjects = method_subject or cid_nl_method_subjects_from_request(
         processing_owners.request
     )
@@ -507,15 +521,17 @@ def _sample_capture_requests(
         grouped = {subjects.method_subject_id: list(candidates)}
     for members in grouped.values():
         ordered = sorted(
-            members, key=lambda item: (item.ms1_search_rt_min, item.candidate_id)
+            members,
+            key=lambda item: (requests[item.candidate_id].rt_min, item.candidate_id),
         )
         components: list[tuple[float, list[DiscoveryCandidate]]] = []
         for item in ordered:
-            if not components or item.ms1_search_rt_min > components[-1][0]:
-                components.append((item.ms1_search_rt_max, [item]))
+            query = requests[item.candidate_id]
+            if not components or query.rt_min > components[-1][0]:
+                components.append((query.rt_max, [item]))
             else:
                 components[-1] = (
-                    max(components[-1][0], item.ms1_search_rt_max),
+                    max(components[-1][0], query.rt_max),
                     components[-1][1],
                 )
                 components[-1][1].append(item)
@@ -524,7 +540,7 @@ def _sample_capture_requests(
                 for item in members:
                     requests[item.candidate_id] = replace(
                         requests[item.candidate_id],
-                        rt_min=members[0].ms1_search_rt_min,
+                        rt_min=requests[members[0].candidate_id].rt_min,
                         rt_max=right,
                     )
     unique: dict[XICRequest, int] = {}

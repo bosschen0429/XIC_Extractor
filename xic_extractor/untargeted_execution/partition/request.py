@@ -60,6 +60,10 @@ from xic_extractor.sample_metadata import (
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
 )
+from xic_extractor.untargeted_execution.physical_comparison_context import (
+    PHYSICAL_COMPARISON_INPUT_KEY,
+)
+from xic_extractor.xic_models import XICRequest
 
 UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = "untargeted_cid_nl_real_data_inputs"
 UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = "untargeted_cid_nl_real_data_algorithm"
@@ -130,6 +134,7 @@ def build_partition_context(
     | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
+    comparison_capture_requests: Mapping[str, XICRequest] | None = None,
 ) -> UntargetedPartitionContext:
     """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
@@ -287,6 +292,7 @@ def build_partition_context(
             discovery_receipts_by_sample=receipt_map,
             expected_sample_stems=tuple(paths_by_stem),
         ),
+        comparison_capture_requests=comparison_capture_requests,
         physical_capture=(
             physical_capture_input_payload(
                 signal_processing_profile,
@@ -313,6 +319,7 @@ def compose_partition_context(
     candidate_universe: dict[str, object],
     physical_capture: dict[str, object],
     feature_candidate_ids: tuple[str, ...] | None = None,
+    comparison_capture_requests: Mapping[str, XICRequest] | None = None,
 ) -> UntargetedPartitionContext:
     """Compose request identity from input-owner verified compact facts."""
     ordered_stems = tuple(
@@ -347,6 +354,23 @@ def compose_partition_context(
                 for field in SCIENTIFIC_SETTING_FIELDS
             },
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture,
+            **(
+                {
+                    PHYSICAL_COMPARISON_INPUT_KEY: {
+                        candidate_id: {
+                            "mz": query.mz,
+                            "ppm_tol": query.ppm_tol,
+                            "rt_min": query.rt_min,
+                            "rt_max": query.rt_max,
+                        }
+                        for candidate_id, query in sorted(
+                            comparison_capture_requests.items()
+                        )
+                    }
+                }
+                if comparison_capture_requests
+                else {}
+            ),
             **(
                 {ALIGNMENT_FEATURE_INPUT_KEY: list(feature_candidate_ids)}
                 if feature_candidate_ids is not None
