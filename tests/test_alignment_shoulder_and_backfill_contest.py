@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner
@@ -195,14 +196,68 @@ def _candidate(
         content=SimpleNamespace(
             peak_observation_content_id=content_id,
             mz=mz,
+            rt=(),
+            intensity=(),
             integration=SimpleNamespace(rt_apex_min=apex),
         ),
-        generation_provenance=SimpleNamespace(query_ppm_tol=query_ppm),
+        generation_provenance=SimpleNamespace(
+            query_ppm_tol=query_ppm, acquisition_source_id="source"
+        ),
     )
 
 
 def _backfill(*peaks):
     return (None, SimpleNamespace(candidate_peaks=peaks))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "case",
+    ["same-lobe", "two-peaks", "different-raw", "short", "source", "sample", "mass"],
+)
+def test_backfill_different_apices_require_measured_same_lobe(case, reverse) -> None:
+    rt = np.linspace(8.0, 10.0, 101)
+    raw = 1000 * np.exp(-(((rt - 9.0) / 0.18) ** 2))
+    apices = (9.0, 9.02)
+    if case == "two-peaks":
+        raw = 1000 * np.exp(-(((rt - 8.7) / 0.08) ** 2)) + 1000 * np.exp(
+            -(((rt - 9.3) / 0.08) ** 2)
+        )
+        apices = (8.7, 9.3)
+    peaks = []
+    for index, apex in enumerate(apices):
+        peak = _candidate(str(index), apex=apex)
+        # Different retained contexts of the same acquired signal.
+        selection = slice(index, -2 + index)
+        peak.content.rt = tuple(rt[selection])
+        peak.content.intensity = tuple(raw[selection])
+        if case == "different-raw" and index:
+            peak.content.intensity = tuple(value * 1.01 for value in raw[selection])
+        if case == "short":
+            peak.content.rt = (8.99, 9.0, 9.02)
+            peak.content.intensity = (10.0, 20.0, 10.0)
+        if case == "source" and index:
+            peak.generation_provenance.acquisition_source_id = "other-source"
+        if case == "mass" and index:
+            peak.content.mz *= 1 + 100e-6
+        peaks.append(peak)
+    backfills = {
+        (
+            f"row-{i}",
+            "other-sample" if case == "sample" and i else "sample",
+            "subject",
+        ): _backfill(p)
+        for i, p in enumerate(peaks)
+    }
+    if reverse:
+        backfills = dict(reversed(tuple(backfills.items())))
+    assert contested_backfill_peaks(
+        groups=(), backfills=backfills, alignment_config=_CONFIG
+    ) == (
+        frozenset({("sample", "0"), ("sample", "1")})
+        if case == "same-lobe"
+        else frozenset()
+    )
 
 
 def _sample_id(owner: SampleLocalMS1Owner) -> str:
