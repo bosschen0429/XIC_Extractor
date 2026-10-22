@@ -58,6 +58,11 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    enumerate_physical_segment_universe,
+    mint_physical_peak_question,
+    prepare_physical_signal,
+)
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -575,24 +580,30 @@ def contested_backfill_peaks(
     from a member's or another window's. Backfills at one sample/apex compete
     when their actual extraction windows overlap, even if their request centers
     are farther apart than the preferred m/z tolerance. Direct-member occupancy
-    retains its preferred-tolerance rule.
+    retains its preferred-tolerance rule. Different-apex Backfill views also
+    compete when identical acquired overlap resolves both apices to one lobe.
     """
     claims: dict[tuple[str, str], set[str]] = defaultdict(set)
     backfills_at_apex: dict[
         tuple[str, float],
         list[tuple[str, PeakObservationRef, tuple[float, float]]],
     ] = defaultdict(list)
+    backfills_by_sample: dict[
+        str, list[tuple[str, PeakObservationRef, tuple[float, float]]]
+    ] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
             content = peak.content
             claims[(sample_id, content.peak_observation_content_id)].add(group_id)
-            backfills_at_apex[(sample_id, content.integration.rt_apex_min)].append(
-                (
-                    group_id,
-                    peak,
-                    mz_window(content.mz, peak.generation_provenance.query_ppm_tol),
-                )
+            entry = (
+                group_id,
+                peak,
+                mz_window(content.mz, peak.generation_provenance.query_ppm_tol),
             )
+            backfills_at_apex[(sample_id, content.integration.rt_apex_min)].append(
+                entry
+            )
+            backfills_by_sample[sample_id].append(entry)
     occupied = {
         (member.canonical_sample_identity_id, observation_id)
         for group in groups
@@ -629,7 +640,73 @@ def contested_backfill_peaks(
                 )
             ):
                 contested.add(key)
+    for sample_id, entries in backfills_by_sample.items():
+        for index, (group_id, peak, (lower, upper)) in enumerate(entries):
+            for other_group, other, (other_lower, other_upper) in entries[:index]:
+                if (
+                    group_id == other_group
+                    or peak.content.integration.rt_apex_min
+                    == other.content.integration.rt_apex_min
+                    or lower > other_upper
+                    or other_lower > upper
+                ):
+                    continue
+                if _backfill_views_share_lobe(peak, other):
+                    contested.update(
+                        (sample_id, item.content.peak_observation_content_id)
+                        for item in (peak, other)
+                    )
     return frozenset(contested)
+
+
+def _backfill_views_share_lobe(
+    left: PeakObservationRef, right: PeakObservationRef
+) -> bool:
+    """Prove competition from retained RAW samples, not an apex tolerance.
+
+    Both queries must lie inside identical acquired overlap. Re-evaluate their
+    combined measured context once: equal traces alone also describe resolved
+    double peaks. Retained observations contain selected samples, not the full
+    baseline margins. Compare lobe membership without requalifying their
+    authoritative integrations or minting a replacement integral.
+    """
+    first, second = left.content, right.content
+    if (
+        min(len(first.rt), len(second.rt)) < 5
+        or left.generation_provenance.acquisition_source_id
+        != right.generation_provenance.acquisition_source_id
+    ):
+        return False
+    lower, upper = max(first.rt[0], second.rt[0]), min(first.rt[-1], second.rt[-1])
+    apices = (first.integration.rt_apex_min, second.integration.rt_apex_min)
+    if not all(lower < apex < upper for apex in apices):
+        return False
+    traces = tuple(
+        tuple(zip(content.rt, content.intensity, strict=True))
+        for content in (first, second)
+    )
+    overlaps = tuple(
+        tuple(point for point in trace if lower <= point[0] <= upper)
+        for trace in traces
+    )
+    if len(overlaps[0]) < 5 or overlaps[0] != overlaps[1]:
+        return False
+    combined = dict((*traces[0], *traces[1]))
+    rt = sorted(combined)
+    prepared = prepare_physical_signal(rt, [combined[t] for t in rt])
+    universe = enumerate_physical_segment_universe(prepared)
+    selected = []
+    for apex in apices:
+        question = mint_physical_peak_question(
+            prepared.projection,
+            universe,
+            selection_subject_id="backfill-competition",
+            query_rt_min=apex,
+        )
+        if len(question.admissible_segment_ids) != 1:
+            return False
+        selected.append(question.admissible_segment_ids[0])
+    return selected[0] == selected[1]
 
 
 def _partition_transition(
