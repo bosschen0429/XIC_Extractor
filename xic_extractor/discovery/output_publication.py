@@ -5,6 +5,10 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
+    MassRecalibrationResult,
+)
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
@@ -53,6 +57,7 @@ _BATCH_INDEX_COLUMNS = (
     "medium_count",
     "low_count",
     *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    "mass_recalibration",
 )
 
 
@@ -77,6 +82,10 @@ def publish_discovery_batch_sample(
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
+    mass_recalibration_result: MassRecalibrationResult = (
+        VENDOR_MASS_RECALIBRATION_RESULT
+    ),
+    sample_output_dir: Path | None = None,
 ) -> PublishedDiscoverySample:
     """Publish one sample and bind all batch handoff facts to its persisted rows.
 
@@ -87,7 +96,9 @@ def publish_discovery_batch_sample(
 
     candidates = _persisted_discovery_candidates(candidates)
     outputs = _write_persisted_candidate_outputs(
-        output_dir / raw_path.stem,
+        sample_output_dir
+        if sample_output_dir is not None
+        else output_dir / raw_path.stem,
         candidates,
         timing_recorder=timing_recorder,
         sample_stem=raw_path.stem,
@@ -102,6 +113,7 @@ def publish_discovery_batch_sample(
         acquisition_source=acquisition_source,
         candidate_csv=outputs.candidates_csv,
         candidates=candidates,
+        mass_recalibration_result=mass_recalibration_result,
     )
     return PublishedDiscoverySample(
         outputs=outputs,

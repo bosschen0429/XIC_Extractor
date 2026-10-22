@@ -8,7 +8,7 @@ from pathlib import Path
 
 from xic_extractor.analysis_set import AnalysisSet
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.scientific_settings import SCIENTIFIC_SETTING_FIELDS
+from xic_extractor.configuration.scientific_settings import scientific_settings_payload
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -17,7 +17,11 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.configuration.targeted_strategy import strategy_receipt
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import (
+    DiscoveryCandidate,
+    DiscoverySettings,
+    discovery_settings_identity_fields,
+)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -139,9 +143,7 @@ def build_targeted_processing_request_identity(
     scientific_inputs = {
         "sample_metadata": [asdict(row) for row in resolved_inputs.sample_metadata],
         "strategy": strategy_receipt(),
-        "settings": {
-            field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
-        },
+        "settings": scientific_settings_payload(config),
         "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
         TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY: (
             targeted_real_data_candidate_universe_payload(
@@ -427,7 +429,7 @@ def targeted_real_data_discovery_settings_payload(
         )
     raw_payload = {
         "schema_version": TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION,
-        "settings": asdict(settings),
+        "settings": discovery_settings_identity_fields(settings),
     }
     try:
         normalized = json.loads(

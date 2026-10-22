@@ -34,7 +34,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
-    SCIENTIFIC_SETTING_FIELDS,
+    scientific_settings_payload,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -934,9 +934,7 @@ def _validate_request_bound_inputs(
         raise UntargetedPartitionError(
             "Discovery settings do not match the processing request"
         )
-    expected_peak_settings = {
-        field: getattr(job.peak_config, field) for field in SCIENTIFIC_SETTING_FIELDS
-    }
+    expected_peak_settings = scientific_settings_payload(job.peak_config)
     if request_inputs.get(PEAK_SETTINGS_INPUT_KEY) != expected_peak_settings:
         raise UntargetedPartitionError(
             "peak settings do not match the processing request"

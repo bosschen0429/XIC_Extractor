@@ -203,6 +203,7 @@ def _open_bound_raw(
             ),
             mass_range_trace_type="MassRange",
             ms2_order="Ms2",
+            ms1_order="Ms1",
         ),
     )
     return handle, vendor_raw
@@ -220,7 +221,10 @@ class _FakeThermoRaw:
     def __init__(self, source: _FakeRaw) -> None:
         self.source = source
         self.RunHeaderEx = SimpleNamespace(
-            StartTime=float(source.rt[0]), EndTime=float(source.rt[-1])
+            StartTime=float(source.rt[0]),
+            EndTime=float(source.rt[-1]),
+            FirstSpectrum=1,
+            LastSpectrum=len(source.rt),
         )
         self.disposed = False
         self.chromatogram_request_counts: list[int] = []
@@ -261,6 +265,10 @@ class _FakeThermoRaw:
                 ]
             ),
         )
+
+    def GetCentroidStream(self, scan_number: int, refresh: bool):
+        # This signal fixture has no background-reference centroids.
+        return SimpleNamespace(Masses=[], Intensities=[])
 
     def GetSimplifiedScan(self, scan_number: int):
         scan = self.scans[scan_number]

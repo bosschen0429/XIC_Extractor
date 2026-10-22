@@ -69,7 +69,7 @@ class _Vendor:
         )
 
 
-def _handle(vendor, policy="easy_ic_probe_v1"):
+def _handle(vendor, policy=MassRecalibration.EASY_IC_PROBE):
     thermo = SimpleNamespace(ms1_order="Ms1", ms2_order="Ms2")
     return RawFileHandle(vendor, thermo, policy)
 
@@ -98,7 +98,8 @@ def test_recalibrated_ms1_centroid_reads_return_true_masses():
     assert observations[1] is None
 
 
-def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1():
+@pytest.mark.parametrize("outcome", ("applied", "none", "unavailable", "not_needed"))
+def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(outcome):
     labels = (
         "LM Correction (ppm):",
         "Monoisotopic M/Z:",
@@ -130,22 +131,34 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1():
             Labels=list(labels), Values=values[scan]
         )
         vendor.ScanNumberFromRetentionTime = lambda rt: 2
-        handle = _handle(vendor)
+        if outcome == "unavailable":
+            vendor.RunHeaderEx.LastSpectrum = 3
+        elif outcome == "not_needed":
+            for masses, _ in vendor.centroids.values():
+                masses[-1] = 391.284286 * (1 + 2e-6)
+        handle = _handle(
+            vendor,
+            MassRecalibration.NONE
+            if outcome == "none"
+            else MassRecalibration.EASY_IC_PROBE,
+        )
         return next(iter(handle.iter_ms2_scan_subset(9.0, 11.0, frozenset({2})))).scan
 
     # A data-dependent pick records the parent reading in both header fields.
     scan = run(parent_reading)
-    assert scan.masses[0] == pytest.approx(true_product, abs=1e-6)
+    expected_product = true_product if outcome == "applied" else product_reading
+    expected_precursor = true_precursor if outcome == "applied" else parent_reading
+    assert scan.masses[0] == pytest.approx(expected_product, abs=1e-6)
     assert scan.precursor_metadata.monoisotopic_mz == pytest.approx(
-        true_precursor, abs=1e-4
+        expected_precursor, abs=1e-4
     )
-    assert scan.precursor_mz == pytest.approx(true_precursor, abs=1e-4)
+    assert scan.precursor_mz == pytest.approx(expected_precursor, abs=1e-4)
 
     # A targeted inclusion mass is a method value, not a parent measurement.
     scan = run(true_precursor)
     assert scan.precursor_mz == true_precursor
     assert scan.precursor_metadata.monoisotopic_mz == pytest.approx(
-        true_precursor, abs=1e-4
+        expected_precursor, abs=1e-4
     )
 
 

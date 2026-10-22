@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from xic_extractor.alignment.backfill.peak_fact_provenance import (
@@ -134,6 +135,17 @@ def run_untargeted_application(
         owner_backfill_peak_fact_provenance_row_count=len(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
         ),
+    )
+    # Source-bound Discovery receipts carry each RAW's fitted probe result.
+    # Publication renders these facts; it never rescans RAW or refits coefficients.
+    metadata["mass_recalibration_by_sample"] = json.dumps(
+        {
+            sample: asdict(receipt.mass_recalibration_result)
+            for sample, receipt in batch.candidate_receipts.items()
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
     )
     if not request.alignment_config.backfill_enabled:
         metadata["backfill_execution"] = "not_run"

@@ -22,6 +22,10 @@ from typing import (
 if TYPE_CHECKING:
     from xic_extractor.discovery.models import DiscoverySettings
 
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -655,6 +659,13 @@ def _method_content(
                 "blank_fold_change_threshold": _float_text(
                     settings.blank_fold_change_threshold
                 ),
+                # Absent means the vendor masses were used unchanged; this keeps
+                # every legacy vendor-mass method identity stable.
+                **(
+                    {"mass_recalibration": settings.mass_recalibration.value}
+                    if settings.mass_recalibration is not MassRecalibration.NONE
+                    else {}
+                ),
             },
         }
         return content
@@ -792,11 +803,25 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 
     settings_value = _mapping(content["settings"], label="Discovery settings")
+    recalibration_value = settings_value.get("mass_recalibration")
     _require_keys(
         settings_value,
-        _SETTINGS_KEYS,
+        _SETTINGS_KEYS
+        if recalibration_value is None
+        else (*_SETTINGS_KEYS, "mass_recalibration"),
         label="Discovery settings",
     )
+    mass_recalibration = (
+        MassRecalibration.NONE
+        if recalibration_value is None
+        else resolve_mass_recalibration(
+            _text(recalibration_value, field="mass_recalibration")
+        )
+    )
+    if recalibration_value is not None and (
+        mass_recalibration is MassRecalibration.NONE
+    ):
+        raise ValueError("mass_recalibration none is recorded by omission")
     profile_values = _list(
         settings_value["neutral_loss_profiles"], label="neutral_loss_profiles"
     )
@@ -945,6 +970,7 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
             settings_value["blank_fold_change_threshold"],
             field="blank_fold_change_threshold",
         ),
+        mass_recalibration=mass_recalibration,
     )
     return CidNlDiscoveryMethodSpec(
         settings=settings,
@@ -1018,6 +1044,8 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
             raise ValueError(f"{field} must be finite and positive")
     if not isinstance(settings.enable_blank_qualification, bool):
         raise TypeError("enable_blank_qualification must be a boolean")
+    if not isinstance(settings.mass_recalibration, MassRecalibration):
+        raise TypeError("mass_recalibration must be a MassRecalibration policy")
     if settings.blank_library_path is not None:
         if not isinstance(settings.blank_library_path, str):
             raise TypeError("blank_library_path must be text or None")

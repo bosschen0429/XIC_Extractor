@@ -25,6 +25,9 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     resolve_mass_recalibration,
 )
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibrationResult as MassRecalibrationResult,
+)
 from xic_extractor.injection_timeline import (
     InjectionHeader,
     PerturbationPolicy,
@@ -71,21 +74,6 @@ class RawReaderOpenError(RawReaderError):
         if not isinstance(cleanup_failed, bool):
             raise TypeError("cleanup_failed must be a bool")
         self.cleanup_failed = cleanup_failed
-
-
-@dataclass(frozen=True, slots=True)
-class MassRecalibrationResult:
-    """Per-file probe provenance; only applied results carry coefficients."""
-
-    outcome: str
-    reason: str | None = None
-    a: float | None = None
-    b: float | None = None
-    n_fit: int = 0
-    n_val: int = 0
-    val_raw_p95: float | None = None
-    val_corrected_p95: float | None = None
-    policy: MassRecalibration = MassRecalibration.NONE
 
 
 @dataclass(frozen=True)
@@ -191,7 +179,7 @@ class RawFileHandle:
         return self._mass_recalibration_result
 
     def _probe_mass_recalibration(self) -> MassRecalibrationResult:
-        """Frozen EASY-IC v1: fit siloxane, independently validate DIOP."""
+        """Frozen per-RAW EASY-IC probe: fit siloxane, independently validate DIOP."""
         raw = self._raw_file
         lm_values: list[float | None] = []
         fit: list[tuple[float | None, float]] = []

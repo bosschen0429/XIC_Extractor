@@ -94,11 +94,16 @@ def process_file(
     sample_name = raw_path.stem
     try:
         raw_context = (
-            open_raw(raw_path, config.dll_dir)
+            open_raw(
+                raw_path,
+                config.dll_dir,
+                mass_recalibration=config.mass_recalibration,
+            )
             if expected_acquisition_source is None
             else open_raw(
                 raw_path,
                 config.dll_dir,
+                mass_recalibration=config.mass_recalibration,
                 expected_acquisition_source=expected_acquisition_source.source,
                 _expected_path_identity=expected_acquisition_source.path_identity,
             )

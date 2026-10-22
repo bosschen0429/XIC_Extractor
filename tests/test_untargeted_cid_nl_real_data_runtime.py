@@ -2036,12 +2036,18 @@ def _install_runtime_raw(
     vendor_raw = _FakeThermoRaw(source_raw)
 
     def _open_runtime_raw(
-        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+        path,
+        dll_dir,
+        *,
+        mass_recalibration="none",
+        expected_acquisition_source,
+        _expected_path_identity=None,
     ):
         assert path == raw_path
         return open_raw(
             path,
             dll_dir,
+            mass_recalibration=mass_recalibration,
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
@@ -2057,6 +2063,7 @@ def _install_runtime_raw(
                 ),
                 mass_range_trace_type="MassRange",
                 ms2_order="Ms2",
+                ms1_order="Ms1",
             ),
         )
 
@@ -2086,13 +2093,19 @@ def _install_runtime_raws(
     opened: dict[Path, list[_FakeThermoRaw]] = {}
 
     def _open_runtime_raw(
-        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+        path,
+        dll_dir,
+        *,
+        mass_recalibration="none",
+        expected_acquisition_source,
+        _expected_path_identity=None,
     ):
         vendor_raw = _FakeThermoRaw(sources_by_path[path])
         opened.setdefault(path, []).append(vendor_raw)
         return open_raw(
             path,
             dll_dir,
+            mass_recalibration=mass_recalibration,
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
@@ -2108,6 +2121,7 @@ def _install_runtime_raws(
                 ),
                 mass_range_trace_type="MassRange",
                 ms2_order="Ms2",
+                ms1_order="Ms1",
             ),
         )
 
@@ -2261,3 +2275,25 @@ def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_pa
     assert repaired[0].scan.precursor_metadata == cold[0].scan.precursor_metadata
     acquire()
     assert len(reads) == 2
+
+
+def test_acquisition_cache_rejects_mismatched_handle_mass_policy(tmp_path):
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.untargeted_execution.acquisition_cache import (
+        UntargetedAcquisitionCacheError,
+    )
+
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path, sample_stems=("S1",), peak_config=_peak_config(tmp_path)
+    )
+    handle, vendor = _open_bound_raw(fixture, "S1", _FakeRaw((8.0,)), tmp_path=tmp_path)
+    try:
+        with pytest.raises(UntargetedAcquisitionCacheError, match="mass recalibration"):
+            CachedUntargetedRaw(
+                handle,
+                source=_source_for(fixture, "S1"),
+                cache_dir=tmp_path / "cache",
+                mass_recalibration=MassRecalibration.EASY_IC_PROBE,
+            )
+    finally:
+        handle.__exit__()

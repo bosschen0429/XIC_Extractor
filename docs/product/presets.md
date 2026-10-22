@@ -38,6 +38,29 @@ surfaces. Presets are not product authority by themselves.
   must not turn that label into a separate primitive strategy or ProductWriter
   authority.
 
+## RAW Mass Recalibration
+
+CID-NL Discovery presets default to the per-RAW EASY-IC probe when
+`[discovery].mass_recalibration` is absent. `DiscoverySettings` and
+`ExtractionConfig` use this same new-execution default. The RAW adapter probes
+each file independently and corrects masses only after independent validation;
+unavailable or unnecessary corrections preserve the vendor read paths.
+Downstream algorithms receive masses, not a second correction policy.
+
+To restore vendor masses, set `mass_recalibration = "none"` in `[discovery]`.
+Preset export preserves explicit `none`; it omits the default probe value.
+Persisted method/request identities have a different compatibility rule: an
+absent mass policy means legacy `none`, and explicit `none` is non-canonical.
+Probe executions intentionally have a different scientific identity.
+
+Discovery sample receipts carry each RAW's probe result in the optional
+`mass_recalibration` column of `discovery_batch_index.csv` (including standalone
+Discovery). Alignment copies these source-bound results into
+`mass_recalibration_by_sample` in its run metadata. This audit provenance does
+not select values or grant writer authority. Cache namespaces separate probe
+facts from vendor facts. Direct `open_raw` callers still default to `none`;
+Delta Mass, QC, diagnostic, and blank-library acquisition are unchanged.
+
 ## Delta Mass Parameters
 
 Delta Mass TOMLs specify `discovery.positions` (label, delta, height-ratio bounds),

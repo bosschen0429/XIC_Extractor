@@ -205,16 +205,22 @@ def _open_job_raw(
         )
     )
 
+    mass_recalibration = job.settings.mass_recalibration
+
     def open_native():
         if expectation is not None:
             return active_open(
                 job.raw_path,
                 job.dll_dir,
+                mass_recalibration=mass_recalibration,
                 expected_acquisition_source=source,
                 _expected_path_identity=expectation.path_identity,
             )
         return active_open(
-            job.raw_path, job.dll_dir, expected_acquisition_source=source
+            job.raw_path,
+            job.dll_dir,
+            mass_recalibration=mass_recalibration,
+            expected_acquisition_source=source,
         )
 
     if expectation is not None and job.acquisition_cache_dir is not None:
@@ -222,7 +228,10 @@ def _open_job_raw(
         # that this path has that exact identity before returning any facts.
         bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
         return CachedUntargetedRaw(
-            open_native, source=source, cache_dir=job.acquisition_cache_dir
+            open_native,
+            source=source,
+            cache_dir=job.acquisition_cache_dir,
+            mass_recalibration=mass_recalibration,
         )
     raw = open_native()
     return bind_untargeted_acquisition_cache(

@@ -52,6 +52,7 @@ DISCOVERY_TUNING_OVERRIDE_KEYS = frozenset(
         "rt_min",
         "rt_max",
         "resolver_mode",
+        "mass_recalibration",
     }
 )
 

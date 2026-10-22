@@ -136,7 +136,7 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
             outside = outside_height * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + inside + outside
 
-    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     target = replace(_target("Inside", neutral_loss_da=None), rt_min=4.5, rt_max=5.5)
     output = _run(config, [target])
     result = output.file_results[0].results["Inside"]
@@ -169,7 +169,7 @@ def test_peak_only_outside_selection_still_answers_physical_question(
             outside = 5000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + outside
 
-    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     target = replace(_target("Empty", neutral_loss_da=None), rt_min=4.5, rt_max=5.5)
     output = _run(config, [target])
     result = output.file_results[0].results["Empty"]
@@ -214,7 +214,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
             fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
             return rt, raw + fragmented
 
-    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     output = _run(config, [target])
     result = output.file_results[0].results[target.label]
     evaluation = result.physical_evaluation
@@ -1009,7 +1009,7 @@ def test_unpaired_isomers_use_expected_rt_to_select_their_own_supported_peak(
                 )
                 yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
 
-    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     output = _run(config, targets)
     results = output.file_results[0].results
 
@@ -1398,7 +1398,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
             ),
         )
 
-    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: raw)
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
@@ -1855,7 +1855,7 @@ def _open_raw_factory(
     error_by_name = errors or {}
     sample_centers = peak_centers_by_sample or {}
 
-    def _fake_open_raw(path: Path, dll_dir: Path):
+    def _fake_open_raw(path: Path, dll_dir: Path, **_options):
         if path.name in error_by_name:
             raise error_by_name[path.name]
         centers = sample_centers.get(path.name, peak_centers)

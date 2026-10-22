@@ -75,7 +75,10 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
     )
     assert apply_to_discovery(reloaded) == expected
     parsed = tomllib.loads(destination.read_text(encoding="utf-8"))
-    assert set(parsed["discovery"]) == set(DISCOVERY_TUNING_OVERRIDE_KEYS) - {"rt_min"}
+    assert set(parsed["discovery"]) == set(DISCOVERY_TUNING_OVERRIDE_KEYS) - {
+        "rt_min",
+        "mass_recalibration",
+    }
     assert parsed["alignment"]["owner_build_xic_backend"] == "raw"
 
 
