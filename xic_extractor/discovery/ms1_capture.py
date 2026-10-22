@@ -46,6 +46,12 @@ from xic_extractor.discovery.priority import (
 )
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlComposition,
+    CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
+    group_cid_nl_physical_subject_units,
+)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     mint_physical_peak_question,
 )
@@ -252,6 +258,16 @@ def capture_ms1_candidates(
     merge_result = _verify_precursor_evidence(
         raw, merge_result, candidate_plans, candidates, settings=settings
     )
+    closed = _close_duplicate_physical_views(
+        raw,
+        merge_result,
+        tuple(physical_fact_by_index[index] for index in physical_indices),
+        settings=settings,
+    )
+    if len(closed.candidates) < len(merge_result.candidates):
+        merge_result = _verify_precursor_evidence(
+            raw, closed, candidate_plans, candidates, settings=settings
+        )
     doubly_charged_by_source = tuple(
         apex_readings.get(index, (None, False))[1] for index in physical_indices
     )
@@ -315,6 +331,122 @@ def _selection_subject_id(group: DiscoverySeedGroup) -> str:
         best_ms2_scan_id=select_representative_seed(group.seeds).scan_number,
         precursor_mz=group.precursor_mz,
         product_mz=group.product_mz,
+    )
+
+
+def _close_duplicate_physical_views(
+    raw: BatchXICAdapter,
+    merged: candidate_merge.DiscoveryCandidateMergeResult,
+    records: Sequence[DiscoveryPhysicalFactRecord],
+    *,
+    settings: DiscoverySettings,
+) -> candidate_merge.DiscoveryCandidateMergeResult:
+    """Acquire bounded ion evidence for representatives left by greedy merging.
+
+    A later member can move a group's representative into another retained
+    group's peak. Only same-apex, overlapping windows need this reconciliation;
+    centroid acquisition stays here, while the physical owner decides identity.
+    """
+    read_windows = getattr(raw, "read_ms1_mass_windows", None)
+    if not callable(read_windows):
+        return merged
+    proofs: dict[str, CidNlPhysicalProof] = {}
+    buckets: dict[float, list[tuple[float, float, str]]] = {}
+    for candidate, binding in zip(merged.candidates, merged.bindings, strict=True):
+        record = records[binding.representative_source_ordinal]
+        peak = record.evaluation.facts
+        if peak is None:
+            continue
+        work = record.work_item
+        proof = CidNlPhysicalProof(
+            acquisition_source_id=work.acquisition_source_id,
+            apex_rt_min=peak.apex_rt_min,
+            left_rt_min=peak.left_rt_min,
+            right_rt_min=peak.right_rt_min,
+            xic_mz=work.xic_mz,
+            xic_ppm_tol=work.xic_ppm_tol,
+            rt=record.acquired_trace.trace.rt,
+            raw=record.acquired_trace.trace.intensity,
+        )
+        proofs[candidate.candidate_id] = proof
+        radius = proof.xic_mz * proof.xic_ppm_tol * 1e-6
+        buckets.setdefault(proof.apex_rt_min, []).append(
+            (proof.xic_mz - radius, proof.xic_mz + radius, candidate.candidate_id)
+        )
+    eligible: set[str] = set()
+    for intervals in buckets.values():
+        upper = float("-inf")
+        previous = ""
+        for low, high, candidate_id in sorted(intervals):
+            if low <= upper:
+                eligible.update((previous, candidate_id))
+            if high > upper:
+                upper, previous = high, candidate_id
+    windows_by_id: dict[str, tuple[tuple[int, float, float], ...]] = {}
+    for candidate_id in sorted(eligible):
+        proof = proofs[candidate_id]
+        rt = np.asarray(proof.rt)
+        apex = int(np.searchsorted(rt, proof.apex_rt_min))
+        if not 0 < apex < len(rt) - 1:
+            continue
+        if not (
+            proof.left_rt_min <= rt[apex - 1] and rt[apex + 1] <= proof.right_rt_min
+        ):
+            continue
+        radius = proof.xic_mz * proof.xic_ppm_tol * 1e-6
+        windows_by_id[candidate_id] = tuple(
+            (
+                raw.scan_window_for_request(
+                    XICRequest(
+                        proof.xic_mz, float(point), float(point), proof.xic_ppm_tol
+                    )
+                )[0],
+                proof.xic_mz - radius,
+                proof.xic_mz + radius,
+            )
+            for point in rt[apex - 1 : apex + 2]
+        )
+    requests = tuple(
+        dict.fromkeys(
+            window for windows in windows_by_id.values() for window in windows
+        )
+    )
+    if not requests:
+        return merged
+    observations = dict(zip(requests, read_windows(requests), strict=True))
+    acquired_proofs = {}
+    for candidate_id, windows in windows_by_id.items():
+        scans = tuple(observations[window] for window in windows)
+        if all(scan is not None for scan in scans):
+            acquired_proofs[candidate_id] = replace(
+                proofs[candidate_id], apex_centroids=scans
+            )
+    composition = (
+        CidNlComposition(
+            tags=tuple(
+                (p.tag, p.neutral_loss_da) for p in settings.neutral_loss_profiles
+            ),
+            combine_mode=settings.tag_combine_mode,
+        )
+        if len(settings.neutral_loss_profiles) > 1
+        and settings.tag_combine_mode != "single"
+        else None
+    )
+    units = group_cid_nl_physical_subject_units(
+        tuple(
+            CidNlPhysicalCandidateFact(
+                candidate.candidate_id,
+                candidate.physical_mz,
+                candidate.configured_neutral_loss_da,
+                acquired_proofs.get(candidate.candidate_id),
+            )
+            for candidate in merged.candidates
+        ),
+        composition=composition,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+    )
+    return candidate_merge.close_physical_candidate_units(
+        merged, units, settings=settings
     )
 
 

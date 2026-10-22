@@ -216,6 +216,56 @@ def same_apex_representative_alternatives(
         yield rebuilt, replace(binding, representative_source_ordinal=ordinal)
 
 
+def close_physical_candidate_units(
+    merged: DiscoveryCandidateMergeResult,
+    units: tuple[tuple[float | None, tuple[str, ...]], ...],
+    *,
+    settings: DiscoverySettings,
+) -> DiscoveryCandidateMergeResult:
+    """Close proven duplicate views, retaining one area and all source lineage."""
+    by_id = {
+        candidate.candidate_id: (candidate, binding)
+        for candidate, binding in zip(merged.candidates, merged.bindings, strict=True)
+    }
+    closed: list[tuple[DiscoveryCandidate, DiscoveryCandidateMergeBinding]] = []
+    for _, ids in units:
+        members = [by_id[candidate_id] for candidate_id in ids]
+        representative, representative_binding = min(
+            members, key=lambda item: _representative_rank(item[0], settings=settings)
+        )
+        candidate = representative
+        for other, _ in members:
+            if other is not representative:
+                candidate = _merge_candidate_pair(
+                    candidate, other, settings=settings, representative=representative
+                )
+        ordinals = tuple(
+            sorted(
+                ordinal
+                for _, binding in members
+                for ordinal in binding.member_source_ordinals
+            )
+        )
+        closed.append(
+            (
+                candidate,
+                DiscoveryCandidateMergeBinding(
+                    final_ordinal=min(binding.final_ordinal for _, binding in members),
+                    representative_source_ordinal=representative_binding.representative_source_ordinal,
+                    member_source_ordinals=ordinals,
+                ),
+            )
+        )
+    closed.sort(key=lambda item: item[1].final_ordinal)
+    return DiscoveryCandidateMergeResult(
+        candidates=tuple(candidate for candidate, _ in closed),
+        bindings=tuple(
+            replace(binding, final_ordinal=index)
+            for index, (_, binding) in enumerate(closed)
+        ),
+    )
+
+
 def _matching_ms1_peak_candidate(
     candidate: DiscoveryCandidate,
     merged: list[DiscoveryCandidate],
