@@ -125,8 +125,7 @@ def _record(
 def _acquired_trace(acquisition_input, *, terminal: str, ordinal: int) -> AcquiredTrace:
     if terminal == "available":
         rt = np.linspace(0.0, 3.0, 31)
-        raw = np.full(31, 10.0)
-        raw[7:10] += [30.0, 100.0, 30.0]
+        raw = 10.0 + 100.0 * np.exp(-0.5 * ((rt - 0.8) / 0.2) ** 2)
         request_rt = (0.0, 3.0)
     elif terminal == "unavailable":
         rt = np.asarray([1.0])

@@ -645,6 +645,9 @@ def mint_captured_peak_observation(
             generation_provenance=provenance,
             source_trace=capture.trace,
             physical_evaluation=capture.physical_evaluation,
+            signal_processing_profile=(
+                capture.scope.method_constraints.signal_processing_profile
+            ),
             capture_stage=(
                 "reacquired_capture"
                 if require_capture_binding(

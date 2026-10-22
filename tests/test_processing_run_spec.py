@@ -489,16 +489,23 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
     assert spec.discovery_method.settings == settings
 
 
-def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) -> None:
-    spec = _compile_paths(_raws(tmp_path))
+def test_signal_profile_changes_run_identity_not_discovery_method(
+    tmp_path: Path,
+) -> None:
+    raws = _raws(tmp_path)
+    spec = _compile_paths(raws)
+    wider = compile_discovery_processing_run_spec(
+        raws,
+        discovery_settings=_settings(),
+        signal_processing_profile=SignalProcessingProfile(window_points=21),
+    )
 
     assert spec.discovery_method.settings.ms2_precursor_tol_da == 0.8
     assert spec.discovery_method.method_hash == (
         "bf4ead9a642a24b163ec108c9ca1005ef58339855af2af09ca0b853b5e8f26f0"
     )
-    assert spec.run_spec_hash == (
-        "6206b6b886b64d985881f97189b8b46bcc2a9ed596cb38c59c7b63ccd365c038"
-    )
+    assert spec.discovery_method == wider.discovery_method
+    assert spec.run_spec_id != wider.run_spec_id
 
 
 @pytest.mark.parametrize("enabled", [False, True])

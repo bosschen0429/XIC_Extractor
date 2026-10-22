@@ -742,7 +742,12 @@ def test_alignment_off_runs_actual_sample_local_batch_without_matrix(
         (candidate,) = read_discovery_candidates_csv(path)
         expected_height = {"A": 1000.0, "B": 2300.0}[candidate.sample_stem]
         assert candidate.ms1_area == pytest.approx(
-            expected_height * 0.1 * math.sqrt(2.0 * math.pi) * 60.0, rel=0.01
+            expected_height
+            * 0.1
+            * math.sqrt(2.0 * math.pi)
+            * 60.0
+            * math.erf(math.sqrt(math.log(10))),
+            rel=0.01,
         )
         assert candidate.matched_tag_names == ("DNA_dR",)
     assert len(list(output.rglob("discovery_candidates.csv"))) == 2

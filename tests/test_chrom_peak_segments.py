@@ -167,7 +167,7 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
     assert central.interval.rt_end_min == pytest.approx(2.26)
 
 
-def test_overlapping_lobes_preserve_partitioned_mass_and_weak_isolated_peak() -> None:
+def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
     rt = np.linspace(0.0, 12.0, 3601)
     signal = (
         10000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.6) ** 2)
@@ -186,17 +186,16 @@ def test_overlapping_lobes_preserve_partitioned_mass_and_weak_isolated_peak() ->
         acquired_intensity_values=signal,
     )
 
-    assert len(result.segments) == 3
-    left, right, isolated = result.segments
-    assert all("shoulder_overlap" in s.evidence_sources for s in (left, right))
-    assert [left.apex_rt_min, right.apex_rt_min] == pytest.approx([3.0, 4.8], abs=0.08)
-    assert left.interval.rt_start_min < 3.0 - 1.2
-    assert right.interval.rt_end_min > 4.8 + 1.2
-    assert left.interval.rt_end_min == right.interval.rt_start_min
-    # Valley partitioning preserves the observed sum. Neither portion is
-    # claimed to be a deconvolved, compound-specific Gaussian area.
+    assert len(result.segments) == 2
+    envelope, isolated = result.segments
+    assert "shoulder_overlap" in envelope.evidence_sources
+    assert envelope.apex_rt_min == pytest.approx(3.0, abs=0.08)
+    assert envelope.interval.rt_start_min < 3.0 - 1.2
+    assert envelope.interval.rt_end_min > 4.8 + 1.2
+    # The unresolved envelope preserves the observed sum, not two claimed
+    # deconvolved, compound-specific Gaussian areas.
     known_overlap_area = (10000.0 + 8000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
-    assert left.area_baseline_corrected + right.area_baseline_corrected == (
+    assert envelope.area_baseline_corrected == (
         pytest.approx(known_overlap_area, rel=0.01)
     )
     assert isolated.apex_rt_min == pytest.approx(9.0, abs=0.04)
@@ -204,7 +203,7 @@ def test_overlapping_lobes_preserve_partitioned_mass_and_weak_isolated_peak() ->
 
 
 @pytest.mark.parametrize("reverse", (False, True))
-def test_remote_small_pulses_preserve_supported_overlapping_doublet(
+def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
     reverse: bool,
 ) -> None:
     from xic_extractor.peak_detection.ms1_morphology import (
@@ -236,16 +235,15 @@ def test_remote_small_pulses_preserve_supported_overlapping_doublet(
         acquired_intensity_values=signal,
     )
 
-    # Remote pulses cannot erase either supported lobe or the persistent
-    # valley between them. Overlap remains review evidence on both portions.
+    # A persistent but shallow valley does not establish independent peaks.
+    # Remote pulses cannot change that relation or erase overlap review.
     principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
-    assert len(principal) == 2
+    assert len(principal) == 1
     assert all("shoulder_overlap" in s.evidence_sources for s in principal)
     centers = (6.9, 8.5) if reverse else (7.5, 9.1)
-    assert [s.apex_rt_min for s in principal] == pytest.approx(centers, abs=0.12)
+    assert principal[0].apex_rt_min == pytest.approx(6.9 if reverse else 9.1, abs=0.12)
     assert principal[0].interval.rt_start_min < min(centers) - 1.2
     assert principal[-1].interval.rt_end_min > max(centers) + 1.2
-    assert principal[0].interval.rt_end_min == principal[1].interval.rt_start_min
     known_area = (10000.0 + 14000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
     assert sum(s.area_baseline_corrected for s in principal) == pytest.approx(
         known_area, rel=0.01
@@ -331,8 +329,11 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
     assert left.right_rt_min <= right.left_rt_min
     assert [left.apex_rt_min, right.apex_rt_min] == pytest.approx([0.94, 1.06])
     analytic_area = 1000.0 * sigma * np.sqrt(2.0 * np.pi) * 60.0
-    assert [left.area_counts_seconds, right.area_counts_seconds] == pytest.approx(
-        [analytic_area, analytic_area], rel=0.01
+    # A 10%-height return retains about 96.8% of an isolated Gaussian mass;
+    # sampled bracketing and the shared valley can retain a little more.
+    assert all(
+        0.96 * analytic_area < segment.area_counts_seconds < 1.01 * analytic_area
+        for segment in (left, right)
     )
 
     evaluations = tuple(

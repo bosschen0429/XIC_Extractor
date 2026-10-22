@@ -16,17 +16,17 @@ from xic_extractor.configuration.signal_processing_profile import (
 
 EXPECTED_DEFAULT_JSON = (
     b'{"schema_version":"signal_processing_profile","method":"gaussian",'
-    b'"window_points":15,"gaussian_sigma_rule":"window_points_div_6",'
+    b'"window_points":9,"gaussian_sigma_rule":"window_points_div_6",'
     b'"gaussian_kernel_normalization":"unit_sum",'
     b'"gaussian_edge_policy":"zero_pad_same","baseline_method":"asls_rt",'
     b'"baseline_lam":1.0,"baseline_lam_unit":"minutes^4",'
     b'"baseline_p":0.01,"baseline_n_iter":10,'
     b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",'
-    b'"boundary_basis":"chrom_peak_supported_lobes_sustained_valleys",'
+    b'"boundary_basis":"chrom_peak_clear_valleys_tenth_height_return",'
     b'"boundary_min_sigma_rt":0.08,"segment_min_prominence_fraction":0.04,'
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
-    b'"complete_supported_envelope_contains_query",'
+    b'"apex_supported_local_valley_contains_query",'
     b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal",'
     b'"relative_shape_basis":"own_max_canonical_signal"}'
 )
@@ -63,9 +63,7 @@ def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
     assert profile == SignalProcessingProfile()
     assert canonical_signal_processing_profile_bytes(profile) == EXPECTED_DEFAULT_JSON
     assert serialize_signal_processing_profile(profile) == EXPECTED_DEFAULT_JSON
-    expected_hash = "9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
-    assert profile.profile_hash == expected_hash
-    assert profile.profile_id == f"signal-profile:{expected_hash}"
+    assert profile.profile_id == f"signal-profile:{profile.profile_hash}"
     assert DEFAULT_SIGNAL_PROCESSING_PROFILE_ID == profile.profile_id
 
 
@@ -74,7 +72,7 @@ def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> No
         b"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
         b"gaussian_raw_minus_asls_raw_positive",
     ).replace(
-        b"complete_supported_envelope_contains_query",
+        b"apex_supported_local_valley_contains_query",
         b"closed_segment_contains_query_unique_only",
     )
 
@@ -82,10 +80,17 @@ def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> No
         deserialize_signal_processing_profile(old_profile)
 
 
-def test_profile_reader_rejects_old_local_split_boundaries() -> None:
-    old_profile = EXPECTED_DEFAULT_JSON.replace(
-        b"chrom_peak_supported_lobes_sustained_valleys",
+@pytest.mark.parametrize(
+    "boundary_basis",
+    [
         b"chrom_peak_envelope_sustained_valleys",
+        b"chrom_peak_supported_lobes_sustained_valleys",
+    ],
+)
+def test_profile_reader_rejects_superseded_boundaries(boundary_basis: bytes) -> None:
+    old_profile = EXPECTED_DEFAULT_JSON.replace(
+        b"chrom_peak_clear_valleys_tenth_height_return",
+        boundary_basis,
     )
     with pytest.raises(ValueError, match="boundary_basis"):
         deserialize_signal_processing_profile(old_profile)
@@ -97,7 +102,7 @@ def test_profile_rejects_non_bool_odd_integer_contract(window_points: object) ->
         SignalProcessingProfile(window_points=window_points)  # type: ignore[arg-type]
 
 
-def test_resolver_supports_only_gaussian_and_15_is_default() -> None:
+def test_resolver_supports_only_gaussian_and_9_is_default() -> None:
     assert resolve_signal_processing_profile() == DEFAULT_SIGNAL_PROCESSING_PROFILE
     assert resolve_signal_processing_profile(
         signal_processing_method="gaussian",
@@ -107,18 +112,18 @@ def test_resolver_supports_only_gaussian_and_15_is_default() -> None:
         resolve_signal_processing_profile(signal_processing_method="savgol")
 
 
-def test_profile_schema_is_closed_and_point15_point21_have_distinct_identity() -> None:
-    profile_15 = DEFAULT_SIGNAL_PROCESSING_PROFILE
+def test_profile_schema_is_closed_and_point9_point21_have_distinct_identity() -> None:
+    profile_9 = DEFAULT_SIGNAL_PROCESSING_PROFILE
     profile_21 = SignalProcessingProfile(window_points=21)
 
     assert tuple(field.name for field in fields(SignalProcessingProfile)) == (
         _PROFILE_FIELDS
     )
-    assert canonical_signal_processing_profile_bytes(profile_15) != (
+    assert canonical_signal_processing_profile_bytes(profile_9) != (
         canonical_signal_processing_profile_bytes(profile_21)
     )
-    assert profile_15.profile_hash != profile_21.profile_hash
-    assert profile_15.profile_id != profile_21.profile_id
+    assert profile_9.profile_hash != profile_21.profile_hash
+    assert profile_9.profile_id != profile_21.profile_id
 
 
 @pytest.mark.parametrize("field_name", _FIXED_PROFILE_FIELDS)

@@ -108,12 +108,12 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 peak=PeakResult(3.0, 90.0, 75.0, 1200.0, 2.0, 4.0),
                 selection_apex_rt=3.0,
                 selection_apex_intensity=75.0,
-                selection_apex_index=4,
+                selection_apex_index=7,
                 raw_apex_rt=3.0,
                 raw_apex_intensity=90.0,
-                raw_apex_index=4,
+                raw_apex_index=7,
                 prominence=65.0,
-                region_scan_count=3,
+                region_scan_count=5,
                 region_duration_min=2.0,
                 region_edge_ratio=3.0 / 65.0,
                 region_trace_continuity=1.0,
@@ -124,12 +124,12 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 peak=PeakResult(1.0, 60.0, 45.0, 600.0, 0.0, 2.0),
                 selection_apex_rt=1.0,
                 selection_apex_intensity=45.0,
-                selection_apex_index=2,
+                selection_apex_index=3,
                 raw_apex_rt=1.0,
                 raw_apex_intensity=60.0,
-                raw_apex_index=2,
+                raw_apex_index=3,
                 prominence=35.0,
-                region_scan_count=3,
+                region_scan_count=5,
                 region_duration_min=2.0,
                 region_edge_ratio=3.0 / 35.0,
                 region_trace_continuity=1.0,
@@ -137,7 +137,7 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 physical_segment=universe.segments[1],
             ),
         ),
-        n_points=7,
+        n_points=11,
         max_smoothed=75.0,
         n_prominent_peaks=2,
     )
@@ -166,7 +166,7 @@ def test_physical_candidate_projection_preserves_unavailable_status(
 
     result = physical_candidates_result(prepared, universe)
 
-    assert result == PeakCandidatesResult(status, (), 7, None, 0)
+    assert result == PeakCandidatesResult(status, (), 11, None, 0)
 
 
 def test_physical_candidate_projection_preserves_empty_universe(
@@ -176,7 +176,7 @@ def test_physical_candidate_projection_preserves_empty_universe(
 
     result = physical_candidates_result(prepared, replace(universe, segments=()))
 
-    assert result == PeakCandidatesResult("PEAK_NOT_FOUND", (), 7, 75.0, 0)
+    assert result == PeakCandidatesResult("PEAK_NOT_FOUND", (), 11, 75.0, 0)
 
 
 @pytest.mark.parametrize("missing", [True, False])
@@ -256,31 +256,31 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         trace_content_id="trace:test",
         profile_id=profile.profile_id,
         prepared_signal_id="prepared:test",
-        trace_point_count=7,
+        trace_point_count=11,
         state="available",
         reason="available",
     )
-    # Both test segments have acquired flanks outside their intervals.
+    # Both segments have acquired flanks and multiple supported core samples.
     prepared = PreparedSignal(
         projection=projection,
         profile=profile,
-        rt=(-1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0),
-        raw=(10.0, 11.0, 60.0, 21.0, 90.0, 14.0, 10.0),
-        baseline=(10.0,) * 7,
-        smoothed=(10.0, 12.0, 45.0, 13.0, 75.0, 11.0, 10.0),
-        positive_signal=(0.0, 2.0, 35.0, 3.0, 65.0, 1.0, 0.0),
+        rt=(-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0),
+        raw=(10.0, 11.0, 45.0, 60.0, 45.0, 21.0, 60.0, 90.0, 60.0, 14.0, 10.0),
+        baseline=(10.0,) * 11,
+        smoothed=(10.0, 12.0, 35.0, 45.0, 35.0, 13.0, 55.0, 75.0, 55.0, 11.0, 10.0),
+        positive_signal=(0.0, 2.0, 25.0, 35.0, 25.0, 3.0, 45.0, 65.0, 45.0, 1.0, 0.0),
     )
     segments = (
         PhysicalSegment(
             physical_segment_id="segment:later",
-            start_index=3,
-            end_index=6,
-            apex_index=4,
+            start_index=5,
+            end_index=10,
+            apex_index=7,
             left_rt_min=2.0,
             right_rt_min=4.0,
             apex_rt_min=3.0,
             height=65.0,
-            scan_support_count=3,
+            scan_support_count=5,
             area_counts_seconds=1200.0,
             segment_class="isolated_peak",
             boundary_stop_reason="baseline_return",
@@ -289,13 +289,13 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         PhysicalSegment(
             physical_segment_id="segment:earlier",
             start_index=1,
-            end_index=4,
-            apex_index=2,
+            end_index=6,
+            apex_index=3,
             left_rt_min=0.0,
             right_rt_min=2.0,
             apex_rt_min=1.0,
             height=35.0,
-            scan_support_count=3,
+            scan_support_count=5,
             area_counts_seconds=600.0,
             segment_class="low_scan_segment",
             boundary_stop_reason="baseline_return",

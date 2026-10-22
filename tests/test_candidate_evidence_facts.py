@@ -168,7 +168,9 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     canonical_signal = np.maximum(
         gaussian15_morphology_trace(raw) - canonical_baseline, 0.0
     )
-    prepared_result = prepare_physical_signal(rt, raw)
+    prepared_result = prepare_physical_signal(
+        rt, raw, profile=SignalProcessingProfile(window_points=15)
+    )
     assert prepared_result.prepared is not None
     np.testing.assert_allclose(
         prepared_result.prepared.baseline,
@@ -233,9 +235,11 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
 def test_physical_question_containment_is_closed_complete_and_owner_derived() -> None:
     profile = SignalProcessingProfile(window_points=3)
     rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    raw[21:24] += [25.0, 80.0, 25.0]
+    raw = (
+        10.0
+        + 100.0 * np.exp(-0.5 * ((rt - 0.8) / 0.2) ** 2)
+        + 80.0 * np.exp(-0.5 * ((rt - 2.2) / 0.2) ** 2)
+    )
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     universe = enumerate_physical_segment_universe(prepared)
     assert len(universe.segment_ids) == 2
@@ -259,12 +263,13 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
     )
     assert answer_physical_peak_question(prepared, universe, one).state == "available"
 
-    overlap_rt = np.linspace(0.0, 3.0, 15)
-    overlap_raw = np.zeros(15)
-    overlap_raw[6] = 100.0
-    # The two Gaussian3 supports return to a shared observed valley. A
-    # shallower unresolved shoulder is one envelope, not two memberships.
-    overlap_raw[10] = 60.0
+    overlap_rt = np.linspace(0.0, 3.0, 301)
+    # The analytical valley is about 27% of either apex: clear enough to split,
+    # but above the 10% return, so both closed intervals share that valley.
+    overlap_raw = sum(
+        100.0 * np.exp(-0.5 * ((overlap_rt - center) / 0.2) ** 2)
+        for center in (1.0, 1.8)
+    )
     overlap_prepared = prepare_physical_signal(
         overlap_rt,
         overlap_raw,
@@ -324,9 +329,11 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
 
 def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    raw[21:24] += [25.0, 80.0, 25.0]
+    raw = (
+        10.0
+        + 100.0 * np.exp(-0.5 * ((rt - 0.8) / 0.2) ** 2)
+        + 80.0 * np.exp(-0.5 * ((rt - 2.2) / 0.2) ** 2)
+    )
     profile = SignalProcessingProfile(window_points=3)
     trace_id = mint_physical_trace_content_id(rt, raw)
     prepared = prepare_physical_signal(
@@ -400,9 +407,11 @@ def test_physical_trace_identity_normalizes_negative_zero() -> None:
 
 def test_physical_owner_excludes_noncontaining_segments_from_admissibility() -> None:
     rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    raw[21:24] += [25.0, 80.0, 25.0]
+    raw = (
+        10.0
+        + 100.0 * np.exp(-0.5 * ((rt - 0.8) / 0.2) ** 2)
+        + 80.0 * np.exp(-0.5 * ((rt - 2.2) / 0.2) ** 2)
+    )
     prepared = prepare_physical_signal(
         rt,
         raw,

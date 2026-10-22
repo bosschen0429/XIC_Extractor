@@ -56,7 +56,7 @@ def test_load_config_snapshot_freezes_intent_hashes_and_fixed_strategy(tmp_path)
     config, targets = load_config_snapshot(tmp_path / "config")
     assert config.output_csv == tmp_path / "output" / "xic_results.csv"
     assert config.signal_processing_method == "gaussian"
-    assert config.signal_processing_window_points == 15
+    assert config.signal_processing_window_points == 9
     assert config.config_hash == compute_config_hash(
         tmp_path / "config/targets.csv", tmp_path / "config/settings.csv"
     )

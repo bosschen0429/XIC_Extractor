@@ -1657,7 +1657,7 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     [
         ("S1", 7.8, 7.8, 0.035, None),
         ("S2", 8.5, 8.5, 0.035, None),
-        ("S1", 7.55, 7.8, 0.1, 12.0),
+        ("S1", 7.55, 7.8, 0.15, 12.0),
     ],
     ids=["first-sample", "second-sample", "query-containing-peak"],
 )
@@ -1772,6 +1772,9 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
         assert evaluation.facts.apex_rt_min > 7.75
         assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
+        receipt = assessment.content.evaluation_receipt
+        assert receipt.query_rt_min <= evaluation.facts.left_rt_min
+        assert evaluation.facts.right_rt_min <= receipt.query_rt_max
     from xic_extractor.alignment.backfill.cid_nl_evidence import (
         decide_cid_nl_backfill_revisit,
     )
@@ -1879,7 +1882,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
         thermo_raw_sources=True,
     )
     source_raw = _FakeRaw((7.99,))
-    source_raw.intensity = 1000.0 * np.exp(-0.5 * ((source_raw.rt - 8.10) / 0.035) ** 2)
+    source_raw.intensity = 1000.0 * np.exp(-0.5 * ((source_raw.rt - 8.10) / 0.06) ** 2)
     settings = replace(_settings(), neutral_loss_profile=None, rt_max=8.0)
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
@@ -2303,7 +2306,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         assessment.candidate_peaks,
         key=lambda peak: peak.content.integration.rt_apex_min,
     )
-    assert left.content.integration.rt_right_min == (
+    assert left.content.integration.rt_right_min < (
         right.content.integration.rt_left_min
     )
     assert assessment.content.method_result == "SUPPORT"
@@ -2583,7 +2586,7 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
     )
 
 
-def test_physical_backfill_receipt_covers_recovered_peak_outside_apex_window(
+def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     tmp_path: Path,
 ) -> None:
     import json
@@ -2649,16 +2652,16 @@ def test_physical_backfill_receipt_covers_recovered_peak_outside_apex_window(
     )
 
     evaluation = result.capture_evidence[0].physical_evaluation
-    assert evaluation.state == "available" and evaluation.facts is not None
-    assert evaluation.question.search_rt_window == (7.5, 8.5)
-    assert evaluation.facts.apex_rt_min < 7.5
-    assert evaluation.facts.left_rt_min < 8.0 < evaluation.facts.right_rt_min
+    # The acquired window contains only the declining tail. Its two clipped
+    # candidates are ambiguous, not authority to select one or invent an apex
+    # outside the observed window. The ordinary wider-query case above covers
+    # receipt propagation when an outside-apex-window peak is actually eligible.
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == "ambiguous_segment_candidates"
+    assert evaluation.facts is None and evaluation.integration is None
     receipt = result.assessment.content.evaluation_receipt
-    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.0, 9.0)
-    assert len(result.assessment.candidate_peaks) == 1
-    assert result.assessment.candidate_peaks[0].content.integration.rt_apex_min == (
-        evaluation.facts.apex_rt_min
-    )
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
+    assert result.assessment.candidate_peaks == ()
 
 
 @pytest.mark.parametrize(

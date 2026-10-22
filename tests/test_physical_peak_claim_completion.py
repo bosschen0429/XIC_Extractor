@@ -33,6 +33,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -231,7 +232,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         len({peak.content.peak_observation_content_id for peak in comparison_peaks})
         == 2
     )
-    if broad_context:
+    if fresh_context:
         integrations = [peak.content.integration for peak in comparison_peaks]
         lower = max(i.rt_left_min for i in integrations)
         upper = min(i.rt_right_min for i in integrations)
@@ -369,6 +370,7 @@ def test_full_acquired_lobes_not_selected_interval_overlap_define_identity(
             xic_ppm_tol=20.0,
             rt=rt,
             raw=raw,
+            profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         )
 
     left = view(4.8, 4.3, 5.1)
@@ -382,7 +384,43 @@ def test_unrelated_acquired_tail_does_not_erase_shared_selected_lobe_evidence():
     raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.35) ** 2)
     other_raw = raw.copy()
     other_raw[-10] += 20.0
-    left = PhysicalPeakView("source", 4.8, 4.0, 6.0, 500.0, 20.0, rt, raw)
-    right = PhysicalPeakView("source", 5.2, 4.1, 6.1, 500.001, 20.0, rt, other_raw)
+    left = PhysicalPeakView(
+        "source",
+        4.8,
+        4.0,
+        6.0,
+        500.0,
+        20.0,
+        rt,
+        raw,
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    right = PhysicalPeakView(
+        "source",
+        5.2,
+        4.1,
+        6.1,
+        500.001,
+        20.0,
+        rt,
+        other_raw,
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
     assert compare_physical_peak_views(left, right) == "same"
     assert compare_physical_peak_views(right, left) == "same"
+
+
+@pytest.mark.parametrize("window_points, expected", [(3, "distinct"), (21, "same")])
+def test_lobe_comparison_uses_the_producing_profile(window_points, expected):
+    rt = np.linspace(4.0, 6.0, 201)
+    raw = sum(
+        1000.0 * np.exp(-0.5 * ((rt - center) / 0.01) ** 2) for center in (4.94, 5.06)
+    )
+    profile = SignalProcessingProfile(window_points=window_points)
+    views = [
+        PhysicalPeakView(
+            "source", apex, 4.8, 5.2, 500.0, 20.0, rt, raw, profile=profile
+        )
+        for apex in (4.94, 5.06)
+    ]
+    assert compare_physical_peak_views(*views) == expected

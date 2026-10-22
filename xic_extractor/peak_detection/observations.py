@@ -380,6 +380,9 @@ class PeakObservationRef:
         default=None, compare=False
     )
     capture_stage: str = field(default="initial_capture", compare=False)
+    signal_processing_profile: SignalProcessingProfile | None = field(
+        default=None, compare=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +446,7 @@ def mint_peak_observation_ref(
         generation_provenance=generation_provenance,
         source_trace=trace,
         physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
         capture_stage=capture_stage,
     )
 
@@ -481,6 +485,7 @@ def _mint_peak_observation_artifact(
     generation_provenance: PeakObservationGenerationProvenance,
     source_trace: Trace,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
     capture_stage: str = "initial_capture",
 ) -> PeakObservationRef:
     payload_bytes = canonical_peak_observation_ref_bytes(
@@ -499,6 +504,7 @@ def _mint_peak_observation_artifact(
         artifact=artifact,
         source_trace=source_trace,
         physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
         capture_stage=capture_stage,
     )
 
