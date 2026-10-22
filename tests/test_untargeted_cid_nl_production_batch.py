@@ -75,9 +75,9 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
     group_cid_nl_physical_subject_units,
 )
+from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -112,7 +112,7 @@ def _physical_subject_facts(candidates, records):
         proof = None
         if record is not None and selected is not None:
             trace = record.acquired_trace.trace
-            proof = CidNlPhysicalProof(
+            proof = PhysicalPeakView(
                 acquisition_source_id=record.work_item.acquisition_source_id,
                 apex_rt_min=selected.apex_rt_min,
                 left_rt_min=selected.left_rt_min,
@@ -834,18 +834,21 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             (record.candidate_id, record) for record in discovery.physical_evaluations
         )
         if family_context:
-            expected_candidate_count = 1 if family_precursor_delta else 2
-            assert len(candidates[path.stem]) == expected_candidate_count
+            # Query/chemical wrappers of one measured lobe close in Discovery;
+            # the two original physical evaluations remain available as lineage.
+            assert len(candidates[path.stem]) == 1
             assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
             if not family_precursor_delta:
                 left, right = discovery.physical_evaluations
                 assert left.work_item.xic_rt_max > right.work_item.xic_rt_min
-            rt_min = min(
-                record.work_item.xic_rt_min for record in discovery.physical_evaluations
+            retained_records = tuple(
+                record
+                for record in discovery.physical_evaluations
+                if record.candidate_id
+                in {c.candidate_id for c in candidates[path.stem]}
             )
-            rt_max = max(
-                record.work_item.xic_rt_max for record in discovery.physical_evaluations
-            )
+            rt_min = min(record.work_item.xic_rt_min for record in retained_records)
+            rt_max = max(record.work_item.xic_rt_max for record in retained_records)
             # The vendor boundary includes the end scan returned for the request,
             # which may lie just beyond the requested RT upper bound.
             vendor = opened_raws[path][0]
@@ -1192,10 +1195,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 assert (
                     set(adapter.source_candidate_ids) == expected_source_candidate_ids
                 )
-                assert (
-                    captured_batches[0].context.physical_records_by_candidate
-                    == source_records
-                )
+                assert captured_batches[0].context.physical_records_by_candidate == {
+                    candidate.candidate_id: source_records[candidate.candidate_id]
+                    for values in candidates.values()
+                    for candidate in values
+                }
                 expected_capture_candidate_ids = {
                     candidate.candidate_id
                     for candidate in candidates[stem]
@@ -1243,7 +1247,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                             == expected.facts.apex_rt_min
                         )
                     else:
-                        assert capture.physical_evaluation.facts == expected.facts
+                        # Discovery has closed the wrappers. One retained view
+                        # reuses its own answer, not a new family-window answer.
+                        assert capture.physical_evaluation.facts == (
+                            source_records[capture.candidate_id].evaluation.facts
+                        )
         return result
 
     monkeypatch.setattr(bounded_owner, "execute_partition", checked_runtime)
@@ -1339,7 +1347,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     # Owner-produced arrays survive both sidecar and runtime partition handoff.
     retained_discovery = tuple(completed.discovery_physical_records)
-    assert {item.candidate_id for item in retained_discovery} == set(source_records)
+    expected_retained_ids = (
+        {
+            candidate.candidate_id
+            for values in candidates.values()
+            for candidate in values
+        }
+        if indexed_input
+        else set(source_records)
+    )
+    assert {item.candidate_id for item in retained_discovery} == expected_retained_ids
     for retained in retained_discovery:
         source = source_records[retained.candidate_id]
         assert (

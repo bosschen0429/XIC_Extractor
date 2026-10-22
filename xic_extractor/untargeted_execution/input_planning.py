@@ -37,13 +37,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
     CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_alignment_subject_worksets,
     cid_nl_method_center_interval,
     group_cid_nl_physical_subject_units,
     mint_cid_nl_subject_membership_from_physical_units,
 )
+from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
@@ -249,7 +249,7 @@ def _physical_subject_candidate_fact(
     proof = None
     if facts is not None:
         trace = record.acquired_trace.trace
-        proof = CidNlPhysicalProof(
+        proof = PhysicalPeakView(
             acquisition_source_id=record.work_item.acquisition_source_id,
             apex_rt_min=facts.apex_rt_min,
             left_rt_min=facts.left_rt_min,
@@ -529,7 +529,7 @@ def prepare_indexed_untargeted_plan(
         return candidates, records, support
 
     units: list[tuple[float | None, tuple[str, ...]]] = []
-    buckets: dict[tuple[str, float | None, float], list[str]] = defaultdict(list)
+    buckets: dict[tuple[str, float | None], list[str]] = defaultdict(list)
     source_ids = {
         path.stem: expectation.source.acquisition_source_id
         for path, expectation in zip(
@@ -545,7 +545,7 @@ def prepare_indexed_untargeted_plan(
         if apex is None:
             units.append((requirement, (cid,)))
         else:
-            buckets[source_ids[location.sample_stem], requirement, apex].append(cid)
+            buckets[source_ids[location.sample_stem], requirement].append(cid)
 
     def close_physical_cohort(requirement: float | None, ids: list[str]) -> None:
         if len(ids) == 1:
@@ -565,9 +565,10 @@ def prepare_indexed_untargeted_plan(
         )
         units.extend(local_units)
 
-    # Only same-source, same-apex, overlapping m/z cohorts can share a physical
-    # core. Isolated entries require no curve hydration during planning.
-    for (_, requirement, _), ids in buckets.items():
+    # Only same-source, overlapping m/z cohorts can share a physical peak.
+    # Different apices need measured lobe evidence, not an identity prefilter.
+    # Isolated entries require no curve hydration during planning.
+    for (_, requirement), ids in buckets.items():
         cohort: list[str] = []
         upper = float("-inf")
         for cid in sorted(ids, key=lambda key: (precursor_by_id[key], key)):

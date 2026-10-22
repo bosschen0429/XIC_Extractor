@@ -198,7 +198,9 @@ def _candidate(
             mz=mz,
             rt=(),
             intensity=(),
-            integration=SimpleNamespace(rt_apex_min=apex),
+            integration=SimpleNamespace(
+                rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
+            ),
         ),
         generation_provenance=SimpleNamespace(
             query_ppm_tol=query_ppm, acquisition_source_id="source"
@@ -210,12 +212,15 @@ def _backfill(*peaks):
     return (None, SimpleNamespace(candidate_peaks=peaks))
 
 
+@pytest.mark.parametrize("role", ["backfill", "direct"])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize(
     "case",
     ["same-lobe", "two-peaks", "different-raw", "short", "source", "sample", "mass"],
 )
-def test_backfill_different_apices_require_measured_same_lobe(case, reverse) -> None:
+def test_backfill_different_apices_require_measured_same_lobe(
+    case, reverse, role
+) -> None:
     rt = np.linspace(8.0, 10.0, 101)
     raw = 1000 * np.exp(-(((rt - 9.0) / 0.18) ** 2))
     apices = (9.0, 9.02)
@@ -249,12 +254,32 @@ def test_backfill_different_apices_require_measured_same_lobe(case, reverse) -> 
         ): _backfill(p)
         for i, p in enumerate(peaks)
     }
+    groups, members = (), {}
+    if role == "direct":
+        first_key = next(iter(backfills))
+        del backfills[first_key]
+        groups = (
+            SimpleNamespace(
+                disposition="established",
+                member_subjects=(
+                    SimpleNamespace(
+                        canonical_sample_identity_id="sample",
+                        physical_observation_ids=("0",),
+                    ),
+                ),
+            ),
+        )
+        members = {"0": peaks[0]}
     if reverse:
         backfills = dict(reversed(tuple(backfills.items())))
     assert contested_backfill_peaks(
-        groups=(), backfills=backfills, alignment_config=_CONFIG
+        groups=groups, backfills=backfills, member_observations=members
     ) == (
-        frozenset({("sample", "0"), ("sample", "1")})
+        frozenset(
+            {("sample", "1")}
+            if role == "direct"
+            else {("sample", "0"), ("sample", "1")}
+        )
         if case == "same-lobe"
         else frozenset()
     )
@@ -263,6 +288,16 @@ def test_backfill_different_apices_require_measured_same_lobe(case, reverse) -> 
 def _sample_id(owner: SampleLocalMS1Owner) -> str:
     assert owner.cross_sample_member_subject is not None
     return owner.cross_sample_member_subject.canonical_sample_identity_id
+
+
+def _member_observations(group):
+    return {
+        observation_id: _candidate(
+            observation_id, apex=owner.owner_apex_rt, mz=owner.precursor_mz
+        )
+        for owner in group.owners
+        for observation_id in owner.cross_sample_member_subject.physical_observation_ids
+    }
 
 
 def test_backfill_peak_of_another_rows_member_is_contested() -> None:
@@ -289,7 +324,9 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
     }
 
     contested = contested_backfill_peaks(
-        groups=(group,), backfills=backfills, alignment_config=_CONFIG
+        groups=(group,),
+        backfills=backfills,
+        member_observations=_member_observations(group),
     )
 
     assert contested == frozenset({(s1, "bf-s1"), (s4, "bf-s4-a"), (s4, "bf-s4-b")})
@@ -315,12 +352,14 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
         contested_backfill_peaks(
             groups=(replace(group, disposition="unresolved"),),
             backfills=backfills,
-            alignment_config=_CONFIG,
+            member_observations=_member_observations(group),
         )
         == frozenset()
     )
     assert contested_backfill_peaks(
-        groups=(group,), backfills=backfills, alignment_config=_CONFIG
+        groups=(group,),
+        backfills=backfills,
+        member_observations=_member_observations(group),
     ) == frozenset({(s1, "bf-s1")})
 
 
@@ -343,7 +382,9 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
 
     assert (
         contested_backfill_peaks(
-            groups=(group,), backfills=backfills, alignment_config=_CONFIG
+            groups=(group,),
+            backfills=backfills,
+            member_observations=_member_observations(group),
         )
         == frozenset()
     )
@@ -377,7 +418,7 @@ def test_backfill_contest_uses_each_extraction_window(
     if reverse:
         backfills = dict(reversed(tuple(backfills.items())))
     assert contested_backfill_peaks(
-        groups=(), backfills=backfills, alignment_config=_CONFIG
+        groups=(), backfills=backfills, member_observations={}
     ) == (frozenset({("sample", "a"), ("sample", "b")}) if competing else frozenset())
 
 
@@ -400,9 +441,7 @@ def test_backfill_contest_keeps_sample_apex_and_group_boundaries(
         ),
     }
     assert (
-        contested_backfill_peaks(
-            groups=(), backfills=backfills, alignment_config=_CONFIG
-        )
+        contested_backfill_peaks(groups=(), backfills=backfills, member_observations={})
         == frozenset()
     )
 

@@ -1,3 +1,5 @@
+"""Aggregate already proven Discovery peak units without redefining identity."""
+
 import json
 import math
 from collections.abc import Callable, Iterable, Sequence
@@ -14,11 +16,6 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.priority import (
     assign_review_priority,
-)
-from xic_extractor.mass_accuracy import (
-    PPM_BOUNDARY_EPSILON,
-    neutral_loss_match,
-    within_ppm,
 )
 
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
@@ -41,140 +38,45 @@ class DiscoveryCandidateMergeResult:
     bindings: tuple[DiscoveryCandidateMergeBinding, ...]
 
 
-class _PrecursorMassIndex:
-    """Candidate ordinals bucketed by precursor m/z for exact merge filtering."""
-
-    _BUCKET_WIDTH_DA = 1.0
-
-    def __init__(self) -> None:
-        self._buckets: dict[int, set[int]] = {}
-
-    def add(self, ordinal: int, precursor_mz: float) -> None:
-        bucket = self._bucket(precursor_mz)
-        if bucket is not None:
-            self._buckets.setdefault(bucket, set()).add(ordinal)
-
-    def remove(self, ordinal: int, precursor_mz: float) -> None:
-        bucket = self._bucket(precursor_mz)
-        if bucket is None:
-            return
-        ordinals = self._buckets.get(bucket)
-        if ordinals is None:
-            return
-        ordinals.discard(ordinal)
-        if not ordinals:
-            del self._buckets[bucket]
-
-    def candidate_ordinals(
-        self, reference_mz: float, tolerance_ppm: float
-    ) -> tuple[int, ...]:
-        if (
-            not math.isfinite(reference_mz)
-            or not math.isfinite(tolerance_ppm)
-            or reference_mz <= 0
-            or tolerance_ppm < 0
-        ):
-            return ()
-        radius_da = (
-            reference_mz * tolerance_ppm * 1e-6
-            + reference_mz * PPM_BOUNDARY_EPSILON * 1e-6
-        )
-        if not math.isfinite(radius_da):
-            return self._all_ordinals()
-        radius_da = math.nextafter(radius_da, math.inf)
-        first_bucket = math.floor((reference_mz - radius_da) / self._BUCKET_WIDTH_DA)
-        last_bucket = math.floor((reference_mz + radius_da) / self._BUCKET_WIDTH_DA)
-        bucket_span = last_bucket - first_bucket + 1
-        if bucket_span <= max(64, 2 * len(self._buckets)):
-            ordinals = {
-                ordinal
-                for bucket in range(first_bucket, last_bucket + 1)
-                for ordinal in self._buckets.get(bucket, ())
-            }
-        else:
-            ordinals = {
-                ordinal
-                for bucket, bucket_ordinals in self._buckets.items()
-                if first_bucket <= bucket <= last_bucket
-                for ordinal in bucket_ordinals
-            }
-        return tuple(sorted(ordinals))
-
-    def _all_ordinals(self) -> tuple[int, ...]:
-        return tuple(
-            sorted(
-                ordinal
-                for bucket_ordinals in self._buckets.values()
-                for ordinal in bucket_ordinals
-            )
-        )
-
-    @classmethod
-    def _bucket(cls, precursor_mz: float) -> int | None:
-        if not math.isfinite(precursor_mz) or precursor_mz <= 0:
-            return None
-        return math.floor(precursor_mz / cls._BUCKET_WIDTH_DA)
-
-
-def merge_candidates_by_ms1_peak_with_lineage(
-    candidates: Iterable[DiscoveryCandidate],
+def merge_candidates_by_physical_units(
+    candidates: Sequence[DiscoveryCandidate],
+    units: tuple[tuple[int, ...], ...],
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz,
 ) -> DiscoveryCandidateMergeResult:
-    merged: list[DiscoveryCandidate] = []
-    mass_index = _PrecursorMassIndex()
-    member_source_ordinals: list[list[int]] = []
-    representative_source_ordinals: list[int] = []
-    for source_ordinal, candidate in enumerate(candidates):
-        match = _matching_ms1_peak_candidate(
-            candidate,
-            merged,
-            settings=settings,
-            ms1_centroid_mz=ms1_centroid_mz,
-            candidate_ordinals=mass_index.candidate_ordinals(
-                candidate.precursor_mz,
-                2 * settings.precursor_mz_tolerance_ppm,
+    """Consume proven units; retain one representative area and all seed lineage.
+
+    Physical equivalence and method compatibility are already decided upstream.
+    Neither a rounded family label nor metadata proximity can create a unit here.
+    """
+    merged = []
+    bindings = []
+    for final_ordinal, unit in enumerate(sorted(units, key=min)):
+        representative_index = min(
+            unit,
+            key=lambda index: _representative_rank(
+                candidates[index], settings=settings
             ),
         )
-        if match is None:
-            merged.append(candidate)
-            mass_index.add(len(merged) - 1, candidate.precursor_mz)
-            member_source_ordinals.append([source_ordinal])
-            representative_source_ordinals.append(source_ordinal)
-            continue
-        merge_index, anchor = match
-        current = merged[merge_index]
-        representative = anchor or _representative_candidate(
-            current,
-            candidate,
-            settings=settings,
-        )
-        mass_index.remove(merge_index, current.precursor_mz)
-        merged_candidate = _merge_candidate_pair(
-            current,
-            candidate,
-            settings=settings,
-            representative=representative,
-        )
-        merged[merge_index] = merged_candidate
-        mass_index.add(merge_index, merged_candidate.precursor_mz)
-        member_source_ordinals[merge_index].append(source_ordinal)
-        if representative is candidate:
-            representative_source_ordinals[merge_index] = source_ordinal
-    return DiscoveryCandidateMergeResult(
-        candidates=tuple(merged),
-        bindings=tuple(
+        representative = candidates[representative_index]
+        candidate = representative
+        for index in sorted(unit):
+            if index != representative_index:
+                candidate = _merge_candidate_pair(
+                    candidate,
+                    candidates[index],
+                    settings=settings,
+                    representative=representative,
+                )
+        merged.append(candidate)
+        bindings.append(
             DiscoveryCandidateMergeBinding(
                 final_ordinal=final_ordinal,
-                representative_source_ordinal=representative_source_ordinals[
-                    final_ordinal
-                ],
-                member_source_ordinals=tuple(member_source_ordinals[final_ordinal]),
+                representative_source_ordinal=representative_index,
+                member_source_ordinals=tuple(sorted(unit)),
             )
-            for final_ordinal in range(len(merged))
-        ),
-    )
+        )
+    return DiscoveryCandidateMergeResult(tuple(merged), tuple(bindings))
 
 
 def same_apex_representative_alternatives(
@@ -185,8 +87,8 @@ def same_apex_representative_alternatives(
 ) -> Iterable[tuple[DiscoveryCandidate, DiscoveryCandidateMergeBinding]]:
     """Rebuild merged facts around ranked original same-apex physical members.
 
-    Qualification remains with the caller. Broader overlap/ion-anchor merges
-    must not replace the retained physical peak through this fallback.
+    These members already share a proven physical unit. Qualification remains
+    with the caller; a different-apex view is not a substitute for this answer.
     """
     retained = candidates[binding.representative_source_ordinal]
     alternatives = sorted(
@@ -194,9 +96,8 @@ def same_apex_representative_alternatives(
             ordinal
             for ordinal in binding.member_source_ordinals
             if ordinal != binding.representative_source_ordinal
-            and _same_ms1_apex_within_extraction_tolerance(
-                retained, candidates[ordinal], settings=settings
-            )
+            and retained.ms1_apex_rt is not None
+            and retained.ms1_apex_rt == candidates[ordinal].ms1_apex_rt
         ),
         key=lambda ordinal: _representative_rank(
             candidates[ordinal], settings=settings
@@ -214,170 +115,6 @@ def same_apex_representative_alternatives(
                     representative=representative,
                 )
         yield rebuilt, replace(binding, representative_source_ordinal=ordinal)
-
-
-def close_physical_candidate_units(
-    merged: DiscoveryCandidateMergeResult,
-    units: tuple[tuple[float | None, tuple[str, ...]], ...],
-    *,
-    settings: DiscoverySettings,
-) -> DiscoveryCandidateMergeResult:
-    """Close proven duplicate views, retaining one area and all source lineage."""
-    by_id = {
-        candidate.candidate_id: (candidate, binding)
-        for candidate, binding in zip(merged.candidates, merged.bindings, strict=True)
-    }
-    closed: list[tuple[DiscoveryCandidate, DiscoveryCandidateMergeBinding]] = []
-    for _, ids in units:
-        members = [by_id[candidate_id] for candidate_id in ids]
-        representative, representative_binding = min(
-            members, key=lambda item: _representative_rank(item[0], settings=settings)
-        )
-        candidate = representative
-        for other, _ in members:
-            if other is not representative:
-                candidate = _merge_candidate_pair(
-                    candidate, other, settings=settings, representative=representative
-                )
-        ordinals = tuple(
-            sorted(
-                ordinal
-                for _, binding in members
-                for ordinal in binding.member_source_ordinals
-            )
-        )
-        closed.append(
-            (
-                candidate,
-                DiscoveryCandidateMergeBinding(
-                    final_ordinal=min(binding.final_ordinal for _, binding in members),
-                    representative_source_ordinal=representative_binding.representative_source_ordinal,
-                    member_source_ordinals=ordinals,
-                ),
-            )
-        )
-    closed.sort(key=lambda item: item[1].final_ordinal)
-    return DiscoveryCandidateMergeResult(
-        candidates=tuple(candidate for candidate, _ in closed),
-        bindings=tuple(
-            replace(binding, final_ordinal=index)
-            for index, (_, binding) in enumerate(closed)
-        ),
-    )
-
-
-def _matching_ms1_peak_candidate(
-    candidate: DiscoveryCandidate,
-    merged: list[DiscoveryCandidate],
-    *,
-    settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz,
-    candidate_ordinals: Iterable[int] | None = None,
-) -> tuple[int, DiscoveryCandidate | None] | None:
-    """The merge target and, for one measured ion, the candidate that holds it."""
-
-    # Every merge path requires precursor agreement; the measured-ion path
-    # permits twice the extraction tolerance. Reject distant ions before the
-    # more expensive provenance, peak and centroid checks, retaining scan order.
-    precursor_tolerance = 2 * settings.precursor_mz_tolerance_ppm
-    ordinals = range(len(merged)) if candidate_ordinals is None else candidate_ordinals
-    for index in ordinals:
-        existing = merged[index]
-        if not _within_ppm(
-            existing.precursor_mz, candidate.precursor_mz, precursor_tolerance
-        ):
-            continue
-        if _can_merge_by_ms1_peak(existing, candidate, settings=settings):
-            return index, None
-        if not _tags_can_merge(existing, candidate, settings=settings):
-            continue
-        anchor = _same_ms1_peak_on_one_measured_ion(
-            existing, candidate, settings=settings, ms1_centroid_mz=ms1_centroid_mz
-        )
-        if anchor is not None:
-            return index, anchor
-    return None
-
-
-def _tags_can_merge(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-) -> bool:
-    return (
-        first.neutral_loss_tag == second.neutral_loss_tag
-        or settings.tag_combine_mode in {"union", "intersection"}
-    )
-
-
-def _can_merge_by_ms1_peak(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-) -> bool:
-    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
-        return _tags_can_merge(first, second, settings=settings)
-    same_ms1_feature_row = _same_ms1_feature_row_identity(first, second)
-    if not (
-        first.raw_file == second.raw_file
-        and first.sample_stem == second.sample_stem
-        and first.ms1_peak_found
-        and second.ms1_peak_found
-        and _candidate_peak_bounds_present(first)
-        and _candidate_peak_bounds_present(second)
-        and _within_ppm(
-            first.precursor_mz,
-            second.precursor_mz,
-            settings.precursor_mz_tolerance_ppm,
-        )
-        and _peak_intervals_overlap(first, second)
-        and (_seed_ranges_touch_shared_peak(first, second) or same_ms1_feature_row)
-    ):
-        return False
-    if first.neutral_loss_tag == second.neutral_loss_tag:
-        if not _within_ppm(
-            first.product_mz,
-            second.product_mz,
-            settings.product_mz_tolerance_ppm,
-        ):
-            return False
-        if same_ms1_feature_row:
-            return _configured_neutral_loss_compatible(
-                first,
-                settings=settings,
-            ) and _configured_neutral_loss_compatible(second, settings=settings)
-        return _within_ppm(
-            first.observed_neutral_loss_da,
-            second.observed_neutral_loss_da,
-            settings.nl_tolerance_ppm,
-        )
-    return settings.tag_combine_mode in {"union", "intersection"}
-
-
-def _same_ms1_feature_row_identity(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-) -> bool:
-    return (
-        bool(first.ms1_feature_row_id)
-        and first.ms1_feature_row_id == second.ms1_feature_row_id
-    )
-
-
-def _configured_neutral_loss_compatible(
-    candidate: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-) -> bool:
-    return neutral_loss_match(
-        candidate.precursor_mz,
-        candidate.product_mz,
-        candidate.configured_neutral_loss_da,
-        settings.nl_tolerance_ppm,
-        observed_loss_da=candidate.observed_neutral_loss_da,
-    )[2]
 
 
 def _merge_candidate_pair(
@@ -474,118 +211,6 @@ def _merge_candidate_pair(
     )
 
 
-def _same_ms1_apex_within_extraction_tolerance(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-) -> bool:
-    """Whether two candidates resolved the same MS1 peak.
-
-    Each candidate's trace is extracted at its own precursor m/z with the MS1
-    tolerance. Within that tolerance both traces hold the same ions, so a shared
-    apex scan identifies one peak whatever the seeds, fragments or boundaries.
-    Only the precursor m/z decides: an observed loss inherits the absolute error
-    of precursor and product, so a ppm comparison on a ~116 Da loss would split
-    one peak on measurement scatter.
-    """
-
-    return (
-        first.raw_file == second.raw_file
-        and first.sample_stem == second.sample_stem
-        and first.ms1_peak_found
-        and second.ms1_peak_found
-        and first.ms1_apex_rt is not None
-        and first.ms1_apex_rt == second.ms1_apex_rt
-        and _within_ppm(
-            first.precursor_mz,
-            second.precursor_mz,
-            settings.precursor_mz_tolerance_ppm,
-        )
-    )
-
-
-def _same_ms1_peak_on_one_measured_ion(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz,
-) -> DiscoveryCandidate | None:
-    """The candidate whose trace holds the whole peak of one ion both traced.
-
-    A precursor inferred as product + loss carries the MS2 product error, so two
-    candidates of one ion can differ by more than the MS1 tolerance. A window
-    that clips the ion shows only part of its peak, such as the tail, and the
-    resolver reports that part with its own apex. The higher candidate (the
-    anchor) traced the peak itself: the other apex inside the anchor's bounds is
-    one peak on the anchor's trace, and the ions read at the two apexes, each
-    inside its own window, agreeing within tolerance show that both traces came
-    from one ion. Returns the anchor, or None when either condition fails.
-    """
-
-    tolerance = settings.precursor_mz_tolerance_ppm
-    if not (
-        first.raw_file == second.raw_file
-        and first.sample_stem == second.sample_stem
-        and _has_resolved_ms1_peak(first)
-        and _has_resolved_ms1_peak(second)
-        and _within_ppm(first.precursor_mz, second.precursor_mz, 2 * tolerance)
-    ):
-        return None
-    anchor, other = sorted((first, second), key=lambda c: -cast(float, c.ms1_height))
-    if not (
-        cast(float, anchor.ms1_peak_rt_start)
-        <= cast(float, other.ms1_apex_rt)
-        <= cast(float, anchor.ms1_peak_rt_end)
-    ):
-        return None
-    anchor_ion = _ion_in_window(anchor, ms1_centroid_mz, tolerance)
-    other_ion = _ion_in_window(other, ms1_centroid_mz, tolerance)
-    if (
-        anchor_ion is None
-        or other_ion is None
-        or not _within_ppm(anchor_ion, other_ion, tolerance)
-    ):
-        return None
-    return anchor
-
-
-def _has_resolved_ms1_peak(candidate: DiscoveryCandidate) -> bool:
-    return (
-        candidate.ms1_peak_found
-        and candidate.ms1_apex_rt is not None
-        and candidate.ms1_height is not None
-        and _candidate_peak_bounds_present(candidate)
-    )
-
-
-def _ion_in_window(
-    candidate: DiscoveryCandidate,
-    ms1_centroid_mz: MS1CentroidMz,
-    tolerance_ppm: float,
-) -> float | None:
-    """The MS1 ion at the candidate's apex inside its own extraction window."""
-
-    return ms1_centroid_mz(
-        cast(float, candidate.ms1_apex_rt),
-        candidate.precursor_mz * (1 - tolerance_ppm * 1e-6),
-        candidate.precursor_mz * (1 + tolerance_ppm * 1e-6),
-    )
-
-
-def _representative_candidate(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-    *,
-    settings: DiscoverySettings,
-) -> DiscoveryCandidate:
-    return min(
-        (first, second),
-        key=lambda candidate: _representative_rank(candidate, settings=settings),
-    )
-
-
 def _representative_rank(
     candidate: DiscoveryCandidate,
     *,
@@ -599,14 +224,6 @@ def _representative_rank(
         else float("inf"),
         candidate.best_seed_rt,
         candidate.best_ms2_scan_id,
-    )
-
-
-def _candidate_peak_bounds_present(candidate: DiscoveryCandidate) -> bool:
-    return (
-        candidate.ms1_peak_rt_start is not None
-        and candidate.ms1_peak_rt_end is not None
-        and candidate.ms1_peak_rt_start <= candidate.ms1_peak_rt_end
     )
 
 
@@ -643,47 +260,6 @@ def _combined_max_scan_precursor_abs_delta_da(
     if not values:
         return None
     return max(values)
-
-
-def _peak_intervals_overlap(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-) -> bool:
-    first_start = first.ms1_peak_rt_start
-    first_end = first.ms1_peak_rt_end
-    second_start = second.ms1_peak_rt_start
-    second_end = second.ms1_peak_rt_end
-    if (
-        first_start is None
-        or first_end is None
-        or second_start is None
-        or second_end is None
-    ):
-        return False
-    return max(first_start, second_start) <= min(first_end, second_end)
-
-
-def _seed_ranges_touch_shared_peak(
-    first: DiscoveryCandidate,
-    second: DiscoveryCandidate,
-) -> bool:
-    return _seed_range_touches_peak(first, second) and _seed_range_touches_peak(
-        second, first
-    )
-
-
-def _seed_range_touches_peak(
-    seed_candidate: DiscoveryCandidate,
-    peak_candidate: DiscoveryCandidate,
-) -> bool:
-    peak_start = peak_candidate.ms1_peak_rt_start
-    peak_end = peak_candidate.ms1_peak_rt_end
-    if peak_start is None or peak_end is None:
-        return False
-    return (
-        seed_candidate.rt_seed_min <= peak_end
-        and seed_candidate.rt_seed_max >= peak_start
-    )
 
 
 def ordered_tag_names(
@@ -894,6 +470,3 @@ def _optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
-
-
-_within_ppm = within_ppm

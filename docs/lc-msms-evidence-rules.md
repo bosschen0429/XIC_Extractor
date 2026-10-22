@@ -34,6 +34,34 @@ lane, or current writer counts. Read lane/readiness from
 from `docs/superpowers/productization/status/productization_authority_manifest.json`, and
 promotion semantics from `docs/agent/product-validation-contract.md`.
 
+## Physical Peak View Equivalence
+
+`peak_detection.physical_peak_equivalence` owns the in-memory comparison used
+by Discovery unit closure, method workset planning and Alignment claim resolution.
+It reports `same`, `distinct` or `unresolved`; none is a chemical identification.
+Observation content IDs still identify exact measurements, not all views of a
+physical peak. Comparison never changes a selected integral or grants membership.
+
+- Views must share an acquisition source and overlapping actual extraction m/z
+  intervals. Sample attribution remains with the owning workflow.
+- Matching, singly occupied centroid readings on the apex scan and its two
+  bracketing MS1 scans can prove identity despite differences in XIC tails.
+  Different singleton ions on those scans are separation evidence; missing or
+  multiply occupied scans are unresolved, not permission to fall back to XIC
+  correlation.
+- Without centroid evidence, identical acquired samples in the common selected
+  peak interval can prove same-apex views. Differing apices additionally require
+  identical measured overlap surrounding both apices and the physical segment
+  owner assigning both queries to one lobe in their combined context. Resolved
+  separate lobes stay distinct. Nearby RT, overlapping bounds, similar area or
+  high correlation alone prove neither identity nor separation.
+- Discovery collapses only mutually proven views and retains one representative
+  measurement plus lineage. Alignment applies role-specific occupancy to the
+  same evidence: existing Direct values remain; competing eligible Backfills do
+  not create duplicate members or numeric cells. Same-apex overlapping claims
+  with unresolved evidence conservatively stay nonnumeric, without granting a
+  Discovery merge. Archive rows do not occupy Matrix peaks.
+
 ## MS1 Morphology And Area Owner
 
 For the first-principles design rationale behind smoothed-everywhere trace

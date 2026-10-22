@@ -326,17 +326,19 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
   multiple hypotheses for the same peak remain allowed. The label must not be
   treated as cross-sample identity, selected-peak truth, or Backfill promotion
   authority by itself.
-- Candidates of one sample whose MS1 traces share the apex scan are one
-  Discovery peak when their precursor m/z agree within
-  `precursor_mz_tolerance_ppm`. A precursor inferred as product + loss carries
-  the MS2 product error, so two candidates of one ion can differ by more. A
-  window that clips the ion shows only part of its peak, such as the tail, and
-  reports that part with its own apex. When the two differ by at most twice the
-  tolerance, they are one Discovery peak if the other apex lies inside the
-  higher candidate's peak bounds (one peak on that trace) and the most intense
-  MS1 centroids read at the two apexes, each within its own window, agree within
-  the tolerance (one ion). The merged candidate keeps the higher candidate's
-  m/z, peak and area.
+- Original acquired views are compared before choosing a merged representative,
+  using the shared [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
+  Same apex, precursor proximity, seed overlap and a rounded feature label do
+  not independently authorize a merge. Different apices can share a measured
+  lobe; sparse or contradictory evidence is not silently treated as identity.
+  A unit requires mutually proven views, a compatible method/tag requirement
+  and a common method-query m/z interval. A middle view cannot bridge two
+  incompatible peaks. The merge owner consumes these completed units, retains
+  the ranked representative's complete integral (never a sum), and combines all
+  original seed lineage. Centroid reads stay in the acquisition adapter and are
+  batched across the overlapping same-apex views that need them. Eager and
+  indexed Alignment input planning consume the same physical-view rule rather
+  than imposing a second exact-apex identity boundary.
 - Current candidate/review outputs do not contain
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and
