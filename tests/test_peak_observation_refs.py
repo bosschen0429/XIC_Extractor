@@ -5,6 +5,7 @@ import math
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import xic_extractor.peak_detection.observations as observation_owner
@@ -88,6 +89,10 @@ def test_query_provenance_does_not_change_selected_physical_content(
         proposal_sources=("local_minimum",),
     )
 
+    np.testing.assert_array_equal(narrow.source_trace.rt, narrow_trace.rt)
+    np.testing.assert_array_equal(wide.source_trace.rt, wide_trace.rt)
+    np.testing.assert_array_equal(wide.source_trace.intensity, wide_trace.intensity)
+    assert len(wide.source_trace.rt) > len(wide.content.rt)
     assert narrow.content == wide.content
     assert narrow.content.peak_observation_content_id == (
         wide.content.peak_observation_content_id

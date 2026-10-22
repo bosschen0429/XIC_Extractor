@@ -331,14 +331,17 @@ class PeakTrajectories:
     """Physical correspondence only; unbound or ambiguous owners are omitted.
 
     Separate tracks are not evidence of separate peaks: their observations may
-    never have been compared. Co-observed landmarks distinguish tracks, and
-    their directed elution order can distinguish tracks through an intermediate
-    track: A < B < C forbids A/C membership, whereas A < B > C does not.
+    never have been compared. Co-observation distinguishes tracks only when
+    the physical owner places both landmarks in different unique segments of
+    the same acquired context. Their directed order can then distinguish tracks
+    through an intermediate track: A < B < C forbids A/C membership, whereas
+    A < B > C does not. Two shoulders of one segment supply no exclusion.
     """
 
     tracks: tuple[PeakTrajectory, ...] = ()
     pattern_comparisons: int = 0
     source_contexts: tuple[SampleElutionContext, ...] = ()
+    physical_order: tuple[tuple[str, str], ...] = ()
     _localization_links: _LocalizationLinks | None = field(
         default=None, repr=False, compare=False
     )
@@ -355,20 +358,14 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
-        by_sample: dict[str, list[tuple[int, float]]] = defaultdict(list)
-        for index, track in enumerate(self.tracks):
-            for sample, rt in track.sample_apices:
-                by_sample[sample].append((index, rt))
         distinct: set[tuple[int, int]] = set()
         later: dict[int, set[int]] = defaultdict(set)
-        for positions in by_sample.values():
-            for position, (first, first_rt) in enumerate(positions):
-                for second, second_rt in positions[position + 1 :]:
-                    distinct.add((first, second))
-                    if first_rt < second_rt:
-                        later[first].add(second)
-                    elif second_rt < first_rt:
-                        later[second].add(first)
+        for first_owner, second_owner in self.physical_order:
+            first = self._track_by_owner.get(first_owner)
+            second = self._track_by_owner.get(second_owner)
+            if first is not None and second is not None and first != second:
+                distinct.add((min(first, second), max(first, second)))
+                later[first].add(second)
         # Prepare ordered separation once, not during every membership/bridge
         # proposal. Closing the undirected distinct relation would wrongly veto
         # tracks that merely lie on the same side of a shared reference peak.
@@ -402,11 +399,11 @@ class PeakTrajectories:
             points = (
                 self._localization_links.positions_for(owners, indices)
                 if self._localization_links is not None
-                else {
-                    sample: rt
+                else _unique_sample_positions(
+                    (sample, rt)
                     for index in sorted(indices)
                     for sample, rt in self.tracks[index].sample_apices
-                }
+                )
             )
         points.update((owner.sample_stem, owner.owner_apex_rt) for owner in owners)
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
@@ -518,10 +515,22 @@ class _LocalizationLinks:
                 continue
             withdrawn.add(node)
             pending.extend(self.neighbors[node] - withdrawn - anchors)
-        return {
-            self.nodes[node].sample: self.nodes[node].landmark.apex_rt
+        return _unique_sample_positions(
+            (self.nodes[node].sample, self.nodes[node].landmark.apex_rt)
             for node in sorted(selected - withdrawn)
-        }
+        )
+
+
+def _unique_sample_positions(
+    positions: Iterable[tuple[str, float]],
+) -> dict[str, float]:
+    """Compatible landmarks need not supply one unique observed query point."""
+    by_sample: dict[str, set[float]] = defaultdict(set)
+    for sample, rt in positions:
+        by_sample[sample].add(rt)
+    return {
+        sample: next(iter(rts)) for sample, rts in by_sample.items() if len(rts) == 1
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -675,7 +684,7 @@ def resolve_peak_trajectories(
     """
     if not contexts or not owners:
         return PeakTrajectories()
-    nodes, patterns, owner_nodes = _local_patterns(
+    nodes, patterns, owner_nodes, physical_order = _local_patterns(
         owners,
         contexts,
         config,
@@ -816,11 +825,26 @@ def resolve_peak_trajectories(
             )
         )
     tracks.sort(key=lambda item: item[0].owner_ids)
+    track_owner_by_node = {
+        node: track.owner_ids[0] for track, indices in tracks for node in indices
+    }
+    witnessed_order = tuple(
+        sorted(
+            {
+                (track_owner_by_node[first], track_owner_by_node[second])
+                for first, second in physical_order
+                if first in track_owner_by_node
+                and second in track_owner_by_node
+                and track_owner_by_node[first] != track_owner_by_node[second]
+            }
+        )
+    )
     return PeakTrajectories(
         tuple(track for track, _ in tracks),
         comparisons,
         retained_contexts,
-        _LocalizationLinks(
+        physical_order=witnessed_order,
+        _localization_links=_LocalizationLinks(
             tuple(nodes),
             owner_nodes,
             tuple(indices for _, indices in tracks),
@@ -838,6 +862,7 @@ def _local_patterns(
     list[_Node],
     tuple[_Pattern, ...],
     dict[str, int],
+    frozenset[tuple[int, int]],
 ]:
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
@@ -851,6 +876,8 @@ def _local_patterns(
     nodes_by_mass: dict[tuple[str, float], list[int]] = defaultdict(list)
     patterns: dict[tuple[int, ...], _Pattern] = {}
     owner_nodes = {}
+    physical_order: set[tuple[int, int]] = set()
+    shared_segments: set[tuple[int, int]] = set()
     retained: dict[tuple[str, float, str], SampleElutionContext] = {}
 
     def add_pattern(
@@ -884,6 +911,21 @@ def _local_patterns(
             indices.append(same)
         key = tuple(indices)
         patterns[key] = _Pattern(context.sample_stem, context.mz, key)
+        # Retain the actual mass-window/context witness while mapping its
+        # landmarks to correspondence nodes. Matching RTs on another ion's
+        # context cannot supply physical separation for these tracks.
+        selected = tuple(zip(indices, peaks[start:end], strict=True))
+        for position, (first, left) in enumerate(selected):
+            for second, right in selected[position + 1 :]:
+                if first == second or None in (
+                    left.physical_segment_id,
+                    right.physical_segment_id,
+                ):
+                    continue
+                if left.physical_segment_id == right.physical_segment_id:
+                    shared_segments.add((min(first, second), max(first, second)))
+                else:
+                    physical_order.add((first, second))
         return key
 
     for owner in sorted(
@@ -983,6 +1025,11 @@ def _local_patterns(
         nodes,
         tuple(sorted(patterns.values(), key=lambda item: (item.sample, item.nodes))),
         owner_nodes,
+        frozenset(
+            (first, second)
+            for first, second in physical_order
+            if (min(first, second), max(first, second)) not in shared_segments
+        ),
     )
 
 

@@ -643,6 +643,7 @@ def mint_captured_peak_observation(
             processing_owners=processing_owners,
             content=content,
             generation_provenance=provenance,
+            source_trace=capture.trace,
             physical_evaluation=capture.physical_evaluation,
             capture_stage=(
                 "reacquired_capture"

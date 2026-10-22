@@ -46,7 +46,7 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.mass_accuracy import mz_window, within_ppm
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -58,10 +58,10 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
 )
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    enumerate_physical_segment_universe,
-    mint_physical_peak_question,
-    prepare_physical_signal,
+from xic_extractor.peak_detection.physical_peak_equivalence import (
+    PhysicalPeakView,
+    compare_physical_peak_views,
+    physical_peak_view_from_observation,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -312,11 +312,14 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
+    member_observations: Mapping[str, PeakObservationRef],
+    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
     dict[str, str],
     dict[tuple[str, str], tuple[PeakHypothesis, ...]],
+    frozenset[tuple[str, str]],
 ]:
     """Extend only the requested group with uniquely claimed supported evidence.
 
@@ -324,14 +327,12 @@ def admit_cid_nl_group_backfills(
     occupied sample, or an unsupported match remains unassigned evidence.
     """
     by_id = {group.group_hypothesis_id: group for group in groups}
-    claims: dict[tuple[str, str], set[str]] = defaultdict(set)
-    occupied = {
-        (member.canonical_sample_identity_id, observation_id)
-        for group in groups
-        for member in group.member_subjects
-        for observation_id in member.physical_observation_ids
-    }
     proposals = []
+    claim_backfills = {
+        key: pair
+        for key, pair in backfills.items()
+        if pair[1].content.method_result != "SUPPORT"
+    }
     retained: dict[tuple[str, str], tuple[PeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
@@ -356,14 +357,10 @@ def admit_cid_nl_group_backfills(
         owner = owner_from_cid_nl_assessment_support(
             sample=sample, assessment=assessment, hypothesis=hypothesis
         )
-        # The content ID excludes query provenance and binds the exact measured
-        # chromatogram and integral. Equal coordinates alone are insufficient.
         physical_key = (
             sample_id,
             hypothesis.peak_observation_refs[0].content.peak_observation_content_id,
         )
-        if physical_key in occupied:
-            continue
         if any(
             member.canonical_sample_identity_id == sample_id
             for member in group.member_subjects
@@ -377,8 +374,14 @@ def admit_cid_nl_group_backfills(
             rules=CID_NL_GROUPING_RULES,
         ):
             continue
-        claims[physical_key].add(group_id)
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
+        claim_backfills[key] = (sample, assessment)
+    contested_peaks = contested_backfill_peaks(
+        groups=groups,
+        backfills=claim_backfills,
+        member_observations=member_observations,
+        physical_peak_views=physical_peak_views,
+    )
     cell_claims: dict[tuple[str, str], int] = defaultdict(int)
     for group_id, physical_key, *_ in proposals:
         cell_claims[(group_id, physical_key[0])] += 1
@@ -387,7 +390,7 @@ def admit_cid_nl_group_backfills(
     for proposal in proposals:
         group_id, physical_key, owner, *_ = proposal
         if (
-            len(claims[physical_key]) != 1
+            physical_key in contested_peaks
             or cell_claims[(group_id, physical_key[0])] != 1
         ):
             continue
@@ -463,6 +466,7 @@ def admit_cid_nl_group_backfills(
             tuple(sorted(groups, key=lambda group: group.group_hypothesis_id)),
             successor_ids,
             retained,
+            contested_peaks,
         )
     identities = tuple(
         sorted(
@@ -495,6 +499,7 @@ def admit_cid_nl_group_backfills(
         tuple(sorted(completed, key=lambda group: group.group_hypothesis_id)),
         successor_ids,
         retained,
+        contested_peaks,
     )
 
 
@@ -570,143 +575,65 @@ def contested_backfill_peaks(
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
-    alignment_config: AlignmentConfig,
+    member_observations: Mapping[str, PeakObservationRef],
+    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
 ) -> frozenset[tuple[str, str]]:
-    """Physical peaks a Backfill value cannot claim for one group alone.
+    """Resolve physical claims once, before SUPPORT admission or cell creation.
 
-    A peak several groups' Backfills found, or one a group member already
-    holds, belongs to no single row. ``groups`` are the admitted successors.
-    Each group-bounded window traces the peak again, so its content ID differs
-    from a member's or another window's. Backfills at one sample/apex compete
-    when their actual extraction windows overlap, even if their request centers
-    are farther apart than the preferred m/z tolerance. Direct-member occupancy
-    retains its preferred-tolerance rule. Different-apex Backfill views also
-    compete when identical acquired overlap resolves both apices to one lobe.
+    Direct members of Matrix rows retain occupancy. Competing Backfills have
+    no order-dependent winner, regardless of their method result. An archive
+    member writes no value and cannot occupy a peak. The caller supplies retained
+    observations, not reconstructed peak-shape summaries or rounded coordinates.
     """
-    claims: dict[tuple[str, str], set[str]] = defaultdict(set)
-    backfills_at_apex: dict[
-        tuple[str, float],
-        list[tuple[str, PeakObservationRef, tuple[float, float]]],
-    ] = defaultdict(list)
-    backfills_by_sample: dict[
-        str, list[tuple[str, PeakObservationRef, tuple[float, float]]]
-    ] = defaultdict(list)
-    for (group_id, sample_id, _), (_, assessment) in backfills.items():
-        for peak in assessment.candidate_peaks:
-            content = peak.content
-            claims[(sample_id, content.peak_observation_content_id)].add(group_id)
-            entry = (
-                group_id,
-                peak,
-                mz_window(content.mz, peak.generation_provenance.query_ppm_tol),
-            )
-            backfills_at_apex[(sample_id, content.integration.rt_apex_min)].append(
-                entry
-            )
-            backfills_by_sample[sample_id].append(entry)
-    occupied = {
-        (member.canonical_sample_identity_id, observation_id)
-        for group in groups
-        for member in group.member_subjects
-        for observation_id in member.physical_observation_ids
-    }
-    members_at_apex: dict[tuple[str, float], list[float]] = defaultdict(list)
-    # An archive row writes no value, so only a Matrix row's member holds a peak.
+
+    def view_for(peak: PeakObservationRef) -> PhysicalPeakView:
+        if physical_peak_views is not None:
+            view = physical_peak_views.get(peak.content.peak_observation_content_id)
+            if view is not None:
+                return view
+        return physical_peak_view_from_observation(peak)
+
+    members_by_sample: dict[str, list[tuple[str, PhysicalPeakView]]] = defaultdict(list)
+    occupied = set()
     for group in groups:
         if group.disposition != "established":
             continue
-        for owner in group.owners:
-            subject = owner.cross_sample_member_subject
-            if subject is None:
-                continue
-            members_at_apex[
-                (subject.canonical_sample_identity_id, owner.owner_apex_rt)
-            ].append(owner.precursor_mz)
+        for member in group.member_subjects:
+            sample_id = member.canonical_sample_identity_id
+            for observation_id in member.physical_observation_ids:
+                occupied.add((sample_id, observation_id))
+                observation = member_observations[observation_id]
+                members_by_sample[sample_id].append(
+                    (observation_id, view_for(observation))
+                )
+    backfills_by_sample: dict[str, list[tuple[str, str, PhysicalPeakView]]] = (
+        defaultdict(list)
+    )
+    for (group_id, sample_id, _), (_, assessment) in backfills.items():
+        for peak in assessment.candidate_peaks:
+            backfills_by_sample[sample_id].append(
+                (
+                    group_id,
+                    peak.content.peak_observation_content_id,
+                    view_for(peak),
+                )
+            )
     contested = set()
-    for (sample_id, apex), entries in backfills_at_apex.items():
-        for group_id, peak, (lower, upper) in entries:
-            content = peak.content
-            key = (sample_id, content.peak_observation_content_id)
-            if (
-                len(claims[key]) > 1
-                or key in occupied
-                or any(
-                    holder != group_id and lower <= other_upper and other_lower <= upper
-                    for holder, _, (other_lower, other_upper) in entries
-                )
-                or any(
-                    within_ppm(content.mz, mz, alignment_config.preferred_ppm)
-                    for mz in members_at_apex[(sample_id, apex)]
-                )
+    for sample_id, entries in backfills_by_sample.items():
+        for index, (group_id, observation_id, view) in enumerate(entries):
+            key = (sample_id, observation_id)
+            if key in occupied or any(
+                compare_physical_peak_views(view, member_view) == "same"
+                for _, member_view in members_by_sample[sample_id]
             ):
                 contested.add(key)
-    for sample_id, entries in backfills_by_sample.items():
-        for index, (group_id, peak, (lower, upper)) in enumerate(entries):
-            for other_group, other, (other_lower, other_upper) in entries[:index]:
-                if (
-                    group_id == other_group
-                    or peak.content.integration.rt_apex_min
-                    == other.content.integration.rt_apex_min
-                    or lower > other_upper
-                    or other_lower > upper
+            for other_group, other_id, other_view in entries[:index]:
+                if other_group != group_id and (
+                    observation_id == other_id
+                    or compare_physical_peak_views(view, other_view) == "same"
                 ):
-                    continue
-                if _backfill_views_share_lobe(peak, other):
-                    contested.update(
-                        (sample_id, item.content.peak_observation_content_id)
-                        for item in (peak, other)
-                    )
+                    contested.update((key, (sample_id, other_id)))
     return frozenset(contested)
-
-
-def _backfill_views_share_lobe(
-    left: PeakObservationRef, right: PeakObservationRef
-) -> bool:
-    """Prove competition from retained RAW samples, not an apex tolerance.
-
-    Both queries must lie inside identical acquired overlap. Re-evaluate their
-    combined measured context once: equal traces alone also describe resolved
-    double peaks. Retained observations contain selected samples, not the full
-    baseline margins. Compare lobe membership without requalifying their
-    authoritative integrations or minting a replacement integral.
-    """
-    first, second = left.content, right.content
-    if (
-        min(len(first.rt), len(second.rt)) < 5
-        or left.generation_provenance.acquisition_source_id
-        != right.generation_provenance.acquisition_source_id
-    ):
-        return False
-    lower, upper = max(first.rt[0], second.rt[0]), min(first.rt[-1], second.rt[-1])
-    apices = (first.integration.rt_apex_min, second.integration.rt_apex_min)
-    if not all(lower < apex < upper for apex in apices):
-        return False
-    traces = tuple(
-        tuple(zip(content.rt, content.intensity, strict=True))
-        for content in (first, second)
-    )
-    overlaps = tuple(
-        tuple(point for point in trace if lower <= point[0] <= upper)
-        for trace in traces
-    )
-    if len(overlaps[0]) < 5 or overlaps[0] != overlaps[1]:
-        return False
-    combined = dict((*traces[0], *traces[1]))
-    rt = sorted(combined)
-    prepared = prepare_physical_signal(rt, [combined[t] for t in rt])
-    universe = enumerate_physical_segment_universe(prepared)
-    selected = []
-    for apex in apices:
-        question = mint_physical_peak_question(
-            prepared.projection,
-            universe,
-            selection_subject_id="backfill-competition",
-            query_rt_min=apex,
-        )
-        if len(question.admissible_segment_ids) != 1:
-            return False
-        selected.append(question.admissible_segment_ids[0])
-    return selected[0] == selected[1]
 
 
 def _partition_transition(

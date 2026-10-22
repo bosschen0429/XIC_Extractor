@@ -1,6 +1,8 @@
 import csv
 from pathlib import Path
 
+import numpy as np
+
 from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupMemberSubject,
 )
@@ -20,12 +22,40 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.peak_detection.elution_context import (
+    SampleElutionContext,
+    project_elution_context,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    prepare_physical_signal,
+)
 from xic_extractor.processing_identity import (
     build_acquisition_source_identity,
     canonical_identity_basis_bytes,
     typed_identity_digest,
 )
+
+
+def resolved_elution_context(
+    sample: str, peaks: tuple[tuple[float, float], ...], *, mz: float = 500.0
+) -> SampleElutionContext:
+    """Separated Gaussian peaks with physical ownership, not landmark-only hints."""
+    apices = tuple(rt for rt, _ in peaks)
+    rt = np.arange(max(0.0, min(apices) - 0.5), max(apices) + 0.5, 0.005)
+    for apex in apices:
+        rt[np.argmin(abs(rt - apex))] = apex
+    signal = sum(
+        height * np.exp(-0.5 * ((rt - apex) / 0.035) ** 2) for apex, height in peaks
+    )
+    context = project_elution_context(
+        prepare_physical_signal(rt, signal), sample_stem=sample, mz=mz
+    )
+    assert context is not None
+    assert tuple(p.apex_rt for p in context.landmarks) == tuple(sorted(apices))
+    assert len({p.physical_segment_id for p in context.landmarks}) == len(peaks)
+    assert all(p.physical_segment_id is not None for p in context.landmarks)
+    return context
 
 
 def write_batch(

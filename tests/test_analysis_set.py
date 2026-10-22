@@ -10,6 +10,8 @@ from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
+from xic_extractor.raw_reader import stat_identity
 from xic_extractor.sample_metadata import SampleMetadata
 
 BASE = datetime(2026, 1, 1, 12)
@@ -155,7 +157,16 @@ def test_retained_alignment_keeps_full_root_injection_order(
     )
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
-        lambda **options: (options["candidates_by_sample"], physical_records, None),
+        lambda **options: (
+            options["candidates_by_sample"],
+            physical_records,
+            tuple(
+                AcquisitionSourceExpectation(
+                    receipts[path.stem].acquisition_source, stat_identity(path.stat())
+                )
+                for path in options["raw_paths"]
+            ),
+        ),
     )
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,

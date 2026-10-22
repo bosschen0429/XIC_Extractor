@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
 
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    enumerate_physical_segment_universe,
+    unique_physical_segment_at_rt,
+)
 from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResult
 
 
@@ -21,6 +25,9 @@ class ElutionLandmark:
     apex_rt: float
     height: float
     width: float
+    # Unique point ownership in this context's formal physical universe.
+    # Missing ownership is not evidence that this is a separate peak.
+    physical_segment_id: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -107,8 +114,14 @@ def project_elution_context(
     _, _, left, right = peak_widths(signal, peaks)
     positions = np.arange(len(rt))
     widths = np.interp(right, positions, rt) - np.interp(left, positions, rt)
+    universe = enumerate_physical_segment_universe(prepared_result)
     landmarks = tuple(
-        ElutionLandmark(float(rt[index]), float(signal[index]), float(width))
+        ElutionLandmark(
+            float(rt[index]),
+            float(signal[index]),
+            float(width),
+            unique_physical_segment_at_rt(universe, float(rt[index])),
+        )
         for index, width in zip(peaks, widths, strict=True)
         if width > 0.0
     )

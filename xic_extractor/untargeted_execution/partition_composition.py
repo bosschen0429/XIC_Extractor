@@ -90,6 +90,9 @@ from xic_extractor.untargeted_execution.partition.models import (
 from xic_extractor.untargeted_execution.partition.request import (
     UntargetedPartitionContext,
 )
+from xic_extractor.untargeted_execution.physical_comparison_context import (
+    comparison_views_from_acquisitions,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -917,12 +920,28 @@ def _build_production_composition_inputs(
             )
             is not None
         }
+        physical_peak_views = comparison_views_from_acquisitions(
+            (assessment.candidate_peaks, acquisition)
+            for subject in subject_workset
+            for result in results_by_subject.get(subject.method_subject_id, ())
+            for assessment, acquisition in (
+                (
+                    result.adapter_result.assessment_input.assessment,
+                    result.adapter_result.acquisition,
+                ),
+                *(
+                    (attempt.assessment, attempt.acquisition)
+                    for attempt in result.backfill_attempts
+                ),
+            )
+        )
         completion = prepare_cid_nl_workset(
             workset,
             CidNlWorksetEvidence(
                 sample_assessments=assessments,
                 initial_assessments=initial_assessments,
                 group_backfills=group_backfills,
+                physical_peak_views=physical_peak_views,
             ),
             samples=batch.context.samples,
             alignment_config=alignment_config,

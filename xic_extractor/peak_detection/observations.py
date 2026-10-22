@@ -366,11 +366,16 @@ class PeakObservationGenerationProvenance:
 
 @dataclass(frozen=True, slots=True)
 class PeakObservationRef:
-    """Physical content plus exact generation provenance and attempt artifact."""
+    """Selected content and the acquired context already bound by provenance.
+
+    The source trace is retained for in-memory physical-view comparison; it
+    neither changes the selected integral nor adds another persisted identity.
+    """
 
     content: PeakObservationContent
     generation_provenance: PeakObservationGenerationProvenance
     artifact: EvidenceArtifactRef
+    source_trace: Trace = field(compare=False)
     physical_evaluation: PhysicalPeakEvaluation | None = field(
         default=None, compare=False
     )
@@ -436,6 +441,7 @@ def mint_peak_observation_ref(
         processing_owners=processing_owners,
         content=content,
         generation_provenance=generation_provenance,
+        source_trace=trace,
         physical_evaluation=physical_evaluation,
         capture_stage=capture_stage,
     )
@@ -473,6 +479,7 @@ def _mint_peak_observation_artifact(
     processing_owners: ProcessingOwnerReferences,
     content: PeakObservationContent,
     generation_provenance: PeakObservationGenerationProvenance,
+    source_trace: Trace,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     capture_stage: str = "initial_capture",
 ) -> PeakObservationRef:
@@ -490,6 +497,7 @@ def _mint_peak_observation_artifact(
         content=content,
         generation_provenance=generation_provenance,
         artifact=artifact,
+        source_trace=source_trace,
         physical_evaluation=physical_evaluation,
         capture_stage=capture_stage,
     )

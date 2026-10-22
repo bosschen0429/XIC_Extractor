@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import resolved_elution_context
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
@@ -752,13 +753,7 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
             _synthetic_owner(sample, f"{sample}:peak{selected}", peaks[selected])
         )
         contexts.append(
-            SampleElutionContext(
-                sample,
-                500.0,
-                9.0,
-                13.0,
-                tuple(ElutionLandmark(rt, 100.0, 0.2) for rt in peaks),
-            )
+            resolved_elution_context(sample, tuple((rt, 1000.0) for rt in peaks))
         )
         orders[sample] = index + 1
     correspondence = resolve_peak_trajectories(
@@ -1345,6 +1340,10 @@ def test_separated_band_bridge_respects_indirect_peak_order(
         ),
         peak_trajectories=PeakTrajectories(
             tuple(reversed(tracks)) if reverse else tracks,
+            physical_order=(
+                ("a1", "b1"),
+                ("b1", "c1") if ordered_chain else ("c1", "b1"),
+            ),
         ),
         rules=CID_NL_GROUPING_RULES,
     )

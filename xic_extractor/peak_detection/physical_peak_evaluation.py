@@ -652,6 +652,20 @@ def _admissible_physical_segments(
     )
 
 
+def unique_physical_segment_at_rt(
+    universe: PhysicalSegmentUniverse, query_rt_min: float
+) -> str | None:
+    """Project point ownership from an already evaluated segment universe.
+
+    In-memory consumers need the segment answer, not a new persisted question
+    or another validation of the authoritative universe.
+    """
+    admissible = _admissible_physical_segments(
+        universe, query_rt_min, PHYSICAL_PEAK_POINT_POLICY, None
+    )
+    return admissible[0] if len(admissible) == 1 else None
+
+
 def validate_physical_peak_question_identity(
     question: PhysicalPeakQuestion,
     *,

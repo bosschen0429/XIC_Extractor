@@ -223,11 +223,16 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
         ] = (fixture.sample(name), assessments[name])
     if reverse:
         backfills = dict(reversed(tuple(backfills.items())))
-    grouping, (successor,), successor_ids, retained = admit_cid_nl_group_backfills(
+    grouping, (successor,), successor_ids, retained, _ = admit_cid_nl_group_backfills(
         result=initial,
         groups=(group,),
         backfills=backfills,
         alignment_config=config,
+        member_observations={
+            peak.content.peak_observation_content_id: peak
+            for assessment in assessments.values()
+            for peak in assessment.candidate_peaks
+        },
     )
     accepted = {"compatible"} if conflicting else {"narrow", "other", "compatible"}
     assert {owner.sample_stem for owner in successor.owners} == (
@@ -1036,6 +1041,14 @@ def test_runtime_recovers_every_authorized_rt_group(
             and recovery_is_support
         ):
             initial_groups = tuple(completed.initial_groups)
+            member_observations = {
+                source.peak_observation.content.peak_observation_content_id: (
+                    source.peak_observation
+                )
+                for cell in scientific.cell_observations
+                for source in cell.predecessor_cells
+                if source.peak_observation is not None
+            }
             initial_transition = CrossSamplePartitionTransition(
                 status="assessable",
                 predecessors=transition.predecessors,
@@ -1079,16 +1092,18 @@ def test_runtime_recovers_every_authorized_rt_group(
                 groups=initial_groups,
                 backfills=bound_recoveries,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+                member_observations=member_observations,
             )
             reverse = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=tuple(reversed(initial_groups)),
                 backfills=dict(reversed(tuple(bound_recoveries.items()))),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+                member_observations=member_observations,
             )
 
             def normalized_admission(admission):
-                grouping, groups, successor_ids, hypotheses = admission
+                grouping, groups, successor_ids, hypotheses, _ = admission
                 return (
                     tuple(
                         sorted(
@@ -1148,12 +1163,14 @@ def test_runtime_recovers_every_authorized_rt_group(
                 groups=initial_groups,
                 backfills=ambiguous,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+                member_observations=member_observations,
             )
             rejected_reverse = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=tuple(reversed(initial_groups)),
                 backfills=dict(reversed(tuple(ambiguous.items()))),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+                member_observations=member_observations,
             )
             assert len(rejected[0].partition_transition.admitted_members) == 1
             assert normalized_admission(rejected) == normalized_admission(
@@ -1389,8 +1406,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             assert replayed[:2] == baseline[:2]
 
 
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, mz_separation_ppm
 ):
     physical_records = {}
     """A shared physical peak must not be assigned to both groups."""
@@ -1418,7 +1436,20 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             np.zeros_like(raw.rt),
         )
         raw.scans = tuple(
-            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            replace(
+                scan,
+                scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1,
+                precursor_mz=scan.precursor_mz
+                + 500.0
+                * mz_separation_ppm
+                * 1e-6
+                * (0.5 if path.stem == "Missing" else float(scan.rt > 8.06)),
+                masses=scan.masses
+                + 500.0
+                * mz_separation_ppm
+                * 1e-6
+                * (0.5 if path.stem == "Missing" else float(scan.rt > 8.06)),
+            )
             for scan in raw.scans
         )
         raws[path] = raw
@@ -1493,7 +1524,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
         for attempt in missing.backfill_attempts
     )
-    assert physical_ids[0] == physical_ids[1]
+    assert len(set(physical_ids)) == (1 if mz_separation_ppm == 0.0 else 2)
 
     (child,) = completed.application_result.children
     transition = child.scientific_core.partition_transition
@@ -1979,6 +2010,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         project_completed_untarget_batch_writer_inputs,
     )
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from xic_extractor.processing_identity import AcquisitionSourceExpectation
+    from xic_extractor.raw_reader import stat_identity
     from xic_extractor.untargeted_execution import execution as bounded_runtime
     from xic_extractor.untargeted_execution.alignment import (
         complete_untargeted_alignment,
@@ -2014,7 +2047,15 @@ def _assert_alignment_uses_configured_recovery_groups(
         lambda **options: (
             options["candidates_by_sample"],
             kwargs["physical_records_by_candidate"],
-            None,
+            tuple(
+                AcquisitionSourceExpectation(
+                    kwargs["discovery_receipts_by_sample"][
+                        path.stem
+                    ].acquisition_source,
+                    stat_identity(path.stat()),
+                )
+                for path in options["raw_paths"]
+            ),
         ),
     )
     completed = complete_untargeted_alignment(

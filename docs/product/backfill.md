@@ -212,14 +212,19 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 5. A member of an archive row writes no value and does not hold the peak.
 6. If the windows of two rows resolve the same peak, the cell stays unresolved
    in both rows. The peak does not supply one value twice.
-7. Each window traces the peak again with its own bounds. Backfills from different
-   rows compete at the same apex in the same sample when their actual extraction
-   m/z intervals overlap, including a shared endpoint. Each interval uses that
-   observation's query center and query ppm, not the global preferred tolerance;
-   centers farther apart than the preferred tolerance can still capture one ion.
-   Direct-member occupancy retains its preferred m/z tolerance. One peak does
-   not mean one peak-observation content ID, and no RT epsilon joins distinct
-   apices.
+7. Direct observations and Backfill observations use the shared
+   [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
+   Different bounds, content IDs or context-dependent apices do not establish
+   different peaks. A Matrix row's Direct member keeps its existing value;
+   another row cannot Backfill the same measured peak. Competing Backfills have
+   no arbitrary winner and remain unresolved, whether they carry SUPPORT or
+   MS1-only HOLD. Claim resolution runs once after method/membership eligibility,
+   before new members or numeric cells are created. A SUPPORT proposal that
+   cannot join its requested feature does not veto an otherwise valid recovery.
+   Each view uses its actual extraction m/z interval, not a second preferred-ppm
+   occupancy rule. Same apex plus overlapping windows is not sufficient to
+   block a distinct ion's recovery. Unresolved comparison evidence neither
+   merges views nor invents a competing claim. No RT epsilon joins apices.
 8. When Backfill independently assesses a cell with an initial missing-MS1
    `REJECT`, the Backfill assessment retains the initial `REJECT`. The Backfill
    assessment must earn SUPPORT through the normal relation owner before the

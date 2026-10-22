@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
@@ -42,7 +42,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
-    contested_backfill_peaks,
 )
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
@@ -53,6 +52,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -84,6 +84,7 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
+    physical_peak_views: Mapping[str, PhysicalPeakView] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,13 +230,24 @@ def _complete_cell_observations(
     retained_hypotheses = {
         key: tuple(values) for key, values in retained_cell_hypotheses.items()
     }
-    grouping_result, backfilled_groups, successor_ids, backfilled_hypotheses = (
-        admit_cid_nl_group_backfills(
-            result=grouping_result,
-            groups=grouping_scope.groups,
-            backfills=group_backfills,
-            alignment_config=alignment_config,
-        )
+    member_observations = {
+        peak.content.peak_observation_content_id: peak
+        for candidate in grouping.retained_candidates
+        for peak in candidate.peak_hypothesis.peak_observation_refs
+    }
+    (
+        grouping_result,
+        backfilled_groups,
+        successor_ids,
+        backfilled_hypotheses,
+        contested_peaks,
+    ) = admit_cid_nl_group_backfills(
+        result=grouping_result,
+        groups=grouping_scope.groups,
+        backfills=group_backfills,
+        alignment_config=alignment_config,
+        member_observations=member_observations,
+        physical_peak_views=evidence.physical_peak_views,
     )
     backfilled_positions = frozenset(
         (group_id, sample_id)
@@ -255,11 +267,7 @@ def _complete_cell_observations(
             if pair[1].content.method_result != "SUPPORT"
         },
         retained_hypotheses_by_assessment=retained_hypotheses,
-        contested_backfill_peaks=contested_backfill_peaks(
-            groups=backfilled_groups,
-            backfills=group_backfills,
-            alignment_config=alignment_config,
-        ),
+        contested_backfill_peaks=contested_peaks,
     )
     backfill_cells = (
         compose_cid_nl_predecessor_cells(
