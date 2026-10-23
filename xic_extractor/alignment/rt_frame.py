@@ -1,8 +1,8 @@
 """Stage-local RT answers over shared sample metadata and existing estimators.
 
 Coordinate availability is distinct from measured zero drift. Pairwise ISTD
-evidence remains separate from the batch coordinate transform: neither enables
-the other, supplies peak correspondence, or changes an estimator's fallback.
+identity evidence and batch coordinate calibration consume the same measured
+reference but remain separate answers; calibration does not prove correspondence.
 """
 
 from __future__ import annotations
@@ -87,7 +87,9 @@ class SampleRtFrame:
     )
     _reference: KnownIstdReference | None = field(default=None, repr=False)
     _warp: BatchRtWarp | None = field(default=None, repr=False)
-    _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
+    _sample_calibration: BatchRtCalibration | KnownIstdReference | None = field(
+        default=None, repr=False
+    )
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
         default=None,
         repr=False,
@@ -155,6 +157,26 @@ class SampleRtFrame:
             _warp=None,
             _coordinate_override=None,
         )
+
+    def with_batch_calibration(self, warp: BatchRtWarp) -> SampleRtFrame:
+        """Freeze measured ISTD coordinates, or use the ordinary batch warp.
+
+        Pairwise identity bindings remain local. Grouping and Backfill share
+        the reference's forward/inverse map, including its no-extrapolation rule.
+        """
+        frame = self.with_warp(warp)
+        if self._reference is None:
+            return frame
+        reference = self._reference.prepare_batch(
+            sample_universe=self.sample_universe or frozenset(self.injection_order),
+            injection_order=self.injection_order,
+        )
+        if not any(
+            reference.has_support(s)
+            for s in self.sample_universe or self.injection_order
+        ):
+            return frame
+        return replace(frame, _sample_calibration=reference, _warp=None)
 
     def for_sample_stems(self, samples: frozenset[str]) -> SampleRtFrame:
         """Restrict a consumer's population without reconstructing sample metadata."""

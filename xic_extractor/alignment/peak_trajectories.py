@@ -411,6 +411,15 @@ class PeakTrajectories:
     def owner_track_indices(self) -> dict[str, int]:
         return dict(self._track_by_owner)
 
+    def supports_ordered_pair(self, first: str, second: str) -> bool:
+        """Positive correspondence in a track distinguished by physical order."""
+        index = self._track_by_owner.get(first)
+        return (
+            index is not None
+            and index == self._track_by_owner.get(second)
+            and any(index in pair for pair in self._distinct)
+        )
+
     def permits_membership(self, owner_ids: Iterable[str]) -> bool:
         """Unobserved correspondence may extend a track; distinct peaks cannot merge."""
         return self._compatible(self._indices(owner_ids))

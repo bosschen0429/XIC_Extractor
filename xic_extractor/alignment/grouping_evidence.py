@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
@@ -11,6 +12,9 @@ from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 
 DETECTION_LIMIT_SNR = 3.0
 QUANTITATION_LIMIT_SNR = 10.0
@@ -35,18 +39,26 @@ def peak_shape_union_conflict(
     left: Sequence[SampleLocalMS1Owner],
     right: Sequence[SampleLocalMS1Owner],
     config: AlignmentConfig,
+    *,
+    trajectories: PeakTrajectories | None = None,
 ) -> tuple[str, str] | None:
     """A measured shape contradiction cannot be repaired by a mass/RT bridge.
 
     Check the members, not just the joining edge: otherwise an intermediate
     shape can transitively reunite two incompatible peaks. Missing/flat/short
     traces supply no shape evidence, rather than a fabricated match or veto.
+    Explicit correspondence distinguished by physical peak order takes priority
+    over shape variation within that track; a mass/RT-only track does not.
     """
     for first in left:
         if first.peak_shape is None:
             continue
         for second in right:
             if second.peak_shape is None or first.owner_id == second.owner_id:
+                continue
+            if trajectories is not None and trajectories.supports_ordered_pair(
+                first.owner_id, second.owner_id
+            ):
                 continue
             evidence = compare_local_peak_shapes(first.peak_shape, second.peak_shape)
             if (

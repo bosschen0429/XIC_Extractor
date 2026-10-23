@@ -741,7 +741,9 @@ def _trajectory_seeds(
                 config.max_ppm,
             )
             or any(
-                peak_shape_union_conflict((member,), members[:index], config)
+                peak_shape_union_conflict(
+                    (member,), members[:index], config, trajectories=correspondence
+                )
                 is not None
                 for index, member in enumerate(members)
             )

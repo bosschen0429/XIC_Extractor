@@ -125,9 +125,14 @@ class UntargetedBatchGroupingPreparation:
 
     def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
         self._calibration.add_groups(prepared.rt_anchor_groups)
+        self._bootstrap_frame = self._bootstrap_frame.with_sources(
+            known_istd_reference=prepared.known_istd_reference
+        )
 
     def freeze_calibration(self) -> None:
-        self._rt_frame = self._bootstrap_frame.with_warp(self._calibration.freeze())
+        self._rt_frame = self._bootstrap_frame.with_batch_calibration(
+            self._calibration.freeze()
+        )
 
     def finalize_grouping(
         self,

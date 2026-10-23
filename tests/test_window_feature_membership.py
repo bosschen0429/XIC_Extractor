@@ -192,6 +192,42 @@ def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
     }
 
 
+def test_ordered_doublet_correspondence_survives_shape_disagreement():
+    offsets = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, f"{sample}:{band}", apex),
+            peak_shape=prepare_local_peak_shape(
+                offsets + apex,
+                3 - offsets
+                if sample == "b" and band == "early"
+                else np.exp(-0.5 * (offsets / 0.07) ** 2),
+                apex_rt_min=apex,
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+        for band, apex in (("early", 10 + shift), ("late", 10.7 + shift))
+    )
+    contexts = tuple(
+        resolved_elution_context(sample, ((10 + shift, 30), (10.7 + shift, 100)))
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+    )
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order={"a": 1, "b": 2}
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
+        peak_trajectories=trajectories,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a:early", "b:early")),
+        frozenset(("a:late", "b:late")),
+    }
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     bootstrap: bool,
