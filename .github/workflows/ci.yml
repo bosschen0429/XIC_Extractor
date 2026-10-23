@@ -197,6 +197,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: workbench-browser-traces
-          path: repo-3.12-tests/tmp_runtime/**/browser-trace.zip
+          path: |
+            repo-3.12-tests/tmp_runtime/**/browser-trace.zip
+            repo-3.12-tests/output/browser-failures/**/browser-trace.zip
+            repo-3.12-tests/output/browser-failures/**/browser-events.json
           if-no-files-found: ignore
           retention-days: 7

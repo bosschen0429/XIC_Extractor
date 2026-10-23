@@ -109,9 +109,17 @@ analysis. After bootstrap, install the locked Chromium once and run the lane:
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. Browser deadlines are hang watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
-while local runs keep Playwright's defaults. Failed tests retain `browser-trace.zip` under their
-`tmp_runtime/` test directory; CI uploads those traces. Successful traces are
-cleaned with pytest's temporary files. `tools.testing.test_selection` owns
+while local runs keep Playwright's defaults. Workbench failures retain
+`browser-trace.zip` and `browser-events.json` in unique directories under ignored
+`output/browser-failures/` (override with `XIC_BROWSER_ARTIFACT_DIR`). CI uploads
+both. Evidence is removed only after setup, call, and teardown all finish without
+failure; pytest's failed-only `tmp_path` retention considers the call outcome
+and cannot retain teardown-only failures. Event records include the test, phase,
+elapsed time, console location, page exceptions, and failed request method,
+resource type, URL without credentials/query/fragment, and transport error.
+Request failures are diagnostic, since navigation/download can intentionally
+abort requests; unexpected console errors and page exceptions still fail tests.
+`tools.testing.test_selection` owns
 change relevance; master runs the lane.
 
 ## RAW And Scientific Validation

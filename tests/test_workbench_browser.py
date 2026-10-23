@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import threading
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 pytestmark = pytest.mark.browser_e2e
+pytest_plugins = ("tests.browser_diagnostics",)
 
 # Deadlines are hang watchdogs, not latency requirements. Hosted CI VMs can
 # stall for several seconds at a time, so CI scales every browser wait by one
@@ -85,39 +87,33 @@ def browser_errors():
 
 
 @pytest.fixture
-def workbench(browser, config_dir, tmp_path, browser_errors):
-    workspace = ReviewWorkspace(config_dir=config_dir)
-    server = create_server(workspace, port=0)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    context = browser.new_context(viewport={"width": 1280, "height": 800})
-    # DOM snapshots carry the failure state; screencast frames add renderer load.
-    context.tracing.start(snapshots=True, sources=True)
-    page = context.new_page()
-    page.set_default_timeout(ACTION_TIMEOUT_MS)
-    errors = browser_errors
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.on(
-        "console",
-        lambda message: (
-            errors.append(message.text) if message.type == "error" else None
-        ),
-    )
-    host, port = server.server_address
-    try:
+def workbench(browser, config_dir, browser_errors, browser_diagnostics):
+    with ExitStack() as cleanup:
+        workspace = ReviewWorkspace(config_dir=config_dir)
+        cleanup.callback(workspace.close)
+        server = create_server(workspace, port=0)
+        cleanup.callback(server.server_close)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cleanup.callback(thread.join, timeout=5)
+        cleanup.callback(server.shutdown)
+        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        cleanup.callback(context.close)
+        # DOM snapshots carry the failure state; screencast frames add renderer load.
+        context.tracing.start(snapshots=True, sources=True)
+        cleanup.callback(
+            context.tracing.stop,
+            path=browser_diagnostics.directory / "browser-trace.zip",
+        )
+        page = context.new_page()
+        page.set_default_timeout(ACTION_TIMEOUT_MS)
+        browser_diagnostics.attach(page, browser_errors)
+        host, port = server.server_address
         page.goto(f"http://{host}:{port}/")
         expect(page.locator("body")).not_to_have_class("booting")
         expect(page.locator("#t-data_dir")).to_be_visible()
         yield page
-    finally:
-        # Failed tests retain tmp_path; successful traces are cleaned by pytest.
-        context.tracing.stop(path=tmp_path / "browser-trace.zip")
-        context.close()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-        workspace.close()
-        assert not errors, "Browser errors: " + "\n".join(errors)
+    assert not browser_errors, "Browser errors: " + "\n".join(browser_errors)
 
 
 def test_analysis_poll_waits_for_previous_response(workbench):
