@@ -258,10 +258,12 @@ def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
         )
 
 
+@pytest.mark.parametrize("separate_batch", [False, True])
 def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, separate_batch
 ):
     from xic_extractor.configuration.targets import parse_target_rows
+    from xic_extractor.sample_metadata import SampleMetadata
 
     masses = (300, 400, 500, 600, 700)
     centers = (8, 12, 16, 23, 30)
@@ -335,18 +337,28 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
         {s: tmp_path / f"{s}.raw" for s in ("S0", "S1", "S2", "S3")},
         tmp_path,
         _config(tmp_path),
+        sample_metadata=tuple(
+            SampleMetadata(
+                s, s, batch_id="other" if separate_batch and s == "S2" else "main"
+            )
+            for s in ("S0", "S1", "S2", "S3")
+        ),
     )
     assert next(
         rt
         for label, sample, rt, _ in reference.coordinates
         if label == "I3" and sample == "S2"
-    ) == pytest.approx(23.2, abs=0.021)
+    ) == pytest.approx(9.7 if separate_batch else 23.2, abs=0.021)
     selection = next(
         s
         for s in reference.peak_selections
         if s.label == "I3" and s.sample_stem == "S2"
     )
     assert selection.initial_rt_min == pytest.approx(9.7, abs=0.021)
+    if separate_batch:
+        assert selection.basis == "direct_targeted"
+        assert selection.supporting_samples == ()
+        return
     assert selection.selected_rt_min == pytest.approx(23.2, abs=0.021)
     assert not selection.nl_observed
     assert selection.basis == "cross_sample_physical_peak"

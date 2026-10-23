@@ -13,6 +13,7 @@ from xic_extractor.alignment.drift_evidence import (
     mint_known_istd_reference_from_measurements,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def extract_batch_known_istd_reference(
@@ -23,6 +24,7 @@ def extract_batch_known_istd_reference(
     *,
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
+    sample_metadata: Sequence[SampleMetadata] | None = None,
 ) -> KnownIstdReference:
     """Project Targeted's credible selected ISTDs into the Alignment RT reference."""
     from dataclasses import replace
@@ -55,8 +57,14 @@ def extract_batch_known_istd_reference(
             )
         results_by_sample[sample_stem] = result
 
+    declared_cohorts = {row.raw_stem: row.batch_id for row in sample_metadata or ()}
     coordinates, selections = resolve_istd_reference_peaks(
-        istd_targets, results_by_sample, alignment_config=AlignmentConfig()
+        istd_targets,
+        results_by_sample,
+        alignment_config=AlignmentConfig(),
+        sample_cohorts={
+            sample: declared_cohorts.get(sample, "") for sample in results_by_sample
+        },
     )
 
     return mint_known_istd_reference_from_measurements(

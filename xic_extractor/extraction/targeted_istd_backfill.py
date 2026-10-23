@@ -42,6 +42,7 @@ def resolve_istd_reference_peaks(
     results_by_sample: Mapping[str, FileResult],
     *,
     alignment_config: AlignmentConfig,
+    sample_cohorts: Mapping[str, str],
 ) -> tuple[dict[tuple[str, str], float], tuple[IstdReferencePeakSelection, ...]]:
     """Recover an observed ISTD peak without manufacturing local NL support.
 
@@ -61,18 +62,20 @@ def resolve_istd_reference_peaks(
                 direct[target.label, sample] = rt
                 if result is not None and result.selected_cid_nl_supported:
                     supported[target.label, sample] = rt
-    centers = {
-        target.label: median(
-            rt for (label, _), rt in supported.items() if label == target.label
-        )
-        for target in targets
-        if any(label == target.label for label, _ in supported)
-    }
+    cohort_points: dict[tuple[str, str], list[float]] = {}
+    for (label, sample), rt in supported.items():
+        cohort_points.setdefault((sample_cohorts[sample], label), []).append(rt)
+    centers = {key: median(values) for key, values in cohort_points.items()}
     contested = set()
     for sample in results_by_sample:
+        cohort = sample_cohorts[sample]
+        labels = sorted(
+            (label for batch, label in centers if batch == cohort),
+            key=lambda label: centers[cohort, label],
+        )
         points = [
             (label, direct[label, sample])
-            for label in sorted(centers, key=centers.__getitem__)
+            for label in labels
             if (label, sample) in direct
         ]
 
@@ -95,7 +98,7 @@ def resolve_istd_reference_peaks(
         )
     frame = SampleRtFrame(
         sample_universe=frozenset(results_by_sample),
-        sample_cohorts={sample: "reference_batch" for sample in results_by_sample},
+        sample_cohorts=sample_cohorts,
     )
     for target in targets:
         for sample, file_result in results_by_sample.items():
@@ -107,6 +110,7 @@ def resolve_istd_reference_peaks(
                 for (label, other), rt in supported.items()
                 if label == target.label
                 and other != sample
+                and sample_cohorts[other] == sample_cohorts[sample]
                 and (label, other) not in contested
             )
             result = file_result.results.get(target.label)
