@@ -15,6 +15,7 @@ from xic_extractor.discovery.batch_contract import (
     validate_discovery_candidate_universe,
 )
 from xic_extractor.discovery.models import (
+    CID_NL_ALIGNMENT_STATES,
     DISCOVERY_CANDIDATE_COLUMNS,
     DISCOVERY_CANDIDATE_STATE_VALUES,
     MS1_FEATURE_BACKED_STATES,
@@ -693,7 +694,7 @@ def _require_unique_ms1_feature_row_id(
     candidate: DiscoveryCandidate,
     seen_ms1_feature_row_ids: dict[tuple[str, str, str], int],
 ) -> None:
-    if candidate.discovery_candidate_state not in _MS1_FEATURE_BACKED_STATES:
+    if candidate.discovery_candidate_state not in CID_NL_ALIGNMENT_STATES:
         return
     tag_scope = candidate.neutral_loss_tag
     key = (candidate.sample_stem, tag_scope, candidate.ms1_feature_row_id)

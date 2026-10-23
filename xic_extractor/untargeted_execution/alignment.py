@@ -588,7 +588,13 @@ def _load_physical_replay_inputs(
         for candidate in candidates_by_sample[stem]:
             record = by_id.get(candidate.candidate_id)
             if record is None:
-                raise ValueError("Discovery candidate lacks its exact physical record")
+                if candidate.ms1_peak_found:
+                    raise ValueError(
+                        "Discovery candidate lacks its exact physical record"
+                    )
+                # Diagnostic orphan rows have no persisted physical observation.
+                sample_candidates.append(candidate)
+                continue
             sample_candidates.append(_restore_physical_candidate(candidate, record))
             if candidate.candidate_id in sample_records:
                 raise ValueError("Discovery physical candidate identity is duplicated")

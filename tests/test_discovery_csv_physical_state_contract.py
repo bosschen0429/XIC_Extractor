@@ -244,5 +244,6 @@ def test_discovery_candidate_state_vocabulary_remains_exact() -> None:
         "ms1_feature_nl_rescued",
         "review_only_orphan_nl",
         "review_only_ambiguous_coisolation",
+        "review_only_unresolved_peak_attribution",
         "rejected_noise_or_outside_rt",
     )

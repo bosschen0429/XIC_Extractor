@@ -1042,9 +1042,9 @@ def _validate_untargeted_subject_batch(
     subjects: object,
     candidate_memberships: object,
 ) -> None:
-    if type(subjects) is not tuple or not subjects:
+    if type(subjects) is not tuple:
         raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch requires a non-empty subject tuple"
+            "Untargeted CID-NL subject batch requires a subject tuple"
         )
     if any(type(subject) is not CidNlMethodSubject for subject in subjects):
         raise CidNlMethodSubjectContractError(
@@ -1081,7 +1081,7 @@ def _validate_untargeted_subject_batch(
             "Untargeted CID-NL subject batch subjects are not canonically ordered"
         )
 
-    if type(candidate_memberships) is not tuple or not candidate_memberships:
+    if type(candidate_memberships) is not tuple:
         raise CidNlMethodSubjectContractError(
             "Untargeted CID-NL subject batch requires candidate memberships"
         )

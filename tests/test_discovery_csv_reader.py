@@ -711,8 +711,12 @@ def test_read_discovery_candidates_csv_accepts_orphan_without_feature_row_id(
     assert candidate.ms1_peak_found is False
 
 
-def test_read_discovery_candidates_rejects_duplicate_ms1_feature_row_id(
+@pytest.mark.parametrize(
+    "state", ["ms1_feature_nl_supported", "ms1_feature_nl_rescued"]
+)
+def test_only_admitted_rows_require_unique_ms1_feature_row_id(
     tmp_path: Path,
+    state: str,
 ) -> None:
     from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
@@ -727,13 +731,22 @@ def test_read_discovery_candidates_rejects_duplicate_ms1_feature_row_id(
                 best_ms2_scan_id="6096",
                 seed_scan_ids="6096",
                 feature_family_id="Sample_1@F0002",
-                discovery_candidate_state="ms1_feature_nl_rescued",
+                discovery_candidate_state=state,
             ),
         ],
     )
 
-    with pytest.raises(ValueError, match="duplicate ms1_feature_row_id"):
-        read_discovery_candidates_csv(csv_path)
+    if state == "ms1_feature_nl_supported":
+        with pytest.raises(ValueError, match="duplicate ms1_feature_row_id"):
+            read_discovery_candidates_csv(csv_path)
+    else:
+        rows = read_discovery_candidates_csv(csv_path)
+        assert len(rows) == 2
+        assert rows[0].ms1_feature_row_id == rows[1].ms1_feature_row_id
+        assert {row.discovery_candidate_state for row in rows} == {
+            state,
+            "ms1_feature_nl_supported",
+        }
 
 
 @pytest.mark.parametrize(
@@ -830,7 +843,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
     assert parsed_rows == [rows[0]["candidate_id"], rows[1]["candidate_id"]]
 
 
-def test_discovery_input_source_selects_only_direct_mixed_review_support(
+def test_discovery_input_source_keeps_review_only_rows_out_of_features(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.discovery.input_source import DiscoveryInputSource
@@ -881,15 +894,11 @@ def test_discovery_input_source_selects_only_direct_mixed_review_support(
         )
     )
 
-    selected = source.load_review_support(
-        ((500.1, 500.3),),
-        sample_stems=frozenset({"Sample_1"}),
-    )
-
-    assert [item.candidate_id for item in selected["Sample_1"]] == sorted(
-        (sample_1_rows[1]["candidate_id"], sample_1_rows[2]["candidate_id"])
-    )
-    assert selected["Sample_2"] == ()
+    assert source.feature_candidate_ids() == (sample_1_rows[0]["candidate_id"],)
+    assert {c.candidate_id for c in source["Sample_1"]} == {
+        row["candidate_id"] for row in sample_1_rows
+    }
+    assert len(source["Sample_2"]) == 1
 
 
 def test_discovery_input_source_rejects_changed_csv(tmp_path: Path) -> None:

@@ -124,7 +124,11 @@ A reliable query with no apex inside that bound can still nominate a physical
 segment whose own boundaries contain the query center. Mere overlap with the
 search window is insufficient. Multiple containing segments remain ambiguous;
 one containing segment must pass the existing complete-context, acquired-support,
-continuity, and background-contrast checks. This candidate recovery neither
+continuity, and background-contrast checks. An evaluation requiring overlap
+review does not mint a Backfill observation, even when its envelope is measurable
+and an admitted group authorized the query. Clean MS1-only observations remain
+eligible for the existing cell policy; rejected Discovery rows supply neither
+new roots nor borrowed NL evidence. This candidate recovery neither
 changes the RT tolerance nor bypasses downstream ownership and duplicate-peak
 decisions. Queries with an in-window apex keep their existing selection behavior.
 A configured acquisition window narrower than 12 seconds remains valid when

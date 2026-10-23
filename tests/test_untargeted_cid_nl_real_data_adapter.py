@@ -45,8 +45,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
 @pytest.mark.parametrize(
     ("fresh_available", "precursor_case"),
     [
-        (True, "direct"),
-        (False, "direct"),
         (True, "shifted"),
         (False, "shifted"),
         (False, "inferred"),
@@ -206,6 +204,8 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
+    # Different mass queries still require Alignment's comparison context.
+    # Identical queries already share their final context in Discovery.
     assert len(discovery.candidates) == 2
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
@@ -228,7 +228,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                 selection_policy_version="baseline_peak_contains_query",
             ),
         )
-        for record in discovery.physical_evaluations
+        for record in (
+            binding.physical_fact_record for binding in discovery.physical_bindings
+        )
     )
     old_request = fixture.owners.request
     request = build_processing_request_identity(
@@ -283,7 +285,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == (1 if precursor_case == "direct" else 2)
+    assert len(result.acquisition.traces) == 2
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
@@ -829,7 +831,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     } == {inferred_scan.scan_number}
 
 
-def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
+def test_adapter_preserves_direct_support_without_absorbing_inferred_scan(
     tmp_path: Path,
 ) -> None:
     physical_records = {}
@@ -862,12 +864,21 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
         settings=settings,
         physical_records=physical_records,
     )
+    assert len(candidates) == 2
+    (inferred_only,) = tuple(
+        c for c in candidates if c.discovery_candidate_state == "ms1_feature_nl_rescued"
+    )
+    assert inferred_only.seed_scan_ids == (inferred.scan_number,)
+    candidates = tuple(
+        c
+        for c in candidates
+        if c.discovery_candidate_state == "ms1_feature_nl_supported"
+    )
     (candidate,) = candidates
-    assert candidate.precursor_mz_basis == "mixed"
+    assert candidate.precursor_mz_basis == "scan_precursor"
     assert candidate.best_ms2_scan_id == representative.scan_number
     assert set(candidate.seed_scan_ids) == {
         first.scan_number,
-        inferred.scan_number,
         representative.scan_number,
     }
     inferred_product_mz = float(source_raw.scans[1].masses[0])
@@ -1353,7 +1364,7 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
         adapt()
 
 
-def test_merged_inferred_member_outside_final_mass_window_is_not_support(
+def test_unproven_inferred_members_keep_independent_scan_receipts(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.discovery.strict_seed_receipts import (
@@ -1373,22 +1384,23 @@ def test_merged_inferred_member_outside_final_mass_window_is_not_support(
         )
     )
     settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.01)
-    (candidate,) = _current_candidates(
+    candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
-    assert len(candidate.seed_scan_ids) == 3
-    seeds = read_complete_discovery_scan_seeds(
-        source_raw,
-        candidates=(candidate,),
-        settings=settings,
-        include_inferred=True,
-    )
-    assert {scan.scan_number for scan, _ in seeds} == {
-        scan.scan_number for scan in source_raw.scans[1:]
-    }
+    assert len(candidates) == 3
+    for candidate in candidates:
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+        assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+        assert len(candidate.seed_scan_ids) == 1
+        seeds = read_complete_discovery_scan_seeds(
+            source_raw,
+            candidates=(candidate,),
+            settings=settings,
+            include_inferred=True,
+        )
+        assert {scan.scan_number for scan, _ in seeds} == set(candidate.seed_scan_ids)
 
 
 @pytest.mark.parametrize(
@@ -2956,7 +2968,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
 
 
 @pytest.mark.parametrize("preserve_configured_losses", [False, True])
-def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
+def test_unmerged_same_scan_products_keep_exact_canonical_seeds(
     tmp_path: Path, preserve_configured_losses: bool
 ) -> None:
     import json
@@ -2976,32 +2988,30 @@ def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
         ),
     )
     settings = _settings()
-    (candidate,) = _current_candidates(
+    candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert candidate.product_mz == canonical_product
-    evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
-    assert (
-        evidence["scan_receipts"][str(candidate.best_ms2_scan_id)]["product_mz"]
-        == absorbed_product
-    )
-
-    seeds = read_complete_discovery_scan_seeds(
-        source_raw,
-        candidates=(candidate,),
-        settings=settings,
-        include_inferred=True,
-        preserve_configured_losses=preserve_configured_losses,
-    )
-    expected_products = (
-        {canonical_product, absorbed_product}
-        if preserve_configured_losses
-        else {canonical_product}
-    )
-    assert {seed.product_mz for _, seed in seeds} == expected_products
-    assert all(seed.precursor_mz == seed.product_mz + 116.0474 for _, seed in seeds)
+    assert len(candidates) == 2
+    assert {c.product_mz for c in candidates} == {canonical_product, absorbed_product}
+    for candidate in candidates:
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+        evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
+        assert (
+            evidence["scan_receipts"][str(candidate.best_ms2_scan_id)]["product_mz"]
+            == candidate.product_mz
+        )
+        seeds = read_complete_discovery_scan_seeds(
+            source_raw,
+            candidates=(candidate,),
+            settings=settings,
+            include_inferred=True,
+            preserve_configured_losses=preserve_configured_losses,
+        )
+        expected_products = {candidate.product_mz}
+        assert {seed.product_mz for _, seed in seeds} == expected_products
+        assert all(seed.precursor_mz == seed.product_mz + 116.0474 for _, seed in seeds)
 
 
 @pytest.mark.parametrize("preserve_configured_losses", [False, True])

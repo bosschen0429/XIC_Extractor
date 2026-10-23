@@ -732,7 +732,7 @@ def _untargeted_batch_view_memberships(
     provider_subject_ids = tuple(provider.method_subject_id for provider in providers)
     parent_positions = index.subject_positions
     if (
-        not providers
+        (not providers and bool(index.subject_ids))
         or any(provider.provider_id != CID_NL_PROVIDER_ID for provider in providers)
         or len(provider_subject_ids) != len(set(provider_subject_ids))
         or any(

@@ -169,8 +169,29 @@ def capture_ms1_candidates(
         adapter_namespace="xic_extractor.discovery.ms1_capture",
         profile=signal_processing_profile,
     )
-    captured_peaks = physical_capture.capture(
-        tuple(_physical_search(plan, settings=settings) for plan in plans)
+    # Every seed may expose an incomplete edge, even when the representative
+    # lands on a complete peak. Resolve context for the whole population before
+    # attaching any seed; all questions retain the original group's mass query.
+    searches = tuple(
+        replace(_physical_search(plan, settings=settings), query_rt_min=seed.rt)
+        for plan in plans
+        for seed in plan.group.seeds
+    )
+    captured_by_question = {
+        (search.selection_subject_id, search.query_rt_min, search.request): captured
+        for search, captured in zip(
+            searches, physical_capture.capture(searches), strict=True
+        )
+    }
+    captured_peaks = tuple(
+        captured_by_question[
+            (
+                _selection_subject_id(plan.group),
+                select_representative_seed(plan.group.seeds).rt,
+                plan.request,
+            )
+        ]
+        for plan in plans
     )
     batches = physical_capture.acquisition_batches
 
@@ -250,13 +271,50 @@ def capture_ms1_candidates(
             candidates.append(candidate)
             candidate_plans.append(candidate_plan)
             physical_indices.append(index)
+    # Complete each source's method admission before merging. A valid neighbor
+    # cannot lend NL or isotope eligibility to a rejected source wrapper.
+    retained_seeds = tuple(
+        seed
+        for candidate, plan in zip(candidates, candidate_plans, strict=True)
+        if candidate.ms1_peak_found
+        for seed in plan.group.seeds
+    )
+    measured = read_parent_ms1_observations(
+        raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
+    )
+    measured_by_seed = dict(zip(retained_seeds, measured, strict=True))
+    source_result = candidate_merge.DiscoveryCandidateMergeResult(
+        candidates=tuple(candidates),
+        bindings=tuple(
+            candidate_merge.DiscoveryCandidateMergeBinding(i, i, (i,))
+            for i in range(len(candidates))
+        ),
+    )
+    source_result = _verify_precursor_evidence(
+        source_result,
+        candidate_plans,
+        candidates,
+        measured_by_seed=measured_by_seed,
+        settings=settings,
+    )
+    doubly_charged_by_source = tuple(
+        apex_readings.get(index, (None, False))[1] for index in physical_indices
+    )
+    source_result = _hold_doubly_charged_candidates(
+        source_result, doubly_charged_by_source
+    )
+    candidates = list(source_result.candidates)
     merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
         candidates,
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
     merge_result = _verify_precursor_evidence(
-        raw, merge_result, candidate_plans, candidates, settings=settings
+        merge_result,
+        candidate_plans,
+        candidates,
+        measured_by_seed=measured_by_seed,
+        settings=settings,
     )
     closed = _close_duplicate_physical_views(
         raw,
@@ -266,15 +324,25 @@ def capture_ms1_candidates(
     )
     if len(closed.candidates) < len(merge_result.candidates):
         merge_result = _verify_precursor_evidence(
-            raw, closed, candidate_plans, candidates, settings=settings
+            closed,
+            candidate_plans,
+            candidates,
+            measured_by_seed=measured_by_seed,
+            settings=settings,
         )
-    doubly_charged_by_source = tuple(
-        apex_readings.get(index, (None, False))[1] for index in physical_indices
-    )
-    if any(doubly_charged_by_source):
-        merge_result = _hold_doubly_charged_candidates(
-            merge_result, doubly_charged_by_source
+    # Only retained questions enter the sidecar. Per-seed context probes above
+    # are not independent persisted work items.
+    retained_ordinals = {
+        ordinal: index for index, ordinal in enumerate(sorted(physical_fact_by_index))
+    }
+    physical_fact_by_index = {
+        retained_ordinals[ordinal]: replace(
+            fact,
+            work_item=replace(fact.work_item, work_ordinal=retained_ordinals[ordinal]),
         )
+        for ordinal, fact in physical_fact_by_index.items()
+    }
+    physical_indices = [retained_ordinals[index] for index in physical_indices]
     physical_bindings = tuple(
         DiscoveryCandidatePhysicalBinding(
             run_spec_id=run_spec_id,
@@ -353,6 +421,8 @@ def _close_duplicate_physical_views(
     proofs: dict[str, CidNlPhysicalProof] = {}
     buckets: dict[float, list[tuple[float, float, str]]] = {}
     for candidate, binding in zip(merged.candidates, merged.bindings, strict=True):
+        if candidate.discovery_candidate_state != "ms1_feature_nl_supported":
+            continue
         record = records[binding.representative_source_ordinal]
         peak = record.evaluation.facts
         if peak is None:
@@ -469,8 +539,7 @@ def _groups_for_physical_peaks(
     settings: DiscoverySettings,
 ) -> tuple[DiscoverySeedGroup, ...]:
     """Partition a seed group by owner-selected physical segments, not RT gaps."""
-    primary = evaluation.question.admissible_segment_ids
-    by_segment: dict[tuple[str, ...], list[DiscoverySeed]] = {primary: []}
+    by_segment: dict[tuple[str, ...], list[DiscoverySeed]] = {}
     for seed in group.seeds:
         question = mint_physical_peak_question(
             evaluation.prepared,
@@ -480,10 +549,8 @@ def _groups_for_physical_peaks(
             selection_policy_version=evaluation.question.selection_policy_version,
         )
         key = question.admissible_segment_ids
-        # Unresolved/outside scans remain with the original representative;
-        # they cannot create or lend support to a different physical peak.
-        if len(key) != 1:
-            key = primary
+        # Unmapped or ambiguous seeds retain their own diagnostic lineage;
+        # they are not members of the representative's resolved peak.
         by_segment.setdefault(key, []).append(seed)
     if len(by_segment) == 1:
         return (group,)
@@ -495,11 +562,11 @@ def _groups_for_physical_peaks(
 
 
 def _verify_precursor_evidence(
-    raw: object,
     merged: candidate_merge.DiscoveryCandidateMergeResult,
     plans: Sequence[_DiscoveryMs1RequestPlan],
     original_candidates: Sequence[DiscoveryCandidate],
     *,
+    measured_by_seed: dict[DiscoverySeed, DiscoverySeed],
     settings: DiscoverySettings,
 ) -> candidate_merge.DiscoveryCandidateMergeResult:
     """Verify member evidence against the final retained physical peak."""
@@ -511,16 +578,6 @@ def _verify_precursor_evidence(
         )
         for binding in merged.bindings
     )
-    retained_seeds = tuple(
-        seed
-        for candidate, seeds in zip(merged.candidates, seed_groups, strict=True)
-        if candidate.ms1_peak_found
-        for seed in seeds
-    )
-    measured = read_parent_ms1_observations(
-        raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
-    )
-    by_seed = dict(zip(retained_seeds, measured, strict=True))
     verified: list[DiscoveryCandidate] = []
     bindings: list[candidate_merge.DiscoveryCandidateMergeBinding] = []
     for candidate, original_seeds, binding in zip(
@@ -530,7 +587,18 @@ def _verify_precursor_evidence(
         if not candidate.ms1_peak_found:
             verified.append(candidate)
             continue
-        seeds = [by_seed[seed] for seed in original_seeds]
+        seeds = [measured_by_seed[seed] for seed in original_seeds]
+        if candidate.discovery_candidate_state in {
+            "review_only_unresolved_peak_attribution",
+            "review_only_ambiguous_coisolation",
+        }:
+            verified.append(
+                replace(
+                    candidate,
+                    tag_evidence_json=merge_seed_evidence(seeds, settings=settings),
+                )
+            )
+            continue
         support_events = []
         for seed in seeds:
             assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
@@ -584,8 +652,8 @@ def _candidate_has_precursor_support(
         )
         and candidate.ms1_peak_rt_start is not None
         and candidate.ms1_peak_rt_end is not None
-        and candidate.ms1_peak_rt_start <= support_rt
-        and scan_rt <= candidate.ms1_peak_rt_end
+        and candidate.ms1_peak_rt_start <= support_rt <= candidate.ms1_peak_rt_end
+        and candidate.ms1_peak_rt_start <= scan_rt <= candidate.ms1_peak_rt_end
         for reference_mz, support_rt, scan_rt in support_events
     )
 
@@ -703,11 +771,7 @@ def _hold_doubly_charged_candidates(
     merge_result: candidate_merge.DiscoveryCandidateMergeResult,
     doubly_charged_by_source: tuple[bool, ...],
 ) -> candidate_merge.DiscoveryCandidateMergeResult:
-    """Hold for review a candidate whose every seed read a doubly charged ion.
-
-    Any singly charged member carries the candidate, so the hold is applied
-    after the merge, which reassigns the state.
-    """
+    """Hold inferred isotope sources before they can borrow a merge's support."""
     return replace(
         merge_result,
         candidates=tuple(
@@ -861,6 +925,11 @@ def _candidate_from_physical_record(
         ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
+    if physical_evaluation.requires_overlap_review:
+        candidate = replace(
+            candidate,
+            discovery_candidate_state="review_only_unresolved_peak_attribution",
+        )
     if candidate.candidate_id != physical_work.candidate_id:
         raise ValueError("physical work candidate identity diverged")
     return candidate

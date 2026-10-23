@@ -321,6 +321,7 @@ class DetachedIndexedDiscoveryPhysicalFacts:
     precursor_mz: dict[str, float]
     physical_identities: dict[str, dict[str, str]]
     physical_apices: dict[str, float]
+    resolved_candidate_ids: frozenset[str]
 
 
 class IndexedDiscoveryPhysicalFacts:
@@ -341,6 +342,7 @@ class IndexedDiscoveryPhysicalFacts:
         self.precursor_mz: dict[str, float] = {}
         self.physical_identities: dict[str, dict[str, str]] = {}
         self.physical_apices: dict[str, float] = {}
+        resolved_candidate_ids: set[str] = set()
         manifest_ids: list[str] = []
         record_ids: list[str] = []
         questions: set[tuple[object, ...]] = set()
@@ -382,6 +384,12 @@ class IndexedDiscoveryPhysicalFacts:
                     value.get("physical_evaluation"), label="physical_evaluation"
                 )
                 evaluation = _mapping(physical.get("evaluation"), label="evaluation")
+                owner_evaluation = physical_evaluation_from_payload(evaluation)
+                if (
+                    owner_evaluation.state == "available"
+                    and not owner_evaluation.requires_overlap_review
+                ):
+                    resolved_candidate_ids.add(cid)
                 fact_value = evaluation.get("facts")
                 facts = (
                     _mapping(fact_value, label="facts")
@@ -421,6 +429,7 @@ class IndexedDiscoveryPhysicalFacts:
             ),
             spool_dir=spool_dir,
         )
+        self.resolved_candidate_ids = frozenset(resolved_candidate_ids)
         try:
             if manifest_ids != record_ids:
                 raise ValueError("Discovery physical records crossed their manifest")
@@ -463,6 +472,7 @@ class IndexedDiscoveryPhysicalFacts:
             precursor_mz=self.precursor_mz,
             physical_identities=self.physical_identities,
             physical_apices=self.physical_apices,
+            resolved_candidate_ids=self.resolved_candidate_ids,
         )
 
     @classmethod
@@ -482,6 +492,7 @@ class IndexedDiscoveryPhysicalFacts:
         value.precursor_mz = transfer.precursor_mz
         value.physical_identities = transfer.physical_identities
         value.physical_apices = transfer.physical_apices
+        value.resolved_candidate_ids = transfer.resolved_candidate_ids
         value.source = PhysicalFactSource.from_detached(transfer.source)
         return value
 

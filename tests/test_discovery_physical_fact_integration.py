@@ -43,6 +43,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -515,6 +516,19 @@ def test_merged_physical_candidate_persists_representative_search_window(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
+    if fallback:
+        # Only the second inferred seed has its own parent-ion NL proof.
+        # The first cannot borrow that support through a physical merge.
+        assert [c.discovery_candidate_state for c in result.candidates] == [
+            "ms1_feature_nl_rescued",
+            "ms1_feature_nl_supported",
+        ]
+        assert [b.member_source_ordinals for b in result.physical_bindings] == [
+            (0,),
+            (1,),
+        ]
+        assert len(parent_batches) == 1 and len(parent_batches[0]) == 2
+        return
     (candidate,) = result.candidates
     (binding,) = result.physical_bindings
     assert binding.candidate is candidate
@@ -535,7 +549,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
                 for work in result.physical_work_manifest
             }
         )
-        == 2
+        == 1
     )
     selected = binding.physical_fact_record
     before_trace = serialize_acquired_trace(selected.acquired_trace)
@@ -660,13 +674,17 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         physical_calls["evaluate"] += 1
         return real_evaluate(*args, **kwargs)
 
+    def counted_answer(*args, **kwargs):
+        physical_calls["evaluate"] += 1
+        return answer_physical_peak_question(*args, **kwargs)
+
     monkeypatch.setattr(
         "xic_extractor.acquisition.physical_capture.prepare_physical_signal",
         counted_prepare,
     )
     monkeypatch.setattr(
-        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak",
-        counted_evaluate,
+        "xic_extractor.acquisition.physical_capture.answer_physical_peak_question",
+        counted_answer,
     )
     monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
     monkeypatch.setattr(physical_owner, "evaluate_physical_peak", counted_evaluate)
@@ -1179,10 +1197,10 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         record.evaluation.prepared.prepared_signal_id
         for record in result.physical_evaluations
     } == {result.physical_evaluations[0].evaluation.prepared.prepared_signal_id}
-    assert metrics.logical_xic_request_count == 2
+    assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
-    assert [len(batch) for batch in raw.request_batches] == [2]
+    assert [len(batch) for batch in raw.request_batches] == [1]
 
 
 def test_physical_binding_rejects_cross_acquisition_reassembly(
@@ -1415,6 +1433,10 @@ def test_discovery_publishes_physical_qualification(
         assert query_rt < evaluation.facts.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert (
+            candidate.discovery_candidate_state
+            == "review_only_unresolved_peak_attribution"
+        )
         assert candidate.is_provisional
         assert candidate.review_priority == "MEDIUM"
         assert "physical_shoulder_overlap" in candidate.reason
@@ -1478,12 +1500,13 @@ def test_physical_fact_sharing_uses_exact_owner_question(
     )
     raw = _OwnerBoundBatchRaw(source)
     prepare = Mock(wraps=prepare_physical_signal)
-    evaluate = Mock(wraps=evaluate_physical_peak)
+    evaluate = Mock(wraps=answer_physical_peak_question)
     monkeypatch.setattr(
         "xic_extractor.acquisition.physical_capture.prepare_physical_signal", prepare
     )
     monkeypatch.setattr(
-        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak", evaluate
+        "xic_extractor.acquisition.physical_capture.answer_physical_peak_question",
+        evaluate,
     )
 
     result = capture_ms1_candidates(
@@ -1828,12 +1851,27 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         tmp_path, _two_ions, basis=basis, companion_basis=companion_basis
     )
 
-    (candidate,) = result.candidates
-    assert candidate.ms1_peak_found is True
-    assert candidate.discovery_candidate_state in {
-        "ms1_feature_nl_supported",
-        "ms1_feature_nl_rescued",
-    }
+    assert all(candidate.ms1_peak_found for candidate in result.candidates)
+    assert (
+        sum(
+            c.discovery_candidate_state == "ms1_feature_nl_supported"
+            for c in result.candidates
+        )
+        == 1
+    )
+    if companion_basis is not None:
+        assert len(result.candidates) == 2
+        assert (
+            sum(
+                c.discovery_candidate_state == "ms1_feature_nl_rescued"
+                for c in result.candidates
+            )
+            == 1
+        )
+        assert all(
+            len(binding.member_source_ordinals) == 1
+            for binding in result.physical_bindings
+        )
 
 
 @pytest.mark.parametrize("has_isotope", [False, True])

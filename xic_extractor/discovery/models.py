@@ -45,6 +45,7 @@ DiscoveryCandidateState = Literal[
     "ms1_feature_nl_rescued",
     "review_only_orphan_nl",
     "review_only_ambiguous_coisolation",
+    "review_only_unresolved_peak_attribution",
     "rejected_noise_or_outside_rt",
 ]
 DISCOVERY_CANDIDATE_STATE_VALUES: tuple[DiscoveryCandidateState, ...] = (
@@ -52,11 +53,16 @@ DISCOVERY_CANDIDATE_STATE_VALUES: tuple[DiscoveryCandidateState, ...] = (
     "ms1_feature_nl_rescued",
     "review_only_orphan_nl",
     "review_only_ambiguous_coisolation",
+    "review_only_unresolved_peak_attribution",
     "rejected_noise_or_outside_rt",
 )
 MS1_FEATURE_BACKED_STATES: tuple[DiscoveryCandidateState, ...] = (
     "ms1_feature_nl_supported",
     "ms1_feature_nl_rescued",
+)
+# A measured MS1 peak alone does not authorize CID-NL Alignment work.
+CID_NL_ALIGNMENT_STATES: tuple[DiscoveryCandidateState, ...] = (
+    "ms1_feature_nl_supported",
 )
 
 DISCOVERY_CANDIDATE_REVIEW_COLUMNS = (

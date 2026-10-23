@@ -134,6 +134,7 @@ def build_partition_context(
     | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
+    feature_candidate_ids: tuple[str, ...] | None = None,
 ) -> UntargetedPartitionContext:
     """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
@@ -165,12 +166,16 @@ def build_partition_context(
         candidates_by_sample,
         expected_sample_stems=tuple(paths_by_stem),
     )
+    admitted = (
+        None if feature_candidate_ids is None else frozenset(feature_candidate_ids)
+    )
     if isinstance(method_subject, UntargetedCidNlMethodSubjectBatch):
         candidate_ids = tuple(
             sorted(
                 candidate.candidate_id
                 for candidates in candidate_map.values()
                 for candidate in candidates
+                if admitted is None or candidate.candidate_id in admitted
             )
         )
         membership_ids = tuple(
@@ -248,9 +253,12 @@ def build_partition_context(
     }
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise IdentityContractError("physical replay profile must be owner-resolved")
-    if set(physical_records) != set(candidate_by_id):
+    measured_ids = {
+        cid for cid, candidate in candidate_by_id.items() if candidate.ms1_peak_found
+    }
+    if not measured_ids <= physical_records.keys() <= candidate_by_id.keys():
         raise IdentityContractError(
-            "physical replay must cover the exact candidate universe"
+            "physical replay must cover every measured Discovery candidate"
         )
     for candidate_id, record in physical_records.items():
         validate_discovery_physical_fact_record(record)
@@ -273,6 +281,19 @@ def build_partition_context(
             raise IdentityContractError(
                 "physical replay crossed candidate, acquisition, or profile"
             )
+    candidate_universe = candidate_universe_payload(
+        candidate_map,
+        discovery_receipts_by_sample=receipt_map,
+        expected_sample_stems=tuple(paths_by_stem),
+    )
+    if admitted is not None:
+        candidate_map = {
+            stem: tuple(c for c in values if c.candidate_id in admitted)
+            for stem, values in candidate_map.items()
+        }
+        physical_records = {
+            cid: record for cid, record in physical_records.items() if cid in admitted
+        }
     return compose_partition_context(
         method_subject=method_subject,
         settings=settings,
@@ -286,11 +307,8 @@ def build_partition_context(
         physical_records=physical_records,
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
-        candidate_universe=candidate_universe_payload(
-            candidate_map,
-            discovery_receipts_by_sample=receipt_map,
-            expected_sample_stems=tuple(paths_by_stem),
-        ),
+        candidate_universe=candidate_universe,
+        feature_candidate_ids=feature_candidate_ids,
         physical_capture=(
             physical_capture_input_payload(
                 signal_processing_profile,

@@ -259,7 +259,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         assert cell.area is not None and cell.area > 0
 
 
-def test_hold_reuse_beside_several_searches_completes_each_group_cell(
+def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     tmp_path, monkeypatch
 ):
     # Three same-m/z peaks; S0-S5 support two samples per peak. S6 shows all
@@ -354,16 +354,10 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
     initial_partition = initial_phase.partitions[0]
     initial = adapter.execute_acquisition(initial_partition)
     assert initial.succeeded
-    (s6_initial,) = (
-        result
+    assert not any(
+        result.job.sample.metadata.raw_stem == "S6"
         for result in initial.result[1].sample_results
-        if result.job.sample.metadata.raw_stem == "S6"
     )
-    s6_assessment = s6_initial.adapter_result.assessment_input.assessment
-    assert s6_assessment.content.method_result == "HOLD"
-    assert [
-        peak.content.integration.rt_apex_min for peak in s6_assessment.candidate_peaks
-    ] == pytest.approx([7.80], abs=0.005)
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert backfill_phase.prepare_before is not None
     backfill_phase.prepare_before(store, lambda: None)
@@ -392,7 +386,7 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
     )
     assert sorted(
         group_apex[attempt.group_hypothesis_id] for attempt in s6.backfill_attempts
-    ) == [8.25, 8.70]
+    ) == list(group_apices)
     composed = adapter.execute_composition(
         partition, acquisition, store, retain_memory=True
     )
@@ -402,11 +396,8 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
     assert len(writer.matrix.cells) == 21
     for cell in writer.matrix.cells:
         apex = group_apex[cell.group_hypothesis_id]
-        if (cell.sample_stem, apex) == ("S6", 7.80):
-            # The reused initial HOLD still reaches its group; an inferred
-            # precursor stays an unresolved owner there.
-            assert cell.status == "ambiguous_ms1_owner"
-            continue
+        if cell.sample_stem == "S6":
+            assert cell.source_candidate_id is None
         direct = cell.sample_stem in samples[2 * group_apices.index(apex) :][:2]
         assert cell.status == ("detected" if direct else "backfilled")
         assert cell.apex_rt == pytest.approx(apex, abs=0.005)

@@ -276,6 +276,15 @@ def _matching_ms1_peak_candidate(
 ) -> tuple[int, DiscoveryCandidate | None] | None:
     """The merge target and, for one measured ion, the candidate that holds it."""
 
+    if candidate.discovery_candidate_state != "ms1_feature_nl_supported":
+        # Repeated delivery of the identical observation is not new support.
+        for index in (
+            range(len(merged)) if candidate_ordinals is None else candidate_ordinals
+        ):
+            if merged[index] == candidate:
+                return index, None
+        return None
+
     # Every merge path requires precursor agreement; the measured-ion path
     # permits twice the extraction tolerance. Reject distant ions before the
     # more expensive provenance, peak and centroid checks, retaining scan order.
@@ -283,6 +292,8 @@ def _matching_ms1_peak_candidate(
     ordinals = range(len(merged)) if candidate_ordinals is None else candidate_ordinals
     for index in ordinals:
         existing = merged[index]
+        if existing.discovery_candidate_state != "ms1_feature_nl_supported":
+            continue
         if not _within_ppm(
             existing.precursor_mz, candidate.precursor_mz, precursor_tolerance
         ):
@@ -387,6 +398,8 @@ def _merge_candidate_pair(
     settings: DiscoverySettings,
     representative: DiscoveryCandidate,
 ) -> DiscoveryCandidate:
+    if first == second:
+        return first
     seed_scan_ids = tuple(sorted(set(first.seed_scan_ids + second.seed_scan_ids)))
     seed_event_count = first.seed_event_count + second.seed_event_count
     rt_seed_min = min(first.rt_seed_min, second.rt_seed_min)

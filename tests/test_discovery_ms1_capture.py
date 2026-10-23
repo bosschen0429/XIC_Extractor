@@ -315,18 +315,22 @@ def test_far_ms1_peak_requires_query_containment_before_priority(
     )
     raw = _peak_raw(center=8.16, sigma=sigma, height=100)
 
-    candidate = _candidates_from_raw(
+    candidates = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.20),
-    )[0]
+    )
+    candidate = next(c for c in candidates if 20 in c.seed_scan_ids)
 
     assert candidate.ms1_peak_found == peak_found
     if peak_found:
         # The wider peak contains the query but its apex is still offset.
         assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
         assert candidate.review_priority == "MEDIUM"
-        assert candidate.reason == "MS1 peak offset from seed RT"
+        assert candidate.seed_scan_ids == (20,)
+        assert any(
+            c.seed_scan_ids == (10,) and not c.ms1_peak_found for c in candidates
+        )
     else:
         # The narrower peak's 10% return excludes the query altogether.
         assert candidate.ms1_seed_delta_min is None
@@ -351,7 +355,7 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     assert candidate.seed_event_count == 2
     assert candidate.rt_seed_min == pytest.approx(7.80)
     assert candidate.rt_seed_max == pytest.approx(8.04)
-    assert candidate.ms1_search_rt_min == pytest.approx(7.44)
+    assert candidate.ms1_search_rt_min == pytest.approx(7.20)
     assert candidate.ms1_search_rt_max == pytest.approx(8.64)
     assert candidate.ms1_area is not None and candidate.ms1_area > 0
     assert candidate.ms2_product_max_intensity == 9000.0
@@ -1017,7 +1021,7 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
     assert candidate.ms1_seed_delta_min == pytest.approx(7.90 - expected_rt)
 
 
-def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
+def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_windows(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
@@ -1052,18 +1056,18 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     )
     assert measurements.input_group_count == 4
     assert measurements.empty_group_count == 1
-    assert runtime_metrics.logical_xic_request_count == 3
+    assert runtime_metrics.logical_xic_request_count == 2
     assert runtime_metrics.xic_batch_count == 1
     assert runtime_metrics.adapter_chromatogram_call_count == 2
-    assert runtime_metrics.trace_point_count == 63
+    assert runtime_metrics.trace_point_count == 42
     assert measurements.exact_scan_window_count == 2
     assert measurements.predicted_chunked_call_count == 2
     assert measurements.batch_max_requests == 256
-    assert [len(batch) for batch in raw.request_batches] == [3]
-    assert raw.request_batches[0][0] == raw.request_batches[0][1]
+    assert [len(batch) for batch in raw.request_batches] == [2]
+    assert raw.request_batches[0][0] != raw.request_batches[0][1]
 
 
-def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
+def test_owner_acquisition_batches_distinct_contexts_at_256(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
@@ -1075,7 +1079,11 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
     )
     group = _group((_seed(scan_number=10, rt=7.80),))
     groups = tuple(
-        replace(group, seeds=(_seed(scan_number=index + 1, rt=7.80),))
+        replace(
+            group,
+            precursor_mz=500.0 + index,
+            seeds=(_seed(scan_number=index + 1, rt=7.80, precursor_mz=500.0 + index),),
+        )
         for index in range(257)
     )
     raw = _OwnerBoundBatchRaw(source)
