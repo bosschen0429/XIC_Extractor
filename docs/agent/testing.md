@@ -69,6 +69,12 @@ Assert the artifact or result, not only that a helper was called. Mock only
 external or expensive boundaries at the import seam used by production code;
 do not mock away the policy under test.
 
+For asynchronous work, assert completion, cancellation, or resource lifetime
+through events and observable results. Wall-clock thresholds are watchdogs,
+not correctness oracles unless latency itself is a product requirement. A pool's
+worker limit does not promise equal task distribution or identical observed PIDs
+between batches; parallel completion order is not input/result order.
+
 ## Test Placement
 
 Pytest discovery and dependencies are owned by pyproject.toml. Keep tests under
@@ -98,6 +104,12 @@ A legitimate re-analysis may change a snapshot. Keep rejection behavior and
 dependency-failure checks in ordinary CI when their oracle is still current.
 
 ## Browser Workbench Checks
+
+Use the browser for browser-specific loss: navigation/reload, native downloads,
+focus, DOM interaction, and asynchronous UI wiring. Keep format and data-case
+matrices with their Python/API owners, with a representative browser journey
+for each distinct interaction. Additional browser cases need a loss that the
+lower layer cannot detect, rather than another spelling of the same data.
 
 `browser_e2e` uses Python Playwright's sync API against an ephemeral loopback
 server and isolated config, with fake application runners instead of RAW/DLL

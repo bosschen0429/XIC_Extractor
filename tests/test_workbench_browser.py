@@ -1748,28 +1748,17 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     page.screenshot(path=str(tmp_path / "xlsx-method-workspace.png"), full_page=True)
 
 
-@pytest.mark.parametrize("extension", ["xlsx", "csv", "tsv"])
-def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path, extension):
+def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
     import base64
 
     from tests.test_targeted_method_files import rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
 
     page = workbench
-    path = tmp_path / f"renamed.{extension}"
-    if extension == "xlsx":
-        save_target_table(rows(), path)
-    else:
-        import csv
-
-        with path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(
-                handle,
-                fieldnames=list(dict.fromkeys(k for row in rows() for k in row)),
-                delimiter="\t" if extension == "tsv" else ",",
-            )
-            writer.writeheader()
-            writer.writerows(rows())
+    # Format decoding belongs to the upload owner tests. This case exercises
+    # the browser's drop/preview/cancel/confirm wiring with one real workbook.
+    path = tmp_path / "renamed.xlsx"
+    save_target_table(rows(), path)
     batch = page.locator("#t-data_dir").input_value()
     for confirm in [False, True]:
         transfer = page.evaluate_handle(

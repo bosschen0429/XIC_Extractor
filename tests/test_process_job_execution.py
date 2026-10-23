@@ -1,7 +1,7 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Event
-from time import perf_counter, sleep
 
 from xic_extractor.execution.workers import execute_process_jobs
 
@@ -94,11 +94,12 @@ class _DeliveryReceipt:
     value: int
 
 
-def _spawn_worker(job: _Job) -> int:
-    if job.index == 0:
+def _spawn_worker(job: tuple[int, Path]) -> int:
+    index, marker = job
+    marker.write_text("started", encoding="utf-8")
+    if index == 0:
         raise RuntimeError("owner boom")
-    sleep(3.0)
-    return job.index
+    return index
 
 
 class _ImmediateFailureExecutor:
@@ -464,19 +465,16 @@ def test_future_finishing_during_cancellation_is_observed() -> None:
     assert report.unsubmitted_job_ordinals == (2,)
 
 
-def test_spawn_failure_does_not_drain_slow_unsubmitted_jobs() -> None:
-    started = perf_counter()
+def test_spawn_failure_leaves_unsubmitted_jobs_unexecuted(tmp_path: Path) -> None:
     report = execute_process_jobs(
-        (_Job(0), _Job(1), _Job(2)),
+        tuple((index, tmp_path / f"{index}.started") for index in range(3)),
         worker=_spawn_worker,
-        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        error_factory=lambda job, exc: _Failure(job[0], str(exc)),
         is_terminal_failure=lambda result: isinstance(result, _Failure),
         max_workers=1,
     )
-    elapsed = perf_counter() - started
-
     assert report.first_failure == _Failure(0, "owner boom")
     assert report.submitted_job_ordinals == (0,)
     assert report.failed_job_ordinals == (0,)
     assert report.unsubmitted_job_ordinals == (1, 2)
-    assert elapsed < 2.0
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["0.started"]
