@@ -5,7 +5,6 @@
   // mounts later for another group, draws curves on the same signal basis.
   const display = {signal: 'smoothed', overlays: new Set()};
   const displayViews = new Set();
-  const signalSwitchMarkup = `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視" hidden><span>曲線訊號</span><div class="axis-switch"><button type="button" data-signal="raw">原始</button><button type="button" data-signal="smoothed">平滑</button></div></div>`;
   const detailMarkup = `
 <main class="panel detail-panel" id="detail-panel"><div id="workspace-content"></div></main>
 `;
@@ -16,7 +15,7 @@
   const offlineMarkup = `
 <div class="notice" id="report-notice" hidden></div>
   <header>
-    <div class="header-main"><div class="header-copy"><span class="brand-mark" aria-hidden="true">XIC</span><div><h1>%%REPORT_TITLE%%</h1><p class="scope-summary"><strong>%%STRATEGY_LABEL%%</strong><span>%%SELECTED_COUNT%% / %%RUN_TOTAL%% 個項目</span><span id="loaded-range"></span></p></div></div><div class="header-actions">${signalSwitchMarkup}<span class="badge badge-%%CAPABILITY_BADGE%%">%%CAPABILITY_LABEL%%</span><button id="btn-report-info" type="button">報告資訊</button></div></div>
+    <div class="header-main"><div class="header-copy"><span class="brand-mark" aria-hidden="true">XIC</span><div><h1>%%REPORT_TITLE%%</h1><p class="scope-summary"><strong>%%STRATEGY_LABEL%%</strong><span>%%SELECTED_COUNT%% / %%RUN_TOTAL%% 個項目</span><span id="loaded-range"></span></p></div></div><div class="header-actions"><span class="badge badge-%%CAPABILITY_BADGE%%">%%CAPABILITY_LABEL%%</span><button id="btn-report-info" type="button">報告資訊</button></div></div>
     <div class="filter-line"><label class="search-control" for="search"><span class="sr-only">本頁搜尋</span><input type="text" id="search" placeholder="搜尋項目、樣本、m/z 或判定"></label><details class="advanced-filters"><summary>進階篩選</summary><div class="filter-fields"><label>m/z <input type="number" id="mz-min" step="0.0001" placeholder="下限">–<input type="number" id="mz-max" step="0.0001" placeholder="上限"></label><label>RT（min）<input type="number" id="rt-min" step="0.01" placeholder="起點">–<input type="number" id="rt-max" step="0.01" placeholder="終點"></label><button type="button" id="clear">重設篩選</button></div></details><div class="active-filters" id="active-filters"></div></div>
   </header>
   <div class="workbench"><aside class="panel list-panel"><div class="list-header"><span>檢閱項目</span><span id="list-count">%%ITEM_COUNT%% 筆</span></div><div class="record-list" id="record-list"></div></aside>%%DETAIL_SURFACE%%</div>
@@ -443,7 +442,7 @@
   };
   const chrome = mode === 'offline'
     ? offlineMarkup.replace('%%DETAIL_SURFACE%%', detailMarkup).replace('%%DIALOG_SURFACE%%', dialogMarkup)
-    : `<div class="signal-bar">${signalSwitchMarkup}</div>` + detailMarkup + dialogMarkup;
+    : detailMarkup + dialogMarkup;
   setHTML(root, chrome.replace(/%%([A-Z_]+)%%/g, (_, key) => esc(fields[key] ?? '')));
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
   const colors=Array.from({length:8},(_,index)=>`var(--curve-${index+1})`);
@@ -461,6 +460,9 @@
   const records=item=>Array.isArray(item?.details?.readable_records)?item.details.readable_records:[];
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
+  const hasCoordinates=item=>finite(item.precursor_mz)||finite(item.rt_apex_min);
+  const itemIdentity=item=>hasCoordinates(item)?`m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}`:itemTitle(item);
+  const itemContext=item=>`${itemName(item)}${itemTitle(item)!==itemIdentity(item)?` · ${itemTitle(item)}`:''}${item.method_label?` · ${item.method_label}`:''}`;
   // Long identifiers wrap after their separators instead of inside a word.
   const breakable=text=>esc(text).replace(/([|_\/])/g,'$1<wbr>');
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
@@ -469,7 +471,7 @@
   if(mode==='offline'&&items.length===1&&!isCollapsedExcluded(items[0]))root.className+=' single-item';
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
   const initialItem=queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
-  const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
+  const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport,legendOpen:false,legendQuery:''};
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
 
   function candidates(item,sid=state.sample){
@@ -649,7 +651,7 @@
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
     $('list-count').textContent=`${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>`<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div><div class="record-meta">${itemName(item)} · m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(item.reason_label||'未記錄判定說明')}</div></button>`;
+    const recordButton=item=>`<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemIdentity(item))}</span><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div><div class="record-meta">${esc(itemContext(item))}</div><div class="record-reason">${esc(item.reason_label||'未記錄判定說明')}</div></button>`;
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
@@ -659,7 +661,7 @@
     itemRows(item).forEach(r=>{if(!has(r,'quantitative_value'))noSingle++;else if(r.quantitative_value===null)nulls++;else values++;if(!(item.curves||[]).some(c=>c.sample_id===r.sample_id&&c.raw_rts?.length))noCurves++;});
     const multi=itemRows(item).filter(r=>candidates(item,r.sample_id).length>1&&!channelRoles(item,r.sample_id));
     const fact=(label,value,unit='',warn=false,title='')=>`<div class="fact ${warn?'warn':''}"${title?` title="${esc(title)}"`:''}><dt>${label}</dt><dd>${value}${unit?`<small>${unit}</small>`:''}</dd></div>`;
-    return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${fact('主要 RT',rt(item.rt_apex_min),finite(item.rt_apex_min)?'min':'')}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
+    return `<dl class="fact-row">${hasCoordinates(item)?'':fact('m/z',mz(item.precursor_mz))+fact('主要 RT',rt(item.rt_apex_min))}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
   }
   function evidenceButtons(refs,context,label='查看定量依據'){
     const values=[...new Set((Array.isArray(refs)?refs:[]).filter(Boolean))];
@@ -674,6 +676,16 @@
   function sampleControl(item){
     const short=compactNames(item),name=state.sample?sampleName(state.sample):'所有可見樣本';
     return `<label class="sample-selector"><span>樣本</span><select id="sample-select" title="${esc(name)}"><option value="">所有可見樣本</option>${itemRows(item).map(row=>{const full=sampleName(row.sample_id);return `<option value="${esc(row.sample_id)}" title="${esc(full)}" aria-label="${esc(full)}" ${row.sample_id===state.sample?'selected':''}>${esc(short(full))}</option>`;}).join('')}</select></label>`;
+  }
+  function signalControl(item){
+    if(mode==='result'||!item.curves?.length)return '';
+    return `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視"><span>訊號</span><div class="axis-switch">${[['raw','原始'],['smoothed','平滑']].map(([signal,label])=>`<button type="button" data-signal="${signal}" aria-pressed="${signal===display.signal}">${label}</button>`).join('')}</div></div>`;
+  }
+  function curveHeading(item){
+    return `<div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" ${mode==='curves'?'class="sr-only" ':''}tabindex="-1">XIC</h3>${sampleControl(item)}${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div>${signalControl(item)}</div>`;
+  }
+  function curveToolbar(item){
+    return `<div class="chart-toolbar">${sampleDisplay(item)}<div class="plot-options">${overlayControl(item)}<label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div>${channelKey(item)}</div>`;
   }
   function candidateControl(item){
     if(!state.sample)return '';
@@ -696,13 +708,20 @@
     return cut>=8&&names.every(n=>n.length>cut)?n=>'…'+n.slice(cut):n=>n;
   }
   function legend(item){
-    const short=compactNames(item),origins=originsRecorded(item),signalSamples=new Set((item.curves||[]).filter(c=>seriesList(c,'raw').length).map(c=>c.sample_id));
-    const sharedOrigin=!origins&&itemRows(item).length?'<span class="legend-context">支持來源未提供</span>':'';
-    return sharedOrigin+itemRows(item).map(r=>{
-      const notices=sampleNotices(item,r),origin=r.support_origin,name=sampleName(r.sample_id);
+    const short=compactNames(item),origins=mode!=='curves'&&originsRecorded(item),signalSamples=new Set((item.curves||[]).filter(c=>seriesList(c,'raw').length).map(c=>c.sample_id));
+    const sharedOrigin=mode!=='curves'&&!origins&&itemRows(item).length?'<span class="legend-context">支持來源未提供</span>':'';
+    const query=itemRows(item).length>8?state.legendQuery.trim().toLowerCase():'',rows=itemRows(item).filter(r=>!query||`${sampleName(r.sample_id)} ${r.sample_id}`.toLowerCase().includes(query));
+    return sharedOrigin+(rows.map(r=>{
+      const notices=mode==='curves'?[]:sampleNotices(item,r),origin=r.support_origin,name=sampleName(r.sample_id);
       if(display.signal==='smoothed'&&!notices.some(n=>n.kind==='curve')&&!signalSamples.has(r.sample_id))notices.push({kind:'signal',label:'未保存平滑訊號',short:'缺平滑'});
-      return `<label class="legend-item ${notices.length?'has-notice':''} ${r.sample_id===state.sample?'is-focused':''}" title="${esc(name)} · ${esc(originLabel(origin))}"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><svg class="legend-line" viewBox="0 0 22 8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" stroke="${color(r.sample_id)}" stroke-width="2.5" stroke-dasharray="${curveDash(item,origin)}"/></svg><span>${esc(short(name))}${origins?` · <small>${esc(originLabel(origin))}</small>`:''}</span>${notices.map(n=>`<span class="legend-notice flag-${n.kind}" title="${esc(n.label)}">${esc(n.short)}</span>`).join('')}</label>`;
-    }).join('');
+      return `<label class="legend-item ${notices.length?'has-notice':''} ${r.sample_id===state.sample?'is-focused':''}" title="${esc(name)} · ${esc(mode==='curves'?'本次 RAW 擷取':originLabel(origin))}"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><svg class="legend-line" viewBox="0 0 22 8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" stroke="${color(r.sample_id)}" stroke-width="2.5" stroke-dasharray="${curveDash(item,origin)}"/></svg><span>${esc(short(name))}${origins?` · <small>${esc(originLabel(origin))}</small>`:''}</span>${notices.map(n=>`<span class="legend-notice flag-${n.kind}" title="${esc(n.label)}">${esc(n.short)}</span>`).join('')}</label>`;
+    }).join('')||'<span class="legend-context">沒有符合的樣本</span>');
+  }
+  function sampleDisplay(item){
+    if(itemRows(item).length<=8)return `<div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div>`;
+    const visible=itemRows(item).filter(r=>state.visible.has(r.sample_id)).length;
+    const available=new Set((item.curves||[]).filter(c=>seriesList(c,'raw').length).map(c=>c.sample_id)),missing=itemRows(item).filter(r=>state.visible.has(r.sample_id)&&!available.has(r.sample_id)).length;
+    return `<details class="sample-display" id="sample-display" ${state.legendOpen?'open':''}><summary>樣本顯示 <strong>${visible} / ${itemRows(item).length}</strong>${missing?`<span class="legend-unavailable">${missing} 個缺少${display.signal==='raw'?'原始':'平滑'}曲線</span>`:''}</summary><div class="sample-display-body"><label class="legend-search">搜尋樣本<input type="search" id="legend-search" value="${esc(state.legendQuery)}" placeholder="名稱或編號"></label><div class="sample-legend" id="legend-items" aria-label="樣本曲線顯示">${legend(item)}</div></div></details>`;
   }
   function channelKey(item){
     if(originsRecorded(item))return '';const styles=channelStyles(item);
@@ -809,7 +828,7 @@
     const f=item.transition_review,shown=(item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&(!state.sample||state.sample===c.sample_id));
     const sharedMax=Math.max(1,...shown.flatMap(c=>differentialSeries(c).intensities.filter(finite)))*1.05;
     const roster=itemRows(item).map(r=>{const c=(item.curves||[]).find(x=>x.sample_id===r.sample_id),decision=c?.quality_flags?.successor_decision||'unclassified';return `<label class="legend-item"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${differentialColor(c||{})}"></span>${esc(sampleName(r.sample_id))} · ${esc(decision)} · ${esc(r.status_label||'')}</label><button type="button" data-focus="${esc(r.sample_id)}" aria-label="查看 ${esc(sampleName(r.sample_id))}">查看樣本</button>`;}).join('');
-    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
+    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}${signalControl(item)}</div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
   }
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
@@ -819,17 +838,17 @@
     }
     const selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[display.signal]||'訊號',signalLabel=selectedSignalLabel;
     if(mode==='curves'){
-      setHTML($('workspace-content'),`<section class="inspection-section"><h3>所選樣本 XIC</h3><p>本次從 RAW 讀取的檢閱曲線；不是重新定量。</p><div class="selection-controls">${overlayControl(item)}</div><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${plotCard(item,'raw',signalLabel,true)}</section>`);
+      setHTML($('workspace-content'),`<section class="inspection-section" id="inspection-workspace"><p class="curve-context">本次從 RAW 讀取的檢閱曲線；不是重新定量。</p>${curveHeading(item)}${curveToolbar(item)}${plotCard(item,'raw',signalLabel,true)}</section>`);
       return;
     }
     const aligned=alignedAvailable(item);
     setHTML($('workspace-content'),`
-      <div class="item-overview"><div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${breakable(itemTitle(item))}</h2></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}</div>
+      <div class="item-overview"><div class="detail-top"><div><p class="detail-eyebrow">${esc(itemContext(item))}</p><h2>${breakable(itemIdentity(item))}</h2></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}</div>
       <p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p>${evidencePanel(item)}
       <section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace">
-        <div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">XIC</h3>${sampleControl(item)}${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="plot-options">${overlayControl(item)}<label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div></div>
+        ${curveHeading(item)}
         ${state.sample?`<div class="selection-controls">${candidateControl(item)}${captureControl(item)}</div>`:''}
-        <div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div>${channelKey(item)}</div>
+        ${curveToolbar(item)}
         <div class="primary-review ${state.sample?'has-readout':''} ${aligned?'':'single-axis'}">
           <section class="integration-card" id="integration-readout" ${state.sample?'':'hidden'}>${readout(item)}</section>
           <div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}</div>
@@ -837,7 +856,7 @@
       </section></section>
       ${internalPairSupportPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${sampleTable(item)}</section>`);
   }
-  function reset(){state.plotWindow=null;rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
+  function reset(){state.plotWindow=null;rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';state.legendOpen=false;state.legendQuery='';evidenceOpener=null;}
   function viewSample(item,sampleId,scroll=false){
     state.sample=sampleId||null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;
     normalize(item,true);detail();
@@ -890,26 +909,44 @@
     else if(el.dataset.laneCapture)rel.captures[el.dataset.laneCapture]=el.value;
     else return;event.stopImmediatePropagation();detail();
   });
-  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.dataset.inspectorId==='plot-rt-start'||el.dataset.inspectorId==='plot-rt-end')return;if(el.dataset.inspectorId==='sample-select'){viewSample(item,el.value);return;}if(el.dataset.inspectorId==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.dataset.inspectorId==='capture-select'){state.capture=el.value;state.evidence='';}if(el.dataset.overlay){if(el.checked)display.overlays.add(el.dataset.overlay);else display.overlays.delete(el.dataset.overlay);refreshViews();return;}if(el.dataset.inspectorId==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
-  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){viewSample(item,focus.dataset.focus,true);return;}if(event.target.closest('[data-inspector-id="btn-unfocus"]')){viewSample(item,null,true);return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('[data-inspector-id="close-evidence"]')){state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');if(destroyed)return;const old=copy.textContent;copy.textContent='已複製';later(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;setHTML($('zoom-container'),plot(item,zoom.dataset.zoom,{view:'zoom'}));$('zoom-dialog').showModal();}});
+  $('detail-panel').addEventListener('toggle',event=>{
+    if(event.target.dataset.inspectorId==='sample-display')state.legendOpen=event.target.open;
+  },true);
+  root.addEventListener('click',event=>{
+    const chooser=$('sample-display');
+    if(chooser?.open&&!event.target.closest('[data-inspector-id="sample-display"]')){chooser.open=false;state.legendOpen=false;}
+  });
+  $('detail-panel').addEventListener('input',event=>{
+    if(event.target.dataset.inspectorId!=='legend-search')return;
+    state.legendQuery=event.target.value;
+    setHTML($('legend-items'),legend(items.find(i=>i.id===state.id)));
+  });
+  $('detail-panel').addEventListener('change',event=>{
+    const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;
+    if(['plot-rt-start','plot-rt-end','legend-search'].includes(el.dataset.inspectorId))return;
+    if(el.dataset.inspectorId==='sample-select'){viewSample(item,el.value);return;}
+    if(el.dataset.inspectorId==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}
+    if(el.dataset.inspectorId==='capture-select'){state.capture=el.value;state.evidence='';}
+    if(el.dataset.overlay){if(el.checked)display.overlays.add(el.dataset.overlay);else display.overlays.delete(el.dataset.overlay);refreshViews();return;}
+    if(el.dataset.inspectorId==='chk-bounds')state.bounds=el.checked;
+    if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}
+    const legendChoice=el.closest('.legend-item'),sid=el.dataset.sampleVisible;
+    detail();
+    if(legendChoice)afterPaint(()=>[...root.querySelectorAll('.legend-item input')].find(input=>input.dataset.sampleVisible===sid)?.focus({preventScroll:true}));
+  });
+  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){viewSample(item,focus.dataset.focus,true);return;}if(event.target.closest('[data-inspector-id="btn-unfocus"]')){viewSample(item,null,true);return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('[data-inspector-id="close-evidence"]')){state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');if(destroyed)return;const old=copy.textContent;copy.textContent='已複製';later(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemIdentity(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;setHTML($('zoom-container'),plot(item,zoom.dataset.zoom,{view:'zoom'}));$('zoom-dialog').showModal();}});
   if (mode === 'offline') {
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
   $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('[data-inspector-id="clear-inline"]'))clearFilters();});
   }
   $('zoom-close').addEventListener('click',()=>$('zoom-dialog').close());$('zoom-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
-  root.addEventListener('keydown',event=>{const dialog=root.querySelector('dialog[open]');if(dialog){if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dialog.close();}return;}if(event.key==='Escape'&&state.evidence){event.preventDefault();event.stopPropagation();state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}if(mode !== 'offline'||event.target.closest('input,textarea,select')||!['ArrowDown','ArrowUp'].includes(event.key)||listed.length<2)return;event.preventDefault();const i=listed.findIndex(x=>x.id===state.id);state.id=listed[Math.max(0,Math.min(listed.length-1,i+(event.key==='ArrowDown'?1:-1)))].id;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  root.addEventListener('keydown',event=>{const dialog=root.querySelector('dialog[open]');if(dialog){if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dialog.close();}return;}const chooser=$('sample-display');if(event.key==='Escape'&&chooser?.open){event.preventDefault();event.stopPropagation();chooser.open=false;state.legendOpen=false;chooser.querySelector('summary').focus();return;}if(event.key==='Escape'&&state.evidence){event.preventDefault();event.stopPropagation();state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}if(mode !== 'offline'||event.target.closest('input,textarea,select')||!['ArrowDown','ArrowUp'].includes(event.key)||listed.length<2)return;event.preventDefault();const i=listed.findIndex(x=>x.id===state.id);state.id=listed[Math.max(0,Math.min(listed.length-1,i+(event.key==='ArrowDown'?1:-1)))].id;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
   if (mode === 'offline') $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;setHTML($('report-info-body'),`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`);$('report-info-dialog').showModal();});
   $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
-  function syncSignalSwitch(){
-    const curves=mode !== 'result' && items.some(item=>item.curves?.length);
-    root.querySelectorAll('.signal-switch,.signal-bar').forEach(el=>el.hidden=!curves);
-    root.querySelectorAll('[data-signal]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.signal===display.signal)));
-  }
   function refreshViews(){displayViews.forEach(view=>view());}
-  const showDisplay=()=>{syncSignalSwitch();detail();};
+  const showDisplay=()=>detail();
   displayViews.add(showDisplay);cleanups.push(()=>displayViews.delete(showDisplay));
-  root.addEventListener('click',event=>{const button=event.target.closest('[data-signal]');if(!button||button.dataset.signal===display.signal)return;display.signal=button.dataset.signal;refreshViews();});
-  syncSignalSwitch();
+  root.addEventListener('click',event=>{const button=event.target.closest('[data-signal]');if(!button||button.dataset.signal===display.signal)return;display.signal=button.dataset.signal;refreshViews();afterPaint(()=>root.querySelector(`[data-signal="${display.signal}"]`)?.focus({preventScroll:true}));});
   if(mode === 'offline'){if(data.notice){$('report-notice').textContent=data.notice;$('report-notice').hidden=false;}list();}
   else detail();
   return instance;

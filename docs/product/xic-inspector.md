@@ -449,8 +449,9 @@ Inspector.
 
 - Source adapters supply readable titles and explanations of recorded
   outcomes.
-- The item list keeps a concise outcome title, status, and readable reason, so
-  users can scan results before opening an item.
+- When coordinates are available, the item list and detail heading lead with
+  m/z and RT. The source's outcome title remains secondary context; its status
+  and readable reason stay available. Items without coordinates keep their title.
 - A report with one ordinary item gives the detail view the full width, without
   an item sidebar. Multi-item reports keep their sidebar while filtering.
 - Ungrouped excluded candidates remain accessible in a counted, collapsed list
@@ -522,6 +523,12 @@ Inspector.
 - The sample selector and legend shorten a long shared name prefix at its
   separator, keeping distinguishing suffixes visible. Full names remain in
   accessible option labels, tooltips, and the sample table.
+- Larger sample rosters use a counted display chooser rather than filling the
+  plot toolbar. Its searchable, scrollable list changes curve visibility, not
+  the selected sample or saved results. Searching the list does not filter the
+  plotted curves. Display choices survive closing the chooser or changing signal.
+  A count of visible samples lacking the selected curve signal remains outside
+  the collapsed list; per-sample details remain inside it.
 - An explicit return beside the sample control restores the all-sample view.
   The return does not reset the display settings of the item.
 - Viewing a candidate does not change the recorded decision.
@@ -559,8 +566,11 @@ Inspector.
 ### Curve signals
 
 - One page-level raw/smoothed choice draws every curve view: the item plots,
-  cross-sample lanes, and differential views. In an offline report it sits in
-  the header; a hosted view shows it above its content.
+  cross-sample lanes, and differential views. Offline and hosted curve views
+  place it beside the sample control, with visibility and overlays below.
+- Hosted RAW curves retain their review-only source statement and do not
+  present a saved-quantity readout. Sharing controls does not merge live
+  acquisition with retained evidence or repeat quantification.
 - The choice holds across items, samples, candidates, and views mounted later
   on the same page, including side-by-side views and a view a host replaces for
   another group. It defaults to the saved smoothed signal and is not persisted

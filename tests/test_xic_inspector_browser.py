@@ -407,10 +407,10 @@ def _mount_offline_view(page, payload):
     return page.locator("#host")
 
 
-def _dense_review_payload():
+def _dense_review_payload(sample_count=12):
     template = _signal_payload()["items"][0]["curves"][0]
     samples, rows, witnesses, curves = [], [], [], []
-    for index in range(1, 13):
+    for index in range(1, sample_count + 1):
         sample_id, candidate_id = f"S{index}", f"C{index}"
         samples.append(
             {
@@ -453,32 +453,34 @@ def _dense_review_payload():
                 "processed_curves": [] if index == 8 else template["processed_curves"],
             }
         )
+    sample_twelve = next(curve for curve in curves if curve["sample_id"] == "S12")
     curves.extend(
         [
             {
-                **curves[-1],
+                **sample_twelve,
                 "evidence_ref": "reacquired-S12",
                 "stage_label": "重新擷取曲線",
             },
             {
-                **curves[-1],
+                **sample_twelve,
                 "candidate_id": "C12-alt",
                 "evidence_ref": "alternative-S12",
                 "area": 999,
             },
         ]
     )
-    witnesses.append({**witnesses[-1], "candidate_id": "C12-alt"})
+    witnesses.append({**witnesses[11], "candidate_id": "C12-alt"})
     return {
         "samples": samples,
         "items": [
             {
                 "id": "dense-group",
                 "kind": "group",
-                "title": "m/z 500.1234 · RT 1.10 min",
+                "title": "分組紀錄",
                 "precursor_mz": 500.1234,
                 "rt_apex_min": 1.1,
-                "reason_label": "12 個樣本，包含空值、零值、未保存曲線與多候選。",
+                "reason_label": f"{sample_count} 個樣本，"
+                "包含空值、零值、未保存曲線與多候選。",
                 "samples": rows,
                 "witnesses": witnesses,
                 "curves": curves,
@@ -492,6 +494,10 @@ def test_dense_review_keeps_identity_curve_and_key_values_in_view(review_page):
     page.set_viewport_size({"width": 1280, "height": 800})
     payload = _dense_review_payload()
     root = _mount_offline_view(page, payload)
+    expect(
+        root.get_by_role("heading", name="m/z 500.1234 · RT 1.10 min", exact=True)
+    ).to_be_visible()
+    expect(root.locator(".detail-eyebrow")).to_contain_text("分組紀錄")
     picker = root.get_by_role("combobox", name="樣本", exact=True)
     picker.select_option("S1")
     expect(picker).to_have_attribute("title", payload["samples"][0]["label"])
@@ -528,6 +534,65 @@ def test_dense_review_keeps_identity_curve_and_key_values_in_view(review_page):
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )
+
+
+@pytest.mark.parametrize("mode", ["offline", "curves"])
+def test_large_sample_roster_preserves_display_choices_without_displacing_plot(
+    review_page, mode
+):
+    page = review_page
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """([payload, mode]) => XicInspector.mount(
+            document.getElementById('host'), payload, {mode})""",
+        [_dense_review_payload(48), mode],
+    )
+    root = page.locator("#host")
+    heading = root.locator(".inspection-heading")
+    picker = heading.get_by_role("combobox", name="樣本", exact=True)
+    picker.select_option("S48")
+    raw = heading.get_by_role("button", name="原始", exact=True)
+    expect(raw).to_be_visible()
+    roster = _control(root, "sample-display")
+    expect(roster).not_to_have_attribute("open", "")
+    expect(roster.locator("summary")).to_contain_text("48 / 48")
+    expect(roster.locator("summary")).to_contain_text("2 個缺少平滑曲線")
+    expect(_control(root, "svg-raw")).to_be_in_viewport(ratio=1)
+
+    roster.locator("summary").click()
+    search = roster.get_by_role("searchbox", name="搜尋樣本", exact=True)
+    search.fill("48_DNA")
+    checkbox = roster.get_by_role("checkbox")
+    expect(checkbox).to_have_count(1)
+    checkbox.uncheck()
+    expect(roster.locator("summary")).to_contain_text("47 / 48")
+    expect(checkbox).not_to_be_checked()
+    expect(checkbox).to_be_focused()
+    raw.click()
+    expect(raw).to_be_focused()
+    expect(roster).not_to_have_attribute("open", "")
+    roster.locator("summary").click()
+    expect(search).to_have_value("48_DNA")
+    expect(checkbox).not_to_be_checked()
+    expect(_control(root, "svg-raw")).to_contain_text("目前樣本已隱藏")
+    expect(
+        _control(root, "svg-raw").locator('[data-curve-ref="curve-S48"]')
+    ).to_have_count(0)
+    expect(
+        _control(root, "svg-raw").locator('[data-curve-ref="curve-S1"]')
+    ).to_have_count(1)
+    page.set_viewport_size({"width": 680, "height": 720})
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    search.press("Escape")
+    expect(roster).not_to_have_attribute("open", "")
+    expect(roster.locator("summary")).to_be_focused()
+    if mode == "curves":
+        expect(root).to_contain_text("不是重新定量")
+        expect(root.locator('[data-readout="quantity"]')).to_have_count(0)
 
 
 @pytest.mark.parametrize(
