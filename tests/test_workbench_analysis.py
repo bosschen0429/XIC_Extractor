@@ -146,37 +146,44 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     monkeypatch.setattr(targeted, "TargetedRun", Run)
     monkeypatch.setattr("xic_workbench.config_io.write_settings", lambda *a, **kw: None)
     monkeypatch.setattr("xic_workbench.config_io.write_targets", lambda *a, **kw: None)
-    jobs = AnalysisJobs(tmp_path)
-    try:
-        jobs.start("targeted", {"settings": {}, "targets": sample_target_rows()})
-        success = _terminal(jobs)["results"]["targeted"]
-        mode[0] = "fail"
-        running = jobs.start(
-            "targeted", {"settings": {}, "targets": sample_target_rows()}
-        )
-        assert entered.wait(3)
-        with pytest.raises(WorkspaceBusy):
-            jobs.start("samples", {})
-        assert jobs.state()["job"]["message"] == "second.raw"
-        proceed.set()
-        state = _terminal(jobs)
-        assert state["job"]["status"] == "failed"
-        assert state["results"]["targeted"] == success
-        entered.clear()
-        proceed.clear()
-        running = jobs.start(
-            "targeted", {"settings": {}, "targets": sample_target_rows()}
-        )
-        assert entered.wait(3)
-        assert jobs.cancel(running["job"]["job_id"])["job"]["status"] == "cancelling"
-        proceed.set()
-        state = _terminal(jobs)
-        assert state["job"]["status"] == "cancelled"
-        assert state["results"]["targeted"] == success
-        assert Path(success["published_paths"][0]).read_bytes() == b"published-result"
-    finally:
-        proceed.set()
-        jobs.close()
+    workspace = ReviewWorkspace(config_dir=tmp_path)
+    jobs = workspace.analysis.jobs
+    with _client(workspace) as request:
+        try:
+            jobs.start("targeted", {"settings": {}, "targets": sample_target_rows()})
+            success = _terminal(jobs)["results"]["targeted"]
+            mode[0] = "fail"
+            running = jobs.start(
+                "targeted", {"settings": {}, "targets": sample_target_rows()}
+            )
+            assert entered.wait(3)
+            with pytest.raises(WorkspaceBusy):
+                jobs.start("samples", {})
+            assert jobs.state()["job"]["message"] == "second.raw"
+            proceed.set()
+            state = _terminal(jobs)
+            assert state["job"]["status"] == "failed"
+            assert state["results"]["targeted"] == success
+            entered.clear()
+            proceed.clear()
+            running = jobs.start(
+                "targeted", {"settings": {}, "targets": sample_target_rows()}
+            )
+            assert entered.wait(3)
+            status, cancelling, _ = request(
+                "/api/analysis/cancel", {"job_id": running["job"]["job_id"]}
+            )
+            assert status == 200
+            assert cancelling["job"]["status"] == "cancelling"
+            proceed.set()
+            state = _terminal(jobs)
+            assert state["job"]["status"] == "cancelled"
+            assert state["results"]["targeted"] == success
+            assert (
+                Path(success["published_paths"][0]).read_bytes() == b"published-result"
+            )
+        finally:
+            proceed.set()
 
 
 def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
