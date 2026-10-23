@@ -196,6 +196,143 @@ def _nearest_review_batch(tmp_path):
     return report, matrix
 
 
+def _browse_review_batch(tmp_path):
+    """A batch with saved concerns beyond the first coordinate-ordered page."""
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+
+    matrix = tmp_path / "browse-matrix.tsv"
+    matrix.write_text("saved browsing fixture", encoding="utf-8")
+    report = tmp_path / "browse-review.sqlite"
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for index in range(31):
+            rid = f"G{index:02}"
+            keys = [(f"{rid}-{sid}", sid) for sid in ("S1", "S2")]
+            for cid, sid in keys:
+                writer.add_candidate(
+                    cid,
+                    sid,
+                    {
+                        "candidate_id": cid,
+                        "canonical_sample_identity_id": sid,
+                        "sample_stem": sid,
+                        "precursor_mz": 123.4 + index / 1000,
+                        "rt_apex_min": None if index == 0 else 5 + index / 10,
+                    },
+                )
+            writer.add_record(
+                "rows",
+                rid,
+                {
+                    "row_key_id": rid,
+                    "group_hypothesis_id": rid,
+                    "route": {"destination": "matrix", "reason": "recorded"},
+                },
+                keys,
+            )
+            writer.add_record(
+                "final_groups",
+                rid,
+                {
+                    "group_hypothesis_id": rid,
+                    "disposition": "provisional" if index == 30 else "accepted",
+                },
+                keys,
+            )
+            if index == 29:
+                writer.add_record(
+                    "method_assessments",
+                    "held-method",
+                    {
+                        "canonical_sample_identity_id": "S1",
+                        "method_result": "HOLD",
+                        "reason_codes": ["ambiguous_peak"],
+                    },
+                    [keys[0]],
+                )
+            writer.add_row_cells(
+                rid,
+                rid,
+                [
+                    {
+                        "canonical_sample_identity_id": sid,
+                        "variant": "unresolved"
+                        if index == 28 and sid == "S2"
+                        else "numeric",
+                        "value": None
+                        if index == 28 and sid == "S2"
+                        else 0.0
+                        if index == 1
+                        else (index + 1) * (100 if sid == "S1" else 200),
+                    }
+                    for sid in ("S1", "S2")
+                ],
+                {"S1": 0, "S2": 1},
+            )
+        writer.finalize(
+            {
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"canonical_sample_identity_id": sid, "sample_stem": sid}
+                    for sid in ("S1", "S2")
+                ],
+                "selection_evidence_capability": "recorded_decisions",
+            }
+        )
+    return report, matrix
+
+
+def test_batch_review_filters_saved_concerns_before_paging_and_combines_search(
+    tmp_path,
+):
+    report, matrix = _browse_review_batch(tmp_path)
+    original = [path.read_bytes() for path in (report, matrix)]
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    try:
+        workspace.open(str(report))
+        page = workspace.query(
+            {"review_filter": "attention", "order_by": "mz", "limit": 2}
+        )
+        assert page["matched_count"] == 3
+        assert [item["group_id"] for item in page["items"]] == ["G28", "G29"]
+        assert page["review_counts"]["attention"] == 3
+        assert page["items"][1]["review"]["reasons"] == ["method_hold"]
+        tail = workspace.query(
+            {"review_filter": "attention", "order_by": "mz", "limit": 2, "offset": 2}
+        )
+        assert [item["group_id"] for item in tail["items"]] == ["G30"]
+        held = workspace.query({"review_filter": "method_hold", "nearest_mz": 123.4567})
+        assert [item["group_id"] for item in held["items"]] == ["G29"]
+        assert held["items"][0]["mz_distance"] == pytest.approx(0.0277)
+        missing = workspace.query(
+            {"review_filter": "attention", "value_filter": "missing"}
+        )
+        assert [item["group_id"] for item in missing["items"]] == ["G28"]
+        zero = workspace.query({"value_filter": "zero"})
+        assert [item["group_id"] for item in zero["items"]] == ["G01"]
+        assert zero["items"][0]["review"]["attention_count"] == 0
+        scoped = workspace.query({"review_filter": "method_hold", "sample_id": "S2"})
+        assert scoped["matched_count"] == 0
+        nearest = workspace.query({"nearest_mz": 123.4})
+        assert nearest["items"][0]["group_id"] == "G00"
+        assert nearest["items"][0]["rt_apex_min"] is None
+    finally:
+        workspace.close()
+    assert [path.read_bytes() for path in (report, matrix)] == original
+
+
+def test_workbench_approximate_search_is_available_for_older_results(tmp_path):
+    report, _, _ = _create_mock_db(tmp_path)
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    try:
+        workspace.open(str(report))
+        page = workspace.query({"nearest_mz": 500.12})
+        assert page["items"][0]["precursor_mz"] == 500.0
+        assert page["items"][0]["mz_distance"] == pytest.approx(0.12)
+    finally:
+        workspace.close()
+
+
 def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path):
     report, matrix = _nearest_review_batch(tmp_path)
     before = [path.read_bytes() for path in (report, matrix)]

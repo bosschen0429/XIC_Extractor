@@ -678,7 +678,7 @@
     return `<label class="sample-selector"><span>樣本</span><select id="sample-select" title="${esc(name)}"><option value="">所有可見樣本</option>${itemRows(item).map(row=>{const full=sampleName(row.sample_id);return `<option value="${esc(row.sample_id)}" title="${esc(full)}" aria-label="${esc(full)}" ${row.sample_id===state.sample?'selected':''}>${esc(short(full))}</option>`;}).join('')}</select></label>`;
   }
   function signalControl(item){
-    if(mode==='result'||!item.curves?.length)return '';
+    if(!item.curves?.length)return '';
     return `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視"><span>訊號</span><div class="axis-switch">${[['raw','原始'],['smoothed','平滑']].map(([signal,label])=>`<button type="button" data-signal="${signal}" aria-pressed="${signal===display.signal}">${label}</button>`).join('')}</div></div>`;
   }
   function curveHeading(item){
@@ -750,7 +750,7 @@
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
-    const compact=wide&&mode==='offline',W=compact?820:wide?1060:760,H=compact?230:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
+    const compact=wide&&mode!=='curves',W=compact?820:wide?1060:760,H=compact?230:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
     const missingFocus=state.sample&&!peer&&!drawable.some(d=>d.curve.sample_id===state.sample),focusCurve=missingFocus?activeCurve(item):null;
     const missingReason=!state.visible.has(state.sample)?'目前樣本已隱藏':!focusCurve?'目前樣本未提供保存曲線':axis==='aligned'&&!focusCurve.aligned_rts?.length?'目前樣本未提供對齊座標':`目前樣本未保存${display.signal==='raw'?'原始':'平滑'}訊號`;
     const focusNotice=missingFocus?`<p class="plot-focus-notice" role="status"><strong>${missingReason}</strong>；下方僅顯示其他樣本作為參照。</p>`:'';
@@ -832,8 +832,8 @@
   }
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
-    if(mode==='result'){
-      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p><div class="table-scroll"><table class="sample-table"><thead><tr><th>樣本</th><th>Area</th><th>定量狀態</th><th>依據</th></tr></thead><tbody>${itemRows(item).map(r=>`<tr><td>${esc(sampleName(r.sample_id))}</td><td>${finite(r.quantitative_value)?Number(r.quantitative_value).toExponential(3):'—'}</td><td>${finite(r.quantitative_value)?'有定量值':esc(r.decision_label||'未提供定量')}</td><td>${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`).join('')}</tbody></table></div></section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
+    if(mode==='result'&&!item.curves?.some(curve=>curve.raw_rts?.length)){
+      setHTML($('workspace-content'),`<section class="sample-section saved-only"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p>${sampleTable(item)}</section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
     }
     const selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[display.signal]||'訊號',signalLabel=selectedSignalLabel;
@@ -843,7 +843,7 @@
     }
     const aligned=alignedAvailable(item);
     setHTML($('workspace-content'),`
-      <div class="item-overview"><div class="detail-top"><div><p class="detail-eyebrow">${esc(itemContext(item))}</p><h2>${breakable(itemIdentity(item))}</h2></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}</div>
+      ${mode==='offline'?`<div class="item-overview"><div class="detail-top"><div><p class="detail-eyebrow">${esc(itemContext(item))}</p><h2>${breakable(itemIdentity(item))}</h2></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}</div>`:''}
       <p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p>${evidencePanel(item)}
       <section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace">
         ${curveHeading(item)}

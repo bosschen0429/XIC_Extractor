@@ -328,15 +328,13 @@
           </button>
         </p>
       </section>
-      <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
-      <section id="review" class="review-grid" hidden>
-        <aside class="list-panel">
+      <section id="batch-browser" class="batch-browser" aria-label="搜尋與篩選整批結果" hidden>
           <form id="query-form">
-            <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
-              <button id="back-to-overview" type="button" class="text-button" data-idle>← 整批總覽</button>
-            </nav>
             <div class="section-heading">
-              <h2 id="list-title">檢閱項目</h2>
+              <h2 id="list-title">整批結果</h2>
+              <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
+                <button id="back-to-overview" type="button" class="text-button" data-idle>整批總覽</button>
+              </nav>
               <button
                 type="button"
                 id="reset-query"
@@ -355,25 +353,36 @@
                 </select>
               </label>
               <label class="field">目標<select id="target-id" data-idle></select></label>
-              <label class="field">樣本<select id="target-sample" data-idle></select></label>
               <label><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>
             </div>
             <div id="untargeted-search" hidden>
-              <label class="field">搜尋方式
+              <label class="field search-mode">搜尋方式
                 <select id="untargeted-search-mode" data-idle>
                   <option value="nearest">近似 m/z 候選</option>
                   <option value="exact">精確範圍／分組 ID</option>
                 </select>
               </label>
-              <label id="nearest-mz-field" class="field">約略 m/z（留白瀏覽）
+              <label id="nearest-mz-field" class="field">約略 m/z
                 <input id="nearest-mz" type="text" inputmode="decimal"
-                  placeholder="例如 123.4" aria-describedby="search-mode-hint nearest-mz-error"
+                  placeholder="例如 123.4567，不必知道 RT" aria-describedby="search-mode-hint nearest-mz-error"
                   data-idle />
               </label>
               <p id="search-mode-hint" class="subtle"></p>
               <p id="nearest-mz-error" class="query-error" role="alert" hidden></p>
             </div>
-            <details id="review-range-filters" class="query-advanced" open>
+            <div class="batch-filters">
+              <label class="field">檢查訊號<select id="review-filter" data-idle><option value="all">全部結果</option></select></label>
+              <label class="field">數值完整性<select id="value-filter" data-idle>
+                <option value="all">不限</option><option value="complete">全部樣本都有值</option>
+                <option value="missing">部分樣本沒有數值</option><option value="zero">含數值 0</option>
+              </select></label>
+              <label class="field">樣本<select id="target-sample" data-idle></select></label>
+              <label class="field">排列<select id="review-order" data-idle>
+                <option value="priority">待查訊號優先</option><option value="mz">m/z 小到大</option>
+                <option value="rt">RT 早到晚</option><option value="coverage">有值樣本多到少</option>
+              </select></label>
+            </div>
+            <details id="review-range-filters" class="query-advanced">
               <summary>m/z / RT 範圍</summary>
             <div id="exact-mz-range" class="range-row">
               <span>m/z</span
@@ -429,8 +438,15 @@
               <svg class="icon"><use href="#i-search" /></svg>搜尋全批結果
             </button>
           </form>
+          <div id="review-quick-filters" class="review-quick-filters" aria-label="整批檢查訊號"></div>
+          <p class="review-reading-note">檢查訊號來自已保存的判讀；未記錄疑慮不代表確認正確。數值完整性不代表峰品質。</p>
+      </section>
+      <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
+      <section id="review" class="review-grid" hidden>
+        <aside class="list-panel">
           <div id="list-summary" class="list-summary"></div>
           <p id="nearest-results-note" class="nearest-results-note" role="status" hidden></p>
+          <div class="result-columns" aria-hidden="true"><span>項目</span><span>m/z / RT</span><span>有值樣本</span><span>檢查訊號與原因</span></div>
           <div
             id="item-list"
             class="item-list"
@@ -443,7 +459,7 @@
             ><button id="next" type="button">後 25 筆</button>
           </div>
         </aside>
-        <section class="detail-card">
+        <section class="detail-card" id="result-detail" aria-label="結果詳情" hidden>
           <div id="selection-empty" class="empty">
             <span class="empty-glyph" aria-hidden="true"
               ><svg class="icon"><use href="#i-peak" /></svg
@@ -452,6 +468,12 @@
             <p id="selection-empty-description">查看當次分析紀錄，或為選定樣本重新取得 XIC。</p>
           </div>
           <div id="selection" hidden>
+            <nav class="result-navigation" aria-label="連續檢閱結果">
+              <button id="close-detail" type="button" aria-label="返回結果清單" data-idle>← 返回結果清單</button>
+              <div><button id="review-previous" type="button" aria-label="上一個結果">←</button>
+                <span id="review-position" role="status"></span>
+                <button id="review-next" type="button" aria-label="下一個結果">→</button></div>
+            </nav>
             <div class="detail-heading">
               <div>
                 <span class="eyebrow" id="item-kind"></span>
@@ -525,7 +547,7 @@
               <p id="inline-curve-status" role="status"></p>
               <div id="inline-curve-review" aria-label="群組樣本 XIC" hidden></div>
             </section>
-            <div id="recorded-review" aria-label="XIC Inspector 檢閱內容"></div>
+            <div id="recorded-review" aria-label="已保存的結果詳情"></div>
             <details class="identity">
               <summary>項目 ID</summary>
               <code id="item-identity"></code>

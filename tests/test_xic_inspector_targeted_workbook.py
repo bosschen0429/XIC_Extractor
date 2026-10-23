@@ -557,13 +557,37 @@ def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path)
     }
 
 
-def test_nearest_mz_does_not_extend_targeted_workbook_search(workbook):
-    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
-        prepare_report(
-            workbook,
-            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=258),
-        )
-    assert exc.value.code == 2
+def test_targeted_batch_search_combines_nearest_review_and_sample_scope(workbook):
+    original = workbook.read_bytes()
+    result = prepare_report(
+        workbook,
+        SelectionRequest(strategy="query", nearest_mz=261, order_by="priority"),
+    )
+    assert [item["title"] for item in result.payload["items"]] == [
+        "ISTD",
+        "Analyte",
+    ]
+    assert result.payload["items"][0]["mz_distance"] == pytest.approx(0.127)
+    result = prepare_report(
+        workbook,
+        SelectionRequest(
+            strategy="query",
+            nearest_mz=261,
+            target_role="Analyte",
+            review_filter="target_review",
+            sample_ids=("Sample B",),
+        ),
+    )
+    assert [item["title"] for item in result.payload["items"]] == ["Analyte"]
+    assert result.payload["items"][0]["review"] == {
+        "sample_count": 1,
+        "numeric_count": 1,
+        "zero_count": 0,
+        "decision_count": 1,
+        "attention_count": 1,
+        "reasons": ["target_review"],
+    }
+    assert workbook.read_bytes() == original
 
 
 @pytest.fixture

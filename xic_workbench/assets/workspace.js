@@ -135,6 +135,7 @@ window.XicUi = (() => {
     page: null,
     item: null,
     detail: null,
+    detailOpen: false,
     recorded: null,
     curveView: null,
     curveCache: new Map(),
@@ -150,6 +151,7 @@ window.XicUi = (() => {
   };
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
+  const significant = (value, digits) => Number(value.toPrecision(digits)).toString();
   const count = (value) => Number(value).toLocaleString();
   // Intensities span decades, so they read as Excel-style scientific notation.
   const scientific = (value) => {
@@ -307,8 +309,7 @@ window.XicUi = (() => {
     return state.busy || state.restoring || !!state.job;
   }
   function supportsNearestSearch() {
-    return state.page?.source_kind !== "targeted_workbook" &&
-      ["matrix", "unresolved"].includes(state.page?.review_scope);
+    return Boolean(state.page);
   }
   function nearestSearchMode() {
     return supportsNearestSearch() && $("untargeted-search-mode").value === "nearest";
@@ -336,11 +337,11 @@ window.XicUi = (() => {
     $("group-filter").hidden = state.page?.source_kind === "targeted_workbook" || nearest;
     $("group-id").disabled = busy || $("group-filter").hidden;
     $("search-mode-hint").textContent = nearest
-      ? "依 m/z 距離找候選，不代表化合物確認或通過質量容差。RT 可留白；精確 m/z 範圍與分組 ID 不生效。"
-      : "精確範圍／分組 ID 生效；約略 m/z 不生效。";
+      ? "只知道大概數值也能找；RT 可留白。留白則瀏覽整批。"
+      : "依指定範圍搜尋；約略 m/z 不生效。";
     $("review-range-filters").querySelector("summary").textContent = nearest
       ? "RT 範圍（選填，留白不限）" : "m/z / RT 範圍";
-    if (nearest) $("review-range-filters").open = true;
+    $("review-order").disabled = busy || Boolean($("nearest-mz").value.trim() && nearest);
     validateNearestMz();
   }
   function controls() {
@@ -379,6 +380,10 @@ window.XicUi = (() => {
       busy ||
       !state.page ||
       state.page.offset + state.page.limit >= state.page.matched_count;
+    const position = resultPosition();
+    $("review-position").textContent = position >= 0 ? `${position + 1} / ${state.page.matched_count}` : "";
+    $("review-previous").disabled = busy || position <= 0;
+    $("review-next").disabled = busy || position < 0 || position + 1 >= state.page.matched_count;
     $("cancel").hidden = !state.job;
     $("cancel").disabled = state.job?.status === "cancelling";
     const sampleIndex = state.item?.curve_sample_ids.indexOf($("xic-sample").value) ?? -1;
@@ -408,6 +413,9 @@ window.XicUi = (() => {
     }
   }
   function clearSelection() {
+    state.detailOpen = false;
+    $("review").classList.remove("has-detail");
+    $("result-detail").hidden = state.page?.matched_count !== 0;
     $("inline-curves").hidden = true;
     clearReview("inline-curve-review");
     state.item = null;
@@ -447,6 +455,10 @@ window.XicUi = (() => {
       parts.push(`樣本：${sample?.label || filters.sample_id}`);
     }
     if (filters.attention_only) parts.push("優先檢閱");
+    if (filters.review_filter && filters.review_filter !== "all")
+      parts.push(`檢查訊號：${state.page.review_options[filters.review_filter]}`);
+    if (filters.value_filter && filters.value_filter !== "all")
+      parts.push(`數值完整性：${({complete:"全部樣本都有值",missing:"部分樣本沒有數值",zero:"含數值 0"})[filters.value_filter]}`);
     if (filters.group_id) parts.push(`分組 ID：${filters.group_id}`);
     if (filters.nearest_mz != null) parts.push(`約略 m/z：${filters.nearest_mz}`);
     for (const [key, label] of [["mz_min", "m/z ≥"], ["mz_max", "m/z ≤"], ["rt_min", "RT ≥"], ["rt_max", "RT ≤"]]) {
@@ -463,6 +475,7 @@ window.XicUi = (() => {
   navigation.register("review", {
     capture: () => ({
       page: state.page, detail: state.detail, filters: state.filters,
+      detailOpen: state.detailOpen, listScroll: $("item-list").scrollTop,
       fields: [...$("query-form").elements].filter(input => input.id).map(input =>
         [input.id, input.value, input.checked]),
       overview: !$("targeted-overview").hidden,
@@ -480,7 +493,11 @@ window.XicUi = (() => {
           }
           state.filters = saved.filters;
           renderPage(saved.page);
-          if (saved.detail) restoreDetail(saved.detail);
+          if (saved.detail) {
+            restoreDetail(saved.detail);
+            if (!saved.detailOpen) closeDetail(false);
+          }
+          $("item-list").scrollTop = saved.listScroll || 0;
         }
         if (saved.overview) showTargetedOverview();
         else {
@@ -640,6 +657,7 @@ window.XicUi = (() => {
   }
   function renderPage(page) {
     state.page = page;
+    $("batch-browser").hidden = false;
     const targeted = page.source_kind === "targeted_workbook";
     const nearest = Number.isFinite(page.nearest_mz);
     if (nearest) {
@@ -647,7 +665,7 @@ window.XicUi = (() => {
       if (Number($("nearest-mz").value) !== page.nearest_mz)
         $("nearest-mz").value = String(page.nearest_mz);
       // Retain the applied nearest query for pagination and reading history.
-      state.filters = {nearest_mz: page.nearest_mz, review_scope: page.review_scope};
+      state.filters = {...state.filters, nearest_mz: page.nearest_mz, review_scope: page.review_scope};
       for (const [id, key] of [["rt-min", "rt_min"], ["rt-max", "rt_max"]]) {
         $(id).value = page[key] == null ? "" : String(page[key]);
         if (page[key] != null) state.filters[key] = page[key];
@@ -655,14 +673,13 @@ window.XicUi = (() => {
     }
     // Targeted review items are targets; Untargeted items are candidates.
     const noun = targeted ? "目標" : "項目";
-    $("list-title").textContent = targeted ? "目標" : "檢閱項目";
+    $("list-title").textContent = "整批結果";
     $("targeted-overview").hidden = true;
     $("targeted-review-nav").hidden = !page.overview;
     if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
     else renderTargetedOverview(page.overview);
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
-    $("review-range-filters").open = false;
     syncQueryMode();
     const selectedTarget = state.filters.target_id || "";
     $("target-role").value = state.filters.target_role || "";
@@ -674,9 +691,10 @@ window.XicUi = (() => {
       ? "點結果列的「看 XIC」，或勾選要看的樣本。自動帶入目標與配對 ISTD；ND 也能看圖，不改寫結果。"
       : "勾選要看的樣本，讀取保留峰頂附近的 RAW。缺少觀測座標的樣本無法自動擷取。";
     $("ppm").closest("label").hidden = targeted;
-    const selectedSample = $("target-sample").value;
+    const selectedSample = state.filters.sample_id || "";
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
     $("target-sample").value = selectedSample;
+    renderReviewFilters(page);
     clearSelection();
     $("review").hidden = false;
     $("review-empty").hidden = true;
@@ -733,7 +751,7 @@ window.XicUi = (() => {
       top.className = "item-top";
       const title = document.createElement("strong");
       title.textContent = targeted ? item.title
-        : `m/z ${nearest ? String(item.precursor_mz) : fmt(item.precursor_mz, 4)}`;
+        : `m/z ${nearest ? significant(item.precursor_mz, 12) : fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
       rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
@@ -745,14 +763,21 @@ window.XicUi = (() => {
         ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
         : `${item.numeric_count} / ${page.samples.length} 個樣本有值`;
       const badge = document.createElement("span");
-      const label = targeted ? item.badge_label || "" : item.unresolved_count ? `${item.unresolved_count} 個未解決定量` : "";
+      const review = item.review;
+      const reasons = (review?.reasons || []).map(reason => page.review_options[reason] || reason);
+      const label = reasons.length ? reasons.join(" · ")
+        : review?.attention_count ? "有已記錄待查訊號"
+        : review?.decision_count ? "未記錄待查訊號" : "未提供定量決策";
       badge.className = `chip ${badgeTone[label] || ""}`;
-      badge.textContent = label;
+      if (review?.attention_count) badge.classList.add("warn");
+      badge.textContent = label + (review?.attention_count ? `（${review.attention_count} 個樣本）` : "");
       bottom.append(summary);
-      if (label && label !== "已保存結果" && label !== "已記錄") bottom.append(badge);
+      bottom.append(badge);
       button.append(top);
       if (nearest) {
-        button.append(node("span", `Δm/z ${item.mz_distance}`, "item-distance"));
+        const distance = node("span", `Δm/z ${significant(item.mz_distance, 6)}`, "item-distance");
+        distance.title = String(item.mz_distance);
+        button.append(distance);
       }
       button.append(bottom);
       button.addEventListener("click", () =>
@@ -777,12 +802,60 @@ window.XicUi = (() => {
         : `已載入全批 ${count(page.run_total)} 個${noun}。`,
     );
   }
-  async function selectItem(item) {
+  function renderReviewFilters(page) {
+    const counts = page.review_counts || {}, labels = page.review_options || {};
+    const selected = page.review_filter || "all";
+    $("review-filter").replaceChildren(...Object.entries(labels)
+      .filter(([key]) => ["all", "attention", "unflagged", "unavailable", selected].includes(key) || counts[key])
+      .map(([key, label]) => new Option(`${label} (${counts[key] || 0})`, key)));
+    $("review-filter").value = selected;
+    $("value-filter").value = page.value_filter || "all";
+    $("review-order").value = page.order_by === "source" ? "priority" : page.order_by || "priority";
+    const quick = $("review-quick-filters");
+    quick.replaceChildren();
+    for (const key of ["all", "attention", "unflagged", "unavailable"]) {
+      const button = node("button", `${labels[key] || key} ${count(counts[key] || 0)}`);
+      button.type = "button";
+      button.dataset.idle = "";
+      button.setAttribute("aria-pressed", String(selected === key));
+      button.addEventListener("click", () => {
+        $("review-filter").value = key;
+        action(() => query(0, queryFields()), "正在篩選整批結果…");
+      });
+      quick.append(button);
+    }
+  }
+  function resultPosition() {
+    const index = state.page?.items.findIndex(item => item.id === state.item?.id) ?? -1;
+    return index < 0 ? -1 : state.page.offset + index;
+  }
+  function closeDetail(focus = true) {
+    state.detailOpen = false;
+    $("result-detail").hidden = true;
+    $("selection").hidden = true;
+    $("review").classList.remove("has-detail", "single-target");
+    if (focus) {
+      const row = $("item-list").querySelector('[aria-current="true"]');
+      row?.scrollIntoView({block: "nearest"});
+      row?.focus({preventScroll: true});
+    }
+  }
+  async function moveResult(step) {
+    const position = resultPosition() + step;
+    if (position < 0 || position >= state.page.matched_count) return;
+    const offset = Math.floor(position / state.page.limit) * state.page.limit;
+    if (offset !== state.page.offset) await query(offset, state.filters, position - offset);
+    else await selectItem(state.page.items[position - offset]);
+    $("result-detail").scrollIntoView({block: "start"});
+  }
+  async function selectItem(item, rememberList = true) {
+    if (rememberList && !state.detailOpen) navigation.push();
     const revision = navigation.revision;
     const detail = await api("/api/detail", { item_id: item.id });
     if (revision === navigation.revision) {
       restoreDetail(detail);
-      if (state.page.source_kind !== "targeted_workbook" && state.samples.size
+      if (rememberList) $("result-detail").scrollIntoView({block: "start"});
+      if (state.page.source_kind !== "targeted_workbook" && !item.retained_curve_count && state.samples.size
         && $("raw-dir").value.trim() && $("dll-dir").value.trim()) await startCurves();
     }
   }
@@ -791,6 +864,9 @@ window.XicUi = (() => {
     clearReview("xic-review");
     state.curveView = null;
     state.detail = detail;
+    state.detailOpen = true;
+    $("review").classList.add("has-detail");
+    $("result-detail").hidden = false;
     const item = detail.item;
     state.item = detail.item;
     state.recorded = detail.view_id;
@@ -799,7 +875,7 @@ window.XicUi = (() => {
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
     const targeted = state.page.source_kind === "targeted_workbook";
-    $("inline-curves").hidden = targeted;
+    $("inline-curves").hidden = targeted || item.retained_curve_count > 0;
     $("item-kind").textContent = targeted ? "" : item.title;
     $("item-kind").hidden = targeted || item.title === "分組紀錄";
     $("item-title").textContent = targeted
@@ -938,21 +1014,26 @@ window.XicUi = (() => {
     state.runFolder = state.runFolders.get($("source").value) || null;
     const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
+    $("review-range-filters").open = false;
     state.filters = {};
     state.samples = new Set();
     renderPage(page);
     $("source-settings").open = false;
-    if (page.overview) showTargetedOverview();
-    else if (page.items.length) await selectItem(page.items[0]);
+    if (page.overview?.kind !== "untargeted" && page.overview) showTargetedOverview();
   }
   function queryFields() {
     const nearest = nearestSearchMode();
     const filters = state.page?.source_kind === "targeted_workbook"
       ? { target_role: $("target-role").value, target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
       : { review_scope: state.page.review_scope };
+    Object.assign(filters, {review_filter: $("review-filter").value, value_filter: $("value-filter").value,
+      order_by: $("review-order").value, sample_id: $("target-sample").value});
     if (nearest) {
       if (!validateNearestMz()) throw new Error($("nearest-mz-error").textContent);
-      if ($("nearest-mz").value.trim()) filters.nearest_mz = Number($("nearest-mz").value);
+      if ($("nearest-mz").value.trim()) {
+        filters.nearest_mz = Number($("nearest-mz").value);
+        delete filters.target_id;
+      }
     } else {
       if (state.page?.source_kind !== "targeted_workbook") filters.group_id = $("group-id").value.trim();
       for (const [id, key] of [["mz-min", "mz_min"], ["mz-max", "mz_max"]])
@@ -962,7 +1043,7 @@ window.XicUi = (() => {
       if ($(id).value.trim()) filters[key] = Number($(id).value);
     return filters;
   }
-  async function query(offset, filters = state.filters) {
+  async function query(offset, filters = state.filters, openIndex = null) {
     const revision = navigation.revision;
     if (!$("selection-empty").hidden)
       selectionEmpty("正在查詢結果…", "正在依目前條件查詢；尚未取得結果。");
@@ -978,7 +1059,8 @@ window.XicUi = (() => {
     if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
-    if (page.items.length) await selectItem(page.items[0]);
+    if (page.items.length && (openIndex !== null || filters.target_id))
+      await selectItem(page.items[openIndex ?? 0], false);
     return revision === navigation.revision;
   }
   async function startCurves() {
@@ -1165,7 +1247,10 @@ window.XicUi = (() => {
     action(openBatch, "正在讀取批次結果…");
   });
   $("untargeted-search-mode").addEventListener("change", syncQueryMode);
-  $("nearest-mz").addEventListener("input", validateNearestMz);
+  $("nearest-mz").addEventListener("input", () => {
+    if ($("nearest-mz").value.trim()) $("target-id").value = "";
+    syncQueryMode();
+  });
   $("query-form").addEventListener("submit", (event) => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
@@ -1177,10 +1262,17 @@ window.XicUi = (() => {
     action(() => query(0, queryFields()), "正在更新類別結果…");
   });
   for (const id of ["target-id", "target-sample", "target-attention"]) {
-    $(id).addEventListener("change", () =>
-      action(() => query(0, queryFields()), "正在更新結果…"),
-    );
+    $(id).addEventListener("change", () => {
+      if (id === "target-id" && $(id).value) $("nearest-mz").value = "";
+      action(() => query(0, queryFields()), "正在更新結果…");
+    });
   }
+  for (const id of ["review-filter", "value-filter", "review-order"]) {
+    $(id).addEventListener("change", () => action(() => query(0, queryFields()), "正在更新整批結果…"));
+  }
+  $("close-detail").addEventListener("click", () => closeDetail());
+  $("review-previous").addEventListener("click", () => action(() => moveResult(-1)));
+  $("review-next").addEventListener("click", () => action(() => moveResult(1)));
   $("back-to-overview").addEventListener("click", () => navigation.back(
     showTargetedOverview,
     saved => saved.workspace === "review" && saved.review?.overview &&
@@ -1287,11 +1379,17 @@ window.XicUi = (() => {
     const review = await api("/api/review");
     if (review.page) {
       $("source").value = review.page.source;
+      state.filters = review.page.filters;
+      for (const [id, key] of [["group-id", "group_id"], ["mz-min", "mz_min"], ["mz-max", "mz_max"], ["rt-min", "rt_min"], ["rt-max", "rt_max"]])
+        $(id).value = state.filters[key] ?? "";
+      if (state.filters.group_id || state.filters.mz_min != null || state.filters.mz_max != null)
+        $("untargeted-search-mode").value = "exact";
+      $("target-attention").checked = Boolean(state.filters.attention_only);
       renderPage(review.page);
       $("source-settings").open = false;
       if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.page.overview) showTargetedOverview();
-      else if (review.detail) restoreDetail(review.detail);
+      if (review.detail) restoreDetail(review.detail);
+      else if (review.page.overview && review.page.overview.kind !== "untargeted") showTargetedOverview();
       if (review.job) {
         state.job = review.job;
         state.curveView = {id: null};

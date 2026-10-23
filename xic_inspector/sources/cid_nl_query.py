@@ -18,6 +18,7 @@ from xic_inspector.selection.canonical import (
     serialize_canonical_ref,
 )
 from xic_inspector.selection.query import filter_by_query
+from xic_inspector.selection.review import select_review_entries
 from xic_inspector.selection.sampler import (
     review_case,
     review_case_order,
@@ -26,6 +27,7 @@ from xic_inspector.selection.sampler import (
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.untargeted_overview import (
+    indexed_review_facts,
     ordered_review_items,
     review_overview,
 )
@@ -39,6 +41,77 @@ class IndexedCidNlSource(CidNlSource):
         self._compact_selection = True
         self.missing_mz_count = 0
         self.mz_distances = {}
+
+    def _browse_page(self, db, scope, request, criteria, ordered, rows):
+        ids, run_total, eligible, _, missing_rt = query_page(
+            db,
+            tuple(sorted(scope)),
+            **criteria,
+            ordered_item_ids=ordered,
+            limit=-1,
+        )
+        if not (
+            request.candidate_ids
+            or request.group_ids
+            or any(
+                criteria[name] is not None
+                for name in ("mz_min", "mz_max", "rt_min", "rt_max")
+            )
+        ):
+            ids = [
+                row[0]
+                for row in db.execute(
+                    "SELECT DISTINCT q.item FROM query_scope q "
+                    "JOIN query_samples s ON s.id=q.sample "
+                    f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
+                    tuple(sorted(scope)),
+                )
+            ]
+            if ordered is not None:
+                admitted = set(ordered)
+                ids = [item_id for item_id in ids if item_id in admitted]
+        coordinates = {
+            item_id: (mz, rt)
+            for item_id, mz, rt in db.execute(
+                "SELECT item,mz,rt FROM (SELECT w.item,c.mz,w.rt,ROW_NUMBER() OVER "
+                "(PARTITION BY w.item ORDER BY w.ordinal) AS position "
+                "FROM query_witnesses w JOIN query_candidates c ON c.id=w.candidate "
+                "JOIN query_samples s ON s.id=c.sample "
+                f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})) "
+                "WHERE position=1",
+                tuple(sorted(scope)),
+            )
+        }
+        facts = indexed_review_facts(db, self.summary, rows, scope)
+        keys = dict(db.execute("SELECT id,sort_key FROM query_items"))
+        entries = [
+            {
+                "id": item_id,
+                "sort_key": keys[item_id],
+                "mz": coordinates.get(item_id, (None, None))[0],
+                "rt": coordinates.get(item_id, (None, None))[1],
+                "review": facts[item_id],
+            }
+            for item_id in ids
+        ]
+        page, matched, self.review_counts, self.missing_mz_count = (
+            select_review_entries(entries, request)
+        )
+        self._page_review = {entry["id"]: entry["review"] for entry in page}
+        self.review_facts = {}
+        distances = {
+            entry["id"]: entry["mz_distance"]
+            for entry in page
+            if "mz_distance" in entry
+        }
+        return (
+            [entry["id"] for entry in page],
+            run_total,
+            eligible,
+            matched,
+            missing_rt,
+            distances,
+        )
 
     def _nearest_page(self, db, scope, request, criteria, ordered):
         # Reuse exact RT/sample eligibility, but not its reading-order pagination.
@@ -76,8 +149,12 @@ class IndexedCidNlSource(CidNlSource):
             population_count = db.execute(
                 "SELECT COUNT(DISTINCT q.item) FROM query_scope q "
                 "JOIN query_samples s ON s.id=q.sample "
-                "JOIN review_order r ON r.item=q.item "
-                f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
+                + (
+                    "JOIN review_order r ON r.item=q.item "
+                    if ordered is not None
+                    else ""
+                )
+                + f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
                 tuple(sorted(scope)),
             ).fetchone()[0]
         self.missing_mz_count = population_count - len(ranked)
@@ -189,14 +266,26 @@ class IndexedCidNlSource(CidNlSource):
         ) as db:
             if request.strategy == "query":
                 ordered = None
-                if request.review_scope != "all":
-                    overview, rows = review_overview(self.path, self.summary)
+                rows = {}
+                if request.review_scope != "all" or request.browsing:
+                    overview, rows = review_overview(self.path, self.summary, scope)
                     overview["candidate_count"] = db.execute(
                         "SELECT COUNT(*) FROM query_items WHERE kind='candidate'"
                     ).fetchone()[0]
                     self.summary["overview"] = overview
                     ordered = ordered_review_items(db, rows, request.review_scope)
-                if request.nearest_mz is not None:
+                if request.browsing:
+                    ids, run_total, eligible, matched, missing, distances = (
+                        self._browse_page(
+                            db,
+                            scope,
+                            request,
+                            criteria,
+                            ordered,
+                            rows,
+                        )
+                    )
+                elif request.nearest_mz is not None:
                     ids, run_total, eligible, matched, missing, distances = (
                         self._nearest_page(db, scope, request, criteria, ordered)
                     )
@@ -290,10 +379,15 @@ class IndexedCidNlSource(CidNlSource):
                 # only to the page's witnesses for the displayed match markers.
                 if request.strategy == "query":
                     with_matches, _, _ = filter_by_query([primary], **criteria, limit=1)
-                    primary = replace(
-                        primary, matched_witnesses=with_matches[0].matched_witnesses
-                    )
+                    if with_matches:
+                        primary = replace(
+                            primary, matched_witnesses=with_matches[0].matched_witnesses
+                        )
                 selected.append(primary)
+                if request.browsing:
+                    self.review_facts[primary.serialized_ref] = self._page_review[
+                        item_id
+                    ]
                 if request.nearest_mz is not None:
                     self.mz_distances[primary.serialized_ref] = distances[item_id]
                 peer = db.execute(
@@ -316,6 +410,8 @@ class IndexedCidNlSource(CidNlSource):
             return (
                 selected
                 if request.review_scope != "all"
+                or request.browsing
+                or request.nearest_mz is not None
                 else sorted(selected, key=lambda item: item.sort_key),
                 run_total,
                 eligible,

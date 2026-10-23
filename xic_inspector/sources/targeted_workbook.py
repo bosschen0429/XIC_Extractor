@@ -17,6 +17,7 @@ from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
+from xic_inspector.selection.review import browse_canonical_items
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
 
 
@@ -297,6 +298,11 @@ class TargetedWorkbookSource:
                 ):
                     matched.append(item)
             items = matched
+        if selection.browsing or selection.nearest_mz is not None:
+            selected, matched_count = browse_canonical_items(
+                self, items, selection, len(sample_ids)
+            )
+            return selected, len(self.targets), eligible, matched_count, missing
         return (
             items[selection.offset : selection.offset + selection.limit],
             len(self.targets),

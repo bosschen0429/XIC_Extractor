@@ -18,6 +18,12 @@ from xic_inspector.rendering.html_builder import (
     write_report_atomically,
 )
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
+from xic_inspector.selection.review import (
+    REVIEW_FILTERS,
+    REVIEW_ORDERS,
+    VALUE_FILTERS,
+    browse_canonical_items,
+)
 from xic_inspector.selection.sampler import (
     SAMPLING_ALGORITHM,
     review_case,
@@ -105,9 +111,32 @@ class SelectionRequest:
     review_scope: str = "all"
     nearest_mz: float | None = None
     target_role: str | None = None
+    review_filter: str = "all"
+    value_filter: str = "all"
+    order_by: str = "source"
+
+    @property
+    def browsing(self) -> bool:
+        return (
+            self.order_by != "source"
+            or self.review_filter != "all"
+            or self.value_filter != "all"
+        )
 
     def validate(self) -> None:
         """Validate request invariants per Issue #398 Section 4."""
+        for name, allowed in (
+            ("review_filter", REVIEW_FILTERS),
+            ("value_filter", VALUE_FILTERS),
+            ("order_by", REVIEW_ORDERS),
+        ):
+            if (
+                not isinstance(getattr(self, name), str)
+                or getattr(self, name) not in allowed
+            ):
+                raise InspectorError(2, f"Invalid {name}")
+        if self.browsing and self.strategy != "query":
+            raise InspectorError(2, "Review browsing requires query selection")
         if not isinstance(self.review_scope, str) or self.review_scope not in {
             "all",
             "matrix",
@@ -135,21 +164,14 @@ class SelectionRequest:
                 or self.nearest_mz <= 0
             ):
                 raise InspectorError(2, "nearest_mz must be a finite positive number")
-            if self.strategy != "query" or self.review_scope not in {
-                "matrix",
-                "unresolved",
-            }:
-                raise InspectorError(
-                    2, "Nearest m/z requires a matrix or unresolved query"
-                )
+            if self.strategy != "query":
+                raise InspectorError(2, "Nearest m/z requires query selection")
             if (
                 self.mz_min is not None
                 or self.mz_max is not None
                 or self.candidate_ids
                 or self.group_ids
                 or self.target_ids
-                or self.target_role is not None
-                or self.attention_only
             ):
                 raise InspectorError(
                     2, "Nearest m/z cannot be combined with exact m/z or ID filters"
@@ -246,7 +268,8 @@ class SelectionRequest:
 
         if self.strategy == "query":
             has_filter = bool(
-                self.nearest_mz is not None
+                self.browsing
+                or self.nearest_mz is not None
                 or self.sample_ids
                 or self.candidate_ids
                 or self.group_ids
@@ -366,12 +389,15 @@ def prepare_report(
         raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
 
     if selection.nearest_mz is not None:
-        from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+        if isinstance(source, CurveBundleSource):
+            raise InspectorError(2, "Nearest m/z requires saved batch results")
 
-        if not isinstance(source, IndexedCidNlSource):
-            raise InspectorError(
-                2, "Nearest m/z requires indexed Untargeted matrix evidence"
-            )
+    if selection.browsing and summary.get("query_index_version") == 1:
+        # Older indexes lack saved review masks. Their metadata adapter remains
+        # usable without writing a replacement index beside the user's result.
+        from xic_inspector.sources.cid_nl import CidNlSource
+
+        source = CidNlSource(report_path)
 
     if (
         selection.target_ids
@@ -537,9 +563,30 @@ def prepare_report(
                 mz_max=selection.mz_max,
                 rt_min=selection.rt_min,
                 rt_max=selection.rt_max,
-                offset=selection.offset,
-                limit=selection.limit,
+                offset=0
+                if selection.browsing or selection.nearest_mz is not None
+                else selection.offset,
+                limit=len(eligible_items)
+                if selection.browsing or selection.nearest_mz is not None
+                else selection.limit,
             )
+            if selection.browsing or selection.nearest_mz is not None:
+                # With no coordinate/ID restriction, missing witnesses are still
+                # results worth finding, rather than disappearing from browsing.
+                if not any(
+                    (
+                        selection.candidate_ids,
+                        selection.group_ids,
+                        selection.mz_min is not None,
+                        selection.mz_max is not None,
+                        selection.rt_min is not None,
+                        selection.rt_max is not None,
+                    )
+                ):
+                    selected_items = eligible_items
+                selected_items, matched_count = browse_canonical_items(
+                    source, selected_items, selection, len(normalized_set)
+                )
 
     selected_count = len(selected_items)
     if on_progress:
@@ -564,6 +611,9 @@ def prepare_report(
     if selection.nearest_mz is not None:
         for item in rendered_items:
             item["mz_distance"] = source.mz_distances[item["id"]]
+    if selection.browsing:
+        for item in rendered_items:
+            item["review"] = source.review_facts[item["id"]]
 
     if on_progress:
         on_progress(
@@ -598,6 +648,10 @@ def prepare_report(
             "limit": selection.limit,
             "offset": selection.offset,
             "review_scope": selection.review_scope,
+            "review_filter": selection.review_filter,
+            "value_filter": selection.value_filter,
+            "order_by": selection.order_by,
+            "review_counts": getattr(source, "review_counts", {}),
             "case_counts": dict(sorted(case_counts.items())),
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,

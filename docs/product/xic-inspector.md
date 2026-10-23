@@ -24,27 +24,42 @@ their output actions remain available beside review; they delegate to the
 existing application and writer owners described in
 [the workbench contract](untargeted-gui.md).
 
-For current Untargeted review reports, the landing page summarizes matrix
-groups, groups with a numeric value in every sample, and groups containing an
-explicitly unresolved saved decision. The last group is the priority queue;
-ordinary missing values are not inferred to be abnormal or not detected.
-Archived groups and ungrouped candidates are secondary evidence, not mixed
-into the default result list. Matrix and unresolved-group review offers a
-single approximate m/z query; RT is optional. Candidates are ranked across the
+Workbench owns one continuous review journey: search the batch, compare the
+filtered list, open a result's detail, then read the previous or next result.
+Returning to the list preserves the query and selected row; navigation crosses
+page boundaries within the same filtered population. Inspector is the shared
+detail renderer and offline export, not a second interactive workspace.
+
+A single approximate m/z field is available for current and older Untargeted
+results and Targeted XLSX; RT is optional. Results are ranked across the
 selected population by absolute distance from the item's unrounded displayed
-precursor m/z, then canonical item ID, before pagination in pages of 25. The
-list shows the distance and counts groups excluded for missing valid m/z. It
-does not apply an implicit mass tolerance or confirm compound identity.
+precursor m/z, then canonical item order, before pagination in pages of 25.
+The list shows the distance and discloses missing valid m/z. There is no
+implicit mass tolerance or compound-identity claim. Entering approximate m/z
+clears an exact target choice; choosing a target clears approximate m/z.
+The separate exact mode retains group ID, m/z and RT witness-chain filtering.
 
-The separate exact mode retains group ID, m/z and RT witness-chain filtering;
-its m/z bounds and group ID do not constrain approximate mode. Without an
-approximate query, reading order uses unresolved-cell count, then numeric
-sample coverage; it is not a new scientific score. Search reads saved evidence
-without RAW, while selecting a result retains the acquisition behavior below.
-The offline custom Inspector retains its bounded evidence-sampling view.
+Batch filters combine sample scope, saved review signals and numeric-value
+availability before pagination. Saved signals include unresolved quantitation,
+method HOLD, ownership/identity conflicts, provisional groups, review-only
+matches and Targeted review/minority flags when the source provides them.
+The list names the reasons and affected-sample count. No recorded concern,
+no saved quantitative decision, missing values and literal numeric zero remain
+distinct; none is a new peak-quality score or scientific acceptance.
+Reading order can prioritize affected-sample count, m/z, RT or numeric coverage.
 
-Selecting an Untargeted group automatically loads all observed samples'
-XIC inline when RAW and DLL locations are configured. The sample selector can
+Current Untargeted reports start with matrix groups. The batch overview retains
+matrix, complete-numeric and unresolved-group counts; archived groups and
+ungrouped candidates remain secondary evidence. Older reports use their saved
+review population without building or writing a replacement index. Targeted
+keeps its full-batch overview, with the same search and filters always available.
+Search reads saved evidence without RAW. Offline export remains a captured,
+bounded review rather than a second batch browser.
+
+Selecting an Untargeted group shows retained curves and saved values together
+through the shared renderer. If no curves were retained, it automatically loads
+all observed samples' XIC inline when RAW and DLL locations are configured.
+The sample selector can
 restrict the display explicitly. Counts distinguish saved numeric results,
 samples with acquisition coordinates, and loaded curves; samples without
 coordinates are named. Saved Area and decision labels stay in a separate
@@ -121,10 +136,10 @@ review conditions. Without a clear majority, the rows with saved review
 conditions remain the reading order. `summarize_targeted_results` owns this
 reading order for every consumer; it does not reclassify results.
 
-When a chosen target leaves one item, the workbench keeps target/sample
-controls in a full-width row and hides the redundant one-entry list. Clearing
-the target restores the list; standalone Targeted Inspector reports already
-render the target directly without a navigation column.
+When a chosen target leaves one item, its detail hides the redundant one-entry
+list while keeping the batch controls available. Returning to results restores
+that list; clearing the target restores the broader population. Offline
+Targeted reports render the target directly without a navigation column.
 
 Opening Targeted results first shows a full-batch overview in three levels.
 The heading states how many results to read first, beside Analyte and

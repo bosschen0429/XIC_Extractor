@@ -448,5 +448,9 @@
 .xic-inspector[data-mode="offline"] { max-width:1540px;margin:auto;padding:20px 24px 40px; }
 .xic-inspector > .detail-panel { border:0;box-shadow:none;border-radius:0;background:transparent; }
 .xic-inspector:not([data-mode="offline"]) { background:var(--card); }
+.xic-inspector .saved-only .sample-table th:first-child,
+.xic-inspector .saved-only .sample-table td:first-child,
+.xic-inspector .saved-only .sample-focus,
+.xic-inspector .saved-only .reading-hint { display:none; }
 .xic-inspector[data-mode="offline"].tx-body { max-width:1100px;padding:16px 24px 12px; }
 @media(max-width:760px) { .xic-inspector[data-mode="offline"] { padding:12px; } }

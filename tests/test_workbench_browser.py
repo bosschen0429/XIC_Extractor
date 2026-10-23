@@ -757,9 +757,8 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
     expect(page.locator("#untargeted-search-mode")).to_have_value("nearest")
-    expect(page.locator("#rt-min")).to_be_visible()
+    expect(page.locator("#rt-min")).to_be_hidden()
     expect(page.locator("#rt-min")).to_have_value("")
     page.locator("#nearest-mz").fill("123.4000")
     with page.expect_response("**/api/query") as query:
@@ -773,7 +772,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     # the returned distance rather than recompute it from the formatted title.
     distance = query.value.json()["items"][0]["mz_distance"]
     expect(page.locator("#item-list .item-distance").first).to_have_text(
-        f"Δm/z {distance}"
+        f"Δm/z {distance:.6g}"
     )
     expect(page.locator("#nearest-results-note")).to_contain_text("1 組缺少有效 m/z")
     expect(page.locator("#list-summary")).to_contain_text("32")
@@ -785,6 +784,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
 
     # Optional RT narrows eligibility without changing distance order and
     # remains applied when pagination requests the next candidate slice.
+    _expand(page, "#review-range-filters")
     page.locator("#rt-min").fill("0.5")
     page.locator("#query-form button[type=submit]").click()
     expect(titles.nth(0)).to_have_text("m/z 123.42")
@@ -812,8 +812,8 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
     page.locator("#untargeted-search-mode").select_option("exact")
+    _expand(page, "#review-range-filters")
     page.locator("#mz-min").fill("123.4")
     page.locator("#mz-max").fill("123.4")
     page.locator("#group-filter > summary").click()
@@ -834,6 +834,10 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
         "review_scope": "matrix",
         "offset": 0,
         "limit": 25,
+        "review_filter": "all",
+        "value_filter": "all",
+        "order_by": "priority",
+        "sample_id": "",
     }
     expect(page.locator("#item-list button")).to_have_count(25)
     expect(page.locator("#item-list .item-top strong").first).to_have_text(
@@ -854,14 +858,16 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
 
 
 def test_saved_review_offers_raw_setup_without_curve_controls(workbench, tmp_path):
+    from tests.test_xic_workbench import _review_batch
+
     page = workbench
-    db, _, _ = _create_mock_db(tmp_path)
+    db, _ = _review_batch(tmp_path)
     _view(page, "review")
     page.locator("#source").fill(str(db))
     page.locator("#open-form button[type=submit]").click()
+    page.locator("#item-list button").first.click()
     expect(page.locator("#recorded-review .sample-table")).to_be_visible()
-    # Saved values are readable without RAW. Controls for a plot belong only
-    # to a plotted view, even when the source also retains some curve evidence.
+    # Metadata-only results remain readable without plot controls or RAW.
     expect(page.locator("#recorded-review .signal-switch")).to_be_hidden()
     setup = page.locator("#load-curves")
     expect(setup).to_be_visible()
@@ -884,13 +890,13 @@ def test_missing_curve_coordinates_keep_saved_values_and_expandable_sample_names
     _view(page, "review")
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
     page.locator("#nearest-mz").fill("123.4")
     page.locator("#query-form button[type=submit]").click()
+    page.locator("#item-list button").first.click()
     expect(page.locator("#inline-curve-coverage")).to_contain_text(
         "1 個樣本有定量值 · 0 個樣本可讀取 XIC"
     )
-    expect(page.locator("#recorded-review .sample-table")).to_contain_text("1.000e+2")
+    expect(page.locator("#recorded-review .sample-table")).to_contain_text("100")
     gaps = page.locator("#inline-curve-gaps")
     expect(gaps.locator("summary")).to_have_text("1 個樣本缺少 XIC 座標")
     expect(page.locator("#inline-numeric-gaps")).to_be_hidden()
@@ -943,6 +949,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     assert off_page_id not in page.locator("#item-list button").evaluate_all(
         "buttons => buttons.map(button => button.dataset.itemId)"
     )
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-filter > summary").click()
     page.locator("#group-id").fill(off_page_group)
     page.locator("#query-form button[type=submit]").click()
@@ -952,11 +959,11 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     )
     page.locator("#reset-query").click()
     expect(page.locator("#item-list button")).to_have_count(25)
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-id").fill("G1")
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(1)
-    # Query also selects an item. Let that action finish before selecting again,
-    # otherwise two detail responses can replace the view during a scroll.
+    # Search leaves the comparison list open until the user chooses a result.
     expect(page.locator("#query-form button[type=submit]")).to_be_enabled()
     with page.expect_response(
         lambda response: response.url.endswith("/api/detail")
@@ -966,14 +973,18 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
         "data-view-id", detail.value.json()["view_id"]
     )
     review = page.locator("#recorded-review")
-    expect(review.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
-    expect(review.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
+    expect(review.locator(".sample-table")).to_be_visible()
+    review.get_by_role("button", name="原始", exact=True).click()
+    expect(review.locator(".plot-card svg")).to_have_count(1)
     # Mounted content participates in the host page's normal flow.
     expect(page.locator("#review iframe, #xic-dialog iframe")).to_have_count(0)
     assert review.evaluate(
         "container => container.scrollHeight <= container.clientHeight + 2"
     )
-    review.get_by_role("button", name="查看依據").first.click()
+    review.get_by_role("combobox", name="樣本", exact=True).select_option("S1")
+    review.get_by_role("region", name="已保存的正式定量結果").get_by_role(
+        "button"
+    ).click()
     expect(review.locator("[data-inspector-id='evidence-panel']")).to_be_visible()
     review.locator("[data-inspector-id='close-evidence']").click()
     expect(review.locator("[data-inspector-id='evidence-panel']")).to_have_count(0)
@@ -1019,16 +1030,19 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
+    expect(page.locator("#item-list button")).to_have_count(3)
+    page.locator("#back-to-overview").click()
     expect(overview.get_by_role("heading", name="先看 1 組未解決定量")).to_be_visible()
     expect(page.locator("#review")).to_be_hidden()
     overview.get_by_role("button", name="先看未解決定量", exact=True).click()
     expect(page.locator("#item-list button")).to_have_count(1)
+    page.locator("#item-list button").first.click()
     expect(page.locator("#inline-curve-status")).to_contain_text(
         "尚未設定 RAW 或 DLL 位置"
     )
     saved = page.locator("#recorded-review")
     expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
-    expect(saved.locator(".sample-table tbody tr").first).to_contain_text("4.000e+2")
+    expect(saved.locator(".sample-table tbody tr").first).to_contain_text("400")
     expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     page.locator("#back-to-overview").click()
     expect(overview).to_be_visible()
@@ -1038,9 +1052,10 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     overview.locator("summary", has_text="進階：未採用群組與候選證據").click()
     overview.get_by_role("button", name="1 組未採用").click()
     expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
+    page.locator("#item-list button").first.click()
     expect(
         page.locator("#recorded-review").locator(".sample-table tbody tr").first
-    ).to_contain_text("5.000e+2")
+    ).to_contain_text("500")
 
 
 @pytest.mark.parametrize("sample_count", (1, 6))
@@ -1069,18 +1084,14 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     page = workbench
     from tests.test_xic_workbench import _review_batch
 
-    db = (
-        _create_mock_db(tmp_path)[0]
-        if sample_count == 1
-        else _review_batch(tmp_path, sample_count=sample_count)[0]
-    )
+    db = _review_batch(tmp_path, sample_count=sample_count)[0]
     _view(page, "review")
     page.locator("#source").fill(str(db))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    page.locator("#item-list button").first.click()
     if sample_count > 1:
-        page.get_by_role("button", name="查看全部矩陣群組").click()
         _wait_for_curve_report(page, inline=True)
         expect(
             page.locator("#inline-curve-review").locator(
@@ -1504,14 +1515,14 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     expect(page.locator("#item-list")).to_be_hidden()
     expect(page.locator("#target-id")).to_be_visible()
     expect(page.locator("#recorded-review .tgt-table")).to_be_visible()
-    expect(page.locator("#review")).to_have_class("review-grid single-target")
+    expect(page.locator("#result-detail")).to_be_visible()
     expect(page.locator("#back-to-overview")).to_be_in_viewport()
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
-    expect(page.locator("#review")).to_have_class("review-grid")
+    expect(page.locator("#result-detail")).to_be_hidden()
 
 
 def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
@@ -1669,6 +1680,7 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview .overview-actions .primary").click()
+    page.locator("#item-list button").first.click()
     review = page.locator("#recorded-review")
     rows = review.locator(".tgt-table tbody tr:not([hidden])")
     # Reading first starts on the minority row; every sample is one click away.
@@ -1678,6 +1690,7 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
     )
     # A filter change applies at once; no separate search press is needed.
     page.locator("#target-attention").uncheck()
+    page.locator("#item-list button").filter(has_text="Analyte").click()
     expect(rows).to_have_count(5)
 
 
@@ -2167,6 +2180,30 @@ def role_review(workbench, tmp_path):
     assert workbook.read_bytes() == original
 
 
+def test_targeted_approximate_search_returns_to_batch_without_an_exact_target(
+    role_review,
+):
+    page = role_review
+    expect(page.locator("#target-id")).to_have_value("Alpha")
+    page.get_by_label("約略 m/z", exact=True).fill("261")
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(page.locator("#review-order")).to_be_disabled()
+    page.get_by_role("button", name="搜尋全批結果", exact=True).click()
+    expect(page.locator("#item-list .item-top strong")).to_have_text(
+        ["Gamma", "Alpha", "Beta"]
+    )
+    expect(page.locator("#result-detail")).to_be_hidden()
+    page.locator("#item-list .item").first.click()
+    expect(page.locator("#item-title")).to_contain_text("Gamma")
+    page.locator("#review-next").click()
+    expect(page.locator("#item-title")).to_contain_text("Alpha")
+    page.get_by_role("button", name="返回結果清單", exact=True).click()
+    expect(page.get_by_label("約略 m/z", exact=True)).to_have_value("261")
+    page.locator("#target-id").select_option("Beta")
+    expect(page.get_by_label("約略 m/z", exact=True)).to_have_value("")
+    expect(page.locator("#item-title")).to_contain_text("Beta")
+
+
 def test_targeted_role_change_preserves_other_filter_inputs(role_review):
     page = role_review
     role = page.locator("#target-role")
@@ -2181,6 +2218,7 @@ def test_targeted_role_change_preserves_other_filter_inputs(role_review):
     expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     expect(titles).to_have_text(["Alpha", "Beta"])
     page.locator("#target-sample").select_option("S3")
+    page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#review-range-filters summary").click()
     for field_id, value in (
         ("mz-min", "250"),
@@ -2218,6 +2256,7 @@ def test_targeted_role_change_preserves_other_filter_inputs(role_review):
     page.locator("#target-attention").uncheck()
     expect(empty).to_be_hidden()
     expect(titles).to_have_text(["Gamma"])
+    page.locator("#item-list button").first.click()
     expect(page.locator("#item-title")).to_contain_text("Gamma")
     expect(
         page.locator("#recorded-review .tgt-table tbody tr:not([hidden])")
@@ -2346,8 +2385,8 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
     page.locator("#untargeted-search-mode").select_option(mode)
+    _expand(page, "#review-range-filters")
     if mode == "nearest":
         page.locator("#nearest-mz").fill("123.4")
     else:
@@ -2360,8 +2399,6 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     for condition in ("矩陣群組", "123.4", "RT ≥ 20", "清除條件"):
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
-    if mode == "exact":
-        page.locator("#review-range-filters summary").click()
     page.locator("#rt-min").fill("")
     page.locator("#query-form button[type=submit]").click()
     expect(empty).to_be_hidden()
@@ -2953,3 +2990,85 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     assert (rows["S1"].excluded, rows["S1"].group) == (True, "New")
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
+
+
+def test_batch_browser_search_filters_and_continuous_review_share_one_workspace(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _browse_review_batch
+
+    page = workbench
+    report, _ = _browse_review_batch(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    expect(page.get_by_role("textbox", name="約略 m/z")).to_be_visible()
+    page.locator("#nearest-mz").fill("123.4567")
+    page.locator("#query-form button[type=submit]").click()
+    expect(page.locator("#item-list button")).to_have_count(25)
+    expect(page.locator("#item-list button").first).to_contain_text("123.43")
+    expect(page.locator("#selection")).to_be_hidden()
+    page.locator("#review-filter").select_option("attention")
+    expect(page.locator("#item-list button")).to_have_count(3)
+    page.reload()
+    expect(page.locator("#review-filter")).to_have_value("attention")
+    expect(page.locator("#nearest-mz")).to_have_value("123.4567")
+    page.locator("#value-filter").select_option("missing")
+    expect(page.locator("#item-list button")).to_have_count(1)
+    expect(page.locator("#item-list button")).to_contain_text("定量尚未解決")
+    page.locator("#value-filter").select_option("all")
+    page.locator("#item-list button").first.click()
+    expect(page.locator("#review-position")).to_have_text("1 / 3")
+    page.get_by_role("button", name="下一個結果", exact=True).click()
+    expect(page.locator("#review-position")).to_have_text("2 / 3")
+    expect(page.locator("#item-title")).to_contain_text("123.4290")
+    page.get_by_role("button", name="返回結果清單", exact=True).click()
+    expect(page.locator("#selection")).to_be_hidden()
+    expect(page.locator("#nearest-mz")).to_have_value("123.4567")
+    expect(page.locator("#review-filter")).to_have_value("attention")
+    expect(page.locator("#item-list button[aria-current=true]")).to_be_focused()
+    page.locator("#reset-query").click()
+    page.locator("#review-order").select_option("mz")
+    expect(page.locator("#item-list button").first).to_contain_text("123.4000")
+    page.reload()
+    expect(page.locator("#review-order")).to_have_value("mz")
+    page.locator("#item-list button").last.click()
+    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    page.get_by_role("button", name="下一個結果", exact=True).click()
+    expect(page.locator("#review-position")).to_have_text("26 / 31")
+    expect(page.locator("#item-title")).to_contain_text("123.4250")
+    page.get_by_role("button", name="上一個結果", exact=True).click()
+    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    page.set_viewport_size({"width": 680, "height": 800})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    expect(page.locator("#review iframe")).to_have_count(0)
+
+
+def test_workbench_detail_reuses_saved_curve_and_evidence_without_another_page(
+    workbench, tmp_path
+):
+    page = workbench
+    report, _, _ = _create_mock_db(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#item-list button").first.click()
+    detail = page.locator("#recorded-review")
+    expect(detail.locator(".xic-inspector")).to_have_attribute("data-mode", "result")
+    detail.get_by_role("button", name="原始", exact=True).click()
+    expect(detail.locator(".plot-card svg")).to_have_count(1)
+    expect(page.locator("#inline-curves")).to_be_hidden()
+    detail.get_by_role("combobox", name="樣本", exact=True).select_option("S1")
+    expect(detail.get_by_role("region", name="已保存的正式定量結果")).to_contain_text(
+        "1,000"
+    )
+    evidence = detail.get_by_role("region", name="已保存的正式定量結果").get_by_role(
+        "button"
+    )
+    evidence.click()
+    expect(detail.locator(".evidence-panel")).to_be_visible()
+    detail.locator('[data-inspector-id="close-evidence"]').click()
+    expect(evidence).to_be_focused()
+    assert len(page.context.pages) == 1

@@ -2494,7 +2494,10 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
     assert restored_rows == [25, 8]
 
 
-def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_path):
+@pytest.mark.parametrize("order_by", ["source", "priority"])
+def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(
+    tmp_path, order_by
+):
     from xic_inspector.api import prepare_report
 
     rows = [
@@ -2511,7 +2514,9 @@ def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_pa
     report, _ = _create_nearest_mz_db(tmp_path, rows)
     matrix = prepare_report(
         report,
-        SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=123.4),
+        SelectionRequest(
+            strategy="query", review_scope="matrix", nearest_mz=123.4, order_by=order_by
+        ),
     )
     assert [i["details"]["source"]["row_key_id"] for i in matrix.payload["items"]] == [
         "resolved",
@@ -2542,16 +2547,11 @@ def test_nearest_mz_rejects_invalid_values(value):
     "conflict",
     [
         {"strategy": "sample"},
-        {"review_scope": "all"},
-        {"review_scope": "archive"},
-        {"review_scope": "candidates"},
         {"mz_min": 100},
         {"mz_max": 200},
         {"group_ids": ("G1",)},
         {"candidate_ids": ("C1",)},
         {"target_ids": ("T1",)},
-        {"target_role": "ISTD"},
-        {"attention_only": True},
     ],
 )
 def test_nearest_mz_rejects_mixed_modes(conflict):
@@ -2562,16 +2562,17 @@ def test_nearest_mz_rejects_mixed_modes(conflict):
     assert exc.value.code == 2
 
 
-def test_nearest_mz_rejects_nonindexed_evidence_without_fallback(tmp_path):
+def test_nearest_mz_reads_nonindexed_evidence_without_changing_source(tmp_path):
     from xic_inspector.api import prepare_report
 
     report, _, _ = _create_mock_db(tmp_path)
-    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
-        prepare_report(
-            report,
-            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),
-        )
-    assert exc.value.code == 2
+    original = report.read_bytes()
+    result = prepare_report(
+        report, SelectionRequest(strategy="query", nearest_mz=500.12)
+    )
+    assert result.payload["items"][0]["precursor_mz"] == 500
+    assert result.payload["items"][0]["mz_distance"] == pytest.approx(0.12)
+    assert report.read_bytes() == original
 
 
 def test_nearest_mz_rejects_portable_curve_bundles(tmp_path):
@@ -2581,7 +2582,7 @@ def test_nearest_mz_rejects_portable_curve_bundles(tmp_path):
 
     source = tmp_path / "curves.json"
     write_curve_bundle(_fixture_bundle(), source)
-    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
+    with pytest.raises(InspectorError, match="saved batch results") as exc:
         prepare_report(
             source,
             SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),

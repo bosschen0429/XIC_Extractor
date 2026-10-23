@@ -25,6 +25,7 @@ from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
 )
+from xic_inspector.selection.review import REVIEW_FILTERS
 from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
 
 
@@ -120,6 +121,7 @@ class ReviewWorkspace:
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
+                    order_by="priority",
                     review_scope="matrix"
                     if summary.get("query_index_version") == 2
                     else "all",
@@ -145,6 +147,9 @@ class ReviewWorkspace:
             "offset",
             "limit",
             "review_scope",
+            "review_filter",
+            "value_filter",
+            "order_by",
         }
         if set(values) - allowed:
             raise ValueError("查詢包含不支援的欄位。")
@@ -176,6 +181,7 @@ class ReviewWorkspace:
                 target_role=None
                 if values.get("target_role") == ""
                 else values.get("target_role"),
+                order_by=values.get("order_by", "priority"),
                 **{
                     key: value
                     for key, value in values.items()
@@ -186,6 +192,7 @@ class ReviewWorkspace:
                         "target_role",
                         "sample_id",
                         "review_scope",
+                        "order_by",
                     }
                 },
             )
@@ -220,6 +227,11 @@ class ReviewWorkspace:
             "target_role": page.payload["selection"].get("target_role"),
             "overview": page.payload["summary"].get("overview"),
             "review_scope": page.payload["selection"].get("review_scope", "all"),
+            "review_filter": page.payload["selection"].get("review_filter", "all"),
+            "value_filter": page.payload["selection"].get("value_filter", "all"),
+            "order_by": page.payload["selection"].get("order_by", "priority"),
+            "review_counts": page.payload["selection"].get("review_counts", {}),
+            "review_options": REVIEW_FILTERS,
             "all_samples": [
                 {
                     "id": row["canonical_sample_identity_id"],
@@ -239,6 +251,30 @@ class ReviewWorkspace:
             "items": [self._item_summary(item) for item in page.payload["items"]],
         }
         selection = page.payload["selection"]
+        response["filters"] = {
+            key: selection[key]
+            for key in (
+                "review_scope",
+                "review_filter",
+                "value_filter",
+                "order_by",
+                "target_role",
+                "attention_only",
+                "nearest_mz",
+                "mz_min",
+                "mz_max",
+                "rt_min",
+                "rt_max",
+            )
+            if selection.get(key) is not None
+        }
+        for field, ids in (
+            ("sample_id", selection["sample_ids"]),
+            ("target_id", selection["target_ids"]),
+            ("group_id", selection["group_ids"]),
+        ):
+            if len(ids) == 1:
+                response["filters"][field] = ids[0]
         if selection.get("nearest_mz") is not None:
             response.update(
                 {
@@ -292,6 +328,10 @@ class ReviewWorkspace:
             "observed_sample_ids": observed,
             "curve_sample_ids": curve_samples,
             "review_summary": item.get("review_summary", {}),
+            "review": item.get("review", {}),
+            "retained_curve_count": sum(
+                bool(curve.get("raw_rts")) for curve in item.get("curves", [])
+            ),
             "numeric_count": len(numeric_samples),
             "numeric_sample_ids": numeric_samples,
             "unresolved_count": sum(
