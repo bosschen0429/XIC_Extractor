@@ -721,7 +721,7 @@
     if(itemRows(item).length<=8)return `<div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div>`;
     const visible=itemRows(item).filter(r=>state.visible.has(r.sample_id)).length;
     const available=new Set((item.curves||[]).filter(c=>seriesList(c,'raw').length).map(c=>c.sample_id)),missing=itemRows(item).filter(r=>state.visible.has(r.sample_id)&&!available.has(r.sample_id)).length;
-    return `<details class="sample-display" id="sample-display" ${state.legendOpen?'open':''}><summary>樣本顯示 <strong>${visible} / ${itemRows(item).length}</strong>${missing?`<span class="legend-unavailable">${missing} 個缺少${display.signal==='raw'?'原始':'平滑'}曲線</span>`:''}</summary><div class="sample-display-body"><label class="legend-search">搜尋樣本<input type="search" id="legend-search" value="${esc(state.legendQuery)}" placeholder="名稱或編號"></label><div class="sample-legend" id="legend-items" aria-label="樣本曲線顯示">${legend(item)}</div></div></details>`;
+    return `<details class="sample-display" id="sample-display" ${state.legendOpen?'open':''}><summary>樣本顯示 <strong>${visible} / ${itemRows(item).length}</strong>${missing?`<span class="legend-unavailable"> · ${missing} 個缺少${display.signal==='raw'?'原始':'平滑'}曲線</span>`:''}</summary><div class="sample-display-body"><label class="legend-search">搜尋樣本<input type="search" id="legend-search" value="${esc(state.legendQuery)}" placeholder="名稱或編號"></label><div class="sample-legend" id="legend-items" aria-label="樣本曲線顯示">${legend(item)}</div></div></details>`;
   }
   function channelKey(item){
     if(originsRecorded(item))return '';const styles=channelStyles(item);
