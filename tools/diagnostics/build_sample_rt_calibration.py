@@ -106,19 +106,18 @@ def heldout_band_offsets(
     min_samples: int,
     band_edges: Sequence[float],
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
-    """Offsets of non-anchor features, before and after calibration.
+    """Offsets of the explicitly held-out observations, before and after fit.
 
     Both sides use the same observations: those inside each sample's anchor
     span, for features with at least ``min_samples`` such observations.
     """
-    anchor_ids = {f for knot in calibration.knots for f in knot.feature_ids}
     raw_by_band: dict[tuple[str, str], list[float]] = {}
     cal_by_band: dict[tuple[str, str], list[float]] = {}
     raw_mads: list[float] = []
     cal_mads: list[float] = []
     outside = 0
-    for feature_id, rt_by_sample in detected.items():
-        if feature_id in anchor_ids or len(rt_by_sample) < min_samples:
+    for rt_by_sample in detected.values():
+        if len(rt_by_sample) < min_samples:
             continue
         calibrated: dict[str, float] = {}
         for sample, rt in rt_by_sample.items():
@@ -238,14 +237,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
-        "--anchor-min-sample-fraction",
+        "--loess-fraction",
         type=float,
-        default=defaults.anchor_min_sample_fraction,
-    )
-    parser.add_argument(
-        "--knot-merge-tolerance-min",
-        type=float,
-        default=defaults.knot_merge_tolerance_min,
+        default=defaults.loess_fraction,
     )
     parser.add_argument(
         "--front-knot-count", type=int, default=defaults.front_knot_count
@@ -264,7 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--heldout-min-sample-fraction",
         type=float,
         default=0.7,
-        help="non-anchor features detected in at least this fraction validate",
+        help="held-out features detected in at least this fraction validate",
     )
     parser.add_argument(
         "--band-edges",
@@ -273,8 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     policy = RtCalibrationPolicy(
-        anchor_min_sample_fraction=args.anchor_min_sample_fraction,
-        knot_merge_tolerance_min=args.knot_merge_tolerance_min,
+        loess_fraction=args.loess_fraction,
         front_knot_count=args.front_knot_count,
         perturbation_mad_multiplier=args.perturbation_mad_multiplier,
         perturbation_min_shift_min=args.perturbation_min_shift_min,
@@ -292,9 +285,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         prior_injections={s: prior for s, (prior, _) in timeline.items()},
         policy=policy,
     )
+    # Keep exact duplicate acquired patterns on one side of the split. This
+    # validation fit is separate from the final map consumed by runtime.
+    unique: dict[tuple[tuple[str, float], ...], str] = {}
+    for feature in sorted(detected):
+        unique.setdefault(tuple(sorted(detected[feature].items())), feature)
+    ordered = sorted(
+        unique.values(),
+        key=lambda feature: (median(detected[feature].values()), feature),
+    )
+    training = {
+        feature: detected[feature]
+        for index, feature in enumerate(ordered)
+        if index % 5 != 2
+    }
+    validation = build_batch_rt_calibration(
+        training, sample_stems=samples, prior_injections={}, policy=policy
+    )
     heldout_rows, heldout_summary = heldout_band_offsets(
-        detected,
-        calibration,
+        {
+            feature: detected[feature]
+            for index, feature in enumerate(ordered)
+            if index % 5 == 2
+        },
+        validation,
         min_samples=math.ceil(args.heldout_min_sample_fraction * len(samples)),
         band_edges=band_edges,
     )
@@ -303,7 +317,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     payload = {
         "schema": "sample_rt_calibration",
-        "schema_version": 1,
+        "schema_version": 2,
         "evidence_status": "diagnostic_only",
         "alignment_cells": str(args.alignment_cells.resolve()),
         "injection_timeline": (

@@ -300,15 +300,15 @@ class PeakTrajectory:
                 float(np.median([rt for _, rt in self.sample_apices])),
                 "trajectory_reference",
             )
-        calibrated = (
-            rt_frame.has_coordinates
-            and rt_frame.has_support(sample_stem)
-            and all(rt_frame.has_support(sample) for sample, _ in nearest)
+        common = [rt_frame.calibrated_rt_min(sample, rt) for sample, rt in nearest]
+        calibrated = rt_frame.has_support(sample_stem) and all(
+            value is not None for value in common
         )
-        coordinates = [
-            rt_frame.common_rt_min(sample, rt) if calibrated else rt
-            for sample, rt in nearest
-        ]
+        coordinates = (
+            [float(value) for value in common if value is not None]
+            if calibrated
+            else [rt for _, rt in nearest]
+        )
         fitted = _fit_rt_trajectory(
             [rt_frame.injection_order[sample] for sample, _ in nearest],
             coordinates,
@@ -316,12 +316,16 @@ class PeakTrajectory:
             backfill_half_window_min=backfill_half_window_min,
         )
         if calibrated:
-            return PeakLocation(
-                max(
-                    0.0,
-                    fitted.query_rt + rt_frame.offset_min(sample_stem, fitted.query_rt),
-                ),
-                f"calibrated_{fitted.basis}",
+            observed = rt_frame.observed_rt_min(sample_stem, fitted.query_rt)
+            if observed is not None:
+                return PeakLocation(max(0.0, observed), f"calibrated_{fitted.basis}")
+            # The inverse is unsupported: refit wholly in observed coordinates,
+            # never label a raw/common mixture as a calibrated localization.
+            fitted = _fit_rt_trajectory(
+                [rt_frame.injection_order[sample] for sample, _ in nearest],
+                [rt for _, rt in nearest],
+                order,
+                backfill_half_window_min=backfill_half_window_min,
             )
         return PeakLocation(max(0.0, fitted.query_rt), fitted.basis)
 
@@ -565,6 +569,22 @@ class _CommonRtPeak:
     width: float
 
 
+def _common_rt_peak(
+    sample: str, peak: ElutionLandmark, rt_frame: RtFrame | None
+) -> _CommonRtPeak | None:
+    """Transform a complete landmark, never a mixture of supported/raw points."""
+    if rt_frame is None:
+        return None
+    half_width = peak.width / 2.0
+    start, apex, end = (
+        rt_frame.calibrated_rt_min(sample, rt)
+        for rt in (peak.apex_rt - half_width, peak.apex_rt, peak.apex_rt + half_width)
+    )
+    if start is None or apex is None or end is None:
+        return None
+    return _CommonRtPeak(apex, peak.height, end - start)
+
+
 @dataclass(frozen=True, slots=True)
 class _PatternCenter:
     observed: float
@@ -581,12 +601,16 @@ def _pattern_center(
     peaks: Sequence[ElutionLandmark],
     rt_frame: RtFrame | None,
 ) -> _PatternCenter:
+    common = [
+        transformed
+        for peak in peaks
+        if (transformed := _common_rt_peak(sample, peak, rt_frame)) is not None
+    ]
     return _PatternCenter(
         sum(peak.apex_rt for peak in peaks) / len(peaks),
         (
-            sum(rt_frame.common_rt_min(sample, peak.apex_rt) for peak in peaks)
-            / len(peaks)
-            if rt_frame is not None and rt_frame.has_support(sample)
+            sum(peak.apex_rt for peak in common) / len(peaks)
+            if len(common) == len(peaks)
             else None
         ),
     )
@@ -704,27 +728,11 @@ def resolve_peak_trajectories(
     retained_contexts = tuple(contexts)
     if not patterns:
         return PeakTrajectories(source_contexts=retained_contexts)
-    calibrated_samples = {
-        sample
-        for sample in {node.sample for node in nodes}
-        if rt_frame is not None and rt_frame.has_support(sample)
+    common_peaks = {
+        index: peak
+        for index, node in enumerate(nodes)
+        if (peak := _common_rt_peak(node.sample, node.landmark, rt_frame)) is not None
     }
-    common_peaks = {}
-    if rt_frame is not None:
-        for index, observed_node in enumerate(nodes):
-            if observed_node.sample not in calibrated_samples:
-                continue
-            peak = observed_node.landmark
-            half_width = peak.width / 2.0
-            common_peaks[index] = _CommonRtPeak(
-                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt),
-                peak.height,
-                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt + half_width)
-                - rt_frame.common_rt_min(
-                    observed_node.sample,
-                    peak.apex_rt - half_width,
-                ),
-            )
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(
@@ -735,7 +743,7 @@ def resolve_peak_trajectories(
         rt_frame,
     ):
         comparisons += 1
-        calibrated = {left.sample, right.sample} <= calibrated_samples
+        calibrated = all(index in common_peaks for index in (*left.nodes, *right.nodes))
         # A measured map already supplies the displacement. Fit the residual
         # within the transformed peak widths; a second free shift could match
         # a neighboring pattern instead. Unsupported pairs retain raw matching.

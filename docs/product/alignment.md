@@ -152,8 +152,8 @@ complete matches; patterns without a unique resolution do not directly provide
 correspondences. A single-pair match cannot connect tracks, bind owners, or
 supply positions; it lacks a second landmark to establish an ordered pattern.
 
-When both compared samples have measured batch-warp support, matching uses their
-common-RT apices and transforms peak widths into that same frame. The calibration
+When both complete compared patterns lie inside their sample calibration spans,
+matching uses common-RT apices and transforms peak widths into that same frame. The calibration
 already supplies the displacement: matching permits width-bounded residuals, not
 a second free shift onto neighboring peaks. Cross-sample context selection and
 neighbor pruning/ranking use the same supported common coordinates before the
@@ -163,7 +163,7 @@ candidates excluded by raw-RT pruning.
 Diagnostic replay retains full calibration support and arbitrary-landmark RT
 mapping, including bounded sample calibration loaded from a file or fitted by
 the replay command. An owner-only coordinate callback does not supply those
-facts. If either sample lacks support, the
+facts. If any required apex or width endpoint lacks support, the entire
 pair retains raw-RT pattern matching; missing support is not measured zero drift.
 These comparison coordinates do not replace measured landmarks or owner values.
 
@@ -207,7 +207,7 @@ disambiguate the witness. Known-identity constraints retain their separate path.
 
 ### Prepare RT coordinates
 
-Bootstrap obtains batch-warp anchors from consistent directional grouping
+Bootstrap obtains measured anchors from consistent directional grouping
 results; ordinary bootstrap membership is not used directly as the final
 answer. Pattern seeds participate in both directions. Extensions that disagree
 between directions remain unresolved without downgrading the seed.
@@ -222,37 +222,45 @@ input selection.
 
 | Mechanism | Current source and use |
 | --- | --- |
-| Known-ISTD drift lookup | Exact bindings and supported reference ranges, used for bootstrap comparison without changing observed RT. |
-| BatchRtWarp | Bootstrap groups from the complete request; ordinary anchors require at least 20 same-cohort members, and a sample requires at least 12 anchor observations. Used for final grouping and Backfill coordinate conversion. |
+| Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
+| Sample RT calibration | One frozen map fitted from the complete request's measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
-| Sample RT calibration diagnostic | Features present in nearly all samples, used only for opt-in grouping experiments, not as the production warp. |
+| Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
-A known-ISTD map requires at least two landmarks with strictly increasing
-observed and reference RT. Missing landmarks may be interpolated within the
-canonical injection order, without extrapolating order or RT; duplicate orders
-disable order interpolation. When the general map is unavailable, the existing
-unique same-target supported-owner correction may still be used. See
-[drift evidence](../../xic_extractor/alignment/drift_evidence.py) for the
-calculation details.
+[`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
+owns anchor preparation and the fit. A correspondence's reference is its
+same-cohort median observed RT. Ordinary correspondences require at least three
+measured members; exact duplicate sample/RT patterns contribute only once.
+Measured ISTDs do not require ordinary-feature prevalence. Missing ISTDs,
+predicted coordinates and Backfill observations are not imputed as anchors.
+Declared batch IDs define cohorts; empty IDs share an unspecified cohort and
+sample role does not define the cohort.
 
-Directional edge scoring evaluates raw RT first. Strong raw edges normally skip
-correction unless both ends have direct, unique same-target bindings; correction
-also does not repair weak non-RT evidence. Other eligible pairs use the prepared
-map. Scoring falls back to raw-only decisions if correction worsens the
-difference beyond the existing 10-second threshold or moves a pair from inside
-the raw preferred window to outside it. Existing Targeted-ISTD product/loss
-exceptions remain. This is the current
-[edge scoring](../../xic_extractor/alignment/edge_scoring.py) policy, not a rule
-shared by every grouping stage.
+Each sample uses robust local-linear regression of reference-minus-observed RT,
+with a 0.3 neighborhood fraction and three residual reweightings. Repeated
+observed RT positions receive one median reference vote. Two distinct positions
+use their straight line. Fewer than two positions or a non-monotone result leave
+the map unavailable. With only ISTDs, contradictory landmark order remains
+unavailable rather than being resolved by the same measurements. Ordinary
+corroboration can support a fit despite a conflicting standard; fitted standard
+residuals remain visible and do not reselect that standard's peak.
 
-After batch warp is prepared, final grouping reconsiders ordinary owners.
-Samples without a usable correction retain observed RT, so comparisons may mix
-corrected and observed coordinates; this does not mean zero drift was measured.
-Final grouping rebuilds correspondence from retained context in the frozen
-calibration frame, and carries those trajectories forward to localization.
-Residual neighbors do not cross declared batches; empty batch IDs share an
-unspecified cohort, and sample role does not define the calibration cohort.
-Non-monotone sample mappings provide no correction.
+The frozen map is linearly interpolated only within its supported anchor range,
+with a bounded inverse for sample-local Backfill queries. It never changes
+observed RT, peak boundaries, area or identity. Final pair scoring uses this
+common coordinate when both endpoints are supported, not a second ISTD override
+or a choice of whichever raw/corrected score is stronger. Non-RT evidence and
+known-identity constraints remain separate. Bootstrap's ISTD-only lookup retains
+the unique same-target fallback; it is not the final batch map.
+
+Final grouping rebuilds correspondence in the frozen frame and carries those
+trajectories to localization. Unsupported coordinates are not measured zero
+drift: a supported peak region cannot join an unsupported raw region through
+ordinary correspondence. When both regions are unsupported, existing raw/shape
+evidence remains available. A Backfill forecast uses common coordinates only
+when its references and target inverse are supported; otherwise it estimates
+the entire forecast in raw RT, without mixing coordinate systems. Historical
+frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitter.
 
 ### Decide membership
 
@@ -265,7 +273,14 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
-- Measured peak shape is independent correspondence evidence. The owner adapter
+- Supported common-coordinate peak regions are the primary physical
+  correspondence check. Each selected apex must lie inside the other's
+  calibrated measured bounds, across every pair in the proposed group. A chain
+  of overlapping neighbors cannot hide incompatible endpoints. This is a
+  correspondence constraint, not proof of chemical identity; same-sample
+  competition and physical order still apply.
+- When both complete peak regions lack calibration support, measured peak
+  shape supplies the existing fallback evidence. The owner adapter
   retains an apex-relative, own-max Gaussian-smoothed shape from the selected
   raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
   translates RT but does not stretch width. Only in this private derivative,
@@ -273,7 +288,8 @@ mass, and product mass, and handles competition within each sample. Currently:
   island from neighboring signal; continuous background is not subtracted.
   This does not reselect the peak or change the measured observation.
   A local Pearson similarity below
-  `min_peak_shape_similarity` (default 0.80) prevents ordinary membership.
+  `min_peak_shape_similarity` (default 0.80) prevents ordinary membership in
+  that fallback, but cannot veto supported common-coordinate regions.
   At least five acquired points per trace and half of the shared +/-0.35-minute
   grid are required. Fine-shape comparison also requires five measured points
   at or above half height in each retained primary signal; zeros, smoothing and
@@ -286,13 +302,14 @@ mass, and product mass, and handles competition within each sample. Currently:
   Shape agreement alone does not establish membership. A measured contradiction
   applies to the entire proposed union, including trajectory seeds, singleton
   admission and separated-band bridges; intermediate members cannot hide it.
-  Directional assignment and Backfill admission consume the same shape rule.
+  Directional assignment and Backfill admission consume the same region/shape rule.
   Simultaneous Backfill candidates are also compared with each other after
   claim resolution. Both endpoints of a shape conflict remain unassigned;
   independent compatible additions can still join, without an ordering winner.
   Explicit known-identity constraints remain separate from inferred membership.
-- Dense bands use their own trend over six neighboring injections; sparse bands
-  use broader warp-only RT comparisons. This is not another Backfill localization.
+- Dense bands use their own trend over six neighboring injections in the shared
+  RT frame; sparse bands use broader calibrated comparisons. This feature-local
+  correspondence estimate is not another batch map or Backfill localization.
 - A band cannot contain two owners from the same sample.
 - Near-equivalent competitors remain unresolved; other independent support does
   not disappear because of one contested pair.

@@ -13,6 +13,7 @@ from xic_extractor.alignment.edge_scoring import (
 )
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.models import Target
 
 
@@ -113,6 +114,36 @@ def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence()
     assert not measured_zero.has_drift
     assert measured_zero.drift_source == "none"
     assert measured_zero.corrected_pair_delta_sec(owner, _owner("other")) is None
+
+
+@pytest.mark.parametrize("shift", (0.0, 1.0))
+def test_frozen_coordinate_replaces_rt_evidence_without_an_extra_score(shift):
+    from tests.test_alignment_edge_scoring import _owner
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+    left = _owner("a", owner_apex_rt=10.0)
+    right = _owner("b", owner_apex_rt=10.01 + shift)
+    frame = SampleRtFrame().with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("a", ((8.0, 8.0), (12.0, 12.0))),
+                ("b", ((8.0 + shift, 8.0), (12.0 + shift, 12.0))),
+            )
+        )
+    )
+    common = evaluate_owner_edge(left, right, config=AlignmentConfig(), rt_frame=frame)
+    raw = evaluate_owner_edge(
+        left,
+        _owner("b", owner_apex_rt=10.01),
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
+    )
+    assert common.decision == raw.decision == "strong_edge"
+    assert common.score == raw.score
+    assert common.rt_basis == "drift_corrected"
+    assert common.rt_drift_corrected_delta_sec == pytest.approx(0.6)
+    assert common.rt_raw_delta_sec == pytest.approx(0.6 + shift * 60)
 
 
 def _known_reference_workbook(path: Path) -> Workbook:
@@ -429,10 +460,13 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
     )
     samples = frozenset({"early", "middle", "late"})
     orders = {"early": 1, "middle": 2, "late": 3}
-    frame = (
-        SampleRtFrame(injection_order=orders, sample_universe=samples)
-        .with_sources(known_istd_reference=reference)
-        .with_batch_calibration(BatchRtWarp((), 0))
+    frame = SampleRtFrame(injection_order=orders, sample_universe=samples).with_sources(
+        known_istd_reference=reference
+    )
+    frame = frame.with_sample_calibration(
+        BatchRtCalibrationAccumulator(
+            sample_stems=tuple(samples), sample_cohorts=dict.fromkeys(samples, "batch")
+        ).freeze(measured_istds=frame.measured_istd_coordinates)
     )
     for sample, observed in (("early", 16), ("middle", 16.2), ("late", 16.4)):
         assert frame.has_support(sample)
@@ -513,7 +547,9 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
+    from xic_extractor.alignment.sample_rt_calibration import (
+        interpolate_calibrated_rt_min,
+    )
 
     reference = _batch_reference(
         tmp_path,
@@ -559,7 +595,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     assert saved["known_istd_reference"] == receipt
 
 
-def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
+def test_batch_reference_does_not_invent_missing_measured_landmarks(
     tmp_path: Path,
 ) -> None:
     from tests.alignment_pipeline_helpers import _owner
@@ -583,8 +619,18 @@ def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
         sample_universe=universe,
         injection_order=order,
     )
-    assert lookup.corrected_pair_delta_sec(early, middle) == pytest.approx(0)
-    assert lookup.corrected_pair_delta_sec(middle, late) == pytest.approx(0)
+    receipt = lookup.reference.explanation_provenance["calibration"]
+    middle_map = next(r for r in receipt["samples"] if r["sample_stem"] == "middle")
+    assert len(middle_map["knots"]) == 2
+    # The two measured endpoints, not injection-order interpolation, define
+    # the missing sample's line: 11 -> 10 and 48 -> 46.
+    expected_middle = 10 + (middle.owner_apex_rt - 11) * 36 / 37
+    assert lookup.corrected_pair_delta_sec(early, middle) == pytest.approx(
+        abs(22 - expected_middle) * 60
+    )
+    assert lookup.corrected_pair_delta_sec(middle, late) == pytest.approx(
+        abs(22 - expected_middle) * 60
+    )
 
 
 @pytest.mark.parametrize(

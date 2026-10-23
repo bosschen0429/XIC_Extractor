@@ -1,36 +1,37 @@
-"""Batch-level sample RT calibration onto a common anchor coordinate.
+"""One measured-anchor RT map for batch grouping, localization and replay.
 
-Anchors are features directly detected in nearly every sample, not only ISTDs.
-Produces calibrated coordinates and perturbation confirmation. Diagnostic
-grouping replay can use these coordinates; measured RTs and areas are preserved.
+ISTDs and agreed ordinary features establish the same cohort-median reference.
+Robust local-linear regression estimates each injection's RT-dependent offset;
+it does not subtract a local injection trend or change measured peaks/areas.
 """
 
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from statistics import median
 
-from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
+import numpy as np
+
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 
 @dataclass(frozen=True)
 class RtCalibrationPolicy:
-    anchor_min_sample_fraction: float = 0.94
-    knot_merge_tolerance_min: float = 0.1
+    loess_fraction: float = 0.3
     front_knot_count: int = 2
     perturbation_mad_multiplier: float = 5.0
     perturbation_min_shift_min: float = 0.1
 
     def __post_init__(self) -> None:
-        if not 0 < self.anchor_min_sample_fraction <= 1:
-            raise ValueError("anchor_min_sample_fraction must be in (0, 1]")
+        if not 0 < self.loess_fraction <= 1:
+            raise ValueError("loess_fraction must be in (0, 1]")
         if self.front_knot_count < 1:
             raise ValueError("front_knot_count must be at least 1")
         values = (
-            self.knot_merge_tolerance_min,
             self.perturbation_mad_multiplier,
             self.perturbation_min_shift_min,
         )
@@ -51,7 +52,7 @@ class PriorInjection:
 
 @dataclass(frozen=True)
 class CalibrationKnot:
-    """Co-eluting anchor features collapsed to one reference position."""
+    """One measured correspondence's same-cohort reference position."""
 
     knot_id: str
     reference_rt_min: float
@@ -68,6 +69,9 @@ class SampleRtCalibration:
     front_shift_min: float | None
     prior_injection: PriorInjection | None
     perturbation_status: str
+    anchor_count: int = 0
+    # (label, observed, reference, fitted-minus-reference), all RTs in minutes.
+    standard_residuals: tuple[tuple[str, float, float, float], ...] = ()
 
     @property
     def reliable_observed_range(self) -> tuple[float, float] | None:
@@ -78,6 +82,18 @@ class SampleRtCalibration:
     def calibrated_rt(self, observed_rt_min: float) -> float | None:
         """Common-coordinate RT; None outside this sample's anchor span."""
         return interpolate_calibrated_rt_min(observed_rt_min, self.knots)
+
+
+def interpolate_calibrated_rt_min(
+    value: float, knots: Sequence[Sequence[float]]
+) -> float | None:
+    """Interpolate an owner-validated monotone map without extrapolation."""
+    if len(knots) < 2 or not knots[0][0] <= value <= knots[-1][0]:
+        return None
+    right = min(bisect_right(knots, value, key=lambda knot: knot[0]), len(knots) - 1)
+    left_x, left_y = knots[right - 1]
+    right_x, right_y = knots[right]
+    return left_y + (value - left_x) / (right_x - left_x) * (right_y - left_y)
 
 
 @dataclass(frozen=True)
@@ -140,34 +156,50 @@ def build_batch_rt_calibration(
     sample_stems: Sequence[str],
     prior_injections: Mapping[str, PriorInjection],
     policy: RtCalibrationPolicy,
+    sample_cohorts: Mapping[str, str] | None = None,
+    measured_istds: Sequence[tuple[str, str, float]] = (),
 ) -> BatchRtCalibration:
-    """Build piecewise sample knots from features detected batch-wide.
+    """Fit one map from same-cohort measured correspondences and ISTDs.
 
-    ``detected_rt_by_feature`` holds directly detected apex RTs only; backfilled
-    or inferred observations must not become anchors. The measured front shift
-    decides a perturbation; the injection timeline only explains it.
+    Ordinary correspondences need two peers, not a batch-size activation gate.
+    Measured identity anchors need no ordinary-feature prevalence assumption.
+    Predicted, interpolated or backfilled coordinates are never training data.
+    Timeline facts explain measured perturbation; they do not fit the map.
     """
     samples = tuple(sorted(set(sample_stems)))
-    knots, shifts_by_knot = _build_knots(detected_rt_by_feature, samples, policy)
+    knots, observations_by_knot, standards, ordinary_samples = _anchor_coordinates(
+        detected_rt_by_feature, samples, sample_cohorts, measured_istds
+    )
     sample_knots: dict[str, tuple[tuple[float, float], ...]] = {}
+    anchor_counts: dict[str, int] = {}
     for sample in samples:
-        sample_knots[sample] = tuple(
+        points = tuple(
             (
-                knot.reference_rt_min + shifts_by_knot[knot.knot_id][sample],
+                observations_by_knot[knot.knot_id][sample],
                 knot.reference_rt_min,
             )
             for knot in knots
-            if sample in shifts_by_knot[knot.knot_id]
+            if sample in observations_by_knot[knot.knot_id]
         )
+        # Conflicting measured standard order cannot be resolved by fitting the
+        # same sparse standards to themselves. Ordinary corroboration is a
+        # distinct source; without it, keep the contradiction unavailable.
+        ordered_points = tuple(sorted(points))
+        sample_knots[sample] = (
+            ordered_points
+            if sample not in ordinary_samples and not _is_usable(ordered_points)
+            else _fit_sample_knots(points, policy.loess_fraction)
+        )
+        anchor_counts[sample] = len({x for x, _ in points})
     usable = {s for s, k in sample_knots.items() if _is_usable(k)}
 
     front_knots = knots[: policy.front_knot_count]
     front_shifts: dict[str, float] = {}
     for sample in sorted(usable):
         observed = [
-            shifts_by_knot[knot.knot_id][sample]
+            observations_by_knot[knot.knot_id][sample] - knot.reference_rt_min
             for knot in front_knots
-            if sample in shifts_by_knot[knot.knot_id]
+            if sample in observations_by_knot[knot.knot_id]
         ]
         if len(observed) == len(front_knots):
             front_shifts[sample] = float(median(observed))
@@ -194,6 +226,18 @@ def build_batch_rt_calibration(
             front_shift_min=front,
             prior_injection=prior,
             perturbation_status=_perturbation_status(prior, front, center, tolerance),
+            anchor_count=anchor_counts[sample],
+            standard_residuals=tuple(
+                (label, observed, reference, fitted - reference)
+                for label, observed, reference in standards.get(sample, ())
+                if sample in usable
+                and (
+                    fitted := interpolate_calibrated_rt_min(
+                        observed, sample_knots[sample]
+                    )
+                )
+                is not None
+            ),
         )
     return BatchRtCalibration(
         policy=policy,
@@ -205,53 +249,161 @@ def build_batch_rt_calibration(
     )
 
 
-def _build_knots(
+def _anchor_coordinates(
     detected_rt_by_feature: Mapping[str, Mapping[str, float]],
     samples: tuple[str, ...],
-    policy: RtCalibrationPolicy,
-) -> tuple[tuple[CalibrationKnot, ...], dict[str, dict[str, float]]]:
+    sample_cohorts: Mapping[str, str] | None,
+    measured_istds: Sequence[tuple[str, str, float]],
+) -> tuple[
+    tuple[CalibrationKnot, ...],
+    dict[str, dict[str, float]],
+    dict[str, list[tuple[str, float, float]]],
+    frozenset[str],
+]:
     sample_set = set(samples)
-    min_samples = math.ceil(policy.anchor_min_sample_fraction * len(samples))
-    anchors: list[tuple[float, str, dict[str, float]]] = []
-    for feature_id, rt_by_sample in detected_rt_by_feature.items():
-        observed = {
-            s: rt
-            for s, rt in rt_by_sample.items()
-            if s in sample_set and math.isfinite(rt)
-        }
-        if observed and len(observed) >= min_samples:
-            anchors.append((float(median(observed.values())), feature_id, observed))
-    anchors.sort(key=lambda item: (item[0], item[1]))
-
-    # Isotope, adduct and fragment families of one compound share its RT; as
-    # separate knots their per-sample order inverts and breaks monotonicity.
-    groups: list[list[tuple[float, str, dict[str, float]]]] = []
-    for anchor in anchors:
-        if groups and anchor[0] - groups[-1][-1][0] <= policy.knot_merge_tolerance_min:
-            groups[-1].append(anchor)
-        else:
-            groups.append([anchor])
-
+    cohorts = (
+        dict(sample_cohorts)
+        if sample_cohorts is not None
+        else dict.fromkeys(samples, "")
+    )
+    known: dict[str, dict[str, float]] = defaultdict(dict)
+    for label, sample, observed_rt in measured_istds:
+        known[label][sample] = observed_rt
+    anchors: list[tuple[float, str, dict[str, float], bool]] = []
+    seen: set[tuple[tuple[str, float], ...]] = set()
+    for is_standard, features in ((False, detected_rt_by_feature), (True, known)):
+        for feature_id, rt_by_sample in sorted(features.items()):
+            by_cohort: dict[str, dict[str, float]] = defaultdict(dict)
+            for sample, rt in rt_by_sample.items():
+                if sample in sample_set and sample in cohorts and math.isfinite(rt):
+                    by_cohort[cohorts[sample]][sample] = rt
+            for observed in by_cohort.values():
+                if len(observed) < (1 if is_standard else 3):
+                    continue
+                signature = tuple(sorted(observed.items()))
+                if not is_standard and signature in seen:
+                    continue
+                seen.add(signature)
+                anchors.append(
+                    (
+                        float(median(observed.values())),
+                        feature_id,
+                        observed,
+                        is_standard,
+                    )
+                )
+    anchors.sort(key=lambda item: (item[0], item[1], tuple(sorted(item[2]))))
     knots: list[CalibrationKnot] = []
-    shifts_by_knot: dict[str, dict[str, float]] = {}
-    for index, group in enumerate(groups):
+    observations_by_knot: dict[str, dict[str, float]] = {}
+    standards: dict[str, list[tuple[str, float, float]]] = defaultdict(list)
+    ordinary_samples: set[str] = set()
+    for index, (reference, feature, observed, is_standard) in enumerate(anchors):
         knot_id = f"K{index + 1:03d}"
-        reference = float(median(ref for ref, _feature, _obs in group))
-        shifts: dict[str, float] = {}
-        for sample in samples:
-            deltas = [obs[sample] - ref for ref, _f, obs in group if sample in obs]
-            if deltas:
-                shifts[sample] = float(median(deltas))
         knots.append(
             CalibrationKnot(
                 knot_id=knot_id,
                 reference_rt_min=reference,
-                feature_ids=tuple(feature for _ref, feature, _obs in group),
-                sample_count=len(shifts),
+                feature_ids=(feature,),
+                sample_count=len(observed),
             )
         )
-        shifts_by_knot[knot_id] = shifts
-    return tuple(knots), shifts_by_knot
+        observations_by_knot[knot_id] = observed
+        if is_standard:
+            for sample, rt in observed.items():
+                standards[sample].append((feature, rt, reference))
+        else:
+            ordinary_samples.update(observed)
+    return (
+        tuple(knots),
+        observations_by_knot,
+        dict(standards),
+        frozenset(ordinary_samples),
+    )
+
+
+def _fit_sample_knots(
+    points: Sequence[tuple[float, float]], fraction: float
+) -> tuple[tuple[float, float], ...]:
+    # Multiple ion views at one acquired position are not independent votes.
+    by_rt: dict[float, list[float]] = defaultdict(list)
+    for observed, reference in points:
+        by_rt[observed].append(reference)
+    locations = sorted((x, float(median(values))) for x, values in by_rt.items())
+    if len(locations) < 2:
+        return tuple(locations)
+    x, reference = np.asarray(locations, dtype=float).T
+    if len(locations) == 2:
+        return tuple(locations)
+    y = reference - x
+    dx = x[None, :] - x[:, None]
+    count = min(len(x), max(4, math.ceil(len(x) * fraction)))
+    radius = np.partition(abs(dx), count - 1, axis=1)[:, count - 1]
+    radius = np.maximum(radius, np.finfo(float).eps)
+    z = dx / radius[:, None]
+    kernel = np.maximum(0, 1 - np.minimum(abs(z) / 1.000001, 1) ** 3) ** 3
+    robust = np.ones(len(x))
+    fitted = y.copy()
+    for iteration in range(4):
+        weights = kernel * robust[None, :]
+        sw = weights.sum(axis=1)
+        sx = (weights * z).sum(axis=1)
+        sxx = (weights * z * z).sum(axis=1)
+        sy, sxy = weights @ y, (weights * z) @ y
+        determinant = sw * sxx - sx * sx
+        supported = robust > 0
+        fallback = np.interp(x, x[supported], y[supported])
+        fitted = np.divide(sy, sw, out=fallback, where=sw > 0)
+        ranked = determinant > np.finfo(float).eps * np.maximum(sw * sxx, 1)
+        fitted[ranked] = (
+            sy[ranked] * sxx[ranked] - sxy[ranked] * sx[ranked]
+        ) / determinant[ranked]
+        if iteration == 3:
+            break
+        residual = y - fitted
+        if float(np.max(abs(residual))) < 1e-10:
+            break
+        scale = max(float(np.median(abs(residual))), 1e-10)
+        u = abs(residual) / (6 * scale)
+        robust = np.maximum(0, 1 - u * u) ** 2
+        robust[u >= 1] = 0
+    supported_x = x[robust > 0]
+    return tuple(
+        (float(a), float(b))
+        for a, b in zip(x, x + fitted, strict=True)
+        if supported_x[0] <= a <= supported_x[-1]
+    )
+
+
+class BatchRtCalibrationAccumulator:
+    """Retain compact bootstrap anchors and fit once after the last partition."""
+
+    def __init__(
+        self, *, sample_stems: Sequence[str], sample_cohorts: Mapping[str, str]
+    ) -> None:
+        self._samples = tuple(sample_stems)
+        self._cohorts = sample_cohorts
+        self._observations: dict[str, dict[str, float]] = {}
+
+    def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
+        for group in groups:
+            if not group:
+                continue
+            key = min(owner.owner_id for owner in group)
+            self._observations[key] = {
+                owner.sample_stem: owner.owner_apex_rt for owner in group
+            }
+
+    def freeze(
+        self, *, measured_istds: Sequence[tuple[str, str, float]] = ()
+    ) -> BatchRtCalibration:
+        return build_batch_rt_calibration(
+            self._observations,
+            sample_stems=self._samples,
+            sample_cohorts=self._cohorts,
+            measured_istds=measured_istds,
+            prior_injections={},
+            policy=RtCalibrationPolicy(),
+        )
 
 
 def _is_usable(knots: tuple[tuple[float, float], ...]) -> bool:

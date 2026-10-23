@@ -17,7 +17,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    estimate_batch_rt_warp,
     infer_feature_memberships,
     supports_existing_feature,
 )
@@ -28,6 +27,10 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import (
+    BatchRtCalibration,
+    BatchRtCalibrationAccumulator,
+)
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -228,6 +231,110 @@ def test_ordered_doublet_correspondence_survives_shape_disagreement():
     }
 
 
+def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
+    offsets = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, sample, apex),
+            owner_peak_start_rt=apex - half_width,
+            owner_peak_end_rt=apex + half_width,
+            peak_shape=prepare_local_peak_shape(
+                offsets + apex,
+                np.exp(-0.5 * (offsets / width) ** 2),
+                apex_rt_min=apex,
+            ),
+        )
+        for sample, apex, width, half_width in (
+            ("narrow", 10.0, 0.03, 0.1),
+            ("shifted-wide", 9.0, 0.25, 0.6),
+            ("late", 10.4, 0.03, 0.1),
+            ("unsupported", 10.0, 0.03, 0.1),
+        )
+    )
+    frame = SampleRtFrame(
+        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+    ).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("narrow", ((8.0, 8.0), (12.0, 12.0))),
+                ("shifted-wide", ((7.0, 8.0), (11.0, 12.0))),
+                ("late", ((8.0, 8.0), (12.0, 12.0))),
+            )
+        )
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("narrow", "shifted-wide")),
+        frozenset(("late",)),
+        frozenset(("unsupported",)),
+    }
+    for candidate, expected in zip(owners[1:], (True, False, False), strict=True):
+        assert (
+            supports_existing_feature(
+                candidate,
+                (owners[0],),
+                config=AlignmentConfig(),
+                rt_frame=frame,
+                rules=CID_NL_GROUPING_RULES,
+            )
+            is expected
+        )
+    assert [(owner.owner_apex_rt, owner.owner_area) for owner in owners] == [
+        (10.0, 1000.0),
+        (9.0, 1000.0),
+        (10.4, 1000.0),
+        (10.0, 1000.0),
+    ]
+
+
+@pytest.mark.parametrize("bootstrap", (False, True))
+def test_common_peak_region_checks_entire_group_not_only_adjacent_edges(bootstrap):
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, sample, apex),
+            owner_peak_start_rt=apex - 0.1,
+            owner_peak_end_rt=apex + 0.1,
+        )
+        for sample, apex in (
+            ("mid-first", 10.08),
+            ("early", 10.0),
+            ("mid", 10.08),
+            ("late", 10.16),
+            ("mid-last", 10.08),
+        )
+    )
+    frame = SampleRtFrame(
+        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+    ).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((owner.sample_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
+        )
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+        bootstrap=bootstrap,
+    )
+    assert not any(
+        {"early", "late"}.issubset(group.owner_ids) for group in result.groups
+    )
+    assert sum(len(group.owner_ids) for group in result.groups) == len(owners)
+    assert not supports_existing_feature(
+        owners[3],
+        (owners[0], owners[1], owners[2]),
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+    )
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     bootstrap: bool,
@@ -392,7 +499,7 @@ def test_tissue_background_observation_does_not_join_four_localized_peaks() -> N
         if decision.sample_stem == "NormalBC2302_DNA"
     )
     assert rejected.state == "proven_incompatible"
-    assert rejected.reason == "peak_shape_mismatch"
+    assert rejected.reason == "peak_correspondence_mismatch"
     assert rejected.witness_owner_ids
 
 
@@ -976,12 +1083,12 @@ def test_estimated_warp_recovers_an_injected_early_shift() -> None:
                 for sample in orders
             )
         )
-    warp = estimate_batch_rt_warp(
-        groups,
-        owners_by_id={},
-        injection_order=orders,
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=tuple(orders), sample_cohorts=dict.fromkeys(orders, "batch")
     )
-    assert warp.anchor_group_count == 36
+    calibration.add_groups(groups)
+    warp = calibration.freeze()
+    assert len(warp.knots) == 36
     assert warp.offset_min("s10", 7.0) * 60.0 < -25.0
     assert abs(warp.offset_min("s10", 27.0) * 60.0) < 8.0
     for sample in ("s01", "s20"):

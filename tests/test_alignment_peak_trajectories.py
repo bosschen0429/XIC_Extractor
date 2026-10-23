@@ -222,6 +222,44 @@ def _context(
     )
 
 
+@pytest.mark.parametrize("right_domain_end", (9.0, 11.0))
+def test_pattern_outside_calibration_span_matches_wholly_in_observed_rt(
+    right_domain_end,
+):
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+    owners = (
+        _owner("a", "early", 10.0),
+        _owner("a", "late", 10.7),
+        _owner("b", "early", 10.6),
+        _owner("b", "late", 11.3),
+    )
+    contexts = (
+        _context("a", ((10.0, 30.0), (10.7, 100.0))),
+        _context("b", ((10.6, 30.0), (11.3, 100.0))),
+    )
+    frame = SampleRtFrame(injection_order={"a": 1, "b": 2}).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("a", ((8.0, 8.0), (12.0, 12.0))),
+                ("b", ((8.0, 8.5), (right_domain_end, right_domain_end + 0.5))),
+            )
+        )
+    )
+    result = resolve_peak_trajectories(
+        owners,
+        contexts,
+        config=AlignmentConfig(),
+        injection_order=frame.injection_order,
+        rt_frame=frame,
+    )
+    assert {frozenset(track.owner_ids) for track in result.tracks} == {
+        frozenset(("a:early", "b:early")),
+        frozenset(("a:late", "b:late")),
+    }
+    assert result.trajectory_for(owners[:1]).sample_apices == (("a", 10.0), ("b", 10.6))
+
+
 @pytest.mark.parametrize("reverse", [False, True])
 def test_single_landmark_cannot_join_disconnected_ordered_patterns(reverse):
     patterns = {

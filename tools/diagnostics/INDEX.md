@@ -184,24 +184,24 @@ authority.
   `alignment_cells.tsv` plus an optional injection timeline JSON. It does not
   read RAW.
 - **Authority:** `diagnostic_only`; no grouping, selection, RT, or value
-  authority. Keep until a correspondence owner adopts the same model.
+  authority. The diagnostic calls the same owner as formal batch calibration.
 
 `python -m tools.diagnostics.build_sample_rt_calibration` places every sample
 on a common RT coordinate. CLI help owns the arguments. Anchors are
-`alignment_cells.tsv` features with `detected` status in at least the
-configured fraction of the batch's samples, not only ISTDs; backfilled or
-inferred cells never become anchors. `alignment.sample_rt_calibration` owns the
-model and has no RAW, file, or Matrix access.
+`alignment_cells.tsv` features with `detected` status in at least three samples;
+backfilled or inferred cells never become anchors. This CLI treats its input as
+one cohort. Formal runtime supplies declared batch cohorts and measured ISTDs
+to the same `alignment.sample_rt_calibration` owner, which has no RAW, file, or
+Matrix access.
 
-- Anchors whose median RT lies within the merge tolerance collapse into one
-  knot. Isotope, adduct, and fragment families of one compound share its RT;
-  kept separate, their per-sample order inverts and the piecewise model fails.
-- Each sample's knots pair its observed RT with the knot's cross-sample median.
-  They must increase strictly on both axes and reuse the formal drift owner's
-  `interpolate_calibrated_rt_min`. A calibrated RT exists only inside that
-  sample's first and last knot; outside that span it is unavailable, never
-  extrapolated. Fewer than two knots, or crossing knots, leave the sample
-  uncalibrated.
+- Exact duplicate sample/RT patterns contribute once; repeated observed RT
+  positions receive one median reference vote. No fixed RT grid or near-RT
+  merge tolerance is fitted in parallel.
+- Robust local-linear regression fits each sample against correspondence
+  medians, with the CLI's `--loess-fraction`. The frozen result must increase
+  strictly on both axes. A calibrated RT exists only inside that sample's
+  supported anchor span; outside it is unavailable, never extrapolated.
+  Fewer than two knots, or a non-monotone result, leave the sample uncalibrated.
 - Measured data decides a perturbation; the
   [injection timeline](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic)
   explains it. The front shift is the median shift at the batch's earliest
@@ -219,9 +219,11 @@ model and has no RAW, file, or Matrix access.
   front knot is `unmeasured`. Sample rows carry the previous injection, its run
   length, the idle time, and the compared full-length run. Confirmation does not remove a sample's own
   calibration; no current consumer reads the status.
-- Held-out validation compares non-anchor features before and after
-  calibration on the same observations: those inside each sample's anchor span,
-  for features with at least the configured fraction of such observations.
+- Held-out validation first deduplicates exact acquired patterns, reserves every
+  fifth feature in median-RT order, fits the
+  remaining features separately, and compares raw/calibrated dispersion on the
+  same supported held-out observations. The output map is fitted to all input
+  anchors; it is not the model used to score its own held-out rows.
 
 Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
 per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
@@ -518,7 +520,7 @@ RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
 and `--known-istd-reference` accept existing metadata and reference artifacts.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, baseline warp, compact elution contexts, local peak-shape
+member identities, frozen batch calibration, compact elution contexts, local peak-shape
 descriptors and configuration. It omits full chromatogram arrays. Older snapshots
 without shape descriptors cannot test shape-aware membership; prepare supplies
 them through the formal owner adapter. Prepare checks snapshot replay against
@@ -530,12 +532,13 @@ Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require prepare.
 
-`--calibrate` fits the existing sample RT calibration model from established
-baseline groups (default anchor presence: 94% of samples). Use
-`--anchor-min-sample-fraction` to change that selection, or `--rt-calibration`
-to supply an existing `sample_rt_calibration` JSON. Coordinates outside a
-sample's calibrated span retain their observed RT. Calibration changes the
-comparison coordinate, not measured RT or area.
+`--calibrate` calls the formal sample RT calibration owner on established
+baseline groups with at least three measured members. `--loess-fraction` controls
+its local regression neighborhood; `--rt-calibration` instead supplies an
+existing `sample_rt_calibration` JSON. Unsupported coordinates remain explicitly
+unavailable to correspondence consumers; displayed comparison RT falls back to
+observed RT. Calibration does not change measured RT or area. Historical frozen
+offset maps remain readable without refitting them.
 
 `groups.tsv` and `members.tsv` report grouping and observed/comparison RT;
 `decisions.tsv` exposes the grouping decisions when present. `changes.tsv`

@@ -26,7 +26,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
-    BatchRtWarpAccumulator,
     FeatureInferenceOperationCounts,
 )
 from xic_extractor.alignment.grouping_workflow import (
@@ -44,6 +43,7 @@ from xic_extractor.alignment.result.application_result import (
     finalize_alignment_result,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
@@ -117,8 +117,11 @@ class UntargetedBatchGroupingPreparation:
 
     def __init__(self, context: UntargetedPartitionContext) -> None:
         self._bootstrap_frame = context.rt_frame
-        self._calibration = BatchRtWarpAccumulator(
-            injection_order=self._bootstrap_frame.injection_order,
+        self._calibration = BatchRtCalibrationAccumulator(
+            sample_stems=tuple(
+                self._bootstrap_frame.sample_universe
+                or self._bootstrap_frame.injection_order
+            ),
             sample_cohorts=self._bootstrap_frame.sample_cohorts,
         )
         self._rt_frame: SampleRtFrame | None = None
@@ -130,8 +133,10 @@ class UntargetedBatchGroupingPreparation:
         )
 
     def freeze_calibration(self) -> None:
-        self._rt_frame = self._bootstrap_frame.with_batch_calibration(
-            self._calibration.freeze()
+        self._rt_frame = self._bootstrap_frame.with_sample_calibration(
+            self._calibration.freeze(
+                measured_istds=self._bootstrap_frame.measured_istd_coordinates
+            )
         )
 
     def finalize_grouping(

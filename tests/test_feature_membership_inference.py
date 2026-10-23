@@ -11,7 +11,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    BatchRtWarpAccumulator,
     FeatureMembershipInferenceResult,
     _Candidate,
     _solve_sample_assignment,
@@ -24,6 +23,7 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -118,7 +118,6 @@ def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]
 
 def test_rt_calibration_accumulates_support_across_partition_boundaries() -> None:
     samples = tuple(f"s{i:02}" for i in range(24))
-    orders = {sample: i for i, sample in enumerate(samples)}
     groups = tuple(
         tuple(
             _owner(
@@ -128,9 +127,13 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
         )
         for feature in range(12)
     )
-    whole = BatchRtWarpAccumulator(injection_order=orders)
+    whole = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
     whole.add_groups(groups)
-    partitioned = BatchRtWarpAccumulator(injection_order=orders)
+    partitioned = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
     for group in reversed(groups):
         partitioned.add_groups((group,))
     assert partitioned.freeze() == whole.freeze()
@@ -141,20 +144,25 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
 
 def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
     samples = tuple(f"s{i:02}" for i in range(24))
-    calibration = BatchRtWarpAccumulator(
-        injection_order={sample: i for i, sample in enumerate(samples)},
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=samples,
         sample_cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
     )
     calibration.add_groups(
         tuple(
             tuple(
-                _owner(sample, f"f{feature}", apex_rt=8.0 + feature)
-                for sample in samples
+                _owner(
+                    sample, f"f{feature}", apex_rt=8.0 + feature + (5 if i >= 12 else 0)
+                )
+                for i, sample in enumerate(samples)
             )
             for feature in range(12)
         )
     )
-    assert calibration.freeze().knots_by_sample == ()
+    result = calibration.freeze()
+    assert result.common_rt_min("s00", 10) == pytest.approx(10)
+    assert result.common_rt_min("s12", 15) == pytest.approx(15)
+    assert all(result.has_support(sample) for sample in samples)
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:

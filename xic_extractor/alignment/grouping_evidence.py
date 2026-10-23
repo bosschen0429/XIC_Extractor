@@ -1,4 +1,4 @@
-"""Shared physical peak shape and signal-to-noise evidence for grouping."""
+"""Shared peak correspondence and signal-to-noise evidence for grouping."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_s
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+    from xic_extractor.alignment.rt_frame import RtFrame
 
 DETECTION_LIMIT_SNR = 3.0
 QUANTITATION_LIMIT_SNR = 10.0
@@ -35,26 +36,41 @@ def envelope_fraction(
     )
 
 
-def peak_shape_union_conflict(
+def peak_correspondence_conflict(
     left: Sequence[SampleLocalMS1Owner],
     right: Sequence[SampleLocalMS1Owner],
     config: AlignmentConfig,
     *,
     trajectories: PeakTrajectories | None = None,
+    rt_frame: RtFrame | None = None,
 ) -> tuple[str, str] | None:
-    """A measured shape contradiction cannot be repaired by a mass/RT bridge.
+    """Check complete groups in one supported RT frame, not just their edge.
 
-    Check the members, not just the joining edge: otherwise an intermediate
-    shape can transitively reunite two incompatible peaks. Missing/flat/short
-    traces supply no shape evidence, rather than a fabricated match or veto.
-    Explicit correspondence distinguished by physical peak order takes priority
-    over shape variation within that track; a mass/RT-only track does not.
+    Each selected centre must be supported by the other's measured peak region.
+    A low apex-relative correlation cannot veto that common-coordinate support.
+    Without a complete calibrated region, retain the measured-shape comparison;
+    an unavailable coordinate is not permission to mix raw and common RT.
+    Physical order remains a separate membership constraint.
     """
     for first in left:
-        if first.peak_shape is None:
-            continue
         for second in right:
-            if second.peak_shape is None or first.owner_id == second.owner_id:
+            if first.owner_id == second.owner_id:
+                continue
+            a = rt_frame.calibrated_peak_region(first) if rt_frame is not None else None
+            b = (
+                rt_frame.calibrated_peak_region(second)
+                if rt_frame is not None
+                else None
+            )
+            if (a is None) != (b is None):
+                # A calibrated and an unsupported raw member do not supply
+                # correspondence evidence in a shared coordinate frame.
+                return first.owner_id, second.owner_id
+            if a is not None and b is not None:
+                if not (a[0] <= b[1] <= a[2] and b[0] <= a[1] <= b[2]):
+                    return first.owner_id, second.owner_id
+                continue
+            if first.peak_shape is None or second.peak_shape is None:
                 continue
             if trajectories is not None and trajectories.supports_ordered_pair(
                 first.owner_id, second.owner_id

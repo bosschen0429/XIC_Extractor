@@ -285,17 +285,45 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
     def run(capacity, *, reverse_initial=False):
+        from xic_extractor.alignment.drift_evidence import (
+            mint_known_istd_reference_from_measurements,
+        )
+        from xic_extractor.configuration.targets import parse_target_rows
+
+        # The twelve co-eluting ion views contribute one acquired position.
+        # Independent measured standards supply the map's bounding positions.
+        reference = mint_known_istd_reference_from_measurements(
+            parse_target_rows(
+                [
+                    {
+                        "label": label,
+                        "mz": str(mz),
+                        "expected_rt_min": str(rt),
+                        "cid_nl_tag": "dR",
+                        "role": "istd",
+                        "istd_pair": "",
+                    }
+                    for label, mz, rt in (("early", 300, 3), ("late", 400, 13))
+                ]
+            ),
+            {
+                (label, path.stem): rt + (0.1 if i == 12 else 0.0)
+                for i, path in enumerate(paths)
+                for label, rt in (("early", 3), ("late", 13))
+            },
+        )
         adapter = UntargetedPartitionPipelineAdapter(
             plan,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=capacity,
             raw_workers=1,
+            known_istd_reference=reference,
         )
         store = StreamedResultStore(
             tmp_path / f"spool-{capacity}-{reverse_initial}",
             adapter.get_shared_objects(),
         )
-        warps, memberships = [], []
+        calibrations, memberships = [], []
         try:
             for partition in _phase_partitions(
                 adapter, store, reverse_initial=reverse_initial
@@ -304,17 +332,17 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
                 assert acquired.succeeded
                 prepared = acquired.result[1].prepared_grouping
                 assert prepared is not None
-                warp = prepared.rt_frame.warp_for_snapshot
-                if warp is not None:
-                    warps.append(warp)
+                calibration = prepared.rt_frame.calibration_for_snapshot
+                if calibration is not None:
+                    calibrations.append(calibration)
                     memberships.extend(
                         tuple(group.owner_ids)
                         for workset in prepared.worksets
                         for group in workset.grouping_scope.groups
                     )
                 adapter.execute_composition(partition, acquired, store)
-            assert warps and all(warp == warps[0] for warp in warps)
-            return warps[0], tuple(sorted(memberships))
+            assert calibrations and all(c == calibrations[0] for c in calibrations)
+            return calibrations[0], tuple(sorted(memberships))
         finally:
             adapter.close_process_worker_pools()
             store.cleanup()
@@ -323,10 +351,10 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     all_features_together = run(24 * 12)
     assert one_feature_at_a_time == all_features_together
     assert run(24, reverse_initial=True) == one_feature_at_a_time
-    warp, groups = one_feature_at_a_time
-    assert warp.anchor_group_count == 12
-    assert warp.has_support("S12")
-    assert warp.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)
+    calibration, groups = one_feature_at_a_time
+    assert len(calibration.knots) == 3
+    assert calibration.has_support("S12")
+    assert calibration.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)
     assert len(groups) == 12 and all(len(group) == 24 for group in groups)
 
 

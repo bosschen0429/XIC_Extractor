@@ -96,12 +96,12 @@ def _parser() -> argparse.ArgumentParser:
     calibration.add_argument(
         "--calibrate",
         action="store_true",
-        help="Fit RT coordinates from near-all-sample baseline groups",
+        help="Fit the shared RT model from directly observed baseline groups",
     )
     calibration.add_argument(
         "--rt-calibration", type=Path, help="Use an existing sample_rt_calibration JSON"
     )
-    replay.add_argument("--anchor-min-sample-fraction", type=float, default=0.94)
+    replay.add_argument("--loess-fraction", type=float, default=0.3)
     return parser
 
 
@@ -235,9 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                 calibration = calibrate_grouping(
                     inputs,
                     baseline,
-                    policy=RtCalibrationPolicy(
-                        anchor_min_sample_fraction=args.anchor_min_sample_fraction
-                    ),
+                    policy=RtCalibrationPolicy(loess_fraction=args.loess_fraction),
                 )
             elif args.rt_calibration:
                 calibration = read_rt_calibration(args.rt_calibration)
