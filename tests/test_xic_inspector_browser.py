@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 import sys
@@ -234,7 +233,7 @@ def test_cli_report_interacts_offline_without_server_or_network(
         if source_kind == "curves"
         else write_rare_detection_workbook(tmp_path / "saved.xlsx")
     )
-    source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    original = source.read_bytes()
     output = tmp_path / "review.html"
     completed = subprocess.run(
         [
@@ -295,7 +294,7 @@ def test_cli_report_interacts_offline_without_server_or_network(
         expect(analyte.locator(".tgt-detail-row")).to_contain_text("積分範圍")
         expect(root.locator(".tgt-xic")).to_have_count(0)
     assert not network_requests
-    assert hashlib.sha256(source.read_bytes()).hexdigest() == source_digest
+    assert source.read_bytes() == original
 
 
 def _signal_payload():
