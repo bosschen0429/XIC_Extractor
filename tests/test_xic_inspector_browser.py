@@ -396,6 +396,121 @@ def _drawn_kinds(root):
     )
 
 
+def _mount_offline_view(page, payload):
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """payload => XicInspector.mount(
+            document.getElementById('host'), payload, {mode:'offline'})""",
+        payload,
+    )
+    return page.locator("#host")
+
+
+@pytest.mark.parametrize("item_count", [1, 3])
+def test_offline_item_layout_stays_stable_while_filtering(review_page, item_count):
+    payload = _signal_payload()
+    payload["items"] = payload["items"][:item_count]
+    root = _mount_offline_view(review_page, payload)
+    sidebar = root.locator(".list-panel")
+    expect(sidebar).to_be_visible(visible=item_count > 1)
+    if item_count == 1:
+        assert root.locator(".workbench").evaluate(
+            "node => Math.abs(node.getBoundingClientRect().width - "
+            "node.querySelector('.detail-panel').getBoundingClientRect().width) < 1"
+        )
+
+    _control(root, "search").fill("Item 1")
+    expect(root.locator(".record-button")).to_have_count(1)
+    expect(sidebar).to_be_visible(visible=item_count > 1)
+    _control(root, "search").fill("no-matching-item")
+    expect(_control(root, "workspace-content")).to_contain_text("沒有符合的項目")
+    _control(root, "clear-inline").click()
+    expect(root.get_by_role("heading", name="Item 1", exact=True)).to_be_visible()
+    expect(root.locator(".record-button")).to_have_count(item_count)
+    expect(sidebar).to_be_visible(visible=item_count > 1)
+    if item_count == 1:
+        picker = root.get_by_role("combobox", name="樣本", exact=True)
+        picker.select_option("S1")
+        root.get_by_role("heading", name="XIC", exact=True).press("ArrowDown")
+        expect(picker).to_have_value("S1")
+
+
+def test_single_excluded_item_keeps_its_counted_entry(review_page):
+    payload = _signal_payload()
+    payload["items"] = [
+        {**payload["items"][0], "kind": "candidate", "stratum": "excluded"}
+    ]
+    root = _mount_offline_view(review_page, payload)
+    expect(root.locator(".list-panel")).to_be_visible()
+    entry = root.get_by_role("button", name=re.compile("已排除候選.*1 筆"))
+    expect(entry).to_have_attribute("aria-expanded", "false")
+    expect(_control(root, "workspace-content")).to_contain_text("目前未選取項目")
+    entry.click()
+    root.locator(".record-button").click()
+    expect(root.get_by_role("heading", name="Item 1", exact=True)).to_be_visible()
+
+
+def test_sample_picker_keeps_item_display_and_evidence_return(review_page, tmp_path):
+    transition = replace(
+        _fixture_bundle().transitions[0],
+        quantifications=(
+            SampleQuantification("sample-1", 17.25, "counts·s"),
+            SampleQuantification("sample-2", None, "counts·s"),
+        ),
+    )
+    source = tmp_path / "review-path.json"
+    write_curve_bundle(
+        CurveBundle((transition, replace(transition, key="transition-B"))), source
+    )
+    payload = prepare_report(source, SelectionRequest()).payload
+    page = review_page
+    root = _mount_offline_view(page, payload)
+    root.locator(".record-button").nth(1).click()
+    selected = root.locator('.record-button[aria-current="true"]')
+    expect(selected).to_have_attribute("data-item", payload["items"][1]["id"])
+    saved_rows = root.locator(".sample-table").inner_text()
+    raw = root.get_by_role("button", name="原始", exact=True)
+    raw.click()
+    bounds = root.get_by_role("checkbox", name="顯示積分範圍與峰頂", exact=True)
+    bounds.uncheck()
+
+    picker = root.get_by_role("combobox", name="樣本", exact=True)
+    picker.select_option("sample-1")
+    expect(picker).to_be_focused()
+    curves = _control(root, "svg-raw").locator("polyline")
+    first_sample = curves.filter(has_text="sample-one")
+    second_sample = curves.filter(has_text="sample-two")
+    assert float(first_sample.get_attribute("opacity")) > float(
+        second_sample.get_attribute("opacity")
+    )
+    expect(root.locator('[data-readout="quantity"]')).to_have_text("17.25 counts·s")
+    opener = root.get_by_role("button", name="查看曲線來源", exact=True)
+    opener.click()
+    expect(_control(root, "evidence-panel")).to_contain_text("raw-source-1")
+    _control(root, "close-evidence").click()
+    expect(opener).to_be_focused()
+    expect(picker).to_have_value("sample-1")
+
+    page.set_viewport_size({"width": 680, "height": 720})
+    picker.select_option("sample-2")
+    expect(root.locator('[data-readout="quantity"]')).to_have_text("空值")
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    root.get_by_role("button", name="← 返回所有樣本", exact=True).click()
+    expect(picker).to_have_value("")
+    expect(picker).to_be_focused()
+    expect(selected).to_have_attribute("data-item", payload["items"][1]["id"])
+    expect(raw).to_have_attribute("aria-pressed", "true")
+    expect(bounds).not_to_be_checked()
+    expect(curves).to_have_count(2)
+    assert first_sample.get_attribute("opacity") == second_sample.get_attribute(
+        "opacity"
+    )
+    expect(root.locator(".sample-table")).to_have_text(saved_rows, use_inner_text=True)
+
+
 def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_path):
     payload = _signal_payload()
     output = tmp_path / "signals.html"

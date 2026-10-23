@@ -451,6 +451,8 @@ Inspector.
   outcomes.
 - The item list keeps a concise outcome title, status, and readable reason, so
   users can scan results before opening an item.
+- A report with one ordinary item gives the detail view the full width, without
+  an item sidebar. Multi-item reports keep their sidebar while filtering.
 - Ungrouped excluded candidates remain accessible in a counted, collapsed list
   section.
 - An ordinary report initially shows the other items. Explicit queries and
@@ -509,8 +511,9 @@ Inspector.
 
 - The workbench links the sample result, candidate, retained capture,
   integration facts, and available decision records.
-- Viewing a sample scopes its candidate choices and peak details.
-- An explicit return beside the sample heading restores the all-sample view.
+- A sample selector beside the XIC heading opens a sample directly; the result
+  table offers the same action. Both scope candidate choices and peak details.
+- An explicit return beside the sample control restores the all-sample view.
   The return does not reset the display settings of the item.
 - Viewing a candidate does not change the recorded decision.
 - Traces of one sample with distinct roles, such as Delta Mass `base` and
