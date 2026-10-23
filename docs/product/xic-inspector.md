@@ -469,6 +469,10 @@ Inspector.
   and integration; sample relationships and cross-sample curves; then all
   sample results and support records.
 - These main sections are visible without expanding a disclosure.
+- For a focused sample, curve integration and the saved quantitative result
+  remain separate in one readout beside the raw-time plot when space allows.
+  Narrow views and paired time-axis plots place this readout above the plots.
+  The compact plot keeps a separate, larger zoom view.
 
 ### Support origin
 
@@ -481,8 +485,8 @@ Inspector.
   Backfill.
 - The sample legend names each origin. An unavailable origin uses a separate
   dash when another sample of the item records an origin. An item with no
-  recorded origin draws solid lines, because line style has nothing to
-  distinguish.
+  recorded origin states that shared absence once and draws solid lines,
+  because line style has nothing to distinguish.
 - A physical direct-observation cell is not by itself evidence of initial
   Discovery support.
 
@@ -513,6 +517,11 @@ Inspector.
   integration facts, and available decision records.
 - A sample selector beside the XIC heading opens a sample directly; the result
   table offers the same action. Both scope candidate choices and peak details.
+- A single candidate or capture appears as inline context; multiple choices
+  remain explicit selectors. Candidate m/z, RT, and capture stage stay available.
+- The sample selector and legend shorten a long shared name prefix at its
+  separator, keeping distinguishing suffixes visible. Full names remain in
+  accessible option labels, tooltips, and the sample table.
 - An explicit return beside the sample control restores the all-sample view.
   The return does not reset the display settings of the item.
 - Viewing a candidate does not change the recorded decision.
@@ -564,6 +573,11 @@ Inspector.
 - Cross-sample lanes scale each sample to the maximum of its selected signal.
 - Missing selected-signal data is stated as unavailable for that item. It does
   not fall back to the other signal or change the page choice.
+- The legend identifies samples missing the selected smoothed signal. When a
+  focused sample cannot be drawn but peer curves remain, the plot states
+  whether it is hidden or lacks data and identifies those curves as
+  other-sample context. A missing curve does not hide or replace the saved
+  quantitative result.
 - The display does not prepare or smooth data again.
 
 ### Time axes
@@ -571,8 +585,8 @@ Inspector.
 - Capture stage, signal type, and time axis are distinct.
 - Raw-time and aligned-time plots are shown together for comparison, with
   separate zoom controls. When the selected curves have no aligned
-  coordinates, the raw-time plot uses the full width and one line states that
-  the aligned plot is unavailable.
+  coordinates, the raw-time plot uses the available plot area and one line
+  states that the aligned plot is unavailable.
 - Aligned curves and peak marks use the formal calibration saved by the
   producer that built the groups.
 - The source adapter applies the stored sample knots to curve and peak times.

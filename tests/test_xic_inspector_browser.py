@@ -407,6 +407,169 @@ def _mount_offline_view(page, payload):
     return page.locator("#host")
 
 
+def _dense_review_payload():
+    template = _signal_payload()["items"][0]["curves"][0]
+    samples, rows, witnesses, curves = [], [], [], []
+    for index in range(1, 13):
+        sample_id, candidate_id = f"S{index}", f"C{index}"
+        samples.append(
+            {
+                "id": sample_id,
+                "label": "Breast_Cancer_Tissue_pooled_Batch_A_"
+                f"Replicate_{index:02d}_DNA",
+            }
+        )
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "quantitative_value": None
+                if index == 10
+                else 0
+                if index == 9
+                else index * 1000,
+            }
+        )
+        witnesses.append(
+            {
+                "candidate_id": candidate_id,
+                "sample_id": sample_id,
+                "precursor_mz": 500.1234,
+                "rt_apex_min": 1.1,
+            }
+        )
+        if index == 11:
+            continue
+        curves.append(
+            {
+                **template,
+                "sample_id": sample_id,
+                "candidate_id": candidate_id,
+                "evidence_ref": f"curve-{sample_id}",
+                "stage_label": "首次擷取曲線",
+                "area": 120.5 + index,
+                "bound_left_rt": 1.0,
+                "bound_right_rt": 1.2,
+                "apex_rt": 1.1,
+                "processed_curves": [] if index == 8 else template["processed_curves"],
+            }
+        )
+    curves.extend(
+        [
+            {
+                **curves[-1],
+                "evidence_ref": "reacquired-S12",
+                "stage_label": "重新擷取曲線",
+            },
+            {
+                **curves[-1],
+                "candidate_id": "C12-alt",
+                "evidence_ref": "alternative-S12",
+                "area": 999,
+            },
+        ]
+    )
+    witnesses.append({**witnesses[-1], "candidate_id": "C12-alt"})
+    return {
+        "samples": samples,
+        "items": [
+            {
+                "id": "dense-group",
+                "kind": "group",
+                "title": "m/z 500.1234 · RT 1.10 min",
+                "precursor_mz": 500.1234,
+                "rt_apex_min": 1.1,
+                "reason_label": "12 個樣本，包含空值、零值、未保存曲線與多候選。",
+                "samples": rows,
+                "witnesses": witnesses,
+                "curves": curves,
+            }
+        ],
+    }
+
+
+def test_dense_review_keeps_identity_curve_and_key_values_in_view(review_page):
+    page = review_page
+    page.set_viewport_size({"width": 1280, "height": 800})
+    payload = _dense_review_payload()
+    root = _mount_offline_view(page, payload)
+    picker = root.get_by_role("combobox", name="樣本", exact=True)
+    picker.select_option("S1")
+    expect(picker).to_have_attribute("title", payload["samples"][0]["label"])
+    expect(picker.locator("option:checked")).to_have_text("…01_DNA")
+    expect(root.locator('[data-current-candidate="C1"]')).to_contain_text("500.1234")
+    expect(_control(root, "candidate-select")).to_have_count(0)
+    expect(_control(root, "capture-select")).to_have_count(0)
+    for panel in (
+        _control(root, "svg-raw"),
+        root.get_by_role("region", name="目前曲線積分", exact=True),
+        root.get_by_role("region", name="已保存的正式定量結果", exact=True),
+    ):
+        expect(panel).to_be_in_viewport(ratio=1)
+
+    root.locator('[data-zoom="raw"]').click()
+    zoom = _control(root, "zoom-container")
+    expect(zoom).to_be_visible()
+    assert zoom.locator("svg").evaluate(
+        r"""svg => [...svg.querySelectorAll('[clip-path]')].every(line => {
+            const id = line.getAttribute('clip-path').match(/^url\(#(.+)\)$/)?.[1];
+            return id && svg.contains(document.getElementById(id));
+        })"""
+    )
+    _control(root, "zoom-close").click()
+
+    picker.select_option("S12")
+    expect(_control(root, "candidate-select")).to_be_visible()
+    expect(_control(root, "capture-select")).to_be_visible()
+    _control(root, "candidate-select").select_option("C12-alt")
+    expect(_control(root, "capture-select")).to_have_count(0)
+    expect(root.locator('[data-readout="area"]')).to_have_text("999 counts·s")
+    expect(root.locator('[data-readout="quantity"]')).to_have_text("12,000")
+    page.set_viewport_size({"width": 680, "height": 720})
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+
+
+@pytest.mark.parametrize(
+    ("missing", "plot_name", "message"),
+    [
+        ("smoothed", "plot-raw", "目前樣本未保存平滑訊號"),
+        ("curve", "plot-raw", "目前樣本未提供保存曲線"),
+        ("alignment", "plot-aligned", "目前樣本未提供對齊座標"),
+        ("hidden", "plot-raw", "目前樣本已隱藏"),
+    ],
+)
+def test_missing_focused_curve_is_not_mistaken_for_peer_evidence(
+    review_page, missing, plot_name, message
+):
+    payload = _signal_payload()
+    payload["items"] = payload["items"][:1]
+    item = payload["items"][0]
+    item["samples"][0]["quantitative_value"] = 17.25
+    if missing == "smoothed":
+        item["curves"][0]["processed_curves"] = []
+    elif missing == "curve":
+        item["curves"] = item["curves"][1:]
+    elif missing == "alignment":
+        peer = item["curves"][1]
+        peer["aligned_rts"] = peer["raw_rts"]
+        for processed in peer["processed_curves"]:
+            processed["aligned_rts"] = peer["raw_rts"]
+    root = _mount_offline_view(review_page, payload)
+    root.get_by_role("combobox", name="樣本", exact=True).select_option("S1")
+    if missing == "hidden":
+        root.locator('.legend-item [data-sample-visible="S1"]').uncheck()
+    expect(_control(root, plot_name)).to_contain_text(message)
+    expect(_control(root, plot_name)).to_contain_text("其他樣本")
+    saved = root.get_by_role("region", name="已保存的正式定量結果", exact=True)
+    expect(saved.locator('[data-readout="quantity"]')).to_have_text("17.25")
+    if missing == "smoothed":
+        expect(root.locator('.legend-item [title="未保存平滑訊號"]')).to_be_visible()
+        root.get_by_role("button", name="原始", exact=True).click()
+        expect(_control(root, plot_name)).not_to_contain_text(message)
+        expect(root.locator('.legend-item [title="未保存平滑訊號"]')).to_have_count(0)
+
+
 @pytest.mark.parametrize("item_count", [1, 3])
 def test_offline_item_layout_stays_stable_while_filtering(review_page, item_count):
     payload = _signal_payload()
