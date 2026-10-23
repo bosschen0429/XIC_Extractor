@@ -77,7 +77,8 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "browser_e2e": re.compile(
         r"^(xic_workbench/|xic_inspector/"
-        r"|tests/test_(workbench_browser|xic_inspector_browser|xic_inspector_api)\.py$"
+        r"|tests/(browser_diagnostics|test_browser_diagnostics|test_workbench_browser"
+        r"|test_xic_inspector_browser|test_xic_inspector_api)\.py$"
         r"|tools/testing/test_selection\.py$|\.github/workflows/ci\.yml$"
         r"|pyproject\.toml$|uv\.lock$)"
     ),

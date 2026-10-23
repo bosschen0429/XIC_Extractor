@@ -114,7 +114,6 @@ def _initialize_shared_process_test() -> None:
 
 
 def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult:
-    time.sleep(0.2)
     return SharedProcessResult(
         task.owner,
         task.value * 10,
@@ -1485,9 +1484,20 @@ def test_worker_admission_pool_thread_single_worker_inline() -> None:
     assert pool.transport_metrics is None
 
 
-def test_worker_admission_pool_process_shares_owner_once_and_restores_identity() -> (
-    None
-):
+def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.execution import workers
+
+    created = []
+    process_executor = workers.ProcessPoolExecutor
+
+    def create_executor(**kwargs):
+        executor = process_executor(**kwargs)
+        created.append(executor)
+        return executor
+
+    monkeypatch.setattr(workers, "ProcessPoolExecutor", create_executor)
     owner = {"global_request": "x" * 1_000_000}
     first_results: list[SharedProcessResult] = []
     second_results: list[SharedProcessResult] = []
@@ -1500,7 +1510,7 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity()
 
     with pool:
         pool.run_windowed(
-            tuple(range(1, 21)),
+            (1, 2),
             _execute_shared_process_task,
             task_arg_fn=lambda value: SharedProcessTask(owner, value),
             on_completed=lambda _c, _t, _item, result: first_results.append(result),
@@ -1508,26 +1518,25 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity()
         first_metrics = pool.transport_metrics
         assert first_metrics is not None
         pool.run_windowed(
-            tuple(range(21, 41)),
+            (3, 4),
             _execute_shared_process_task,
             task_arg_fn=lambda value: SharedProcessTask(owner, value),
             on_completed=lambda _c, _t, _item, result: second_results.append(result),
         )
 
     results = (*first_results, *second_results)
-    assert sorted(result.value for result in results) == [
-        value * 10 for value in range(1, 41)
-    ]
+    assert sorted(result.value for result in first_results) == [10, 20]
+    assert sorted(result.value for result in second_results) == [30, 40]
     assert all(result.owner is owner for result in results)
     assert all(result.initialized for result in results)
-    assert len({result.worker_pid for result in results}) == 2
+    # Reusing an executor does not promise that every worker receives a task in
+    # every batch. Observe lifetime directly, not the OS's task distribution.
+    assert len(created) == 1
+    assert 1 <= len({result.worker_pid for result in results}) <= 2
     assert all(result.worker_pid != os.getpid() for result in results)
     metrics = pool.transport_metrics
     assert metrics is not None
     assert metrics.shared_bootstrap_bytes == first_metrics.shared_bootstrap_bytes
-    assert {result.worker_pid for result in second_results} == {
-        result.worker_pid for result in first_results
-    }
     assert metrics.shared_bootstrap_bytes >= 2_000_000
     assert metrics.task_request_bytes < 10_000
     assert metrics.task_response_bytes < 10_000

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 import sys
@@ -24,21 +23,7 @@ from xic_inspector.sources.curve_bundle import (
 )
 
 pytestmark = pytest.mark.browser_e2e
-
-
-@pytest.fixture
-def review_page(browser, tmp_path):
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.tracing.start(snapshots=True, sources=True)
-    page = context.new_page()
-    errors = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    try:
-        yield page
-    finally:
-        context.tracing.stop(path=tmp_path / "browser-trace.zip")
-        context.close()
-        assert not errors, "Browser errors: " + "\n".join(errors)
+pytest_plugins = ("tests.browser_diagnostics",)
 
 
 def _curve_source(tmp_path):
@@ -234,7 +219,7 @@ def test_cli_report_interacts_offline_without_server_or_network(
         if source_kind == "curves"
         else write_rare_detection_workbook(tmp_path / "saved.xlsx")
     )
-    source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    original = source.read_bytes()
     output = tmp_path / "review.html"
     completed = subprocess.run(
         [
@@ -295,7 +280,7 @@ def test_cli_report_interacts_offline_without_server_or_network(
         expect(analyte.locator(".tgt-detail-row")).to_contain_text("積分範圍")
         expect(root.locator(".tgt-xic")).to_have_count(0)
     assert not network_requests
-    assert hashlib.sha256(source.read_bytes()).hexdigest() == source_digest
+    assert source.read_bytes() == original
 
 
 def _signal_payload():
@@ -437,3 +422,184 @@ def test_hosted_views_share_signal_choice_across_remounts(review_page):
     expect(left.get_by_role("button", name="原始", exact=True)).to_have_attribute(
         "aria-pressed", "true"
     )
+
+
+@pytest.fixture
+def paired_curve_payload():
+    rts = [0.0, 8.9, 9.0, 9.1, 12.0]
+    curves = []
+    for sample in ("S1", "S2"):
+        for label, scale, mz in (("Analyte", 1, 258.1085), ("ISTD", 1000, 261.127)):
+            impulse = sample == "S1" and label == "Analyte"
+            curves.append(
+                {
+                    "sample_id": sample,
+                    "raw_rts": rts,
+                    "raw_intensities": [0, 0, 13000, 0, 0]
+                    if impulse
+                    else [0, scale, 10 * scale, scale, 0],
+                    "processed_curves": [
+                        {
+                            "kind": "smoothed",
+                            "rts": rts,
+                            "intensities": [0, 20, 100, 20, 0]
+                            if impulse
+                            else [0, scale, 10 * scale, scale, 0],
+                        }
+                    ],
+                    "provenance": {"mz": mz, "ppm": 5},
+                    "apex_rt": None,
+                    "quality_flags": {
+                        "target_label": label,
+                        "paired_istd": label == "ISTD",
+                        "saved_area": "ND" if impulse else 55.5 * scale,
+                        "reference_support_failures": [
+                            "insufficient_original_xic_support"
+                        ]
+                        if impulse
+                        else [],
+                    },
+                }
+            )
+    return {
+        "items": [
+            {
+                "id": "Analyte",
+                "title": "Analyte",
+                "review_rt_window": [8.5, 9.5],
+                "curves": curves,
+            }
+        ]
+    }
+
+
+def test_targeted_curve_rendering_preserves_raw_spikes_and_independent_scales(
+    review_page, paired_curve_payload
+):
+    page = review_page
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """payload => XicInspector.mount(
+        document.getElementById('host'), payload, {mode:'curves'})""",
+        paired_curve_payload,
+    )
+    review = page.locator("#host")
+    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    expect(review.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
+    expect(review.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
+    expect(review.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
+    raw = review.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
+    assert (
+        sum(
+            not value.endswith("· 0")
+            for value in raw.locator("title").all_text_contents()
+        )
+        == 1
+    )
+    # The raw impulse is much taller than its smoothed peak, but still fits.
+    assert raw.evaluate_all("""points => points.every(point => {
+        const svg = point.ownerSVGElement;
+        const y = point.cy.baseVal.value;
+        return y >= 0 && y <= svg.viewBox.baseVal.height;
+    })""")
+    expect(review.locator('polyline[data-kind="smoothed"]')).to_have_count(2)
+    review.get_by_label("樣本", exact=True).select_option("S2")
+    expect(review.locator(".tx-support-note")).to_have_count(0)
+    lines = review.locator('polyline[data-kind="smoothed"]')
+    ys = lines.evaluate_all("""lines => lines.map(line =>
+        [...line.points].map(point => point.y))""")
+    # The same shape spans the same height despite a 1000-fold ion intensity gap.
+    assert ys[0] == ys[1]
+    assert max(ys[0]) - min(ys[0]) > 100
+
+
+def test_targeted_curve_range_changes_and_restores_the_drawn_points(
+    review_page, paired_curve_payload
+):
+    page = review_page
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """payload => XicInspector.mount(
+        document.getElementById('host'), payload, {mode:'curves'})""",
+        paired_curve_payload,
+    )
+    review = page.locator("#host")
+    line = review.locator('polyline[data-kind="smoothed"]').first
+    original_points = line.get_attribute("points")
+    review.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+    review.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+    review.get_by_role("button", name="套用範圍", exact=True).click()
+    assert line.get_attribute("points") != original_points
+    review.get_by_role("button", name="完整 RT", exact=True).click()
+    expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+    expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    review.get_by_role("button", name="峰附近", exact=True).click()
+    expect(line).to_have_attribute("points", original_points)
+
+
+def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
+    review_page, tmp_path
+):
+    from openpyxl import load_workbook
+
+    from tests.test_xic_inspector_targeted_workbook import (
+        write_rare_detection_workbook,
+    )
+
+    page = review_page
+    workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    # Current Targeted workbooks store one expected RT as equal RT min/max.
+    book = load_workbook(workbook)
+    book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
+    results = book["XIC Results"]
+    results.cell(2, 8, "峰不在內標位置，報 ND")
+    nl_column = results.max_column + 1
+    results.cell(1, nl_column, "NL")
+    results.cell(1, nl_column + 1, "NL Evidence")
+    for row in range(2, results.max_row + 1):
+        # Only S1's Analyte (row 2) observed its neutral loss.
+        observed = row == 2
+        results.cell(row, nl_column, "OK" if observed else "NO_MS2")
+        results.cell(
+            row, nl_column + 1, "已觀察到" if observed else "所選峰沒有對應的 MS2"
+        )
+    book.save(workbook)
+    book.close()
+    payload = prepare_report(
+        workbook, SelectionRequest(strategy="query", target_ids=("Analyte",))
+    ).payload
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """payload => XicInspector.mount(
+        document.getElementById('host'), payload, {mode:'result'})""",
+        payload,
+    )
+    review = page.locator("#host")
+    expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
+    expect(review.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
+    rows = review.locator(".tgt-table tbody tr")
+    # Rows stay in run order; the rare detection is marked where it ran.
+    expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
+    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
+    # The same sample's paired ISTD reads in the same row.
+    expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
+    rows.nth(2).locator(".tgt-sample").click()
+    # The evidence is the next row, not a panel after every other sample.
+    detail = review.locator(".tgt-table tbody tr:nth-child(4)")
+    expect(detail).to_have_class("tgt-detail-row")
+    expect(detail).to_contain_text("積分範圍")
+    # A neutral loss that was not observed is a given fact under CID: it stays
+    # with the selection record instead of the first layer.
+    expect(detail.locator(".tgt-facts")).not_to_contain_text("NL 證據")
+    expect(detail.locator(".tgt-raw")).to_contain_text("NL 證據：所選峰沒有對應的 MS2")
+    expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
+    expect(detail).not_to_contain_text("檢閱註記")
+    # An observed neutral loss supports the result, so it reads up front.
+    rows.nth(0).locator(".tgt-sample").click()
+    observed = review.locator(".tgt-table tbody tr:nth-child(2)")
+    expect(observed).to_have_class("tgt-detail-row")
+    expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
+    expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")

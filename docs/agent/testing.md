@@ -12,7 +12,8 @@ modify a test only when all are true:
 2. its input reproduces the failure mechanism;
 3. its assertion distinguishes the expected result from the observable loss;
 4. no existing test, validator, schema check, artifact inspection, or focused
-   review supplies the same oracle;
+   review covers the same observable loss on the same actual path; matching
+   expected values alone do not establish equivalent boundary coverage;
 5. the check remains useful after the current branch or migration ends.
 
 For a production behavior change with a stable oracle, make the test red on the
@@ -69,6 +70,10 @@ Assert the artifact or result, not only that a helper was called. Mock only
 external or expensive boundaries at the import seam used by production code;
 do not mock away the policy under test.
 
+For asynchronous work, assert events, results, and resource lifetime. Scheduling
+outcomes and elapsed time are correctness oracles only when scheduling or latency
+is itself a product contract. Otherwise, timeouts serve only as hang watchdogs.
+
 ## Test Placement
 
 Pytest discovery and dependencies are owned by pyproject.toml. Keep tests under
@@ -99,9 +104,16 @@ dependency-failure checks in ordinary CI when their oracle is still current.
 
 ## Browser Workbench Checks
 
-`browser_e2e` uses Python Playwright's sync API against an ephemeral loopback
-server and isolated config, with fake application runners instead of RAW/DLL
-analysis. After bootstrap, install the locked Chromium once and run the lane:
+Use the smallest real environment that exposes the loss: data rules stay with
+their actual owner, DOM/SVG behavior uses directly mounted browser tests, and
+cross-boundary wiring retains representative integration journeys. Limit each
+scenario's setup to what exposes that loss; split long journeys that combine
+unrelated purposes.
+
+`browser_e2e` uses Python Playwright's sync API for directly mounted Inspector
+payloads or Workbench journeys against an ephemeral loopback server and isolated
+config. Workbench uses fake application runners instead of RAW/DLL analysis.
+After bootstrap, install the locked Chromium once and run the Workbench checks:
 
     .venv\Scripts\python.exe -m playwright install chromium
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
@@ -109,9 +121,21 @@ analysis. After bootstrap, install the locked Chromium once and run the lane:
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. Browser deadlines are hang watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
-while local runs keep Playwright's defaults. Failed tests retain `browser-trace.zip` under their
-`tmp_runtime/` test directory; CI uploads those traces. Successful traces are
-cleaned with pytest's temporary files. `tools.testing.test_selection` owns
+while local runs keep Playwright's defaults. Browser failures retain
+`browser-trace.zip` and `browser-events.json` in unique directories under ignored
+`output/browser-failures/` (override with `XIC_BROWSER_ARTIFACT_DIR`). CI uploads
+both, including the Inspector subdirectory when a test opens an additional
+offline report context. Each test has one event receipt with context labels.
+Evidence is removed only after setup, call, and teardown all finish without
+failure; pytest's failed-only `tmp_path` retention considers the call outcome
+and cannot retain teardown-only failures. Event records include the test, phase,
+elapsed time, console location, page exceptions, and failed request method,
+resource type, URL without credentials/query/fragment, and transport error.
+Request failures are diagnostic, since navigation/download can intentionally
+abort requests. Workbench console errors and page exceptions fail tests;
+Inspector contexts preserve their page-exception gate and record console errors
+as diagnostics.
+`tools.testing.test_selection` owns
 change relevance; master runs the lane.
 
 ## RAW And Scientific Validation
@@ -129,10 +153,10 @@ passing pytest.
 ## Verification
 
 Pytest manages temporary files under the worktree's ignored `tmp_runtime/`.
-Failed tests retain their `tmp_path` files for inspection within pytest's
-retention window; passing tests are cleaned. Concurrent sessions use distinct
-numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` remain available
-for explicit overrides; do not share a fixed `--basetemp` across concurrent runs.
+Ordinary `tmp_path` retention uses the call outcome, not teardown failures;
+browser evidence follows the full-lifecycle policy above. Concurrent sessions use
+distinct numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` allow explicit
+overrides; do not share a fixed `--basetemp` across concurrent runs.
 
 Run the narrowest existing tests that can falsify the change, then expand in
 proportion to affected consumers and public surfaces. The complete hosted

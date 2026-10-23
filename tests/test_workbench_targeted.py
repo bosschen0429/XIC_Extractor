@@ -421,25 +421,40 @@ def _result(*, area: float, nl_status: str, detected: bool) -> SimpleNamespace:
     )
 
 
-@pytest.mark.parametrize("kind", ["method", "targets"])
-def test_uploaded_workbook_detects_content_and_preserves_batch(tmp_path, kind):
+@pytest.mark.parametrize(
+    "kind, extension",
+    [("method", "xlsx"), ("targets", "xlsx"), ("targets", "csv"), ("targets", "tsv")],
+)
+def test_uploaded_files_detect_content_and_preserve_batch(tmp_path, kind, extension):
     import base64
+    import csv
 
     from tests.test_targeted_method_files import rows
     from xic_extractor.configuration import targeted_method_files as files
     from xic_workbench.target_import import preview_target_upload
 
-    path = tmp_path / "arbitrary-name.xlsx"
+    path = tmp_path / f"arbitrary-name.{extension}"
     if kind == "method":
         files.save_targeted_method(files.create_targeted_method({}, rows()), path)
-    else:
+    elif extension == "xlsx":
         files.save_target_table(rows(), path)
+    else:
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(dict.fromkeys(key for row in rows() for key in row)),
+                delimiter="\t" if extension == "tsv" else ",",
+            )
+            writer.writeheader()
+            writer.writerows(rows())
     settings = {"data_dir": "current-raw", "dll_dir": "current-dll"}
     result = preview_target_upload(
         path.name, base64.b64encode(path.read_bytes()).decode(), settings
     )
     assert result["kind"] == kind
+    assert [row["label"] for row in result["targets"]] == ["standard", "analyte"]
     assert result["targets"][1]["istd_pair"] == "standard"
+    assert settings == {"data_dir": "current-raw", "dll_dir": "current-dll"}
     if kind == "method":
         assert result["settings"]["data_dir"] == "current-raw"
         assert result["settings"]["dll_dir"] == "current-dll"

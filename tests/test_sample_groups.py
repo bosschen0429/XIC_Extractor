@@ -1,5 +1,4 @@
 import csv
-from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -78,27 +77,9 @@ def test_suggestions_for_real_sequence_names():
         encoding="utf-8", newline=""
     ) as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert len(rows) == 118
     names = [row["name"] for row in rows]
     suggestions = suggest_sample_groups(names)
     assert suggestions == {row["name"]: row["suggested_group"] for row in rows}
-    assert suggest_sample_groups(names) == suggestions
-    assert Counter(suggestions[name] for name in names) == {
-        "Blank waste": 1,
-        "Blank": 12,
-        "SDOLEK pretest": 1,
-        "250ppb Mix STDs": 4,
-        "Breast Cancer Tissue pooled QC": 7,
-        "Tumor tissue DNA": 28,
-        "Tumor tissue RNA": 2,
-        "Tumor tissue DNA +RNA": 2,
-        "Normal tissue DNA": 32,
-        "Benign fat DNA": 20,
-        "SDOLEK": 6,
-        "SDO posttest": 1,
-        "ColumnWash": 1,
-        "StopFlow": 1,
-    }
 
 
 def test_suggestions_preserve_decimal_concentrations():
