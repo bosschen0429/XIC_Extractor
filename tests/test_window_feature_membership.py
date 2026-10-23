@@ -1209,6 +1209,32 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
         )
 
 
+@pytest.mark.parametrize("spacing", (17, 35))
+@pytest.mark.parametrize("reverse", (False, True))
+def test_distant_samples_form_distinct_bands_in_a_crowded_mass_window(
+    spacing: int, reverse: bool
+) -> None:
+    # Nearby peaks inflate local detection density; none of the samples has
+    # a neighbor within 16 injections from which to establish a band first.
+    orders = {f"s{i}": 1 + i * spacing for i in range(4)}
+    owners = tuple(
+        _synthetic_owner(sample, f"{band}-{sample}", rt + i * 0.01)
+        for band, rt in (("early", 9.0), ("middle", 10.0), ("late", 11.0))
+        for i, sample in enumerate(orders)
+    )
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(g.owner_ids) for g in result.groups} == {
+        frozenset(f"{band}-{sample}" for sample in orders)
+        for band in ("early", "middle", "late")
+    }
+    assert all(g.disposition == "assigned" for g in result.groups)
+
+
 def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
     sparse_orders = (1, 21, 41, 61, 81)
     sparse = tuple(
