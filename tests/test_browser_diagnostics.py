@@ -38,6 +38,26 @@ def test_exception(workbench):
 
 def test_success(workbench):
     assert workbench.title()
+
+def test_inspector_exception(review_page):
+    with review_page.expect_event("pageerror"):
+        review_page.evaluate(
+            "setTimeout(() => { throw new Error('inspector exception probe'); }, 0)"
+        )
+
+def test_both_contexts(workbench, review_page):
+    assert workbench.title()
+    with review_page.expect_event("pageerror"):
+        review_page.evaluate(
+            "setTimeout(() => { throw new Error('offline exception probe'); }, 0)"
+        )
+
+def test_inspector_console_is_diagnostic(review_page):
+    review_page.evaluate("console.error('inspector console remains diagnostic')")
+
+def test_both_success(workbench, review_page):
+    assert workbench.title()
+    review_page.set_content("<h1>Offline success</h1>")
 """,
         encoding="utf-8",
     )
@@ -52,9 +72,9 @@ def test_success(workbench):
         timeout=120,
     )
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "4 passed, 3 errors" in result.stdout, result.stdout + result.stderr
+    assert "8 passed, 5 errors" in result.stdout, result.stdout + result.stderr
     traces = sorted(artifacts.rglob("browser-trace.zip"))
-    assert len(traces) == 3, result.stdout + result.stderr
+    assert len(traces) == 6, result.stdout + result.stderr
     records = {}
     for trace in traces:
         # A readable Playwright archive needs actual trace and network entries.
@@ -62,13 +82,19 @@ def test_success(workbench):
             assert archive.testzip() is None
             assert any(name.endswith(".trace") for name in archive.namelist())
             assert any(name.endswith(".network") for name in archive.namelist())
-        report = json.loads(trace.with_name("browser-events.json").read_text("utf-8"))
+    reports = list(artifacts.rglob("browser-events.json"))
+    assert len(reports) == 5
+    for path in reports:
+        report = json.loads(path.read_text("utf-8"))
         assert report["outcomes"] == {
             "setup": "passed",
             "call": "passed",
             "teardown": "failed",
         }
         records[report["test"].rsplit("::", 1)[-1]] = report["events"]
+        if report["test"].endswith("::test_both_contexts"):
+            assert (path.parent / "browser-trace.zip").is_file()
+            assert (path.parent / "inspector" / "browser-trace.zip").is_file()
     failed = next(e for e in records["test_transport"] if e["kind"] == "requestfailed")
     assert failed["phase"] == "call"
     assert failed["method"] == "GET"
@@ -78,3 +104,8 @@ def test_success(workbench):
     assert "private" not in json.dumps(records)
     assert any(e["kind"] == "console" for e in records["test_console"])
     assert any(e["kind"] == "pageerror" for e in records["test_exception"])
+    for name in ("test_inspector_exception", "test_both_contexts"):
+        assert any(
+            e["kind"] == "pageerror" and e["context"] == "inspector"
+            for e in records[name]
+        )

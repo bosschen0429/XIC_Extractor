@@ -1993,7 +1993,7 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
 
 
 def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
-    workbench, browser, tmp_path, monkeypatch
+    workbench, review_page, tmp_path, monkeypatch
 ):
     from tests.test_xic_inspector_targeted_workbook import (
         install_targeted_raws,
@@ -2026,11 +2026,8 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     expect(mounted.locator(".tx-sample-name")).to_have_text("S4")
     expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
 
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.tracing.start(snapshots=True, sources=True)
-    offline = context.new_page()
-    errors, network_requests = [], []
-    offline.on("pageerror", lambda error: errors.append(str(error)))
+    offline = review_page
+    network_requests = []
     offline.on(
         "request",
         lambda request: (
@@ -2039,38 +2036,33 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
             else None
         ),
     )
-    context.route(re.compile(r"^https?://"), lambda route: route.abort())
-    context.set_offline(True)
-    try:
-        offline.goto(downloaded.as_uri())
-        report = offline.locator("#inspector-root")
-        expect(report.locator(".tx-sample-name")).to_have_text("S3")
-        expect(report.get_by_label("樣本", exact=True)).to_have_value("S3")
-        expect(report.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-        # The fixture has no saved bounds: preserve unavailable RT and saved Areas,
-        # rather than inventing either from the newly read RAW intensities.
-        expect(report.locator(".tx-chart-meta").nth(0)).to_contain_text(
-            "保存 RT — · 面積 5.55e+1"
-        )
-        expect(report.locator(".tx-chart-meta").nth(1)).to_contain_text(
-            "保存 RT — · 面積 1.00e+3"
-        )
-        lines = report.locator('.tx-chart polyline[data-kind="smoothed"]')
-        expect(lines).to_have_count(2)
-        initial_points = lines.first.get_attribute("points")
-        report.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
-        report.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
-        report.get_by_role("button", name="套用範圍", exact=True).click()
-        assert lines.first.get_attribute("points") != initial_points
-        report.get_by_role("button", name="完整 RT", exact=True).click()
-        expect(report.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
-        expect(report.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
-        assert not network_requests
-        assert not errors
-        assert workbook.read_bytes() == original
-    finally:
-        context.tracing.stop(path=tmp_path / "downloaded-offline-trace.zip")
-        context.close()
+    offline.context.route(re.compile(r"^https?://"), lambda route: route.abort())
+    offline.context.set_offline(True)
+    offline.goto(downloaded.as_uri())
+    report = offline.locator("#inspector-root")
+    expect(report.locator(".tx-sample-name")).to_have_text("S3")
+    expect(report.get_by_label("樣本", exact=True)).to_have_value("S3")
+    expect(report.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    # The fixture has no saved bounds: preserve unavailable RT and saved Areas,
+    # rather than inventing either from the newly read RAW intensities.
+    expect(report.locator(".tx-chart-meta").nth(0)).to_contain_text(
+        "保存 RT — · 面積 5.55e+1"
+    )
+    expect(report.locator(".tx-chart-meta").nth(1)).to_contain_text(
+        "保存 RT — · 面積 1.00e+3"
+    )
+    lines = report.locator('.tx-chart polyline[data-kind="smoothed"]')
+    expect(lines).to_have_count(2)
+    initial_points = lines.first.get_attribute("points")
+    report.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+    report.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+    report.get_by_role("button", name="套用範圍", exact=True).click()
+    assert lines.first.get_attribute("points") != initial_points
+    report.get_by_role("button", name="完整 RT", exact=True).click()
+    expect(report.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+    expect(report.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    assert not network_requests
+    assert workbook.read_bytes() == original
 
 
 def test_targeted_role_groups_keep_other_filters_and_restore_through_history(

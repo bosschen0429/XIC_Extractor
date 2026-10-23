@@ -23,21 +23,7 @@ from xic_inspector.sources.curve_bundle import (
 )
 
 pytestmark = pytest.mark.browser_e2e
-
-
-@pytest.fixture
-def review_page(browser, tmp_path):
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.tracing.start(snapshots=True, sources=True)
-    page = context.new_page()
-    errors = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    try:
-        yield page
-    finally:
-        context.tracing.stop(path=tmp_path / "browser-trace.zip")
-        context.close()
-        assert not errors, "Browser errors: " + "\n".join(errors)
+pytest_plugins = ("tests.browser_diagnostics",)
 
 
 def _curve_source(tmp_path):

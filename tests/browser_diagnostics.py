@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -42,17 +43,22 @@ class BrowserDiagnostics:
             }
         )
 
-    def attach(self, page, errors: list[str]) -> None:
+    def attach(
+        self, page, errors: list[str], *, context="workbench", console_errors=True
+    ) -> None:
         def console(message):
             if message.type == "error":
-                errors.append(message.text)
+                if console_errors:
+                    errors.append(message.text)
                 location = dict(message.location)
                 location["url"] = _resource_url(location.get("url", ""))
-                self.record("console", text=message.text, location=location)
+                self.record(
+                    "console", context=context, text=message.text, location=location
+                )
 
         def pageerror(error):
             errors.append(str(error))
-            self.record("pageerror", text=str(error))
+            self.record("pageerror", context=context, text=str(error))
 
         # Keep all transport failures as evidence, including intentional navigation
         # cancellations. Console errors/page exceptions remain the failure gate.
@@ -60,6 +66,7 @@ class BrowserDiagnostics:
             "requestfailed",
             lambda request: self.record(
                 "requestfailed",
+                context=context,
                 url=_resource_url(request.url),
                 method=request.method,
                 resource_type=request.resource_type,
@@ -88,6 +95,24 @@ def browser_diagnostics(request):
     )
     request.node.stash[_DIAGNOSTICS] = diagnostics
     return diagnostics
+
+
+@pytest.fixture
+def review_page(browser, browser_diagnostics):
+    errors = []
+    directory = browser_diagnostics.directory / "inspector"
+    directory.mkdir()
+    with ExitStack() as cleanup:
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        cleanup.callback(context.close)
+        context.tracing.start(snapshots=True, sources=True)
+        cleanup.callback(context.tracing.stop, path=directory / "browser-trace.zip")
+        page = context.new_page()
+        browser_diagnostics.attach(
+            page, errors, context="inspector", console_errors=False
+        )
+        yield page
+    assert not errors, "Browser errors: " + "\n".join(errors)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
