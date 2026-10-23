@@ -329,12 +329,12 @@
         </p>
       </section>
       <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
-      <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
-        <button id="back-to-overview" type="button" data-idle>← 返回整批總覽</button>
-      </nav>
       <section id="review" class="review-grid" hidden>
         <aside class="list-panel">
           <form id="query-form">
+            <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
+              <button id="back-to-overview" type="button" class="text-button" data-idle>← 整批總覽</button>
+            </nav>
             <div class="section-heading">
               <h2 id="list-title">檢閱項目</h2>
               <button
@@ -462,10 +462,6 @@
                 >下載目前檢閱頁</a
               >
             </div>
-            <details class="identity">
-              <summary>來源明細</summary>
-              <code id="item-identity"></code>
-            </details>
             <section id="inline-curves" hidden aria-label="群組 XIC">
               <div class="curve-heading">
                 <h3>XIC</h3>
@@ -521,10 +517,19 @@
                 ><span id="job-message"></span>
               </div>
               <p id="inline-curve-coverage"></p>
+              <details id="inline-curve-gaps" class="curve-gaps" hidden>
+                <summary id="inline-gap-count"></summary>
+                <p id="inline-numeric-gaps" hidden></p>
+                <p id="inline-other-gaps" hidden></p>
+              </details>
               <p id="inline-curve-status" role="status"></p>
               <div id="inline-curve-review" aria-label="群組樣本 XIC" hidden></div>
             </section>
             <div id="recorded-review" aria-label="XIC Inspector 檢閱內容"></div>
+            <details class="identity">
+              <summary>項目 ID</summary>
+              <code id="item-identity"></code>
+            </details>
           </div>
         </section>
       </section>

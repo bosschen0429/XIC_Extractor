@@ -1043,7 +1043,8 @@ th.num {
 .overview-reading { margin-top: 16px;color: var(--muted);font-size: 13px; }
 .overview-reading p { margin-top: 8px; }
 .overview-unknown { color: var(--warn); }
-.targeted-review-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; position: sticky; top: var(--topbar-h); z-index: 5; background: var(--surface); padding: 10px 0; }
+.targeted-review-nav { margin-bottom: 12px; }
+.targeted-review-nav button { padding-left: 0; }
 @media (max-width: 700px) {
   .targeted-overview { padding: 20px 16px; }
   .overview-heading h2 { font-size: 22px; }
@@ -1210,7 +1211,9 @@ th.num {
   font-variant-numeric: tabular-nums;
 }
 .identity {
-  padding: 0 22px 14px;
+  padding: 0 22px 18px;
+  color: var(--muted);
+  font-size: 13px;
 }
 .identity code {
   display: block;
@@ -1229,6 +1232,9 @@ th.num {
 .curve-heading { display: flex;align-items: center;justify-content: space-between;gap: 12px; }
 .curve-heading h3 { font-size: 16px; }
 #inline-curve-coverage { color: var(--muted);font-size: 13px;line-height: 1.6;margin: 10px 0; }
+.curve-gaps { margin: 0 0 12px;font-size: 13px;color: var(--muted); }
+.curve-gaps p { margin-top: 8px;overflow-wrap: anywhere; }
+#inline-numeric-gaps { color: var(--warn); }
 #inline-curve-status:not(:empty) { padding: 16px;border: 1px dashed var(--border);border-radius: 8px;background: var(--surface-2);font-size: 14px; }
 #inline-curve-review { margin-top: 14px; }
 #inline-curve-review .xic-inspector > .detail-panel { padding: 0; }
@@ -1540,16 +1546,19 @@ kbd {
 
 /* Keep the target/sample controls, but do not dedicate a column to the
    single target already selected in the dropdown. */
-.review-grid.single-target { grid-template-columns: minmax(0, 1fr); }
-.single-target .list-panel { position: static; max-height: none; }
-.single-target .list-panel form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.review-grid.single-target { grid-template-columns: minmax(0, 1fr);gap: 12px; }
+.single-target .list-panel { position: static;max-height: none;border: 0;box-shadow: none;background: transparent; }
+.single-target .list-panel form { display: flex;flex-wrap: wrap;gap: 12px 24px;align-items: center;padding: 0;border: 0; }
+.single-target .targeted-review-nav { margin: 0; }
 .single-target .list-panel .section-heading,
 .single-target .list-panel form > button[type="submit"],
 .single-target .list-panel h2,
 .single-target #list-summary,
 .single-target #item-list,
 .single-target .pagination { display: none; }
-.single-target #targeted-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.single-target #targeted-filters { display: flex;flex-wrap: wrap;gap: 10px 16px;align-items: center; }
+.single-target #targeted-filters .field { flex-direction: row;align-items: center;gap: 6px;margin: 0; }
+.single-target #targeted-filters select { width: auto;max-width: 240px; }
 .single-target #review-range-filters { display: none; }
 
 /* Inspect a sample without replacing the result table underneath it. */

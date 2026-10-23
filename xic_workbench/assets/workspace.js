@@ -864,9 +864,19 @@ window.XicUi = (() => {
         ? "尚未設定 RAW 或 DLL 位置。已保存的結果仍可查看。" : "";
       const missing = state.page.samples.filter(sample => !available.has(sample.id));
       const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
+      const otherMissing = missing.filter(sample => !item.numeric_sample_ids.includes(sample.id));
       $("inline-curve-coverage").textContent = `${item.numeric_count} 個樣本有定量值 · ${available.size} 個樣本可讀取 XIC`
-        + (numericMissing.length ? `。有定量值，但目前檢閱資料未提供可擷取座標：${numericMissing.map(sample => sample.label).join("、")}。` : "。")
-        + (missing.length ? `本次無法取得曲線的樣本：${missing.map(sample => sample.label).join("、")}。` : "");
+        + (numericMissing.length ? ` · ${numericMissing.length} 個有值樣本缺少座標` : "");
+      $("inline-curve-gaps").hidden = missing.length === 0;
+      $("inline-curve-gaps").open = false;
+      $("inline-gap-count").textContent = `${missing.length} 個樣本缺少 XIC 座標`;
+      for (const [id, label, samples] of [
+        ["inline-numeric-gaps", "有定量值", numericMissing],
+        ["inline-other-gaps", "其他樣本", otherMissing],
+      ]) {
+        $(id).hidden = samples.length === 0;
+        $(id).textContent = samples.length ? `${label}：${samples.map(sample => sample.label).join("、")}` : "";
+      }
     }
     showRecorded();
     status("");

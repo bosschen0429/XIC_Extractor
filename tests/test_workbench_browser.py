@@ -874,6 +874,37 @@ def test_saved_review_offers_raw_setup_without_curve_controls(workbench, tmp_pat
     expect(page.locator("#raw-dir")).to_be_focused()
 
 
+def test_missing_curve_coordinates_keep_saved_values_and_expandable_sample_names(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _nearest_review_batch
+
+    page = workbench
+    report, _ = _nearest_review_batch(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.locator("#nearest-mz").fill("123.4")
+    page.locator("#query-form button[type=submit]").click()
+    expect(page.locator("#inline-curve-coverage")).to_contain_text(
+        "1 個樣本有定量值 · 0 個樣本可讀取 XIC"
+    )
+    expect(page.locator("#recorded-review .sample-table")).to_contain_text("1.000e+2")
+    gaps = page.locator("#inline-curve-gaps")
+    expect(gaps.locator("summary")).to_have_text("1 個樣本缺少 XIC 座標")
+    expect(page.locator("#inline-numeric-gaps")).to_be_hidden()
+    gaps.locator("summary").click()
+    expect(page.locator("#inline-numeric-gaps")).to_have_text("有定量值：S1")
+    expect(page.locator("#inline-numeric-gaps")).to_be_visible()
+    # The next item has coordinates; the previous item's warning must disappear.
+    page.locator("#item-list button").filter(has_text="m/z 123.42").click()
+    expect(page.locator("#inline-curve-coverage")).to_contain_text(
+        "1 個樣本有定量值 · 1 個樣本可讀取 XIC"
+    )
+    expect(gaps).to_be_hidden()
+
+
 def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
@@ -1462,6 +1493,7 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
 
     page = workbench
+    page.set_viewport_size({"width": 680, "height": 720})
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
     _view(page, "review")
     page.locator("#source").fill(str(workbook))
@@ -1473,6 +1505,10 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     expect(page.locator("#target-id")).to_be_visible()
     expect(page.locator("#recorded-review .tgt-table")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid single-target")
+    expect(page.locator("#back-to-overview")).to_be_in_viewport()
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
