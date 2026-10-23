@@ -45,8 +45,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
 @pytest.mark.parametrize(
     ("fresh_available", "precursor_case"),
     [
-        (True, "direct"),
-        (False, "direct"),
         (True, "shifted"),
         (False, "shifted"),
         (False, "inferred"),
@@ -206,6 +204,8 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
+    # Different mass queries still require Alignment's comparison context.
+    # Identical queries already share their final context in Discovery.
     assert len(discovery.candidates) == 2
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
@@ -228,7 +228,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                 selection_policy_version="baseline_peak_contains_query",
             ),
         )
-        for record in discovery.physical_evaluations
+        for record in (
+            binding.physical_fact_record for binding in discovery.physical_bindings
+        )
     )
     old_request = fixture.owners.request
     request = build_processing_request_identity(
@@ -283,7 +285,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == (1 if precursor_case == "direct" else 2)
+    assert len(result.acquisition.traces) == 2
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}

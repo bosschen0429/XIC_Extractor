@@ -21,7 +21,7 @@ def group_discovery_seeds(
     settings: DiscoverySettings,
 ) -> tuple[DiscoverySeedGroup, ...]:
     sorted_seeds = sorted(
-        seeds,
+        dict.fromkeys(seeds),
         key=lambda seed: _seed_sort_key(seed, settings=settings),
     )
     if not sorted_seeds:

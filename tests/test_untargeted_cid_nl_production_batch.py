@@ -638,6 +638,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     candidates = {}
     physical_facts = {}
     source_records = {}
+    source_evidence = {}
     family_evaluations = {}
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         import numpy as np
@@ -706,7 +707,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                     raw.scans[0],
                     rt=query_rts[index],
                     scan_number=(int(np.argmin(np.abs(raw.rt - query_rts[index]))) + 1),
-                    # Separate chemical hypotheses exercise two retained wrappers.
+                    # Distinct MS2 receipts can now share one physical root.
                     precursor_mz=sample_mz,
                     masses=(
                         raw.scans[0].masses
@@ -773,12 +774,18 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
             if candidate.ms1_peak_found
         )
-        source_records.update(
+        source_evidence.update(
             (record.candidate_id, record) for record in discovery.physical_evaluations
         )
+        source_records.update(
+            (record.candidate_id, record)
+            for record in discovery.physical_evaluations
+            if record.candidate_id in {c.candidate_id for c in candidates[path.stem]}
+        )
         if family_context:
-            expected_candidate_count = 1 if family_precursor_delta else 2
-            assert len(candidates[path.stem]) == expected_candidate_count
+            # Identical mass queries now share the complete peak population in
+            # Discovery; the same peak is not left as two window-bound roots.
+            assert len(candidates[path.stem]) == 1
             assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
             if not family_precursor_delta:
                 left, right = discovery.physical_evaluations
@@ -1186,7 +1193,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                             == expected.facts.apex_rt_min
                         )
                     else:
-                        assert capture.physical_evaluation.facts == expected.facts
+                        # Discovery already resolved this shared context, so
+                        # runtime reuses its exact question rather than minting
+                        # a comparison-window question with a different ID.
+                        assert (
+                            capture.physical_evaluation
+                            == source_records[capture.candidate_id].evaluation
+                        )
         return result
 
     monkeypatch.setattr(bounded_owner, "execute_partition", checked_runtime)
@@ -1282,9 +1295,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     # Owner-produced arrays survive both sidecar and runtime partition handoff.
     retained_discovery = tuple(completed.discovery_physical_records)
-    assert {item.candidate_id for item in retained_discovery} == set(source_records)
+    # Indexed input exposes published candidate bindings lazily; eager input
+    # also retains the source-only records behind merged representatives.
+    expected_retained = source_records if indexed_input else source_evidence
+    assert {item.candidate_id for item in retained_discovery} == set(expected_retained)
     for retained in retained_discovery:
-        source = source_records[retained.candidate_id]
+        source = source_evidence[retained.candidate_id]
         assert (
             retained.evaluation.retained_prepared_signal
             == source.evaluation.retained_prepared_signal

@@ -43,6 +43,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -548,7 +549,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
                 for work in result.physical_work_manifest
             }
         )
-        == 2
+        == 1
     )
     selected = binding.physical_fact_record
     before_trace = serialize_acquired_trace(selected.acquired_trace)
@@ -673,13 +674,17 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         physical_calls["evaluate"] += 1
         return real_evaluate(*args, **kwargs)
 
+    def counted_answer(*args, **kwargs):
+        physical_calls["evaluate"] += 1
+        return answer_physical_peak_question(*args, **kwargs)
+
     monkeypatch.setattr(
         "xic_extractor.acquisition.physical_capture.prepare_physical_signal",
         counted_prepare,
     )
     monkeypatch.setattr(
-        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak",
-        counted_evaluate,
+        "xic_extractor.acquisition.physical_capture.answer_physical_peak_question",
+        counted_answer,
     )
     monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
     monkeypatch.setattr(physical_owner, "evaluate_physical_peak", counted_evaluate)
@@ -1192,10 +1197,10 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         record.evaluation.prepared.prepared_signal_id
         for record in result.physical_evaluations
     } == {result.physical_evaluations[0].evaluation.prepared.prepared_signal_id}
-    assert metrics.logical_xic_request_count == 2
+    assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
-    assert [len(batch) for batch in raw.request_batches] == [2]
+    assert [len(batch) for batch in raw.request_batches] == [1]
 
 
 def test_physical_binding_rejects_cross_acquisition_reassembly(
@@ -1495,12 +1500,13 @@ def test_physical_fact_sharing_uses_exact_owner_question(
     )
     raw = _OwnerBoundBatchRaw(source)
     prepare = Mock(wraps=prepare_physical_signal)
-    evaluate = Mock(wraps=evaluate_physical_peak)
+    evaluate = Mock(wraps=answer_physical_peak_question)
     monkeypatch.setattr(
         "xic_extractor.acquisition.physical_capture.prepare_physical_signal", prepare
     )
     monkeypatch.setattr(
-        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak", evaluate
+        "xic_extractor.acquisition.physical_capture.answer_physical_peak_question",
+        evaluate,
     )
 
     result = capture_ms1_candidates(

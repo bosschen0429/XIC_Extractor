@@ -8,6 +8,7 @@ physical peak owner still owns preparation, selection and integration.
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -26,7 +27,9 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    evaluate_physical_peak,
+    answer_physical_peak_question,
+    enumerate_physical_segment_universe,
+    mint_physical_peak_question,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_identity import (
@@ -35,6 +38,7 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
+    PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
 from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
@@ -87,6 +91,9 @@ class PhysicalPeakCapture:
         )
         self._profile = profile
         self._prepared: dict[tuple[str, str], PreparedSignalResult] = {}
+        self._populations: dict[
+            XICRequest, tuple[PreparedSignalResult, PhysicalSegmentUniverse]
+        ] = {}
         self._results: dict[tuple[str, float, XICRequest], CapturedPhysicalPeak] = {}
         self._batches: list[TraceAcquisitionBatch] = []
         self._next_work_ordinal = 0
@@ -100,32 +107,64 @@ class PhysicalPeakCapture:
     def capture(
         self, searches: Sequence[PhysicalPeakSearch]
     ) -> tuple[CapturedPhysicalPeak, ...]:
-        """Batch distinct questions, extend context once, return input order."""
+        """Build shared peak populations before answering individual questions.
+
+        Only identical mass queries share signal. Overlapping local windows
+        form a common context; neither a question nor a later reselect crops it.
+        One bounded extension round applies to the entire affected population.
+        """
         unique: dict[tuple[str, float, XICRequest], PhysicalPeakSearch] = {}
         for search in searches:
             unique.setdefault(_question_key(search), search)
-        physical_searches = tuple(unique.values())
-        acquired = self._acquire(physical_searches)
-        self.initial_request_count = len(physical_searches)
-        results = [
-            self._evaluate(index, search, trace)
-            for index, (search, trace) in enumerate(
-                zip(physical_searches, acquired, strict=True)
+        contexts = _shared_contexts(tuple(unique.values()))
+        traces = dict(zip(contexts, self._acquire(tuple(contexts)), strict=True))
+        self.initial_request_count = len(contexts)
+        ordinals = {key: index for index, key in enumerate(unique)}
+        results = {}
+        extended_searches: dict[tuple[str, float, XICRequest], PhysicalPeakSearch] = {}
+        for request, members in contexts.items():
+            lower, upper = request.rt_min, request.rt_max
+            for original in members:
+                key = _question_key(original)
+                result = self._evaluate(
+                    ordinals[key], replace(original, request=request), traces[request]
+                )
+                results[key] = result
+                expanded = _expanded_request(result, self._profile)
+                if expanded is not None:
+                    lower = min(lower, expanded.rt_min)
+                    upper = max(upper, expanded.rt_max)
+            shared = replace(request, rt_min=lower, rt_max=upper)
+            extended_searches.update(
+                (_question_key(s), replace(s, request=shared)) for s in members
             )
-        ]
-        expanded = [
-            (index, replace(result.search, request=request))
-            for index, result in enumerate(results)
-            if (request := _expanded_request(result, self._profile)) is not None
-        ]
-        extended_traces = self._acquire(tuple(search for _, search in expanded))
-        self.reacquisition_request_count = len(expanded)
-        for (index, search), trace in zip(expanded, extended_traces, strict=True):
-            results[index] = self._evaluate(index, search, trace)
-        self._results = {_question_key(result.search): result for result in results}
-        self._next_work_ordinal = len(results)
-        by_original_question = dict(zip(unique, results, strict=True))
-        return tuple(by_original_question[_question_key(search)] for search in searches)
+
+        # An extension can connect two previously separate contexts. Re-union
+        # before reacquiring so no question retains a smaller competing view.
+        final_contexts = _shared_contexts(tuple(extended_searches.values()))
+        missing = tuple(request for request in final_contexts if request not in traces)
+        traces.update(zip(missing, self._acquire(missing), strict=True))
+        self.reacquisition_request_count = len(missing)
+        final_requests = {
+            s: request for request, members in final_contexts.items() for s in members
+        }
+        for key, original in unique.items():
+            request = final_requests[extended_searches[key]]
+            if results[key].search.request != request:
+                results[key] = self._evaluate(
+                    ordinals[key], replace(original, request=request), traces[request]
+                )
+        # Different input windows can now ask exactly the same final question.
+        # Keep a single completed work item for that question, not two aliases.
+        for key, result in results.items():
+            final_key = _question_key(result.search)
+            if final_key not in self._results:
+                self._results[final_key] = replace(
+                    result, work_ordinal=len(self._results)
+                )
+            results[key] = self._results[final_key]
+        self._next_work_ordinal = len(self._results)
+        return tuple(results[_question_key(search)] for search in searches)
 
     def reselect(
         self,
@@ -150,15 +189,11 @@ class PhysicalPeakCapture:
             self._results[key] = result
         return result
 
-    def _acquire(
-        self, searches: Sequence[PhysicalPeakSearch]
-    ) -> tuple[AcquiredTrace, ...]:
+    def _acquire(self, requests: Sequence[XICRequest]) -> tuple[AcquiredTrace, ...]:
         traces: list[AcquiredTrace] = []
-        for start in range(0, len(searches), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
-            chunk = searches[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
-            batch = acquire_trace_batch(
-                self._capability, tuple(search.request for search in chunk), self._raw
-            )
+        for start in range(0, len(requests), PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS):
+            chunk = requests[start : start + PHYSICAL_CAPTURE_BATCH_MAX_REQUESTS]
+            batch = acquire_trace_batch(self._capability, tuple(chunk), self._raw)
             self._batches.append(batch)
             traces.extend(batch.traces)
         return tuple(traces)
@@ -167,22 +202,36 @@ class PhysicalPeakCapture:
         self, ordinal: int, search: PhysicalPeakSearch, acquired: AcquiredTrace
     ) -> CapturedPhysicalPeak:
         rt, intensity = acquired.trace.rt, acquired.trace.intensity
-        trace_content_id = mint_physical_trace_content_id(rt, intensity)
-        cache_key = (trace_content_id, self._profile.profile_id)
-        prepared = self._prepared.get(cache_key)
-        if prepared is None:
-            prepared = prepare_physical_signal(
-                rt, intensity, trace_content_id=trace_content_id, profile=self._profile
+        population = self._populations.get(search.request)
+        if population is None:
+            trace_content_id = mint_physical_trace_content_id(rt, intensity)
+            cache_key = (trace_content_id, self._profile.profile_id)
+            prepared = self._prepared.get(cache_key)
+            if prepared is None:
+                prepared = prepare_physical_signal(
+                    rt,
+                    intensity,
+                    trace_content_id=trace_content_id,
+                    profile=self._profile,
+                )
+                self._prepared[cache_key] = prepared
+            universe = enumerate_physical_segment_universe(
+                prepared,
+                request_context_rt_start_min=search.request.rt_min,
+                request_context_rt_end_min=search.request.rt_max,
+                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
             )
-            self._prepared[cache_key] = prepared
-        evaluation = evaluate_physical_peak(
-            prepared,
+            population = prepared, universe
+            self._populations[search.request] = population
+        prepared, universe = population
+        question = mint_physical_peak_question(
+            prepared.projection,
+            universe,
             selection_subject_id=search.selection_subject_id,
             query_rt_min=search.query_rt_min,
-            request_context_rt_start_min=search.request.rt_min,
-            request_context_rt_end_min=search.request.rt_max,
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )
+        evaluation = answer_physical_peak_question(prepared, universe, question)
         return CapturedPhysicalPeak(
             work_ordinal=ordinal,
             search=search,
@@ -194,6 +243,34 @@ class PhysicalPeakCapture:
 
 def _question_key(search: PhysicalPeakSearch) -> tuple[str, float, XICRequest]:
     return search.selection_subject_id, search.query_rt_min, search.request
+
+
+def _shared_contexts(
+    searches: Sequence[PhysicalPeakSearch],
+) -> dict[XICRequest, tuple[PhysicalPeakSearch, ...]]:
+    """Union overlapping local windows, never nearby but different mass queries."""
+    channels: dict[tuple[float, float], list[PhysicalPeakSearch]] = defaultdict(list)
+    for search in searches:
+        channels[search.request.mz, search.request.ppm_tol].append(search)
+    contexts: dict[XICRequest, tuple[PhysicalPeakSearch, ...]] = {}
+    for channel in sorted(channels):
+        request: XICRequest | None = None
+        members: list[PhysicalPeakSearch] = []
+        for search in sorted(
+            channels[channel], key=lambda s: (s.request.rt_min, s.request.rt_max)
+        ):
+            if request is None or search.request.rt_min > request.rt_max:
+                if request is not None:
+                    contexts[request] = tuple(members)
+                request, members = search.request, [search]
+            else:
+                request = replace(
+                    request, rt_max=max(request.rt_max, search.request.rt_max)
+                )
+                members.append(search)
+        if request is not None:
+            contexts[request] = tuple(members)
+    return contexts
 
 
 def _expanded_request(

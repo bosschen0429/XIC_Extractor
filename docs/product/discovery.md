@@ -196,9 +196,15 @@ that observation cannot resurrect a rejected candidate or create a new root.
 
 ### Precursor inference
 
-- CID-NL Discovery acquires MS2 search seeds, groups nearby seeds, captures and
-  qualifies their MS1 peaks, then verifies each candidate's independent
-  precursor/NL relation and isotope hold before merging. Only independently
+- CID-NL Discovery acquires MS2 search seeds and retains the existing groups'
+  XIC centers and ppm. For each identical mass query in one RAW, overlapping
+  local RT windows form one shared context. Signal preparation and the physical
+  peak population are reused by all seed questions; the signal is not cropped
+  back to each seed's original window. Nearby but different XIC centers remain
+  separate measurement channels, not assumed to be the same ion.
+  Seeds are attached to owner-selected peaks, then Discovery verifies each
+  candidate's independent precursor/NL relation and isotope hold before merging.
+  Only independently
   admitted candidates may merge; the resulting representative is rechecked
   against the retained member evidence. A feature with a compatible independent
   precursor and product inside its resolved peak is `ms1_feature_nl_supported`.
@@ -237,6 +243,11 @@ that observation cannot resurrect a rejected candidate or create a new root.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
+  An incomplete edge exposed by any seed extends the whole shared context in
+  one bounded reacquisition round. Contexts connected by that extension are
+  reunited before the final peak population is built. Windows are the union of
+  local requests, not a fixed full-run extraction; the physical owner's shape,
+  boundary, qualification and overlap rules are unchanged.
 - When the final physical evaluation of a pure `product_mz + neutral_loss`
   group resolves a peak, including after point reacquisition, Discovery reads
   the ion at the apex scan and one MS1 scan on each side, inside the final
@@ -286,8 +297,9 @@ that observation cannot resurrect a rejected candidate or create a new root.
   One RT seed group can contain multiple physical peaks. Its seeds are
   partitioned by the physical owner's point-selection result, retaining a
   candidate for each seeded peak while sharing the acquired MS1 trace.
-  Outside or ambiguous scans stay with the original representative; they do
-  not supply support to another peak. Each retained candidate keeps its own
+  Outside or ambiguous scans retain separate diagnostic lineage rather than
+  joining the original representative's peak. They do not supply support to
+  another peak. Each retained candidate keeps its own
   physical question and persisted answer binding.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor

@@ -169,8 +169,29 @@ def capture_ms1_candidates(
         adapter_namespace="xic_extractor.discovery.ms1_capture",
         profile=signal_processing_profile,
     )
-    captured_peaks = physical_capture.capture(
-        tuple(_physical_search(plan, settings=settings) for plan in plans)
+    # Every seed may expose an incomplete edge, even when the representative
+    # lands on a complete peak. Resolve context for the whole population before
+    # attaching any seed; all questions retain the original group's mass query.
+    searches = tuple(
+        replace(_physical_search(plan, settings=settings), query_rt_min=seed.rt)
+        for plan in plans
+        for seed in plan.group.seeds
+    )
+    captured_by_question = {
+        (search.selection_subject_id, search.query_rt_min, search.request): captured
+        for search, captured in zip(
+            searches, physical_capture.capture(searches), strict=True
+        )
+    }
+    captured_peaks = tuple(
+        captured_by_question[
+            (
+                _selection_subject_id(plan.group),
+                select_representative_seed(plan.group.seeds).rt,
+                plan.request,
+            )
+        ]
+        for plan in plans
     )
     batches = physical_capture.acquisition_batches
 
@@ -309,6 +330,19 @@ def capture_ms1_candidates(
             measured_by_seed=measured_by_seed,
             settings=settings,
         )
+    # Only retained questions enter the sidecar. Per-seed context probes above
+    # are not independent persisted work items.
+    retained_ordinals = {
+        ordinal: index for index, ordinal in enumerate(sorted(physical_fact_by_index))
+    }
+    physical_fact_by_index = {
+        retained_ordinals[ordinal]: replace(
+            fact,
+            work_item=replace(fact.work_item, work_ordinal=retained_ordinals[ordinal]),
+        )
+        for ordinal, fact in physical_fact_by_index.items()
+    }
+    physical_indices = [retained_ordinals[index] for index in physical_indices]
     physical_bindings = tuple(
         DiscoveryCandidatePhysicalBinding(
             run_spec_id=run_spec_id,
@@ -505,8 +539,7 @@ def _groups_for_physical_peaks(
     settings: DiscoverySettings,
 ) -> tuple[DiscoverySeedGroup, ...]:
     """Partition a seed group by owner-selected physical segments, not RT gaps."""
-    primary = evaluation.question.admissible_segment_ids
-    by_segment: dict[tuple[str, ...], list[DiscoverySeed]] = {primary: []}
+    by_segment: dict[tuple[str, ...], list[DiscoverySeed]] = {}
     for seed in group.seeds:
         question = mint_physical_peak_question(
             evaluation.prepared,
@@ -516,10 +549,8 @@ def _groups_for_physical_peaks(
             selection_policy_version=evaluation.question.selection_policy_version,
         )
         key = question.admissible_segment_ids
-        # Unresolved/outside scans remain with the original representative;
-        # they cannot create or lend support to a different physical peak.
-        if len(key) != 1:
-            key = primary
+        # Unmapped or ambiguous seeds retain their own diagnostic lineage;
+        # they are not members of the representative's resolved peak.
         by_segment.setdefault(key, []).append(seed)
     if len(by_segment) == 1:
         return (group,)
