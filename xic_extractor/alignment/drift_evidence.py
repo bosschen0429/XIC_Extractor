@@ -208,6 +208,13 @@ class KnownIstdReference:
     def has_support(self, sample_stem: str) -> bool:
         return sample_stem in self._knots_by_sample
 
+    @property
+    def coordinate_knots(
+        self,
+    ) -> tuple[tuple[str, tuple[tuple[float, float], ...]], ...]:
+        """Prepared bounded coordinates for curve-free grouping replay."""
+        return self._batch_knots
+
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
 

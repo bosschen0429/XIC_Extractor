@@ -89,6 +89,25 @@ class BatchRtCalibration:
     front_shift_mad_min: float | None
     perturbation_tolerance_min: float | None
 
+    @classmethod
+    def from_coordinate_knots(
+        cls, knots_by_sample: Sequence[tuple[str, tuple[tuple[float, float], ...]]]
+    ) -> BatchRtCalibration:
+        """Retain an already chosen map without claiming a new fit or perturbation."""
+        return cls(
+            policy=RtCalibrationPolicy(),
+            knots=(),
+            samples={
+                sample: SampleRtCalibration(
+                    sample, "calibrated", knots, None, None, "unmeasured"
+                )
+                for sample, knots in knots_by_sample
+            },
+            front_shift_center_min=None,
+            front_shift_mad_min=None,
+            perturbation_tolerance_min=None,
+        )
+
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
         return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)

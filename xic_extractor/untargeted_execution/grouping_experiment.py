@@ -100,6 +100,7 @@ def grouping_inputs_from_prepared(
                     owners=tuple(owners[key] for key in sorted(owners)),
                     known_identity_bindings=bindings,
                     rt_warp=partition.rt_frame.warp_for_snapshot,
+                    rt_calibration=partition.rt_frame.calibration_for_snapshot,
                     elution_contexts=workset.grouping_scope.peak_trajectories.source_contexts,
                 )
             )
@@ -207,7 +208,9 @@ def prepare_grouping_experiment(
                     ).index
                 )
                 del prepared, sample_results, batch
-        rt_frame = rt_frame.with_warp(calibration.freeze())
+        rt_frame = rt_frame.with_sources(
+            known_istd_reference=known_istd_reference
+        ).with_batch_calibration(calibration.freeze())
         for position in positions:
             retained = cast(_GroupingBootstrap, store.read(position))
             prepared = finalize_untargeted_partition_grouping(

@@ -198,6 +198,17 @@ class SampleRtFrame:
         """Expose the existing calibration payload only to the snapshot boundary."""
         return self._warp
 
+    @property
+    def calibration_for_snapshot(self) -> BatchRtCalibration | None:
+        """Retain the selected bounded map, not the unused ordinary batch warp."""
+        from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+        if isinstance(self._sample_calibration, KnownIstdReference):
+            return BatchRtCalibration.from_coordinate_knots(
+                self._sample_calibration.coordinate_knots
+            )
+        return self._sample_calibration
+
     def with_calibration(self, frozen: SampleRtFrame) -> SampleRtFrame:
         """Attach frozen batch coordinates without changing local identity evidence."""
         return replace(
