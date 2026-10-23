@@ -18,6 +18,7 @@ from xic_inspector.api import SelectionRequest, prepare_report
 from xic_inspector.rendering.html_builder import build_report_html
 from xic_inspector.sources.curve_bundle import (
     CurveBundle,
+    CurveIntegration,
     SampleQuantification,
     write_curve_bundle,
 )
@@ -281,6 +282,68 @@ def test_cli_report_interacts_offline_without_server_or_network(
         expect(root.locator(".tgt-xic")).to_have_count(0)
     assert not network_requests
     assert source.read_bytes() == original
+
+
+def test_candidate_integration_stays_separate_from_saved_quantity(
+    review_page, tmp_path
+):
+    transition = _fixture_bundle().transitions[0]
+    first = replace(
+        transition.traces[0],
+        integration=CurveIntegration(120.5, 6.1, "raw_trapezoid"),
+    )
+    second = replace(
+        first,
+        trace_id="alternative-s1",
+        integration=CurveIntegration(999.0, 6.2, "raw_trapezoid"),
+    )
+    source = tmp_path / "candidates.json"
+    write_curve_bundle(
+        CurveBundle(
+            (
+                replace(
+                    transition,
+                    traces=(first, second),
+                    quantifications=(
+                        SampleQuantification("sample-1", 17.25, "counts·s"),
+                    ),
+                ),
+            )
+        ),
+        source,
+    )
+    payload = prepare_report(source, SelectionRequest()).payload
+    page = review_page
+    page.set_content(
+        build_report_html(
+            title="Candidate review",
+            evidence_capability="retained_curves",
+            strategy="sample",
+            request_id="candidates",
+            run_total=1,
+            eligible_count=1,
+            selected_count=1,
+            source_db_name=source.name,
+            payload_data=payload,
+        )
+    )
+    root = page.locator("#inspector-root")
+    root.get_by_role("button", name="查看樣本", exact=True).click()
+    integration = root.get_by_role("region", name="目前曲線積分", exact=True)
+    saved = root.get_by_role("region", name="已保存的正式定量結果", exact=True)
+    expect(integration.locator('[data-readout="area"]')).to_have_text("120.5 counts·s")
+    expect(integration).to_contain_text("原始 RT")
+    expect(saved.locator('[data-readout="quantity"]')).to_have_text("17.25 counts·s")
+    page.set_viewport_size({"width": 680, "height": 720})
+    _control(root, "candidate-select").select_option(index=1)
+    expect(integration.locator('[data-readout="area"]')).to_have_text("999 counts·s")
+    expect(saved.locator('[data-readout="quantity"]')).to_have_text("17.25 counts·s")
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    _control(root, "btn-unfocus").click()
+    expect(root.locator(".sample-table")).to_be_visible()
+    expect(_control(root, "integration-readout")).to_be_hidden()
 
 
 def _signal_payload():
