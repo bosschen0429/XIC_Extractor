@@ -152,6 +152,23 @@ def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
     assert probe.read("xic", b"same-query") == b"corrected masses"
 
 
+def test_corrected_ms2_cache_reacquires_legacy_precursors_but_reuses_xic(tmp_path):
+    from xic_extractor.untargeted_execution.acquisition_cache import _FactCache
+
+    legacy = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    # Populate the previous producer's persisted MS2 directory.
+    legacy._ms2_kind = "ms2"
+    legacy.write("ms2", b"same-query", b"uncorrected selected precursor")
+    legacy.write("xic", b"same-query", b"corrected MS1 signal")
+
+    current = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    assert current.read("ms2", b"same-query") is None
+    assert current.read("xic", b"same-query") == b"corrected MS1 signal"
+    current.write("ms2", b"same-query", b"corrected selected precursor")
+    reopened = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    assert reopened.read("ms2", b"same-query") == b"corrected selected precursor"
+
+
 def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatch):
     import csv
 

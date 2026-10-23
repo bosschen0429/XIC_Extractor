@@ -325,8 +325,18 @@ class _FactCache:
         )
         self._root = root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
         self._source_id = source_id
+        # Calibrated MS2 facts include parent-centroid precursor recognition.
+        # Keep XICs and vendor-mass facts reusable without admitting older MS2
+        # entries whose fragments and selected precursor may use different scales.
+        self._ms2_kind = (
+            "ms2"
+            if mass_recalibration is MassRecalibration.NONE
+            else "ms2_parent_centroid"
+        )
 
     def _path(self, kind: str, key: bytes) -> Path:
+        if kind == "ms2":
+            kind = self._ms2_kind
         return self._root / kind / f"{hashlib.sha256(key).hexdigest()}.json"
 
     def read(self, kind: str, key: bytes) -> bytes | None:

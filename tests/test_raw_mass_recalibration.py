@@ -247,6 +247,48 @@ def test_probe_fits_this_raw_once_and_exposes_coefficients():
     assert vendor.centroid_reads == reads
 
 
+def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monkeypatch):
+    monkeypatch.setitem(LM_BY_SCAN, 1, 12.5)
+    labels = (
+        "LM Correction (ppm):",
+        "Monoisotopic M/Z:",
+        "Master Scan Number:",
+        "Charge State:",
+    )
+    true_product = TRUE_MZ - 116.0474
+    selected = _recorded(TRUE_MZ, 1)
+    # The selected ion is an exact parent centroid. The vendor's separate
+    # monoisotopic estimate need not predict its M+1 mass to four decimals.
+    mono = _recorded(TRUE_MZ - 1.0033548, 1) - 0.0003
+    vendor = _Vendor(trailer_labels=labels)
+    vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
+        MSOrder="Ms2" if scan == 2 else "Ms1",
+        Filter=SimpleNamespace(Reactions=[SimpleNamespace(PrecursorMass=selected)]),
+    )
+    vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
+        Masses=[_recorded(true_product, 2)], Intensities=[50.0]
+    )
+    vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+        Labels=list(labels),
+        Values=[str(LM_BY_SCAN[scan]), str(mono), "1", "1"],
+    )
+    vendor.ScanNumberFromRetentionTime = lambda rt: 2
+    handle = _handle(vendor)
+    assert handle.mass_recalibration_result.outcome == "applied"
+    reads = vendor.centroid_reads
+    scans = [
+        next(handle.iter_ms2_scan_subset(9.0, 11.0, frozenset({2}))).scan
+        for _ in range(2)
+    ]
+
+    assert scans[0].precursor_mz == pytest.approx(TRUE_MZ, abs=1e-8)
+    assert scans[0].precursor_mz - scans[0].masses[0] == pytest.approx(
+        116.0474, abs=1e-8
+    )
+    assert scans[1].precursor_mz == scans[0].precursor_mz
+    assert vendor.centroid_reads - reads == 1
+
+
 def test_default_policy_keeps_the_vendor_xic():
     vendor = _Vendor()
     vendor.GetChromatogramData = lambda settings, start, end: SimpleNamespace(

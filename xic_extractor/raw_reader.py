@@ -618,8 +618,8 @@ class RawFileHandle:
     ) -> tuple[np.ndarray, float, Ms2PrecursorMetadata]:
         """Fragments use this scan; precursor readings use their parent MS1.
 
-        A filter precursor matching the recorded mono or a charge-resolved M+n
-        reading is a parent measurement; inclusion-list setpoints stay unchanged.
+        A filter precursor matching the recorded mono, a charge-resolved M+n,
+        or a parent centroid is measured; inclusion-list setpoints stay unchanged.
         """
         recalibrated_masses = masses / self._mass_scale(scan_number)
         monoisotopic = metadata.monoisotopic_mz
@@ -642,6 +642,19 @@ class RawFileHandle:
                 measured_precursor = (
                     abs(precursor_mz - (monoisotopic + isotope_number * spacing))
                     <= _RECORDED_PRECURSOR_ROUNDING_MZ
+                )
+        if not measured_precursor:
+            parent = self._recalibrated_ms1_spectrum(metadata.master_scan_number)
+            if parent is not None:
+                selected = precursor_mz / parent_scale
+                index = int(np.searchsorted(parent[1], selected))
+                # A selected parent centroid remains a measured precursor even
+                # when the vendor's mono/isotope estimate is imprecise. Allow
+                # only arithmetic roundoff here, not a mass-tolerance window
+                # that could turn an inclusion-list setpoint into a measurement.
+                measured_precursor = any(
+                    math.isclose(selected, float(mass), rel_tol=1e-12, abs_tol=0.0)
+                    for mass in parent[1][max(0, index - 1) : index + 1]
                 )
         if measured_precursor:
             precursor_mz = precursor_mz / parent_scale
