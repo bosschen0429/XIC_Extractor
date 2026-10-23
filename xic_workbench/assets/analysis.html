@@ -18,9 +18,7 @@
 <main id="workspace-targeted" class="page analysis-page" hidden>
   <header class="page-header">
     <div>
-      <span class="eyebrow">Targeted 分析</span>
-      <h1>依目標清單擷取 XIC</h1>
-      <p class="subtle">完成後產生一份 XLSX，可直接在結果檢閱開啟。</p>
+      <h1>目標分析</h1>
     </div>
     <div class="button-row">
       <button id="target-new" type="button" class="ghost" data-analysis-idle>
@@ -29,100 +27,100 @@
     </div>
   </header>
   <div class="analysis-layout">
+    <div class="job-slot" data-job-slot="targeted"></div>
     <div class="analysis-main">
       <form id="targeted-form" class="steps">
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">1</span>
-            <div>
-              <h2>資料與輸出</h2>
-              <p class="subtle">更換 RAW 資料夾時，會清空上機資訊。</p>
+        <div class="setup-column">
+          <section class="card step">
+            <div class="step-head">
+              <div>
+                <h2>資料與輸出</h2>
+              </div>
             </div>
-          </div>
-          <div id="targeted-data" class="step-body"></div>
-        </section>
-        <section class="card step" id="t-sample-section" data-sample-step="targeted"></section>
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">3</span>
-            <div>
-              <h2>目標清單</h2>
-              <p class="subtle" id="target-count"></p>
+            <div id="targeted-data" class="step-body"></div>
+            <p class="subtle batch-note">更換 RAW 資料夾會清空上機資訊。</p>
+            <details class="machine-settings">
+              <summary>本機設定</summary>
+              <div id="targeted-machine"></div>
+              <div id="targeted-execution"></div>
+            </details>
+          </section>
+          <section class="card step" id="t-sample-section" data-sample-step="targeted"></section>
+          <section id="target-samples-review" class="card step" hidden>
+            <h2>最近一次樣本檢查</h2>
+            <p id="target-samples-summary" class="subtle"></p>
+            <ul id="target-samples-conflicts" class="sequence-conflicts" hidden></ul>
+          </section>
+        </div>
+        <div class="setup-column">
+          <section class="card step">
+            <div class="step-head">
+              <div>
+                <h2>目標清單</h2>
+                <p class="subtle" id="target-count"></p>
+              </div>
+              <button
+                type="button"
+                id="target-edit"
+                class="step-action"
+                data-analysis-idle
+              >
+                <svg class="icon"><use href="#i-edit" /></svg>檢視與編輯
+              </button>
             </div>
-            <button
-              type="button"
-              id="target-edit"
-              class="step-action"
-              data-analysis-idle
-            >
-              <svg class="icon"><use href="#i-edit" /></svg>檢視與編輯
-            </button>
-          </div>
-          <div class="step-body">
-            <div id="target-preview" class="target-preview"></div>
-            <div id="target-dropzone" class="target-dropzone">
-              <strong>拖曳方法檔或目標表到這裡</strong>
-              <p class="subtle">自動辨識 XLSX 方法檔／目標表，也支援 CSV、TSV（單檔上限 1 MiB）。</p>
-              <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
-              <button id="target-import" type="button" data-analysis-idle>選擇檔案</button>
-              <p id="target-import-status" role="status" aria-live="polite"></p>
+            <div class="step-body">
+              <div id="target-preview" class="target-preview"></div>
+              <div id="target-dropzone" class="target-dropzone">
+                <div><strong>拖曳目標表或方法檔</strong>
+                <p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p></div>
+                <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
+                <button id="target-import" type="button" data-analysis-idle>選擇檔案</button>
+                <p id="target-import-status" role="status" aria-live="polite"></p>
+              </div>
+              <details class="method-section">
+                <summary>清單檔案與範例</summary>
+                <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
+                <div class="actions">
+                  <button id="target-method-load" type="button" data-analysis-idle>載入清單</button>
+                  <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
+                </div>
+                <div class="actions"><a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a><a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a><button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button></div>
+                <p class="subtle">載入會取代目前清單；RAW 資料夾、上機資訊和本機設定不變。</p>
+              </details>
             </div>
-            <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
-            <div class="actions">
-              <button id="target-method-load" type="button" data-analysis-idle>載入清單</button>
-              <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
-            </div>
-            <div class="actions"><a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a><a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a><button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button></div>
-            <p class="subtle">方法 XLSX 包含目標、ISTD 配對與共用處理策略。載入會取代目前清單；RAW 資料夾、上機資訊和本機設定不變。</p>
-          </div>
-          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
-        </section>
-        <section class="card step">
-          <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2><p class="subtle">同時處理多個 RAW 可縮短執行時間。</p></div></div>
-          <div id="targeted-execution" class="step-body"></div>
-        </section>
+            <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
+          </section>
+        </div>
       </form>
       <section id="target-result" class="card result-card" hidden></section>
     </div>
-    <aside class="analysis-rail">
-      <section class="card run-card">
-        <h2>執行前確認</h2>
-        <ul id="target-checklist" class="checklist"></ul>
-        <div id="target-samples-review" hidden>
-          <h3>最近一次 Targeted 樣本檢查</h3>
-          <p id="target-samples-summary" class="subtle"></p>
-          <ul id="target-samples-conflicts" class="sequence-conflicts" hidden></ul>
-        </div>
+    <section class="card run-card" aria-label="Targeted 執行">
+      <div class="run-readiness">
+        <ul id="target-checklist" class="checklist" aria-label="待確認事項"></ul>
         <p id="target-dirty" class="dirty-note"></p>
+      </div>
+      <div class="run-actions">
+        <button type="button" id="target-save" class="ghost" data-analysis-idle>
+          <svg class="icon"><use href="#i-save" /></svg>保存目前工作
+        </button>
         <button
           type="submit"
           form="targeted-form"
-          class="primary large block"
+          class="primary"
           data-analysis-idle
+          title="開始 Targeted 分析（Ctrl+Enter）"
         >
           <svg class="icon"><use href="#i-play" /></svg>開始 Targeted 分析
         </button>
-        <button
-          type="button"
-          id="target-save"
-          class="block"
-          data-analysis-idle
-        >
-          <svg class="icon"><use href="#i-save" /></svg>保存目前工作
-        </button>
-        <p class="hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始</p>
-      </section>
-      <div class="job-slot" data-job-slot="targeted"></div>
-    </aside>
+      </div>
+    </section>
   </div>
 </main>
 
 <main id="workspace-untargeted" class="page analysis-page" hidden>
   <header class="page-header">
     <div>
-      <span class="eyebrow">Untargeted 分析</span>
-      <h1>探索候選並跨樣本對齊</h1>
-      <p class="subtle">完成後可直接在結果檢閱開啟這個批次。</p>
+      <h1>探索分析</h1>
     </div>
     <div class="button-row">
       <button id="untargeted-new" type="button" class="ghost" data-analysis-idle>
@@ -138,155 +136,145 @@
     </div>
   </header>
   <div class="analysis-layout">
+    <div class="job-slot" data-job-slot="untargeted"></div>
     <div class="analysis-main">
       <form id="untargeted-form" class="steps">
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">1</span>
-            <div>
-              <h2>執行範圍</h2>
-              <p class="subtle">選擇要執行的分析階段。</p>
-            </div>
-          </div>
-          <div id="u-mode" class="mode-options step-body" role="radiogroup">
-            <label class="mode-option"
-              ><input
-                type="radio"
-                name="u-mode"
-                value="full"
-                data-analysis-idle
-              /><span
-                ><strong>完整分析</strong
-                ><small>Discovery → Alignment，產生跨樣本矩陣</small></span
-              ></label
-            ><label class="mode-option"
-              ><input
-                type="radio"
-                name="u-mode"
-                value="discovery_only"
-                data-analysis-idle
-              /><span
-                ><strong>只做 Discovery</strong
-                ><small>單一 RAW 的候選與檢閱表</small></span
-              ></label
-            ><label class="mode-option"
-              ><input
-                type="radio"
-                name="u-mode"
-                value="align_only"
-                data-analysis-idle
-              /><span
-                ><strong>只做 Alignment</strong
-                ><small>使用既有的 Discovery 結果</small></span
-              ></label
-            >
-          </div>
-          <div class="step-body">
-            <label><input type="checkbox" id="u-alignment-enabled" checked data-analysis-idle /> 執行跨樣本 Alignment（關閉時只輸出各樣本 Discovery）</label>
-            <label><input type="checkbox" id="u-backfill-enabled" checked data-analysis-idle /> 執行 Backfill（關閉時缺格維持未搜尋，不填零值）</label>
-          </div>
-        </section>
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">2</span>
-            <div>
-              <h2>資料與輸出</h2>
-              <p class="subtle">依執行範圍顯示需要的檔案。</p>
-            </div>
-          </div>
-          <div class="step-body">
-            <div id="untargeted-paths"></div>
-            <details class="method-section" open>
-              <summary>內標清單（選用）</summary>
-              <p class="subtle">與 Targeted 共用清單格式，只使用 role=istd 且符合本方法 CID-NL 的列；其他 tag 標示不適用，不當成 ND。忽略一般目標及 Targeted 方法設定。</p>
-              <div id="istd-dropzone" class="target-dropzone">
-                <strong>拖曳內標清單到這裡</strong>
-                <p class="subtle">支援 XLSX 目標表／方法檔、CSV、TSV（單檔上限 1 MiB）。</p>
-                <input id="istd-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
-                <button id="istd-import" type="button" data-analysis-idle>選擇檔案</button>
-                <a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
-                <p id="istd-import-status" role="status" aria-live="polite"></p>
+        <div class="setup-column">
+          <section class="card step">
+            <div class="step-head"><h2>資料與輸出</h2></div>
+            <div id="untargeted-paths" class="step-body"></div>
+            <details class="machine-settings">
+              <summary>本機設定</summary>
+              <div id="untargeted-machine"></div>
+            </details>
+          </section>
+          <section class="card step" id="sample-section" data-sample-step="untargeted"></section>
+        </div>
+        <div class="setup-column">
+          <section class="card step">
+            <div class="step-head">
+              <div>
+                <h2>執行範圍</h2>
               </div>
-              <div id="istd-path-field"></div>
-              <p id="istd-summary" class="subtle"></p>
-              <div id="istd-preview" class="target-preview"></div>
-              <div class="button-row">
-                <button type="button" id="istd-reload" data-analysis-idle>
-                  <svg class="icon"><use href="#i-refresh" /></svg>重新載入</button
-                ><button type="button" id="istd-copy" data-analysis-idle>
-                  另存可編輯副本</button
-                ><button type="button" id="istd-open" data-analysis-idle>
-                  <svg class="icon"><use href="#i-external" /></svg>開啟清單
+            </div>
+            <div id="u-mode" class="mode-options step-body" role="radiogroup">
+              <label class="mode-option"
+                ><input
+                  type="radio"
+                  name="u-mode"
+                  value="full"
+                  data-analysis-idle
+                /><span
+                  ><strong>完整分析</strong
+                  ><small>Discovery → Alignment，產生跨樣本矩陣</small></span
+                ></label
+              ><label class="mode-option"
+                ><input
+                  type="radio"
+                  name="u-mode"
+                  value="discovery_only"
+                  data-analysis-idle
+                /><span
+                  ><strong>只做 Discovery</strong
+                  ><small>單一 RAW 的候選與檢閱表</small></span
+                ></label
+              ><label class="mode-option"
+                ><input
+                  type="radio"
+                  name="u-mode"
+                  value="align_only"
+                  data-analysis-idle
+                /><span
+                  ><strong>只做 Alignment</strong
+                  ><small>使用既有的 Discovery 結果</small></span
+                ></label
+              >
+            </div>
+            <div class="step-body pipeline-options">
+              <label><input type="checkbox" id="u-alignment-enabled" checked data-analysis-idle /> 跨樣本 Alignment</label>
+              <label><input type="checkbox" id="u-backfill-enabled" checked data-analysis-idle /> Backfill</label>
+              <p id="u-stage-note" class="subtle" hidden></p>
+            </div>
+          </section>
+          <section class="card step">
+            <div class="step-head">
+              <div>
+                <h2>分析方法</h2>
+              </div>
+              <div class="button-row step-action">
+                <button type="button" id="method-import" class="ghost" data-analysis-idle>
+                  匯入方法</button
+                ><button type="button" id="method-new" class="ghost" data-analysis-idle>
+                  <svg class="icon"><use href="#i-plus" /></svg>新增</button
+                ><button type="button" id="method-edit" data-analysis-idle>
+                  <svg class="icon"><use href="#i-edit" /></svg>編輯方法
                 </button>
               </div>
-            </details>
-          </div>
-        </section>
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">3</span>
-            <div>
-              <h2>分析方法</h2>
-              <p class="subtle">Neutral loss 標籤與 RT 範圍。</p>
             </div>
-            <div class="button-row step-action">
-              <button type="button" id="method-import" class="ghost" data-analysis-idle>
-                匯入方法</button
-              ><button type="button" id="method-new" class="ghost" data-analysis-idle>
-                <svg class="icon"><use href="#i-plus" /></svg>新增</button
-              ><button type="button" id="method-edit" data-analysis-idle>
-                <svg class="icon"><use href="#i-edit" /></svg>編輯方法
-              </button>
+            <div class="step-body">
+              <label class="field"
+                ><span class="sr-only">方法</span><select id="u-preset" data-analysis-idle></select
+              ></label>
+              <div id="method-preview" class="chip-row method-preview"></div>
+              <details class="method-section">
+                  <summary>調整本次方法參數</summary>
+                  <div id="method-tuning" class="settings-grid"></div>
+              </details>
+              <section id="istd-section" class="istd-section">
+                <h3>內標清單 <span class="subtle">選用</span></h3>
+                <p id="istd-summary" class="subtle" role="status"></p>
+                <details id="istd-details" class="method-section">
+                  <summary>檢視與更換清單</summary>
+                  <div id="istd-dropzone" class="target-dropzone">
+                    <div><strong>拖曳內標清單</strong><p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p></div>
+                    <input id="istd-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
+                    <button id="istd-import" type="button" data-analysis-idle>選擇檔案</button>
+                    <p id="istd-import-status" role="status" aria-live="polite"></p>
+                  </div>
+                  <div id="istd-path-field"></div>
+                  <div id="istd-preview" class="target-preview"></div>
+                  <div class="button-row">
+                    <button type="button" id="istd-reload" data-analysis-idle><svg class="icon"><use href="#i-refresh" /></svg>重新載入</button>
+                    <button type="button" id="istd-copy" data-analysis-idle>另存可編輯副本</button>
+                    <button type="button" id="istd-open" data-analysis-idle><svg class="icon"><use href="#i-external" /></svg>開啟清單</button>
+                    <a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
+                  </div>
+                  <p class="subtle">僅使用符合本方法 CID-NL 的內標；不適用的項目會略過，不當成 ND。Targeted 方法設定不會套用。</p>
+                </details>
+              </section>
             </div>
-          </div>
-          <div class="step-body">
-            <label class="field"
-              >方法<select id="u-preset" data-analysis-idle></select
-            ></label>
-            <div id="method-preview" class="chip-row method-preview"></div>
-            <details class="method-section">
-              <summary>調整本次方法參數</summary>
-              <div id="method-tuning" class="settings-grid"></div>
-            </details>
-          </div>
-        </section>
-        <section class="card step" id="sample-section" data-sample-step="untargeted"></section>
+          </section>
+        </div>
       </form>
       <section id="untargeted-result" class="card result-card" hidden></section>
     </div>
-    <aside class="analysis-rail">
-      <section class="card run-card">
-        <h2>執行前確認</h2>
-        <ul id="untargeted-checklist" class="checklist"></ul>
+    <section class="card run-card" aria-label="Untargeted 執行">
+      <div class="run-readiness">
+        <ul id="untargeted-checklist" class="checklist" aria-label="待確認事項"></ul>
         <p id="untargeted-dirty" class="dirty-note"></p>
+      </div>
+      <div class="run-actions">
+        <button type="button" id="untargeted-save" class="ghost" data-analysis-idle>
+          <svg class="icon"><use href="#i-save" /></svg>保存目前工作
+        </button>
         <button
           type="submit"
           form="untargeted-form"
-          class="primary large block"
+          class="primary"
           data-analysis-idle
+          title="開始 Untargeted 分析（Ctrl+Enter）"
         >
           <svg class="icon"><use href="#i-play" /></svg>開始 Untargeted 分析
         </button>
-        <button
-          type="button"
-          id="untargeted-save"
-          class="block"
-          data-analysis-idle
-        >
-          <svg class="icon"><use href="#i-save" /></svg>保存目前工作
-        </button>
-        <p class="hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始</p>
-      </section>
-      <div class="job-slot" data-job-slot="untargeted"></div>
-    </aside>
+      </div>
+    </section>
   </div>
 </main>
 
 <template id="sample-step-template">
   <div class="step-head">
-    <span class="step-no" data-part="step-no"></span>
     <div>
-      <h2>樣本與上機資訊</h2>
+      <h2>樣本</h2>
       <p class="subtle" data-part="samples-count">尚未讀取樣本</p>
     </div>
     <div class="button-row step-action">
@@ -298,33 +286,36 @@
     </div>
   </div>
   <div class="step-body">
-    <div class="import-line">
-      <label data-part="sequence-label">上機資訊</label
-      ><input
-        data-part="sequence-source"
-        class="path"
-        placeholder="Word、Excel、CSV 或 TSV（選用）"
-        data-analysis-idle
-      /><button type="button" data-part="sequence-browse" data-kind="metadata" data-analysis-idle>
-        瀏覽</button
-      ><button type="button" data-part="samples-import" data-analysis-idle>
-        匯入上機資訊
-      </button>
-    </div>
-    <div class="import-line annotation-line">
-      <span class="subtle">組別與排除</span
-      ><button type="button" data-part="samples-table" data-analysis-idle>
-        匯入合作者樣品表</button
-      ><button type="button" data-part="samples-carry" data-analysis-idle>
-        沿用上一批分組
-      </button>
-    </div>
     <div class="sample-summary">
       <div data-part="role-summary" class="chip-row"></div>
       <button type="button" data-part="samples-refresh" data-analysis-idle>
         <svg class="icon"><use href="#i-vial" /></svg>讀取 RAW 樣本
       </button>
     </div>
+    <details class="sample-imports">
+      <summary>上機資訊與分組</summary>
+      <div class="import-line">
+        <label data-part="sequence-label">上機資訊</label
+        ><input
+          data-part="sequence-source"
+          class="path"
+          placeholder="Word、Excel、CSV 或 TSV（選用）"
+          data-analysis-idle
+        /><button type="button" data-part="sequence-browse" data-kind="metadata" data-analysis-idle>
+          瀏覽</button
+        ><button type="button" data-part="samples-import" data-analysis-idle>
+          匯入上機資訊
+        </button>
+      </div>
+      <div class="import-line annotation-line">
+        <span class="subtle">組別與排除</span
+        ><button type="button" data-part="samples-table" data-analysis-idle>
+          匯入合作者樣品表</button
+        ><button type="button" data-part="samples-carry" data-analysis-idle>
+          沿用上一批分組
+        </button>
+      </div>
+    </details>
     <div data-part="group-cards" class="group-cards" hidden></div>
     <p data-part="samples-source" class="subtle"></p>
     <p data-part="samples-summary" class="subtle"></p>

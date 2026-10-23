@@ -227,6 +227,12 @@ def _start(page, kind):
     page.locator(f"button[form={kind}-form][type=submit]").click()
 
 
+def _expand(page, selector):
+    details = page.locator(selector)
+    if details.get_attribute("open") is None:
+        details.locator(":scope > summary").click()
+
+
 def _wait_for_analysis_status(page, status):
     expect(page.locator("#analysis-job-title")).to_contain_text(
         status, timeout=BACKGROUND_JOB_TIMEOUT_MS
@@ -284,6 +290,25 @@ def test_untargeted_module_switches_persist_and_follow_mode(workbench):
     expect(alignment).not_to_be_checked()
     alignment.check()
     expect(backfill).to_be_enabled()
+
+
+def test_analysis_actions_and_settings_remain_reachable_on_narrow_screen(workbench):
+    page = workbench
+    page.set_viewport_size({"width": 680, "height": 720})
+    for kind in ("targeted", "untargeted"):
+        _view(page, kind)
+        expect(
+            page.get_by_role("button", name=f"開始 {kind.title()} 分析")
+        ).to_be_visible()
+        _expand(page, f"#workspace-{kind} .machine-settings")
+        dll = page.locator(f"#{'t' if kind == 'targeted' else 'u'}-dll_dir")
+        dll.click()
+        dll.press("Tab")
+        expect(page.locator(":focus")).to_have_text("瀏覽")
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= "
+            "document.documentElement.clientWidth"
+        )
 
 
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
@@ -370,6 +395,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
         "xic_workbench.targeted.build_canonical_targeted_application_service",
         lambda _: Service(),
     )
+    _expand(page, "#workspace-targeted .sample-imports")
     page.locator("#t-injection_order_source").fill(str(sequence))
     page.locator('button[form="targeted-form"]').click()
     try:
@@ -400,6 +426,8 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
     page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
         expect(cell).to_have_css("text-align", "center")
+    expect(page.locator("#t-parallel_workers")).to_be_hidden()
+    _expand(page, "#workspace-targeted .machine-settings")
     expect(page.locator("#t-parallel_workers")).to_be_visible()
     page.locator("#t-parallel_workers").fill("2")
     page.locator("#target-edit").click()
@@ -436,6 +464,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
 def test_target_list_save_and_load_preserves_batch(workbench):
     page = workbench
     original_batch = page.locator("#t-data_dir").input_value()
+    page.locator("summary", has_text="清單檔案與範例").click()
     page.get_by_role("button", name="另存清單", exact=True).click()
     page.get_by_label("清單名稱（不含 .xlsx）", exact=True).fill("Browser saved list")
     page.locator("#path-dialog").get_by_role("button", name="確定").click()
@@ -481,9 +510,11 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
 ):
     page = workbench
     labels = page.locator("#targeted-data .path-line > label")
-    expect(labels).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
+    expect(labels).to_have_text(["RAW 資料夾", "輸出資料夾"])
+    expect(page.locator("#targeted-machine .path-line > label")).to_have_text(
+        "RawFileReader DLL 資料夾"
     )
+    expect(page.locator("#t-dll_dir")).to_be_hidden()
     # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
@@ -505,8 +536,12 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
     expect(page.locator("#untargeted-paths .path-line:visible > label")).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
+        ["RAW 資料夾", "輸出資料夾"]
     )
+    expect(page.locator("#untargeted-machine .path-line > label")).to_have_text(
+        "RawFileReader DLL 資料夾"
+    )
+    expect(page.locator("#u-dll_dir")).to_be_hidden()
 
 
 def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_errors):
@@ -557,8 +592,17 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     page.locator(f"input[name=u-mode][value={mode}]").check()
     checklist = page.locator("#untargeted-checklist")
     expect(checklist.locator("li.todo").filter(has_text=input_label)).to_have_count(1)
-    expect(checklist).to_contain_text("RawFileReader DLL")
-    expect(checklist).to_contain_text("輸出資料夾")
+    expect(checklist).not_to_contain_text("輸出資料夾")
+    _expand(page, "#workspace-untargeted .machine-settings")
+    page.locator("#u-dll_dir").fill("C:/local/dll")
+    page.locator("#u-dll_dir").press("Tab")
+    expect(checklist).not_to_contain_text("RawFileReader DLL")
+    page.locator("#u-dll_dir").fill("")
+    page.locator("#u-dll_dir").press("Tab")
+    page.locator("#workspace-untargeted .machine-settings > summary").click()
+    checklist.get_by_role("button", name=re.compile("RawFileReader DLL")).click()
+    expect(page.locator("#u-dll_dir")).to_be_visible()
+    expect(page.locator("#u-dll_dir")).to_be_focused()
     for label in {"RAW 資料夾", "單一 RAW", "Discovery batch index"} - (
         {input_label, "RAW 資料夾"} if mode == "align_only" else {input_label}
     ):
@@ -618,6 +662,7 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
         _view(page, kind)
         page.locator("input[name=u-mode][value=discovery_only]").check()
         page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
+        _expand(page, "#workspace-untargeted .machine-settings")
         page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
         page.locator("#u-output_dir").fill(str(tmp_path / "results"))
     _start(page, kind)
@@ -808,6 +853,27 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     )
 
 
+def test_saved_review_offers_raw_setup_without_curve_controls(workbench, tmp_path):
+    page = workbench
+    db, _, _ = _create_mock_db(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(db))
+    page.locator("#open-form button[type=submit]").click()
+    expect(page.locator("#recorded-review .sample-table")).to_be_visible()
+    # Saved values are readable without RAW. Controls for a plot belong only
+    # to a plotted view, even when the source also retains some curve evidence.
+    expect(page.locator("#recorded-review .signal-switch")).to_be_hidden()
+    setup = page.locator("#load-curves")
+    expect(setup).to_be_visible()
+    expect(setup).to_contain_text("設定 RAW 位置")
+    page.reload()
+    expect(page.locator("#recorded-review .sample-table")).to_be_visible()
+    expect(setup).to_be_visible()
+    setup.click()
+    expect(page.locator("#raw-dir")).to_be_visible()
+    expect(page.locator("#raw-dir")).to_be_focused()
+
+
 def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
@@ -938,7 +1004,7 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     overview.get_by_role("button", name="查看全部矩陣群組").click()
     expect(page.locator("#item-list button")).to_have_count(3)
     page.locator("#back-to-overview").click()
-    overview.locator("summary").click()
+    overview.locator("summary", has_text="進階：未採用群組與候選證據").click()
     overview.get_by_role("button", name="1 組未採用").click()
     expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
     expect(
@@ -1622,6 +1688,10 @@ def test_sample_restore_is_bound_to_current_inputs(
         with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
             page.locator("#untargeted-save").click()
     elif changed_input:
+        if changed_input == "sequence_source":
+            _expand(page, "#workspace-untargeted .sample-imports")
+        elif changed_input == "dll_dir":
+            _expand(page, "#workspace-untargeted .machine-settings")
         selector = (
             "#sequence-source"
             if changed_input == "sequence_source"
@@ -1658,6 +1728,7 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     page = workbench
     batch = page.locator("#t-data_dir").input_value()
     dll = page.locator("#t-dll_dir").input_value()
+    page.locator("summary", has_text="清單檔案與範例").click()
     with page.expect_download() as download:
         page.get_by_role("link", name="下載方法範例 XLSX", exact=True).click()
     path = tmp_path / "downloaded-method.xlsx"
@@ -1763,11 +1834,13 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
     fake_runs.release.set()
     page.locator("#t-data_dir").fill(str(raw_dir))
+    _expand(page, "#workspace-targeted .machine-settings")
     page.locator("#t-dll_dir").fill(str(tmp_path))
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
     _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
+    _expand(page, "#workspace-targeted .machine-settings")
     page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
@@ -1814,6 +1887,7 @@ def test_untargeted_istd_shared_upload_and_persistence(
             writer.writerows(rows())
     original_targets = page.locator("#target-preview").inner_text()
     page.get_by_role("button", name="Untargeted", exact=True).click()
+    _expand(page, "#istd-details")
     expect(page.get_by_role("link", name="下載共用清單範例 XLSX")).to_be_visible()
     with page.expect_download() as download:
         page.get_by_role("link", name="下載共用清單範例 XLSX").click()
@@ -1886,6 +1960,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
     _view(page, "untargeted")
+    _expand(page, "#istd-details")
     page.locator("#istd-import-file").set_input_files(path)
     expect(page.locator("#istd-import-status")).to_contain_text("已匯入")
     rna = page.locator("#istd-preview tr").filter(has_text="RNA standard")
@@ -2358,7 +2433,9 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
         editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
     page.keyboard.press("Escape")
 
-    expect(checklist).to_contain_text("各組樣本數Tumor 1 · normal 1 · QC 1")
+    expect(page.locator("#t-role-summary")).to_contain_text("Tumor 1")
+    expect(page.locator("#t-role-summary")).to_contain_text("normal 1")
+    expect(page.locator("#t-role-summary")).to_contain_text("QC 1")
     expect(checklist).to_contain_text("只有 1 個樣本的組別Tumor、normal")
     expect(checklist).to_contain_text("排除的樣本1 個：clogged ×1")
     expect(checklist).not_to_contain_text("未標組別的研究樣本")
@@ -2377,7 +2454,9 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
+    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+    _expand(page, "#workspace-untargeted .sample-imports")
     page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
@@ -2535,6 +2614,7 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
     page.keyboard.press("Escape")
 
     # A pasted collaborator table previews every match state before writing.
+    _expand(page, "#workspace-targeted .sample-imports")
     page.locator("#t-samples-table").click()
     dialog = page.locator("#annotation-dialog")
     page.locator("#annotation-text").fill(
@@ -2561,6 +2641,7 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
 
     # A new batch named the same way reuses the confirmed batch by name.
     _view(page, "untargeted")
+    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     second = tmp_path / "second"
     _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
@@ -2568,6 +2649,7 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
     page.locator("#u-raw_dir").press("Tab")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
+    _expand(page, "#workspace-untargeted .sample-imports")
     page.locator("#samples-carry").click()
     page.locator("#annotation-confirmed").select_option(label="raw")
     expect(page.locator("#annotation-counts")).to_contain_text("對到 2 個 RAW")
@@ -2698,6 +2780,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
         "NormalBC101_DNA,Unknown,Normal\n",
         encoding="utf-8",
     )
+    _expand(page, "#workspace-targeted .sample-imports")
     page.locator("#t-injection_order_source").fill(str(sequence))
     page.locator("#t-samples-refresh").click()
     expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
@@ -2711,6 +2794,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     # The next batch is another folder, saved as the current settings; the
     # exclusion still goes to the run's folder with the run's annotations.
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
+    _expand(page, "#workspace-targeted .sample-imports")
     page.locator("#t-injection_order_source").fill("")
     with page.expect_response(lambda r: r.url.endswith("/api/targeted/save")):
         page.locator("#target-save").click()
@@ -2801,6 +2885,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
+    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
@@ -2815,6 +2900,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
         encoding="utf-8",
     )
     _view(page, "targeted")
+    _expand(page, "#workspace-targeted .sample-imports")
     page.locator("#t-injection_order_source").fill(str(listed))
     page.locator("#t-samples-import").click()
     expect(page.locator("#t-role-summary")).to_contain_text("排除 1")

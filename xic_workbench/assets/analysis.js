@@ -69,7 +69,6 @@
       rawDir: "t-data_dir",
       dll: "t-dll_dir",
       output: "t-output_dir",
-      step: 2,
     },
     untargeted: {
       prefix: "",
@@ -77,7 +76,6 @@
       rawDir: "u-raw_dir",
       dll: "u-dll_dir",
       output: "u-output_dir",
-      step: 4,
     },
   };
   const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
@@ -159,7 +157,7 @@
   function dirty(kind, value = true) {
     state.dirty[kind] = value;
     const note = $(`${kind === "targeted" ? "target" : "untargeted"}-dirty`);
-    note.textContent = value ? "有尚未儲存的變更；開始分析時會一併儲存。" : "";
+    note.textContent = value ? "尚未儲存 · 開始分析時一併儲存" : "";
     note.className = `dirty-note${value ? " unsaved" : ""}`;
     if (kind === "targeted") {
       clearTimeout(methodTimer);
@@ -383,7 +381,7 @@
     }
     const list = $(`${kind === "targeted" ? "target" : "untargeted"}-checklist`);
     list.replaceChildren(
-      ...items.map((item) => {
+      ...items.filter(item => item.tone === "todo" || item.label === "排除的樣本").map((item) => {
         const li = el("li", undefined, item.tone);
         const target = el("button", undefined, "check-item");
         target.type = "button";
@@ -499,8 +497,9 @@
     const data = $("targeted-data");
     const method = $("targeted-settings");
     const execution = $("targeted-execution");
+    const machine = $("targeted-machine");
     const outputDir = $("t-output_dir")?.value ?? state.config.targeted_output_dir;
-    for (const panel of [data, method, execution]) panel.replaceChildren();
+    for (const panel of [data, method, execution, machine]) panel.replaceChildren();
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
@@ -520,7 +519,7 @@
         $(samplePages.targeted.sequence).value = isTemplatePath(value) ? "" : value;
         continue;
       }
-      pathField(data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
+      pathField(spec.scope === "environment" ? machine : data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
     $("t-data_dir").dataset.batchPath = values.data_dir || "";
@@ -628,7 +627,7 @@
     const istd = state.targets.filter(isIstd).length;
     $("target-count").textContent = state.targets.length
       ? `${state.targets.length} 個目標 · ${istd} 個 ISTD`
-      : "尚未載入目標";
+      : "";
     renderTargetPreview();
     checklist("targeted");
   }
@@ -638,7 +637,7 @@
       preview.replaceChildren(
         el(
           "div",
-          "目前沒有目標。匯入 CSV／TSV／Excel，或按「檢視與編輯」新增。",
+          "尚無目標",
           "target-preview-empty",
         ),
       );
@@ -683,7 +682,7 @@
       nodes.push(
         el(
           "p",
-          `另外 ${state.targets.length - 6} 個目標，按「檢視與編輯」查看完整清單。`,
+          `另有 ${state.targets.length - 6} 個目標`,
           "target-preview-more",
         ),
       );
@@ -783,7 +782,13 @@
     $("u-backfill-enabled").parentElement.hidden = mode === "discovery_only";
     $("u-alignment-enabled").disabled = isBusy() || mode !== "full";
     $("u-backfill-enabled").disabled = isBusy() || !alignment;
-    $("istd-path-field").parentElement.hidden = !alignment;
+    $("istd-section").hidden = !alignment;
+    const note = $("u-stage-note");
+    note.textContent = mode === "full" && !alignment
+      ? "只輸出各樣本 Discovery，不產生跨樣本矩陣。"
+      : alignment && !$("u-backfill-enabled").checked
+        ? "缺格維持未搜尋，不填零值。" : "";
+    note.hidden = !note.textContent;
   }
   function modeFields() {
     const mode = currentMode();
@@ -883,7 +888,7 @@
     const chips = preview.tags.map((tag) =>
       el("span", `${tag.name} · ${tag.neutral_loss_da} Da`, "chip accent"),
     );
-    chips.push(el("span", preview.combine_mode, "chip"));
+    if (preview.tags.length > 1) chips.push(el("span", preview.combine_mode, "chip"));
     const crop = $("u-rt-crop")?.checked;
     const lower = crop ? $("tune-rt_min")?.value.trim() : "";
     const upper = crop ? $("tune-rt_max")?.value.trim() : "";
@@ -994,7 +999,6 @@
           node.dataset.part === "sequence-source"
             ? spec.sequence
             : sampleId(page, node.dataset.part);
-      $(sampleId(page, "step-no")).textContent = spec.step;
       $(sampleId(page, "sequence-label")).htmlFor = spec.sequence;
       $(sampleId(page, "sequence-browse")).dataset.browse = spec.sequence;
     }
@@ -1011,9 +1015,6 @@
       counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
     const excluded = set.rows.filter((row) => row.excluded).length;
     $(sampleId(page, "role-summary")).replaceChildren(
-      ...(set.rows.length
-        ? []
-        : [el("span", "讀取 RAW 後可檢視樣本，並指定角色、組別與排除。", "subtle")]),
       ...roles
         .filter((role) => counts.has(role))
         .map((role) =>
@@ -1938,6 +1939,7 @@
     const selection = result.selection;
     $("istd-summary").textContent = result.message ||
       `${selection.targets.length} 個適用內標；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : " 本次不使用內標參考。"}`;
+    $("istd-summary").classList.toggle("warning", Boolean(selection?.method_skipped.length));
     const preview = $("istd-preview");
     preview.replaceChildren();
     if (!selection) return;
@@ -2490,7 +2492,7 @@
     renderTargetedMethods(state.config.targeted_methods || []);
     for (const [key, label, kind] of pathFields)
       pathField(
-        $("untargeted-paths"),
+        $(key === "dll_dir" ? "untargeted-machine" : "untargeted-paths"),
         key,
         label,
         kind,

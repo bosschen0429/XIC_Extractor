@@ -328,6 +328,8 @@
         const review = reviews.get(record.SampleName), row = element('tr');
         const sampleCell = element('td'), button = element('button', record.SampleName, 'tgt-sample');
         button.type = 'button';button.setAttribute('aria-expanded', 'false');
+        const chevron = element('span', '›', 'tgt-expand');
+        chevron.setAttribute('aria-hidden', 'true');button.prepend(chevron);
         const grouped = groupOf.get(record.SampleName);
         if (grouped?.group_color) {
           const dot = element('span', undefined, 'sample-dot');
@@ -395,7 +397,7 @@
       applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
-      section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));
+      section.append(scroll);
       const method = element('details', undefined, 'tgt-method');
       method.append(element('summary', '方法設定'));
       method.append(facts([
@@ -855,7 +857,7 @@
   if (mode === 'offline') $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;setHTML($('report-info-body'),`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`);$('report-info-dialog').showModal();});
   $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
   function syncSignalSwitch(){
-    const curves=items.some(item=>item.curves?.length);
+    const curves=mode !== 'result' && items.some(item=>item.curves?.length);
     root.querySelectorAll('.signal-switch,.signal-bar').forEach(el=>el.hidden=!curves);
     root.querySelectorAll('[data-signal]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.signal===display.signal)));
   }

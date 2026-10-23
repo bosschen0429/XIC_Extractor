@@ -582,7 +582,7 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     expect(review.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
     rows = review.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
-    expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
+    expect(rows.nth(2).locator(".tgt-sample")).to_have_accessible_name("S3")
     expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
     # The same sample's paired ISTD reads in the same row.
     expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
