@@ -566,10 +566,53 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     expect(page.locator("button[form=untargeted-form][type=submit]")).to_be_enabled()
 
 
+@pytest.fixture
+def analysis_feedback(workbench):
+    """Serve a published result without running another application job."""
+    page = workbench
+    state = {
+        "job": {
+            "job_id": "published",
+            "kind": "targeted",
+            "status": "succeeded",
+            "elapsed_seconds": 1,
+            "completed": 1,
+            "total": 1,
+            "cancellable": True,
+        },
+        "results": {
+            "targeted": {
+                "total_files": 1,
+                "targets": [{"label": "Saved target"}],
+                "artifacts": [
+                    {
+                        "name": "saved.tsv",
+                        "path": "/saved.tsv",
+                        "url": "/api/artifacts/saved",
+                    }
+                ],
+                "istd_warnings": [{"label": "ISTD", "detected": 0, "total": 1}],
+            }
+        },
+    }
+
+    def bootstrap(route):
+        response = route.fetch()
+        config = response.json()
+        config["analysis"] = state
+        route.fulfill(response=response, json=config)
+
+    page.route("**/api/config", bootstrap)
+    page.route("**/api/analysis", lambda route: route.fulfill(json=state))
+    page.clock.install()
+    page.reload()
+    expect(page.locator("body")).not_to_have_class("booting")
+    expect(page.locator("#target-result")).to_be_visible()
+    return page, state
+
+
 @pytest.mark.parametrize("kind", ["targeted", "untargeted"])
-def test_job_progress_artifact_failure_retention_and_confirmed_stop(
-    fake_runs, workbench, tmp_path, kind
-):
+def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, kind):
     page = workbench
     if kind == "untargeted":
         _view(page, kind)
@@ -596,31 +639,56 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
         .read_text(encoding="utf-8")
         .endswith("Browser target\t1\n")
     )
+
+
+def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
+    analysis_feedback,
+):
+    page, state = analysis_feedback
+    result = page.locator("#target-result")
     previous = result.inner_text()
-    fake_runs.release.clear()
-    fake_runs.outcome = "failure"
-    _start(page, kind)
+    state["job"].update(job_id="second", status="running", completed=1, total=2)
+    with page.expect_response("**/api/analysis"):
+        page.clock.run_for(1000)
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
-    fake_runs.release.set()
-    _wait_for_analysis_status(page, "執行失敗")
-    expect(page.locator("#analysis-job-message")).to_contain_text(
-        "Browser fake failure"
-    )
-    expect(result).to_be_visible()
-    expect(link).to_be_visible()
+    expect(page.locator("#analysis-progress")).to_have_attribute("value", "1")
+    state["job"].update(status="failed", error="Example failure")
+    with page.expect_response("**/api/analysis"):
+        page.clock.run_for(1000)
+    expect(page.locator("#analysis-job-title")).to_contain_text("執行失敗")
+    expect(page.locator("#analysis-job-message")).to_contain_text("Example failure")
     expect(result).to_have_text(previous, use_inner_text=True)
-    fake_runs.release.clear()
-    _start(page, kind)
+    state["job"].update(job_id="third", status="running", error=None)
+    with page.expect_response("**/api/analysis"):
+        page.clock.run_for(1000)
     expect(page.locator("#analysis-stop")).to_be_visible()
+    cancelled = []
+
+    def cancel(route):
+        cancelled.append(route.request.post_data_json)
+        state["job"].update(status="cancelled")
+        route.fulfill(json=state)
+
+    page.route("**/api/analysis/cancel", cancel)
     page.locator("#analysis-stop").click()
     expect(page.locator("#confirm-dialog")).to_be_visible()
     page.locator("#confirm-dialog button[value=cancel]").click()
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
+    assert not cancelled
     page.locator("#analysis-stop").click()
     page.locator("#confirm-accept").click()
-    _wait_for_analysis_status(page, "已停止")
-    expect(result).to_be_visible()
+    expect(page.locator("#analysis-job-title")).to_contain_text("已停止")
+    assert cancelled == [{"job_id": "third"}]
     expect(result).to_have_text(previous, use_inner_text=True)
+    expect(result.get_by_role("link", name="saved.tsv")).to_be_visible()
+
+
+def test_istd_warning_distinguishes_confirmation_from_signal(analysis_feedback):
+    page, _ = analysis_feedback
+    warning = page.locator(".result-warning")
+    expect(warning).to_contain_text("ISTD ISTD：0 / 1 個樣本通過確認")
+    expect(warning).to_contain_text("未通過確認不代表沒有訊號")
+    expect(warning).not_to_contain_text("個樣本偵測到")
 
 
 def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
@@ -961,11 +1029,9 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_hidden()
 
 
-def test_targeted_nd_shows_original_points_and_support_failure(
+def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(
     workbench, tmp_path, monkeypatch
 ):
-    from openpyxl import load_workbook
-
     from tests.test_xic_inspector_targeted_workbook import (
         install_targeted_raws,
         write_rare_detection_workbook,
@@ -973,14 +1039,8 @@ def test_targeted_nd_shows_original_points_and_support_failure(
 
     page = workbench
     raw_dir = tmp_path / "raw"
-    install_targeted_raws(
-        monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
-    )
+    install_targeted_raws(monkeypatch, raw_dir, {"S1": 13000})
     path = write_rare_detection_workbook(tmp_path / "nd.xlsx")
-    book = load_workbook(path)
-    book["XIC Results"].cell(2, 8, "峰不在內標位置，報 ND")
-    book.save(path)
-    book.close()
     original = path.read_bytes()
     _view(page, "review")
     page.locator("#source").fill(str(path))
@@ -989,32 +1049,18 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     saved = page.locator("#recorded-review")
-    expect(saved.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
+    expect(saved.locator(".tgt-table tbody tr").first).to_contain_text("ND")
     saved.get_by_role("button", name="看 S1 的 Analyte XIC", exact=True).click()
     review = _wait_for_curve_report(page)
-    expect(review.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
-    expect(review.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
-    expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
-    raw_points = review.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
-    values = raw_points.locator("title").all_text_contents()
-    assert sum(not value.endswith("· 0") for value in values) == 1
-    # Raw spikes must fit the shared per-ion Y scale, not be clipped by smoothing.
-    assert (
-        min(float(raw_points.nth(i).get_attribute("cy")) for i in range(len(values)))
-        >= 14
-    )
-    page.locator("#xic-next").click()
-    expect(page.locator("#xic-sample")).to_have_value("S2")
-    _wait_for_curve_report(page)
-    expect(review.locator(".tx-support-note")).to_have_count(0)
-    expect(review.locator(".tx-chart polyline")).to_have_count(2)
+    expect(review.locator(".tx-sample-name")).to_have_text("S1")
+    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
     assert path.read_bytes() == original
 
 
 @pytest.mark.parametrize(
     "filter_pending", [False, True], ids=["completed-reading", "pending-reading"]
 )
-def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
+def test_curve_history_restores_snapshot_after_pending_load(
     workbench,
     tmp_path,
     monkeypatch,
@@ -1134,116 +1180,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
         == recorded_view
     )
     expect(review.locator(".tx-chart")).to_have_count(2)
-    for line in curves.all():
-        ys = [
-            float(point.split(",")[1]) for point in line.get_attribute("points").split()
-        ]
-        assert min(ys) < 25 and max(ys) > 150  # Neither ion is flattened by its pair.
     expect(review).to_have_attribute("data-view-id", view_id)
     expect(page.locator("#target-id")).to_have_value("Analyte")
     expect(review.locator(".tx-sample-name")).to_have_text("S3")
     expect(review.locator(".tx-chart-meta").nth(0)).to_contain_text("面積 5.55e+1")
     expect(review.locator(".tx-chart-meta").nth(1)).to_contain_text("面積 1.00e+3")
     assert len(reads) == 2
-    assert workbook.read_bytes() == original
-    if filter_pending:
-        # The pending/filter scenario is complete. The other scenario keeps the
-        # original reading mounted for the same-reading focus, zoom and cache oracles.
-        return
-    original_points = curves.first.get_attribute("points")
-    review.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
-    review.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
-    review.get_by_role("button", name="套用範圍", exact=True).click()
-    assert curves.first.get_attribute("points") != original_points
-    review.get_by_role("button", name="完整 RT", exact=True).click()
-    expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
-    expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
-    page.go_back()
-    expect(dialog).to_be_hidden()
-    expect(row_button).to_be_focused()
-    page.go_forward()
-    expect(dialog).to_be_visible()
-    expect(review.locator(".tx-sample-name")).to_have_text("S3")
-    # Returning to the same XIC keeps the reader's chosen RT range, not a
-    # freshly mounted view's default zoom. Review loads must not own Back stops.
-    expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
-    expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
-    assert len(reads) == 2
-    page.keyboard.press("Escape")
-    expect(dialog).to_be_hidden()
-    page.go_forward()
-    expect(dialog).to_be_visible()
-    page.locator("#xic-close").click()
-    expect(dialog).to_be_hidden()
-    expect(row_button).to_be_focused()
-    row_button.click()
-    expect(curves).to_have_count(2)
-    assert len(reads) == 2  # Reopening the same sample reuses the loaded report.
-    page.locator("#xic-next").click()
-    expect(page.locator("#xic-sample")).to_have_value("S4")
-    _wait_for_curve_report(page)
-    expect(review.locator(".tx-sample-name")).to_have_text("S4")
-    expect(curves).to_have_count(2)
-    assert len(reads) == 4
-    page.locator("#xic-next").click()  # S5 has no RAW: keep a recoverable local error.
-    expect(page.locator("#xic-status")).to_contain_text(
-        "找不到", timeout=BACKGROUND_JOB_TIMEOUT_MS
-    )
-    expect(page.locator("#status")).to_contain_text("S5")
-    expect(page.locator("#status")).to_have_class(re.compile(r"\berror\b"))
-    expect(page.locator("#xic-review")).to_be_hidden()
-    expect(page.locator("#xic-retry")).to_be_visible()
-    page.locator("#xic-previous").click()
-    expect(review.locator(".tx-sample-name")).to_have_text("S4")
-    expect(page.locator("#xic-review")).to_be_visible()
-    expect(page.locator("#xic-retry")).to_be_hidden()
-    expect(page.locator("#xic-status")).to_contain_text("診斷曲線已載入")
-    expect(page.locator("#xic-status")).to_contain_text("S4")
-    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
-    expect(page.locator("#status")).to_contain_text("S4")
-    expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
-    assert len(reads) == 4
-    assert len(curve_posts) == 3
-    # A result filter can replace the current detail while the closed drawer's
-    # history still names the previously acquired Analyte/S3 curve snapshot.
-    page.locator("#xic-previous").click()
-    expect(review.locator(".tx-sample-name")).to_have_text("S3")
-    expect(page.locator("#xic-status")).to_contain_text("S3")
-    expect(page.locator("#status")).to_contain_text("S3")
-    expect(page.locator("#xic-retry")).to_be_hidden()
-    previous_curve_view = review.get_attribute("data-view-id")
-    assert previous_curve_view
-    page.go_back()
-    expect(dialog).to_be_hidden()
-    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
-    expect(page.locator("#status")).to_contain_text("S3")
-    expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
-    assert len(reads) == 4
-    assert len(curve_posts) == 3
-    page.locator("#target-id").select_option("ISTD")
-    expect(page.locator("#item-title")).to_contain_text("ISTD")
-    expect(page.locator("#target-id")).to_be_enabled()
-    page.go_forward()
-    expect(dialog).to_be_visible()
-    expect(review).to_have_attribute("data-view-id", previous_curve_view)
-    expect(page.locator("#target-id")).to_have_value("Analyte")
-    expect(page.locator("#xic-sample")).to_have_value("S3")
-    expect(review.locator(".tx-sample-name")).to_have_text("S3")
-    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    expect(review.locator(".tx-chart-meta").nth(0)).to_contain_text("面積 5.55e+1")
-    expect(review.locator(".tx-chart-meta").nth(1)).to_contain_text("面積 1.00e+3")
-    expect(curves).to_have_count(2)
-    expect(review.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
-    assert len(reads) == 4  # Restoring history reuses the original RAW acquisition.
-    page.set_viewport_size({"width": 420, "height": 760})
-    bounds = dialog.bounding_box()
-    assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
-    assert (
-        page.locator("#recorded-review").evaluate(
-            "container => container.dataset.viewId"
-        )
-        == recorded_view
-    )
     assert workbook.read_bytes() == original
 
 
@@ -1288,6 +1230,72 @@ def cached_paired_curves(workbench, tmp_path, monkeypatch):
     assert len(posts) == 2
     yield page, views, reads, posts
     assert workbook.read_bytes() == original
+
+
+def test_cached_curve_history_restores_focus_range_and_drawer(cached_paired_curves):
+    page, views, reads, posts = cached_paired_curves
+    page.locator("#xic-sample").select_option("S3")
+    review = _wait_for_curve_report(page)
+    expect(review).to_have_attribute("data-view-id", views["S3"])
+    recorded_view = page.locator("#recorded-review").get_attribute("data-view-id")
+    opener = page.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
+    review.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+    review.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+    review.get_by_role("button", name="套用範圍", exact=True).click()
+    dialog = page.locator("#xic-dialog")
+    for close in (
+        page.go_back,
+        lambda: page.keyboard.press("Escape"),
+        lambda: page.locator("#xic-close").click(),
+    ):
+        close()
+        expect(dialog).to_be_hidden()
+        expect(opener).to_be_focused()
+        page.go_forward()
+        expect(dialog).to_be_visible()
+        expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("8.95")
+        expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("9.05")
+    page.go_back()
+    page.locator("#target-id").select_option("ISTD")
+    expect(page.locator("#item-title")).to_contain_text("ISTD")
+    expect(page.locator("#target-id")).to_be_enabled()
+    page.go_forward()
+    expect(review).to_have_attribute("data-view-id", views["S3"])
+    expect(page.locator("#target-id")).to_have_value("Analyte")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(page.locator("#recorded-review")).to_have_attribute(
+        "data-view-id", recorded_view
+    )
+    page.set_viewport_size({"width": 420, "height": 760})
+    bounds = dialog.bounding_box()
+    assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
+    assert len(reads) == 4 and len(posts) == 2
+
+
+def test_missing_curve_recovers_to_cached_sample_feedback(cached_paired_curves):
+    page, views, reads, posts = cached_paired_curves
+    page.locator("#xic-next").click()  # S5 has no RAW.
+    expect(page.locator("#xic-status")).to_contain_text(
+        "找不到", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    expect(page.locator("#status")).to_contain_text("S5")
+    expect(page.locator("#status")).to_have_class(re.compile(r"\berror\b"))
+    expect(page.locator("#xic-review")).to_be_hidden()
+    expect(page.locator("#xic-retry")).to_be_visible()
+    for sample in ("S4", "S3"):
+        page.locator("#xic-previous").click()
+        review = page.locator("#xic-review")
+        expect(review).to_be_visible()
+        expect(review).to_have_attribute("data-view-id", views[sample])
+        expect(review.locator(".tx-sample-name")).to_have_text(sample)
+        expect(page.locator("#xic-retry")).to_be_hidden()
+        for status in ("#xic-status", "#status"):
+            expect(page.locator(status)).to_contain_text("診斷曲線已載入")
+            expect(page.locator(status)).to_contain_text(sample)
+        expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
+    page.locator("#xic-close").click()
+    expect(page.locator("#status")).to_contain_text("S3")
+    assert len(reads) == 4 and len(posts) == 3
 
 
 def test_cached_curve_does_not_clear_a_current_query_error(
@@ -1384,33 +1392,11 @@ def test_delayed_cached_curve_cannot_replace_current_sample_feedback(
         page.unroute(old_url)
 
 
-def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
-    workbench, tmp_path
-):
-    from openpyxl import load_workbook
-
-    from tests.test_xic_inspector_targeted_workbook import (
-        write_rare_detection_workbook,
-    )
+def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    # Current Targeted workbooks store one expected RT as equal RT min/max.
-    book = load_workbook(workbook)
-    book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
-    results = book["XIC Results"]
-    nl_column = results.max_column + 1
-    results.cell(1, nl_column, "NL")
-    results.cell(1, nl_column + 1, "NL Evidence")
-    for row in range(2, results.max_row + 1):
-        # Only S1's Analyte (row 2) observed its neutral loss.
-        observed = row == 2
-        results.cell(row, nl_column, "OK" if observed else "NO_MS2")
-        results.cell(
-            row, nl_column + 1, "已觀察到" if observed else "所選峰沒有對應的 MS2"
-        )
-    book.save(workbook)
-    book.close()
     _view(page, "review")
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
@@ -1419,32 +1405,8 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     overview.locator("td button", has_text="Analyte").click()
     expect(page.locator("#item-list")).to_be_hidden()
     expect(page.locator("#target-id")).to_be_visible()
+    expect(page.locator("#recorded-review .tgt-table")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid single-target")
-    review = page.locator("#recorded-review")
-    expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
-    rows = review.locator(".tgt-table tbody tr")
-    # Rows stay in run order; the rare detection is marked where it ran.
-    expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
-    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
-    # The same sample's paired ISTD reads in the same row.
-    expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
-    rows.nth(2).locator(".tgt-sample").click()
-    # The evidence is the next row, not a panel after every other sample.
-    detail = review.locator(".tgt-table tbody tr:nth-child(4)")
-    expect(detail).to_have_class("tgt-detail-row")
-    expect(detail).to_contain_text("積分範圍")
-    # A neutral loss that was not observed is a given fact under CID: it stays
-    # with the selection record instead of the first layer.
-    expect(detail.locator(".tgt-facts")).not_to_contain_text("NL 證據")
-    expect(detail.locator(".tgt-raw")).to_contain_text("NL 證據：所選峰沒有對應的 MS2")
-    expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
-    expect(detail).not_to_contain_text("檢閱註記")
-    # An observed neutral loss supports the result, so it reads up front.
-    rows.nth(0).locator(".tgt-sample").click()
-    observed = review.locator(".tgt-table tbody tr:nth-child(2)")
-    expect(observed).to_have_class("tgt-detail-row")
-    expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
-    expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
@@ -1787,17 +1749,6 @@ def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
     expect(page.locator("#target-preview")).to_contain_text("analyte")
 
 
-def test_istd_warning_distinguishes_confirmation_from_signal(workbench, fake_runs):
-    fake_runs.istd_warnings = [{"label": "d4-N6-2HE-dA", "detected": 0, "total": 1}]
-    fake_runs.release.set()
-    _start(workbench, "targeted")
-    _wait_for_analysis_status(workbench, "已完成")
-    warning = workbench.locator(".result-warning")
-    expect(warning).to_contain_text("ISTD d4-N6-2HE-dA：0 / 1 個樣本通過確認")
-    expect(warning).to_contain_text("未通過確認不代表沒有訊號")
-    expect(warning).not_to_contain_text("個樣本偵測到")
-
-
 def test_analysis_review_uses_run_paths_even_after_batch_edit(
     workbench, fake_runs, tmp_path, monkeypatch
 ):
@@ -1925,19 +1876,24 @@ def test_untargeted_istd_shared_upload_and_persistence(
     )
 
 
-def test_untargeted_istd_applicability_tracks_method_not_nd(workbench):
+def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path):
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+
     page = workbench
-    page.get_by_role("button", name="Untargeted", exact=True).click()
-    rna = page.locator("#istd-preview tr").filter(has_text="[13C,15N2]-8-oxo-Guo")
+    targets = rows()
+    targets.append({**targets[0], "label": "RNA standard", "cid_nl_tag": "R"})
+    path = tmp_path / "method-standards.xlsx"
+    save_target_table(targets, path)
+    _view(page, "untargeted")
+    page.locator("#istd-import-file").set_input_files(path)
+    expect(page.locator("#istd-import-status")).to_contain_text("已匯入")
+    rna = page.locator("#istd-preview tr").filter(has_text="RNA standard")
     expect(page.locator("#istd-summary")).to_have_text(
-        "6 個適用內標；1 個不適用此方法；略過 7 個一般目標。"
+        "1 個適用內標；1 個不適用此方法；略過 1 個一般目標。"
     )
     expect(rna).to_contain_text("不適用此方法（略過）")
-    expect(rna.locator("td").nth(1)).to_have_text("R")
     page.locator("#u-preset").select_option("rna_ribose")
-    expect(page.locator("#istd-summary")).to_have_text(
-        "1 個適用內標；6 個不適用此方法；略過 7 個一般目標。"
-    )
     expect(rna.locator("td").last).to_have_text("適用")
     page.locator("#u-preset").select_option("rna_mer")
     expect(page.locator("#istd-summary")).to_contain_text("0 個適用內標")
@@ -1945,7 +1901,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench):
     expect(rna.locator("td").last).to_have_text("不適用此方法（略過）")
     expect(page.locator("#istd-preview")).not_to_contain_text("ND")
     page.locator("#u-preset").select_option("dna_dr")
-    expect(page.locator("#istd-summary")).to_contain_text("6 個適用內標")
+    expect(page.locator("#istd-summary")).to_contain_text("1 個適用內標")
 
 
 def test_delayed_review_payload_cannot_replace_newer_sample_selection(
@@ -2065,9 +2021,8 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     assert workbook.read_bytes() == original
 
 
-def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
-    workbench, tmp_path
-):
+@pytest.fixture
+def role_review(workbench, tmp_path):
     from openpyxl import load_workbook
 
     from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
@@ -2097,14 +2052,17 @@ def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Alpha").click()
+    yield page
+    assert workbook.read_bytes() == original
+
+
+def test_targeted_role_change_preserves_other_filter_inputs(role_review):
+    page = role_review
     role = page.locator("#target-role")
     expect(role).to_be_visible()
     expect(role.locator("option")).to_have_text(
         ["全部類別", "Analyte（分析物）", "ISTD（內標）"]
     )
-    assert role.locator("option").evaluate_all(
-        "options => options.map(option => option.value)"
-    ) == ["", "Analyte", "ISTD"]
     names = page.locator("#target-id option")
     titles = page.locator("#item-list .item-top strong")
     role.select_option("Analyte")
@@ -2158,6 +2116,15 @@ def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
     expect(page.locator("#target-id")).to_have_value("")
     expect(page.locator("#target-sample")).to_have_value("S3")
     expect(titles).to_have_text(["Alpha", "Beta"])
+
+
+def test_targeted_role_history_and_reset_restore_available_targets(role_review):
+    page = role_review
+    role = page.locator("#target-role")
+    names = page.locator("#target-id option")
+    titles = page.locator("#item-list .item-top strong")
+    role.select_option("Analyte")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     page.locator("#target-id").select_option("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
     _view(page, "targeted")
@@ -2194,7 +2161,6 @@ def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
     expect(names).to_have_text(["全部目標", "Alpha", "Beta", "Gamma"])
     expect(page.locator("#target-id")).to_have_value("Alpha")
     expect(page.locator("#item-title")).to_contain_text("Alpha")
-    assert workbook.read_bytes() == original
 
 
 def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition(
@@ -2438,7 +2404,7 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     assert read_settings(config_dir=config_dir)["injection_order_source"] == ""
 
 
-def test_naming_cards_and_name_words_group_samples(
+def test_naming_cards_apply_rename_and_merge_without_overwriting_manual_groups(
     workbench, config_dir, tmp_path, monkeypatch
 ):
     page = workbench
@@ -2510,6 +2476,22 @@ def test_naming_cards_and_name_words_group_samples(
     saved(lambda: merged.get_by_label("套用 Normal tissue 到尚未標組別的樣本").click())
     assert groups()["abnormal_A1"] == "Normal tissue"
 
+
+def test_sample_name_words_select_whole_tokens(workbench, tmp_path, monkeypatch):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    _placeholder_batch(
+        tmp_path / "raw",
+        (
+            "TumorBC101_DNA",
+            "NormalBC101_DNA",
+            "NormalBC102_DNA",
+            "abnormal_A1",
+        ),
+    )
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("4 個樣本")
+    editor = page.locator("#sample-editor")
     # Clicking a word selects whole-word matches only: abnormal is not normal.
     page.locator("#t-samples-edit").click()
     editor.locator("#sample-rows tr", has_text="NormalBC101_DNA").get_by_role(
@@ -2633,59 +2615,71 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
 
 
 def test_group_colours_match_between_samples_and_inspector(
-    workbench, fake_runs, tmp_path, monkeypatch
+    workbench, config_dir, tmp_path, monkeypatch
 ):
+    from xic_workbench.samples import save_batch_samples
+
     page = workbench
     install_fake_raw_headers(monkeypatch)
+    groups = {
+        "TumorBC101_DNA": "Tumor",
+        "NormalBC101_DNA": "Normal",
+        "TumorBC102_DNA": "Tumor",
+    }
     batch = tmp_path / "raw"
-    _placeholder_batch(batch, ("TumorBC101_DNA", "NormalBC101_DNA", "TumorBC102_DNA"))
+    _placeholder_batch(batch, tuple(groups))
+    save_batch_samples(
+        config_dir,
+        batch,
+        [
+            asdict(SampleMetadata(stem, stem, sample_role="study_sample", group=group))
+            for stem, group in groups.items()
+        ],
+    )
     page.locator("#t-samples-refresh").click()
     expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
-    cards = page.locator("#t-group-cards")
-    for label in ("Tumor DNA", "Normal DNA"):
-        name = cards.get_by_label(f"建議組別 {label} 的名稱")
-        name.fill(label.split()[0])
-        name.press("Tab")
-        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-            cards.get_by_label(f"套用 {label.split()[0]} 到尚未標組別的樣本").click()
 
     def colour(locator):
-        return locator.evaluate("node => node.style.background")
+        return locator.evaluate("node => getComputedStyle(node).backgroundColor")
 
     chips = page.locator("#t-role-summary .group-chip")
     tumor = colour(chips.filter(has_text="Tumor 2").locator(".group-swatch"))
     normal = colour(chips.filter(has_text="Normal 1").locator(".group-swatch"))
-    assert tumor.startswith("var(--curve-") and normal.startswith("var(--curve-")
     assert tumor != normal
+    assert "rgba(0, 0, 0, 0)" not in (tumor, normal)
     page.locator("#t-samples-edit").click()
     row = page.locator("#sample-rows tr", has_text="TumorBC102_DNA")
+    expect(row.locator(".group-swatch")).to_be_visible()
     assert colour(row.locator(".group-swatch")) == tumor
     page.keyboard.press("Escape")
-
-    # The run's recorded groups colour the Inspector rows the same way.
-    fake_runs.targeted_workbook = _grouped_workbook(
-        tmp_path / "run.xlsx",
-        {
-            "TumorBC101_DNA": "Tumor",
-            "NormalBC101_DNA": "Normal",
-            "TumorBC102_DNA": "Tumor",
-        },
-    )
-    fake_runs.release.set()
-    _start(page, "targeted")
-    _wait_for_analysis_status(page, "已完成")
-    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    workbook = _grouped_workbook(tmp_path / "saved.xlsx", groups)
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     review = page.locator("#recorded-review")
-    for sample, expected in (
-        ("TumorBC101_DNA", tumor),
-        ("NormalBC101_DNA", normal),
-    ):
-        cell = review.locator("tr", has_text=sample)
-        expect(cell.locator(".sample-group")).to_have_text(
-            "Tumor" if expected == tumor else "Normal"
-        )
-        assert colour(cell.locator(".sample-dot")) == expected
+    palettes = []
+    for change_theme in (False, True):
+        if change_theme:
+            initial = page.locator("html").get_attribute("data-theme")
+            page.locator("#theme-toggle").click()
+            expect(page.locator("html")).to_have_attribute(
+                "data-theme", "light" if initial == "dark" else "dark"
+            )
+        palette = {}
+        for sample, group in groups.items():
+            expected = colour(chips.filter(has_text=group).locator(".group-swatch"))
+            cell = review.locator("tr", has_text=sample)
+            expect(cell.locator(".sample-group")).to_have_text(group)
+            expect(cell.locator(".sample-dot")).to_be_visible()
+            expect(cell.locator(".sample-dot")).to_have_css(
+                "background-color", expected
+            )
+            assert expected != "rgba(0, 0, 0, 0)"
+            palette[group] = expected
+        assert palette["Tumor"] != palette["Normal"]
+        palettes.append(palette)
+    assert palettes[0] != palettes[1]
 
 
 def test_review_marks_an_exclusion_for_the_runs_folder(

@@ -188,6 +188,42 @@ def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     assert workbook.read_bytes() == before
 
 
+def test_nd_curve_acquisition_reports_original_support_without_changing_saved_values(
+    tmp_path, monkeypatch
+):
+    from xic_inspector.sources.curve_bundle import read_curve_bundle
+    from xic_workbench.targeted_curves import export_targeted_curves
+
+    workbook = write_rare_detection_workbook(tmp_path / "nd.xlsx")
+    original = workbook.read_bytes()
+    raw_dir = tmp_path / "raw"
+    install_targeted_raws(
+        monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
+    )
+    output = tmp_path / "curves.json"
+    export_targeted_curves(
+        workbook,
+        output,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path,
+        target_id="Analyte",
+        sample_ids=("S1", "S2"),
+    )
+    traces = {
+        trace.sample_id: trace
+        for trace in read_curve_bundle(output).transitions[0].traces
+        if trace.quality_flags["target_label"] == "Analyte"
+    }
+    assert sum(value != 0 for value in traces["S1"].raw.intensity) == 1
+    assert (
+        "insufficient_original_xic_support"
+        in traces["S1"].quality_flags["reference_support_failures"]
+    )
+    assert not traces["S2"].quality_flags["reference_support_failures"]
+    assert traces["S1"].quality_flags["saved_area"] == "ND"
+    assert workbook.read_bytes() == original
+
+
 def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
     workbook,
     tmp_path,
