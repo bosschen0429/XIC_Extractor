@@ -33,6 +33,7 @@ class GroupingWorkset:
     known_identity_bindings: tuple[tuple[str, str], ...]
     rt_warp: BatchRtWarp | None
     elution_contexts: tuple[SampleElutionContext, ...] = ()
+    rt_calibration: BatchRtCalibration | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,8 @@ def replay_grouping(
     groups: list[CrossSamplePeakGroupHypothesis] = []
     for workset in inputs.worksets:
         frame = override or base_frame.with_warp(workset.rt_warp)
+        if override is None and workset.rt_calibration is not None:
+            frame = frame.with_sample_calibration(workset.rt_calibration)
         trajectories = resolve_peak_trajectories(
             workset.owners,
             workset.elution_contexts,

@@ -741,7 +741,9 @@ def _trajectory_seeds(
                 config.max_ppm,
             )
             or any(
-                peak_shape_union_conflict((member,), members[:index], config)
+                peak_shape_union_conflict(
+                    (member,), members[:index], config, trajectories=correspondence
+                )
                 is not None
                 for index, member in enumerate(members)
             )
@@ -1322,9 +1324,7 @@ def _window_candidate_edges(
                 )
                 <= 10
             )
-            # Dense distant pairs are compared as settled bands below.
-            if gap > 16 and not sparse_fallback:
-                break
+            distant_dense_pair = gap > 16 and not sparse_fallback
             if left.sample_stem == right.sample_stem:
                 continue
             if not trajectories.permits_membership((left.owner_id, right.owner_id)):
@@ -1346,11 +1346,16 @@ def _window_candidate_edges(
                     * 60.0
                 )
             )
-            rt_limit_sec = (
-                max(120.0, config.preferred_rt_sec)
-                if sparse_fallback
-                else min(120.0, 45.0 + 4.0 * gap)
-            )
+            # A crowded window can contain only distant singletons, so it
+            # cannot rely on established-band bridging to compare them.
+            # Use that bridge's RT tolerance for dense distant pairs too;
+            # an unobserved injection gap is not extra RT evidence.
+            if distant_dense_pair:
+                rt_limit_sec = config.preferred_rt_sec
+            elif sparse_fallback:
+                rt_limit_sec = max(120.0, config.preferred_rt_sec)
+            else:
+                rt_limit_sec = min(120.0, 45.0 + 4.0 * gap)
             rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
             if rt_delta_sec > rt_limit_sec:
                 continue
@@ -1377,7 +1382,7 @@ def _window_candidate_edges(
                 * rt_delta_sec
                 / (
                     rt_limit_sec
-                    if sparse_fallback
+                    if sparse_fallback or distant_dense_pair
                     else config.preferred_rt_sec + 3.0 * gap
                 )
                 + 0.15 * min(precursor_fraction, 2.0)

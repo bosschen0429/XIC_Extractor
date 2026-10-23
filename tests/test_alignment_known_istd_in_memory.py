@@ -258,6 +258,113 @@ def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
         )
 
 
+@pytest.mark.parametrize("separate_batch", [False, True])
+def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
+    tmp_path, monkeypatch, separate_batch
+):
+    from xic_extractor.configuration.targets import parse_target_rows
+    from xic_extractor.sample_metadata import SampleMetadata
+
+    masses = (300, 400, 500, 600, 700)
+    centers = (8, 12, 16, 23, 30)
+    targets = parse_target_rows(
+        [
+            dict(
+                label=f"I{i}",
+                mz=str(mz),
+                expected_rt_min=str(rt),
+                cid_nl_tag="dR",
+                role="istd",
+                istd_pair="",
+            )
+            for i, (mz, rt) in enumerate(zip(masses, centers, strict=True))
+        ]
+    )
+
+    class Raw:
+        def __init__(self, sample):
+            self.sample = sample
+            self.shift = int(sample[1:]) * 0.1
+
+        def acquisition_rt_bounds(self):
+            return 1.0, 35.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            rt = np.arange(low, high + 0.001, 0.02)
+            apex = centers[masses.index(round(mz))] + self.shift
+            intensity = 10 + 100000 * np.exp(-0.5 * ((rt - apex) / 0.13) ** 2)
+            if round(mz) == 600 and self.sample == "S2":
+                intensity += 300000 * np.exp(-0.5 * ((rt - 9.7) / 0.13) ** 2)
+            return rt, intensity
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays(
+                    *self.extract_xic(x.mz, x.rt_min, x.rt_max, x.ppm_tol)
+                )
+                for x in requests
+            )
+
+        def iter_ms2_scans(self, low, high):
+            return tuple(
+                Ms2ScanEvent(
+                    Ms2Scan(
+                        i + 1,
+                        rt,
+                        float(mz),
+                        np.array([mz - 116.0474]),
+                        np.array([1000.0]),
+                        1000.0,
+                    ),
+                    None,
+                    i + 1,
+                )
+                for i, (mz, center) in enumerate(zip(masses, centers, strict=True))
+                for rt in [
+                    9.7 if mz == 600 and self.sample == "S2" else center + self.shift
+                ]
+                if low <= rt <= high
+            )
+
+    @contextmanager
+    def open_raw(path, *args, **kwargs):
+        yield Raw(path.stem)
+
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
+    monkeypatch.setattr("xic_extractor.extraction.target_extraction.open_raw", open_raw)
+    reference = extract_batch_known_istd_reference(
+        targets,
+        {s: tmp_path / f"{s}.raw" for s in ("S0", "S1", "S2", "S3")},
+        tmp_path,
+        _config(tmp_path),
+        sample_metadata=tuple(
+            SampleMetadata(
+                s, s, batch_id="other" if separate_batch and s == "S2" else "main"
+            )
+            for s in ("S0", "S1", "S2", "S3")
+        ),
+    )
+    assert next(
+        rt
+        for label, sample, rt, _ in reference.coordinates
+        if label == "I3" and sample == "S2"
+    ) == pytest.approx(9.7 if separate_batch else 23.2, abs=0.021)
+    selection = next(
+        s
+        for s in reference.peak_selections
+        if s.label == "I3" and s.sample_stem == "S2"
+    )
+    assert selection.initial_rt_min == pytest.approx(9.7, abs=0.021)
+    if separate_batch:
+        assert selection.basis == "direct_targeted"
+        assert selection.supporting_samples == ()
+        return
+    assert selection.selected_rt_min == pytest.approx(23.2, abs=0.021)
+    assert not selection.nl_observed
+    assert selection.basis == "cross_sample_physical_peak"
+    assert selection.supporting_samples == ("S0", "S1", "S3")
+
+
 def _config(tmp_path):
     return ExtractionConfig(
         data_dir=tmp_path,

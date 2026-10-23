@@ -22,6 +22,19 @@ DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 
 
 @dataclass(frozen=True)
+class IstdReferencePeakSelection:
+    """Observed reference peak and its independent cross-sample support."""
+
+    label: str
+    sample_stem: str
+    selected_rt_min: float
+    initial_rt_min: float | None
+    nl_observed: bool
+    basis: str
+    supporting_samples: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class KnownIstdReference:
     """Declared ISTD definitions and measured reference coordinates, never areas."""
 
@@ -29,6 +42,7 @@ class KnownIstdReference:
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
+    peak_selections: tuple[IstdReferencePeakSelection, ...] = ()
     _batch_context: tuple[tuple[str, ...], tuple[tuple[str, int], ...]] | None = field(
         default=None, repr=False
     )
@@ -74,6 +88,10 @@ class KnownIstdReference:
     def explanation_provenance(self) -> dict[str, object]:
         """Project the batch map already used by grouping, without preparing it."""
         result: dict[str, object] = dict(self.provenance)
+        if self.peak_selections:
+            from dataclasses import asdict
+
+            result["peak_selections"] = [asdict(item) for item in self.peak_selections]
         prepared = self if self._batch_context is not None else self._prepared_batch
         if prepared is None or prepared._batch_context is None:
             return result
@@ -186,6 +204,39 @@ class KnownIstdReference:
         return interpolate_calibrated_rt_min(
             owner.owner_apex_rt, self._knots_by_sample.get(owner.sample_stem, ())
         )
+
+    def has_support(self, sample_stem: str) -> bool:
+        return sample_stem in self._knots_by_sample
+
+    @property
+    def coordinate_knots(
+        self,
+    ) -> tuple[tuple[str, tuple[tuple[float, float], ...]], ...]:
+        """Prepared bounded coordinates for curve-free grouping replay."""
+        return self._batch_knots
+
+    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
+        return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
+
+    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
+        corrected = interpolate_calibrated_rt_min(
+            observed_rt, self._knots_by_sample.get(sample_stem, ())
+        )
+        return observed_rt if corrected is None else corrected
+
+    @cached_property
+    def _inverse_knots_by_sample(self) -> dict[str, tuple[tuple[float, float], ...]]:
+        return {
+            sample: tuple((reference, observed) for observed, reference in knots)
+            for sample, knots in self._batch_knots
+        }
+
+    def offset_min(self, sample_stem: str, common_rt: float) -> float:
+        """Invert the same bounded map used to group measured peaks."""
+        observed = interpolate_calibrated_rt_min(
+            common_rt, self._inverse_knots_by_sample.get(sample_stem, ())
+        )
+        return 0.0 if observed is None else observed - common_rt
 
     def bind(
         self,
@@ -304,6 +355,7 @@ def mint_known_istd_reference_from_measurements(
     *,
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
+    peak_selections: tuple[IstdReferencePeakSelection, ...] = (),
 ) -> KnownIstdReference:
     """Mint a KnownIstdReference from declared targets and measured apex RT.
 
@@ -348,6 +400,7 @@ def mint_known_istd_reference_from_measurements(
         workbook_sha256=sha,
         anchor=build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
         coordinates=coords,
+        peak_selections=peak_selections,
     )
 
 

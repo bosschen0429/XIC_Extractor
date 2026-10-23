@@ -1264,6 +1264,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
     from xic_extractor.presets import apply_to_discovery, load_preset
+    from xic_extractor.sample_metadata import SampleMetadata
 
     source = (
         Path(__file__).parents[1]
@@ -1275,6 +1276,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))
     captured = {}
+    metadata = (SampleMetadata("S1", "S1", batch_id="declared-batch"),)
 
     def extract_reference(**kwargs):
         captured.update(kwargs)
@@ -1304,6 +1306,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             peak_config=_peak_config(),
             discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
+            sample_metadata=metadata,
         )
     )
     if not count:
@@ -1313,6 +1316,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             t for t in all_targets if t.is_istd and t.cid_nl_tag == tag
         )
         assert len(captured["targets"]) == count
+        assert captured["sample_metadata"] == metadata
 
 
 def test_alignment_outputs_publish_no_live_workflow_result() -> None:

@@ -101,6 +101,7 @@ def run_untargeted_application(
                 raw_paths_by_sample=raw_paths_by_sample,
                 dll_dir=request.dll_dir,
                 peak_config=request.peak_config,
+                sample_metadata=request.sample_metadata,
                 source_identifier=str(request.targets_csv.resolve()),
                 source_sha256=hashlib.sha256(
                     request.targets_csv.read_bytes()

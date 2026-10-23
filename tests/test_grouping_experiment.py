@@ -1,5 +1,6 @@
 """The experiment replays formal initial grouping and never schedules Backfill."""
 
+import csv
 import gzip
 import json
 from dataclasses import replace
@@ -167,6 +168,61 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
         '"changed_observation_count": 0'
         in (tmp_path / "replay" / "summary.json").read_text()
     )
+
+
+def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.untargeted_execution.partition.workers as workers
+    from tests.test_alignment_known_istd_in_memory import _make_target
+    from xic_extractor.alignment.drift_evidence import (
+        mint_known_istd_reference_from_measurements,
+    )
+    from xic_extractor.alignment.rt_frame import SampleRtFrame
+
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
+    reference = mint_known_istd_reference_from_measurements(
+        [_make_target("early"), _make_target("late")],
+        {
+            (label, sample): rt + (2 if sample == "S1" else 0)
+            for label, rt in (("early", 3), ("late", 13))
+            for sample in ("S0", "S1", "S2", "S3")
+        },
+    )
+    prepared = prepare_grouping_experiment(
+        plan,
+        mz_ranges=((499, 501),),
+        spool_directory=tmp_path,
+        workers=1,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        known_istd_reference=reference,
+    )
+    formal_frame = plan.context.rt_frame.with_sources(
+        known_istd_reference=reference
+    ).with_batch_calibration(BatchRtWarp((), 0))
+    assert formal_frame.common_rt_min("S1", 8) == pytest.approx(6)
+    expected = replay_grouping(prepared.inputs, rt_coordinates=formal_frame)
+    assert (
+        len(expected) == 2
+    )  # The observed 8 min peaks are 2 min apart after calibration.
+    assert group_signature(prepared.groups) == group_signature(expected)
+    snapshot = tmp_path / "istd.json.gz"
+    write_grouping_inputs(snapshot, prepared.inputs, provenance={})
+    restored, _ = read_grouping_inputs(snapshot)
+    assert group_signature(replay_grouping(restored)) == group_signature(expected)
+    assert group_signature(
+        replay_grouping(restored, rt_coordinates=SampleRtFrame())
+    ) != group_signature(expected)
+    output = tmp_path / "istd-replay"
+    assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
+    with (output / "members.tsv").open(encoding="utf-8") as stream:
+        members = list(csv.DictReader(stream, delimiter="\t"))
+    for member in members:
+        expected_rt = float(member["observed_rt"]) - (
+            2 if member["sample_stem"] == "S1" else 0
+        )
+        assert float(member["comparison_rt"]) == pytest.approx(expected_rt)
 
 
 def test_rt_coordinate_override_changes_membership_without_rewriting_measurements(

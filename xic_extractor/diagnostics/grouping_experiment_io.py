@@ -113,6 +113,9 @@ def write_grouping_inputs(
                 "rt_warp": asdict(workset.rt_warp)
                 if workset.rt_warp is not None
                 else None,
+                "rt_calibration": _rt_calibration_payload(workset.rt_calibration)
+                if workset.rt_calibration is not None
+                else None,
             }
             for workset in inputs.worksets
         ],
@@ -152,6 +155,9 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                     tuple(binding) for binding in value["known_identity_bindings"]
                 ),
                 rt_warp=warp,
+                rt_calibration=_read_rt_calibration_payload(value["rt_calibration"])
+                if value.get("rt_calibration") is not None
+                else None,
                 elution_contexts=tuple(
                     SampleElutionContext(
                         **{
@@ -265,6 +271,10 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
 def read_rt_calibration(path: Path) -> BatchRtCalibration:
     """Read the existing sample_rt_calibration artifact into its domain owner."""
     value = json.loads(path.read_text(encoding="utf-8"))
+    return _read_rt_calibration_payload(value)
+
+
+def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
     if value.get("schema") != "sample_rt_calibration":
         raise ValueError("Expected a sample_rt_calibration JSON artifact")
     samples = {}
@@ -306,28 +316,29 @@ def read_rt_calibration(path: Path) -> BatchRtCalibration:
 
 
 def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
-    write_json(
-        path,
-        {
-            "schema": "sample_rt_calibration",
-            "schema_version": 1,
-            "policy": asdict(calibration.policy),
-            "knots": [asdict(knot) for knot in calibration.knots],
-            "samples": [
-                {
-                    "sample_stem": sample.sample_stem,
-                    "status": sample.status,
-                    "knots_observed_reference_min": sample.knots,
-                    "front_shift_min": sample.front_shift_min,
-                    "perturbation_status": sample.perturbation_status,
-                }
-                for sample in calibration.samples.values()
-            ],
-            "front_shift_center_min": calibration.front_shift_center_min,
-            "front_shift_mad_min": calibration.front_shift_mad_min,
-            "perturbation_tolerance_min": calibration.perturbation_tolerance_min,
-        },
-    )
+    write_json(path, _rt_calibration_payload(calibration))
+
+
+def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
+    return {
+        "schema": "sample_rt_calibration",
+        "schema_version": 1,
+        "policy": asdict(calibration.policy),
+        "knots": [asdict(knot) for knot in calibration.knots],
+        "samples": [
+            {
+                "sample_stem": sample.sample_stem,
+                "status": sample.status,
+                "knots_observed_reference_min": sample.knots,
+                "front_shift_min": sample.front_shift_min,
+                "perturbation_status": sample.perturbation_status,
+            }
+            for sample in calibration.samples.values()
+        ],
+        "front_shift_center_min": calibration.front_shift_center_min,
+        "front_shift_mad_min": calibration.front_shift_mad_min,
+        "perturbation_tolerance_min": calibration.perturbation_tolerance_min,
+    }
 
 
 def group_signature(groups: Sequence[CrossSamplePeakGroupHypothesis]) -> tuple:
@@ -360,7 +371,7 @@ def write_grouping_result(
     group_rows = []
     decisions: list[dict[str, Any]] = []
     coordinate_by_owner = {
-        owner.owner_id: rt_coordinates or workset.rt_warp
+        owner.owner_id: rt_coordinates or workset.rt_calibration or workset.rt_warp
         for workset in inputs.worksets
         for owner in workset.owners
     }

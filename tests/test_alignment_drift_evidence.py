@@ -418,6 +418,31 @@ def _batch_reference(tmp_path: Path, observations):
     return read_known_istd_reference(path)
 
 
+def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
+    reference = _batch_reference(
+        tmp_path,
+        {
+            "early": (8, 12, 20, 30),
+            "middle": (8.2, 12.2, 20.2, 30.2),
+            "late": (8.4, 12.4, 20.4, 30.4),
+        },
+    )
+    samples = frozenset({"early", "middle", "late"})
+    orders = {"early": 1, "middle": 2, "late": 3}
+    frame = (
+        SampleRtFrame(injection_order=orders, sample_universe=samples)
+        .with_sources(known_istd_reference=reference)
+        .with_batch_calibration(BatchRtWarp((), 0))
+    )
+    for sample, observed in (("early", 16), ("middle", 16.2), ("late", 16.4)):
+        assert frame.has_support(sample)
+        assert frame.common_rt_min(sample, observed) == pytest.approx(16.2)
+        assert 16.2 + frame.offset_min(sample, 16.2) == pytest.approx(observed)
+    assert frame.common_rt_min("middle", 3.0) == 3.0
+    derived = SampleRtFrame().with_calibration(frame)
+    assert derived.common_rt_min("late", 16.4) == pytest.approx(16.2)
+
+
 @pytest.mark.parametrize(
     ("early_knots", "late_knots"),
     [

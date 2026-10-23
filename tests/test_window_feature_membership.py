@@ -192,6 +192,42 @@ def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
     }
 
 
+def test_ordered_doublet_correspondence_survives_shape_disagreement():
+    offsets = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, f"{sample}:{band}", apex),
+            peak_shape=prepare_local_peak_shape(
+                offsets + apex,
+                3 - offsets
+                if sample == "b" and band == "early"
+                else np.exp(-0.5 * (offsets / 0.07) ** 2),
+                apex_rt_min=apex,
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+        for band, apex in (("early", 10 + shift), ("late", 10.7 + shift))
+    )
+    contexts = tuple(
+        resolved_elution_context(sample, ((10 + shift, 30), (10.7 + shift, 100)))
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+    )
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order={"a": 1, "b": 2}
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2}),
+        peak_trajectories=trajectories,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a:early", "b:early")),
+        frozenset(("a:late", "b:late")),
+    }
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     bootstrap: bool,
@@ -1207,6 +1243,32 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
             group.disposition == "undecided" and group.owner_ids == (owner.owner_id,)
             for group in result.groups
         )
+
+
+@pytest.mark.parametrize("spacing", (17, 35))
+@pytest.mark.parametrize("reverse", (False, True))
+def test_distant_samples_form_distinct_bands_in_a_crowded_mass_window(
+    spacing: int, reverse: bool
+) -> None:
+    # Nearby peaks inflate local detection density; none of the samples has
+    # a neighbor within 16 injections from which to establish a band first.
+    orders = {f"s{i}": 1 + i * spacing for i in range(4)}
+    owners = tuple(
+        _synthetic_owner(sample, f"{band}-{sample}", rt + i * 0.01)
+        for band, rt in (("early", 9.0), ("middle", 10.0), ("late", 11.0))
+        for i, sample in enumerate(orders)
+    )
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(g.owner_ids) for g in result.groups} == {
+        frozenset(f"{band}-{sample}" for sample in orders)
+        for band in ("early", "middle", "late")
+    }
+    assert all(g.disposition == "assigned" for g in result.groups)
 
 
 def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
