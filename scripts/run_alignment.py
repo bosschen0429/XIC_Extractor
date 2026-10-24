@@ -930,6 +930,7 @@ def _peak_config(
         resolver_mode=resolver_mode,
         baseline_integration_method=baseline_integration_method,
         mass_recalibration=mass_recalibration,
+        parallel_mode="process",
     )
 
 

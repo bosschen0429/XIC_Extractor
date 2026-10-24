@@ -206,7 +206,9 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
 
     target = _make_target("ISTD")
 
-    def process_file(config, targets, path, *, scoring_context_factory):
+    def process_file(
+        config, targets, path, *, scoring_context_factory, expected_acquisition_source
+    ):
         assert targets == [target]
         assert config.dll_dir == tmp_path / "dll"
         projection = (
@@ -240,6 +242,63 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
         _config(tmp_path),
     )
     assert reference.coordinates == (("ISTD", "A", 3.0, 0.0),)
+
+
+def test_istd_reference_runs_raw_files_through_targeted_process_backend(
+    tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from tests.test_target_extraction import _candidate, _peak_result
+    from xic_extractor.extraction.result_models import (
+        ExtractionResult,
+        FileResult,
+        RunOutput,
+    )
+
+    target = _make_target("ISTD")
+    calls = []
+
+    def run_process(config, targets, *, raw_paths, injection_order):
+        calls.append((config.parallel_mode, targets, raw_paths))
+        return RunOutput(
+            file_results=[
+                FileResult(
+                    path.stem,
+                    {
+                        "ISTD": ExtractionResult(
+                            peak_result=_peak_result(_candidate(rt=rt)), nl=None
+                        )
+                    },
+                )
+                for path, rt in zip(raw_paths, (3.0, 3.2), strict=True)
+            ],
+            diagnostics=[],
+        )
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.process_backend.run_process", run_process
+    )
+    reference = extract_batch_known_istd_reference(
+        [target, _make_target("Analyte", is_istd=False)],
+        {"B": tmp_path / "b.raw", "A": tmp_path / "a.raw"},
+        tmp_path / "dll",
+        replace(_config(tmp_path), parallel_mode="process"),
+    )
+    assert calls == [("process", [target], [tmp_path / "a.raw", tmp_path / "b.raw"])]
+    assert {(label, sample) for label, sample, *_ in reference.coordinates} == {
+        ("ISTD", "A"),
+        ("ISTD", "B"),
+    }
+
+
+def test_alignment_peak_config_runs_istd_extraction_in_process_mode(tmp_path):
+    from scripts.run_alignment import _peak_config
+
+    assert (
+        _peak_config(tmp_path, tmp_path, tmp_path, "local_minimum").parallel_mode
+        == "process"
+    )
 
 
 def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
