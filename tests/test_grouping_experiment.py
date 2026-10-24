@@ -129,6 +129,14 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
     )
     assert prepared.selected_partition_count == 1
     assert len(prepared.groups) == 1
+    whole_batch = prepare_grouping_experiment(
+        plan,
+        spool_directory=tmp_path / "whole",
+        workers=1,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+    assert whole_batch.selected_partition_count == whole_batch.total_partition_count
+    assert group_signature(whole_batch.groups) == group_signature(prepared.groups)
     assert prepared.inputs.sample_stems == ("S0", "S1", "S2", "S3")
     snapshot = tmp_path / "inputs.json.gz"
     write_grouping_inputs(

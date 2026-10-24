@@ -118,7 +118,7 @@ def grouping_inputs_from_prepared(
 def prepare_grouping_experiment(
     plan: UntargetedInputPlan,
     *,
-    mz_ranges: Sequence[tuple[float, float]],
+    mz_ranges: Sequence[tuple[float, float]] = (),
     spool_directory: Path,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
@@ -126,7 +126,10 @@ def prepare_grouping_experiment(
     workers: int = 4,
     progress: Callable[[str], None] | None = None,
 ) -> PreparedGroupingExperiment:
-    """Assess complete selected partitions, then stop before Backfill planning."""
+    """Assess complete selected partitions, then stop before Backfill planning.
+
+    Without m/z ranges every partition is retained, giving a whole-batch snapshot.
+    """
     if workers < 1:
         raise ValueError("workers must be positive")
     if any(subject.composition is not None for subject in plan.subject_batch.subjects):
@@ -143,7 +146,8 @@ def prepare_grouping_experiment(
     selected = tuple(
         partition
         for partition in adapter.bootstrap_partitions
-        if any(
+        if not mz_ranges
+        or any(
             left <= upper and lower <= right
             for subject in partition.payload
             for lower, upper in (cid_nl_method_subject_resolver_interval(subject),)

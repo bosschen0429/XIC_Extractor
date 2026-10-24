@@ -36,7 +36,7 @@ workflow owner rather than chaining similarly named commands.
 | Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
-| Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
+| Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping`, then `tools.diagnostics.grouping_experiment replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
 | Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](#duplicate_quantificationpy) |
 | Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
@@ -498,12 +498,14 @@ evidence sidecar.
 
 ### `grouping_experiment.py`
 
-**Purpose:** Query arbitrary measured-mass ranges in saved Discovery, prepare
-complete selected partitions once, and replay grouping with parameter or RT
-coordinate changes without RAW or Backfill.
+**Purpose:** Query arbitrary measured-mass ranges in saved Discovery and replay
+a formal grouping snapshot with parameter, RT coordinate or code changes without
+RAW or Backfill.
 
-**Owner:** `xic_extractor.untargeted_execution.grouping_experiment` owns bounded
-preparation; `xic_extractor.alignment.grouping_experiment` delegates replay to
+**Owner:** `scripts.run_alignment --stop-after grouping` writes the snapshot
+through the formal Alignment application (same config, ISTD reference,
+assessment, calibration and grouping as a full run);
+`xic_extractor.alignment.grouping_experiment` delegates replay to
 the formal grouping owner. Snapshot and table I/O live in
 `xic_extractor.diagnostics.grouping_experiment_io`.
 
@@ -514,7 +516,7 @@ loop over saved Discovery candidates for scalar CID-NL presets:
 
 ```powershell
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
-.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment prepare --discovery-batch-index <index.csv> --mz-range 396.19:396.21 --raw-dir <raw-directory> --dll-dir <dll-directory> --acquisition-cache-dir <cache-directory> --output-dir output/grouping
+.venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping <usual Alignment arguments> --output-dir output/grouping
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
@@ -524,21 +526,18 @@ and reports measured-mass candidates plus every sample, including zero-match
 samples. A query is a lookup in the saved Discovery population, not a fresh
 extraction at that mass.
 
-Prepare retains the complete sample population and selects **whole original
-partitions** intersecting the requested intervals for comparison. Calibration
-uses bootstrap evidence from **all** partitions, not only the selected masses.
-It runs the formal initial assessment and grouping owners, then stops before
-Backfill. Its summary reports selected versus total partition counts; initial
-job count includes the full calibration scope. Initial preparation requires the matching
-RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
-and `--known-istd-reference` accept existing metadata and reference artifacts.
+`--stop-after grouping` retains every partition of the batch, runs the formal
+initial assessment, RT calibration and grouping, writes
+`grouping-inputs.json.gz` into the output directory and stops before Backfill
+and publication. It requires the matching RAW files and current Discovery
+owner-closure artifacts, and checks that replaying the written snapshot equals
+the formal grouping.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
 member identities, frozen batch calibration, compact elution contexts, local peak-shape
 descriptors and configuration. It omits full chromatogram arrays. Older snapshots
-without shape descriptors cannot test shape-aware membership; prepare supplies
-them through the formal owner adapter. Prepare checks snapshot replay against
-the formal initial grouping.
+without shape descriptors cannot test shape-aware membership; a new
+`--stop-after grouping` snapshot supplies them through the formal owner adapter.
 Backfill acquisition windows are not grouping inputs. The snapshot reader also
 accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
@@ -547,7 +546,8 @@ Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 replay of the same snapshot, such as one produced by another commit, and writes
 `membership-diff.tsv` (merges and splits with their apex RT gap and samples).
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
-grouping affect replay. Owner detection and integration changes require prepare.
+grouping affect replay. Owner detection and integration changes require a new
+snapshot.
 
 `--calibrate` calls the formal sample RT calibration owner on established
 baseline groups with at least three measured members. `--loess-fraction` controls
