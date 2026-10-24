@@ -381,7 +381,10 @@ def prepare_report(
         raise InspectorError(3, f"Source unavailable: {report_path}")
 
     try:
-        source = open_source(report_path, query_only=selection.strategy == "query")
+        source = open_source(
+            report_path,
+            query_only=selection.strategy == "query" and not selection.browsing,
+        )
         summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
@@ -391,13 +394,6 @@ def prepare_report(
     if selection.nearest_mz is not None:
         if isinstance(source, CurveBundleSource):
             raise InspectorError(2, "Nearest m/z requires saved batch results")
-
-    if selection.browsing and summary.get("query_index_version") == 1:
-        # Older indexes lack saved review masks. Their metadata adapter remains
-        # usable without writing a replacement index beside the user's result.
-        from xic_inspector.sources.cid_nl import CidNlSource
-
-        source = CidNlSource(report_path)
 
     if (
         selection.target_ids

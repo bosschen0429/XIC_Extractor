@@ -7,6 +7,7 @@ import http.client
 import json
 import re
 import socket
+import sqlite3
 import threading
 import time
 import weakref
@@ -282,42 +283,84 @@ def _browse_review_batch(tmp_path):
     return report, matrix
 
 
+@pytest.mark.parametrize("index_version", (None, 1, 2))
 def test_batch_review_filters_saved_concerns_before_paging_and_combines_search(
     tmp_path,
+    index_version,
 ):
     report, matrix = _browse_review_batch(tmp_path)
+    if index_version != 2:
+        with sqlite3.connect(report) as db:
+            tables = db.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name LIKE 'query_%'"
+            ).fetchall()
+            for (table,) in tables:
+                if index_version is None or table == "query_review":
+                    db.execute(f'DROP TABLE "{table}"')
+            summary = json.loads(
+                db.execute(
+                    "SELECT payload FROM metadata WHERE key='summary'"
+                ).fetchone()[0]
+            )
+            summary.pop("query_index_version")
+            if index_version is not None:
+                summary["query_index_version"] = index_version
+            db.execute(
+                "UPDATE metadata SET payload=? WHERE key='summary'",
+                (json.dumps(summary),),
+            )
     original = [path.read_bytes() for path in (report, matrix)]
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    try:
-        workspace.open(str(report))
-        page = workspace.query(
-            {"review_filter": "attention", "order_by": "mz", "limit": 2}
-        )
+    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+
+        def query(filters):
+            status, page, _ = request("/api/query", filters)
+            assert status == 200
+            return page
+
+        status, opened, _ = request("/api/open", {"source": str(report)})
+        assert status == 200
+        assert opened["review_counts"]["attention"] == 3
+        assert opened["items"][0]["group_id"] == "G30"
+        page = query({"review_filter": "attention", "order_by": "mz", "limit": 2})
         assert page["matched_count"] == 3
         assert [item["group_id"] for item in page["items"]] == ["G28", "G29"]
         assert page["review_counts"]["attention"] == 3
+        assert page["items"][0]["review"] == {
+            "sample_count": 2,
+            "numeric_count": 1,
+            "zero_count": 0,
+            "decision_count": 2,
+            "attention_count": 1,
+            "reasons": ["unresolved"],
+        }
         assert page["items"][1]["review"]["reasons"] == ["method_hold"]
-        tail = workspace.query(
+        tail = query(
             {"review_filter": "attention", "order_by": "mz", "limit": 2, "offset": 2}
         )
         assert [item["group_id"] for item in tail["items"]] == ["G30"]
-        held = workspace.query({"review_filter": "method_hold", "nearest_mz": 123.4567})
+        held = query({"review_filter": "method_hold", "nearest_mz": 123.4567})
         assert [item["group_id"] for item in held["items"]] == ["G29"]
         assert held["items"][0]["mz_distance"] == pytest.approx(0.0277)
-        missing = workspace.query(
-            {"review_filter": "attention", "value_filter": "missing"}
-        )
+        missing = query({"review_filter": "attention", "value_filter": "missing"})
         assert [item["group_id"] for item in missing["items"]] == ["G28"]
-        zero = workspace.query({"value_filter": "zero"})
+        zero = query({"value_filter": "zero"})
         assert [item["group_id"] for item in zero["items"]] == ["G01"]
         assert zero["items"][0]["review"]["attention_count"] == 0
-        scoped = workspace.query({"review_filter": "method_hold", "sample_id": "S2"})
+        assert zero["items"][0]["review"]["zero_count"] == 2
+        complete = query({"value_filter": "complete"})
+        assert complete["matched_count"] == 30
+        assert all(item["review"]["numeric_count"] == 2 for item in complete["items"])
+        assert query({"review_filter": "unavailable"})["matched_count"] == 0
+        scoped = query({"review_filter": "method_hold", "sample_id": "S1"})
+        assert [item["group_id"] for item in scoped["items"]] == ["G29"]
+        assert scoped["items"][0]["review"]["numeric_count"] == 1
+        assert scoped["items"][0]["review"]["attention_count"] == 1
+        scoped = query({"review_filter": "method_hold", "sample_id": "S2"})
         assert scoped["matched_count"] == 0
-        nearest = workspace.query({"nearest_mz": 123.4})
+        nearest = query({"nearest_mz": 123.4})
         assert nearest["items"][0]["group_id"] == "G00"
         assert nearest["items"][0]["rt_apex_min"] is None
-    finally:
-        workspace.close()
     assert [path.read_bytes() for path in (report, matrix)] == original
 
 

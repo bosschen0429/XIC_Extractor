@@ -43,6 +43,7 @@ from xic_inspector.selection.canonical import (
     Witness,
     build_canonical_ref,
 )
+from xic_inspector.selection.review import finite_number, reason_category
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
 
@@ -389,6 +390,39 @@ class CidNlSource:
             )
             for sid, flag in flags.items()
         }
+        # Keep only browse facts after reading this row's compact cells.
+        # The full per-sample presentation is still loaded for the chosen page.
+        reasons = {
+            reason_category(_attention_reason("cell_decisions", cell)) for cell in cells
+        }
+        reasons.add(reason_category(group.get("disposition"), group=True))
+        for cid, sid in scoped:
+            for record_kind, rid in self.links.get((cid, sid), ()):
+                if record_kind not in ("method_assessments", "initial_edges"):
+                    continue
+                fact = self.records.get(record_kind, {}).get(rid, {})
+                if fact.get(
+                    "canonical_sample_identity_id", fact.get("sample_id")
+                ) not in (None, sid):
+                    continue
+                if fact.get("group_hypothesis_id") not in (None, gid):
+                    continue
+                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+                    continue
+                reasons.add(reason_category(_attention_reason(record_kind, fact)))
+        values = {
+            cell["canonical_sample_identity_id"]: cell.get("value") for cell in cells
+        }
+        review = {
+            "sample_count": len(scope),
+            "numeric_count": sum(finite_number(value) for value in values.values()),
+            "zero_count": sum(
+                finite_number(value) and value == 0 for value in values.values()
+            ),
+            "decision_count": len(values),
+            "attention_count": sum(bool(flag & ATTENTION) for flag in flags.values()),
+            "reasons": sorted(reason for reason in reasons if reason is not None),
+        }
         members = group.get("member_subjects", [])
         _, ref = build_canonical_ref(
             kind,
@@ -413,6 +447,7 @@ class CidNlSource:
             ),
             is_attention=attention,
             details={
+                "review": review,
                 "review_summary": {
                     "observed_sample_count": len(observed & sample_ids),
                     "scope_sample_count": len(sample_ids),
@@ -424,7 +459,7 @@ class CidNlSource:
                     if "member_subjects" in group
                     else len(keys),
                     "related_group_count": 0,
-                }
+                },
             },
         )
 

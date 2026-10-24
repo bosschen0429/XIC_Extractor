@@ -45,6 +45,8 @@ def reason_category(reason, *, group=False):
 def item_review_facts(item, sample_count):
     """Translate an already-scoped source item, preserving sample attribution."""
     details = item.details
+    if "review" in details:
+        return details["review"]
     reasons = set()
     affected: set[str] = set()
     if item.kind == "target":
