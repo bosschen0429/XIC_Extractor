@@ -309,25 +309,32 @@ mass, and product mass, and handles competition within each sample. Currently:
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
 - Supported common-coordinate apices and measured peak edges are the primary
-  physical correspondence check. An apex outside the other's calibrated
-  measured edge excludes correspondence, across every pair in the proposed group.
+  physical correspondence check. Each side of a proposed union contributes a
+  consensus region: the median of its members' supported apices and measured
+  edges. A consensus apex outside the other side's consensus edges excludes
+  correspondence, so one narrow or locally miscalibrated member cannot veto an
+  otherwise coincident group. A calibrated side and a side without calibration
+  support do not share a frame and do not correspond.
   A peak edge outside the calibration span remains unknown: it is neither
   extrapolated nor clipped into a new measured boundary. It cannot establish
-  exclusion or switch supported apices to a raw-shape veto. A chain
-  of overlapping neighbors cannot hide incompatible endpoints. This is a
+  exclusion or switch supported apices to a raw-shape veto. Every union is
+  checked against the complete groups, so a chain of overlapping neighbors
+  cannot pull a separated band in. This is a
   correspondence constraint, not proof of chemical identity; same-sample
   competition and physical order still apply.
-- When both apices lack calibration support, measured peak
-  shape supplies the existing fallback evidence. The owner adapter
+- When neither side has calibration support, measured peak
+  shape supplies the fallback evidence. The owner adapter
   retains an apex-relative, own-max Gaussian-smoothed shape from the selected
   raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
   translates RT but does not stretch width. Only in this private derivative,
   an observed nonpositive gap separates the selected apex's positive signal
   island from neighboring signal; continuous background is not subtracted.
   This does not reselect the peak or change the measured observation.
-  A local Pearson similarity below
+  A median local Pearson similarity across the two sides' member pairs below
   `min_peak_shape_similarity` (default 0.80) prevents ordinary membership in
-  that fallback, but cannot veto supported common-coordinate regions.
+  that fallback; a single dissimilar pair does not. Pairs distinguished by
+  physical peak order are not shape evidence. The fallback cannot veto
+  supported common-coordinate regions.
   At least five acquired points per trace and half of the shared +/-0.35-minute
   grid are required. Fine-shape comparison also requires five measured points
   at or above half height in each retained primary signal; zeros, smoothing and

@@ -293,7 +293,9 @@ def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
 
 
 @pytest.mark.parametrize("bootstrap", (False, True))
-def test_common_peak_region_checks_entire_group_not_only_adjacent_edges(bootstrap):
+def test_common_peak_region_uses_group_consensus_not_every_member_pair(bootstrap):
+    # Band a spans more than one member's narrow region (a1 and a4 exclude each
+    # other's apex); band b lies outside band a's consensus region.
     owners = tuple(
         replace(
             _synthetic_owner(sample, sample, apex),
@@ -301,11 +303,12 @@ def test_common_peak_region_checks_entire_group_not_only_adjacent_edges(bootstra
             owner_peak_end_rt=apex + 0.1,
         )
         for sample, apex in (
-            ("mid-first", 10.08),
-            ("early", 10.0),
-            ("mid", 10.08),
-            ("late", 10.16),
-            ("mid-last", 10.08),
+            ("a1", 10.0),
+            ("b1", 10.5),
+            ("a2", 10.04),
+            ("a3", 10.08),
+            ("b2", 10.54),
+            ("a4", 10.12),
         )
     )
     frame = SampleRtFrame(
@@ -322,13 +325,22 @@ def test_common_peak_region_checks_entire_group_not_only_adjacent_edges(bootstra
         rules=CID_NL_GROUPING_RULES,
         bootstrap=bootstrap,
     )
-    assert not any(
-        {"early", "late"}.issubset(group.owner_ids) for group in result.groups
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a1", "a2", "a3", "a4")),
+        frozenset(("b1", "b2")),
+    }
+    by_id = {owner.owner_id: owner for owner in owners}
+    band_a = tuple(by_id[owner_id] for owner_id in ("a1", "a2", "a3"))
+    assert supports_existing_feature(
+        by_id["a4"],
+        band_a,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
     )
-    assert sum(len(group.owner_ids) for group in result.groups) == len(owners)
     assert not supports_existing_feature(
-        owners[3],
-        (owners[0], owners[1], owners[2]),
+        by_id["b1"],
+        band_a,
         config=AlignmentConfig(),
         rt_frame=frame,
         rules=CID_NL_GROUPING_RULES,
@@ -372,20 +384,33 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     )
 
 
-def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> None:
+def test_singleton_extensions_follow_the_band_majority_shape() -> None:
     offsets = np.linspace(-0.6, 0.6, 121)
-    widths = {**{f"seed-{i}": 0.07 for i in range(1, 15)}, "wide": 0.25, "narrow": 0.03}
-    orders = {**{f"seed-{i}": i for i in range(1, 15)}, "wide": 40, "narrow": 70}
+    # "broader" differs only from the one narrow member (0.74 < 0.80) and
+    # matches the rest of the band (0.94); the ramp matches none of it.
+    gaussian = {
+        **{f"seed-{i}": 0.07 for i in range(1, 15)},
+        "narrow": 0.03,
+        "broader": 0.12,
+    }
+    orders = {
+        **{f"seed-{i}": i for i in range(1, 15)},
+        "narrow": 15,
+        "broader": 40,
+        "ramp": 70,
+    }
     owners = tuple(
         replace(
             _synthetic_owner(name, name, 10.0),
             peak_shape=prepare_local_peak_shape(
                 offsets + 10,
-                np.exp(-0.5 * (offsets / width) ** 2),
+                np.exp(-0.5 * (offsets / gaussian[name]) ** 2)
+                if name in gaussian
+                else 3 - offsets,
                 apex_rt_min=10,
             ),
         )
-        for name, width in widths.items()
+        for name in orders
     )
     result = infer_feature_memberships(
         owners,
@@ -393,8 +418,10 @@ def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> N
         rt_frame=SampleRtFrame(injection_order=orders),
         rules=CID_NL_GROUPING_RULES,
     )
-    assert sorted(len(group.owner_ids) for group in result.groups) == [1, 15]
-    assert not any({"wide", "narrow"}.issubset(g.owner_ids) for g in result.groups)
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset((*(f"seed-{i}" for i in range(1, 15)), "narrow", "broader")),
+        frozenset(("ramp",)),
+    }
 
 
 @pytest.mark.parametrize("with_order", [False, True])
