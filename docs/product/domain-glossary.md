@@ -296,8 +296,9 @@ contract says otherwise.
 
 - `sample_metadata`: canonical schema for sample identity, injection order,
   role, batch, and QC context.
-- `validation-minimal`: lightweight Alignment validation output profile. It is
-  an artifact surface, not production-readiness evidence by itself.
+- `validation-minimal`: lightweight Alignment validation output profile,
+  including the compact CID-NL explanation. It is an artifact surface, not
+  production-readiness evidence by itself.
 
 ## Processing Lineage Terms
 

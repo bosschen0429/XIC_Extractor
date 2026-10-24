@@ -48,6 +48,7 @@ def test_validation_minimal_output_level_is_machine_gate_surface_only():
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_backfill_cell_evidence.tsv",
+        EXPLANATION_ARTIFACT_NAME,
     )
 
 
@@ -64,13 +65,13 @@ def test_all_output_levels_keep_same_provenance_filename_without_alias(
     assert artifacts.count("alignment_owner_backfill_peak_fact_provenance.tsv") == 1
 
 
-@pytest.mark.parametrize("level", ["production", "machine", "validation-minimal"])
+@pytest.mark.parametrize("level", ["production", "machine"])
 def test_non_diagnostic_levels_do_not_produce_the_explanation_report(level):
     """The report is a per-cell projection; only diagnostic levels pay for it."""
     assert EXPLANATION_ARTIFACT_NAME not in artifact_names_for_output_level(level)
 
 
-@pytest.mark.parametrize("level", ["debug", "validation"])
+@pytest.mark.parametrize("level", ["debug", "validation", "validation-minimal"])
 def test_diagnostic_levels_produce_the_explanation_report(level):
     assert EXPLANATION_ARTIFACT_NAME in artifact_names_for_output_level(level)
 

@@ -67,7 +67,7 @@ publication, alongside their runtime marker; see
 [execution explanations](xic-inspector.md#cid-nl-execution-explanations).
 Identity, review, provenance, Backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
-their schemas and value policies are unchanged. TSV-only `production` and
+their schemas and value policies are unchanged. `production` and
 `validation-minimal` publication consumes finalized rows in one pass, retaining
 the identity census rather than the complete cell and decision populations.
 Public row numbering and identity hashes span that complete ordered stream.
@@ -174,7 +174,8 @@ Alignment additionally exposes `alignment_review.tsv` for review,
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.
 These are public schema surfaces, not independent scientific authority.
 The standard fast public validation profile remains `validation-minimal`;
-it does not establish production readiness by itself.
+it also writes the compact `cid_nl_explanation.sqlite` so a run can be reviewed
+and scored without a rerun. It does not establish production readiness by itself.
 
 ## Boundaries
 
