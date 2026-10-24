@@ -143,13 +143,15 @@ def candidate_selection_decision_record(
     if facts.rt.role == "ISTD" and reference is not None and not strict_selection_rt:
         # Known-standard localization precedes trace-strength tie-breaks. Two
         # peaks sharing the configured NL are not interchangeable identities.
-        # Reuse the anchor's physical-completeness/proximity rule; this neither
-        # crops acquisition nor promotes a nearby peak without method support.
+        # Keep physical completeness first, then continuous reference distance:
+        # drift outside a fixed proximity radius must not erase this identity
+        # preference. This neither crops acquisition nor supplies method support.
         gate = (
             (
                 "istd_reference_completeness_rank",
-                float(_typed_anchor_rank(facts, selection_rt=reference)),
+                float(not _typed_anchor_complete(facts)),
             ),
+            ("istd_reference_distance", distance),
             *gate,
         )
     # Only positive, peak-owned method support precedes RT hints. An unobserved
@@ -187,14 +189,19 @@ def _facts(item: ScoredCandidate) -> CandidateEvidenceFacts:
 def _typed_anchor_rank(facts: CandidateEvidenceFacts, *, selection_rt: float) -> int:
     if _strong_paired_istd_chrom_segment_anchor(facts):
         return 0
-    complete_enough = (
+    if _typed_anchor_complete(facts) and _facts_interval_contains_rt(
+        facts, selection_rt
+    ):
+        return 0
+    return 1
+
+
+def _typed_anchor_complete(facts: CandidateEvidenceFacts) -> bool:
+    return (
         not facts.trace.hard_quality_flags
         and "low_scan_support" not in set(facts.trace.quality_flags)
         and facts.chemical.nl_match is not False
     )
-    if complete_enough and _facts_interval_contains_rt(facts, selection_rt):
-        return 0
-    return 1
 
 
 def _strong_paired_istd_chrom_segment_anchor(facts: CandidateEvidenceFacts) -> bool:

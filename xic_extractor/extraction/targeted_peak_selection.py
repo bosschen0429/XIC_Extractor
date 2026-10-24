@@ -55,8 +55,11 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.peak_selection import select_peak_and_area
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     answer_selected_physical_candidate,
+    physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
@@ -171,7 +174,6 @@ def assess_targeted_candidate_population(
     trace_group: TraceGroup,
     prepared_result: PreparedSignalResult,
     universe: PhysicalSegmentUniverse,
-    candidates: PeakCandidatesResult,
     selection_window: tuple[float, float],
     preferred_rt: float | None,
     strict_preferred_rt: bool,
@@ -179,6 +181,14 @@ def assess_targeted_candidate_population(
     method_seeds: tuple | None = None,
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
+    physical_policy = (
+        PHYSICAL_PEAK_REFERENCE_POLICY
+        if target.is_istd and preferred_rt is not None
+        else PHYSICAL_PEAK_POINT_POLICY
+    )
+    candidates = physical_candidates_result(
+        prepared_result, universe, selection_policy_version=physical_policy
+    )
     evaluations = {
         candidate: answer_selected_physical_candidate(
             prepared_result,
@@ -187,6 +197,7 @@ def assess_targeted_candidate_population(
             selection_subject_id=target.label,
             acquisition_rt_window=(trace.rt_min, trace.rt_max),
             selection_rt_window=selection_window,
+            selection_policy_version=physical_policy,
         )
         for candidate in candidates.candidates
     }

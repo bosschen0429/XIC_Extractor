@@ -199,11 +199,13 @@ def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
 
 
 @pytest.mark.parametrize("nearby_usable", [True, False])
+@pytest.mark.parametrize("reference_rt", [23.26, 25.8])
 def test_istd_reference_peak_precedes_stronger_remote_nl_trace(
     nearby_usable: bool,
+    reference_rt: float,
 ) -> None:
     remote = _candidate(10.6, area=320_000_000.0)
-    reference = _candidate(23.26, area=200_000_000.0)
+    reference = _candidate(reference_rt, area=200_000_000.0)
     scored = []
     for candidate, strength in [(remote, "strong"), (reference, "moderate")]:
         facts = _facts(
@@ -211,7 +213,7 @@ def test_istd_reference_peak_precedes_stronger_remote_nl_trace(
             rt=candidate.selection_apex_rt,
             abundance=candidate.peak.area,
             ms2_trace_strength=strength,
-            shape_quality="clean",
+            shape_quality="borderline" if candidate is reference else "clean",
         )
         facts = replace(
             facts,

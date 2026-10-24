@@ -53,6 +53,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
@@ -730,6 +731,8 @@ def physical_segment_has_incomplete_context(
 def qualified_physical_segments(
     prepared: PreparedSignal,
     segments: tuple[PhysicalSegment, ...],
+    *,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> tuple[PhysicalSegment, ...]:
     """Return segments with shared original-XIC support before candidate ranking.
 
@@ -738,7 +741,9 @@ def qualified_physical_segments(
     return tuple(
         segment
         for segment in segments
-        if not _physical_segment_support_failure(prepared, segment)
+        if not _physical_segment_support_failure(
+            prepared, segment, selection_policy_version=selection_policy_version
+        )
     )
 
 
@@ -765,7 +770,7 @@ def _physical_segment_support_failure(
     prepared: PreparedSignal,
     selected: PhysicalSegment,
     *,
-    for_backfill: bool = False,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> str:
     if physical_segment_has_incomplete_context(prepared.projection, selected):
         return "incomplete_peak_context"
@@ -811,18 +816,25 @@ def _physical_segment_support_failure(
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
     # establish the absence of an already observed morphology peak.
-    prominence = local_apex_prominence(signal, apex_offset)
+    # A known-reference search localizes an existing contour, rather than
+    # discovering each local maximum. Surface ripples cannot erase that
+    # contour's acquired support and full rise/fall. Discovery and Backfill
+    # retain their nearest-valley contrast requirement.
+    if selection_policy_version != PHYSICAL_PEAK_REFERENCE_POLICY:
+        prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_mad = short_scale_noise_mad(rt, acquired)
     minimum_contrast = (
         _BACKFILL_LOCAL_CONTRAST_MIN_MAD
-        if for_backfill
+        if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
         else _PHYSICAL_LOCAL_CONTRAST_MIN_MAD
     )
     if prominence < minimum_contrast * noise_mad:
+        if selection_policy_version == PHYSICAL_PEAK_REFERENCE_POLICY:
+            return "insufficient_reference_peak_contrast"
         return (
             "insufficient_backfill_peak_contrast"
-            if for_backfill
+            if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
             else "insufficient_local_peak_contrast"
         )
     return ""
@@ -871,9 +883,7 @@ def answer_physical_peak_question(
             support_failure = _physical_segment_support_failure(
                 prepared,
                 selected,
-                for_backfill=(
-                    question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
-                ),
+                selection_policy_version=question.selection_policy_version,
             )
             if support_failure:
                 state, reason = "unavailable", support_failure

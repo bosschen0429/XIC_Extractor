@@ -732,3 +732,80 @@ def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
     assert result.candidate_ms2_evidence.trace.product_point_count == 0
     assert result.candidate_ms2_evidence.best_product_evidence is None
     assert result.nl_token != "OK"
+
+
+@pytest.mark.parametrize("is_istd", [True, False])
+def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
+    tmp_path, is_istd
+):
+    from xic_extractor.peak_detection.physical_peak_codec import (
+        deserialize_physical_peak_evaluation,
+        serialize_physical_peak_evaluation,
+    )
+
+    target = replace(_intent_target(15.5), is_istd=is_istd)
+    config = _strategy_config(tmp_path)
+    rt = np.linspace(0.0, 24.0, 2401)
+    rng = np.random.default_rng(479)
+    intensity = (
+        300.0
+        + 12000.0 * np.exp(-0.5 * ((rt - 17.5) / 0.8) ** 2)
+        + 3000.0 * np.exp(-0.5 * ((rt - 10.9) / 0.06) ** 2)
+        + rng.uniform(-150.0, 150.0, rt.size)
+    )
+    scans = tuple(
+        Ms2Scan(
+            index + 1,
+            apex,
+            target.mz,
+            np.array([target.mz - target.neutral_loss_da]),
+            np.array([1000.0]),
+            1000.0,
+        )
+        for index, apex in enumerate((10.9, 17.3, 17.5, 17.7))
+    )
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 24.0
+
+        def extract_xic(self, *args):
+            return rt, intensity
+
+        def iter_ms2_scans(self, *args):
+            return iter(Ms2ScanEvent(scan, None, scan.scan_number) for scan in scans)
+
+    results = {}
+    target_extraction.extract_one_target(
+        Raw(),
+        config,
+        "sample",
+        target,
+        reference_rt=None,
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(config=config),
+    )
+    result = results[target.label]
+    assert result.reported_rt == pytest.approx(17.5 if is_istd else 10.9, abs=0.05)
+    assert result.selected_cid_nl_supported
+    selected = next(
+        evaluation
+        for evaluation in result.candidate_physical_evaluations
+        if evaluation.integration.rt_apex_min == result.reported_rt
+    )
+    restored = deserialize_physical_peak_evaluation(
+        serialize_physical_peak_evaluation(
+            rt,
+            intensity,
+            profile=selected.retained_prepared_signal.profile,
+            evaluation=selected,
+        )
+    )[-1]
+    assert restored.integration == selected.integration
+    if is_istd:
+        assert target_extraction.credible_istd_anchor_rt(result) == result.reported_rt
+        assert (
+            restored.question.selection_policy_version
+            == "reference_localized_contour_peak"
+        )

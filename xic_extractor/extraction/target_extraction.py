@@ -37,9 +37,6 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
-from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
-    physical_candidates_result,
-)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     prepare_physical_signal,
@@ -284,7 +281,6 @@ def extract_one_target(
             else context_rt_max
         ),
     )
-    physical_candidates = physical_candidates_result(prepared, universe)
     method_window = sample_window
     trace_group = targeted_extraction_trace_group(
         sample_name=sample_name,
@@ -302,7 +298,6 @@ def extract_one_target(
         trace_group=trace_group,
         prepared_result=prepared,
         universe=universe,
-        candidates=physical_candidates,
         selection_window=(selection_rt_min, selection_rt_max),
         preferred_rt=anchor_rt,
         strict_preferred_rt=strict_preferred_rt,

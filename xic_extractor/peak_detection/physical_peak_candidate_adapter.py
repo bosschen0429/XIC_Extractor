@@ -34,6 +34,7 @@ def answer_selected_physical_candidate(
     acquisition_rt_window: tuple[float, float],
     selection_rt_window: tuple[float, float],
     candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation] | None = None,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PhysicalPeakEvaluation:
     """Bind a selected candidate and return its completed physical answer.
 
@@ -63,7 +64,7 @@ def answer_selected_physical_candidate(
         selection_subject_id=selection_subject_id,
         query_rt_min=query_rt_min,
         selection_policy_version=(
-            PHYSICAL_PEAK_POINT_POLICY
+            selection_policy_version
             if segment is not None
             else PHYSICAL_PEAK_NO_SELECTION_POLICY
         ),
@@ -74,6 +75,8 @@ def answer_selected_physical_candidate(
 def physical_candidates_result(
     prepared_result: PreparedSignalResult,
     universe: PhysicalSegmentUniverse,
+    *,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PeakCandidatesResult:
     prepared = prepared_result.prepared
     if universe.state != "available" or prepared is None:
@@ -91,7 +94,11 @@ def physical_candidates_result(
         )
     candidates = tuple(
         _physical_segment_candidate(prepared_result, segment)
-        for segment in qualified_physical_segments(prepared, universe.segments)
+        for segment in qualified_physical_segments(
+            prepared,
+            universe.segments,
+            selection_policy_version=selection_policy_version,
+        )
     )
     if not candidates:
         return PeakCandidatesResult(
