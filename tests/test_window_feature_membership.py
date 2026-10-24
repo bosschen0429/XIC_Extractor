@@ -273,7 +273,9 @@ def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
         frozenset(("late",)),
         frozenset(("unsupported",)),
     }
-    for candidate, expected in zip(owners[1:], (True, False, False), strict=True):
+    # Without its own calibration support, "unsupported" is compared with
+    # "narrow" in the observed frame, where the two apices coincide.
+    for candidate, expected in zip(owners[1:], (True, False, True), strict=True):
         assert (
             supports_existing_feature(
                 candidate,

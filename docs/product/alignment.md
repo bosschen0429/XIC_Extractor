@@ -313,8 +313,9 @@ mass, and product mass, and handles competition within each sample. Currently:
   consensus region: the median of its members' supported apices and measured
   edges. A consensus apex outside the other side's consensus edges excludes
   correspondence, so one narrow or locally miscalibrated member cannot veto an
-  otherwise coincident group. A calibrated side and a side without calibration
-  support do not share a frame and do not correspond.
+  otherwise coincident group. When only one side has calibration support, both
+  sides are compared the same way in the observed RT frame; missing calibration
+  support is not evidence of a different peak.
   A peak edge outside the calibration span remains unknown: it is neither
   extrapolated nor clipped into a new measured boundary. It cannot establish
   exclusion or switch supported apices to a raw-shape veto. Every union is

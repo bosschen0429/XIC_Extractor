@@ -51,8 +51,9 @@ def peak_correspondence_conflict(
     one narrow or locally miscalibrated member cannot veto an otherwise
     coincident group, and an intermediate member still cannot bridge two
     separated bands because every union is checked against complete groups.
-    A calibrated group and one without calibration support share no RT frame,
-    so they cannot be shown to correspond. Without calibrated regions on either
+    When only one side has calibration support, both sides are compared in the
+    shared observed RT frame instead: missing support is not evidence of a
+    different peak. Without calibrated regions on either
     side, the groups' median measured-shape similarity decides: chromatography
     varies individual pairs, so one noisy pair cannot split a band, while an
     unrelated background trace still differs from most members. Pairs
@@ -64,8 +65,9 @@ def peak_correspondence_conflict(
     left_regions = _calibrated_regions(left, rt_frame)
     right_regions = _calibrated_regions(right, rt_frame)
     if bool(left_regions) != bool(right_regions):
-        return left[0].owner_id, right[0].owner_id
-    if not left_regions:
+        left_regions = _observed_regions(left)
+        right_regions = _observed_regions(right)
+    elif not left_regions:
         return _median_shape_conflict(left, right, config, trajectories)
     left_region = _consensus_region(left_regions.values())
     right_region = _consensus_region(right_regions.values())
@@ -92,6 +94,17 @@ def _calibrated_regions(
         member.owner_id: region
         for member in members
         if (region := rt_frame.calibrated_peak_region(member)) is not None
+    }
+
+
+def _observed_regions(members: Sequence[SampleLocalMS1Owner]) -> dict[str, _Region]:
+    return {
+        member.owner_id: (
+            member.owner_peak_start_rt,
+            member.owner_apex_rt,
+            member.owner_peak_end_rt,
+        )
+        for member in members
     }
 
 
