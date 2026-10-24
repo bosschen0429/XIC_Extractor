@@ -889,7 +889,7 @@ window.XicUi = (() => {
         && $("raw-dir").value.trim() && $("dll-dir").value.trim()) await startCurves();
     }
   }
-  function restoreDetail(detail) {
+  function restoreDetail(detail, preserveSamples = false) {
     clearReview("inline-curve-review");
     clearReview("xic-review");
     state.curveView = null;
@@ -924,10 +924,10 @@ window.XicUi = (() => {
         ),
       );
     const available = new Set(detail.item.curve_sample_ids);
-    state.samples = targeted ? new Set(
+    state.samples = targeted || preserveSamples ? new Set(
       [...state.samples].filter((id) => available.has(id)),
     ) : new Set(available);
-    if (!state.samples.size)
+    if (!state.samples.size && !preserveSamples)
       state.samples = new Set(
         state.page.samples
           .filter((sample) => available.has(sample.id))
@@ -1427,6 +1427,7 @@ window.XicUi = (() => {
       if (state.filters.group_id || state.filters.mz_min != null || state.filters.mz_max != null)
         $("untargeted-search-mode").value = "exact";
       $("target-attention").checked = Boolean(state.filters.attention_only);
+      serverPage = review.page;
       renderPage(review.page);
       $("source-settings").open = false;
       if (saved) {
@@ -1435,7 +1436,7 @@ window.XicUi = (() => {
         state.samples = new Set(saved.samples);
         for (const [id, value] of saved.acquisition) $(id).value = value;
       } else if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.detail) await restoreDetail(review.detail);
+      if (review.detail) await restoreDetail(review.detail, Boolean(saved));
       else if (review.page.overview && review.page.overview.kind !== "untargeted") showTargetedOverview();
       if (saved?.curveView && !["running", "cancelling"].includes(review.job?.status)) {
         prepareCurveView();
@@ -1452,7 +1453,8 @@ window.XicUi = (() => {
       if (saved) {
         $("item-list").scrollTop = saved.listScroll;
         if (document.body.dataset.view === saved.workspaceView)
-          requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
+          // Let restored panels finish layout before applying the reading offset.
+          requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, saved.scroll)));
       }
     } else if ($("source").value) await openBatch();
     else status("");

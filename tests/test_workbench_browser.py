@@ -3413,6 +3413,7 @@ def test_continuous_review_resumes_after_reload_and_honors_changed_inputs(
     assert len(calls) == 2
     saved_rows = page.locator("#recorded-review .sample-table tbody tr")
     saved_rows.last.scroll_into_view_if_needed()
+    page.evaluate("window.scrollTo(0, window.scrollY / 2)")
     reading_scroll = page.evaluate("window.scrollY")
     page.reload()
     _wait_for_curve_report(page, inline=True)
@@ -3472,6 +3473,13 @@ def test_continuous_review_resumes_after_reload_and_honors_changed_inputs(
     _wait_for_curve_report(page, inline=True)
     assert len(calls) == 4
     assert calls[-1][1] == ("S1",)
+    selected_sample_view = curves.get_attribute("data-view-id")
+    page.reload()
+    _wait_for_curve_report(page, inline=True)
+    expect(curves).to_have_attribute("data-view-id", selected_sample_view)
+    expect(page.locator('#sample-list input[value="S1"]')).to_be_checked()
+    expect(page.locator('#sample-list input[value="S2"]')).not_to_be_checked()
+    assert len(calls) == 4
     page.locator("#source-settings > summary").click()
     page.locator("#open-form button[type=submit]").click()
     page.locator("#review-order").select_option("mz")
