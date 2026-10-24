@@ -635,7 +635,11 @@ class UntargetedPartitionPipelineAdapter:
                 raise RuntimeError("process worker pools are already closed")
             pool = self._process_pools[0]
             if pool.stopped:
-                raise RuntimeError("process worker pool failure stopped admission")
+                cause = pool.first_error
+                raise RuntimeError(
+                    "process worker pool failure stopped admission: "
+                    f"{type(cause).__name__}: {cause}"
+                ) from cause
             pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool = (
                 nullcontext(pool)
             )

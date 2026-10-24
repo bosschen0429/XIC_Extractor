@@ -2632,9 +2632,14 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
         subject_batch = adapter._partition_subject_batches[partition.partition_key]
         assert any(value is subject_batch for value in shared)
 
-    created[0].stop(RuntimeError("failure stopped admission"))
-    with pytest.raises(RuntimeError, match="failure stopped admission"):
+    worker_failure = OSError("RAW reader failed for QC_sample_3")
+    created[0].stop(worker_failure)
+    with pytest.raises(
+        RuntimeError,
+        match="stopped admission: OSError: RAW reader failed for QC_sample_3",
+    ) as stopped:
         adapter.execute_acquisition(adapter.partitions[0])
+    assert stopped.value.__cause__ is worker_failure
 
     adapter.close_process_worker_pools()
     adapter.close_process_worker_pools()
