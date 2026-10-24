@@ -423,7 +423,6 @@ window.XicUi = (() => {
     state.item = null;
     state.detail = null;
     state.recorded = null;
-    state.curveCache.clear();
     $("selection").hidden = true;
     $("selection-empty").hidden = false;
     renderSelectionEmpty();
@@ -870,7 +869,6 @@ window.XicUi = (() => {
     const item = detail.item;
     state.item = detail.item;
     state.recorded = detail.view_id;
-    state.curveCache.clear();
     $("selection").hidden = false;
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
@@ -1020,6 +1018,7 @@ window.XicUi = (() => {
     $("review-range-filters").open = false;
     state.filters = {};
     state.samples = new Set();
+    state.curveCache.clear();
     renderPage(page);
     $("source-settings").open = false;
     if (page.overview?.kind !== "untargeted" && page.overview) showTargetedOverview();
@@ -1102,7 +1101,7 @@ window.XicUi = (() => {
       ppm: Number($("ppm").value),
       padding_min: Number($("padding").value),
     };
-    const key = JSON.stringify([state.recorded, request]);
+    const key = JSON.stringify([state.page.source, request]);
     state.curveRequestKey = key;
     if (state.curveCache.has(key)) {
       showCurveView({id: state.curveCache.get(key)});

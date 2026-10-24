@@ -50,6 +50,35 @@ def _control(root, name):
     return root.locator(f'[data-inspector-id="{name}"]')
 
 
+def test_saved_result_explains_its_reason_and_labels_reference_only_actions(
+    review_page,
+):
+    page = review_page
+    payload = _signal_payload()
+    payload["items"] = payload["items"][:1]
+    payload["items"][0]["curves"] = []
+    payload["items"][0]["reason_label"] = "S1：方法評估為 HOLD：方法證據不足。"
+    page.set_content('<div id="saved-result"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """payload => XicInspector.mount(
+            document.getElementById('saved-result'), payload, {mode:'result'})""",
+        payload,
+    )
+    root = page.locator("#saved-result")
+    reason = root.locator(".detail-reason")
+    reason.locator("summary").click()
+    expect(reason).to_contain_text("方法評估為 HOLD：方法證據不足")
+    reference = root.get_by_role(
+        "button", name="查看支持記錄（僅引用）", exact=True
+    ).first
+    expect(reference).to_be_visible()
+    reference.click()
+    expect(_control(root, "evidence-panel")).to_contain_text("來源內容未提供")
+    _control(root, "close-evidence").click()
+    expect(reference).to_be_focused()
+
+
 def _targeted_rows(root):
     root.get_by_role("button", name=re.compile(r"^全部")).click()
     return root.locator(".tgt-table tbody tr:not([hidden])")

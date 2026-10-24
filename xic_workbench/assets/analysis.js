@@ -1610,7 +1610,14 @@
     }
     state.seenJob = null;
     renderJob();
+    if ((kind === "targeted" || kind === "untargeted") && state.view === kind)
+      revealJob();
     status("工作已開始。關閉分頁不會停止分析。");
+  }
+  function revealJob() {
+    const page = pageOf(state.analysis.job);
+    if (state.view !== page) selectView(page);
+    $("analysis-job").scrollIntoView({ block: "start" });
   }
   function renderActivity() {
     const job = state.analysis.job;
@@ -1631,7 +1638,7 @@
         : ui.icon(job.status === "succeeded" ? "check-circle" : "alert"),
       `${jobNames[job.kind]} · ${jobLabels[job.status]}${isRunning() ? percent : ""}`,
     );
-    pill.onclick = () => selectView(page);
+    pill.onclick = revealJob;
   }
   function renderJob() {
     const job = state.analysis.job;

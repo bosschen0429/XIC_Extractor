@@ -2524,6 +2524,10 @@ def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(
     ]
     assert matrix.payload["selection"]["missing_mz_count"] == 5
     assert matrix.matched_count == 2
+    if order_by == "priority":
+        counts = matrix.payload["selection"]["review_counts"]
+        assert counts["all"] == matrix.matched_count
+        assert counts["attention"] == 1
     unresolved = prepare_report(
         report,
         SelectionRequest(strategy="query", review_scope="unresolved", nearest_mz=123.4),

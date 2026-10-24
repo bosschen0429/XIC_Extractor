@@ -117,6 +117,16 @@ def select_review_entries(entries, request):
         for entry in entries
         if matches_values(entry["review"], request.value_filter)
     ]
+    missing_mz = 0
+    if request.nearest_mz is not None:
+        valid = []
+        for entry in entries:
+            if finite_number(entry["mz"]) and entry["mz"] > 0:
+                entry["mz_distance"] = abs(entry["mz"] - request.nearest_mz)
+                valid.append(entry)
+            elif matches_review(entry["review"], request.review_filter):
+                missing_mz += 1
+        entries = valid
     counts = {
         kind: sum(matches_review(entry["review"], kind) for entry in entries)
         for kind in REVIEW_FILTERS
@@ -126,15 +136,6 @@ def select_review_entries(entries, request):
         for entry in entries
         if matches_review(entry["review"], request.review_filter)
     ]
-    missing_mz = 0
-    if request.nearest_mz is not None:
-        valid = [
-            entry for entry in entries if finite_number(entry["mz"]) and entry["mz"] > 0
-        ]
-        missing_mz = len(entries) - len(valid)
-        entries = valid
-        for entry in entries:
-            entry["mz_distance"] = abs(entry["mz"] - request.nearest_mz)
 
     def key(entry):
         if request.nearest_mz is not None:

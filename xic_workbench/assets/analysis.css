@@ -395,6 +395,7 @@
 
 /* Job card */
 .job-card {
+  scroll-margin-top: calc(var(--topbar-h) + 12px);
   display: flex;
   flex-direction: column;
   gap: 10px;

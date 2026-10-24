@@ -667,8 +667,8 @@
   function evidenceButtons(refs,context,label='查看定量依據'){
     const values=[...new Set((Array.isArray(refs)?refs:[]).filter(Boolean))];
     // Several references are told apart by their readable record title when the report embeds one.
-    const titled=ref=>records(items.find(i=>i.id===state.id)).find(r=>r.ref===ref)?.title;
-    return values.length?`<div class="evidence-actions">${values.map((ref,i)=>`<button type="button" class="evidence-link" data-evidence-ref="${esc(ref)}" data-evidence-context="${esc(context)}">${values.length>1?esc(titled(ref)||`${label} ${i+1}`):label}</button>`).join('')}</div>`:'';
+    const embedded=records(items.find(i=>i.id===state.id));
+    return values.length?`<div class="evidence-actions">${values.map((ref,i)=>{const record=embedded.find(r=>r.ref===ref),title=values.length>1?(record?.title||`${label} ${i+1}`):label;return `<button type="button" class="evidence-link" data-evidence-ref="${esc(ref)}" data-evidence-context="${esc(context)}">${esc(title)}${record?'':'（僅引用）'}</button>`;}).join('')}</div>`:'';
   }
   function sampleTable(item){
     const excluded=isCollapsedExcluded(item), evidenceLabel=excluded?'查看排除依據':'查看定量依據';
@@ -830,10 +830,13 @@
     const roster=itemRows(item).map(r=>{const c=(item.curves||[]).find(x=>x.sample_id===r.sample_id),decision=c?.quality_flags?.successor_decision||'unclassified';return `<label class="legend-item"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${differentialColor(c||{})}"></span>${esc(sampleName(r.sample_id))} · ${esc(decision)} · ${esc(r.status_label||'')}</label><button type="button" data-focus="${esc(r.sample_id)}" aria-label="查看 ${esc(sampleName(r.sample_id))}">查看樣本</button>`;}).join('');
     setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}${signalControl(item)}</div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
   }
+  function reasonPanel(item){
+    return `<details class="detail-reason"><summary>判讀紀錄</summary><p>${esc(item.reason_label||'未記錄項目判定說明。')}</p></details>`;
+  }
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
     if(mode==='result'&&!item.curves?.some(curve=>curve.raw_rts?.length)){
-      setHTML($('workspace-content'),`<section class="sample-section saved-only"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p>${sampleTable(item)}</section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
+      setHTML($('workspace-content'),`${reasonPanel(item)}<section class="sample-section saved-only"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p>${sampleTable(item)}</section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
     }
     const selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[display.signal]||'訊號',signalLabel=selectedSignalLabel;
@@ -844,7 +847,7 @@
     const aligned=alignedAvailable(item);
     setHTML($('workspace-content'),`
       ${mode==='offline'?`<div class="item-overview"><div class="detail-top"><div><p class="detail-eyebrow">${esc(itemContext(item))}</p><h2>${breakable(itemIdentity(item))}</h2></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}</div>`:''}
-      <details class="detail-reason"><summary>判讀紀錄</summary><p>${esc(item.reason_label||'未記錄項目判定說明。')}</p></details>${evidencePanel(item)}
+      ${reasonPanel(item)}${evidencePanel(item)}
       <section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace">
         ${curveHeading(item)}
         ${state.sample?`<div class="selection-controls">${candidateControl(item)}${captureControl(item)}</div>`:''}

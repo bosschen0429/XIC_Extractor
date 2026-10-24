@@ -1610,11 +1610,11 @@ kbd {
 .has-detail .item-bottom .chip { display:block;white-space:normal;margin-top:5px; }
 .review-grid.single-target.has-detail { grid-template-columns:minmax(0,1fr); }
 .single-target.has-detail .list-panel { display:none; }
-.result-navigation { display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface-2); }
+.result-navigation { position:sticky;top:var(--topbar-h);z-index:11;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface-2); }
 .result-navigation > div { display:flex;gap:10px;align-items:center; }
 .result-navigation button { min-height:30px;font-size:12px; }
 #review-position { min-width:60px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums; }
-#result-detail { scroll-margin-top:calc(var(--topbar-h) + 12px); }
+#result-detail { overflow:visible;scroll-margin-top:calc(var(--topbar-h) + 12px); }
 @media(max-width:900px) {
   .review-grid.has-detail { grid-template-columns:minmax(0,1fr); }
   .has-detail .list-panel { display:none; }

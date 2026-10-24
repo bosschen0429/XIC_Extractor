@@ -868,6 +868,7 @@ def analysis_feedback(workbench):
 @pytest.mark.parametrize("kind", ["targeted", "untargeted"])
 def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, kind):
     page = workbench
+    page.set_viewport_size({"width": 680, "height": 600})
     if kind == "untargeted":
         _view(page, kind)
         page.locator("input[name=u-mode][value=discovery_only]").check()
@@ -879,6 +880,10 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
         "Browser fake progress"
     )
     expect(page.locator("#analysis-progress")).to_have_attribute("value", "1")
+    expect(page.locator("#analysis-job-title")).to_be_in_viewport(ratio=1)
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.locator("#activity").click()
+    expect(page.locator("#analysis-job-title")).to_be_in_viewport(ratio=1)
     expect(page.locator(f"button[form={kind}-form][type=submit]")).to_be_disabled()
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
@@ -893,6 +898,21 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
         .read_text(encoding="utf-8")
         .endswith("Browser target\t1\n")
     )
+
+
+def test_analysis_start_preserves_newer_workspace_navigation(workbench, fake_runs):
+    page = workbench
+    pending = []
+    page.route("**/api/analysis/start", lambda route: pending.append(route))
+    with page.expect_request("**/api/analysis/start"):
+        _start(page, "targeted")
+    _view(page, "untargeted")
+    pending.pop().continue_()
+    expect(page.locator("#toasts")).to_contain_text("工作已開始")
+    expect(page.locator("#workspace-untargeted")).to_be_visible()
+    page.locator("#activity").click()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    expect(page.locator("#analysis-job-title")).to_be_in_viewport(ratio=1)
 
 
 def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
@@ -1336,6 +1356,9 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     )
     assert set(calls[-1]) == {f"S{i + 1}" for i in range(sample_count)}
     assert len(calls) == (1 if sample_count == 1 else 2)
+    if sample_count > 1:
+        saved.locator(".sample-table tbody tr").last.scroll_into_view_if_needed()
+        expect(page.locator("#review-next")).to_be_in_viewport(ratio=1)
     review.locator("button[data-zoom]").click()
     expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_visible()
     page.wait_for_function("""() => {
@@ -3248,6 +3271,10 @@ def test_batch_browser_search_filters_and_continuous_review_share_one_workspace(
     expect(page.locator("#review-position")).to_have_text("2 / 3")
     expect(page.locator("#item-title")).to_contain_text("123.4290")
     expect(page.locator("#item-kind")).to_have_text("方法判讀待確認")
+    reason = page.locator("#recorded-review .detail-reason")
+    reason.locator("summary").click()
+    expect(reason).to_contain_text("S1：相關方法評估為 HOLD")
+    expect(reason).to_contain_text("ambiguous_peak")
     page.get_by_role("button", name="返回結果清單", exact=True).click()
     expect(page.locator("#selection")).to_be_hidden()
     expect(page.locator("#nearest-mz")).to_have_value("123.4567")
@@ -3301,3 +3328,96 @@ def test_workbench_detail_reuses_saved_curve_and_evidence_without_another_page(
     detail.locator('[data-inspector-id="close-evidence"]').click()
     expect(evidence).to_be_focused()
     assert len(page.context.pages) == 1
+
+
+def test_continuous_review_reuses_curves_across_pages_and_honors_changed_inputs(
+    workbench, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from tests.test_xic_workbench import _browse_review_batch
+    from xic_inspector.sources.curve_bundle import CurveBundle, write_curve_bundle
+    from xic_workbench import acquisition
+
+    calls = []
+
+    def acquire(report, output, *, sample_ids, **kwargs):
+        calls.append((kwargs["group_id"], tuple(sample_ids), kwargs["padding_min"]))
+        transition = _fixture_bundle().transitions[0]
+        scale = int(kwargs["group_id"][1:]) + 1
+        traces = tuple(
+            replace(
+                trace,
+                trace_id=sid,
+                sample_id=sid,
+                sample_label=sid,
+                raw=replace(
+                    trace.raw, intensity=tuple(x * scale for x in trace.raw.intensity)
+                ),
+            )
+            for sid in sample_ids
+            for trace in (transition.traces[0 if sid == "S1" else 1],)
+        )
+        write_curve_bundle(CurveBundle((replace(transition, traces=traces),)), output)
+        return {"curve_count": len(traces)}
+
+    monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
+    page = workbench
+    report, _ = _browse_review_batch(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill(str(tmp_path))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#review-order").select_option("mz")
+    page.locator("#item-list button").last.click()
+    curves = _wait_for_curve_report(page, inline=True)
+    first_view = curves.get_attribute("data-view-id")
+    first_values = page.locator("#recorded-review .sample-table").inner_text()
+    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    assert len(calls) == 1
+    page.locator("#review-next").click()
+    expect(page.locator("#review-position")).to_have_text("26 / 31")
+    _wait_for_curve_report(page, inline=True)
+    assert curves.get_attribute("data-view-id") != first_view
+    assert len(calls) == 2
+    page.locator("#review-previous").click()
+    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    _wait_for_curve_report(page, inline=True)
+    assert len(calls) == 2
+    expect(curves).to_have_attribute("data-view-id", first_view)
+    expect(page.locator("#recorded-review .sample-table")).to_have_text(
+        first_values, use_inner_text=True
+    )
+    for sid, value in (("S1", "2,500"), ("S2", "5,000")):
+        expect(
+            page.locator(f'#recorded-review [data-sample-row="{sid}"]')
+        ).to_contain_text(value)
+    response = page.request.get(
+        f"{page.url}api/views/{first_view}", headers={"X-XIC-Client": "workbench"}
+    )
+    assert response.ok
+    payload = response.json()
+    assert {
+        curve["sample_id"]: curve["raw_intensities"]
+        for curve in payload["items"][0]["curves"]
+    } == {"S1": [0, 125, 225, 0], "S2": [0, 50, 300, 0]}
+    page.locator(".acquisition-panel > summary").click()
+    page.locator(".parameters > summary").click()
+    page.locator("#padding").fill("0.75")
+    page.locator("#load-curves").click()
+    _wait_for_curve_report(page, inline=True)
+    assert len(calls) == 3
+    assert calls[-1][2] == 0.75
+    page.locator('#sample-list input[value="S2"]').uncheck()
+    page.locator("#load-curves").click()
+    _wait_for_curve_report(page, inline=True)
+    assert len(calls) == 4
+    assert calls[-1][1] == ("S1",)
+    page.locator("#source-settings > summary").click()
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#review-order").select_option("mz")
+    page.locator("#item-list button").last.click()
+    _wait_for_curve_report(page, inline=True)
+    assert len(calls) == 5
