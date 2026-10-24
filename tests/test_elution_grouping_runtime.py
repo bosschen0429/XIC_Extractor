@@ -128,7 +128,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     store = StreamedResultStore(
         tmp_path / "elution-spool", adapter.get_shared_objects()
     )
-    initial_phase, backfill_phase = adapter.execution_phases()
+    initial_phase, grouping_phase, backfill_phase = adapter.execution_phases()
     assert len(initial_phase.partitions) == len(backfill_phase.partitions) == 1
     initial_partition = initial_phase.partitions[0]
     initial = adapter.execute_acquisition(initial_partition)
@@ -191,8 +191,8 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             expected_query[state.job.sample.metadata.raw_stem], abs=0.005
         )
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
-    assert backfill_phase.prepare_before is not None
-    backfill_phase.prepare_before(store, lambda: None)
+    assert grouping_phase.prepare_before is not None
+    grouping_phase.prepare_before(store, lambda: None)
     partition = backfill_phase.partitions[0]
     acquisition = adapter.execute_acquisition(partition)
     assert acquisition.succeeded
@@ -350,7 +350,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         max_partition_jobs=100,
     )
     store = StreamedResultStore(tmp_path / "reuse-spool", adapter.get_shared_objects())
-    initial_phase, backfill_phase = adapter.execution_phases()
+    initial_phase, grouping_phase, backfill_phase = adapter.execution_phases()
     initial_partition = initial_phase.partitions[0]
     initial = adapter.execute_acquisition(initial_partition)
     assert initial.succeeded
@@ -359,8 +359,8 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         for result in initial.result[1].sample_results
     )
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
-    assert backfill_phase.prepare_before is not None
-    backfill_phase.prepare_before(store, lambda: None)
+    assert grouping_phase.prepare_before is not None
+    grouping_phase.prepare_before(store, lambda: None)
     partition = backfill_phase.partitions[0]
     acquisition = adapter.execute_acquisition(partition)
     assert acquisition.succeeded

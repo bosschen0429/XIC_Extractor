@@ -4,6 +4,7 @@ import csv
 import gzip
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,9 +25,20 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_grouping_inputs,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
-from xic_extractor.untargeted_execution.grouping_experiment import (
-    prepare_grouping_experiment,
-)
+from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
+
+
+def _snapshot_grouping(
+    plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
+):
+    return execute_prepared_alignment(
+        plan,
+        output_dir=spool_directory,
+        raw_workers=workers,
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+        grouping_only=True,
+    )
 
 
 @pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
@@ -108,10 +120,25 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         assert owner.peak_shape.edge_intensity_ratio is None
 
 
-def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("raw_workers", [1, 4])
+def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
+    tmp_path, monkeypatch, raw_workers
 ):
+    import xic_extractor.applications.untargeted.application as application
     import xic_extractor.untargeted_execution.partition.workers as workers
+    from tests.alignment_pipeline_helpers import write_batch
+    from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+    from xic_extractor.execution.partitions import PartitionPipelineScheduler
+
+    scheduled = []
+    execute = PartitionPipelineScheduler.execute
+
+    def observe_scheduler(adapter, **kwargs):
+        scheduled.append(kwargs)
+        return execute(adapter, **kwargs)
+
+    monkeypatch.setattr(PartitionPipelineScheduler, "execute", observe_scheduler)
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
 
@@ -120,33 +147,48 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
 
     monkeypatch.setattr(workers, "_execute_backfill_batch", forbidden)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
-    prepared = prepare_grouping_experiment(
-        plan,
-        mz_ranges=((499, 501),),
-        spool_directory=tmp_path,
-        workers=1,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    closed = []
+    monkeypatch.setattr(
+        application,
+        "prepare_untargeted_alignment_inputs",
+        lambda **kwargs: SimpleNamespace(plan=plan, close=lambda: closed.append(True)),
     )
-    assert prepared.selected_partition_count == 1
-    assert len(prepared.groups) == 1
-    whole_batch = prepare_grouping_experiment(
-        plan,
-        spool_directory=tmp_path / "whole",
-        workers=1,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    snapshot = application.snapshot_untargeted_grouping(
+        UntargetedRequest(
+            discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "snapshot",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            discovery_settings=plan.context.settings,
+            peak_config=plan.context.peak_config,
+            execution=UntargetedExecutionPolicy(
+                raw_workers=raw_workers,
+                raw_worker_backend="thread",
+                max_partition_jobs=8,
+            ),
+        )
     )
-    assert whole_batch.selected_partition_count == whole_batch.total_partition_count
-    assert group_signature(whole_batch.groups) == group_signature(prepared.groups)
-    assert prepared.inputs.sample_stems == ("S0", "S1", "S2", "S3")
-    snapshot = tmp_path / "inputs.json.gz"
-    write_grouping_inputs(
-        snapshot, prepared.inputs, provenance={"case": "cross-subject"}
-    )
+    inputs, provenance = read_grouping_inputs(snapshot)
+    groups = replay_grouping(inputs)
+    assert len(groups) == 1
+    assert closed == [True]
+    assert len(scheduled) == 1
+    assert [phase.name for phase in scheduled[0]["phases"]] == [
+        "initial-acquisition",
+        "final-grouping",
+    ]
+    assert provenance["initial_job_count"] == 2
+    assert inputs.sample_stems == ("S0", "S1", "S2", "S3")
+    assert {owner.sample_stem for group in groups for owner in group.owners} == {
+        "S0",
+        "S1",
+    }
+    assert not (snapshot.parent / "alignment_matrix.tsv").exists()
     restored, provenance = read_grouping_inputs(snapshot)
-    assert provenance == {"case": "cross-subject"}
     original_shapes = {
         owner.owner_id: owner.peak_shape
-        for workset in prepared.inputs.worksets
+        for workset in inputs.worksets
         for owner in workset.owners
     }
     assert original_shapes
@@ -156,9 +198,7 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
         for workset in restored.worksets
         for owner in workset.owners
     } == original_shapes
-    assert group_signature(replay_grouping(restored)) == group_signature(
-        prepared.groups
-    )
+    assert group_signature(replay_grouping(restored)) == group_signature(groups)
     monkeypatch.setattr(workers, "_open_job_raw", forbidden)
     assert (
         main(
@@ -199,9 +239,8 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
             for sample in ("S0", "S1", "S2", "S3")
         },
     )
-    prepared = prepare_grouping_experiment(
+    prepared = _snapshot_grouping(
         plan,
-        mz_ranges=((499, 501),),
         spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -247,9 +286,8 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
-    inputs = prepare_grouping_experiment(
+    inputs = _snapshot_grouping(
         plan,
-        mz_ranges=((499, 501),),
         spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import mkdtemp
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
@@ -62,6 +62,9 @@ from xic_extractor.untargeted_execution.execution import (
 )
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.untargeted_execution.grouping_experiment import (
+    PreparedGroupingExperiment,
 )
 from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
@@ -473,60 +476,26 @@ def complete_untargeted_alignment(
         should_cancel=should_cancel,
     )
     plan = prepared.plan
-    recorder = timing_recorder or TimingRecorder.disabled("alignment")
     with ExitStack() as pending:
         pending.callback(prepared.close)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        inference_counts: Counter[str] = Counter()
-        inference_counts_lock = Lock()
-
-        def runtime_progress(event: Mapping[str, object]) -> None:
-            counts = event.get("operation_counts")
-            if event.get("event") == "feature_membership_inference" and isinstance(
-                counts, dict
-            ):
-                with inference_counts_lock:
-                    for key, value in counts.items():
-                        if key.startswith("largest_"):
-                            inference_counts[key] = max(inference_counts[key], value)
-                        else:
-                            inference_counts[key] += value
-                    runtime_stage.metrics.update(
-                        {
-                            f"feature_inference_{key}": value
-                            for key, value in inference_counts.items()
-                        }
-                    )
-            recorder.heartbeat_event(event)
-
-        with (
-            recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
-            recorder.process_memory_scope("retained_runtime") as runtime_peak,
-        ):
-            completed = execute_untargeted_plan(
+        completed = cast(
+            CompletedUntargetBatchWorkflowResult,
+            execute_prepared_alignment(
                 plan,
                 output_dir=output_dir,
-                telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
-                    coordinator, runtime_peak
-                ),
-                recovery_marker=OwnerPathRuntimeMarker(
-                    output_dir / ".cid_nl_runtime.json",
-                    _RUNTIME_ARTIFACT_NAMESPACE,
-                    allow_failed_attempt_retry=True,
-                ),
-                progress_callback=runtime_progress,
                 alignment_config=alignment_config,
                 known_istd_reference=known_istd_reference,
+                timing_recorder=timing_recorder,
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
                 retain_partition_memory=retain_partition_memory,
                 retain_acquisition_cache=retain_acquisition_cache,
                 acquisition_cache_dir=acquisition_cache_dir,
-                pipeline_overlap=True,
                 max_partition_jobs=max_partition_jobs,
-            )
-            pending.callback(completed.close)
+            ),
+        )
+        pending.callback(completed.close)
 
         completed = completed.with_discovery_inputs(prepared)
         completed = completed.bind_publication_inputs(
@@ -536,6 +505,78 @@ def complete_untargeted_alignment(
         )
         pending.pop_all()
         return completed
+
+
+def execute_prepared_alignment(
+    plan: UntargetedInputPlan,
+    *,
+    output_dir: Path,
+    alignment_config: AlignmentConfig,
+    known_istd_reference: KnownIstdReference | None = None,
+    timing_recorder: TimingRecorder | None = None,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
+    raw_worker_backend: str = "thread",
+    should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
+    retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
+    max_partition_jobs: int = 100_000,
+    grouping_only: bool = False,
+) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
+    """One instrumented scheduler for complete Alignment and frozen grouping."""
+    recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    inference_counts: Counter[str] = Counter()
+    inference_counts_lock = Lock()
+
+    def runtime_progress(event: Mapping[str, object]) -> None:
+        counts = event.get("operation_counts")
+        if event.get("event") == "feature_membership_inference" and isinstance(
+            counts, dict
+        ):
+            with inference_counts_lock:
+                for key, value in counts.items():
+                    if key.startswith("largest_"):
+                        inference_counts[key] = max(inference_counts[key], value)
+                    else:
+                        inference_counts[key] += value
+                runtime_stage.metrics.update(
+                    {
+                        f"feature_inference_{key}": value
+                        for key, value in inference_counts.items()
+                    }
+                )
+        recorder.heartbeat_event(event)
+
+    with (
+        recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
+        recorder.process_memory_scope("retained_runtime") as runtime_peak,
+    ):
+        completed = execute_untargeted_plan(
+            plan,
+            output_dir=output_dir,
+            telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
+                coordinator, runtime_peak
+            ),
+            recovery_marker=OwnerPathRuntimeMarker(
+                output_dir / ".cid_nl_runtime.json",
+                _RUNTIME_ARTIFACT_NAMESPACE,
+                allow_failed_attempt_retry=True,
+            ),
+            progress_callback=runtime_progress,
+            alignment_config=alignment_config,
+            known_istd_reference=known_istd_reference,
+            raw_workers=raw_workers,
+            raw_worker_backend=raw_worker_backend,
+            should_cancel=should_cancel,
+            retain_partition_memory=retain_partition_memory,
+            retain_acquisition_cache=retain_acquisition_cache,
+            acquisition_cache_dir=acquisition_cache_dir,
+            pipeline_overlap=True,
+            max_partition_jobs=max_partition_jobs,
+            grouping_only=grouping_only,
+        )
+    return completed
 
 
 def _load_physical_replay_inputs(

@@ -1695,7 +1695,7 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
 
 @pytest.mark.parametrize("cancel_during_grouping", [False, True])
 @pytest.mark.parametrize("pipeline_overlap", [False, True])
-def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
+def test_final_grouping_failure_stops_before_any_backfill(
     tmp_path, monkeypatch, cancel_during_grouping, pipeline_overlap
 ):
     import xic_extractor.untargeted_execution.execution as owner
@@ -1734,7 +1734,7 @@ def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
         return result
 
     def forbid_completed(*args, **kwargs):
-        pytest.fail("A failed Backfill grouping must not publish a batch")
+        pytest.fail("A failed final grouping must not publish a batch")
 
     monkeypatch.setattr(
         owner.UntargetedPartitionPipelineAdapter,
@@ -1763,10 +1763,10 @@ def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
                 else None
             ),
         )
-    # Each Backfill partition finalizes only its own grouping after admission;
-    # no partition waits for every other grouping in the batch.
+    # Final grouping is a shared phase boundary, before Backfill admission.
     assert len(finalized) >= 2
-    assert all(admitted_first for _, admitted_first in finalized)
+    assert not admitted
+    assert not any(admitted_first for _, admitted_first in finalized)
     assert len({subjects for subjects, _ in finalized}) == len(finalized)
     assert len(timeline_events) == 1
     backfill_statuses = {
@@ -1774,12 +1774,10 @@ def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
         for record in timeline_events[0]["timeline"]
         if record["partition_key"].endswith("-backfill")
     }
+    assert backfill_statuses == {"cancelled"}
     if cancel_during_grouping:
-        assert "cancelled" in backfill_statuses
-        assert "failed" not in backfill_statuses
         assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
     else:
-        assert "failed" in backfill_statuses
         assert "grouping finalization failed" in str(error.value)
         assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 

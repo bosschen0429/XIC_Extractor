@@ -5,6 +5,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.alignment.backfill.peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
@@ -44,10 +45,11 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 )
 from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
+    execute_prepared_alignment,
     prepare_untargeted_alignment_inputs,
 )
 from xic_extractor.untargeted_execution.grouping_experiment import (
-    prepare_grouping_experiment,
+    PreparedGroupingExperiment,
 )
 
 GROUPING_SNAPSHOT_NAME = "grouping-inputs.json.gz"
@@ -270,13 +272,22 @@ def snapshot_untargeted_grouping(
     )
     try:
         with recorder.stage("alignment.grouping_snapshot") as stage:
-            grouping = prepare_grouping_experiment(
-                prepared.plan,
-                spool_directory=request.output_dir,
-                alignment_config=request.alignment_config,
-                known_istd_reference=known_istd_reference,
-                acquisition_cache_dir=request.execution.acquisition_cache_dir,
-                workers=request.execution.raw_workers,
+            grouping = cast(
+                PreparedGroupingExperiment,
+                execute_prepared_alignment(
+                    prepared.plan,
+                    output_dir=request.output_dir,
+                    alignment_config=request.alignment_config,
+                    known_istd_reference=known_istd_reference,
+                    timing_recorder=recorder,
+                    acquisition_cache_dir=request.execution.acquisition_cache_dir,
+                    retain_acquisition_cache=request.execution.retain_acquisition_cache,
+                    raw_workers=request.execution.raw_workers,
+                    raw_worker_backend=request.execution.raw_worker_backend,
+                    max_partition_jobs=request.execution.max_partition_jobs,
+                    should_cancel=context.should_cancel,
+                    grouping_only=True,
+                ),
             )
             write_grouping_inputs(
                 snapshot,
