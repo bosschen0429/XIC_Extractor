@@ -302,11 +302,12 @@ def snapshot_untargeted_grouping(
             )
             stage.metrics["partition_count"] = grouping.total_partition_count
             stage.metrics["group_count"] = len(grouping.groups)
-        restored, _ = read_grouping_inputs(snapshot)
-        if group_signature(replay_grouping(restored)) != group_signature(
-            grouping.groups
-        ):
-            raise ValueError("Snapshot replay differs from formal initial grouping")
+        with recorder.stage("alignment.grouping_snapshot.verify"):
+            restored, _ = read_grouping_inputs(snapshot)
+            if group_signature(replay_grouping(restored)) != group_signature(
+                grouping.groups
+            ):
+                raise ValueError("Snapshot replay differs from formal initial grouping")
     finally:
         prepared.close()
     return snapshot
