@@ -17,7 +17,8 @@ SQLite report.
 environment's `XIC_RAW_ROOT` and `THERMO_RAWFILE_READER_DLL_DIR` supply defaults.
 `--no-open` prints the URL without opening a browser. `--port` selects its
 loopback port, and `--config-dir` selects writable application state. Stop the
-process with Ctrl+C when finished. Reports should be downloaded before stopping.
+process with Ctrl+C or **結束工作區** when finished. Download any standalone
+reports that should be retained independently of the review cache.
 
 The same navigation launches Targeted and Untargeted work. Analysis jobs and
 their output actions remain available beside review; they delegate to the
@@ -29,6 +30,22 @@ filtered list, open a result's detail, then read the previous or next result.
 Returning to the list preserves the query and selected row; navigation crosses
 page boundaries within the same filtered population. Inspector is the shared
 detail renderer and offline export, not a second interactive workspace.
+
+The last reading is saved automatically under the application-state directory's
+`review/` folder. Reopening with the same `--config-dir` restores the source,
+applied search and filters, selected result, scroll position, acquisition inputs
+and sample selection. Up to eight recent XIC views are kept as immutable local
+snapshots; reload and restart reuse them without RAW acquisition. **結束工作區**
+waits for this checkpoint before stopping. An explicitly different source starts
+its own reading instead of restoring the previous source.
+
+Resume compares source identity and file size/mtime, and checks each cached
+view's RAW size/mtime once per file. These are cache freshness hints, not a new
+content proof or acquisition binding. Changed results discard the old reading;
+changed/missing RAW or unreadable curve snapshots keep the position but omit
+affected XIC with a notice, without automatically rereading RAW. Changing the
+sample selection or acquisition inputs requires a matching cached view or a new
+explicit acquisition. This review cache never writes results or Matrix values.
 
 A single approximate m/z field is available for current and older Untargeted
 results and Targeted XLSX; RT is optional. Results are ranked across the
@@ -201,7 +218,8 @@ from the original analysis. Old workbooks without the near-reference rejection
 reason say it is unavailable instead of using a remote selected peak as its cause.
 New Targeted output retains near-reference support rejection diagnostics, including
 the method's expected analyte/ISTD offset, and prioritizes them in Review Reason.
-Review pages remain temporary session views, not additional normal-run outputs.
+Review pages and the bounded resume cache are local application state, not
+additional normal-run outputs.
 
 ## Public entry points
 

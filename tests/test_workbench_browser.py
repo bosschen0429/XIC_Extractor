@@ -3486,3 +3486,131 @@ def test_continuous_review_resumes_after_reload_and_honors_changed_inputs(
     page.locator("#item-list button").last.click()
     _wait_for_curve_report(page, inline=True)
     assert len(calls) == 5
+
+
+def test_closed_workbench_resumes_review_in_new_browser_without_raw_reads(
+    browser, config_dir, tmp_path, monkeypatch, browser_diagnostics, browser_errors
+):
+    from dataclasses import replace
+
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from tests.test_xic_workbench import _browse_review_batch
+    from xic_inspector.sources.curve_bundle import CurveBundle, write_curve_bundle
+    from xic_workbench import acquisition
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    for sample in ("S1", "S2"):
+        (raw_dir / f"{sample}.raw").write_bytes(sample.encode())
+    calls = []
+
+    def acquire(report, output, *, sample_ids, **kwargs):
+        calls.append((kwargs["group_id"], tuple(sample_ids)))
+        transition = _fixture_bundle().transitions[0]
+        scale = int(kwargs["group_id"][1:]) + 1
+        traces = tuple(
+            replace(
+                trace,
+                trace_id=sid,
+                sample_id=sid,
+                sample_label=sid,
+                raw=replace(
+                    trace.raw, intensity=tuple(x * scale for x in trace.raw.intensity)
+                ),
+            )
+            for sid in sample_ids
+            for trace in (transition.traces[0 if sid == "S1" else 1],)
+        )
+        write_curve_bundle(CurveBundle((replace(transition, traces=traces),)), output)
+        return {
+            "curve_count": len(traces),
+            "raw_paths": [str(raw_dir / f"{sid}.raw") for sid in sample_ids],
+        }
+
+    monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
+    report, _ = _browse_review_batch(tmp_path)
+
+    def launch(cleanup, name):
+        workspace = ReviewWorkspace(config_dir=config_dir)
+        cleanup.callback(workspace.close)
+        server = create_server(workspace)
+        cleanup.callback(server.server_close)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cleanup.callback(thread.join, timeout=5)
+        cleanup.callback(server.shutdown)
+        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        cleanup.callback(context.close)
+        context.tracing.start(snapshots=True, sources=True)
+        cleanup.callback(
+            context.tracing.stop,
+            path=browser_diagnostics.directory / f"{name}-trace.zip",
+        )
+        page = context.new_page()
+        page.set_default_timeout(ACTION_TIMEOUT_MS)
+        browser_diagnostics.attach(page, browser_errors)
+        page.goto(f"http://127.0.0.1:{server.server_port}/")
+        expect(page.locator("#t-data_dir")).to_be_attached()
+        expect(page.locator("body")).not_to_have_class(re.compile(r"\bbooting\b"))
+        return page
+
+    with ExitStack() as first:
+        page = launch(first, "before-close")
+        _view(page, "review")
+        page.locator("#source").fill(str(report))
+        page.locator("#raw-dir").fill(str(raw_dir))
+        page.locator("#dll-dir").fill(str(dll_dir))
+        page.locator("#open-form button[type=submit]").click()
+        page.locator("#nearest-mz").fill("123.4")
+        page.get_by_role("button", name="搜尋全批結果", exact=True).click()
+        page.locator("#review-filter").select_option("unflagged")
+        page.locator("#value-filter").select_option("complete")
+        page.locator("#item-list button").last.click()
+        curves = _wait_for_curve_report(page, inline=True)
+        first_view = curves.get_attribute("data-view-id")
+        page.locator("#review-next").click()
+        expect(page.locator("#review-position")).to_have_text("26 / 28")
+        _wait_for_curve_report(page, inline=True)
+        second_view = curves.get_attribute("data-view-id")
+        page.locator("#review-previous").click()
+        expect(curves).to_have_attribute("data-view-id", first_view)
+        first_values = page.locator("#recorded-review .sample-table").inner_text()
+        page.evaluate("window.scrollTo(0, 500)")
+        page.locator("#shutdown-workspace").click()
+        # Clicking the sidebar control may scroll it into view. Resume the
+        # viewport at shutdown, not the position before that user interaction.
+        reading_scroll = page.evaluate("window.scrollY")
+        page.locator("#confirm-accept").click()
+        expect(page.get_by_role("heading", name="工作區已結束")).to_be_visible()
+
+    with ExitStack() as reopened:
+        page = launch(reopened, "after-reopen")
+        expect(page.locator("#source")).to_have_value(str(report))
+        curves = _wait_for_curve_report(page, inline=True)
+        expect(curves).to_have_attribute("data-view-id", first_view)
+        expect(page.locator("#nearest-mz")).to_have_value("123.4")
+        expect(page.locator("#review-filter")).to_have_value("unflagged")
+        expect(page.locator("#value-filter")).to_have_value("complete")
+        expect(page.locator("#review-position")).to_have_text("25 / 28")
+        expect(page.locator("#page-label")).to_have_text("1 / 2 頁")
+        page.wait_for_function(
+            "y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll
+        )
+        expect(page.locator("#recorded-review .sample-table")).to_have_text(
+            first_values, use_inner_text=True
+        )
+        response = page.request.get(
+            f"{page.url}api/views/{first_view}", headers={"X-XIC-Client": "workbench"}
+        )
+        assert response.ok
+        assert {
+            curve["sample_id"]: curve["raw_intensities"]
+            for curve in response.json()["items"][0]["curves"]
+        } == {"S1": [0, 125, 225, 0], "S2": [0, 50, 300, 0]}
+        page.locator("#review-next").click()
+        expect(curves).to_have_attribute("data-view-id", second_view)
+        expect(page.locator("#review-position")).to_have_text("26 / 28")
+        assert len(calls) == 2
+    assert not browser_errors

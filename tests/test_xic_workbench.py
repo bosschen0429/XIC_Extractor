@@ -10,7 +10,7 @@ import socket
 import threading
 import time
 import weakref
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -930,3 +930,140 @@ def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_p
         workspace_id = a("/api/review")[1]["workspace_id"]
         assert workspace_id == a("/api/review")[1]["workspace_id"]
         assert workspace_id != b("/api/review")[1]["workspace_id"]
+
+
+@pytest.fixture
+def saved_review_checkpoint(tmp_path, monkeypatch):
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from xic_inspector.sources.curve_bundle import write_curve_bundle
+    from xic_workbench import acquisition
+
+    report, _ = _review_batch(tmp_path)
+    raw = tmp_path / "S1.raw"
+    raw.write_bytes(b"original RAW fixture")
+    calls = []
+
+    def acquire(_report, output, **kwargs):
+        calls.append(kwargs)
+        write_curve_bundle(_fixture_bundle(), output)
+        return {"raw_paths": [str(raw)]}
+
+    monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
+    config = tmp_path / "config"
+    with closing(ReviewWorkspace(config_dir=config)) as workspace:
+        workspace.open(str(report))
+        page = workspace.query({"group_id": "a-complete"})
+        detail = workspace.detail(page["items"][0]["id"])
+        parameters = {
+            "item_id": detail["item"]["id"],
+            "sample_ids": ["S1"],
+            "raw_dir": str(tmp_path),
+            "dll_dir": str(tmp_path),
+            "ppm": 5,
+            "padding_min": 0.5,
+        }
+        job = workspace.start_curves(parameters)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            job = workspace.job(job["id"])
+            if job["status"] != "running":
+                break
+            time.sleep(0.01)
+        assert job["status"] == "succeeded", job
+        view_id = job["view_id"]
+        key = json.dumps([str(report), parameters])
+        reading = {
+            "workspace": workspace.state()["workspace_id"],
+            "source": str(report),
+            "recorded": detail["view_id"],
+            "curveCache": [[key, view_id]],
+            "curveView": view_id,
+            "curveRequestKey": key,
+            "samples": ["S1"],
+            "acquisition": [
+                ["raw-dir", str(tmp_path)],
+                ["dll-dir", str(tmp_path)],
+                ["ppm", "5"],
+                ["padding", "0.5"],
+            ],
+            "detailOpen": True,
+            "overview": False,
+            "drawerOpen": False,
+            "workspaceView": "review",
+            "scroll": 400,
+            "listScroll": 25,
+            "capturedAt": 100,
+        }
+        assert workspace.save_reading(reading) == {"saved": True}
+        payload = workspace.view_payload(view_id)
+    return config, report, raw, reading, payload, calls
+
+
+def test_review_checkpoint_reopens_and_ignores_stale_saves(saved_review_checkpoint):
+    config, report, _, original, payload, calls = saved_review_checkpoint
+    with closing(ReviewWorkspace(config_dir=config)) as workspace:
+        state = workspace.state()
+        assert state["page"]["source"] == str(report)
+        assert state["page"]["filters"]["group_id"] == "a-complete"
+        assert state["detail"]["item"]["group_id"] == "a-complete"
+        assert state["reading"]["curveCache"] == original["curveCache"]
+        assert state["reading"]["workspace"] != original["workspace"]
+        assert workspace.view_payload(original["curveView"]) == payload
+        reading = state["reading"] | {"capturedAt": 200, "scroll": 700}
+        assert workspace.save_reading(reading) == {"saved": True}
+        assert workspace.save_reading(reading | {"capturedAt": 150, "scroll": 1}) == {
+            "saved": False
+        }
+        assert workspace.save_reading(original | {"capturedAt": 300}) == {
+            "saved": False
+        }
+        assert workspace.state()["reading"]["scroll"] == 700
+        # Pruning the durable cache must not destroy this live session's views.
+        workspace.save_reading(reading | {"capturedAt": 400, "curveCache": []})
+        assert not list((config / "review").glob("*.view.json"))
+        assert workspace.view_payload(original["curveView"]) == payload
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("changed", ["raw", "cache", "source", "checkpoint"])
+def test_review_resume_omits_stale_or_unreadable_state(
+    saved_review_checkpoint, changed
+):
+    config, report, raw, original, _, calls = saved_review_checkpoint
+    if changed == "raw":
+        raw.write_bytes(b"replaced RAW fixture with different content")
+    elif changed == "cache":
+        (config / "review" / f"{original['curveView']}.view.json").write_text("{")
+    elif changed == "source":
+        # The bound Matrix is part of source freshness, not just the SQLite file.
+        (report.parent / "matrix.tsv").write_text("changed matrix fixture")
+    else:
+        (config / "review" / "state.json").write_text('{"version": 1, "reading": []}')
+    with closing(ReviewWorkspace(config_dir=config)) as workspace:
+        state = workspace.state()
+        assert state["resume_notice"]
+        if changed in {"raw", "cache"}:
+            assert state["detail"]["item"]["group_id"] == "a-complete"
+            assert state["reading"]["scroll"] == 400
+            assert state["reading"]["curveCache"] == []
+            assert state["reading"]["curveView"] is None
+        else:
+            assert state["reading"] is None
+            assert state["detail"] is None
+    assert len(calls) == 1, "Resume must never acquire RAW automatically"
+
+
+def test_explicit_new_source_does_not_resume_old_reading(
+    saved_review_checkpoint, tmp_path
+):
+    config, _, _, _, _, calls = saved_review_checkpoint
+    other = tmp_path / "other"
+    other.mkdir()
+    report, _ = _review_batch(other)
+    with closing(
+        ReviewWorkspace(config_dir=config, defaults={"source": str(report)})
+    ) as workspace:
+        assert workspace.state()["page"] is None
+        assert workspace.state()["reading"] is None
+        assert workspace.defaults["source"] == str(report)
+    assert len(calls) == 1

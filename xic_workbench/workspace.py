@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import shutil
+import sqlite3
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +18,7 @@ from typing import Any
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
+    InspectorError,
     PreparedReport,
     SelectionRequest,
     prepare_report,
@@ -27,6 +31,7 @@ from xic_inspector.rendering.html_builder import (
 )
 from xic_inspector.selection.review import REVIEW_FILTERS
 from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
+from xic_workbench.review_state import ReviewStateStore, file_metadata
 
 
 class WorkspaceBusy(ValueError):
@@ -69,6 +74,13 @@ class ReviewWorkspace:
         self._job: dict[str, Any] | None = None
         self._detail: dict[str, Any] | None = None
         self._views: dict[str, Path] = {}
+        self._store = ReviewStateStore(self.analysis.config_dir)
+        self._source_metadata: dict[str, list[int]] = {}
+        self._curve_inputs: dict[str, dict[str, Any]] = {}
+        self._reading: dict[str, Any] | None = None
+        self._reading_clock = 0
+        self._resume_notice = ""
+        self._restore_reading()
 
     def state(self) -> dict[str, Any]:
         """Restore the current review selection and job after a page reload."""
@@ -79,8 +91,190 @@ class ReviewWorkspace:
                     "page": self._page_response() if self._page is not None else None,
                     "detail": self._detail,
                     "job": self._job,
+                    "reading": self._reading,
+                    "resume_notice": self._resume_notice,
                 }
             )
+
+    def _reading_state(self, values: dict[str, Any]) -> dict[str, Any] | None:
+        recorded = self._detail["view_id"] if self._detail else None
+        if (
+            self._report is None
+            or values.get("workspace") != self._workspace_id
+            or values.get("source") != str(self._report)
+            or values.get("recorded") != recorded
+        ):
+            return None
+        cache = values.get("curveCache")
+        samples = values.get("samples")
+        acquisition = values.get("acquisition")
+        if (
+            not isinstance(cache, list)
+            or len(cache) > 8
+            or not all(
+                isinstance(entry, list)
+                and len(entry) == 2
+                and all(isinstance(value, str) for value in entry)
+                for entry in cache
+            )
+            or not isinstance(samples, list)
+            or not all(isinstance(sample, str) for sample in samples)
+            or not isinstance(acquisition, list)
+        ):
+            raise ValueError("無法保存此檢閱進度。")
+        fields = dict(acquisition)
+        if set(fields) != {"raw-dir", "dll-dir", "ppm", "padding"} or not all(
+            isinstance(value, str) for value in fields.values()
+        ):
+            raise ValueError("檢閱來源設定格式不正確。")
+        for key in ("detailOpen", "overview", "drawerOpen"):
+            if not isinstance(values.get(key), bool):
+                raise ValueError("檢閱位置格式不正確。")
+        for key in ("scroll", "listScroll"):
+            value = values.get(key)
+            if (
+                not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value < 0
+            ):
+                raise ValueError("檢閱捲動位置格式不正確。")
+        if values.get("workspaceView") not in {"targeted", "untargeted", "review"}:
+            raise ValueError("檢閱工作區格式不正確。")
+        retained = []
+        for key, view_id in cache:
+            inputs = self._curve_inputs.get(view_id)
+            if inputs is None or view_id not in self._views:
+                continue
+            # The acquisition owns this binding; the browser supplies references only.
+            if json.loads(key) != [inputs["source"], inputs["request"]]:
+                continue
+            retained.append([key, view_id])
+        reading = {
+            key: copy.deepcopy(values.get(key))
+            for key in (
+                "workspace",
+                "source",
+                "recorded",
+                "detailOpen",
+                "overview",
+                "curveView",
+                "curveRequestKey",
+                "samples",
+                "drawerOpen",
+                "workspaceView",
+                "scroll",
+                "listScroll",
+                "acquisition",
+            )
+        }
+        reading["curveCache"] = retained
+        if reading["curveView"] not in {view_id for _, view_id in retained}:
+            reading["curveView"] = None
+        return reading
+
+    def save_reading(self, values: dict[str, Any]) -> dict[str, bool]:
+        """Persist the current reading, never a late response from another selection."""
+        from xic_workbench.analysis_workspace import json_value
+
+        with self._lock:
+            reading = self._reading_state(values)
+            clock = values.get("capturedAt", 0)
+            if not isinstance(clock, int) or clock < 0:
+                raise ValueError("檢閱進度時間格式不正確。")
+            if reading is None or clock < self._reading_clock:
+                return {"saved": False}
+            if self._job and self._job["status"] in {"running", "cancelling"}:
+                return {"saved": False}
+            assert self._page is not None
+            page = self._page_response()
+            ids = {view_id for _, view_id in reading["curveCache"]}
+            self._store.write(
+                {
+                    "source": str(self._report),
+                    "source_metadata": self._source_metadata,
+                    "source_identity": json_value(self._page.source),
+                    "query": page["filters"]
+                    | {
+                        "offset": page["offset"],
+                        "limit": page["limit"],
+                    },
+                    "item_id": self._detail["item"]["id"] if self._detail else None,
+                    "reading": reading,
+                    "curve_inputs": {key: self._curve_inputs[key] for key in ids},
+                },
+                {key: self._views[key] for key in ids},
+            )
+            self._reading, self._reading_clock = reading, clock
+            return {"saved": True}
+
+    def _restore_reading(self) -> None:
+        from xic_workbench.analysis_workspace import json_value
+
+        try:
+            saved = self._store.read()
+            if saved is None:
+                return
+            source = Path(saved["source"])
+            explicit = self.defaults.get("source")
+            if explicit and resolve_source(Path(explicit)).resolve() != source:
+                return
+            self.defaults["source"] = str(source)
+            metadata = saved["source_metadata"]
+            if file_metadata(Path(path) for path in metadata) != metadata:
+                self._resume_notice = "上次結果已變更，未沿用舊檢閱位置與 XIC。"
+                return
+            self.open(str(source))
+            assert self._page is not None
+            if json_value(self._page.source) != saved["source_identity"]:
+                self._resume_notice = "上次結果已變更，未沿用舊檢閱位置與 XIC。"
+                return
+            self.query(saved["query"])
+            if saved["item_id"] is not None:
+                self.detail(saved["item_id"])
+            reading = saved["reading"]
+            retained = []
+            checked_files: dict[str, list[int]] = {}
+            for key, view_id in reading["curveCache"][-8:]:
+                try:
+                    inputs = saved["curve_inputs"][view_id]
+                    files = inputs["files"]
+                    if not isinstance(files, dict):
+                        raise ValueError("RAW 快取來源格式不正確。")
+                    missing = files.keys() - checked_files.keys()
+                    checked_files.update(file_metadata(Path(path) for path in missing))
+                    if any(
+                        checked_files[path] != metadata
+                        for path, metadata in files.items()
+                    ):
+                        raise ValueError("RAW 檔案已變更。")
+                    snapshot = self._store.read_view(view_id)
+                    local = self._folder / snapshot.name
+                    shutil.copyfile(snapshot, local)
+                    self._views[view_id] = local
+                    self._curve_inputs[view_id] = inputs
+                    retained.append([key, view_id])
+                except (OSError, ValueError, TypeError, KeyError):
+                    self._resume_notice = (
+                        "部分 RAW 或 XIC 快取已變更或無法讀取；保留檢閱位置，"
+                        "需要時請重新載入受影響的 XIC。"
+                    )
+            reading.update(
+                workspace=self._workspace_id,
+                source=str(self._report),
+                recorded=self._detail["view_id"] if self._detail else None,
+                curveCache=retained,
+            )
+            self._reading = self._reading_state(reading)
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            InspectorError,
+            sqlite3.Error,
+        ):
+            self._reading = None
+            self._resume_notice = "上次檢閱進度無法還原；請重新開啟結果。"
 
     def _require_idle(self) -> None:
         if self._job and self._job["status"] in {"running", "cancelling"}:
@@ -132,6 +326,13 @@ class ReviewWorkspace:
             # Failed opens never displace the previously usable batch.
             self._report, self._page = path, page
             self._detail, self._job = None, None
+            paths = [path]
+            if isinstance(page.source, EvidenceLocator):
+                paths.append(page.source.matrix_path)
+            self._source_metadata = file_metadata(paths)
+            self._curve_inputs = {}
+            self._reading = None
+            self._reading_clock = 0
             return self._page_response()
 
     def query(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -394,6 +595,10 @@ class ReviewWorkspace:
                 self.detail(item["id"])
             source, expected_source = self._report, self._page.source
             job_id = uuid.uuid4().hex
+            self._curve_inputs[job_id] = {
+                "source": str(source),
+                "request": copy.deepcopy(values),
+            }
             self._cancel = threading.Event()
             self._job = {
                 "id": job_id,
@@ -502,6 +707,9 @@ class ReviewWorkspace:
                 if cancel.is_set():
                     raise CurveAcquisitionCancelled("已取消曲線載入。")
                 self._store_view(job_id, prepared)
+                self._curve_inputs[job_id]["files"] = file_metadata(
+                    Path(path) for path in receipt.get("raw_paths", [])
+                )
                 update(
                     status="succeeded",
                     phase="完成",

@@ -154,31 +154,57 @@ window.XicUi = (() => {
   const acquisitionFields = ["raw-dir", "dll-dir", "ppm", "padding"];
   const analysisReady = new Promise(resolve =>
     document.addEventListener("xic:analysis-ready", resolve, {once: true}));
-  // Keep only view references in this tab; the live workspace owns curve data.
-  // Its identity prevents old references surviving a local server restart.
+  let readingTimer;
+  function captureReading() {
+    if (!state.workspaceId || !state.page || locked() || document.querySelector(".closed-screen")) return null;
+    return {
+      workspace: state.workspaceId, source: state.page?.source,
+      recorded: state.recorded, detailOpen: state.detailOpen,
+      overview: !$("targeted-overview").hidden,
+      curveView: state.curveView?.id, curveCache: [...state.curveCache],
+      curveRequestKey: state.curveRequestKey, samples: [...state.samples],
+      drawerOpen: $("xic-dialog").open,
+      workspaceView: document.body.dataset.view,
+      scroll: window.scrollY, listScroll: $("item-list").scrollTop,
+      acquisition: acquisitionFields.map(id => [id, $(id).value]),
+      capturedAt: Date.now(),
+    };
+  }
+  async function saveReading(keepalive = false) {
+    clearTimeout(readingTimer);
+    const reading = captureReading();
+    if (!reading) return;
+    const body = JSON.stringify(reading);
+    // Tab state supports an immediate reload; the workspace owns durable curves.
+    try { sessionStorage.setItem(readingKey, body); } catch (_) {}
+    const response = await fetch("/api/review/reading", {
+      method: "POST", keepalive,
+      headers: {"X-XIC-Client": "workbench", "Content-Type": "application/json"},
+      body,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "無法保存檢閱進度。");
+  }
+  window.XicUi.saveReading = saveReading;
+  function scheduleReading() {
+    clearTimeout(readingTimer);
+    readingTimer = setTimeout(() => saveReading().catch(error =>
+      status(`檢閱進度尚未保存：${error.message}`, "error")), 350);
+  }
+  for (const event of ["change", "click", "scroll", "close", "popstate"])
+    window.addEventListener(event, scheduleReading, {capture: true, passive: true});
   window.addEventListener("pagehide", () => {
-    if (!state.workspaceId) return;
-    try {
-      sessionStorage.setItem(readingKey, JSON.stringify({
-        workspace: state.workspaceId, source: state.page?.source,
-        recorded: state.recorded, detailOpen: state.detailOpen,
-        overview: !$("targeted-overview").hidden,
-        curveView: state.curveView?.id, curveCache: [...state.curveCache],
-        curveRequestKey: state.curveRequestKey, samples: [...state.samples],
-        drawerOpen: $("xic-dialog").open,
-        workspaceView: document.body.dataset.view,
-        scroll: window.scrollY, listScroll: $("item-list").scrollTop,
-        acquisition: acquisitionFields.map(id => [id, $(id).value]),
-      }));
-    } catch (_) {}
+    saveReading(true).catch(() => {});
   });
   function savedReading(review) {
+    const matches = saved => saved?.workspace === review.workspace_id
+      && saved.source === review.page?.source
+      && saved.recorded === (review.detail?.view_id ?? null);
     try {
       const saved = JSON.parse(sessionStorage.getItem(readingKey));
-      return saved?.workspace === review.workspace_id
-        && saved.source === review.page?.source
-        && saved.recorded === (review.detail?.view_id ?? null) ? saved : null;
-    } catch (_) { return null; }
+      if (matches(saved)) return saved;
+    } catch (_) {}
+    return matches(review.reading) ? review.reading : null;
   }
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
@@ -443,6 +469,7 @@ window.XicUi = (() => {
     } finally {
       state.busy = false;
       controls();
+      scheduleReading();
     }
   }
   function clearSelection() {
@@ -998,6 +1025,7 @@ window.XicUi = (() => {
   }
   async function showCurveView(view) {
     state.curveView = view;
+    scheduleReading();
     const targeted = state.page.source_kind === "targeted_workbook";
     if (targeted) $("xic-download").href = `/reports/${view.id}.html?download=1`;
     if (targeted && !$("xic-dialog").open) {
@@ -1013,6 +1041,7 @@ window.XicUi = (() => {
     }
     const mounted = await mountReview(targeted ? "xic-review" : "inline-curve-review", view.id, "curves");
     if (!mounted || state.curveView !== view) return;
+    scheduleReading();
     const samples = targeted ? $("xic-sample").selectedOptions[0].textContent : `${state.samples.size} 個樣本`;
     curveStatus(`${samples} 的診斷曲線已載入；不改寫已保存結果。`);
     if (!targeted) {
@@ -1458,5 +1487,6 @@ window.XicUi = (() => {
       }
     } else if ($("source").value) await openBatch();
     else status("");
+    if (review.resume_notice) window.XicUi.toast(review.resume_notice, "error");
   }, "正在連接本機工作區…");
 })();

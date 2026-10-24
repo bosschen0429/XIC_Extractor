@@ -2049,11 +2049,12 @@
     const accepted = await ui.confirm({
       title: "結束工作區？",
       message:
-        "本機工作區會停止，這個分頁之後無法再操作。已儲存的設定與結果都會保留。",
+        "本機工作區會停止。檢閱進度、已載入的 XIC、已儲存的設定與結果都會保留。",
       accept: "結束工作區",
       danger: true,
     });
     if (!accepted) return;
+    await ui.saveReading();
     await api("/api/shutdown", {});
     state.closed = true;
     const screen = el("div", undefined, "closed-screen");
