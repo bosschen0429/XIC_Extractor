@@ -380,11 +380,10 @@
   <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
 </dialog>
 
-<dialog id="target-editor" class="wide-dialog">
+<dialog id="target-editor" class="wide-dialog" aria-labelledby="target-editor-title">
   <div class="dialog-head">
     <div>
-      <h2>編輯目標清單</h2>
-      <p class="subtle">目標表保留 expected RT、CID/NL tag 與明確 ISTD 配對；匯入不會自動推測配對。</p>
+      <h2 id="target-editor-title">目標清單</h2>
     </div>
     <button
       type="button"
@@ -402,21 +401,25 @@
         <tbody id="target-rows"></tbody>
       </table>
     </div>
+    <details class="editor-help">
+      <summary>欄位說明</summary>
+      <p>CID-NL tag 範例：dR、R、MeR。ISTD 需明確指定配對，匯入不會自動推測。</p>
+    </details>
   </div>
   <div class="dialog-foot">
     <button id="target-add" type="button" class="spacer">
       <svg class="icon"><use href="#i-plus" /></svg>新增目標</button
-    ><button type="button" data-close="target-editor">完成</button
+    ><button type="button" data-close="target-editor">返回設定</button
     ><button id="target-editor-save" type="button" class="primary">
       <svg class="icon"><use href="#i-save" /></svg>儲存目標
     </button>
   </div>
 </dialog>
 
-<dialog id="sample-editor" class="wide-dialog">
+<dialog id="sample-editor" class="wide-dialog" aria-labelledby="sample-editor-title">
   <div class="dialog-head">
-    <div>
-      <h2>樣本明細</h2>
+    <div class="editor-heading">
+      <h2 id="sample-editor-title">樣本明細</h2>
       <p class="subtle" id="sample-editor-count"></p>
     </div>
     <button
@@ -433,8 +436,12 @@
       <input
         id="sample-filter"
         type="search"
-        placeholder="篩選 RAW 檔名、樣品名稱或批次"
+        aria-label="篩選樣本"
+        placeholder="RAW 檔名、樣品名稱、批次或組別"
       />
+      <span id="sample-selection-count" class="subtle" role="status">已選 0 個樣本</span>
+    </div>
+    <div class="sample-bulk-actions" role="group" aria-label="套用至勾選的樣本">
       <span class="toolbar-group"
         ><select id="sample-bulk-role" aria-label="批次角色"></select
         ><button id="sample-apply-role" type="button">套用角色</button></span
@@ -447,7 +454,6 @@
         ><button id="sample-include" type="button">取消排除</button></span
       >
     </div>
-    <p class="subtle">改動會立即存成這個 RAW 資料夾的樣品資訊；Targeted 與 Untargeted 共用。勾選的樣本才會套用批次操作；點樣品名稱中的詞可選取所有含這個詞的樣本。</p>
     <datalist id="sample-group-options"></datalist>
     <div class="table-scroll editor-table">
       <table>
@@ -473,15 +479,20 @@
         <tbody id="sample-rows"></tbody>
       </table>
     </div>
+    <details class="editor-help">
+      <summary>批次選取說明</summary>
+      <p>批次操作只套用至勾選樣本。點選樣品名稱中的詞，可選取目前顯示且含此詞的樣本。</p>
+    </details>
   </div>
   <div class="dialog-foot">
+    <p class="subtle spacer">變更即時儲存；Targeted 與 Untargeted 共用。</p>
     <button type="button" class="primary" data-close="sample-editor">完成</button>
   </div>
 </dialog>
 
-<dialog id="method-editor" class="wide-dialog">
+<dialog id="method-editor" class="wide-dialog" aria-labelledby="method-editor-title">
   <div class="dialog-head">
-    <h2>編輯分析方法</h2>
+    <h2 id="method-editor-title">分析方法</h2>
     <button
       type="button"
       class="dialog-close"
@@ -492,35 +503,38 @@
     </button>
   </div>
   <div class="dialog-body">
-    <div class="settings-grid">
+    <div class="method-identity">
       <label class="field">名稱<input id="method-name" /></label
-      ><label class="field">說明<input id="method-description" /></label
       ><label class="field"
-        >組合方式<select id="method-combine">
-          <option value="single">single · 單一標籤</option>
-          <option value="union">union · 任一標籤</option>
-          <option value="intersection">intersection · 全部標籤</option>
+        >組合方式<select id="method-combine" aria-label="組合方式">
+          <option value="single">單一標籤</option>
+          <option value="union">任一標籤</option>
+          <option value="intersection">全部標籤</option>
         </select></label
       >
     </div>
-    <div class="table-scroll">
+    <div class="table-scroll editor-table">
       <table>
         <thead>
           <tr>
             <th>啟用</th>
             <th>標籤名稱</th>
-            <th>CID-NL tag</th>
+            <th>Neutral loss (Da)</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="method-tags"></tbody>
       </table>
     </div>
+    <details class="editor-help">
+      <summary>方法說明（選填）</summary>
+      <label class="field"><span class="sr-only">說明</span><input id="method-description" /></label>
+    </details>
     <p id="method-error" class="inline-status error" hidden></p>
   </div>
   <div class="dialog-foot">
     <button id="method-add-tag" type="button" class="spacer">
-      <svg class="icon"><use href="#i-plus" /></svg>新增 neutral loss</button
+      <svg class="icon"><use href="#i-plus" /></svg>新增標籤</button
     ><button id="method-save-as" type="button">另存 preset</button
     ><button id="method-apply" type="button" class="primary">
       套用至本次執行

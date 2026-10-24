@@ -685,10 +685,10 @@
   }
   const targetColumns = [
     ["label", "名稱"],
-    ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
     ["expected_rt_min", "預期 RT（min）"],
-    ["cid_nl_tag", "CID-NL tag（dR / R / MeR）"],
+    ["cid_nl_tag", "CID-NL tag"],
+    ["pairing", "角色／ISTD 配對"],
   ];
   function renderTargets() {
     const head = el("tr");
@@ -719,6 +719,7 @@
           input.value = value;
         } else {
           input.value = row[key] || "";
+          if (key === "cid_nl_tag") input.placeholder = "dR / R / MeR";
           if (
             ["mz", "expected_rt_min"].includes(
               key,
@@ -755,6 +756,13 @@
       tr.append(td);
       body.append(tr);
     });
+    if (!state.targets.length) {
+      const row = el("tr");
+      const cell = el("td", "尚無目標", "subtle");
+      cell.colSpan = targetColumns.length + 1;
+      row.append(cell);
+      body.append(row);
+    }
     targetCount();
   }
 
@@ -905,7 +913,7 @@
               : "text";
         input.setAttribute(
           "aria-label",
-          `${{ enabled: "啟用", name: "標籤名稱", neutral_loss_da: "Neutral loss" }[key]}（第 ${index + 1} 列）`,
+          `${{ enabled: "啟用", name: "標籤名稱", neutral_loss_da: "Neutral loss（Da）" }[key]}（第 ${index + 1} 列）`,
         );
         if (key === "enabled") input.checked = tag.enabled !== false;
         else {
@@ -1250,6 +1258,7 @@
       box.checked = hits.has(box.dataset.sample);
       if (box.checked) shown += 1;
     }
+    updateSampleSelection();
     ui.toast(
       `已選取 ${shown} 個名稱含「${word}」的樣本，可在上方套用組別或排除。`,
     );
@@ -1507,18 +1516,29 @@
       tr.append(sampleCell(excluded), sampleCell(reason));
       body.append(tr);
     }
-    if (!set.rows.length) {
+    if (!shown) {
       const tr = el("tr");
-      const td = el("td", "尚未讀取樣本。關閉此視窗後按「讀取 RAW 樣本」。");
+      const td = el("td", set.rows.length
+        ? "沒有符合條件的樣本。"
+        : "尚未讀取樣本。關閉此視窗後按「讀取 RAW 樣本」。");
       td.colSpan = 9;
       td.className = "subtle";
       tr.append(td);
       body.append(tr);
     }
-    $("sample-select-all").checked = false;
+    updateSampleSelection();
     $("sample-editor-count").textContent = filter
       ? `顯示 ${shown} ／ 共 ${set.rows.length} 個樣本`
       : `共 ${set.rows.length} 個樣本`;
+  }
+  function updateSampleSelection() {
+    const boxes = [...$("sample-rows").querySelectorAll("input[data-sample]")];
+    const count = boxes.filter((box) => box.checked).length;
+    $("sample-selection-count").textContent = `已選 ${count} 個樣本`;
+    $("sample-select-all").checked = count > 0 && count === boxes.length;
+    $("sample-select-all").indeterminate = count > 0 && count < boxes.length;
+    for (const id of ["sample-apply-role", "sample-apply-group", "sample-exclude", "sample-include"])
+      $(id).disabled = !count;
   }
   function selectedSamples() {
     const selected = new Set(
@@ -2267,10 +2287,15 @@
       state.pendingExclusions.clear();
       ui.toast("未填排除原因的勾選已取消。");
     });
-    $("sample-select-all").onchange = () =>
+    $("sample-rows").addEventListener("change", (event) => {
+      if (event.target.dataset.sample) updateSampleSelection();
+    });
+    $("sample-select-all").onchange = () => {
       $("sample-rows")
         .querySelectorAll("input[data-sample]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
+      updateSampleSelection();
+    };
     roleOptions($("sample-bulk-role"), "study_sample");
     // A change confirmed elsewhere, such as an exclusion marked in review.
     document.addEventListener("xic:samples-confirmed", (event) => {

@@ -345,6 +345,79 @@ def test_visible_rt_range_round_trips_without_changing_automatic_bounds(
     assert "rt_max" not in saved["overrides"]
 
 
+@pytest.mark.parametrize("width", [680, 960])
+def test_editors_keep_fields_and_actions_reachable(workbench, width):
+    page = workbench
+    page.set_viewport_size({"width": width, "height": 720})
+    for view, launcher, title, fields, actions in (
+        (
+            "targeted",
+            "target-edit",
+            "目標清單",
+            (
+                "名稱（第 1 列）",
+                "m/z（第 1 列）",
+                "預期 RT（min）（第 1 列）",
+                "CID-NL tag（第 1 列）",
+                "角色／ISTD 配對（第 1 列）",
+            ),
+            ("新增目標", "返回設定", "儲存目標"),
+        ),
+        (
+            "targeted",
+            "t-samples-edit",
+            "樣本明細",
+            ("篩選樣本", "批次角色", "批次組別", "批次排除原因"),
+            ("完成",),
+        ),
+        (
+            "untargeted",
+            "method-edit",
+            "分析方法",
+            ("名稱", "組合方式", "啟用（第 1 列）", "Neutral loss（Da）（第 1 列）"),
+            ("新增標籤", "另存 preset", "套用至本次執行"),
+        ),
+    ):
+        _view(page, view)
+        page.locator(f"#{launcher}").click()
+        dialog = page.get_by_role("dialog", name=title, exact=True)
+        expect(dialog).to_be_visible()
+        for label in fields:
+            expect(dialog.get_by_label(label, exact=True)).to_be_visible()
+        for name in actions:
+            expect(
+                dialog.get_by_role("button", name=name, exact=True)
+            ).to_be_in_viewport()
+        assert dialog.evaluate("node => node.scrollWidth <= node.clientWidth")
+        dialog.get_by_role("button", name="關閉", exact=True).click()
+
+
+def test_method_editor_keeps_optional_description_and_tag_values(workbench):
+    page = workbench
+    _view(page, "untargeted")
+    page.locator("#method-edit").click()
+    editor = page.get_by_role("dialog", name="分析方法", exact=True)
+    expect(editor.get_by_label("名稱", exact=True)).to_be_visible()
+    expect(editor.get_by_label("組合方式", exact=True)).to_be_visible()
+    expect(editor.get_by_label("說明", exact=True)).to_be_hidden()
+    editor.get_by_label("名稱", exact=True).fill("Browser method")
+    editor.get_by_label("組合方式", exact=True).select_option("union")
+    editor.get_by_label("啟用（第 2 列）", exact=True).check()
+    editor.get_by_label("Neutral loss（Da）（第 1 列）", exact=True).fill("120.25")
+    editor.get_by_text("方法說明（選填）", exact=True).click()
+    editor.get_by_label("說明", exact=True).fill("Two neutral losses")
+    page.locator("#method-apply").click()
+    expect(editor).to_be_hidden()
+    page.locator("#method-edit").click()
+    expect(editor.get_by_label("名稱", exact=True)).to_have_value("Browser method")
+    expect(editor.get_by_label("組合方式", exact=True)).to_have_value("union")
+    expect(editor.get_by_label("啟用（第 2 列）", exact=True)).to_be_checked()
+    expect(
+        editor.get_by_label("Neutral loss（Da）（第 1 列）", exact=True)
+    ).to_have_value("120.25")
+    expect(editor.get_by_label("說明", exact=True)).to_have_value("Two neutral losses")
+
+
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
     page = workbench
     summary = {
@@ -476,9 +549,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
         "2.75"
     )
-    page.get_by_role(
-        "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-    ).fill("R")
+    page.get_by_role("textbox", name="CID-NL tag（第 1 列）", exact=True).fill("R")
     page.locator("#target-editor-save").click()
     expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
@@ -487,9 +558,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
         page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
     ).to_have_value("2.75")
     expect(
-        page.get_by_role(
-            "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-        )
+        page.get_by_role("textbox", name="CID-NL tag（第 1 列）", exact=True)
     ).to_have_value("R")
     assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
     expect(page.locator("#t-parallel_workers")).to_have_value("2")
@@ -583,7 +652,7 @@ def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_er
     page.locator("#target-edit").click()
     page.get_by_role("button", name="刪除第 1 列", exact=True).click()
     page.locator("#target-editor").get_by_role(
-        "button", name="完成", exact=True
+        "button", name="返回設定", exact=True
     ).click()
     expected_http_error = (
         "Failed to load resource: the server responded with a status of "
@@ -2506,11 +2575,18 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     expect(checklist).to_contain_text("未標組別的研究樣本3 個，會歸到 Other")
     page.locator("#t-samples-edit").click()
     editor = page.locator("#sample-editor")
+    selection = editor.locator("#sample-selection-count")
+    expect(selection).to_have_text("已選 0 個樣本")
+    expect(page.locator("#sample-apply-group")).to_be_disabled()
     for stem in ("TumorBC1_DNA", "TumorBC2_DNA"):
         editor.get_by_label(f"選取 {stem}", exact=True).check()
+    expect(selection).to_have_text("已選 2 個樣本")
+    expect(page.locator("#sample-apply-group")).to_be_enabled()
     page.locator("#sample-bulk-group").fill("Tumor")
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         page.locator("#sample-apply-group").click()
+    expect(selection).to_have_text("已選 0 個樣本")
+    expect(page.locator("#sample-apply-group")).to_be_disabled()
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).fill(" normal ")
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).press("Tab")
@@ -2525,8 +2601,16 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     # Select-all picks samples; it never ticks an exclusion box.
     page.locator("#sample-select-all").check()
     expect(editor.locator("#sample-rows input[data-sample]:checked")).to_have_count(4)
+    expect(selection).to_have_text("已選 4 個樣本")
     expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).not_to_be_checked()
     page.locator("#sample-select-all").uncheck()
+    expect(selection).to_have_text("已選 0 個樣本")
+    page.locator("#sample-filter").fill("Normal")
+    page.locator("#sample-select-all").check()
+    expect(selection).to_have_text("已選 1 個樣本")
+    page.locator("#sample-filter").fill("")
+    expect(selection).to_have_text("已選 0 個樣本")
+    expect(page.locator("#sample-exclude")).to_be_disabled()
     # The exclusion is saved once it has its reason.
     editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
     expect(editor.get_by_label("TumorBC2_DNA 排除原因", exact=True)).to_be_focused()
