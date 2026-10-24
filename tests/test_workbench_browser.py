@@ -1614,6 +1614,27 @@ def test_cached_curve_history_restores_focus_range_and_drawer(cached_paired_curv
     assert len(reads) == 4 and len(posts) == 2
 
 
+def test_reload_restores_cached_sample_and_open_drawer(cached_paired_curves):
+    page, views, reads, posts = cached_paired_curves
+    raw_dir = page.locator("#raw-dir").input_value()
+    dll_dir = page.locator("#dll-dir").input_value()
+    page.locator("#xic-sample").select_option("S3")
+    review = _wait_for_curve_report(page)
+    expect(review).to_have_attribute("data-view-id", views["S3"])
+    page.reload()
+    expect(page.locator("#xic-dialog")).to_be_visible()
+    _wait_for_curve_report(page)
+    expect(review).to_have_attribute("data-view-id", views["S3"])
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(page.locator("#xic-sample")).to_have_value("S3")
+    expect(page.locator("#raw-dir")).to_have_value(raw_dir)
+    expect(page.locator("#dll-dir")).to_have_value(dll_dir)
+    page.locator("#xic-next").click()
+    _wait_for_curve_report(page)
+    expect(review).to_have_attribute("data-view-id", views["S4"])
+    assert len(reads) == 4 and len(posts) == 2
+
+
 def test_missing_curve_recovers_to_cached_sample_feedback(cached_paired_curves):
     page, views, reads, posts = cached_paired_curves
     page.locator("#xic-next").click()  # S5 has no RAW.
@@ -3330,7 +3351,7 @@ def test_workbench_detail_reuses_saved_curve_and_evidence_without_another_page(
     assert len(page.context.pages) == 1
 
 
-def test_continuous_review_reuses_curves_across_pages_and_honors_changed_inputs(
+def test_continuous_review_resumes_after_reload_and_honors_changed_inputs(
     workbench, tmp_path, monkeypatch
 ):
     from dataclasses import replace
@@ -3370,23 +3391,52 @@ def test_continuous_review_reuses_curves_across_pages_and_honors_changed_inputs(
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
-    page.locator("#review-order").select_option("mz")
+    page.locator("#nearest-mz").fill("123.4")
+    page.get_by_role("button", name="搜尋全批結果", exact=True).click()
+    page.locator("#review-filter").select_option("unflagged")
+    page.locator("#value-filter").select_option("complete")
     page.locator("#item-list button").last.click()
     curves = _wait_for_curve_report(page, inline=True)
     first_view = curves.get_attribute("data-view-id")
     first_values = page.locator("#recorded-review .sample-table").inner_text()
-    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    expect(page.locator("#review-position")).to_have_text("25 / 28")
     assert len(calls) == 1
     page.locator("#review-next").click()
-    expect(page.locator("#review-position")).to_have_text("26 / 31")
+    expect(page.locator("#review-position")).to_have_text("26 / 28")
     _wait_for_curve_report(page, inline=True)
-    assert curves.get_attribute("data-view-id") != first_view
+    second_view = curves.get_attribute("data-view-id")
+    assert second_view != first_view
     assert len(calls) == 2
     page.locator("#review-previous").click()
-    expect(page.locator("#review-position")).to_have_text("25 / 31")
+    expect(page.locator("#review-position")).to_have_text("25 / 28")
     _wait_for_curve_report(page, inline=True)
     assert len(calls) == 2
+    saved_rows = page.locator("#recorded-review .sample-table tbody tr")
+    saved_rows.last.scroll_into_view_if_needed()
+    reading_scroll = page.evaluate("window.scrollY")
+    page.reload()
+    _wait_for_curve_report(page, inline=True)
+    page.wait_for_function("y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll)
+    expect(page.locator("#nearest-mz")).to_have_value("123.4")
+    expect(page.locator("#review-filter")).to_have_value("unflagged")
+    expect(page.locator("#value-filter")).to_have_value("complete")
+    expect(page.locator("#raw-dir")).to_have_value(str(tmp_path))
+    expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
+    expect(page.locator("#review-position")).to_have_text("25 / 28")
+    expect(page.locator("#page-label")).to_have_text("1 / 2 頁")
     expect(curves).to_have_attribute("data-view-id", first_view)
+    page.locator("#review-next").click()
+    _wait_for_curve_report(page, inline=True)
+    expect(curves).to_have_attribute("data-view-id", second_view)
+    page.reload()
+    _wait_for_curve_report(page, inline=True)
+    expect(page.locator("#review-position")).to_have_text("26 / 28")
+    expect(page.locator("#page-label")).to_have_text("2 / 2 頁")
+    expect(curves).to_have_attribute("data-view-id", second_view)
+    page.locator("#review-previous").click()
+    _wait_for_curve_report(page, inline=True)
+    expect(curves).to_have_attribute("data-view-id", first_view)
+    assert len(calls) == 2
     expect(page.locator("#recorded-review .sample-table")).to_have_text(
         first_values, use_inner_text=True
     )
@@ -3410,6 +3460,13 @@ def test_continuous_review_reuses_curves_across_pages_and_honors_changed_inputs(
     _wait_for_curve_report(page, inline=True)
     assert len(calls) == 3
     assert calls[-1][2] == 0.75
+    changed_range = curves.get_attribute("data-view-id")
+    page.reload()
+    _wait_for_curve_report(page, inline=True)
+    expect(page.locator("#padding")).to_have_value("0.75")
+    expect(curves).to_have_attribute("data-view-id", changed_range)
+    assert len(calls) == 3
+    page.locator(".acquisition-panel > summary").click()
     page.locator('#sample-list input[value="S2"]').uncheck()
     page.locator("#load-curves").click()
     _wait_for_curve_report(page, inline=True)

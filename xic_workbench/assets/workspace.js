@@ -130,6 +130,7 @@ window.XicUi = (() => {
   const $ = (id) => document.getElementById(id);
   const { icon, navigation } = window.XicUi;
   const state = {
+    workspaceId: null,
     runFolders: new Map(),
     runFolder: null,
     page: null,
@@ -149,6 +150,36 @@ window.XicUi = (() => {
     browser: null,
     analysisBusy: false,
   };
+  const readingKey = "xic-review-reading-v1";
+  const acquisitionFields = ["raw-dir", "dll-dir", "ppm", "padding"];
+  const analysisReady = new Promise(resolve =>
+    document.addEventListener("xic:analysis-ready", resolve, {once: true}));
+  // Keep only view references in this tab; the live workspace owns curve data.
+  // Its identity prevents old references surviving a local server restart.
+  window.addEventListener("pagehide", () => {
+    if (!state.workspaceId) return;
+    try {
+      sessionStorage.setItem(readingKey, JSON.stringify({
+        workspace: state.workspaceId, source: state.page?.source,
+        recorded: state.recorded, detailOpen: state.detailOpen,
+        overview: !$("targeted-overview").hidden,
+        curveView: state.curveView?.id, curveCache: [...state.curveCache],
+        curveRequestKey: state.curveRequestKey, samples: [...state.samples],
+        drawerOpen: $("xic-dialog").open,
+        workspaceView: document.body.dataset.view,
+        scroll: window.scrollY, listScroll: $("item-list").scrollTop,
+        acquisition: acquisitionFields.map(id => [id, $(id).value]),
+      }));
+    } catch (_) {}
+  });
+  function savedReading(review) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(readingKey));
+      return saved?.workspace === review.workspace_id
+        && saved.source === review.page?.source
+        && saved.recorded === (review.detail?.view_id ?? null) ? saved : null;
+    } catch (_) { return null; }
+  }
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
   const significant = (value, digits) => Number(value.toPrecision(digits)).toString();
@@ -955,13 +986,15 @@ window.XicUi = (() => {
         $(id).textContent = samples.length ? `${label}：${samples.map(sample => sample.label).join("、")}` : "";
       }
     }
-    showRecorded();
+    const ready = showRecorded();
     status("");
+    return ready;
   }
   function showRecorded() {
-    mountReview("recorded-review", state.recorded, "result");
+    const ready = mountReview("recorded-review", state.recorded, "result");
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
+    return ready;
   }
   async function showCurveView(view) {
     state.curveView = view;
@@ -1065,6 +1098,19 @@ window.XicUi = (() => {
       await selectItem(page.items[openIndex ?? 0], false);
     return revision === navigation.revision;
   }
+  function prepareCurveView() {
+    const targeted = state.page.source_kind === "targeted_workbook";
+    $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
+    $("xic-navigation").hidden = !targeted;
+    $("xic-source-note").textContent = targeted
+      ? "陰影為已保存峰界；看圖不會重新積分或改變判定。"
+      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。看圖不改寫結果。";
+    if (targeted) {
+      $("xic-sample").value = [...state.samples][0];
+      const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
+      $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
+    }
+  }
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
       $("source-settings").open = true;
@@ -1078,17 +1124,8 @@ window.XicUi = (() => {
       curveStatus(`看 XIC 需要讀取 RAW。請先選擇${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`, "error");
       return;
     }
+    prepareCurveView();
     const targeted = state.page.source_kind === "targeted_workbook";
-    $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
-    $("xic-navigation").hidden = !targeted;
-    $("xic-source-note").textContent = targeted
-      ? "陰影為已保存峰界；看圖不會重新積分或改變判定。"
-      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。看圖不改寫結果。";
-    if (targeted) {
-      $("xic-sample").value = [...state.samples][0];
-      const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
-      $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
-    }
     if (targeted && !$("xic-dialog").open) {
       navigation.push();
       $("xic-dialog").showModal();
@@ -1379,6 +1416,9 @@ window.XicUi = (() => {
     $("raw-dir").value = session.defaults.raw_dir || "";
     $("dll-dir").value = session.defaults.dll_dir || "";
     const review = await api("/api/review");
+    await analysisReady;
+    state.workspaceId = review.workspace_id;
+    const saved = savedReading(review);
     if (review.page) {
       $("source").value = review.page.source;
       state.filters = review.page.filters;
@@ -1389,14 +1429,30 @@ window.XicUi = (() => {
       $("target-attention").checked = Boolean(state.filters.attention_only);
       renderPage(review.page);
       $("source-settings").open = false;
-      if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.detail) restoreDetail(review.detail);
+      if (saved) {
+        state.curveCache = new Map(saved.curveCache);
+        state.curveRequestKey = saved.curveRequestKey;
+        state.samples = new Set(saved.samples);
+        for (const [id, value] of saved.acquisition) $(id).value = value;
+      } else if (review.job) state.samples = new Set(review.job.sample_ids);
+      if (review.detail) await restoreDetail(review.detail);
       else if (review.page.overview && review.page.overview.kind !== "untargeted") showTargetedOverview();
-      if (review.job) {
+      if (saved?.curveView && !["running", "cancelling"].includes(review.job?.status)) {
+        prepareCurveView();
+        if (saved.drawerOpen) $("xic-dialog").showModal();
+        await showCurveView({id: saved.curveView});
+      } else if (review.job) {
         state.job = review.job;
         state.curveView = {id: null};
         $("job-progress").hidden = false;
         await pollJob(state.curveView);
+      }
+      if (saved && !saved.detailOpen) closeDetail(false);
+      if (saved?.overview) showTargetedOverview();
+      if (saved) {
+        $("item-list").scrollTop = saved.listScroll;
+        if (document.body.dataset.view === saved.workspaceView)
+          requestAnimationFrame(() => window.scrollTo(0, saved.scroll));
       }
     } else if ($("source").value) await openBatch();
     else status("");

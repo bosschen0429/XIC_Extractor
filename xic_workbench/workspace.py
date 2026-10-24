@@ -58,6 +58,7 @@ class ReviewWorkspace:
         self.analysis = AnalysisWorkspace(config_dir or CONFIG_DIR, self.defaults)
         self._temporary = TemporaryDirectory(prefix="xic-workbench-")
         self._folder = Path(self._temporary.name)
+        self._workspace_id = uuid.uuid4().hex
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="xic-review"
@@ -74,6 +75,7 @@ class ReviewWorkspace:
         with self._lock:
             return copy.deepcopy(
                 {
+                    "workspace_id": self._workspace_id,
                     "page": self._page_response() if self._page is not None else None,
                     "detail": self._detail,
                     "job": self._job,

@@ -927,3 +927,6 @@ def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_p
             assert a("/api/analysis", headers={"Cookie": cookie})[0] == 200
             if request is b or len(jar) > 1:
                 assert b("/api/analysis", headers={"Cookie": cookie})[0] == 200
+        workspace_id = a("/api/review")[1]["workspace_id"]
+        assert workspace_id == a("/api/review")[1]["workspace_id"]
+        assert workspace_id != b("/api/review")[1]["workspace_id"]

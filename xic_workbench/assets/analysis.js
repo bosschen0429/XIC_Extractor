@@ -2597,5 +2597,7 @@
   } catch (error) {
     document.body.classList.remove("booting");
     ui.toast(error.message, "error");
+  } finally {
+    document.dispatchEvent(new Event("xic:analysis-ready"));
   }
 })();
