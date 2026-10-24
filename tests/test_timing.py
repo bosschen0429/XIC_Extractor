@@ -727,6 +727,27 @@ def test_measurement_observation_rejects_unknown_availability() -> None:
         recorder.observe("metric", value=1, availability="unknown")
 
 
+def test_timing_recorder_reports_wall_time_outside_every_stage() -> None:
+    recorder = TimingRecorder(
+        "alignment",
+        run_id="run-wall",
+        timer=_Timer([1.0, 2.0, 2.5, 4.0, 4.5, 5.0]),
+        wall_clock=_Timer([0.0, 10.0]),
+    )
+    with recorder.stage("alignment.read_batch_index"):
+        pass
+    with recorder.stage("alignment.untargeted_cid_nl_runtime"):
+        with recorder.stage("alignment.nested"):
+            pass
+
+    assert recorder.wall_coverage() == {
+        "run_wall_sec": 10.0,
+        "attributed_wall_sec": 3.5,
+        "unattributed_wall_sec": 6.5,
+        "unattributed_fraction": 0.65,
+    }
+
+
 class _Timer:
     def __init__(self, values: list[float]) -> None:
         self._values = values

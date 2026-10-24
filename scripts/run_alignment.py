@@ -285,6 +285,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timing_path = args.timing_output.resolve()
                 timing_recorder.write_json(timing_path)
                 print(f"Timing JSON: {timing_path}")
+                coverage = timing_recorder.wall_coverage()
+                if coverage["unattributed_fraction"] > 0.05:
+                    print(
+                        "Timing warning: "
+                        f"{coverage['unattributed_wall_sec'] / 60:.1f} min "
+                        f"({coverage['unattributed_fraction']:.0%}) of wall time "
+                        "is outside every recorded stage",
+                        file=sys.stderr,
+                    )
 
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
