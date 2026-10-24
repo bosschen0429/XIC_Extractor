@@ -37,6 +37,7 @@ workflow owner rather than chaining similarly named commands.
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
+| Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](#duplicate_quantificationpy) |
 | Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
 The sections below index maintained diagnostics. Retired tools are recovered
@@ -58,6 +59,19 @@ commands.
 ---
 
 ## Validation Gates
+
+### `duplicate_quantification.py`
+
+**Purpose**: Count same-sample cells in different Matrix rows whose row
+precursor m/z (default ≤10 ppm) and published apex (default ≤3 s) coincide, and
+classify each row pair as complementary split, distinct peaks sharing a
+Backfill, or duplicate view.
+**Topic group**: `duplicate_quantification.py` + package-owned
+`xic_extractor.diagnostics.duplicate_quantification`
+**Status**: diagnostic_only. Reads `alignment_matrix_identity.tsv`,
+`alignment_backfill_cell_evidence.tsv` and `cid_nl_explanation.sqlite` from a
+`validation-minimal` or richer output. Does not open RAW or change Matrix values;
+a screening count, not chemical identity.
 
 Pipeline-tier gates that compare candidate configurations against current
 production, or summarize cost/parity for production decisions.
