@@ -337,11 +337,13 @@ window.XicUi = (() => {
     $("group-filter").hidden = state.page?.source_kind === "targeted_workbook" || nearest;
     $("group-id").disabled = busy || $("group-filter").hidden;
     $("search-mode-hint").textContent = nearest
-      ? "只知道大概數值也能找；RT 可留白。留白則瀏覽整批。"
+      ? "m/z 留白可瀏覽整批；RT 選填。輸入 m/z 後依全批接近程度排序，不套用科學容差。"
       : "依指定範圍搜尋；約略 m/z 不生效。";
     $("review-range-filters").querySelector("summary").textContent = nearest
-      ? "RT 範圍（選填，留白不限）" : "m/z / RT 範圍";
-    $("review-order").disabled = busy || Boolean($("nearest-mz").value.trim() && nearest);
+      ? "RT 範圍" : "m/z / RT 範圍";
+    const ranked = Boolean($("nearest-mz").value.trim() && nearest);
+    $("review-order").closest("label").hidden = ranked;
+    $("review-order").disabled = busy || ranked;
     validateNearestMz();
   }
   function controls() {
@@ -673,7 +675,9 @@ window.XicUi = (() => {
     }
     // Targeted review items are targets; Untargeted items are candidates.
     const noun = targeted ? "目標" : "項目";
-    $("list-title").textContent = "整批結果";
+    $("result-primary-column").textContent = targeted ? "目標" : "m/z";
+    $("result-coordinate-column").textContent = targeted ? "m/z" : "RT（min）";
+    $("result-sample-column").textContent = targeted ? "樣本" : "有值樣本";
     $("targeted-overview").hidden = true;
     $("targeted-review-nav").hidden = !page.overview;
     if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
@@ -729,15 +733,14 @@ window.XicUi = (() => {
           : `全批 ${count(page.run_total)} 個${noun}`,
       }),
       Object.assign(document.createElement("span"), {
-        textContent: page.selected_count
+        textContent: nearest ? "依 m/z 接近程度" : page.selected_count
           ? `第 ${count(page.offset + 1)}–${count(page.offset + page.selected_count)} 筆`
           : "",
       }),
     );
-    $("nearest-results-note").hidden = !nearest;
-    $("nearest-results-note").textContent = nearest
-      ? `約略 m/z ${page.nearest_mz} 的候選 · 依接近程度排序（全批排序後，每頁 25 筆）。`
-        + (page.missing_mz_count ? `另有 ${count(page.missing_mz_count)} 組缺少有效 m/z，未列入排序。` : "")
+    $("nearest-results-note").hidden = !nearest || !page.missing_mz_count;
+    $("nearest-results-note").textContent = nearest && page.missing_mz_count
+      ? `${count(page.missing_mz_count)} 組缺少有效 m/z，未列入排序。`
       : "";
     const list = $("item-list");
     list.replaceChildren();
@@ -750,18 +753,22 @@ window.XicUi = (() => {
       const top = document.createElement("span");
       top.className = "item-top";
       const title = document.createElement("strong");
-      title.textContent = targeted ? item.title
-        : `m/z ${nearest ? significant(item.precursor_mz, 12) : fmt(item.precursor_mz, 4)}`;
+      if (targeted) title.textContent = item.title;
+      else title.append(node("span", "m/z ", "column-label"),
+        document.createTextNode(nearest ? significant(item.precursor_mz, 12) : fmt(item.precursor_mz, 4)));
       const rt = document.createElement("span");
       rt.className = "item-rt";
-      rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
+      rt.append(node("span", targeted ? "m/z " : "RT ", "column-label"),
+        document.createTextNode(targeted ? fmt(item.precursor_mz, 4) : fmt(item.rt_apex_min, 2)));
+      if (!targeted) rt.append(node("span", " min", "column-label"));
       top.append(title, rt);
       const bottom = document.createElement("span");
       bottom.className = "item-bottom";
       const summary = document.createElement("span");
-      summary.textContent = targeted
-        ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
-        : `${item.numeric_count} / ${page.samples.length} 個樣本有值`;
+      summary.append(document.createTextNode(targeted
+        ? String(item.review_summary.scope_sample_count)
+        : `${item.numeric_count} / ${page.samples.length}`),
+      node("span", targeted ? " 個樣本的已保存結果" : " 個樣本有值", "column-label"));
       const badge = document.createElement("span");
       const review = item.review;
       const reasons = (review?.reasons || []).map(reason => page.review_options[reason] || reason);
@@ -770,7 +777,13 @@ window.XicUi = (() => {
         : review?.decision_count ? "未記錄待查訊號" : "未提供定量決策";
       badge.className = `chip ${badgeTone[label] || ""}`;
       if (review?.attention_count) badge.classList.add("warn");
-      badge.textContent = label + (review?.attention_count ? `（${review.attention_count} 個樣本）` : "");
+      if (review?.decision_count && !review.attention_count && !reasons.length) {
+        badge.classList.add("quiet-status");
+        badge.title = label;
+        const dash = node("span", "—");
+        dash.setAttribute("aria-hidden", "true");
+        badge.append(dash, node("span", label, "sr-only"));
+      } else badge.textContent = label + (review?.attention_count ? ` · ${review.attention_count} 個樣本` : "");
       bottom.append(summary);
       bottom.append(badge);
       button.append(top);
@@ -811,19 +824,6 @@ window.XicUi = (() => {
     $("review-filter").value = selected;
     $("value-filter").value = page.value_filter || "all";
     $("review-order").value = page.order_by === "source" ? "priority" : page.order_by || "priority";
-    const quick = $("review-quick-filters");
-    quick.replaceChildren();
-    for (const key of ["all", "attention", "unflagged", "unavailable"]) {
-      const button = node("button", `${labels[key] || key} ${count(counts[key] || 0)}`);
-      button.type = "button";
-      button.dataset.idle = "";
-      button.setAttribute("aria-pressed", String(selected === key));
-      button.addEventListener("click", () => {
-        $("review-filter").value = key;
-        action(() => query(0, queryFields()), "正在篩選整批結果…");
-      });
-      quick.append(button);
-    }
   }
   function resultPosition() {
     const index = state.page?.items.findIndex(item => item.id === state.item?.id) ?? -1;
@@ -876,8 +876,11 @@ window.XicUi = (() => {
     $("job-progress").hidden = true;
     const targeted = state.page.source_kind === "targeted_workbook";
     $("inline-curves").hidden = targeted || item.retained_curve_count > 0;
-    $("item-kind").textContent = targeted ? "" : item.title;
-    $("item-kind").hidden = targeted || item.title === "分組紀錄";
+    const concern = (item.review?.reasons || [])
+      .map(reason => state.page.review_options[reason] || reason).join(" · ");
+    const kind = concern || (!targeted && item.title !== "分組紀錄" ? item.title : "");
+    $("item-kind").textContent = kind;
+    $("item-kind").hidden = !kind;
     $("item-title").textContent = targeted
       ? `${item.title} · m/z ${fmt(item.precursor_mz, 4)}`
       : `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
