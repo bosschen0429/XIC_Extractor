@@ -765,3 +765,70 @@ def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> N
     assert result.operation_counts.feature_summary_comparisons < (
         owner_count * (owner_count - 1) // 2
     )
+
+
+@pytest.mark.parametrize("unsupported_edge", ["start", "end"])
+@pytest.mark.parametrize("measured_exclusion", [False, True])
+def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
+    unsupported_edge: str, measured_exclusion: bool
+) -> None:
+    import numpy as np
+
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+    from xic_extractor.peak_detection.ms1_shape_identity import (
+        compare_local_peak_shapes,
+        prepare_local_peak_shape,
+    )
+
+    owners = []
+    for sample, apex, width in (("a", 10.0, 0.035), ("b", 10.05, 0.19)):
+        rt = np.linspace(apex - 0.4, apex + 0.4, 161)
+        shape = prepare_local_peak_shape(
+            rt, np.exp(-0.5 * ((rt - apex) / width) ** 2), apex_rt_min=apex
+        )
+        start, end = apex - 0.4, apex + 0.4
+        if measured_exclusion:
+            if unsupported_edge == "start" and sample == "a":
+                end = 10.02
+            elif unsupported_edge == "end" and sample == "b":
+                start = 10.03
+        owners.append(
+            replace(
+                _owner(sample, "peak", apex_rt=apex),
+                owner_peak_start_rt=start,
+                owner_peak_end_rt=end,
+                peak_shape=shape,
+            )
+        )
+    assert (
+        compare_local_peak_shapes(owners[0].peak_shape, owners[1].peak_shape).similarity
+        < 0.8
+    )
+    ranges = (
+        {"a": (10.0, 12.0), "b": (10.03, 12.0)}
+        if unsupported_edge == "start"
+        else {"a": (8.0, 10.0), "b": (8.0, 10.05)}
+    )
+    calibration = BatchRtCalibration.from_coordinate_knots(
+        tuple(
+            (sample, tuple((rt, rt) for rt in bounds))
+            for sample, bounds in ranges.items()
+        )
+    )
+    frame = SampleRtFrame().with_sample_calibration(calibration)
+    result = _infer_feature_memberships(
+        owners, config=AlignmentConfig(), rules=CID_NL_GROUPING_RULES, rt_frame=frame
+    )
+    expected = (
+        {frozenset((owner.owner_id,)) for owner in owners}
+        if measured_exclusion
+        else {frozenset(owner.owner_id for owner in owners)}
+    )
+    assert _memberships(result) == expected
+    for owner in owners:
+        boundary = (
+            owner.owner_peak_start_rt
+            if unsupported_edge == "start"
+            else owner.owner_peak_end_rt
+        )
+        assert frame.calibrated_rt_min(owner.sample_stem, boundary) is None

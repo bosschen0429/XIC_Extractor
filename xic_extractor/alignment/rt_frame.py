@@ -60,7 +60,7 @@ class RtFrame(Protocol):
 
     def calibrated_peak_region(
         self, owner: SampleLocalMS1Owner
-    ) -> tuple[float, float, float] | None: ...
+    ) -> tuple[float | None, float, float | None] | None: ...
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
@@ -341,7 +341,13 @@ class SampleRtFrame:
 
     def calibrated_peak_region(
         self, owner: SampleLocalMS1Owner
-    ) -> tuple[float, float, float] | None:
+    ) -> tuple[float | None, float, float | None] | None:
+        """Map the apex and each supported measured edge, without extrapolation.
+
+        An unsupported edge is unknown, not the end of the measured peak.
+        Keep a supported apex in the common frame even when a tail extends
+        beyond the calibration span.
+        """
         # A historical clamped offset map has no measured support bounds.
         if self._sample_calibration is None:
             return None
@@ -353,7 +359,7 @@ class SampleRtFrame:
                 owner.owner_peak_end_rt,
             )
         )
-        if start is None or apex is None or end is None:
+        if apex is None:
             return None
         return start, apex, end
 

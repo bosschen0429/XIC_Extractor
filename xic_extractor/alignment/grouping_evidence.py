@@ -46,9 +46,10 @@ def peak_correspondence_conflict(
 ) -> tuple[str, str] | None:
     """Check complete groups in one supported RT frame, not just their edge.
 
-    Each selected centre must be supported by the other's measured peak region.
-    A low apex-relative correlation cannot veto that common-coordinate support.
-    Without a complete calibrated region, retain the measured-shape comparison;
+    Supported measured edges can exclude the other's common-coordinate apex.
+    An edge outside calibration support cannot establish that exclusion, and
+    must not switch supported apices to a raw-shape veto. With neither apex
+    calibrated, retain the measured-shape comparison;
     an unavailable coordinate is not permission to mix raw and common RT.
     Physical order remains a separate membership constraint.
     """
@@ -67,7 +68,12 @@ def peak_correspondence_conflict(
                 # correspondence evidence in a shared coordinate frame.
                 return first.owner_id, second.owner_id
             if a is not None and b is not None:
-                if not (a[0] <= b[1] <= a[2] and b[0] <= a[1] <= b[2]):
+                if (
+                    (a[0] is not None and b[1] < a[0])
+                    or (a[2] is not None and b[1] > a[2])
+                    or (b[0] is not None and a[1] < b[0])
+                    or (b[2] is not None and a[1] > b[2])
+                ):
                     return first.owner_id, second.owner_id
                 continue
             if first.peak_shape is None or second.peak_shape is None:

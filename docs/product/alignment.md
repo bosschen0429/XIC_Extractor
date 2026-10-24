@@ -276,8 +276,8 @@ the unique same-target fallback; it is not the final batch map.
 
 Final grouping rebuilds correspondence in the frozen frame and carries those
 trajectories to localization. Unsupported coordinates are not measured zero
-drift: a supported peak region cannot join an unsupported raw region through
-ordinary correspondence. When both regions are unsupported, existing raw/shape
+drift: a supported apex cannot join an unsupported raw apex through
+ordinary correspondence. When both apices are unsupported, existing raw/shape
 evidence remains available. A Backfill forecast uses common coordinates only
 when its references and target inverse are supported; otherwise it estimates
 the entire forecast in raw RT, without mixing coordinate systems. Historical
@@ -294,13 +294,16 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
-- Supported common-coordinate peak regions are the primary physical
-  correspondence check. Each selected apex must lie inside the other's
-  calibrated measured bounds, across every pair in the proposed group. A chain
+- Supported common-coordinate apices and measured peak edges are the primary
+  physical correspondence check. An apex outside the other's calibrated
+  measured edge excludes correspondence, across every pair in the proposed group.
+  A peak edge outside the calibration span remains unknown: it is neither
+  extrapolated nor clipped into a new measured boundary. It cannot establish
+  exclusion or switch supported apices to a raw-shape veto. A chain
   of overlapping neighbors cannot hide incompatible endpoints. This is a
   correspondence constraint, not proof of chemical identity; same-sample
   competition and physical order still apply.
-- When both complete peak regions lack calibration support, measured peak
+- When both apices lack calibration support, measured peak
   shape supplies the existing fallback evidence. The owner adapter
   retains an apex-relative, own-max Gaussian-smoothed shape from the selected
   raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
