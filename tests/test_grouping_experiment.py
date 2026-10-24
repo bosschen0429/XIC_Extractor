@@ -534,3 +534,57 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         frozenset(("c", "d")),
     }
     assert all(group.disposition == "established" for group in groups)
+
+
+def test_compare_membership_reports_merges_and_splits_against_previous_replay(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    from xic_extractor.diagnostics.grouping_experiment_io import (
+        compare_membership,
+        write_table,
+    )
+
+    def owner(owner_id, sample, rt):
+        return SimpleNamespace(
+            owner_id=owner_id, sample_stem=sample, owner_apex_rt=rt, precursor_mz=300.0
+        )
+
+    a, b, c = owner("a", "s1", 10.0), owner("b", "s2", 10.0), owner("c", "s3", 10.1)
+    d, e = owner("d", "s1", 12.0), owner("e", "s2", 12.05)
+    previous = tmp_path / "members.tsv"
+    write_table(
+        previous,
+        [
+            {"group_id": group, "owner_id": owner_id}
+            for group, owner_id in (
+                ("G1", "a"),
+                ("G1", "b"),
+                ("G2", "c"),
+                ("G3", "d"),
+                ("G3", "e"),
+            )
+        ],
+        ("group_id", "owner_id"),
+    )
+    groups = [
+        SimpleNamespace(group_hypothesis_id="H1", owners=(a, b, c)),
+        SimpleNamespace(group_hypothesis_id="H2", owners=(d,)),
+        SimpleNamespace(group_hypothesis_id="H3", owners=(e,)),
+    ]
+
+    rows, counts = compare_membership(previous, groups)
+
+    assert counts == {
+        "compared_owner_count": 5,
+        "merge_count": 1,
+        "split_count": 1,
+        "merge_within_10s_count": 1,
+        "split_within_10s_count": 1,
+    }
+    merge = next(row for row in rows if row["change"] == "merge")
+    assert (merge["group_id"], merge["part_sizes"]) == ("H1", "2|1")
+    assert round(merge["apex_gap_sec"], 6) == 6.0
+    split = next(row for row in rows if row["change"] == "split")
+    assert (split["group_id"], split["part_samples"]) == ("G3", "s1|s2")

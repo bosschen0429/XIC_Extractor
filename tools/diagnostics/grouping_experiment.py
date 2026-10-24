@@ -26,6 +26,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.diagnostics.grouping_experiment_io import (
+    compare_membership,
     group_signature,
     query_discovery,
     read_grouping_inputs,
@@ -102,6 +103,11 @@ def _parser() -> argparse.ArgumentParser:
         "--rt-calibration", type=Path, help="Use an existing sample_rt_calibration JSON"
     )
     replay.add_argument("--loess-fraction", type=float, default=0.3)
+    replay.add_argument(
+        "--compare-to",
+        type=Path,
+        help="Previous replay output dir of the same snapshot (e.g. another commit)",
+    )
     return parser
 
 
@@ -176,6 +182,27 @@ def _prepare(args: argparse.Namespace) -> dict:
         }
     finally:
         resources.close()
+
+
+def _membership_comparison(args: argparse.Namespace, groups) -> dict[str, Any]:
+    if args.compare_to is None:
+        return {}
+    rows, counts = compare_membership(args.compare_to / "members.tsv", groups)
+    write_table(
+        args.output_dir / "membership-diff.tsv",
+        rows,
+        (
+            "change",
+            "group_id",
+            "mz",
+            "part_count",
+            "part_sizes",
+            "part_apex_rt",
+            "apex_gap_sec",
+            "part_samples",
+        ),
+    )
+    return {"compared_to": str(args.compare_to), "membership_diff": counts}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -258,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
                     rt_coordinates=rt_frame,
                 ),
                 "source": provenance,
+                **_membership_comparison(args, groups),
                 "overrides": overrides,
                 "rt_calibration": bool(calibration),
                 "calibration_knot_count": len(calibration.knots) if calibration else 0,

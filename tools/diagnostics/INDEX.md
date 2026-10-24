@@ -543,6 +543,9 @@ Backfill acquisition windows are not grouping inputs. The snapshot reader also
 accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
+`--compare-to <previous replay dir>` compares group membership with another
+replay of the same snapshot, such as one produced by another commit, and writes
+`membership-diff.tsv` (merges and splits with their apex RT gap and samples).
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require prepare.
 
