@@ -9,12 +9,6 @@ from xic_inspector.sources.curve_bundle import CurveBundleLocator, CurveBundleSo
 
 
 def __getattr__(name):
-    # Preserve the existing public names without loading the SQLite adapter
-    # (and its alignment imports) for a portable bundle.
-    if name == "EvidenceSource":
-        from xic_inspector.sources.cid_nl import CidNlSource
-
-        return CidNlSource
     if name == "read_evidence_summary":
         from xic_inspector.sources.cid_nl import read_summary
 
@@ -22,7 +16,7 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
-def open_source(path, *, query_only=False):
+def open_source(path):
     """Select a source adapter without interpreting its schema here."""
     if path.suffix.lower() == ".xlsx":
         from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
@@ -30,19 +24,15 @@ def open_source(path, *, query_only=False):
         return TargetedWorkbookSource(path)
     if path.suffix.lower() == ".json":
         return CurveBundleSource(path)
-    from xic_inspector.sources.cid_nl import CidNlSource, read_summary
+    from xic_inspector.sources.cid_nl import read_summary
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 
     summary = read_summary(path)
-    revision = summary.get("query_index_version")
-    if revision == 2 or (revision == 1 and query_only):
-        return IndexedCidNlSource(path, summary)
-    return CidNlSource(path, query_only=query_only)
+    return IndexedCidNlSource(path, summary)
 
 
 __all__ = [
     "EvidenceLocator",
-    "EvidenceSource",
     "CurveBundleLocator",
     "open_source",
     "ExplanationError",

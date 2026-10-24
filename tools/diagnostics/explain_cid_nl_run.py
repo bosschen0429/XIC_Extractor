@@ -25,16 +25,6 @@ def main(argv: list[str] | None = None) -> int:
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
     parser.add_argument(
-        "--compact-to",
-        type=Path,
-        help="Write compact review facts from a full report, without RAW or Backfill",
-    )
-    parser.add_argument(
-        "--index-query-to",
-        type=Path,
-        help="Copy a compact review with the current query, sample and attention index",
-    )
-    parser.add_argument(
         "--curve-bundle",
         type=Path,
         help="Acquire selected candidate/group XIC windows into an Inspector bundle",
@@ -47,40 +37,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--curve-padding-min", type=float, default=0.5)
     parser.add_argument("--curve-ppm", type=float, default=5.0)
     args = parser.parse_args(argv)
-    if (
-        sum(
-            option is not None
-            for option in (args.compact_to, args.index_query_to, args.curve_bundle)
-        )
-        > 1
-    ):
-        parser.error(
-            "Choose only one of --compact-to, --index-query-to, or --curve-bundle"
-        )
     if args.group_id is not None and args.curve_bundle is None:
         parser.error("--group-id requires --curve-bundle")
     try:
-        if args.index_query_to is not None:
-            from xic_extractor.diagnostics.explanation_conversion import (
-                index_review_query,
-            )
-
-            print(
-                json.dumps(
-                    index_review_query(Path(args.report), args.index_query_to), indent=2
-                )
-            )
-            return 0
         if args.curve_bundle is not None:
-            if (
-                args.compact_to is not None
-                or args.raw_dir is None
-                or args.dll_dir is None
-            ):
-                parser.error(
-                    "--curve-bundle needs --raw-dir and --dll-dir "
-                    "and cannot accompany --compact-to"
-                )
+            if args.raw_dir is None or args.dll_dir is None:
+                parser.error("--curve-bundle needs --raw-dir and --dll-dir")
             from xic_workbench.acquisition import (
                 export_explanation_curves,
             )
@@ -94,18 +56,6 @@ def main(argv: list[str] | None = None) -> int:
                 group_id=args.group_id,
                 padding_min=args.curve_padding_min,
                 ppm=args.curve_ppm,
-            )
-            print(json.dumps(result, indent=2))
-            return 0
-        if args.compact_to is not None:
-            from xic_extractor.diagnostics.explanation_conversion import (
-                compact_explanation,
-            )
-
-            result = compact_explanation(
-                Path(args.report),
-                args.compact_to,
-                progress=lambda message: print(message, file=sys.stderr, flush=True),
             )
             print(json.dumps(result, indent=2))
             return 0

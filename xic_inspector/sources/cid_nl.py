@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,24 +16,10 @@ from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationMetadata,
-    open_review_cells,
     read_cid_nl_curves,
     read_cid_nl_explanation,
-    read_explanation_metadata,
-    read_explanation_selection,
-    read_review_row_samples,
 )
 from xic_extractor.diagnostics.explanation_query import recorded_observations
-from xic_extractor.diagnostics.explanation_review import (
-    ATTENTION,
-    EXCLUDED,
-    NULL_CELL,
-    OBSERVED,
-    ORIGIN_FLAGS,
-    REVIEW_SCHEMA_VERSION,
-    ZERO_CELL,
-    selection_sample_facts,
-)
 from xic_extractor.diagnostics.explanation_review import (
     attention_reason as _attention_reason,
 )
@@ -43,7 +28,6 @@ from xic_inspector.selection.canonical import (
     Witness,
     build_canonical_ref,
 )
-from xic_inspector.selection.review import finite_number, reason_category
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
 
@@ -53,31 +37,17 @@ def read_summary(path: str | Path) -> dict[str, Any]:
     return read_cid_nl_explanation(path)
 
 
-class CidNlSource:
-    """One report's metadata projection and selected evidence retrieval."""
+class CidNlEvidence:
+    """Presentation of the bounded evidence selected by the indexed source."""
 
     def __init__(
         self,
         path: Path,
         *,
-        metadata: ExplanationMetadata | None = None,
-        query_only: bool = False,
+        metadata: ExplanationMetadata,
     ) -> None:
         self.path = path
-        from_selection = metadata is not None
-        metadata = metadata or read_explanation_metadata(
-            path, selection_only=True, query_only=query_only
-        )
         self.summary = metadata.summary
-        self._compact_selection = (
-            not from_selection
-            and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
-        )
-        self._query_only = self._compact_selection and query_only
-        self._row_samples = (
-            read_review_row_samples(path, self.summary) if self._query_only else {}
-        )
-        self._selection_cells: Callable[[str], dict[str, dict[str, Any]]] | None = None
         self.request_id = self.summary.get("processing_request_id", "")
         self.attempt_id = self.summary.get("processing_attempt_id", "")
         self.records = metadata.records
@@ -121,20 +91,8 @@ class CidNlSource:
             self.record_links.setdefault(record, set()).add(key)
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        if self._compact_selection and not self._query_only:
-            with open_review_cells(self.path, self.summary) as read_cells:
-                self._selection_cells = read_cells
-                try:
-                    return self._load_items(sample_ids)
-                finally:
-                    self._selection_cells = None
-        return self._load_items(sample_ids)
-
-    def _load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []
-        build_item = (
-            self._selection_item if self._compact_selection else self._presentation_item
-        )
+        build_item = self._presentation_item
         item_keys: dict[str, set[tuple[str, str]]] = {}
         row_groups = set()
         grouped = set()
@@ -327,141 +285,6 @@ class CidNlSource:
                 for observation in observations
             )
         return witnesses
-
-    def _selection_item(
-        self, kind, identifier, gid, keys, scope, payload
-    ) -> CanonicalItem:
-        """Reduce scoped facts once; never construct per-sample presentation."""
-        scoped = sorted(key for key in keys if key[1] in scope)
-        sample_ids = {sid for _, sid in scoped}
-        witnesses = self._witnesses(kind, identifier, gid, scoped)
-        if self._query_only:
-            sample_ids.update(self._row_samples.get(identifier, set()) & scope)
-            _, ref = build_canonical_ref(
-                kind,
-                self.request_id,
-                self.attempt_id,
-                identifier,
-                sample_id=next(iter(keys))[1] if kind == "candidate" else None,
-            )
-            return CanonicalItem(
-                kind=kind,
-                request_id=self.request_id,
-                attempt_id=self.attempt_id,
-                identifier=identifier,
-                serialized_ref=ref,
-                sample_ids=tuple(sorted(sample_ids)),
-                witnesses=tuple(witnesses),
-                stratum="unclassified",
-                details={"review_summary": {}},
-            )
-        cells: tuple[dict[str, Any], ...] = ()
-        if kind == "row":
-            assert self._selection_cells is not None
-            cells = tuple(
-                cell
-                for cell in self._selection_cells(identifier).values()
-                if cell["canonical_sample_identity_id"] in scope
-            )
-        flags = selection_sample_facts(
-            kind,
-            identifier,
-            gid,
-            scoped,
-            self.candidates,
-            self.records,
-            self.links,
-            cells,
-            {w.canonical_sample_identity_id for w in witnesses if w.observation_id},
-        )
-        sample_ids = set(flags)
-        observed = {sid for sid, flag in flags.items() if flag & OBSERVED}
-        group = self.records.get("final_groups", {}).get(gid, {})
-        attention = group.get("disposition") in ("provisional", "unresolved") or any(
-            flag & ATTENTION for flag in flags.values()
-        )
-        excluded = any(flag & EXCLUDED for flag in flags.values())
-        has_null = any(flag & NULL_CELL for flag in flags.values())
-        has_zero = any(flag & ZERO_CELL for flag in flags.values())
-        origins = {
-            sid: next(
-                (origin for origin, bit in ORIGIN_FLAGS.items() if flag & bit),
-                "unavailable",
-            )
-            for sid, flag in flags.items()
-        }
-        # Keep only browse facts after reading this row's compact cells.
-        # The full per-sample presentation is still loaded for the chosen page.
-        reasons = {
-            reason_category(_attention_reason("cell_decisions", cell)) for cell in cells
-        }
-        reasons.add(reason_category(group.get("disposition"), group=True))
-        for cid, sid in scoped:
-            for record_kind, rid in self.links.get((cid, sid), ()):
-                if record_kind not in ("method_assessments", "initial_edges"):
-                    continue
-                fact = self.records.get(record_kind, {}).get(rid, {})
-                if fact.get(
-                    "canonical_sample_identity_id", fact.get("sample_id")
-                ) not in (None, sid):
-                    continue
-                if fact.get("group_hypothesis_id") not in (None, gid):
-                    continue
-                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
-                    continue
-                reasons.add(reason_category(_attention_reason(record_kind, fact)))
-        values = {
-            cell["canonical_sample_identity_id"]: cell.get("value") for cell in cells
-        }
-        review = {
-            "sample_count": len(scope),
-            "numeric_count": sum(finite_number(value) for value in values.values()),
-            "zero_count": sum(
-                finite_number(value) and value == 0 for value in values.values()
-            ),
-            "decision_count": len(values),
-            "attention_count": sum(bool(flag & ATTENTION) for flag in flags.values()),
-            "reasons": sorted(reason for reason in reasons if reason is not None),
-        }
-        members = group.get("member_subjects", [])
-        _, ref = build_canonical_ref(
-            kind,
-            self.request_id,
-            self.attempt_id,
-            identifier,
-            sample_id=next(iter(keys))[1] if kind == "candidate" else None,
-        )
-        return CanonicalItem(
-            kind=kind,
-            request_id=self.request_id,
-            attempt_id=self.attempt_id,
-            identifier=identifier,
-            serialized_ref=ref,
-            sample_ids=tuple(sorted(sample_ids)),
-            witnesses=tuple(witnesses),
-            stratum=classify_scoped_stratum(
-                is_attention=attention,
-                is_excluded=excluded,
-                has_null_cell=has_null,
-                has_zero_cell=has_zero,
-            ),
-            is_attention=attention,
-            details={
-                "review": review,
-                "review_summary": {
-                    "observed_sample_count": len(observed & sample_ids),
-                    "scope_sample_count": len(sample_ids),
-                    "origin_kinds": sorted(
-                        {origins.get(sid, "unavailable") for sid in sample_ids}
-                    ),
-                    "initial_member_count": len(keys),
-                    "final_member_count": len(members)
-                    if "member_subjects" in group
-                    else len(keys),
-                    "related_group_count": 0,
-                },
-            },
-        )
 
     def _presentation_item(
         self, kind, identifier, gid, keys, scope, payload
@@ -767,48 +590,6 @@ class CidNlSource:
         self, items, *, capability: str, check_cancel: Callable[[], None]
     ):
         primary_items = list(items)
-        if self._compact_selection:
-            expanded = [
-                *primary_items,
-                *(
-                    peer
-                    for item in primary_items
-                    for peer, _ in self.related_items.get(item.serialized_ref, [])[:1]
-                ),
-            ]
-            check_cancel()
-            metadata = read_explanation_selection(
-                self.path,
-                candidate_keys=tuple(
-                    sorted(
-                        {
-                            (w.candidate_id, w.canonical_sample_identity_id)
-                            for item in expanded
-                            for w in item.witnesses
-                        }
-                    )
-                ),
-                row_ids=tuple(
-                    sorted({item.identifier for item in expanded if item.kind == "row"})
-                ),
-            )
-            selected_source = CidNlSource(self.path, metadata=metadata)
-            restored = {
-                item.serialized_ref: item
-                for item in selected_source.load_items(
-                    {sid for item in expanded for sid in item.sample_ids}
-                )
-            }
-            selected = [
-                replace(
-                    restored[item.serialized_ref],
-                    matched_witnesses=item.matched_witnesses,
-                )
-                for item in primary_items
-            ]
-            return selected_source.load_render_items(
-                selected, capability=capability, check_cancel=check_cancel
-            )
         chosen_peers = {
             item.serialized_ref: self.related_items.get(item.serialized_ref, [])[:1]
             for item in primary_items

@@ -7,8 +7,6 @@ import zlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
-
 # Per-sample retained review facts. These bits summarize recorded decisions;
 # they do not choose peaks, assign groups, or authorize Matrix values.
 OBSERVED, ATTENTION, EXCLUDED, NULL_CELL, ZERO_CELL = 1, 2, 4, 8, 16
@@ -101,18 +99,14 @@ def selection_sample_facts(
 
 
 def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -> bytes:
-    """Store a row's values once, with sample ordinals and shared field names."""
+    """Store one row's review facts and optional audit links with sample ordinals."""
     values = [
-        [
-            samples[cell["canonical_sample_identity_id"]],
-            cell["variant"],
-            cell.get("value"),
-            cell.get("source"),
-            cell.get("evidence_states", []),
-            cell.get("reason_codes", []),
-            cell.get("support_origin", "unavailable"),
-            cell.get("observation_ids", []),
-        ]
+        {
+            **cell,
+            "canonical_sample_identity_id": samples[
+                cell["canonical_sample_identity_id"]
+            ],
+        }
         for cell in cells
     ]
     return zlib.compress(
@@ -127,30 +121,24 @@ def unpack_cells(
     group_id: str,
     sample_ids: Sequence[str],
 ) -> dict[str, dict[str, Any]]:
-    """Diagnostic row positions identify display facts, not scientific decisions."""
+    """Restore row/sample context and retained decision IDs or display-only refs."""
     values = json.loads(zlib.decompress(payload))
     result = {}
     for position, cell in enumerate(values):
-        sample, variant, value, source, states, reasons, origin, observations = cell
+        sample = cell["canonical_sample_identity_id"]
         if (
             isinstance(sample, bool)
             or not isinstance(sample, int)
             or not 0 <= sample < len(sample_ids)
         ):
             raise ValueError("review cell has an invalid sample ordinal")
-        identity = f"review-cell:{row_id}:{position}"
+        identity = cell.get("decision_id", f"review-cell:{row_id}:{position}")
         result[identity] = {
+            **cell,
             "review_cell_id": identity,
             "row_key_id": row_id,
             "group_hypothesis_id": group_id,
             "canonical_sample_identity_id": sample_ids[sample],
-            "variant": variant,
-            "value": value,
-            "source": source,
-            "evidence_states": states,
-            "reason_codes": reasons,
-            "support_origin": origin,
-            "observation_ids": observations,
         }
     return result
 
@@ -196,7 +184,7 @@ def review_cell(decision: Any) -> dict[str, Any]:
 
 
 def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    """The retained review facts also define conversion of existing full reports."""
+    """Retain the facts needed for review without the optional audit graph."""
     if kind == "method_assessments":
         names = (
             "canonical_sample_identity_id",

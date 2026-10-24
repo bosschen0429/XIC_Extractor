@@ -104,9 +104,7 @@ models because their output schemas are intentionally different; see
 compact summary or exact candidate details without reading RAW.
 **Owner**: [CID-NL execution explanations](../../docs/product/xic-inspector.md#cid-nl-execution-explanations).
 **Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
-**Output**: Readable text or JSON; `--compact-to` writes compact review from an
-existing full report; `--index-query-to` copies an older compact review with an
-current query/sample/attention index; `--curve-bundle` acquires only explicitly selected windows
+**Output**: Readable text or JSON; `--curve-bundle` acquires only explicitly selected windows
 for Inspector. [Retention and curve export](../../docs/product/xic-inspector.md#lightweight-alignment-review).
 **Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant

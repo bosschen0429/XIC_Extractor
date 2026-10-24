@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import sqlite3
 import threading
 from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
@@ -15,7 +14,12 @@ import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from tests.raw_header_fakes import install_fake_raw_headers
-from tests.test_xic_inspector_api import _create_mock_db, _insert_link
+from tests.test_xic_inspector_api import (
+    _create_mock_db,
+    _edit_report,
+    _insert_link,
+    _set_cell,
+)
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings, write_targets
@@ -1150,12 +1154,20 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     # Keep the existing curve-bearing fixture, extending only review row scope
     # beyond the UI's 25-item page. No scientific values are asserted here.
     groups = {"row-01": "G1"}
-    with sqlite3.connect(db) as connection:
+    with _edit_report(db) as connection:
         for index in range(2, 27):
             row, group = f"row-{index:02}", f"G{index:02}"
             groups[row] = group
             for kind, identity, payload in (
-                ("rows", row, {"row_key_id": row, "group_hypothesis_id": group}),
+                (
+                    "rows",
+                    row,
+                    {
+                        "row_key_id": row,
+                        "group_hypothesis_id": group,
+                        "route": {"destination": "matrix", "reason": "recorded"},
+                    },
+                ),
                 (
                     "final_groups",
                     group,
@@ -1167,6 +1179,16 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                     (kind, identity, json.dumps(payload)),
                 )
                 _insert_link(connection, ("C1", "S1", kind, identity))
+            _set_cell(
+                connection,
+                f"decision-{index}",
+                {
+                    "row_key_id": row,
+                    "group_hypothesis_id": group,
+                    "canonical_sample_identity_id": "S1",
+                    "value": 1000.0,
+                },
+            )
     _view(page, "review")
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()

@@ -41,7 +41,6 @@ from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     read_cid_nl_curves,
     read_cid_nl_explanation,
-    read_explanation_metadata,
     write_explanation_report,
 )
 from xic_extractor.diagnostics.alignment_explanation_projection import (
@@ -517,9 +516,9 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize({})
+        writer.finalize({"samples": [{"canonical_sample_identity_id": "s"}]})
     detail = read_cid_nl_explanation(report, candidate_id="a")
-    assert detail["records"] == {"facts": [{"value": 1}]}
+    assert detail["records"] == {"facts": [{"value": 1}], "cell_decisions": []}
     assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
     failed = tmp_path / "conflict.sqlite"
     with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
@@ -530,7 +529,7 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     assert not failed.with_name(failed.name + ".tmp").exists()
 
 
-def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
+def test_related_set_links_preserve_union_and_order(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "normalized.sqlite"
@@ -561,22 +560,16 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
             {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
         )
-        writer.finalize({})
+        writer.finalize({"samples": [{"canonical_sample_identity_id": "S1"}]})
 
     expected = {
         (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
     }
-    assert set(read_explanation_metadata(report).links) == expected
+    with sqlite3.connect(report) as db:
+        assert set(db.execute("SELECT * FROM links")) == expected
     for candidate_id in ("C1", "C2", "C3"):
         detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
-        assert detail["records"] == {"facts": [{"value": 1}]}
-
-    # Materialize the logical view only for this legacy-reader fixture.
-    with sqlite3.connect(report) as connection:
-        connection.execute("CREATE TABLE legacy_links AS SELECT * FROM links")
-        connection.execute("DROP VIEW links")
-        connection.execute("ALTER TABLE legacy_links RENAME TO links")
-    assert set(read_explanation_metadata(report).links) == expected
+        assert detail["records"] == {"facts": [{"value": 1}], "cell_decisions": []}
 
 
 def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
@@ -611,7 +604,7 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 
     report = write_explanation_report(
         tmp_path / "bounded.sqlite",
-        summary={},
+        summary={"samples": [{"canonical_sample_identity_id": "s"}]},
         candidates=rows(),
         records=Records(),
         links=(("199", "s", "facts", "199"),),
@@ -620,14 +613,18 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
         {"candidate_id": "199"}
     ]
     assert read_cid_nl_explanation(report, candidate_id="199")["records"] == {
-        "facts": [{"value": 199}]
+        "facts": [{"value": 199}],
+        "cell_decisions": [],
     }
 
 
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
-        summary={"candidate_count": 2},
+        summary={
+            "candidate_count": 2,
+            "samples": [{"canonical_sample_identity_id": sid} for sid in ("s1", "s2")],
+        },
         candidates=(
             ("a", "s1", {"candidate_id": "a"}),
             ("b", "s2", {"candidate_id": "b"}),
@@ -664,7 +661,7 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
 
 @pytest.mark.parametrize(
     "corruption",
-    ("bytes", "schema_identity", "schema", "payload"),
+    ("bytes", "schema_identity", "schema", "index", "payload"),
 )
 @pytest.mark.parametrize("reader", (read_cid_nl_explanation, read_cid_nl_curves))
 def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader):
@@ -673,7 +670,7 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
         report.write_bytes(b"not sqlite")
     else:
         write_explanation_report(
-            report, summary={}, candidates=(), records={}, links=()
+            report, summary={"samples": []}, candidates=(), records={}, links=()
         )
         with sqlite3.connect(report) as connection:
             if corruption == "schema_identity":
@@ -685,6 +682,8 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
                 )
             elif corruption == "schema":
                 connection.execute("DROP TABLE records")
+            elif corruption == "index":
+                connection.execute("DROP TABLE query_review")
             else:
                 connection.execute("UPDATE metadata SET payload='null'")
     with pytest.raises(ExplanationError, match="malformed|unsupported|failed reading"):

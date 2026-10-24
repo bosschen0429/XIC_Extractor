@@ -8,7 +8,10 @@ import sqlite3
 from contextlib import closing
 from dataclasses import replace
 
-from xic_extractor.diagnostics.alignment_explanation import ExplanationMetadata
+from xic_extractor.diagnostics.alignment_explanation import (
+    ExplanationMetadata,
+    read_explanation_selection,
+)
 from xic_extractor.diagnostics.explanation_query import query_page
 from xic_extractor.diagnostics.explanation_review import ORIGIN_FLAGS, SELECTION_FLAGS
 from xic_inspector.selection.canonical import (
@@ -25,7 +28,7 @@ from xic_inspector.selection.sampler import (
     sampling_rank,
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
-from xic_inspector.sources.cid_nl import CidNlSource
+from xic_inspector.sources.cid_nl import CidNlEvidence
 from xic_inspector.sources.untargeted_overview import (
     indexed_review_facts,
     ordered_review_items,
@@ -33,14 +36,57 @@ from xic_inspector.sources.untargeted_overview import (
 )
 
 
-class IndexedCidNlSource(CidNlSource):
+class IndexedCidNlSource(CidNlEvidence):
     """Use stored selection coordinates and the existing bounded renderer."""
 
     def __init__(self, path, summary):
         super().__init__(path, metadata=ExplanationMetadata(summary, {}, {}, ()))
-        self._compact_selection = True
         self.missing_mz_count = 0
         self.mz_distances = {}
+
+    def load_render_items(self, items, *, capability, check_cancel):
+        primary_items = list(items)
+        expanded = [
+            *primary_items,
+            *(
+                peer
+                for item in primary_items
+                for peer, _ in self.related_items.get(item.serialized_ref, [])[:1]
+            ),
+        ]
+        check_cancel()
+        metadata = read_explanation_selection(
+            self.path,
+            candidate_keys=tuple(
+                sorted(
+                    {
+                        (w.candidate_id, w.canonical_sample_identity_id)
+                        for item in expanded
+                        for w in item.witnesses
+                    }
+                )
+            ),
+            row_ids=tuple(
+                sorted({item.identifier for item in expanded if item.kind == "row"})
+            ),
+        )
+        selected_source = CidNlEvidence(self.path, metadata=metadata)
+        restored = {
+            item.serialized_ref: item
+            for item in selected_source.load_items(
+                {sid for item in expanded for sid in item.sample_ids}
+            )
+        }
+        selected = [
+            replace(
+                restored[item.serialized_ref],
+                matched_witnesses=item.matched_witnesses,
+            )
+            for item in primary_items
+        ]
+        return selected_source.load_render_items(
+            selected, capability=capability, check_cancel=check_cancel
+        )
 
     def _browse_page(self, db, scope, request, criteria, ordered, rows):
         ids, run_total, eligible, _, missing_rt = query_page(

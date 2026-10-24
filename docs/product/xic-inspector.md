@@ -269,7 +269,7 @@ seed 0.
 
 ## Lightweight Alignment review
 
-New Alignment explanations default to `alignment_explanation_review`. They
+Alignment explanations use one `alignment_explanation` format. They
 retain the full candidate/group population, grouping reasons, compact method
 conclusions and sample cell values. Cell values are stored once per row; full
 artifact envelopes and curve arrays are not included by default. Query,
@@ -277,10 +277,10 @@ attention and RT selection use the saved observation coordinates and decisions,
 so a report without curves remains selectable. Inspector builds detailed cell
 and grouping records for selected items after population selection.
 
-New review reports index candidate coordinates, membership and sample scope
+All reports index candidate coordinates, membership and sample scope
 at publication. SQLite applies query predicates, counts and offset/limit before
 Inspector loads the selected page's witnesses and details.
-New reports store row sample membership separately from the packed cell values,
+The index stores sample membership separately from the packed cell values,
 so checking scope does not require decoding all values. Sample and attention
 selection use persisted per-sample fact masks, including observed coverage,
 attention, exclusion, null/zero values and support origins. Changing sample
@@ -292,29 +292,16 @@ statuses and presentation are built only for selected items and displayed peers.
 Use `scripts.run_alignment --explanation-curve-mz-range LOWER:UPPER` to retain
 curves only for requested regions (repeatable), or `--explanation-full-audit`
 to explicitly pay for the full audit and all curves. These options imply
-explanation output. Existing full reports remain readable. Missing unretained
+explanation output. Full audit adds retained evidence and scientific decision
+IDs to the same storage and indexed selection path; it does not select another
+schema or reader. Missing unretained
 curves are shown as unavailable; they are not interpreted as zero signal.
 
-An existing full report can be reduced without RAW or another Alignment run:
-
-```powershell
-.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <full.sqlite> --compact-to <review.sqlite>
-```
-
-The source is preserved. Conversion retains values, membership and review
-reasons, omitting curve payloads and duplicated artifact chains. Compact review
-cell references are display positions, not scientific decision IDs; full audit
-retains the latter. The bound Matrix file must remain available.
-
-An older compact review can gain or upgrade the selection index without losing retained facts
-or curves. This writes a new file and requires no RAW access:
-
-```powershell
-.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
-```
-
-Older reports without the current index remain readable through population
-selection. Query-only indexes remain usable for query selection until upgraded.
+Review cell references are display positions, not scientific decision IDs;
+full audit retains the latter. The bound Matrix file must remain available.
+Readers require the current complete report layout and selection index. There
+is no legacy reader or report conversion/upgrade command; retention is chosen
+when the analysis publishes its report.
 
 For a curve not retained in the report, acquire only the requested candidate's
 or group's observed windows into a portable bundle:

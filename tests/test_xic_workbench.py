@@ -7,7 +7,6 @@ import http.client
 import json
 import re
 import socket
-import sqlite3
 import threading
 import time
 import weakref
@@ -61,7 +60,7 @@ def _review_batch(tmp_path, sample_count=2):
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("recorded matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report, full_audit=False) as writer:
         for rid, route, values in (
             ("a-complete", "matrix", tuple(100 * (i + 1) for i in range(sample_count))),
             ("b-missing", "matrix", (300,) + ("unavailable",) * (sample_count - 1)),
@@ -145,7 +144,7 @@ def _nearest_review_batch(tmp_path):
         ("missing-mz", ((None, 1.0),), False),
         ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
     ]
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report, full_audit=False) as writer:
         for rid, witnesses, unresolved in rows:
             keys = []
             for index, (mz, rt) in enumerate(witnesses):
@@ -204,7 +203,7 @@ def _browse_review_batch(tmp_path):
     matrix = tmp_path / "browse-matrix.tsv"
     matrix.write_text("saved browsing fixture", encoding="utf-8")
     report = tmp_path / "browse-review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report, full_audit=False) as writer:
         for index in range(31):
             rid = f"G{index:02}"
             keys = [(f"{rid}-{sid}", sid) for sid in ("S1", "S2")]
@@ -283,33 +282,10 @@ def _browse_review_batch(tmp_path):
     return report, matrix
 
 
-@pytest.mark.parametrize("index_version", (None, 1, 2))
 def test_batch_review_filters_saved_concerns_before_paging_and_combines_search(
     tmp_path,
-    index_version,
 ):
     report, matrix = _browse_review_batch(tmp_path)
-    if index_version != 2:
-        with sqlite3.connect(report) as db:
-            tables = db.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name LIKE 'query_%'"
-            ).fetchall()
-            for (table,) in tables:
-                if index_version is None or table == "query_review":
-                    db.execute(f'DROP TABLE "{table}"')
-            summary = json.loads(
-                db.execute(
-                    "SELECT payload FROM metadata WHERE key='summary'"
-                ).fetchone()[0]
-            )
-            summary.pop("query_index_version")
-            if index_version is not None:
-                summary["query_index_version"] = index_version
-            db.execute(
-                "UPDATE metadata SET payload=? WHERE key='summary'",
-                (json.dumps(summary),),
-            )
     original = [path.read_bytes() for path in (report, matrix)]
     with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
 
@@ -431,7 +407,7 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
 
     sample_count = 32
     report, _ = _review_batch(tmp_path, sample_count=sample_count)
-    summary = alignment_explanation.read_explanation_metadata(report).summary
+    summary = alignment_explanation.read_cid_nl_explanation(report)
     live_cells = weakref.WeakValueDictionary()
     peak_cells = 0
     unpack = alignment_explanation.unpack_cells

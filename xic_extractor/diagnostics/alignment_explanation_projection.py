@@ -104,7 +104,7 @@ def _emit_curve_payload(
     """Serialize retained owner values; missing processing remains unavailable."""
     content = ref.content if ref is not None else None
     mz = trace.mz if trace is not None else content.mz if content is not None else None
-    if sink.review_only and not any(
+    if not sink.full_audit and not any(
         lower <= mz <= upper for lower, upper in sink.curve_mz_ranges if mz is not None
     ):
         return
@@ -263,7 +263,7 @@ def prepare_alignment_explanation(
     """Keep one bounded transaction while outputs share the loaded children."""
     with ExplanationReportWriter(
         path,
-        review_only=not full_audit,
+        full_audit=full_audit,
         curve_mz_ranges=curve_mz_ranges,
     ) as sink:
         application = completed.application_result
@@ -773,31 +773,18 @@ def prepare_alignment_explanation(
                     },
                     related,
                 )
-                if not full_audit:
-                    sink.add_row_cells(
-                        row.row_key.untarget_row_key_id,
-                        group_id,
-                        [review_cell(decision) for decision in row.decisions],
-                        sample_ordinals,
-                    )
-                    continue
+                cells = []
                 for decision in row.decisions:
-                    add(
-                        "cell_decisions",
-                        decision.decision_id,
-                        {
-                            **_fields(
-                                decision, "decision_id", "variant", "value", "source"
-                            ),
-                            "row_key_id": row.row_key.untarget_row_key_id,
-                            "group_hypothesis_id": group_id,
-                            "canonical_sample_identity_id": (
-                                decision.subject.canonical_sample.identity.sample_identity_id
-                            ),
+                    cell = review_cell(decision)
+                    if full_audit:
+                        cell.update(
+                            decision_id=decision.decision_id,
                             **_fields(decision.evidence, "cell_observation_id"),
-                        },
-                        related,
-                    )
+                        )
+                    cells.append(cell)
+                sink.add_row_cells(
+                    row.row_key.untarget_row_key_id, group_id, cells, sample_ordinals
+                )
             child_count += 1
             if child_count % 256 == 0:
                 report_progress("children", child_count, len(application.children))

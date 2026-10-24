@@ -125,7 +125,7 @@ class ReviewWorkspace:
                     limit=25,
                     order_by="priority",
                     review_scope="matrix"
-                    if summary.get("query_index_version") == 2
+                    if summary.get("schema_version") == "alignment_explanation"
                     else "all",
                 ),
             )

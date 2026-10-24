@@ -381,10 +381,7 @@ def prepare_report(
         raise InspectorError(3, f"Source unavailable: {report_path}")
 
     try:
-        source = open_source(
-            report_path,
-            query_only=selection.strategy == "query" and not selection.browsing,
-        )
+        source = open_source(report_path)
         summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc

@@ -226,7 +226,7 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
     assert write_alignment_explanation is write_cid_nl_explanation
 
     with ExplanationReportWriter(db_path) as writer:
-        writer.finalize({"method": "discovery"})
+        writer.finalize({"method": "discovery", "samples": []})
 
     rows_generic = read_alignment_explanation(db_path)
     rows_cid_nl = read_cid_nl_explanation(db_path)

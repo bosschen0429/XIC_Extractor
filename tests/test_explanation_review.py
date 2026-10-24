@@ -9,89 +9,23 @@ import numpy as np
 import pytest
 
 from tests.test_cid_nl_explanation import _owner_run
+from tests.test_xic_inspector_api import _report_data
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationReportWriter,
     read_cid_nl_curves,
     read_cid_nl_explanation,
-    read_explanation_metadata,
+    read_explanation_selection,
 )
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
 )
-from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_inspector.api import SelectionRequest, generate_report
-from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.curve_bundle import read_curve_bundle
 from xic_workbench.acquisition import (
     CurveAcquisitionCancelled,
     export_explanation_curves,
 )
-
-
-@pytest.mark.parametrize("old_revision", (None, 1))
-def test_index_existing_review_preserves_source_and_rejects_broken_index(
-    tmp_path, monkeypatch, old_revision
-):
-    from tools.diagnostics.explain_cid_nl_run import main
-    from xic_inspector.api import InspectorError
-
-    completed, writer, candidates, matrix, config = _owner_run(
-        tmp_path, monkeypatch, "positive"
-    )
-    source = write_cid_nl_explanation(
-        tmp_path / "old.sqlite",
-        completed=completed,
-        writer_inputs=writer,
-        candidates_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    with sqlite3.connect(source) as db:
-        tables = [
-            row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name LIKE 'query_%'"
-            )
-        ]
-        for table in tables:
-            if old_revision is None or table == "query_review":
-                db.execute(f'DROP TABLE "{table}"')
-        summary = json.loads(
-            db.execute("SELECT payload FROM metadata WHERE key='summary'").fetchone()[0]
-        )
-        summary.pop("query_index_version")
-        if old_revision is not None:
-            summary["query_index_version"] = old_revision
-        db.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
-        )
-    before = source.read_bytes()
-    target = tmp_path / "indexed.sqlite"
-    assert main(["--report", str(source), "--index-query-to", str(target)]) == 0
-    assert source.read_bytes() == before
-    assert (
-        read_explanation_metadata(source).candidates
-        == read_explanation_metadata(target).candidates
-    )
-    assert (
-        read_explanation_metadata(source).records
-        == read_explanation_metadata(target).records
-    )
-    assert (
-        read_explanation_metadata(source).links
-        == read_explanation_metadata(target).links
-    )
-    assert main(["--report", str(source), "--index-query-to", str(target)]) == 2
-    with sqlite3.connect(target) as db:
-        db.execute("DROP TABLE query_witnesses")
-    with pytest.raises(InspectorError, match="Invalid query index"):
-        generate_report(
-            target,
-            SelectionRequest(strategy="query", mz_min=400),
-            tmp_path / "broken.html",
-        )
 
 
 @pytest.mark.parametrize(
@@ -118,12 +52,11 @@ def test_index_existing_review_preserves_source_and_rejects_broken_index(
 def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     tmp_path, monkeypatch, criteria, expected
 ):
-    from tests.test_xic_inspector_api import _report_data
 
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
+    with ExplanationReportWriter(report, full_audit=False) as writer:
         for cid, sid, mz, rt in (
             ("C1", "S1", 500, 1),
             ("C2", "S2", 600, 2),
@@ -200,25 +133,15 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             }
         )
     request = SelectionRequest(**{"strategy": "query", **criteria})
-    baseline = tmp_path / "baseline.html"
-    with monkeypatch.context() as patch:
-        patch.setattr(
-            "xic_inspector.api.open_source", lambda path, **kw: CidNlSource(path, **kw)
-        )
-        old = generate_report(report, request, baseline)
-    assert (
-        old.run_total,
-        old.eligible_count,
-        old.matched_count,
-        old.missing_rt_count,
-    ) == expected
+    from xic_extractor.diagnostics import alignment_explanation as storage
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("indexed query read the entire review population")
+    read_cells = storage._read_review_cells
 
-    monkeypatch.setattr(
-        "xic_inspector.sources.cid_nl.read_explanation_metadata", forbidden
-    )
+    def bounded_cells(db, summary, row_ids=None):
+        assert row_ids is not None, "indexed query read the entire review population"
+        return read_cells(db, summary, row_ids)
+
+    monkeypatch.setattr(storage, "_read_review_cells", bounded_cells)
     output = tmp_path / "indexed.html"
     result = generate_report(report, request, output)
     assert (
@@ -227,7 +150,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
         result.matched_count,
         result.missing_rt_count,
     ) == expected
-    assert _report_data(output) == _report_data(baseline)
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))
@@ -264,8 +186,16 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     actual = sorted(
         (row["canonical_sample_identity_id"], row["variant"], row["value"])
-        for row in read_explanation_metadata(report)
-        .records.get("cell_decisions", {})
+        for row in read_explanation_selection(
+            report,
+            candidate_keys=(),
+            row_ids=tuple(
+                row.row_key.untarget_row_key_id
+                for child in completed.application_result.children
+                for row in child.completed_projection.rows
+            ),
+        )
+        .records["cell_decisions"]
         .values()
     )
     assert actual == expected
@@ -285,47 +215,6 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     assert result.selected_count > 0
     assert (tmp_path / "review.html").is_file()
-    # Selection summaries must agree with fully hydrated facts: they determine
-    # sampling coverage and attention, even when presentation is deferred.
-    compact = CidNlSource(report)
-    hydrated = CidNlSource(report, metadata=read_explanation_metadata(report))
-    scope = set(compact.sample_labels)
-    actual_items = compact.load_items(scope)
-    expected_items = hydrated.load_items(scope)
-    assert [
-        (item.serialized_ref, item.stratum, item.details["review_summary"])
-        for item in actual_items
-    ] == [
-        (item.serialized_ref, item.stratum, item.details["review_summary"])
-        for item in expected_items
-    ]
-
-    # Query coordinates and eligibility must not construct presentation or
-    # decode every row's values before filtering. This guards the measured
-    # all-population work that made one selected item expensive.
-    def forbidden(*args, **kwargs):
-        raise AssertionError("query population loaded presentation/value payloads")
-
-    with monkeypatch.context() as query_patch:
-        query_patch.setattr(CidNlSource, "_presentation_item", forbidden)
-        query_patch.setattr(
-            "xic_extractor.diagnostics.alignment_explanation.unpack_cells", forbidden
-        )
-        query_source = CidNlSource(report, query_only=True)
-        query_items = query_source.load_items(scope)
-        assert "method_assessments" not in query_source.records
-        assert [
-            (item.serialized_ref, item.sample_ids, item.witnesses)
-            for item in query_items
-        ] == [
-            (item.serialized_ref, item.sample_ids, item.witnesses)
-            for item in expected_items
-        ]
-    # The prior compact schema is already used by retained reports.
-    with sqlite3.connect(report) as db:
-        db.execute("ALTER TABLE row_cells DROP COLUMN sample_mask")
-    old_schema_items = CidNlSource(report, query_only=True).load_items(scope)
-    assert old_schema_items == query_items
 
 
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(
@@ -357,7 +246,9 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     assert full.stat().st_size > other.stat().st_size
 
 
-def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monkeypatch):
+def test_full_audit_uses_the_same_indexed_format_and_preserves_sample_values(
+    tmp_path, monkeypatch
+):
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
@@ -370,14 +261,28 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
         alignment_config=config,
         full_audit=True,
     )
-    before = full.read_bytes()
-    review = tmp_path / "compact.sqlite"
-    result = compact_explanation(full, review)
-    assert full.read_bytes() == before
-    assert result["review_bytes"] < result["source_bytes"]
+    review = write_cid_nl_explanation(
+        tmp_path / "review.sqlite",
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    assert (
+        read_cid_nl_explanation(full)["schema_version"]
+        == read_cid_nl_explanation(review)["schema_version"]
+    )
+    for path in (full, review):
+        with sqlite3.connect(path) as db:
+            assert db.execute("SELECT COUNT(*) FROM query_items").fetchone()[0] > 0
     for candidate in (candidates["S1"][0], candidates["S2"][0]):
-        old = read_cid_nl_explanation(full, candidate_id=candidate.candidate_id)
-        new = read_cid_nl_explanation(review, candidate_id=candidate.candidate_id)
+        audit_detail = read_cid_nl_explanation(
+            full, candidate_id=candidate.candidate_id
+        )
+        review_detail = read_cid_nl_explanation(
+            review, candidate_id=candidate.candidate_id
+        )
 
         def values(detail):
             return sorted(
@@ -390,11 +295,38 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
                 for row in detail["records"].get("cell_decisions", [])
             )
 
-        assert values(old) == values(new)
+        assert values(audit_detail) == values(review_detail)
         assert (
-            old["records"]["final_groups"][0]["member_subjects"]
-            == new["records"]["final_groups"][0]["member_subjects"]
+            audit_detail["records"]["final_groups"][0]["member_subjects"]
+            == review_detail["records"]["final_groups"][0]["member_subjects"]
         )
+        assert audit_detail["records"]["cell_observations"]
+        assert all(
+            "decision_id" in cell for cell in audit_detail["records"]["cell_decisions"]
+        )
+        assert "cell_observations" not in review_detail["records"]
+
+    for sample in read_cid_nl_explanation(full)["samples"]:
+        sid = sample["canonical_sample_identity_id"]
+        results = []
+        for path in (full, review):
+            output = tmp_path / f"{path.stem}-{sample['sample_stem']}.html"
+            result = generate_report(
+                path,
+                SelectionRequest(
+                    strategy="query", sample_ids=(sid,), review_scope="matrix"
+                ),
+                output,
+            )
+            results.append(
+                (result.run_total, result.eligible_count, result.matched_count)
+            )
+            assert all(
+                record["sample_id"] == sid
+                for item in _report_data(output)["items"]
+                for record in item["samples"]
+            )
+        assert results[0] == results[1]
 
 
 def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
