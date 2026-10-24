@@ -570,6 +570,59 @@
 }
 
 /* Dialog content */
+:is(#target-editor, #sample-editor, #method-editor) .dialog-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+:is(#target-editor, #sample-editor, #method-editor) .dialog-body > * {
+  flex: none;
+}
+:is(#target-editor, #sample-editor, #method-editor) .editor-table {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+:is(#target-editor, #sample-editor, #method-editor) :is(.dialog-head, .dialog-foot) {
+  flex-shrink: 0;
+}
+#target-editor table {
+  table-layout: fixed;
+  min-width: 920px;
+}
+#target-editor th:first-child { width: 260px; }
+#target-editor th:nth-child(2) { width: 120px; }
+#target-editor th:nth-child(3) { width: 132px; }
+#target-editor th:nth-child(4) { width: 112px; }
+#target-editor th:last-child { width: 42px; }
+#sample-editor {
+  width: min(1440px, calc(100vw - 32px));
+}
+#sample-editor table {
+  table-layout: fixed;
+  min-width: 1120px;
+}
+#sample-editor th:first-child { width: 36px; }
+#sample-editor th:nth-child(2) { width: 220px; }
+#sample-editor th:nth-child(3) { width: 96px; }
+#sample-editor th:nth-child(4) { width: 76px; }
+#sample-editor th:nth-child(6) { width: 104px; }
+#sample-editor th:nth-child(7) { width: 128px; }
+#sample-editor th:nth-child(8) { width: 52px; }
+#sample-editor th:nth-child(9) { width: 168px; }
+/* Keep the injection identity beside editable columns during horizontal scroll. */
+#sample-editor :is(th, td):first-child,
+#sample-editor :is(th, td):nth-child(2) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+#sample-editor :is(th, td):nth-child(2) { left: 36px; }
+#sample-editor th:first-child,
+#sample-editor th:nth-child(2) {
+  z-index: 3;
+  background: var(--surface-2);
+}
 .editor-heading {
   display: flex;
   align-items: center;

@@ -345,10 +345,76 @@ def test_visible_rt_range_round_trips_without_changing_automatic_bounds(
     assert "rt_max" not in saved["overrides"]
 
 
-@pytest.mark.parametrize("width", [680, 960])
-def test_editors_keep_fields_and_actions_reachable(workbench, width):
+@pytest.mark.parametrize("width", [680, 960, 1280])
+def test_editors_keep_fields_and_actions_reachable(
+    workbench, width, config_dir, tmp_path, monkeypatch
+):
+    from xic_workbench.discovery_config_io import write_discovery_config
+    from xic_workbench.methods import method_details, save_method
+    from xic_workbench.samples import save_batch_samples
+
+    install_fake_raw_headers(monkeypatch)
+    raw_dir = tmp_path / "raw"
+    stems = tuple(
+        f"Demo_batch_Tumor_DNA_{index:03d}"
+        + ("_technical_replicate_with_long_acquisition_name" if index == 3 else "")
+        for index in range(1, 49)
+    )
+    _placeholder_batch(raw_dir, stems)
+    save_batch_samples(
+        config_dir,
+        raw_dir,
+        [
+            asdict(
+                SampleMetadata(
+                    stem,
+                    stem,
+                    index,
+                    "study_sample",
+                    "Batch_01",
+                    group="Tumor",
+                    excluded=index == 48,
+                    exclusion_reason="Injection interrupted" if index == 48 else "",
+                )
+            )
+            for index, stem in enumerate(stems, start=1)
+        ],
+    )
+    write_targets(
+        [
+            {
+                "label": f"Demo compound with a long name {index:02d}",
+                "mz": str(400 + index),
+                "expected_rt_min": "5.25",
+                "cid_nl_tag": "dR",
+                "role": "istd" if index == 24 else "analyte",
+                "istd_pair": "Demo compound with a long name 24" if index < 24 else "",
+            }
+            for index in range(1, 25)
+        ],
+        config_dir=config_dir,
+    )
+    draft = method_details("dna_dr")["draft"]
+    draft["combine_mode"] = "union"
+    draft["tags"].extend(
+        {
+            "enabled": True,
+            "strategy": "neutral_loss",
+            "name": f"Demo neutral loss {index:02d}",
+            "neutral_loss_da": 200 + index,
+        }
+        for index in range(1, 13)
+    )
+    method_path = tmp_path / "demo-method.toml"
+    save_method(draft, method_path)
+    write_discovery_config({"preset": str(method_path)}, config_dir=config_dir)
+
     page = workbench
     page.set_viewport_size({"width": width, "height": 720})
+    page.reload()
+    expect(page.locator("body")).not_to_have_class("booting")
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("48 個樣本")
     for view, launcher, title, fields, actions in (
         (
             "targeted",
@@ -389,6 +455,38 @@ def test_editors_keep_fields_and_actions_reachable(workbench, width):
                 dialog.get_by_role("button", name=name, exact=True)
             ).to_be_in_viewport()
         assert dialog.evaluate("node => node.scrollWidth <= node.clientWidth")
+        # Reaching the final row must not scroll search or bulk actions away.
+        last_row = dialog.locator("tbody tr").last
+        last_field = last_row.locator(
+            'input:not([type="checkbox"]):enabled, select'
+        ).last
+        last_field.focus()
+        expect(last_field).to_be_in_viewport(ratio=1)
+        if launcher == "t-samples-edit":
+            expect(last_row.locator("td.mono")).to_be_in_viewport(ratio=1)
+            expect(
+                dialog.get_by_label(f"{stems[-1]} 排除原因", exact=True)
+            ).to_be_in_viewport(ratio=1)
+        assert dialog.locator(
+            'tbody input:not([type="checkbox"]), tbody select'
+        ).evaluate_all(
+            """nodes => nodes.every(node => {
+              const control = node.getBoundingClientRect();
+              const cell = node.closest('td').getBoundingClientRect();
+              return control.left >= cell.left && control.right <= cell.right;
+            })"""
+        )
+        dialog.locator(".editor-help > summary").click()
+        if launcher == "method-edit":
+            expect(dialog.get_by_label("說明", exact=True)).to_be_in_viewport(ratio=1)
+        for region in dialog.locator(
+            ".dialog-head, .dialog-foot, .toolbar, "
+            ".sample-bulk-actions, .method-identity"
+        ).all():
+            expect(region).to_be_in_viewport(ratio=1)
+        assert dialog.locator(".dialog-body").evaluate(
+            "node => node.scrollHeight <= node.clientHeight + 1"
+        )
         dialog.get_by_role("button", name="關閉", exact=True).click()
 
 
@@ -691,6 +789,8 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     workbench, mode, input_label
 ):
     page = workbench
+    page.clock.install(time=0)
+    page.clock.pause_at(1_000)
     _view(page, "untargeted")
     page.locator(f"input[name=u-mode][value={mode}]").check()
     checklist = page.locator("#untargeted-checklist")
@@ -701,6 +801,10 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     expect(checklist).not_to_contain_text("RawFileReader DLL")
     page.locator("#u-dll_dir").fill("")
     page.locator("#u-dll_dir").press("Tab")
+    with page.expect_response("**/api/targeted/method") as preview:
+        page.clock.run_for(300)
+    assert preview.value.status == 200
+    expect(page.locator("#toasts .toast.error")).to_have_count(0)
     checklist.get_by_role("button", name=re.compile("RawFileReader DLL")).click()
     expect(page.locator("#u-dll_dir")).to_be_visible()
     expect(page.locator("#u-dll_dir")).to_be_focused()
@@ -709,6 +813,11 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     ):
         expect(checklist).not_to_contain_text(label)
     expect(page.locator("button[form=untargeted-form][type=submit]")).to_be_enabled()
+    page.locator("#u-dll_dir").fill("C:/local/dll")
+    with page.expect_response("**/api/targeted/method") as preview:
+        page.clock.run_for(300)
+    assert preview.value.status == 200
+    expect(checklist).not_to_contain_text("RawFileReader DLL")
 
 
 @pytest.fixture

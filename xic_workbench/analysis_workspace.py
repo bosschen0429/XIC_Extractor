@@ -219,7 +219,7 @@ class AnalysisWorkspace:
             }
         if action == "targeted/method":
             from xic_extractor.configuration.settings import (
-                resolve_settings,
+                fill_setting_defaults,
             )
             from xic_workbench.config_io import read_settings
             from xic_workbench.targeted import method_summary
@@ -229,7 +229,9 @@ class AnalysisWorkspace:
                 if "settings" in values
                 else read_settings(config_dir=self.config_dir)
             )
-            settings, _parsed, warnings = resolve_settings(raw)
+            # A method preview may contain unfinished batch/machine inputs.
+            # Keep the settings allowlist; save/run own execution validation.
+            settings, warnings = fill_setting_defaults(raw)
             summary = {**method_summary(settings), "warnings": warnings}
             return summary
         if action == "targets/export":

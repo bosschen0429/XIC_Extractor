@@ -632,6 +632,27 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         workspace.jobs.close()
 
 
+def test_method_preview_allows_incomplete_paths_but_save_and_run_reject_them(tmp_path):
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        _, config, _ = request("/api/config")
+        settings = {**config["settings"], "dll_dir": ""}
+        status, preview, _ = request("/api/targeted/method", {"settings": settings})
+        assert status == 200
+        assert preview["label"] == "共用 CID-NL 策略"
+        values = {"settings": settings, "targets": config["targets"]}
+        for endpoint, payload in (
+            ("/api/targeted/save", values),
+            ("/api/analysis/start", {"kind": "targeted", "values": values}),
+        ):
+            status, result, _ = request(endpoint, payload)
+            assert status == 400
+            assert "dll_dir is required" in result["error"]
+        _, current, _ = request("/api/config")
+        assert current["settings"] == config["settings"]
+        assert current["analysis"]["job"] is None
+
+
 def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
     from tests.test_xic_workbench import _client
     from xic_workbench.workspace import ReviewWorkspace
