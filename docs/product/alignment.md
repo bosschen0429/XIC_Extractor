@@ -257,6 +257,20 @@ measurements. Ordinary corroboration can support a fit despite a conflicting
 standard; fitted standard residuals remain visible and do not reselect that
 standard's peak.
 
+Within a usable fit, a measured ISTD also supplies a bounded local landmark.
+Its fitted coordinate can move toward its measured cohort reference by at most
+six times the median absolute residual of the final nonzero-weight positions,
+using the same residual multiplier as the robust fit. Rejected correspondences
+do not enlarge this influence limit. The adjustment must preserve order against
+both the original neighboring fitted coordinates and neighboring landmark
+proposals; conflicting proposals keep their original fitted values. It changes
+only an existing measured knot, not neighboring knots, the observed support
+range, or the count of supported positions. The frozen interpolation therefore
+carries this local correction without a second ISTD override. Large or
+order-conflicting standard residuals remain visible rather than forcing the
+curve through every standard. This bound limits influence; it is not a
+statistical confidence interval or independent identity verification.
+
 Eight is a conservative application support floor, not a universal LOESS
 theorem. Local support, polynomial degree, bandwidth and sampling density still
 matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)

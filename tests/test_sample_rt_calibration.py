@@ -216,6 +216,87 @@ def test_conflicting_standard_does_not_drag_a_supported_ordinary_map():
     assert residual[1:] == pytest.approx((35, 42, -7))
 
 
+@pytest.mark.parametrize("standard_reference", (16.65, 30.0))
+def test_identity_landmark_corrects_locally_without_unbounded_influence(
+    standard_reference,
+):
+    samples = ("a", "b", "c", "d", "e")
+    detected = {
+        f"F{i}": {
+            s: float(rt) - 1 + (0.05 if i % 2 else -0.05)
+            if s == "a"
+            else float(rt) + (0.2 if s == "b" else 0)
+            for s in samples
+        }
+        for i, rt in enumerate(range(8, 40))
+    }
+    measured = {
+        s: 15.3 if s == "a" else standard_reference + (0.2 if s == "b" else 0)
+        for s in samples
+    }
+    # The same acquired position already has an ordinary correspondence.
+    # Naming its known identity must not add a vote or move other fitted knots.
+    detected["ordinary_view"] = measured
+    kwargs = dict(
+        sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
+    )
+    ordinary = build_batch_rt_calibration(detected, **kwargs)
+    known = build_batch_rt_calibration(
+        detected,
+        measured_istds=tuple(("standard", s, rt) for s, rt in measured.items()),
+        **kwargs,
+    )
+    before, after = ordinary.samples["a"], known.samples["a"]
+    assert after.anchor_count == before.anchor_count
+    assert after.reliable_observed_range == before.reliable_observed_range
+    assert [(x, y) for x, y in after.knots if x != 15.3] == [
+        (x, y) for x, y in before.knots if x != 15.3
+    ]
+    calibrated = after.calibrated_rt(15.3)
+    if standard_reference == 16.65:
+        assert calibrated == pytest.approx(standard_reference, abs=0.1)
+    else:
+        # An identity/coordinate contradiction cannot pull a whole RT region.
+        assert abs(calibrated - before.calibrated_rt(15.3)) < 0.5
+        assert abs(calibrated - standard_reference) > 10
+    assert known.samples["b"].calibrated_rt(measured["b"]) == pytest.approx(
+        standard_reference
+    )
+    assert calibrated + known.offset_min("a", calibrated) == pytest.approx(15.3)
+
+
+def test_neighboring_identity_conflicts_do_not_reverse_the_supported_map():
+    samples = ("a", "b", "c")
+    detected = {
+        f"F{i}": {
+            s: float(rt) - 1 + (0.05 if i % 2 else -0.05) if s == "a" else float(rt)
+            for s in samples
+        }
+        for i, rt in enumerate(range(8, 40))
+    }
+    measured = (
+        ("first", "a", 15.3),
+        ("first", "b", 16.36),
+        ("first", "c", 16.36),
+        ("second", "a", 15.4),
+        ("second", "b", 16.34),
+        ("second", "c", 16.34),
+    )
+    for label, sample, observed in measured:
+        detected.setdefault(label, {})[sample] = observed
+    kwargs = dict(
+        sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
+    )
+    ordinary = build_batch_rt_calibration(detected, **kwargs)
+    known = build_batch_rt_calibration(detected, measured_istds=measured, **kwargs)
+    assert known.samples["a"].knots == ordinary.samples["a"].knots
+    assert known.samples["a"].status == "calibrated"
+    reversed_labels = build_batch_rt_calibration(
+        detected, measured_istds=tuple(reversed(measured)), **kwargs
+    )
+    assert reversed_labels.samples == known.samples
+
+
 def test_measured_front_shift_decides_and_timeline_explains() -> None:
     early = (-0.6, -0.6) + (0.0,) * (len(REFERENCE_RTS) - 2)
     late = (0.4, 0.4) + (0.0,) * (len(REFERENCE_RTS) - 2)

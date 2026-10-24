@@ -2,7 +2,8 @@
 
 ISTDs and agreed ordinary features establish the same cohort-median reference.
 Robust local-linear regression estimates each injection's RT-dependent offset;
-it does not subtract a local injection trend or change measured peaks/areas.
+bounded identity landmarks retain local measured evidence without moving the
+neighboring fitted positions. Measured peaks and areas remain unchanged.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 # Count acquired RT positions, not ion aliases, interpolation knots or samples.
 _MIN_LOESS_POSITIONS = 8
 _MIN_ORDINARY_COHORT_FRACTION = 0.5
+_ROBUST_RESIDUAL_CUTOFF = 6.0
 
 
 @dataclass(frozen=True)
@@ -193,7 +195,14 @@ def build_batch_rt_calibration(
         sample_knots[sample] = (
             ordered_points
             if sample not in ordinary_samples and not _is_usable(ordered_points)
-            else _fit_sample_knots(points, policy.loess_fraction)
+            else _fit_sample_knots(
+                points,
+                policy.loess_fraction,
+                standard_points=tuple(
+                    (observed, reference)
+                    for _, observed, reference in standards.get(sample, ())
+                ),
+            )
         )
         anchor_counts[sample] = len({x for x, _ in points})
     usable = {s for s, k in sample_knots.items() if _is_usable(k)}
@@ -339,7 +348,10 @@ def _anchor_coordinates(
 
 
 def _fit_sample_knots(
-    points: Sequence[tuple[float, float]], fraction: float
+    points: Sequence[tuple[float, float]],
+    fraction: float,
+    *,
+    standard_points: Sequence[tuple[float, float]] = (),
 ) -> tuple[tuple[float, float], ...]:
     # Multiple ion views at one acquired position are not independent votes.
     by_rt: dict[float, list[float]] = defaultdict(list)
@@ -390,17 +402,57 @@ def _fit_sample_knots(
         if float(np.max(abs(residual))) < 1e-10:
             break
         scale = max(float(np.median(abs(residual))), 1e-10)
-        u = abs(residual) / (6 * scale)
+        u = abs(residual) / (_ROBUST_RESIDUAL_CUTOFF * scale)
         robust = np.maximum(0, 1 - u * u) ** 2
         robust[u >= 1] = 0
     supported_x = x[robust > 0]
     if len(supported_x) < _MIN_LOESS_POSITIONS:
         return ()
-    return tuple(
+    knots = tuple(
         (float(a), float(b))
         for a, b in zip(x, x + fitted, strict=True)
         if supported_x[0] <= a <= supported_x[-1]
     )
+    # Identity cannot rescue an unsupported/non-monotone trend or extend its
+    # span. Its local influence uses the same residual scale as robust fitting,
+    # estimated only from retained positions so rejected pairs cannot inflate it.
+    if not standard_points or not _is_usable(knots):
+        return knots
+    limit = _ROBUST_RESIDUAL_CUTOFF * float(np.median(abs((y - fitted)[robust > 0])))
+    return _bound_standard_landmarks(knots, standard_points, limit)
+
+
+def _bound_standard_landmarks(
+    knots: tuple[tuple[float, float], ...],
+    standard_points: Sequence[tuple[float, float]],
+    adjustment_limit: float,
+) -> tuple[tuple[float, float], ...]:
+    """Retain identity locally, without extra support or a second RT map."""
+    by_rt: dict[float, list[float]] = defaultdict(list)
+    for observed, reference in standard_points:
+        by_rt[observed].append(reference)
+    proposed = [reference for _, reference in knots]
+    for index, (observed, reference) in enumerate(knots):
+        if observed not in by_rt:
+            continue
+        value = max(
+            reference - adjustment_limit,
+            min(float(median(by_rt[observed])), reference + adjustment_limit),
+        )
+        lower = knots[index - 1][1] if index else -math.inf
+        upper = knots[index + 1][1] if index + 1 < len(knots) else math.inf
+        if lower < value < upper:
+            proposed[index] = value
+    # Evaluate neighboring proposals together, not in label/insertion order.
+    # Each proposal also fits between the original neighbors, so reverting a
+    # conflicting proposal cannot invalidate an accepted one.
+    result = []
+    for index, (observed, reference) in enumerate(knots):
+        lower = proposed[index - 1] if index else -math.inf
+        upper = proposed[index + 1] if index + 1 < len(knots) else math.inf
+        value = proposed[index] if lower < proposed[index] < upper else reference
+        result.append((observed, value))
+    return tuple(result)
 
 
 class BatchRtCalibrationAccumulator:

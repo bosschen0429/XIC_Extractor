@@ -26,8 +26,10 @@ activation contract promotes a correction or gate.
   to the Matrix. Clean-standard evidence alone does not establish transfer to
   biological samples.
 - Production ISTD RT correspondence belongs to `alignment.drift_evidence`.
-  Sample-RT calibration from detected features remains a separate diagnostic
-  and grouping-experiment input under `alignment.sample_rt_calibration`.
+  The shared `alignment.sample_rt_calibration` owner fits measured ISTDs and
+  qualified ordinary bootstrap correspondences for the frozen production map;
+  diagnostics and grouping experiments reuse that owner. Its support and
+  bounded-landmark rules are owned by [Alignment](alignment.md).
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
