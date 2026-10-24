@@ -44,8 +44,15 @@ selected integral or grants membership.
 
 - Views must share an acquisition source and overlapping actual extraction m/z
   intervals. Sample attribution remains with the owning workflow.
-- Identical acquired samples in the common selected peak interval can prove
-  same-apex views. Differing apices additionally require identical measured
+- Same-apex views are equivalent when their acquired samples are identical
+  in the common selected peak interval. Small flank differences are also allowed
+  when both selected intervals retain exactly the same raw peak maximum, the
+  overlap contains at least five matching acquisition times, and the integral of
+  their absolute signal difference is at most 5% of the integral of their
+  pointwise maximum signal in that overlap. This is an amplitude-preserving
+  comparison tolerance, not an
+  error estimate or a replacement integral; neither trace is rescaled.
+  Differing apices still require identical measured
   overlap surrounding both apices and the physical segment owner assigning both
   queries to one lobe in their combined context. Resolved separate lobes stay
   distinct. Nearby RT, overlapping bounds, similar area or high correlation

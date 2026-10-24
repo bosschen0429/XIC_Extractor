@@ -7,8 +7,10 @@ No caller may replace missing evidence with an RT or correlation tolerance.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.configuration.signal_processing_profile import (
@@ -24,6 +26,9 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.observations import PeakObservationRef
+
+
+_MAX_OFF_APEX_SIGNAL_DIFFERENCE = 0.05
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,12 +94,8 @@ def compare_physical_peak_views(
         tuple(point for point in trace if lower <= point[0] <= upper)
         for trace in traces
     )
-    if (
-        apices[0] == apices[1]
-        and lower < apices[0] < upper
-        and overlaps[0]
-        and overlaps[0] == overlaps[1]
-    ):
+    same_apex = apices[0] == apices[1] and lower < apices[0] < upper
+    if same_apex and overlaps[0] and overlaps[0] == overlaps[1]:
         return "same"
     selected_traces = tuple(
         tuple(
@@ -104,6 +105,8 @@ def compare_physical_peak_views(
         )
         for trace, view in zip(traces, (left, right), strict=True)
     )
+    if same_apex and _same_peak_with_off_apex_difference(selected_traces, overlaps):
+        return "same"
     # A shared selected lobe is sufficient evidence. Unrelated ions outside
     # these selections must not erase it merely because more context is kept.
     selected_relation = _compare_measured_lobes(
@@ -157,6 +160,37 @@ def compare_physical_peak_views(
         profile=left.profile,
         require_qualified=True,
     )
+
+
+def _same_peak_with_off_apex_difference(
+    selected: tuple[tuple[tuple[float, float], ...], ...],
+    overlaps: tuple[tuple[tuple[float, float], ...], ...],
+) -> bool:
+    """Retain the measured peak maximum while allowing small flank differences.
+
+    Compare acquired amplitudes, not independently normalized shapes. The
+    trapezoidal difference is comparison evidence, never a replacement integral.
+    """
+    left, right = overlaps
+    if (
+        len(left) < 5
+        or len(left) != len(right)
+        or any(a[0] != b[0] for a, b in zip(left, right, strict=True))
+        or max(v for _, v in selected[0]) != max(v for _, v in selected[1])
+    ):
+        return False
+    differences = [abs(a[1] - b[1]) for a, b in zip(left, right, strict=True)]
+    envelope = [max(a[1], b[1]) for a, b in zip(left, right, strict=True)]
+    widths = [b[0] - a[0] for a, b in pairwise(left)]
+    difference = math.fsum(
+        (a + b) * width
+        for (a, b), width in zip(pairwise(differences), widths, strict=True)
+    )
+    reference = math.fsum(
+        (a + b) * width
+        for (a, b), width in zip(pairwise(envelope), widths, strict=True)
+    )
+    return reference > 0 and difference <= _MAX_OFF_APEX_SIGNAL_DIFFERENCE * reference
 
 
 def _compare_measured_lobes(
