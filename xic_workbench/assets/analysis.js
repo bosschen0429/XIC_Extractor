@@ -627,20 +627,15 @@
     const istd = state.targets.filter(isIstd).length;
     $("target-count").textContent = state.targets.length
       ? `${state.targets.length} 個目標 · ${istd} 個 ISTD`
-      : "";
+      : "尚無目標";
     renderTargetPreview();
     checklist("targeted");
   }
   function renderTargetPreview() {
     const preview = $("target-preview");
+    preview.hidden = !state.targets.length;
     if (!state.targets.length) {
-      preview.replaceChildren(
-        el(
-          "div",
-          "尚無目標",
-          "target-preview-empty",
-        ),
-      );
+      preview.replaceChildren();
       return;
     }
     const table = el("table");
@@ -869,15 +864,14 @@
     crop.id = "u-rt-crop";
     crop.dataset.analysisIdle = "";
     crop.checked = hasCrop;
-    cropLabel.append(crop, el("span", "限制分析 RT 範圍（選用）"));
-    const cropNote = el("p", "預設分析完整 RAW 採集範圍（自動）。需要裁切時才啟用；任一端留空會使用該 RAW 的採集起點／終點。", "settings-notice span-all");
+    cropLabel.append(crop, el("span", "限制分析 RT 範圍"));
     cropFields.hidden = !hasCrop;
     crop.addEventListener("change", () => {
       cropFields.hidden = !crop.checked;
       lock();
       updateMethodPreview();
     });
-    tuning.append(cropLabel, cropNote, cropFields);
+    $("method-rt-crop").replaceChildren(cropLabel, cropFields);
     lock();
     updateMethodPreview();
     if (state.booted) await act(reloadIstd);
@@ -889,12 +883,6 @@
       el("span", `${tag.name} · ${tag.neutral_loss_da} Da`, "chip accent"),
     );
     if (preview.tags.length > 1) chips.push(el("span", preview.combine_mode, "chip"));
-    const crop = $("u-rt-crop")?.checked;
-    const lower = crop ? $("tune-rt_min")?.value.trim() : "";
-    const upper = crop ? $("tune-rt_max")?.value.trim() : "";
-    chips.push(el("span", !lower && !upper
-      ? "完整 RAW 採集範圍（自動）"
-      : `RT ${lower || "RAW 起點"}–${upper || "RAW 終點"} min`, "chip"));
     $("method-preview").replaceChildren(...chips);
     checklist("untargeted");
   }
@@ -1004,9 +992,8 @@
     }
   }
   const sourceNotes = {
-    confirmed:
-      "使用這個 RAW 資料夾已確認的樣品資訊。要改用新的上機資訊，請按「匯入上機資訊」。",
-    sequence: "樣品資訊來自上機資訊；修改後會存成這個 RAW 資料夾的樣品資訊。",
+    confirmed: "使用本批已確認的樣品資訊。",
+    sequence: "來源：上機資訊；修改後儲存至本批。",
   };
   function renderRoleSummary(page) {
     const set = state.sampleSets[page];

@@ -292,23 +292,57 @@ def test_untargeted_module_switches_persist_and_follow_mode(workbench):
     expect(backfill).to_be_enabled()
 
 
-def test_analysis_actions_and_settings_remain_reachable_on_narrow_screen(workbench):
+@pytest.mark.parametrize("width", [680, 960])
+def test_analysis_actions_and_settings_remain_reachable(workbench, width):
     page = workbench
-    page.set_viewport_size({"width": 680, "height": 720})
+    page.set_viewport_size({"width": width, "height": 720})
     for kind in ("targeted", "untargeted"):
         _view(page, kind)
         expect(
             page.get_by_role("button", name=f"開始 {kind.title()} 分析")
         ).to_be_visible()
-        _expand(page, f"#workspace-{kind} .machine-settings")
         dll = page.locator(f"#{'t' if kind == 'targeted' else 'u'}-dll_dir")
+        expect(dll).to_be_visible()
         dll.click()
         dll.press("Tab")
         expect(page.locator(":focus")).to_have_text("瀏覽")
+        if kind == "untargeted":
+            expect(page.locator("#u-preset")).to_be_visible()
+            page.locator("#u-rt-crop").check()
+            expect(page.locator("#tune-rt_min")).to_be_visible()
+            expect(page.locator("#tune-rt_max")).to_be_visible()
+            page.get_by_text("本次方法參數", exact=True).click()
+            expect(page.locator("#tune-nl_tolerance_ppm")).to_be_visible()
         assert page.evaluate(
             "document.documentElement.scrollWidth <= "
             "document.documentElement.clientWidth"
         )
+
+
+def test_visible_rt_range_round_trips_without_changing_automatic_bounds(
+    workbench, config_dir
+):
+    page = workbench
+    _view(page, "untargeted")
+    crop = page.locator("#u-rt-crop")
+    expect(crop).to_be_visible()
+    expect(crop).not_to_be_checked()
+    expect(page.locator("#tune-rt_min")).to_be_hidden()
+    crop.check()
+    page.locator("#tune-rt_min").fill("2.5")
+    expect(page.locator("#tune-rt_max")).to_have_value("")
+    with page.expect_response("**/api/untargeted/save"):
+        page.locator("#untargeted-save").click()
+    page.reload()
+    expect(crop).to_be_checked()
+    expect(page.locator("#tune-rt_min")).to_have_value("2.5")
+    expect(page.locator("#tune-rt_max")).to_have_value("")
+    crop.uncheck()
+    with page.expect_response("**/api/untargeted/save"):
+        page.locator("#untargeted-save").click()
+    saved = json.loads((config_dir / "discovery_gui.json").read_text(encoding="utf-8"))
+    assert "rt_min" not in saved["overrides"]
+    assert "rt_max" not in saved["overrides"]
 
 
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
@@ -514,7 +548,7 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#targeted-machine .path-line > label")).to_have_text(
         "RawFileReader DLL 資料夾"
     )
-    expect(page.locator("#t-dll_dir")).to_be_hidden()
+    expect(page.locator("#t-dll_dir")).to_be_visible()
     # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
@@ -541,7 +575,7 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#untargeted-machine .path-line > label")).to_have_text(
         "RawFileReader DLL 資料夾"
     )
-    expect(page.locator("#u-dll_dir")).to_be_hidden()
+    expect(page.locator("#u-dll_dir")).to_be_visible()
 
 
 def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_errors):
@@ -593,13 +627,11 @@ def test_readiness_lists_mode_inputs_without_blocking_submit(
     checklist = page.locator("#untargeted-checklist")
     expect(checklist.locator("li.todo").filter(has_text=input_label)).to_have_count(1)
     expect(checklist).not_to_contain_text("輸出資料夾")
-    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill("C:/local/dll")
     page.locator("#u-dll_dir").press("Tab")
     expect(checklist).not_to_contain_text("RawFileReader DLL")
     page.locator("#u-dll_dir").fill("")
     page.locator("#u-dll_dir").press("Tab")
-    page.locator("#workspace-untargeted .machine-settings > summary").click()
     checklist.get_by_role("button", name=re.compile("RawFileReader DLL")).click()
     expect(page.locator("#u-dll_dir")).to_be_visible()
     expect(page.locator("#u-dll_dir")).to_be_focused()
@@ -662,7 +694,6 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
         _view(page, kind)
         page.locator("input[name=u-mode][value=discovery_only]").check()
         page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
-        _expand(page, "#workspace-untargeted .machine-settings")
         page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
         page.locator("#u-output_dir").fill(str(tmp_path / "results"))
     _start(page, kind)
@@ -1741,8 +1772,6 @@ def test_sample_restore_is_bound_to_current_inputs(
     elif changed_input:
         if changed_input == "sequence_source":
             _expand(page, "#workspace-untargeted .sample-imports")
-        elif changed_input == "dll_dir":
-            _expand(page, "#workspace-untargeted .machine-settings")
         selector = (
             "#sequence-source"
             if changed_input == "sequence_source"
@@ -1885,13 +1914,11 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
     fake_runs.release.set()
     page.locator("#t-data_dir").fill(str(raw_dir))
-    _expand(page, "#workspace-targeted .machine-settings")
     page.locator("#t-dll_dir").fill(str(tmp_path))
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
     _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
-    _expand(page, "#workspace-targeted .machine-settings")
     page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
@@ -2529,7 +2556,6 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     _expand(page, "#workspace-untargeted .sample-imports")
     page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
@@ -2716,7 +2742,6 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
 
     # A new batch named the same way reuses the confirmed batch by name.
     _view(page, "untargeted")
-    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     second = tmp_path / "second"
     _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
@@ -2960,7 +2985,6 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    _expand(page, "#workspace-untargeted .machine-settings")
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
