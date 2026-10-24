@@ -1900,7 +1900,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     recovery_path = tmp_path / "recovery-evidence.sqlite"
     recovery_sources = (retained_recovery, retained_unavailable, retained_empty)
-    with ExplanationReportWriter(recovery_path) as sink:
+    with ExplanationReportWriter(recovery_path, full_audit=True) as sink:
         for evidence in recovery_sources:
             _emit_curve_payload(
                 sink,
@@ -1917,6 +1917,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
         sink.finalize(
             {
+                "samples": [],
                 "processing_request_id": (
                     job.processing_owners.request.processing_request_id
                 ),

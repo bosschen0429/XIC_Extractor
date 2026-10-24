@@ -553,7 +553,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     )
 
     with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
-        path = writer.finalize({"known_istd_reference": receipt})
+        path = writer.finalize({"samples": [], "known_istd_reference": receipt})
     saved = read_cid_nl_explanation(path)
     assert saved["schema_version"] == "alignment_explanation"
     assert saved["known_istd_reference"] == receipt

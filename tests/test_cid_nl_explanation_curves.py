@@ -168,16 +168,16 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         alignment_config=config,
     )
     completed.close()
-    with sqlite3.connect(report) as connection:
-        actual = {
-            (record["candidate_id"], record["canonical_sample_identity_id"]): record[
-                "observations"
-            ]
-            for (raw,) in connection.execute(
-                "SELECT payload FROM records WHERE kind='terminal_subjects'"
-            )
-            if (record := json.loads(raw)).get("hypothesis_id")
-        }
+    actual = {
+        (record["candidate_id"], record["canonical_sample_identity_id"]): record[
+            "observations"
+        ]
+        for candidate_id in {candidate_id for candidate_id, _ in expected}
+        for record in read_cid_nl_explanation(report, candidate_id=candidate_id)[
+            "records"
+        ]["terminal_subjects"]
+        if record.get("hypothesis_id")
+    }
     assert actual == expected
 
 
