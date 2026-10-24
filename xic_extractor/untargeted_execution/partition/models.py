@@ -30,6 +30,9 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_bootstrap import (
+    measured_calibration_anchor_groups,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
@@ -442,7 +445,9 @@ class UntargetedPreparedGrouping:
         return tuple(
             owners
             for workset in self.worksets
-            for owners in workset.grouping_scope.calibration_anchor_groups
+            for owners in measured_calibration_anchor_groups(
+                workset.grouping_scope, workset.retained_candidates
+            )
         )
 
 

@@ -229,21 +229,42 @@ input selection.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 owns anchor preparation and the fit. A correspondence's reference is its
-same-cohort median observed RT. Ordinary correspondences require at least three
-measured members; exact duplicate sample/RT patterns contribute only once.
-Measured ISTDs do not require ordinary-feature prevalence. Missing ISTDs,
+same-cohort median observed RT. Ordinary correspondences require direct identity
+support, no identity conflict or provisional status, and quantification-eligible
+observations in at least half the declared cohort (rounded up), with at least
+three measured members. Bootstrap takes measured support from the retained
+assessment binding, not nominal method-query masses projected into an
+observation-only owner. These are anchor qualifications, not feature-retention
+rules: other observations remain available to grouping. Exact duplicate
+sample/RT patterns contribute only once. Measured ISTDs require at least two
+same-cohort measurements, but not ordinary-feature prevalence. Missing ISTDs,
 predicted coordinates and Backfill observations are not imputed as anchors.
 Declared batch IDs define cohorts; empty IDs share an unspecified cohort and
 sample role does not define the cohort.
 
 Each sample uses robust local-linear regression of reference-minus-observed RT,
 with a 0.3 neighborhood fraction and three residual reweightings. Repeated
-observed RT positions receive one median reference vote. Two distinct positions
-use their straight line. Fewer than two positions or a non-monotone result leave
-the map unavailable. With only ISTDs, contradictory landmark order remains
-unavailable rather than being resolved by the same measurements. Ordinary
-corroboration can support a fit despite a conflicting standard; fitted standard
-residuals remain visible and do not reselect that standard's peak.
+observed RT positions receive one median reference vote. A new fit requires at
+least eight distinct measured RT positions, and at least eight positions must
+retain nonzero robust weight in the final fit. Local neighborhoods include at
+least eight positions; they expand when rejected points would otherwise fill
+the final neighborhood. Distance weights remain unequal: eight positions are
+not a guarantee of precision or dense coverage. A deficient fit is unavailable,
+not replaced by a two-point line, constant, or interpolated pseudo-anchors.
+Non-monotone results also remain unavailable. With only ISTDs, contradictory
+landmark order remains unavailable rather than being resolved by the same
+measurements. Ordinary corroboration can support a fit despite a conflicting
+standard; fitted standard residuals remain visible and do not reselect that
+standard's peak.
+
+Eight is a conservative application support floor, not a universal LOESS
+theorem. Local support, polynomial degree, bandwidth and sampling density still
+matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)
+and the [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm).
+It counts RT positions per injection, not the number of samples in the batch.
+The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
+not feed their own results back into that fit. Historical frozen maps retain
+their coordinates on replay and are not retroactively refitted under this floor.
 
 The frozen map is linearly interpolated only within its supported anchor range,
 with a bounded inverse for sample-local Backfill queries. It never changes

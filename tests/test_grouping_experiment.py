@@ -184,10 +184,10 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
     reference = mint_known_istd_reference_from_measurements(
-        [_make_target("early"), _make_target("late")],
+        [_make_target(f"standard{i}") for i in range(8)],
         {
-            (label, sample): rt + (2 if sample == "S1" else 0)
-            for label, rt in (("early", 3), ("late", 13))
+            (f"standard{i}", sample): 3 + 2 * i + (2 if sample == "S1" else 0)
+            for i in range(8)
             for sample in ("S0", "S1", "S2", "S3")
         },
     )

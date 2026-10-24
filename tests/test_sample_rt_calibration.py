@@ -14,7 +14,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
 )
 
 SAMPLES = tuple(f"S{i:02d}" for i in range(1, 11))
-REFERENCE_RTS = (8.0, 12.0, 16.0, 24.0, 32.0)
+REFERENCE_RTS = (8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 28.0, 30.0, 32.0)
 
 
 def _batch(
@@ -93,6 +93,58 @@ def test_too_few_knots_leave_sample_uncalibrated() -> None:
     assert sample.calibrated_rt(8.0) is None
 
 
+@pytest.mark.parametrize("positions", (2, 7, 8))
+def test_loess_requires_eight_distinct_measured_positions(positions: int) -> None:
+    detected = {
+        f"F{i}": {s: 8.0 + i + (0.2 if s == "S01" else 0) for s in SAMPLES}
+        for i in range(positions)
+    }
+    # Repeated ion views cannot turn seven acquired positions into eight.
+    detected.update({f"alias{i}": dict(detected["F0"]) for i in range(20)})
+    sample = _calibrate(detected).samples["S01"]
+    assert sample.anchor_count == positions
+    if positions < 8:
+        assert sample.status == "insufficient_anchors"
+        assert sample.calibrated_rt(9.2) is None
+    else:
+        assert sample.calibrated_rt(9.2) == pytest.approx(9.0)
+
+
+def test_ordinary_anchor_needs_half_of_its_cohort_not_just_three_members() -> None:
+    detected = _batch()
+    detected["sparse"] = dict.fromkeys(SAMPLES[:3], 20.0)
+    calibration = _calibrate(detected)
+    assert not any("sparse" in knot.feature_ids for knot in calibration.knots)
+    assert "sparse" in detected  # Anchor rejection does not delete a feature.
+
+
+@pytest.mark.parametrize("positions", (8, 9))
+def test_rejected_position_does_not_count_toward_final_loess_support(positions):
+    detected = {
+        f"F{i}": {
+            s: 8.0 + 4 * i + (2.0 if s == "S01" and i == 3 else 0.0) for s in SAMPLES
+        }
+        for i in range(positions)
+    }
+    calibration = _calibrate(detected)
+    # Every other position independently specifies the identity RT map.
+    expected = None if positions == 8 else pytest.approx(10.0)
+    assert calibration.samples["S01"].calibrated_rt(10.0) == expected
+    assert calibration.samples["S02"].calibrated_rt(10.0) == pytest.approx(10.0)
+
+
+def test_unshared_standard_cannot_extend_calibration_support() -> None:
+    calibration = build_batch_rt_calibration(
+        _batch(),
+        sample_stems=SAMPLES,
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+        measured_istds=(("unshared", "S01", 50.0),),
+    )
+    assert not any("unshared" in knot.feature_ids for knot in calibration.knots)
+    assert calibration.samples["S01"].calibrated_rt(40.0) is None
+
+
 def test_unresolved_standard_order_is_not_forced_into_a_map() -> None:
     calibration = build_batch_rt_calibration(
         {},
@@ -100,11 +152,12 @@ def test_unresolved_standard_order_is_not_forced_into_a_map() -> None:
         prior_injections={},
         policy=RtCalibrationPolicy(),
         measured_istds=tuple(
-            (label, s, observed)
+            (f"standard{i}", s, observed)
             for s in SAMPLES
-            for label, observed in (
-                ("early", 12 if s == "S01" else 8),
-                ("late", 8 if s == "S01" else 12),
+            for i, observed in enumerate(
+                (12, 8, 16, 20, 24, 28, 32, 36)
+                if s == "S01"
+                else (8, 12, 16, 20, 24, 28, 32, 36)
             )
         ),
     )
@@ -164,8 +217,8 @@ def test_conflicting_standard_does_not_drag_a_supported_ordinary_map():
 
 
 def test_measured_front_shift_decides_and_timeline_explains() -> None:
-    early = (-0.6, -0.6, 0.0, 0.0, 0.0)
-    late = (0.4, 0.4, 0.0, 0.0, 0.0)
+    early = (-0.6, -0.6) + (0.0,) * (len(REFERENCE_RTS) - 2)
+    late = (0.4, 0.4) + (0.0,) * (len(REFERENCE_RTS) - 2)
     detected = _batch({"S01": early, "S02": late, "S03": early, "S04": late})
     # S06 cannot be measured: it lacks the first knot.
     del detected["F0"]["S06"]
@@ -193,7 +246,7 @@ def test_measured_front_shift_decides_and_timeline_explains() -> None:
 
 
 def test_first_run_after_method_change_explains_outlier() -> None:
-    early = (-0.8, -0.8, 0.0, 0.0, 0.0)
+    early = (-0.8, -0.8) + (0.0,) * (len(REFERENCE_RTS) - 2)
     detected = _batch({"S01": early, "S02": early})
     normal = PriorInjection(False, False, False)
     priors = {s: normal for s in SAMPLES}
@@ -301,11 +354,15 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     assert by_sample["S05"]["after_method_change"] is False
     assert by_sample["S11"]["status"] == "insufficient_anchors"
     heldout = payload["heldout_validation"]
-    assert heldout["paired_feature_count"] == 1
+    assert heldout["paired_feature_count"] == 2
     assert heldout["calibrated_median_feature_mad_min"] < 0.01
     with (out / "sample_rt_calibration_heldout.tsv").open(encoding="utf-8") as f:
-        rows = {row["sample_stem"]: row for row in csv.DictReader(f, delimiter="\t")}
-    assert rows["S01"]["rt_band"] == "10-15"
-    assert float(rows["S01"]["raw_median_offset_min"]) == pytest.approx(-0.6, abs=0.01)
-    assert abs(float(rows["S01"]["calibrated_median_offset_min"])) < 0.01
-    assert "S09" in rows
+        rows = {
+            (row["sample_stem"], row["rt_band"]): row
+            for row in csv.DictReader(f, delimiter="\t")
+        }
+    early = rows["S01", "10-15"]
+    assert float(early["raw_median_offset_min"]) == pytest.approx(-0.6, abs=0.01)
+    assert abs(float(early["calibrated_median_offset_min"])) < 0.01
+    assert ("S09", "10-15") not in rows  # Held-out RT 33 is outside support.
+    assert ("S09", "20-30") in rows

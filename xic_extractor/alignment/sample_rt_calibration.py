@@ -18,6 +18,11 @@ import numpy as np
 
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
+# Operational support floors, not a universal mathematical LOESS minimum.
+# Count acquired RT positions, not ion aliases, interpolation knots or samples.
+_MIN_LOESS_POSITIONS = 8
+_MIN_ORDINARY_COHORT_FRACTION = 0.5
+
 
 @dataclass(frozen=True)
 class RtCalibrationPolicy:
@@ -161,8 +166,8 @@ def build_batch_rt_calibration(
 ) -> BatchRtCalibration:
     """Fit one map from same-cohort measured correspondences and ISTDs.
 
-    Ordinary correspondences need two peers, not a batch-size activation gate.
-    Measured identity anchors need no ordinary-feature prevalence assumption.
+    Ordinary correspondences need at least half their cohort and two peers.
+    Measured identity anchors need a peer, not ordinary-feature prevalence.
     Predicted, interpolated or backfilled coordinates are never training data.
     Timeline facts explain measured perturbation; they do not fit the map.
     """
@@ -266,6 +271,10 @@ def _anchor_coordinates(
         if sample_cohorts is not None
         else dict.fromkeys(samples, "")
     )
+    cohort_sizes: dict[str, int] = defaultdict(int)
+    for sample in samples:
+        if sample in cohorts:
+            cohort_sizes[cohorts[sample]] += 1
     known: dict[str, dict[str, float]] = defaultdict(dict)
     for label, sample, observed_rt in measured_istds:
         known[label][sample] = observed_rt
@@ -277,8 +286,16 @@ def _anchor_coordinates(
             for sample, rt in rt_by_sample.items():
                 if sample in sample_set and sample in cohorts and math.isfinite(rt):
                     by_cohort[cohorts[sample]][sample] = rt
-            for observed in by_cohort.values():
-                if len(observed) < (1 if is_standard else 3):
+            for cohort, observed in by_cohort.items():
+                required = (
+                    2
+                    if is_standard
+                    else max(
+                        3,
+                        math.ceil(cohort_sizes[cohort] * _MIN_ORDINARY_COHORT_FRACTION),
+                    )
+                )
+                if len(observed) < required:
                     continue
                 signature = tuple(sorted(observed.items()))
                 if not is_standard and signature in seen:
@@ -329,34 +346,44 @@ def _fit_sample_knots(
     for observed, reference in points:
         by_rt[observed].append(reference)
     locations = sorted((x, float(median(values))) for x, values in by_rt.items())
-    if len(locations) < 2:
-        return tuple(locations)
+    if len(locations) < _MIN_LOESS_POSITIONS:
+        return ()
     x, reference = np.asarray(locations, dtype=float).T
-    if len(locations) == 2:
-        return tuple(locations)
     y = reference - x
     dx = x[None, :] - x[:, None]
-    count = min(len(x), max(4, math.ceil(len(x) * fraction)))
-    radius = np.partition(abs(dx), count - 1, axis=1)[:, count - 1]
-    radius = np.maximum(radius, np.finfo(float).eps)
-    z = dx / radius[:, None]
-    kernel = np.maximum(0, 1 - np.minimum(abs(z) / 1.000001, 1) ** 3) ** 3
+    count = min(len(x), max(_MIN_LOESS_POSITIONS, math.ceil(len(x) * fraction)))
+    base_radius = np.partition(abs(dx), count - 1, axis=1)[:, count - 1]
     robust = np.ones(len(x))
     fitted = y.copy()
     for iteration in range(4):
+        supported = robust > 0
+        support_count = int(np.count_nonzero(supported))
+        if support_count < 2 or (
+            iteration == 3 and support_count < _MIN_LOESS_POSITIONS
+        ):
+            return ()
+        # Robust iterations can readmit temporarily downweighted points. Only
+        # the final map must retain eight; do not stop at a transient rejection.
+        # Expand a neighborhood when rejected anchors would fill its support.
+        support_index = min(_MIN_LOESS_POSITIONS, support_count) - 1
+        support_radius = np.partition(abs(dx[:, supported]), support_index, axis=1)[
+            :, support_index
+        ]
+        radius = np.maximum(
+            np.maximum(base_radius, support_radius), np.finfo(float).eps
+        )
+        z = dx / radius[:, None]
+        kernel = np.maximum(0, 1 - np.minimum(abs(z) / 1.000001, 1) ** 3) ** 3
         weights = kernel * robust[None, :]
         sw = weights.sum(axis=1)
         sx = (weights * z).sum(axis=1)
         sxx = (weights * z * z).sum(axis=1)
         sy, sxy = weights @ y, (weights * z) @ y
         determinant = sw * sxx - sx * sx
-        supported = robust > 0
-        fallback = np.interp(x, x[supported], y[supported])
-        fitted = np.divide(sy, sw, out=fallback, where=sw > 0)
         ranked = determinant > np.finfo(float).eps * np.maximum(sw * sxx, 1)
-        fitted[ranked] = (
-            sy[ranked] * sxx[ranked] - sxy[ranked] * sx[ranked]
-        ) / determinant[ranked]
+        if not np.all(ranked):
+            return ()  # No silent constant/interpolation substitute for LOESS.
+        fitted = (sy * sxx - sxy * sx) / determinant
         if iteration == 3:
             break
         residual = y - fitted
@@ -367,6 +394,8 @@ def _fit_sample_knots(
         robust = np.maximum(0, 1 - u * u) ** 2
         robust[u >= 1] = 0
     supported_x = x[robust > 0]
+    if len(supported_x) < _MIN_LOESS_POSITIONS:
+        return ()
     return tuple(
         (float(a), float(b))
         for a, b in zip(x, x + fitted, strict=True)
@@ -386,11 +415,22 @@ class BatchRtCalibrationAccumulator:
 
     def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
         for group in groups:
-            if not group:
+            # These are upstream-owned observation facts, not a second peak
+            # assessment. A retained MS1-only or ambiguous member may still be
+            # grouped, but cannot establish other samples' RT coordinates.
+            anchors = tuple(
+                owner
+                for owner in group
+                if owner.primary_identity_event is not None
+                and not owner.identity_conflict
+                and not owner.is_provisional
+                and owner.quantification_eligible
+            )
+            if not anchors:
                 continue
-            key = min(owner.owner_id for owner in group)
+            key = min(owner.owner_id for owner in anchors)
             self._observations[key] = {
-                owner.sample_stem: owner.owner_apex_rt for owner in group
+                owner.sample_stem: owner.owner_apex_rt for owner in anchors
             }
 
     def freeze(
@@ -407,7 +447,7 @@ class BatchRtCalibrationAccumulator:
 
 
 def _is_usable(knots: tuple[tuple[float, float], ...]) -> bool:
-    return len(knots) >= 2 and all(
+    return len(knots) >= _MIN_LOESS_POSITIONS and all(
         left[0] < right[0] and left[1] < right[1]
         for left, right in zip(knots, knots[1:], strict=False)
     )
@@ -416,7 +456,7 @@ def _is_usable(knots: tuple[tuple[float, float], ...]) -> bool:
 def _sample_status(knots: tuple[tuple[float, float], ...], usable: bool) -> str:
     if usable:
         return "calibrated"
-    if len(knots) < 2:
+    if len(knots) < _MIN_LOESS_POSITIONS:
         return "insufficient_anchors"
     return "non_monotonic_anchors"
 

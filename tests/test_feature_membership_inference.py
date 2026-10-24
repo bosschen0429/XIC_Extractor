@@ -165,6 +165,39 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
     assert all(result.has_support(sample) for sample in samples)
 
 
+@pytest.mark.parametrize(
+    "untrusted",
+    (
+        {"identity_conflict": True},
+        {"is_provisional": True},
+        {"quantification_eligible": False},
+        {"primary_identity_event": None},
+    ),
+)
+def test_observations_without_direct_clean_support_do_not_calibrate_others(
+    untrusted,
+) -> None:
+    samples = ("a", "b", "c", "d", "e")
+    groups = tuple(
+        tuple(
+            replace(_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
+            if sample == "e"
+            else _owner(sample, f"f{i}", apex_rt=8.0 + i)
+            for sample in samples
+        )
+        for i in range(12)
+    )
+    accumulator = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    accumulator.add_groups(groups)
+    calibration = accumulator.freeze()
+    assert not calibration.has_support("e")
+    assert calibration.samples["e"].anchor_count == 0
+    assert all(calibration.has_support(sample) for sample in samples[:-1])
+    assert all(len(group) == 5 for group in groups)
+
+
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
     warp = BatchRtWarp((("a", ((7.0, 0.1), (20.0, 0.5))),), 12)
     common_rt = 12.0

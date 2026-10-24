@@ -303,13 +303,15 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
                         "role": "istd",
                         "istd_pair": "",
                     }
-                    for label, mz, rt in (("early", 300, 3), ("late", 400, 13))
+                    for label, mz, rt in (
+                        (f"standard{i}", 300 + 20 * i, 3 + 2 * i) for i in range(8)
+                    )
                 ]
             ),
             {
                 (label, path.stem): rt + (0.1 if i == 12 else 0.0)
                 for i, path in enumerate(paths)
-                for label, rt in (("early", 3), ("late", 13))
+                for label, rt in ((f"standard{j}", 3 + 2 * j) for j in range(8))
             },
         )
         adapter = UntargetedPartitionPipelineAdapter(
@@ -352,7 +354,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     assert one_feature_at_a_time == all_features_together
     assert run(24, reverse_initial=True) == one_feature_at_a_time
     calibration, groups = one_feature_at_a_time
-    assert len(calibration.knots) == 3
+    assert len(calibration.knots) == 9
     assert calibration.has_support("S12")
     assert calibration.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)
     assert len(groups) == 12 and all(len(group) == 24 for group in groups)

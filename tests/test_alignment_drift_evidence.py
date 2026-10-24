@@ -426,6 +426,10 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
     }
 
 
+_LANDMARK_RTS = (8, 12, 16, 20, 24, 28, 32, 40)
+_STRETCHED_RTS = tuple(1.25 * rt for rt in _LANDMARK_RTS)
+
+
 def _batch_reference(tmp_path: Path, observations):
     from xic_extractor.applications.untargeted.istd_reference import (
         read_known_istd_reference,
@@ -453,9 +457,9 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
     reference = _batch_reference(
         tmp_path,
         {
-            "early": (8, 12, 20, 30),
-            "middle": (8.2, 12.2, 20.2, 30.2),
-            "late": (8.4, 12.4, 20.4, 30.4),
+            "early": _LANDMARK_RTS,
+            "middle": tuple(rt + 0.2 for rt in _LANDMARK_RTS),
+            "late": tuple(rt + 0.4 for rt in _LANDMARK_RTS),
         },
     )
     samples = frozenset({"early", "middle", "late"})
@@ -480,9 +484,9 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
 @pytest.mark.parametrize(
     ("early_knots", "late_knots"),
     [
-        ((8, 20, 40), (10, 24, 46)),
-        ((10, 24, 46), (8, 20, 40)),
-        ((8, 20, 40), (8, 20, 40)),
+        (_LANDMARK_RTS, _STRETCHED_RTS),
+        (_STRETCHED_RTS, _LANDMARK_RTS),
+        (_LANDMARK_RTS, _LANDMARK_RTS),
     ],
 )
 def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_peaks(
@@ -554,8 +558,8 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     reference = _batch_reference(
         tmp_path,
         {
-            "early": (8, 20, 40),
-            "late": (10, 24, 46),
+            "early": _LANDMARK_RTS,
+            "late": _STRETCHED_RTS,
         },
     )
     assert reference.explanation_provenance.get("calibration") is None
@@ -574,13 +578,13 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     calibration = receipt["calibration"]
     assert calibration["schema_version"] == "known_istd_calibration"
     assert calibration["extrapolation"] == "unavailable"
-    assert len(calibration["measurements"]) == 6
+    assert len(calibration["measurements"]) == 16
     samples = {sample["sample_stem"]: sample for sample in calibration["samples"]}
     assert samples["missing"]["status"] == "unavailable"
     assert samples["missing"]["domain_rt_min"] is None
     knots = samples["early"]["knots"]
     assert samples["early"]["domain_rt_min"] == [8, 40]
-    assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(15.5)
+    assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(14 * 1.125)
     assert interpolate_calibrated_rt_min(7, knots) is None
     assert interpolate_calibrated_rt_min(41, knots) is None
     from xic_extractor.diagnostics.alignment_explanation import (
@@ -621,27 +625,38 @@ def test_batch_reference_does_not_invent_missing_measured_landmarks(
     )
     receipt = lookup.reference.explanation_provenance["calibration"]
     middle_map = next(r for r in receipt["samples"] if r["sample_stem"] == "middle")
-    assert len(middle_map["knots"]) == 2
-    # The two measured endpoints, not injection-order interpolation, define
-    # the missing sample's line: 11 -> 10 and 48 -> 46.
-    expected_middle = 10 + (middle.owner_apex_rt - 11) * 36 / 37
-    assert lookup.corrected_pair_delta_sec(early, middle) == pytest.approx(
-        abs(22 - expected_middle) * 60
-    )
-    assert lookup.corrected_pair_delta_sec(middle, late) == pytest.approx(
-        abs(22 - expected_middle) * 60
-    )
+    assert middle_map["knots"] == []
+    assert middle_map["status"] == "unavailable"
+    # Neither other injections nor interpolation may manufacture the missing
+    # measured positions needed to authorize a LOESS map.
+    assert sum(r["sample_stem"] == "middle" for r in receipt["measurements"]) == 2
+    assert lookup.corrected_pair_delta_sec(early, middle) is None
+    assert lookup.corrected_pair_delta_sec(middle, late) is None
 
 
 @pytest.mark.parametrize(
     ("observations", "early_rt", "late_rt"),
     [
-        ({"early": (None, 20, 40), "late": (10, 24, 46)}, 8, 10),
-        ({"early": (8, 20, 40), "late": (10, 24, None)}, 40, 46),
-        ({"early": (8, 20, 40), "late": (10, 24, 46)}, 7, 9),
-        ({"early": (8, 20, 40), "late": (10, 24, 46)}, 41, 47),
-        ({"early": (8, 20, 40), "late": (10, 9, 46)}, 14, 15),
-        ({"early": (8, 20, 40), "late": (12, 0, 46)}, 14, 15),
+        (
+            {
+                "early": (None, 12, 16, 20, 24, 28, 32, 36, 40),
+                "late": (10, 15, 20, 25, 30, 35, 40, 45, 50),
+            },
+            8,
+            10,
+        ),
+        (
+            {
+                "early": (8, 12, 16, 20, 24, 28, 32, 36, 40),
+                "late": (10, 15, 20, 25, 30, 35, 40, 45, None),
+            },
+            40,
+            50,
+        ),
+        ({"early": _LANDMARK_RTS, "late": _STRETCHED_RTS}, 7, 9),
+        ({"early": _LANDMARK_RTS, "late": _STRETCHED_RTS}, 41, 51),
+        ({"early": _LANDMARK_RTS, "late": (10, 9, 20, 25, 30, 35, 40, 50)}, 14, 15),
+        ({"early": _LANDMARK_RTS, "late": (12, 0, 20, 25, 30, 35, 40, 50)}, 14, 15),
     ],
 )
 def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
@@ -673,9 +688,9 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
     reference = _batch_reference(
         tmp_path,
         {
-            "early": (8, 20, 40),
-            "late": (10, 24, 46),
-            "unused": (15, 30, 50),
+            "early": _LANDMARK_RTS,
+            "late": _STRETCHED_RTS,
+            "unused": tuple(1.5 * rt + 3 for rt in _LANDMARK_RTS),
         },
     )
     universe = frozenset({"early", "late"})
@@ -702,7 +717,7 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
     )
     for index in range(3):
         early = _owner("early", f"unknown-{index}", apex_rt=14, precursor_mz=600)
-        late = _owner("late", f"unknown-{index}", apex_rt=17, precursor_mz=600)
+        late = _owner("late", f"unknown-{index}", apex_rt=17.5, precursor_mz=600)
         lookup = prepared.bind(
             (early, late),
             sample_universe=universe,
@@ -720,13 +735,13 @@ def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
     reference = _batch_reference(
         tmp_path,
         {
-            "early": (8, 20, 40),
-            "late": (10, 24, 46),
-            "extra": (15, 30, 50),
+            "early": _LANDMARK_RTS,
+            "late": _STRETCHED_RTS,
+            "extra": tuple(1.5 * rt + 3 for rt in _LANDMARK_RTS),
         },
     )
     early = _owner("early", "unknown", apex_rt=14, precursor_mz=600)
-    late = _owner("late", "unknown", apex_rt=17.5, precursor_mz=600)
+    late = _owner("late", "unknown", apex_rt=18, precursor_mz=600)
     order = {"early": 1, "late": 2, "extra": 3}
     original = reference.bind(
         (early, late),
@@ -738,7 +753,9 @@ def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
         sample_universe=frozenset(order),
         injection_order=order,
     )
-    assert original.corrected_pair_delta_sec(early, late) == pytest.approx(195 / 7)
+    # The original gauge is 1.125*x; adding the third sample changes it to
+    # 1.25*x. The two owners represent x=14 and x=14.4 respectively.
+    assert original.corrected_pair_delta_sec(early, late) == pytest.approx(27)
     assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)
     assert original.reference is not changed.reference
 
