@@ -298,8 +298,6 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 result = workspace.open(values["source"])
             elif path == "/api/query":
                 result = workspace.query(values)
-            elif path == "/api/review/reading":
-                result = workspace.save_reading(values)
             elif path == "/api/detail":
                 if set(values) != {"item_id"}:
                     raise ValueError("請選擇一個檢閱項目。")

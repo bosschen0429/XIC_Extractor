@@ -269,7 +269,6 @@ def export_targeted_curves(
         "curve_count": len(traces),
         "bytes": output.stat().st_size,
         "acquisition_sources": raw_sources,
-        "raw_paths": [str(path.resolve()) for path in selected_paths.values()],
         "source_binding_basis": "workbook_sample_name_unverified",
         "original_acquisition_verified": False,
     }

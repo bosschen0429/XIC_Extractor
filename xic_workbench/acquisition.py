@@ -145,7 +145,6 @@ def export_explanation_curves(
     sources = _report_acquisition_sources(summary)
     traces: list[CurveBundleTrace] = []
     source_ids_by_sample: dict[str, str] = {}
-    raw_paths: list[str] = []
     profile = resolve_signal_processing_profile()
     total = len(by_sample)
     for completed, (sid, observations) in enumerate(sorted(by_sample.items())):
@@ -154,7 +153,6 @@ def export_explanation_curves(
         if Path(stem).name != stem or stem in (".", ".."):
             raise ExplanationError("Invalid sample stem in report")
         raw_path = raw_dir / f"{stem}.raw"
-        raw_paths.append(str(raw_path.resolve()))
         if not raw_path.is_file():
             raise ExplanationError(
                 f"RAW is required for this selected curve: {raw_path}"
@@ -242,7 +240,6 @@ def export_explanation_curves(
         "curve_count": len(traces),
         "bytes": output.stat().st_size,
         "acquisition_sources": dict(sorted(source_ids_by_sample.items())),
-        "raw_paths": raw_paths,
         "source_binding_basis": _SOURCE_BINDING_BASIS,
     }
 
