@@ -1,10 +1,7 @@
 # XIC Extractor Agent Contract
 
-This root file carries only high-frequency XIC deltas; Global Codex rules own
-general opportunity cost, minimal delivery, and test necessity. Load a route
-only for the decision being made, and reuse still-current context. The table
-is not a checklist for every edit. A local change within an established owner
-uses the affected source, existing tests, and the relevant branch below.
+This file provides XIC-specific invariants and routes, not a checklist for every
+edit. Global Codex rules own general operating defaults.
 
 ## Task Routes
 
@@ -19,21 +16,21 @@ uses the affected source, existing tests, and the relevant branch below.
 | Change import loading in startup-sensitive or lightweight readers | Read [Dependency Direction](docs/architecture-contract.md#dependency-direction). |
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
-| Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
+| Clean-checkout artifact, long RAW run, CI evidence, push, PR creation, remote-head change, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
 | Create, expose, consolidate, or retire a script/diagnostic; select or repeat scientific diagnostic evidence | Use [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) for lifecycle changes; search [`INDEX.md`](tools/diagnostics/INDEX.md) when selecting a tool and [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) when reusing or repeating evidence. Routine invocation of an already selected command uses its help and runner. |
 | Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
-| Change a hook, rule, agent config, or skill; resolve Git command-policy behavior | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |
+| Change docs, skills, hooks, rules, agent config, or subagent definitions; resolve Git command-policy behavior | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md); for changes, select checks by the behavior changed under its [Change Protocol](docs/agent/codex-operating-system.md#change-protocol). |
 | GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
 | Add or move a maintained file, change tracking, or alter repository layout | Read [`project-layout.md`](docs/project-layout.md). |
 
 ## Always-On Gates
 
-- **Mission lock:** the current Issue/Current Packet is the durable task
-  authority when one exists. TaskFrame keeps only its locator, volatile
-  decisions/progress, and evidence receipts; do not copy the packet's scope or
-  acceptance into another contract.
+- **Mission lock:** the Issue/Current Packet preserves the accepted task contract
+  when one exists. Follow [Direction Updates](docs/agent/planning-workflows.md#direction-updates)
+  when user instructions change it; TaskFrame links to that contract rather than
+  duplicating its scope or acceptance.
 - **Structural observation:** use Codebase Memory (CBM) first for callers,
   dependencies, impact, and reachability. Check its checkout/freshness and scope
   coverage once; a stale or different-worktree index is only a locator. Use
@@ -58,10 +55,4 @@ uses the affected source, existing tests, and the relevant branch below.
 - **Evidence claim:** report the canonical Evidence label and the actual method-
   appropriate oracle. Passing tests proves engineering regression coverage,
   not scientific or production readiness.
-- **Agent guidance changes:** use the
-  [operating-system change protocol](docs/agent/codex-operating-system.md#change-protocol)
-  for docs, skills, hooks, rules, config, and subagent definitions. Select its
-  checks by the behavior changed.
-- **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
-  follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification).
-  Hosted checks on the final remote SHA remain merge authority.
+- **Merge authority:** hosted checks on the final remote SHA remain merge authority.
