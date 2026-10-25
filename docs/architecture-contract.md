@@ -73,6 +73,15 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
   the current contract's tests or documentation; the
   [testing contract](agent/testing.md) governs new regression coverage.
 
+## UI Presentation
+
+Workbench and Inspector choose style tokens by semantic role, not by current
+color: quality warnings, selection, disabled controls, and actions retain their
+own meanings. If a required role is absent, extend the owning style definitions
+and their defaults/fallbacks instead of borrowing an unrelated token. Verify the
+affected component in the themes and fallback paths that the UI actually supports;
+this does not require introducing a new theme system.
+
 ## Configuration Documents
 
 `configuration.targeted_method_files` owns strict Targeted XLSX exchange; the
@@ -239,6 +248,13 @@ A scheduling partition or subject center cannot become a feature boundary;
 result writers consume the completed groups and cells.
 
 ## Dependency Direction
+
+Startup-sensitive entry points and lightweight report readers keep heavy,
+branch-specific dependencies inside the path that needs them. Importing a shared
+model or reading completed evidence must not load scientific computation or
+RAW/DLL dependencies solely through an unused capability. Keep ordinary imports
+unchanged where no such loading boundary exists; delaying an import does not
+permit a forbidden dependency.
 
 `extraction/` 與 `untargeted_execution/` 互不依賴；兩者共用的科學設定欄位由
 `configuration/scientific_settings.py` 擁有。`.importlinter` 的 independence

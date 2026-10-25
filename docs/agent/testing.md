@@ -112,7 +112,10 @@ unrelated purposes.
 
 `browser_e2e` uses Python Playwright's sync API for directly mounted Inspector
 payloads or Workbench journeys against an ephemeral loopback server and isolated
-config. Workbench uses fake application runners instead of RAW/DLL analysis.
+config. Interactive demonstrations and UI tests use production components with
+controllable fixtures, not visual replicas. Keep writes and analysis side effects
+isolated from real user state; provide a reset when exploration can leave fixtures
+confusing. Workbench uses fake application runners instead of RAW/DLL analysis.
 After bootstrap, install the locked Chromium once and run the Workbench checks:
 
     .venv\Scripts\python.exe -m playwright install chromium
