@@ -30,10 +30,19 @@ def infer(owners, **kwargs):
 
 
 @pytest.mark.parametrize("missing_sample", (False, True))
-def test_final_membership_uses_weak_common_frame_without_mixing_raw(missing_sample):
-    samples = ("a", "b", "c", "d")
+@pytest.mark.parametrize("strong_peers", (False, True))
+def test_final_membership_uses_weak_common_frame_without_mixing_raw(
+    missing_sample, strong_peers
+):
+    samples = ("a", "b", "c", "d", "e")
+    anchors = {
+        "early": {"a": 10, "b": 15, "c": 15},
+        "late": {"a": 20, "b": 25, "c": 25},
+    }
+    if strong_peers:
+        anchors.update({f"extra{i}": dict.fromkeys("bce", 30 + i) for i in range(6)})
     calibration = build_batch_rt_calibration(
-        {"early": {"a": 10, "b": 15, "c": 15}, "late": {"a": 20, "b": 25, "c": 25}},
+        anchors,
         sample_stems=samples,
         prior_injections={},
         policy=RtCalibrationPolicy(),
@@ -55,7 +64,11 @@ def test_final_membership_uses_weak_common_frame_without_mixing_raw(missing_samp
         if missing_sample:
             assert risk.rt_estimate is None
         else:
-            assert risk.rt_estimate.method == "median_shift"
+            assert risk.rt_estimate.method == (
+                "loess"
+                if strong_peers and decision.owner_id != owners[0].owner_id
+                else "median_shift"
+            )
             assert risk.rt_estimate.rt_min == 16
             assert "low_rt_support" in risk.risk_flags
     assert not frame.has_support("a")  # No promotion of bootstrap support.
