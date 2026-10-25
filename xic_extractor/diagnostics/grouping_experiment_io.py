@@ -556,7 +556,15 @@ def write_grouping_result(
                         "after_reason": basis.reason if basis else "",
                     }
                 )
-        decisions.extend(asdict(decision) for decision in group.inference_decisions)
+        for decision in group.inference_decisions:
+            fields = asdict(decision)
+            risk = fields.pop("accepted_risk")
+            fields["accepted_risk_json"] = (
+                json.dumps(risk, ensure_ascii=False, allow_nan=False)
+                if risk is not None
+                else ""
+            )
+            decisions.append(fields)
     write_table(
         output / "groups.tsv",
         group_rows,
@@ -619,6 +627,7 @@ def write_grouping_result(
             "rt_basis",
             "rt_raw_delta_sec",
             "rt_drift_corrected_delta_sec",
+            "accepted_risk_json",
         ),
     )
     present = Counter(row["sample_stem"] for row in members)

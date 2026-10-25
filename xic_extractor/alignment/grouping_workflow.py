@@ -292,6 +292,7 @@ def group_cid_nl_owners(
     """Consume inferred membership and apply the separate shoulder disposition."""
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
+        accept_competition=True,
         config=config,
         sample_universe=sample_universe,
         rt_frame=rt_frame,

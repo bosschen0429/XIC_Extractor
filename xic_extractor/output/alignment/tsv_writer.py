@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import json
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import ExitStack
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +78,9 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
+    "membership_risk_status",
+    "membership_risk_flags",
+    "membership_risks_json",
     "representative_samples",
     "family_evidence",
     "warning",
@@ -571,6 +576,26 @@ def _review_rows(
                 "review_backfill_count": row_decision.review_backfill_count,
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
+                "membership_risk_status": "recorded"
+                if getattr(cluster, "membership_risks", ())
+                else "not_recorded",
+                "membership_risk_flags": ";".join(
+                    sorted(
+                        {
+                            flag
+                            for _, risk in getattr(cluster, "membership_risks", ())
+                            for flag in risk.risk_flags
+                        }
+                    )
+                ),
+                "membership_risks_json": json.dumps(
+                    [
+                        {"canonical_sample_identity_id": sample, **asdict(risk)}
+                        for sample, risk in getattr(cluster, "membership_risks", ())
+                    ],
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ),
                 "representative_samples": _representative_samples(cells, decisions),
                 "family_evidence": _family_evidence(cluster),
                 "warning": _warning(

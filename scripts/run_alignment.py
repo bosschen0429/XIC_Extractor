@@ -304,6 +304,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
+    if outputs.evidence is not None:
+        print(f"Alignment explanation: {outputs.evidence.report_path}")
     if outputs.matrix_tsv is not None:
         print(f"Alignment matrix TSV: {outputs.matrix_tsv}")
     if outputs.cells_tsv is not None:

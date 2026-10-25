@@ -78,8 +78,15 @@ def publish_untargeted_outputs(
         }
         inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv
+        membership_risks = {
+            decision.owner_id: decision.accepted_risk
+            for group in completed.initial_groups
+            for decision in group.inference_decisions
+            if decision.accepted_risk is not None
+        }
         write_explanation = (
-            policy.emit_cid_nl_explanation
+            any(risk.risk_flags for risk in membership_risks.values())
+            or policy.emit_cid_nl_explanation
             or policy.explanation_full_audit
             or bool(policy.explanation_curve_mz_ranges)
             or EXPLANATION_ARTIFACT_NAME
@@ -112,6 +119,7 @@ def publish_untargeted_outputs(
                 timing_recorder=timing_recorder,
                 consume_child=_explanation_sink(explanation),
                 ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
+                membership_risks_by_owner=membership_risks,
                 before_write=lambda: _ensure_output_publication_not_cancelled(
                     should_cancel
                 ),

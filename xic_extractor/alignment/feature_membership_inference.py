@@ -24,6 +24,13 @@ from xic_extractor.alignment.grouping_evidence import (
     peak_correspondence_conflict,
 )
 from xic_extractor.alignment.grouping_rules import GroupingRules, MethodFeatureEnvelope
+from xic_extractor.alignment.membership_selection import (
+    AcceptedMembershipRisk,
+    MembershipComparison,
+    Partition,
+    canonical_partition,
+    measured_owner_key,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -108,6 +115,7 @@ class SparseFeatureDecision:
     rt_basis: RTEvidenceBasis | None = None
     rt_raw_delta_sec: float | None = None
     rt_drift_corrected_delta_sec: float | None = None
+    accepted_risk: AcceptedMembershipRisk | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -412,6 +420,7 @@ def infer_feature_memberships(
     rt_frame: RtFrame,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     bootstrap: bool = False,
+    accept_competition: bool = True,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> FeatureMembershipInferenceResult:
     """Infer ordinary whole-window bands, preserving exact known identities.
@@ -443,7 +452,45 @@ def infer_feature_memberships(
         ordinary, peak_trajectories or PeakTrajectories(), config, rules=rules
     )
     use_directional = bootstrap or rules.requires_directional_membership(ordinary)
-    if use_directional:
+    if accept_competition and not bootstrap:
+        trajectories = trajectories.common_frame_membership(
+            (
+                o.owner_id
+                for o in ordinary
+                if rt_frame.membership_coordinate(o) is not None
+            ),
+            preserve_independent=True,
+        )
+        directions = (
+            tuple(
+                _directional_inference(
+                    ordinary,
+                    rules=rules,
+                    direction=cast(DecisionDirection, direction),
+                    config=config,
+                    rt_frame=rt_frame,
+                    counts=counts,
+                    seed_by_owner={},
+                    trajectories=trajectories,
+                )
+                for direction in ("forward", "reverse")
+            )
+            if use_directional
+            else ()
+        )
+        inferred_groups, decisions = _accepted_final_memberships(
+            ordinary,
+            rules=rules,
+            config=config,
+            rt_frame=rt_frame,
+            trajectories=trajectories,
+            counts=counts,
+            directional_partitions=tuple(result.groups for result in directions),
+        )
+        algorithm = "bounded_complete_group_selection"
+        objective = "minimum_complete_group_cost_then_mean_peer_fit_over_bounded_moves"
+        termination = "no_improving_bounded_move"
+    elif use_directional:
         trajectory_seeds = _trajectory_seeds(
             ordinary,
             trajectories,
@@ -517,6 +564,175 @@ def infer_feature_memberships(
             else "bounded_window_edges;absence_means_not_evaluated"
         ),
     )
+
+
+def _accepted_final_memberships(
+    owners: tuple[SampleLocalMS1Owner, ...],
+    *,
+    rules: GroupingRules,
+    config: AlignmentConfig,
+    rt_frame: RtFrame,
+    trajectories: PeakTrajectories,
+    counts: Counter[str],
+    directional_partitions: tuple[Partition, ...] = (),
+) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
+    """Select whole bands, then reassess samples with the assignment solver."""
+    windows: list[list[SampleLocalMS1Owner]] = []
+    for owner in sorted(owners, key=lambda o: (o.precursor_mz, measured_owner_key(o))):
+        if not windows or not within_ppm(
+            owner.precursor_mz, windows[-1][-1].precursor_mz, config.max_ppm
+        ):
+            windows.append([])
+        windows[-1].append(owner)
+    groups, decisions = [], []
+    for window in windows:
+        comparison = MembershipComparison(
+            window,
+            rules=rules,
+            config=config,
+            rt_frame=rt_frame,
+            trajectories=trajectories,
+        )
+        partition = comparison.merge(
+            canonical_partition([(o.owner_id,) for o in window])
+        )
+        direction_candidates = [
+            canonical_partition(
+                [
+                    tuple(key for key in group if key in comparison.owners)
+                    for group in candidate
+                ]
+            )
+            for candidate in directional_partitions
+        ]
+        partition = min(
+            [partition, *direction_candidates],
+            key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
+        )
+        by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+        for owner in window:
+            by_sample[owner.sample_stem].append(owner)
+        while True:
+            moves = []
+            for sample_owners in by_sample.values():
+                ids = {o.owner_id for o in sample_owners}
+                base = canonical_partition(
+                    [tuple(p for p in g if p not in ids) for g in partition]
+                )
+                # Names order solver columns by measured features, not group IDs.
+                bands = {
+                    f"band:{i:08d}": group
+                    for i, group in enumerate(
+                        sorted(base, key=lambda g: comparison.partition_key((g,)))
+                    )
+                }
+                candidates = {
+                    owner.owner_id: tuple(
+                        _Candidate(
+                            key, delta, "supported", "complete_group_cost", group
+                        )
+                        for key, group in bands.items()
+                        if math.isfinite(
+                            delta := comparison.group_cost(
+                                tuple(sorted((*group, owner.owner_id)))
+                            )
+                            - comparison.group_cost(group)
+                        )
+                        and delta <= _UNASSIGNED_COST
+                    )
+                    for owner in sample_owners
+                }
+                assignments, _ = _solve_sample_assignment(
+                    sample_owners,
+                    candidates,
+                    counts,
+                    owner_order={
+                        o.owner_id: measured_owner_key(o) for o in sample_owners
+                    },
+                )
+                proposed = {key: list(group) for key, group in bands.items()}
+                singletons = []
+                for owner in sample_owners:
+                    if key := assignments.get(owner.owner_id):
+                        proposed[key].append(owner.owner_id)
+                    else:
+                        singletons.append((owner.owner_id,))
+                candidate = canonical_partition([*proposed.values(), *singletons])
+                if (comparison.cost(candidate), comparison.partition_key(candidate)) < (
+                    comparison.cost(partition) - 1e-12,
+                    comparison.partition_key(partition),
+                ):
+                    moves.append(candidate)
+            if not moves:
+                refined, alternatives_by_owner = comparison.refine_choices(partition)
+                if refined == partition:
+                    break
+                partition = refined
+                continue
+            partition = comparison.merge(
+                min(
+                    moves,
+                    key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
+                )
+            )
+        risks = comparison.risks(partition, alternatives_by_owner=alternatives_by_owner)
+        if len(direction_candidates) == 2:
+            left = {
+                owner_id: group
+                for group in direction_candidates[0]
+                for owner_id in group
+            }
+            right = {
+                owner_id: group
+                for group in direction_candidates[1]
+                for owner_id in group
+            }
+            risks = {
+                owner_id: replace(
+                    risk,
+                    risk_flags=tuple(
+                        sorted({*risk.risk_flags, "direction_disagreement"})
+                    ),
+                )
+                if left[owner_id] != right[owner_id]
+                else risk
+                for owner_id, risk in risks.items()
+            }
+        for group in partition:
+            assigned = len(group) > 1
+            groups.append(
+                FeatureMembershipGroup(
+                    group,
+                    "assigned" if assigned else "undecided",
+                    "window_level_rt_band",
+                    "minimum_feasible_complete_group_cost"
+                    if assigned
+                    else "separation_has_lower_configuration_cost",
+                )
+            )
+            for owner_id in group:
+                owner = comparison.owners[owner_id]
+                decisions.append(
+                    SparseFeatureDecision(
+                        "window",
+                        owner.sample_stem,
+                        owner_id,
+                        f"window:{group[0]}",
+                        "assigned" if assigned else "birth",
+                        "complete_group_configuration_selected",
+                        cost=comparison.group_cost(group),
+                        witness_owner_ids=tuple(p for p in group if p != owner_id),
+                        rt_basis="drift_corrected"
+                        if comparison.rt_basis == "drift_corrected"
+                        else "raw",
+                        accepted_risk=risks[owner_id],
+                    )
+                )
+        counts["owner_edge_evaluations"] += len(comparison.pairs)
+        counts["feature_summary_comparisons"] += len(comparison.group_costs)
+    counts["samples_processed"] += len({o.sample_stem for o in owners})
+    counts["births"] += len(groups)
+    return tuple(groups), tuple(decisions)
 
 
 def _membership_trajectories(
@@ -2125,6 +2341,7 @@ def _solve_sample_assignment(
     counts: Counter[str],
     *,
     ambiguity_margin: float = _AMBIGUITY_EPSILON,
+    owner_order: Mapping[str, tuple[object, ...]] | None = None,
 ) -> tuple[dict[str, str], frozenset[str]]:
     arcs = {
         owner.owner_id: {
@@ -2157,7 +2374,7 @@ def _solve_sample_assignment(
                     feature_keys.add(feature_key)
                     queue.extend(reverse[feature_key] - row_ids)
         pending.difference_update(row_ids)
-        rows = sorted(row_ids)
+        rows = sorted(row_ids, key=owner_order.__getitem__ if owner_order else None)
         columns = sorted(feature_keys)
         counts["largest_component_owners"] = max(
             counts["largest_component_owners"], len(rows)
@@ -2188,7 +2405,13 @@ def _solve_sample_assignment(
             continue
         if len(columns) == 1:
             feature_key = columns[0]
-            owner_id = min(rows, key=lambda key: (arcs[key][feature_key], key))
+            owner_id = min(
+                rows,
+                key=lambda key: (
+                    arcs[key][feature_key],
+                    owner_order[key] if owner_order else key,
+                ),
+            )
             best = arcs[owner_id][feature_key]
             alternative = min(
                 _UNASSIGNED_COST,

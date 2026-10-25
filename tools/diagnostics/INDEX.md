@@ -559,7 +559,9 @@ observed RT. Calibration does not change measured RT or area. Historical frozen
 offset maps remain readable without refitting them.
 
 `groups.tsv` and `members.tsv` report grouping and observed/comparison RT;
-`decisions.tsv` exposes the grouping decisions when present. `changes.tsv`
+`decisions.tsv` exposes the grouping decisions when present, including optional
+`accepted_risk_json` with selected/alternative configurations and sample risk
+facts. An empty field means no recorded risk decision. `changes.tsv`
 compares each observation's membership and disposition with baseline;
 `samples.tsv` retains zero-observation samples. `summary.json` records counts,
 parameters and elapsed time. These are initial-grouping experiment results;

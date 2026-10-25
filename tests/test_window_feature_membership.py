@@ -192,7 +192,9 @@ def test_calibrated_band_outweighs_free_shift_pattern_seed(reverse: bool) -> Non
 
 
 @pytest.mark.parametrize("reverse", (False, True))
-def test_raw_pattern_order_cannot_split_measured_common_bands(reverse: bool) -> None:
+def test_partial_region_calibration_keeps_supported_common_apices(
+    reverse: bool,
+) -> None:
     owners = tuple(
         replace(
             _synthetic_owner(sample, owner_id, apex),
@@ -237,10 +239,19 @@ def test_raw_pattern_order_cannot_split_measured_common_bands(reverse: bool) -> 
         peak_trajectories=trajectories,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(("a-early", "b-late", "c-main")),
-        frozenset(("a-late", "c-late")),
-        frozenset(("b-early",)),
+        frozenset(("a-early", "b-early", "c-main")),
+        frozenset(("a-late", "b-late", "c-late")),
     }
+    # a-early's edge extends beyond its calibrated support; its apex does not.
+    # Unknown edges cannot discard measured apex coordinates or import raw edges.
+    assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {
+        "drift_corrected"
+    }
+    assert "low_rt_support" in next(
+        d.accepted_risk.risk_flags
+        for d in result.sparse_decisions
+        if d.owner_id == "a-early"
+    )
     # Membership does not erase the caller's original localization geometry.
     assert not trajectories.permits_membership(("a-early", "b-late"))
 
@@ -298,13 +309,12 @@ def test_unrelated_calibration_preserves_unsupported_raw_pattern(
 
 
 @pytest.mark.parametrize("reverse", (False, True))
-def test_group_unions_do_not_cross_early_and_late_sample_assignments(
+def test_retained_m298_configuration_preserves_sample_occupancy(
     reverse: bool,
 ) -> None:
-    # Retained m298 geometry, rounded in its already-calibrated frame. The
-    # peripheral "bridge" must not lend its RT to the entire early band;
-    # the competing early band must not fall back to a worse late assignment
-    # merely because its closest band already contains another QC owner.
+    # Retained m298 geometry, rounded in its already-calibrated frame.
+    # Final selection may join disjoint samples across the former local RT
+    # gate, but cannot put either sample's two measured peaks in one Feature.
     rows = (
         ("a", "a-early", 9, 13.29663, 298.139679, 182.092172, 13.08574, 13.83271),
         ("b", "b-early", 10, 13.24687, 298.139889, 182.092161, 13.00025, 13.62336),
@@ -340,10 +350,14 @@ def test_group_unions_do_not_cross_early_and_late_sample_assignments(
         rt_frame=frame,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(("a-early", "b-early", "qc-low", "bridge")),
-        frozenset(("qc-high", "c-early")),
-        frozenset(("a-late", "b-late", "r-late", "s-late")),
+        frozenset(("a-early", "b-early", "qc-low", "bridge", "r-late", "s-late")),
+        frozenset(("qc-high", "c-early", "a-late", "b-late")),
     }
+    by_id = {owner.owner_id: owner for owner in owners}
+    assert all(
+        len({by_id[key].sample_stem for key in group.owner_ids}) == len(group.owner_ids)
+        for group in result.groups
+    )
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -406,7 +420,7 @@ def test_injection_gap_does_not_discount_rt_in_union_priority(reverse: bool) -> 
 @pytest.mark.parametrize("bootstrap", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("pattern_seed", [False, True])
-def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
+def test_peak_shape_contradiction_is_soft_only_for_final_membership(
     bootstrap: bool,
     reverse: bool,
     pattern_seed: bool,
@@ -455,6 +469,13 @@ def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
         else None,
         rules=CID_NL_GROUPING_RULES,
     )
+    if not bootstrap:
+        assert len(result.groups) == 1
+        assert any(
+            "accepted_contradiction" in decision.accepted_risk.risk_flags
+            for decision in result.sparse_decisions
+        )
+        return
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(("clean-a", "clean-b")),
         frozenset(("background",)),
@@ -532,7 +553,7 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
     )
     expected = (
         {frozenset(("left", "right"))}
-        if joins
+        if joins or not bootstrap
         else {frozenset(("left",)), frozenset(("right",))}
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == expected
@@ -549,7 +570,7 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
         )
 
 
-def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
+def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
     offsets = np.linspace(-0.6, 0.6, 121)
     owners = tuple(
         replace(
@@ -586,11 +607,12 @@ def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
         rt_frame=frame,
         rules=CID_NL_GROUPING_RULES,
     )
-    assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(("narrow", "shifted-wide")),
-        frozenset(("late",)),
-        frozenset(("unsupported",)),
-    }
+    assert len(result.groups) == 1
+    assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {"raw"}
+    assert any(
+        "accepted_contradiction" in d.accepted_risk.risk_flags
+        for d in result.sparse_decisions
+    )
     # Without its own calibration support, "unsupported" is compared with
     # "narrow" in the observed frame, where the two apices coincide.
     for candidate, expected in zip(owners[1:], (True, False, True), strict=True):
@@ -613,7 +635,7 @@ def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
 
 
 @pytest.mark.parametrize("bootstrap", (False, True))
-def test_common_peak_region_uses_group_consensus_not_every_member_pair(bootstrap):
+def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
     # Band a spans more than one member's narrow region (a1 and a4 exclude each
     # other's apex); band b lies outside band a's consensus region.
     owners = tuple(
@@ -645,10 +667,17 @@ def test_common_peak_region_uses_group_consensus_not_every_member_pair(bootstrap
         rules=CID_NL_GROUPING_RULES,
         bootstrap=bootstrap,
     )
-    assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(("a1", "a2", "a3", "a4")),
-        frozenset(("b1", "b2")),
-    }
+    if bootstrap:
+        assert {frozenset(group.owner_ids) for group in result.groups} == {
+            frozenset(("a1", "a2", "a3", "a4")),
+            frozenset(("b1", "b2")),
+        }
+    else:
+        assert len(result.groups) == 1
+        assert any(
+            "region_disagreement" in decision.accepted_risk.soft_contradictions
+            for decision in result.sparse_decisions
+        )
     by_id = {owner.owner_id: owner for owner in owners}
     band_a = tuple(by_id[owner_id] for owner_id in ("a1", "a2", "a3"))
     assert supports_existing_feature(
@@ -697,14 +726,22 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
         rules=CID_NL_GROUPING_RULES,
     )
     assert sorted(len(group.owner_ids) for group in result.groups) == (
-        [1, 1, 1] if bootstrap else [1, 2]
+        [1, 1, 1] if bootstrap else [3]
     )
-    assert not any(
-        {"narrow", "wide"}.issubset(group.owner_ids) for group in result.groups
-    )
+    if bootstrap:
+        assert not any(
+            {"narrow", "wide"}.issubset(group.owner_ids) for group in result.groups
+        )
+    else:
+        # Accepting the whole group must retain its endpoint contradiction,
+        # even though the intermediate peak agrees with both endpoints.
+        assert any(
+            "shape_disagreement" in decision.accepted_risk.soft_contradictions
+            for decision in result.sparse_decisions
+        )
 
 
-def test_singleton_extensions_follow_the_band_majority_shape() -> None:
+def test_singleton_shape_disagreement_is_retained_after_band_extension() -> None:
     offsets = np.linspace(-0.6, 0.6, 121)
     # "broader" differs only from the one narrow member (0.74 < 0.80) and
     # matches the rest of the band (0.94); the ramp matches none of it.
@@ -738,10 +775,10 @@ def test_singleton_extensions_follow_the_band_majority_shape() -> None:
         rt_frame=SampleRtFrame(injection_order=orders),
         rules=CID_NL_GROUPING_RULES,
     )
-    assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset((*(f"seed-{i}" for i in range(1, 15)), "narrow", "broader")),
-        frozenset(("ramp",)),
-    }
+    assert len(result.groups) == 1
+    ramp = next(d for d in result.sparse_decisions if d.owner_id == "ramp")
+    assert "shape_disagreement" in ramp.accepted_risk.soft_contradictions
+    assert set(ramp.accepted_risk.selected_owner_ids) == set(orders)
 
 
 @pytest.mark.parametrize("with_order", [False, True])
@@ -785,7 +822,7 @@ def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -
     )
 
 
-def test_tissue_background_observation_does_not_join_four_localized_peaks() -> None:
+def test_tissue_outlier_can_remain_separate_by_configuration_cost() -> None:
     evidence = json.loads((_FIXTURES / "tissue_247_peak_shapes.json").read_text())
     owners = tuple(
         replace(
@@ -831,23 +868,20 @@ def test_tissue_background_observation_does_not_join_four_localized_peaks() -> N
         for group in result.groups
     } == {
         frozenset(
-            (
-                "NormalBC2272_DNA",
-                "NormalBC2281_DNA",
-                "NormalBC2283_DNA",
-                "NormalBC2303_DNA",
-            )
+            owner.sample_stem
+            for owner in owners
+            if owner.sample_stem != "NormalBC2302_DNA"
         ),
         frozenset(("NormalBC2302_DNA",)),
     }
-    rejected = next(
+    separate = next(
         decision
         for decision in result.sparse_decisions
         if decision.sample_stem == "NormalBC2302_DNA"
     )
-    assert rejected.state == "proven_incompatible"
-    assert rejected.reason == "peak_correspondence_mismatch"
-    assert rejected.witness_owner_ids
+    assert separate.state == "birth"
+    assert separate.accepted_risk.alternative_partition is not None
+    assert separate.accepted_risk.cost_gap > 0
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -977,12 +1011,18 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
         bootstrap=bootstrap,
         rules=CID_NL_GROUPING_RULES,
     )
-    assert {frozenset(group.owner_ids) for group in result.groups} == {
+    expected = {
         frozenset(("a:early", "b:early")),
         frozenset(("a:late", "c:late", "d:late")),
-        frozenset(("u:independent", "v:independent")),
     }
-    assert all(group.disposition == "assigned" for group in result.groups)
+    expected.update(
+        {frozenset(("u:independent", "v:independent"))}
+        if bootstrap
+        else {frozenset(("u:independent",)), frozenset(("v:independent",))}
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+    # Final selection scores the independent raw pair's actual 168 s gap;
+    # it is no longer a mandatory seed with zero RT cost.
     # Membership qualification must not mutate geometry used by localization.
     assert geometry.trajectory_for(owners[2:4]) == before
     assert dict(before.sample_apices)["a"] == 13.0
@@ -1000,7 +1040,7 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
         "weak_member",
     ],
 )
-def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
+def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control):
     owners, geometry = _method_disambiguated_pattern_conflict()
     # Isolate the claimed correspondence; no competing valid late seed.
     geometry = PeakTrajectories((geometry.tracks[0],))
@@ -1039,6 +1079,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcd")}),
         peak_trajectories=geometry,
+        bootstrap=True,
         rules=CID_NL_GROUPING_RULES,
     )
     if control.endswith("member"):
@@ -1052,6 +1093,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
                 injection_order={s: i for i, s in enumerate("abcd")}
             ),
             peak_trajectories=geometry,
+            bootstrap=True,
             rules=CID_NL_GROUPING_RULES,
         )
         assert next(g for g in result.groups if "c:late" in g.owner_ids) == next(
@@ -1062,7 +1104,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
 
 
 @pytest.mark.parametrize("overlap", [False, True])
-def test_coobserved_witness_uses_selected_integration_segments(overlap):
+def test_bootstrap_coobserved_witness_uses_selected_integration_segments(overlap):
     owners, geometry = _method_disambiguated_pattern_conflict()
     for index in (0, 1):
         owner = owners[index]
@@ -1089,6 +1131,7 @@ def test_coobserved_witness_uses_selected_integration_segments(overlap):
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcduv")}),
         peak_trajectories=geometry,
+        bootstrap=True,
         rules=CID_NL_GROUPING_RULES,
     )
     containing_late = next(g for g in result.groups if "c:late" in g.owner_ids)
@@ -1347,7 +1390,15 @@ def test_single_peak_owner_keeps_ordinary_rt_gate(
         rules=CID_NL_GROUPING_RULES,
     )
     (x_group,) = (group for group in result.groups if "x:only" in group.owner_ids)
-    assert x_group.owner_ids == ("x:only",)
+    if bootstrap or isolated_rt == 12.4:
+        assert x_group.owner_ids == ("x:only",)
+    else:
+        assert set(x_group.owner_ids) == {"a:late", "b:late", "x:only"}
+        assert "low_rt_support" in next(
+            d.accepted_risk.risk_flags
+            for d in result.sparse_decisions
+            if d.owner_id == "x:only"
+        )
     assert x_group.reason != "ordered_ms1_pattern_links_existing_owners"
 
 
@@ -1505,7 +1556,7 @@ def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> No
     assert len(result.groups[0].owner_ids) == 63
 
 
-def test_equal_band_competition_marks_only_the_bridge_undecided() -> None:
+def test_equal_band_competition_selects_and_records_the_alternative() -> None:
     def make(sample: str, name: str, rt: float) -> SampleLocalMS1Owner:
         event = IdentityEvent(
             candidate_id=name,
@@ -1544,11 +1595,12 @@ def test_equal_band_competition_marks_only_the_bridge_undecided() -> None:
         rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
         rules=CID_NL_GROUPING_RULES,
     )
-    assert len(result.groups) == 3
-    assert all(group.disposition == "undecided" for group in result.groups)
+    assert sorted(len(g.owner_ids) for g in result.groups) == [1, 2]
     assert any(
         decision.owner_id == bridge.owner_id
-        and decision.reason == "alternative_bands_have_near_equal_cost"
+        and decision.state == "assigned"
+        and "accepted_competition" in decision.accepted_risk.risk_flags
+        and decision.accepted_risk.equivalent_alternatives
         for decision in result.sparse_decisions
     )
 
@@ -1681,9 +1733,9 @@ def test_singleton_ambiguity_uses_remaining_band_choices(
     if occupy_early_band:
         early.add("early-probe")
         late.add("between")
+    else:
+        early.add("between")
     expected = {frozenset(early), frozenset(late)}
-    if not occupy_early_band:
-        expected.add(frozenset(("between",)))
     assert {frozenset(group.owner_ids) for group in result.groups} == expected
     assert all(
         group.disposition == ("assigned" if len(group.owner_ids) > 1 else "undecided")
@@ -1694,7 +1746,9 @@ def test_singleton_ambiguity_uses_remaining_band_choices(
         for decision in result.sparse_decisions
         if decision.owner_id == "between"
     )
-    assert between.state == ("assigned" if occupy_early_band else "evaluated_undecided")
+    assert between.state == "assigned"
+    if not occupy_early_band:
+        assert "accepted_competition" in between.accepted_risk.risk_flags
 
 
 def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> None:
@@ -1733,13 +1787,12 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
         and {owner.owner_id for owner in local} <= set(group.owner_ids)
         for group in result.groups
     )
-    # The two later observations have near-equal costs for the one supported
-    # band. Neither gains membership merely because the band now exists.
-    for owner in distant:
-        assert any(
-            group.disposition == "undecided" and group.owner_ids == (owner.owner_id,)
-            for group in result.groups
-        )
+    # A choice is now made, without admitting both same-sample candidates.
+    assert sorted(len(group.owner_ids) for group in result.groups) == [1, 3]
+    assert all(
+        len(set(group.owner_ids) & {o.owner_id for o in distant}) <= 1
+        for group in result.groups
+    )
 
 
 @pytest.mark.parametrize("spacing", (17, 35))
@@ -1839,14 +1892,13 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
     )
 
     assert all(group.disposition == "assigned" for group in result.groups)
+    assert len(result.groups) == 1
+    assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
     if different_shape:
-        assert {frozenset(group.owner_ids) for group in result.groups} == {
-            frozenset(owner.owner_id for owner in owners[:7]),
-            frozenset(owner.owner_id for owner in owners[7:]),
-        }
-    else:
-        assert len(result.groups) == 1
-        assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
+        assert all(
+            "shape_disagreement" in d.accepted_risk.soft_contradictions
+            for d in result.sparse_decisions
+        )
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -1915,7 +1967,7 @@ def test_separated_band_bridge_respects_indirect_peak_order(
     assert all(g.disposition == "assigned" for g in result.groups)
 
 
-def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
+def test_long_gap_and_cross_sample_region_difference_are_costs_not_vetoes() -> None:
     early = tuple(
         _synthetic_owner(f"s{order:02d}", f"early-{order}", 10.0)
         for order in range(1, 8)
@@ -1934,10 +1986,13 @@ def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
     )
 
     assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(owner.owner_id for owner in early),
-        frozenset(owner.owner_id for owner in late),
+        frozenset(owner.owner_id for owner in (*early, *late)),
     }
     assert all(group.disposition == "assigned" for group in result.groups)
+    assert all(
+        "region_disagreement" in d.accepted_risk.soft_contradictions
+        for d in result.sparse_decisions
+    )
 
 
 def test_product_scatter_is_scored_within_the_precursor_search_window() -> None:

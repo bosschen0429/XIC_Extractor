@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-17
+**Last updated:** 2026-10-25
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,76 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-10-25 Average Peer Fit Resolves Flat Worst-Pair Choices
+
+#913 section I, Evidence: `expected_diff`. The retained 44-sample snapshot has
+the same input hash as the replay entry below; comparison baseline is
+`83749217`. The primary maximum-pair cost can remain unchanged when replacing a
+non-extreme member. It is not evidence that the candidates fit equally well.
+The current bounded search acts on better alternatives and resolves primary
+ties by average owner-to-peer cost without increasing the primary cost.
+
+- At m/z about 310.14, `DNA+RNA_SBO+water_1` now contributes its 34.561-minute
+  peak to the 32-member group instead of its 34.520-minute peak. Primary cost
+  stays 46.59519548; selected peer fit 0.21365894 beats alternative 0.21441450.
+- At m/z about 326.146, `DNA+RNA_SBO_fumes_3` retains B at 26.8577 minutes,
+  rather than A at 25.9906. Primary cost stays 37.70535310; selected peer fit
+  0.28257755 beats alternative 0.28446526. Local RAW inspection of six sources
+  supports the explanation; it does not reselect or integrate their peaks.
+- All 35,677 owner observations and areas are retained. There are still 4,166
+  groups and 965 singletons. Membership sets change for 668 owners, including
+  unchanged peers of moved owners; this is not a count of 668 replaced peaks.
+  No selected primary cost increases, no group repeats a sample, all 35,459
+  risk decisions bind their final membership, and no unchanged partition is
+  reported as an alternative. Primary-cost competition flags remain visible.
+- None of the 346 formerly equivalent risk decisions remains equivalent under
+  both costs. A different candidate can still be plausible without being an
+  equally supported answer. Missing historical signal-quality facts explain
+  the retained `low_rt_support` flags, not a demonstrated calibration failure.
+- Single-run replay is 214.81 s, excluding 25.37 s loading and 12.27 s writing.
+  This includes additional choice refinement; it is not an output-preserving
+  optimization claim or whole-workflow timing. Discovery and Backfill are
+  excluded. The separate local RAW inspection is not included in replay time.
+- Artifacts: `output/issue-913/peer-fit-expected-diff.json`,
+  `output/issue-913/peer-fit-full/timing.json`, and
+  `output/issue-913/case326-raw/inspector.html`. The timing receipt binds the
+  producing source hash; the Issue carries the implementation receipt.
+
+Rerun when candidate scope, costs, or bounded search changes. Do not repeat RAW
+acquisition or demand chemical truth merely to resolve this known scoring
+plateau. Singleton count alone does not measure whether the better-supported
+representative was selected.
+
+### 2026-10-25 Final Membership Replay Reuses Costs Without Changing Decisions
+
+#913, Evidence: `exact_safe`; verdict: `optimized`. Baseline is `a51d0473f`,
+not the earlier pre-membership-policy implementation. The retained 44-sample
+snapshot contains 35,677 owners (SHA-256
+`3449cac3c205b39f205211b98faebf4dc78227b311d0f492758341e3f075e46c`).
+Discovery, RAW acquisition and Backfill are excluded.
+
+- Separate same-runtime runs measured `replay_grouping` at 240.43 s before and
+  177.91 s after. Loading was 26.45/25.85 s; writing was 12.46/12.38 s, excluded
+  from replay timing. Inclusive merge spans were 158.91/120.26 s, while risk
+  spans were 21.67/15.18 s: merge evaluation, not risk publication, dominates.
+- Reuse canonical group-cost cache hits before sorting, canonicalize pair keys
+  with one comparison, and omit neighbor-trend evaluation when the entire RT
+  range is at most 90 seconds. A median cannot escape that range, so the
+  existing trend penalty is exactly zero; its threshold and policy are unchanged.
+- Six interleaved small-band replays (352 owners, three per implementation,
+  fresh comparison caches) had medians 5.088/4.062 s and ranges
+  5.003–5.132/4.032–4.118 s. Full and small outputs each preserve all five TSVs
+  byte-for-byte, including risk decisions. The full comparison has one run per
+  variant; do not interpret its percentage as a stable production speedup.
+- Artifacts: `output/issue-913/perf-full-{before,after}/timing.json`,
+  `output/issue-913/perf-interleaved.json`, and `current-small.pstats` in the
+  same task directory. The profiler is call-cost evidence, not benchmark timing.
+- Current membership interpretation is owned by the peer-fit entry above, not the
+  performance comparison; output parity does not validate the risk semantics.
+
+Rerun when membership costs/search, the comparison universe, or snapshot changes.
+Historical concurrent-run elapsed times are not an isolated optimization baseline.
 
 ### 2026-09-28 Inferred Precursor MS1 Ion Offsets By m/z Band
 

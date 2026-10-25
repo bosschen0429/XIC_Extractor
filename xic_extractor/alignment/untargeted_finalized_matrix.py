@@ -16,6 +16,7 @@ from xic_extractor.alignment.matrix import (
     AlignmentRowLike,
     CellStatus,
 )
+from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.production_decisions import (
     BackfillTier,
@@ -71,6 +72,7 @@ class FinalizedUntargetMatrixRow:
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
     evidence_status: str = "finalized_untargeted_owner_complete"
+    membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
 
     @property
     def source_feature_family_ids(self) -> tuple[str, ...]:
@@ -100,6 +102,7 @@ def project_completed_untarget_batch_writer_inputs(
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
+    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
 ) -> CompletedUntargetBatchWriterInputs:
     """Materialize writer inputs for consumers that require a complete matrix."""
 
@@ -111,6 +114,7 @@ def project_completed_untarget_batch_writer_inputs(
         completed,
         consume_child=consume_child,
         ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+        membership_risks_by_owner=membership_risks_by_owner,
     ):
         rows.extend(projected.matrix.clusters)
         cells.extend(projected.matrix.cells)
@@ -164,6 +168,7 @@ def iter_completed_untarget_batch_writer_inputs(
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
+    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
 ) -> Iterator[CompletedUntargetBatchWriterInputs]:
     """Project one finalized row at a time while retaining only identity census.
 
@@ -260,6 +265,14 @@ def iter_completed_untarget_batch_writer_inputs(
                 family_observed_neutral_loss_da=family_observed_neutral_loss_da,
                 neutral_loss_tag=neutral_loss_tag,
                 has_anchor=has_anchor,
+                membership_risks=tuple(
+                    (member.canonical_sample_identity_id, risk)
+                    for member in typed_observations[0].group.member_subjects
+                    if (
+                        risk := (membership_risks_by_owner or {}).get(member.subject_id)
+                    )
+                    is not None
+                ),
             )
             projected_cells = tuple(
                 _aligned_cell(

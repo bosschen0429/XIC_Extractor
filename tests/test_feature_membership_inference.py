@@ -55,8 +55,18 @@ def test_membership_consumes_the_composed_support_rule(bootstrap: bool) -> None:
         rules=replace(CID_NL_GROUPING_RULES, support_level=lambda *_: "weak"),
     )
     assert _memberships(default) == {frozenset(owner.owner_id for owner in owners)}
-    assert _memberships(withheld) == {frozenset((owner.owner_id,)) for owner in owners}
-    assert all(group.disposition == "undecided" for group in withheld.groups)
+    if bootstrap:
+        assert _memberships(withheld) == {
+            frozenset((owner.owner_id,)) for owner in owners
+        }
+        assert all(group.disposition == "undecided" for group in withheld.groups)
+    else:
+        assert _memberships(withheld) == _memberships(default)
+        assert all(
+            decision.accepted_risk is not None
+            and "weak_identity" in decision.accepted_risk.risk_flags
+            for decision in withheld.sparse_decisions
+        )
 
 
 @dataclass(frozen=True, slots=True)

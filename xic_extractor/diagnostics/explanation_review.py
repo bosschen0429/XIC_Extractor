@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
@@ -28,9 +29,61 @@ SELECTION_FLAGS = (
 )
 
 
+def validate_membership_risks(risks: object) -> None:
+    """Validate declared optional facts at the persisted JSON boundary."""
+
+    def strings(value: object) -> bool:
+        return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+    def partition(value: object) -> bool:
+        return isinstance(value, list) and all(strings(group) for group in value)
+
+    if not isinstance(risks, list):
+        raise ValueError("membership risks must be a list")
+    for risk in risks:
+        if not isinstance(risk, dict):
+            raise ValueError("membership risk must be an object")
+        valid = all(
+            isinstance(risk.get(key), str)
+            for key in ("status", "phase", "rt_basis", "evidence_basis")
+        ) and all(
+            strings(risk.get(key))
+            for key in ("selected_owner_ids", "soft_contradictions", "risk_flags")
+        )
+        alternative = risk.get("alternative_partition")
+        equivalents = risk.get("equivalent_alternatives")
+        valid = (
+            valid
+            and (alternative is None or partition(alternative))
+            and isinstance(equivalents, list)
+            and all(partition(value) for value in equivalents)
+        )
+        for key in (
+            "selected_cost",
+            "alternative_cost",
+            "cost_gap",
+            "selected_peer_fit",
+            "alternative_peer_fit",
+            "peer_fit_gap",
+        ):
+            value = risk.get(key)
+            if value is None and key != "selected_cost":
+                continue
+            valid = (
+                valid
+                and not isinstance(value, bool)
+                and isinstance(value, (int, float))
+                and math.isfinite(value)
+            )
+        if not valid:
+            raise ValueError("malformed membership risk fields")
+
+
 def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
     """One recorded-fact predicate for selection and its displayed explanation."""
     if kind == "cell_decisions":
+        if any(risk.get("risk_flags") for risk in fact.get("membership_risks", [])):
+            return "accepted_membership_risk"
         if (
             fact.get("variant") == "unresolved"
             and fact.get("value", fact.get("quantitative_value")) is None
@@ -114,6 +167,7 @@ def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -
             cell.get("support_origin", "unavailable"),
             cell.get("observation_ids", []),
             cell.get("signal_quality", []),
+            cell.get("membership_risks", []),
         ]
         for cell in cells
     ]
@@ -135,6 +189,8 @@ def unpack_cells(
     for position, cell in enumerate(values):
         sample, variant, value, source, states, reasons, origin, observations = cell[:8]
         quality = cell[8] if len(cell) > 8 else []
+        risks = cell[9] if len(cell) > 9 else []
+        validate_membership_risks(risks)
         if (
             isinstance(sample, bool)
             or not isinstance(sample, int)
@@ -155,6 +211,7 @@ def unpack_cells(
             "support_origin": origin,
             "observation_ids": observations,
             "signal_quality": quality,
+            "membership_risks": risks,
         }
     return result
 

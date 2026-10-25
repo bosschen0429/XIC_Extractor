@@ -62,6 +62,10 @@ class RtFrame(Protocol):
         self, owner: SampleLocalMS1Owner
     ) -> tuple[float | None, float, float | None] | None: ...
 
+    def membership_coordinate(
+        self, owner: SampleLocalMS1Owner
+    ) -> tuple[float, str] | None: ...
+
     def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
     def corrected_pair_delta_sec(
@@ -362,6 +366,15 @@ class SampleRtFrame:
         if apex is None:
             return None
         return start, apex, end
+
+    def membership_coordinate(
+        self, owner: SampleLocalMS1Owner
+    ) -> tuple[float, str] | None:
+        """Expose existing apex support without inventing calibrated peak edges."""
+        if self._coordinate_override is not None:
+            return self._coordinate_override(owner), "diagnostic_override"
+        apex = self.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt)
+        return None if apex is None else (apex, "drift_corrected")
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
         if self._sample_calibration is not None:
