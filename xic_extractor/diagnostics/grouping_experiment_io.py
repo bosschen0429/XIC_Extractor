@@ -128,13 +128,40 @@ def write_grouping_inputs(
         )
 
 
+# Saved snapshots may contain these retired, non-semantic settings.
+# Unknown keys still reach AlignmentConfig and fail rather than hiding typos.
+_RETIRED_ALIGNMENT_CONFIG_KEYS = frozenset(
+    {
+        "anchor_min_scan_support_score",
+        "anchor_priorities",
+        "duplicate_fold_min_detected_jaccard",
+        "duplicate_fold_min_detected_overlap",
+        "duplicate_fold_min_present_overlap",
+        "duplicate_fold_min_shared_detected_count",
+        "duplicate_fold_observed_loss_ppm",
+        "duplicate_fold_ppm",
+        "duplicate_fold_product_ppm",
+        "duplicate_fold_rt_sec",
+        "identity_rt_candidate_window_sec",
+        "mz_bucket_neighbor_radius",
+        "owner_backfill_min_detected_samples",
+        "owner_tail_max_secondary_ratio",
+        "owner_tail_seed_guard_sec",
+        "owner_window_overlap_fraction",
+    }
+)
+
+
 def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         payload = json.load(stream)
     if payload.get("schema") != "grouping_experiment_inputs":
         raise ValueError("Not a grouping experiment input snapshot")
-    config = payload["alignment_config"]
-    config["anchor_priorities"] = tuple(config["anchor_priorities"])
+    config = {
+        key: value
+        for key, value in payload["alignment_config"].items()
+        if key not in _RETIRED_ALIGNMENT_CONFIG_KEYS
+    }
     worksets = []
     for value in payload["worksets"]:
         raw_warp = value["rt_warp"]
