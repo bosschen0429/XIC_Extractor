@@ -164,7 +164,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
                     )
 
     monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
-    physical_candidates = target_extraction.physical_candidates_result
+    physical_candidates = targeted_peak_selection.physical_candidates_result
 
     def ordered_candidates(*args, **kwargs):
         result = physical_candidates(*args, **kwargs)
@@ -175,7 +175,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         )
 
     monkeypatch.setattr(
-        target_extraction, "physical_candidates_result", ordered_candidates
+        targeted_peak_selection, "physical_candidates_result", ordered_candidates
     )
     monkeypatch.setattr(
         target_extraction,

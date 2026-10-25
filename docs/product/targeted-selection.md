@@ -81,12 +81,21 @@ resolution within each target’s m/z population before candidate-local CID-NL
 assessment. Different recorded precursors from one scan remain available to
 their respective targets.
 
-Within the same chemical-support tier, an ISTD candidate meeting the existing
-anchor completeness and reference-proximity rule precedes a remote candidate,
-even if the remote candidate has stronger MS2 trace support. A matching NL at
-another chromatographic position does not make the two peaks interchangeable.
-This preference does not crop acquisition, confirm an unsupported nearby peak,
-or reject supported drift when no qualified reference-local candidate exists.
+Within the same chemical-support tier, ISTD selection checks anchor
+completeness, then continuous distance from the known reference before
+morphology, review-blocker count, MS2 trace strength or abundance. Drifting
+outside a fixed proximity radius does not erase that identity preference.
+A matching NL at another chromatographic position does not make the two peaks
+interchangeable. This does not crop acquisition or confirm an unsupported
+nearby peak.
+
+For an ISTD with a known reference RT, the shared physical owner uses
+`reference_localized_contour_peak` to qualify a full contour, not each surface
+ripple. The [physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+owns its support requirements and unchanged quantitative values. Candidate
+enumeration and physical answers use the same policy, retained in the physical
+question for replay. Other Targeted candidates, Discovery and Backfill keep
+their existing local-valley qualification.
 
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by

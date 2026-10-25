@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import DriftPriorSource
 from xic_extractor.alignment.grouping_evidence import (
     pair_ppm,
-    peak_shape_union_conflict,
+    peak_correspondence_conflict,
 )
 from xic_extractor.alignment.grouping_rules import (
     DuplicateContext,
@@ -20,7 +21,6 @@ from xic_extractor.alignment.rt_frame import RtFrame
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
 HardGateFailureReason = str
 
-DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 RTEvidenceBasis = Literal["raw", "drift_corrected"]
 OwnerQuality = Literal["clean", "weak", "tail_supported", "ambiguous_nearby"]
 
@@ -89,6 +89,7 @@ def evaluate_owner_edge(
         right_detected_owner=right_detected_owner,
         left_ambiguous_owner=left_ambiguous_owner,
         right_ambiguous_owner=right_ambiguous_owner,
+        rt_frame=rt_frame,
     )
     if failure:
         # Method permission applies only after all shared physical gates pass.
@@ -147,6 +148,7 @@ def _hard_gate_failure(
     left: SampleLocalMS1Owner,
     right: SampleLocalMS1Owner,
     *,
+    rt_frame: RtFrame,
     config: AlignmentConfig,
     method_evidence: MethodPairEvidence,
     edge_depends_on_backfill: bool,
@@ -169,8 +171,16 @@ def _hard_gate_failure(
         return method_evidence.identity_failure, False
     if pair_ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance", False
-    if peak_shape_union_conflict((left,), (right,), config) is not None:
-        return "peak_shape_mismatch", False
+    if (
+        peak_correspondence_conflict(
+            (left,),
+            (right,),
+            config,
+            rt_frame=rt_frame,
+        )
+        is not None
+    ):
+        return "peak_correspondence_mismatch", False
     return (
         method_evidence.measurement_failure,
         method_evidence.measurement_failure_allows_rt_continuity,
@@ -202,7 +212,35 @@ def _score_and_decide(
     owner_quality: OwnerQuality,
     duplicate_context: DuplicateContext,
 ) -> tuple[int, EdgeDecision, RTEvidenceBasis, str, float | None]:
-    """Query drift only when raw evidence does not already establish an edge."""
+    """Use frozen batch coordinates; legacy drift remains an optional prior."""
+    if drift_prior_source == "batch_anchor_calibration":
+        corrected = corrected_delta_supplier()
+        if corrected is not None:
+            # One authoritative coordinate, not competing raw/corrected votes.
+            score = _score(
+                rt_raw_delta_sec=corrected,
+                rt_drift_corrected_delta_sec=None,
+                config=config,
+                seed_support_level=seed_support_level,
+                owner_quality=owner_quality,
+                duplicate_context=duplicate_context,
+            )
+            decision = _decision(
+                rt_raw_delta_sec=corrected,
+                rt_drift_corrected_delta_sec=None,
+                drift_prior_source="none",
+                owner_quality=owner_quality,
+                seed_support_level=seed_support_level,
+                score=score,
+                config=config,
+            )
+            return (
+                score,
+                decision,
+                "drift_corrected",
+                _pass_reason(decision, score),
+                corrected,
+            )
     raw_score = _score(
         rt_raw_delta_sec=rt_raw_delta_sec,
         rt_drift_corrected_delta_sec=None,

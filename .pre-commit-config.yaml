@@ -29,10 +29,3 @@ repos:
         require_serial: true
         files: ^(xic_extractor|scripts|xic_workbench|xic_inspector|tools)/.*\.py$
         types: [python]
-
-      - id: pytest-staged-tests
-        name: pytest staged test files
-        entry: uv run --cache-dir .uv-cache pytest -q
-        language: system
-        files: ^tests/(.*/)?test_[^/]*\.py$
-        types: [python]

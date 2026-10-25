@@ -21,7 +21,7 @@ from xic_extractor.alignment.edge_scoring import (
 from xic_extractor.alignment.grouping_evidence import (
     envelope_fraction,
     owner_uncertainty_reason,
-    peak_shape_union_conflict,
+    peak_correspondence_conflict,
 )
 from xic_extractor.alignment.grouping_rules import GroupingRules, MethodFeatureEnvelope
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -71,8 +71,6 @@ _INFEASIBLE_COST = 1_000_000.0
 _AMBIGUITY_EPSILON = 1e-9
 _WINDOW_AMBIGUITY_MARGIN = 0.05
 _FEATURE_TREND_NEIGHBORS = 6
-_WARP_ANCHOR_MIN_MEMBERS = 20
-_WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
 _WINDOW_TREND_TOLERANCE_SEC = 90.0
 
 
@@ -155,7 +153,7 @@ class FeatureMembershipInferenceResult:
 
 @dataclass(frozen=True, slots=True)
 class BatchRtWarp:
-    """Measured per-injection RT offset from agreed batch features."""
+    """Read-only historical offset map for retained grouping snapshots."""
 
     knots_by_sample: tuple[tuple[str, tuple[tuple[float, float], ...]], ...]
     anchor_group_count: int
@@ -195,98 +193,6 @@ def _interpolated_offset(
     right_rt, right_offset = knots[right]
     fraction = (rt_min - left_rt) / (right_rt - left_rt)
     return left_offset + fraction * (right_offset - left_offset)
-
-
-def estimate_batch_rt_warp(
-    groups: Sequence[FeatureMembershipGroup | Sequence[SampleLocalMS1Owner]],
-    *,
-    owners_by_id: Mapping[str, SampleLocalMS1Owner],
-    injection_order: Mapping[str, int],
-) -> BatchRtWarp:
-    """Fit one smooth RT-dependent offset per injection from bootstrap anchors.
-
-    The caller supplies only agreed ordinary and exact known-identity groups.
-    Their membership is used to estimate an offset, never retained as final
-    ordinary membership authority.
-    """
-    calibration = BatchRtWarpAccumulator(injection_order=injection_order)
-    calibration.add_groups(
-        tuple(
-            tuple(owners_by_id[owner_id] for owner_id in group.owner_ids)
-            if isinstance(group, FeatureMembershipGroup)
-            else tuple(group)
-            for group in groups
-        )
-    )
-    return calibration.freeze()
-
-
-class BatchRtWarpAccumulator:
-    """Accumulate compact anchor observations, independent of execution partitions.
-
-    Only RT pairs are retained: measured curves and owner graphs may be released
-    after each bootstrap partition. Freeze once all compatible evidence is added.
-    """
-
-    def __init__(
-        self,
-        *,
-        injection_order: Mapping[str, int],
-        sample_cohorts: Mapping[str, str] | None = None,
-    ) -> None:
-        self._orders = dict(injection_order)
-        self._cohorts = dict(sample_cohorts) if sample_cohorts is not None else None
-        self._observations: dict[str, list[tuple[float, float]]] = defaultdict(list)
-        self._accepted = 0
-
-    def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
-        for group in groups:
-            cohorts: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
-            for owner in group:
-                stem = owner.sample_stem
-                cohort = "" if self._cohorts is None else self._cohorts.get(stem)
-                if stem in self._orders and cohort is not None:
-                    cohorts[cohort].append(owner)
-            for members in cohorts.values():
-                if len(members) < _WARP_ANCHOR_MIN_MEMBERS:
-                    continue
-                ordered = tuple(
-                    sorted(
-                        members,
-                        key=lambda owner: (
-                            self._orders[owner.sample_stem],
-                            owner.owner_id,
-                        ),
-                    )
-                )
-                self._accepted += 1
-                trends = _NearestInjectionMedians.prepare(ordered, self._orders)
-                for owner in ordered:
-                    trend = trends.median(owner, exclude_owner_id=owner.owner_id)
-                    if trend is not None:
-                        self._observations[owner.sample_stem].append(
-                            (trend, owner.owner_apex_rt - trend)
-                        )
-
-    def freeze(self) -> BatchRtWarp:
-        sample_knots = []
-        for sample, points in sorted(self._observations.items()):
-            if len(points) < 12:
-                continue
-            knots = []
-            for rt in _WARP_GRID_RT_MIN:
-                # Resolve equal-distance ties by data, never arrival order.
-                nearest = sorted(points, key=lambda point: (abs(point[0] - rt), point))[
-                    :25
-                ]
-                if len(nearest) >= 5:
-                    knots.append((rt, statistics.median(point[1] for point in nearest)))
-            if len(knots) >= 2 and all(
-                left[0] + left[1] < right[0] + right[1]
-                for left, right in zip(knots, knots[1:], strict=False)
-            ):
-                sample_knots.append((sample, tuple(knots)))
-        return BatchRtWarp(tuple(sample_knots), self._accepted)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,7 +276,7 @@ class _FeatureTrack:
     precursor_min: float
     precursor_max: float
     method: MethodFeatureEnvelope
-    shape_members: list[SampleLocalMS1Owner]
+    members: list[SampleLocalMS1Owner]
 
     @classmethod
     def from_owner(
@@ -388,13 +294,12 @@ class _FeatureTrack:
             precursor_min=owner.precursor_mz,
             precursor_max=owner.precursor_mz,
             method=rules.feature_envelope(owner),
-            shape_members=[owner] if owner.peak_shape is not None else [],
+            members=[owner],
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         self.method.add(owner)
-        if owner.peak_shape is not None:
-            self.shape_members.append(owner)
+        self.members.append(owner)
         self.sample_stems.add(owner.sample_stem)
         self.precursor_min = min(self.precursor_min, owner.precursor_mz)
         self.precursor_max = max(self.precursor_max, owner.precursor_mz)
@@ -537,10 +442,15 @@ def infer_feature_memberships(
     trajectories = _membership_trajectories(
         ordinary, peak_trajectories or PeakTrajectories(), config, rules=rules
     )
-    trajectory_seeds = _trajectory_seeds(ordinary, trajectories, config, rules=rules)
-
     use_directional = bootstrap or rules.requires_directional_membership(ordinary)
     if use_directional:
+        trajectory_seeds = _trajectory_seeds(
+            ordinary,
+            trajectories,
+            config,
+            rules=rules,
+            rt_frame=rt_frame,
+        )
         seed_by_owner = {
             owner_id: index
             for index, seed in enumerate(trajectory_seeds)
@@ -580,7 +490,6 @@ def infer_feature_memberships(
             config=config,
             rt_frame=rt_frame,
             counts=counts,
-            trajectory_seeds=trajectory_seeds,
             trajectories=trajectories,
             rules=rules,
         )
@@ -700,12 +609,7 @@ def _membership_trajectories(
             retained.append(track)
     if len(retained) == len(geometry.tracks):
         return geometry
-    return PeakTrajectories(
-        tuple(retained),
-        geometry.pattern_comparisons,
-        geometry.source_contexts,
-        physical_order=geometry.physical_order,
-    )
+    return geometry.membership_subset(retained)
 
 
 def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:
@@ -720,6 +624,7 @@ def _trajectory_seeds(
     correspondence: PeakTrajectories | None,
     config: AlignmentConfig,
     *,
+    rt_frame: RtFrame,
     rules: GroupingRules,
 ) -> tuple[FeatureMembershipGroup, ...]:
     if correspondence is None:
@@ -741,8 +646,12 @@ def _trajectory_seeds(
                 config.max_ppm,
             )
             or any(
-                peak_shape_union_conflict(
-                    (member,), members[:index], config, trajectories=correspondence
+                peak_correspondence_conflict(
+                    (member,),
+                    members[:index],
+                    config,
+                    trajectories=correspondence,
+                    rt_frame=rt_frame,
                 )
                 is not None
                 for index, member in enumerate(members)
@@ -932,9 +841,14 @@ def _directional_inference(
         for owner in seeded_rows:
             feature_key = seed_feature[seed_by_owner[owner.owner_id]]
             track = tracks[feature_key]
-            if peak_shape_union_conflict((owner,), track.shape_members, config):
+            if peak_correspondence_conflict(
+                (owner,),
+                track.members,
+                config,
+                rt_frame=rt_frame,
+            ):
                 # Pattern agreement cannot override a contradictory measured
-                # shape introduced by an intervening member of the feature.
+                # region or shape introduced by an intervening member.
                 continue
             decisions.append(
                 SparseFeatureDecision(
@@ -1096,6 +1010,152 @@ def _directional_inference(
     return _DirectionalResult(groups, tuple(decisions), frozenset(uncertain))
 
 
+@dataclass(frozen=True, slots=True)
+class _WindowEdge:
+    left_id: str
+    right_id: str
+    ambiguity_cost: float
+    union_priority: float
+
+
+def _join_window_bands(
+    members: dict[str, list[SampleLocalMS1Owner]],
+    arcs: Sequence[_WindowEdge],
+    *,
+    config: AlignmentConfig,
+    rules: GroupingRules,
+    rt_frame: RtFrame,
+    trajectories: PeakTrajectories,
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    common_rt: Mapping[str, float],
+    shape_conflicts: dict[str, set[str]],
+    counts: Counter[str],
+) -> None:
+    """Grow owners normally; compare established bands as complete alternatives.
+
+    An old pair priority no longer represents two established bands. Refresh
+    their median RT/mass cost after each merge, preserving the existing score
+    and gates. A closer band remains an alternative when sample occupancy
+    prevents merging it: that conflict does not support a worse assignment.
+    Only summaries and incident links of the changed band are recomputed.
+    """
+    samples = {
+        key: {owner.sample_stem for owner in group} for key, group in members.items()
+    }
+    roots = {owner.owner_id: key for key, group in members.items() for owner in group}
+    links: dict[str, dict[str, tuple[float, str, str]]] = {key: {} for key in members}
+    for arc in arcs:
+        left, right = roots[arc.left_id], roots[arc.right_id]
+        if left == right:
+            continue
+        edge_priority = (arc.union_priority, arc.left_id, arc.right_id)
+        previous = links[left].get(right)
+        if previous is None or edge_priority < previous:
+            links[left][right] = links[right][left] = edge_priority
+
+    def center(key: str) -> tuple[float | None, float, float | None]:
+        group = members[key]
+        measured_rts = [
+            common_rt[owner.owner_id] for owner in group if owner.owner_id in common_rt
+        ]
+        return (
+            statistics.median(measured_rts) if measured_rts else None,
+            statistics.median(owner.precursor_mz for owner in group),
+            rules.mass_center(group),
+        )
+
+    centers = {key: center(key) for key in members}
+
+    def priority(left: str, right: str) -> tuple[float, str, str]:
+        pair_cost, first_id, second_id = links[left][right]
+        first, second = centers[left], centers[right]
+        if (
+            min(len(members[left]), len(members[right])) < 2
+            or first[0] is None
+            or second[0] is None
+        ):
+            return pair_cost, first_id, second_id
+        counts["feature_summary_comparisons"] += 1
+        cost = (
+            0.70 * 60.0 * abs(first[0] - second[0]) / config.preferred_rt_sec
+            + 0.15
+            * min(
+                absolute_ppm_error(max(first[1], second[1]), min(first[1], second[1]))
+                / config.max_ppm,
+                2.0,
+            )
+            + 0.15 * min(rules.mass_fraction(first[2], second[2], config), 2.0)
+        )
+        return cost, first_id, second_id
+
+    costs = {
+        (left, right): priority(left, right)
+        for left in links
+        for right in links[left]
+        if left < right
+    }
+    while costs:
+        best: dict[str, float] = {}
+        for (left, right), (cost, _, _) in costs.items():
+            best[left] = min(best.get(left, math.inf), cost)
+            best[right] = min(best.get(right, math.inf), cost)
+        available = (
+            pair
+            for pair, (cost, _, _) in costs.items()
+            if not samples[pair[0]] & samples[pair[1]]
+            and (
+                min(len(members[pair[0]]), len(members[pair[1]])) < 2
+                or centers[pair[0]][0] is None
+                or centers[pair[1]][0] is None
+                or cost <= best[pair[0]]
+                and cost <= best[pair[1]]
+            )
+        )
+        pair = min(available, key=costs.__getitem__, default=None)
+        if pair is None:
+            return
+        left, right = pair
+        del costs[pair]
+        del links[left][right]
+        del links[right][left]
+        left_members, right_members = members[left], members[right]
+        if not trajectories.permits_membership(
+            owner.owner_id for owner in (*left_members, *right_members)
+        ):
+            continue
+        if conflict := peak_correspondence_conflict(
+            left_members, right_members, config, rt_frame=rt_frame
+        ):
+            first_id, second_id = conflict
+            shape_conflicts[first_id].add(second_id)
+            shape_conflicts[second_id].add(first_id)
+            continue
+        if not rt_trend_supports_union(
+            left_members,
+            right_members,
+            orders=orders,
+            corrected_rt=corrected_rt,
+            max_rt_sec=config.max_rt_sec,
+        ):
+            continue
+        if (len(left_members), left) < (len(right_members), right):
+            left, right = right, left
+        members[left].extend(members.pop(right))
+        samples[left].update(samples.pop(right))
+        centers[left] = center(left)
+        del centers[right]
+        for neighbor, old_priority in links.pop(right).items():
+            del links[neighbor][right]
+            first, second = sorted((right, neighbor))
+            del costs[(first, second)]
+            kept = min(links[left].get(neighbor, old_priority), old_priority)
+            links[left][neighbor] = links[neighbor][left] = kept
+        for neighbor in links[left]:
+            first, second = sorted((left, neighbor))
+            costs[(first, second)] = priority(first, second)
+
+
 def _window_inference(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -1103,14 +1163,14 @@ def _window_inference(
     config: AlignmentConfig,
     rt_frame: RtFrame,
     counts: Counter[str],
-    trajectory_seeds: Sequence[FeatureMembershipGroup],
     trajectories: PeakTrajectories,
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
     """Find all RT bands in each mass neighbourhood in one finite pass.
 
-    Ordered-pattern observations seed this graph rather than removing their
-    owners into a separate answer. RT and mass evidence extend the same tracks;
-    every union keeps one physical owner per sample and distinct tracks apart.
+    Raw ordered patterns can seed owners without measured RT coordinates.
+    Calibrated bands use measured RT and mass, not forced pattern unions
+    or zero-distance shortcuts. Every union keeps one physical owner per sample
+    and distinct tracks apart.
     A feature's six nearest injections provide its RT trend once it has enough
     members; sparse bands rely on the batch warp with a wider RT allowance.
     After local bands settle, separated dense bands can bridge on whole-band
@@ -1131,6 +1191,20 @@ def _window_inference(
     corrected_rt = {
         owner.owner_id: rt_frame.corrected_rt_min(owner) for owner in owners
     }
+    common_rt = {
+        owner.owner_id: rt
+        for owner in owners
+        if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt))
+        is not None
+    }
+    trajectories = trajectories.common_frame_membership(common_rt)
+    trajectory_seeds = _trajectory_seeds(
+        tuple(owner for owner in owners if owner.owner_id not in common_rt),
+        trajectories,
+        config,
+        rules=rules,
+        rt_frame=rt_frame,
+    )
     ordinary_by_id = {owner.owner_id: owner for owner in owners}
     track_indices = trajectories.owner_track_indices()
     weak = {
@@ -1165,39 +1239,31 @@ def _window_inference(
         for window in windows:
             counts["index_queries"] += len(window)
             counts["candidate_features_considered"] += len(window)
-            parents = {owner.owner_id: owner.owner_id for owner in window}
             members = {owner.owner_id: [owner] for owner in window}
-            sample_sets = {owner.owner_id: {owner.sample_stem} for owner in window}
             seeded_owners: set[str] = set()
             for seed in trajectory_seeds:
                 retained = [
-                    owner_id for owner_id in seed.owner_ids if owner_id in parents
+                    owner_id for owner_id in seed.owner_ids if owner_id in members
                 ]
                 if seed.disposition != "assigned" or len(retained) < 2:
                     continue
                 seeded_owners.update(retained)
                 first, *others = retained
                 for owner_id in others:
-                    parents[owner_id] = first
                     members[first].extend(members.pop(owner_id))
-                    sample_sets[first].update(sample_sets.pop(owner_id))
-
-            def root(owner_id: str, parents=parents) -> str:
-                while parents[owner_id] != owner_id:
-                    parents[owner_id] = parents[parents[owner_id]]
-                    owner_id = parents[owner_id]
-                return owner_id
 
             arcs = _window_candidate_edges(
                 window,
                 config=config,
                 orders=orders,
                 corrected_rt=corrected_rt,
+                common_rt=common_rt,
                 track_indices=track_indices,
                 trajectories=trajectories,
                 counts=counts,
                 shape_conflicts=shape_conflicts,
                 rules=rules,
+                rt_frame=rt_frame,
             )
             counts["supported_candidate_arcs"] += len(arcs)
             ambiguous_window, ambiguous_arcs = _ambiguous_window_edges(
@@ -1206,46 +1272,26 @@ def _window_inference(
             for owner_id in ambiguous_window:
                 weak[owner_id] = "alternative_bands_have_near_equal_cost"
             counts["ambiguous_assignments"] += len(ambiguous_window)
-            for _, left_id, right_id in sorted(arcs):
-                if left_id in ambiguous_window or right_id in ambiguous_window:
-                    continue
-                if (left_id, right_id) in ambiguous_arcs or (
-                    right_id,
-                    left_id,
-                ) in ambiguous_arcs:
-                    continue
-                left_root, right_root = root(left_id), root(right_id)
-                if left_root == right_root:
-                    continue
-                if sample_sets[left_root] & sample_sets[right_root]:
-                    continue
-                left_members, right_members = members[left_root], members[right_root]
-                if not trajectories.permits_membership(
-                    owner.owner_id for owner in (*left_members, *right_members)
-                ):
-                    continue
-                if conflict := peak_shape_union_conflict(
-                    left_members,
-                    right_members,
-                    config,
-                ):
-                    first, second = conflict
-                    shape_conflicts[first].add(second)
-                    shape_conflicts[second].add(first)
-                    continue
-                if not rt_trend_supports_union(
-                    left_members,
-                    right_members,
-                    orders=orders,
-                    corrected_rt=corrected_rt,
-                    max_rt_sec=config.max_rt_sec,
-                ):
-                    continue
-                if (len(left_members), left_root) < (len(right_members), right_root):
-                    left_root, right_root = right_root, left_root
-                parents[right_root] = left_root
-                members[left_root].extend(members.pop(right_root))
-                sample_sets[left_root].update(sample_sets.pop(right_root))
+            _join_window_bands(
+                members,
+                [
+                    arc
+                    for arc in arcs
+                    if arc.left_id not in ambiguous_window
+                    and arc.right_id not in ambiguous_window
+                    and (arc.left_id, arc.right_id) not in ambiguous_arcs
+                    and (arc.right_id, arc.left_id) not in ambiguous_arcs
+                ],
+                config=config,
+                rules=rules,
+                rt_frame=rt_frame,
+                trajectories=trajectories,
+                orders=orders,
+                corrected_rt=corrected_rt,
+                common_rt=common_rt,
+                shape_conflicts=shape_conflicts,
+                counts=counts,
+            )
             _assign_window_singletons(
                 members,
                 weak=weak,
@@ -1256,6 +1302,7 @@ def _window_inference(
                 trajectories=trajectories,
                 shape_conflicts=shape_conflicts,
                 rules=rules,
+                rt_frame=rt_frame,
             )
             if rt_frame.has_coordinates and len(known_orders) == len(samples):
                 _bridge_separated_window_bands(
@@ -1267,6 +1314,7 @@ def _window_inference(
                     counts=counts,
                     trajectories=trajectories,
                     rules=rules,
+                    rt_frame=rt_frame,
                 )
             final_components.extend(
                 tuple(sorted(owner.owner_id for owner in group))
@@ -1290,15 +1338,17 @@ def _window_inference(
 def _window_candidate_edges(
     window: Sequence[SampleLocalMS1Owner],
     *,
+    rt_frame: RtFrame,
     rules: GroupingRules,
     config: AlignmentConfig,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
+    common_rt: Mapping[str, float],
     track_indices: Mapping[str, int],
     trajectories: PeakTrajectories,
     counts: Counter[str],
     shape_conflicts: dict[str, set[str]],
-) -> list[tuple[float, str, str]]:
+) -> list[_WindowEdge]:
     """Apply pair eligibility and score supported edges in one mass window."""
     window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
     sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
@@ -1309,7 +1359,7 @@ def _window_candidate_edges(
         - bisect_left(window_rts, corrected_rt[owner.owner_id] - sparse_radius_min)
         for owner in window
     }
-    arcs: list[tuple[float, str, str]] = []
+    arcs: list[_WindowEdge] = []
     by_order = sorted(
         window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
     )
@@ -1341,6 +1391,8 @@ def _window_candidate_edges(
             rt_delta_sec = (
                 0.0
                 if same_track
+                and left.owner_id not in common_rt
+                and right.owner_id not in common_rt
                 else (
                     abs(corrected_rt[left.owner_id] - corrected_rt[right.owner_id])
                     * 60.0
@@ -1360,7 +1412,12 @@ def _window_candidate_edges(
             if rt_delta_sec > rt_limit_sec:
                 continue
             counts["owner_edge_evaluations"] += 1
-            if peak_shape_union_conflict((left,), (right,), config):
+            if peak_correspondence_conflict(
+                (left,),
+                (right,),
+                config,
+                rt_frame=rt_frame,
+            ):
                 shape_conflicts[left.owner_id].add(right.owner_id)
                 shape_conflicts[right.owner_id].add(left.owner_id)
                 continue
@@ -1376,31 +1433,45 @@ def _window_candidate_edges(
                 / config.max_ppm
             )
             method_fraction = rules.pair_mass_fraction(left, right, config)
-            cost = (
+            non_rt_cost = (
                 (0.20 if sparse_fallback else 0.0)
-                + 0.70
-                * rt_delta_sec
-                / (
-                    rt_limit_sec
-                    if sparse_fallback or distant_dense_pair
-                    else config.preferred_rt_sec + 3.0 * gap
-                )
                 + 0.15 * min(precursor_fraction, 2.0)
                 + 0.15 * min(method_fraction, 2.0)
             )
-            arcs.append((cost, left.owner_id, right.owner_id))
+            rt_scale = (
+                rt_limit_sec
+                if sparse_fallback or distant_dense_pair
+                else config.preferred_rt_sec
+            )
+            # Retain the uncertainty allowance for per-sample competition.
+            # It must not make a distant pair outrank closer RT support when
+            # committing unions: a missing injection is not stronger evidence.
+            ambiguity_rt_scale = (
+                rt_scale
+                if sparse_fallback or distant_dense_pair
+                else rt_scale + 3.0 * gap
+            )
+            arcs.append(
+                _WindowEdge(
+                    left.owner_id,
+                    right.owner_id,
+                    non_rt_cost + 0.70 * rt_delta_sec / ambiguity_rt_scale,
+                    non_rt_cost + 0.70 * rt_delta_sec / rt_scale,
+                )
+            )
     return arcs
 
 
 def _ambiguous_window_edges(
-    arcs: Sequence[tuple[float, str, str]],
+    arcs: Sequence[_WindowEdge],
     owner_by_id: Mapping[str, SampleLocalMS1Owner],
     seeded_owners: set[str],
 ) -> tuple[set[str], set[tuple[str, str]]]:
     """Resolve per-sample competition without discarding independent support."""
     competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
     neighbors: dict[str, set[str]] = defaultdict(set)
-    for cost, left_id, right_id in arcs:
+    for arc in arcs:
+        cost, left_id, right_id = arc.ambiguity_cost, arc.left_id, arc.right_id
         competing[(left_id, owner_by_id[right_id].sample_stem)].append((cost, right_id))
         competing[(right_id, owner_by_id[left_id].sample_stem)].append((cost, left_id))
         neighbors[left_id].add(right_id)
@@ -1464,7 +1535,7 @@ def _window_membership_result(
             and bool(shape_conflicts.get(owner_ids[0]))
         )
         unassigned_reason = (
-            "peak_shape_mismatch"
+            "peak_correspondence_mismatch"
             if shape_rejected
             else weak.get(owner_ids[0], "no_supported_cross_sample_membership")
         )
@@ -1562,6 +1633,7 @@ def rt_trend_supports_union(
 def _bridge_separated_window_bands(
     members: dict[str, list[SampleLocalMS1Owner]],
     *,
+    rt_frame: RtFrame,
     rules: GroupingRules,
     weak: Mapping[str, str],
     orders: Mapping[str, int],
@@ -1620,7 +1692,12 @@ def _bridge_separated_window_bands(
                 rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
                 if (
                     rt_delta_sec > config.preferred_rt_sec
-                    or peak_shape_union_conflict(bands[left], bands[right], config)
+                    or peak_correspondence_conflict(
+                        bands[left],
+                        bands[right],
+                        config,
+                        rt_frame=rt_frame,
+                    )
                     is not None
                     or not rt_trend_supports_union(
                         bands[left],
@@ -1670,6 +1747,7 @@ def _window_band_candidate(
     key: str,
     band: tuple[SampleLocalMS1Owner, ...],
     *,
+    rt_frame: RtFrame,
     rules: GroupingRules,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
@@ -1717,7 +1795,12 @@ def _window_band_candidate(
     rt_delta_sec = abs(corrected_rt[owner.owner_id] - expected) * 60.0
     if rt_delta_sec > tolerance_sec:
         return None
-    if conflict := peak_shape_union_conflict((owner,), band, config):
+    if conflict := peak_correspondence_conflict(
+        (owner,),
+        band,
+        config,
+        rt_frame=rt_frame,
+    ):
         if shape_conflicts is not None:
             first, second = conflict
             shape_conflicts[first].add(second)
@@ -1751,6 +1834,7 @@ def _window_band_candidate(
 def _assign_window_singletons(
     members: dict[str, list[SampleLocalMS1Owner]],
     *,
+    rt_frame: RtFrame,
     rules: GroupingRules,
     weak: dict[str, str],
     orders: Mapping[str, int],
@@ -1760,7 +1844,7 @@ def _assign_window_singletons(
     trajectories: PeakTrajectories,
     shape_conflicts: dict[str, set[str]],
 ) -> None:
-    """Resolve remaining owner-to-band competition against fixed band medians."""
+    """Reassess singleton competition against the established bands."""
     bands = {key: tuple(group) for key, group in members.items() if len(group) >= 2}
     if not bands:
         return
@@ -1771,8 +1855,10 @@ def _assign_window_singletons(
     }
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
+    # Identity-ineligible owners never enter a window. Earlier pairwise
+    # ambiguity must be reconsidered against the remaining band choices.
     for group in members.values():
-        if len(group) != 1 or group[0].owner_id in weak:
+        if len(group) != 1:
             continue
         owner = group[0]
         row_candidates = []
@@ -1788,6 +1874,7 @@ def _assign_window_singletons(
                 trajectories=trajectories,
                 shape_conflicts=shape_conflicts,
                 rules=rules,
+                rt_frame=rt_frame,
             )
             if candidate is not None:
                 row_candidates.append(candidate)
@@ -1811,10 +1898,11 @@ def _assign_window_singletons(
         for owner in by_sample[sample]:
             remaining = []
             for candidate in candidates_by_owner[owner.owner_id]:
-                conflict = peak_shape_union_conflict(
+                conflict = peak_correspondence_conflict(
                     (owner,),
                     members[candidate.feature_key],
                     config,
+                    rt_frame=rt_frame,
                 )
                 if conflict is None:
                     remaining.append(candidate)
@@ -1837,6 +1925,7 @@ def _assign_window_singletons(
                 continue
             members[selected].append(owner)
             members.pop(owner.owner_id)
+            weak.pop(owner.owner_id, None)
 
 
 def _feature_rt_may_support(
@@ -1886,6 +1975,7 @@ def supports_existing_feature(
                 corrected_rt=corrected_rt,
                 config=config,
                 rules=rules,
+                rt_frame=rt_frame,
             )
             is not None
         )
@@ -1909,7 +1999,12 @@ def _compare_owner_to_feature(
     counts: Counter[str],
 ) -> _Candidate:
     counts["feature_summary_comparisons"] += 1
-    hard_reason, mass_fraction = _feature_hard_reason(owner, track, config)
+    hard_reason, mass_fraction = _feature_hard_reason(
+        owner,
+        track,
+        config,
+        rt_frame=rt_frame,
+    )
     witnesses = track.witness_owners
     witness_ids = tuple(witness.owner_id for witness in witnesses)
     if hard_reason:
@@ -1983,6 +2078,8 @@ def _feature_hard_reason(
     owner: SampleLocalMS1Owner,
     track: _FeatureTrack,
     config: AlignmentConfig,
+    *,
+    rt_frame: RtFrame | None = None,
 ) -> tuple[str, float]:
     if owner.sample_stem in track.sample_stems:
         return "same_sample", math.inf
@@ -1994,8 +2091,13 @@ def _feature_hard_reason(
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction
-    if peak_shape_union_conflict((owner,), track.shape_members, config):
-        return "peak_shape_mismatch", mass_fraction
+    if peak_correspondence_conflict(
+        (owner,),
+        track.members,
+        config,
+        rt_frame=rt_frame,
+    ):
+        return "peak_correspondence_mismatch", mass_fraction
     return measurement_failure, mass_fraction
 
 
@@ -2261,6 +2363,5 @@ __all__ = [
     "FeatureMembershipInferenceResult",
     "KnownIdentityMembershipConstraint",
     "SparseFeatureDecision",
-    "estimate_batch_rt_warp",
     "infer_feature_memberships",
 ]

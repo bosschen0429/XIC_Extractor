@@ -301,9 +301,22 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             front_shift_min=row.get("front_shift_min"),
             prior_injection=None,
             perturbation_status=row.get("perturbation_status", "unmeasured"),
+            anchor_count=row.get("anchor_count", 0),
+            standard_residuals=tuple(
+                tuple(item) for item in row.get("standard_residuals", ())
+            ),
         )
+    version = value.get("schema_version", 1)
+    if version not in (1, 2):
+        raise ValueError(f"Unsupported RT calibration version: {version}")
+    policy = dict(value["policy"])
+    if version == 1:
+        # Historical snapshots retain their exact frozen coordinates. Retired
+        # fitting parameters are not applied to, or refitted from, those maps.
+        policy.pop("anchor_min_sample_fraction", None)
+        policy.pop("knot_merge_tolerance_min", None)
     return BatchRtCalibration(
-        policy=RtCalibrationPolicy(**value["policy"]),
+        policy=RtCalibrationPolicy(**policy),
         knots=tuple(
             CalibrationKnot(**{**row, "feature_ids": tuple(row["feature_ids"])})
             for row in value["knots"]
@@ -322,7 +335,7 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
 def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
     return {
         "schema": "sample_rt_calibration",
-        "schema_version": 1,
+        "schema_version": 2,
         "policy": asdict(calibration.policy),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [
@@ -332,6 +345,8 @@ def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
                 "knots_observed_reference_min": sample.knots,
                 "front_shift_min": sample.front_shift_min,
                 "perturbation_status": sample.perturbation_status,
+                "anchor_count": sample.anchor_count,
+                "standard_residuals": sample.standard_residuals,
             }
             for sample in calibration.samples.values()
         ],

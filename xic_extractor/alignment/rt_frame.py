@@ -1,4 +1,4 @@
-"""Stage-local RT answers over shared sample metadata and existing estimators.
+"""Stage-local RT answers over shared metadata and the frozen batch calibration.
 
 Coordinate availability is distinct from measured zero drift. Pairwise ISTD
 identity evidence and batch coordinate calibration consume the same measured
@@ -52,6 +52,16 @@ class RtFrame(Protocol):
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
 
+    def calibrated_rt_min(
+        self, sample_stem: str, observed_rt: float
+    ) -> float | None: ...
+
+    def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None: ...
+
+    def calibrated_peak_region(
+        self, owner: SampleLocalMS1Owner
+    ) -> tuple[float | None, float, float | None] | None: ...
+
     def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
     def corrected_pair_delta_sec(
@@ -87,9 +97,7 @@ class SampleRtFrame:
     )
     _reference: KnownIstdReference | None = field(default=None, repr=False)
     _warp: BatchRtWarp | None = field(default=None, repr=False)
-    _sample_calibration: BatchRtCalibration | KnownIstdReference | None = field(
-        default=None, repr=False
-    )
+    _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
         default=None,
         repr=False,
@@ -150,7 +158,7 @@ class SampleRtFrame:
         )
 
     def with_sample_calibration(self, calibration: BatchRtCalibration) -> SampleRtFrame:
-        """Retain bounded diagnostic calibration, not just its owner callback."""
+        """Attach the bounded batch map shared by grouping and localization."""
         return replace(
             self,
             _sample_calibration=calibration,
@@ -158,25 +166,17 @@ class SampleRtFrame:
             _coordinate_override=None,
         )
 
-    def with_batch_calibration(self, warp: BatchRtWarp) -> SampleRtFrame:
-        """Freeze measured ISTD coordinates, or use the ordinary batch warp.
-
-        Pairwise identity bindings remain local. Grouping and Backfill share
-        the reference's forward/inverse map, including its no-extrapolation rule.
-        """
-        frame = self.with_warp(warp)
-        if self._reference is None:
-            return frame
-        reference = self._reference.prepare_batch(
-            sample_universe=self.sample_universe or frozenset(self.injection_order),
-            injection_order=self.injection_order,
+    @property
+    def measured_istd_coordinates(self) -> tuple[tuple[str, str, float], ...]:
+        """Measured anchors, never interpolated per-injection predictions."""
+        return (
+            tuple(
+                (label, sample, rt)
+                for label, sample, rt, _ in self._reference.coordinates
+            )
+            if self._reference is not None
+            else ()
         )
-        if not any(
-            reference.has_support(s)
-            for s in self.sample_universe or self.injection_order
-        ):
-            return frame
-        return replace(frame, _sample_calibration=reference, _warp=None)
 
     def for_sample_stems(self, samples: frozenset[str]) -> SampleRtFrame:
         """Restrict a consumer's population without reconstructing sample metadata."""
@@ -200,13 +200,7 @@ class SampleRtFrame:
 
     @property
     def calibration_for_snapshot(self) -> BatchRtCalibration | None:
-        """Retain the selected bounded map, not the unused ordinary batch warp."""
-        from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
-
-        if isinstance(self._sample_calibration, KnownIstdReference):
-            return BatchRtCalibration.from_coordinate_knots(
-                self._sample_calibration.coordinate_knots
-            )
+        """Retain the same frozen map used by every current RT consumer."""
         return self._sample_calibration
 
     def with_calibration(self, frozen: SampleRtFrame) -> SampleRtFrame:
@@ -235,10 +229,12 @@ class SampleRtFrame:
 
     @property
     def has_drift(self) -> bool:
-        return self._drift is not None
+        return self._sample_calibration is not None or self._drift is not None
 
     @property
     def drift_source(self) -> DriftPriorSource:
+        if self._sample_calibration is not None:
+            return "batch_anchor_calibration"
         if self._drift is None:
             return "none"
         source = self._drift.source
@@ -263,6 +259,10 @@ class SampleRtFrame:
         left: SampleLocalMS1Owner,
         right: SampleLocalMS1Owner,
     ) -> float | None:
+        if self._sample_calibration is not None:
+            a = self.calibrated_rt_min(left.sample_stem, left.owner_apex_rt)
+            b = self.calibrated_rt_min(right.sample_stem, right.owner_apex_rt)
+            return abs(a - b) * 60.0 if a is not None and b is not None else None
         if self._drift is None:
             return None
         if isinstance(self._drift, KnownIstdOwnerLookup):
@@ -315,6 +315,53 @@ class SampleRtFrame:
             if source is not None
             else observed_rt
         )
+
+    def calibrated_rt_min(self, sample_stem: str, observed_rt: float) -> float | None:
+        """A bounded common coordinate, distinct from an unsupported raw RT."""
+        if self._sample_calibration is not None:
+            sample = self._sample_calibration.samples.get(sample_stem)
+            return sample.calibrated_rt(observed_rt) if sample is not None else None
+        if self._warp is not None and self._warp.has_support(sample_stem):
+            return self._warp.common_rt_min(sample_stem, observed_rt)
+        return None
+
+    def observed_rt_min(self, sample_stem: str, common_rt: float) -> float | None:
+        if self._sample_calibration is not None:
+            sample = self._sample_calibration.samples.get(sample_stem)
+            if sample is None or not sample.knots:
+                return None
+            if not sample.knots[0][1] <= common_rt <= sample.knots[-1][1]:
+                return None
+            return common_rt + self._sample_calibration.offset_min(
+                sample_stem, common_rt
+            )
+        if self._warp is not None and self._warp.has_support(sample_stem):
+            return common_rt + self._warp.offset_min(sample_stem, common_rt)
+        return None
+
+    def calibrated_peak_region(
+        self, owner: SampleLocalMS1Owner
+    ) -> tuple[float | None, float, float | None] | None:
+        """Map the apex and each supported measured edge, without extrapolation.
+
+        An unsupported edge is unknown, not the end of the measured peak.
+        Keep a supported apex in the common frame even when a tail extends
+        beyond the calibration span.
+        """
+        # A historical clamped offset map has no measured support bounds.
+        if self._sample_calibration is None:
+            return None
+        start, apex, end = (
+            self.calibrated_rt_min(owner.sample_stem, value)
+            for value in (
+                owner.owner_peak_start_rt,
+                owner.owner_apex_rt,
+                owner.owner_peak_end_rt,
+            )
+        )
+        if apex is None:
+            return None
+        return start, apex, end
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
         if self._sample_calibration is not None:

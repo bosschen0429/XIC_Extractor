@@ -170,6 +170,13 @@ signal and its scan-support count.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
 
+Known-reference ISTD localization answers a narrower question than discovering
+local maxima: small surface ripples should not erase a supported broad contour
+before the known RT and method evidence can locate it. The
+[physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+defines the reference-specific full-contour policy and preserved support checks.
+It does not relax Discovery, Backfill or non-ISTD Targeted qualification.
+
 Known limits are conservative false negatives, not proof of signal absence.
 In very short peaks the three-point noise estimate can include peak curvature;
 small canonical ripples can give a broad real peak very little nearest-valley

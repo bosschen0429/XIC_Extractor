@@ -15,11 +15,11 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarpAccumulator
 from xic_extractor.alignment.grouping_experiment import (
     GroupingInputs,
     GroupingWorkset,
 )
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_resolver_interval,
@@ -154,8 +154,8 @@ def prepare_grouping_experiment(
     sample_stems = tuple(sample.metadata.raw_stem for sample in plan.context.samples)
     rt_frame = plan.context.rt_frame.for_sample_stems(frozenset(sample_stems))
     injection_order = rt_frame.injection_order
-    calibration = BatchRtWarpAccumulator(
-        injection_order=injection_order,
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=sample_stems,
         sample_cohorts=rt_frame.sample_cohorts,
     )
     partition_count = len(adapter.bootstrap_partitions)
@@ -208,9 +208,10 @@ def prepare_grouping_experiment(
                     ).index
                 )
                 del prepared, sample_results, batch
-        rt_frame = rt_frame.with_sources(
-            known_istd_reference=known_istd_reference
-        ).with_batch_calibration(calibration.freeze())
+        rt_frame = rt_frame.with_sources(known_istd_reference=known_istd_reference)
+        rt_frame = rt_frame.with_sample_calibration(
+            calibration.freeze(measured_istds=rt_frame.measured_istd_coordinates)
+        )
         for position in positions:
             retained = cast(_GroupingBootstrap, store.read(position))
             prepared = finalize_untargeted_partition_grouping(

@@ -14,6 +14,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
+from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
     group_cid_nl_owners,
@@ -487,17 +488,21 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
         gap=1.8,
     )
 
-    class CorrectedCoordinates:
-        def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-            return 9.0
+    owners = tuple(owner for group in groups for owner in group.owners)
+    warp = BatchRtWarp(
+        knots_by_sample=tuple(
+            (owner.sample_stem, ((9.0, owner.owner_apex_rt - 9.0),)) for owner in owners
+        ),
+        anchor_group_count=1,
+    )
 
     result = group_cid_nl_owners(
-        tuple(owner for group in groups for owner in group.owners),
+        owners,
         config=_CONFIG,
         sample_universe=frozenset(f"S{i}" for i in range(12)),
         rt_frame=SampleRtFrame(
             injection_order=({f"S{i}": i for i in range(12)})
-        ).with_warp(CorrectedCoordinates() if calibrated else None),
+        ).with_warp(warp if calibrated else None),
     )
     if calibrated:
         assert len(result) == 1

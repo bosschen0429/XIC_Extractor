@@ -33,7 +33,7 @@ from xic_extractor.alignment.grouping_bootstrap import (
     RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
 )
-from xic_extractor.alignment.grouping_evidence import peak_shape_union_conflict
+from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
@@ -405,10 +405,11 @@ def admit_cid_nl_group_backfills(
     for candidates in candidates_by_group.values():
         for index, owner in enumerate(candidates):
             for other in candidates[:index]:
-                if conflict := peak_shape_union_conflict(
+                if conflict := peak_correspondence_conflict(
                     (owner,),
                     (other,),
                     alignment_config,
+                    rt_frame=result.rt_frame,
                 ):
                     conflicted.update(conflict)
     additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)

@@ -11,7 +11,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    BatchRtWarpAccumulator,
     FeatureMembershipInferenceResult,
     _Candidate,
     _solve_sample_assignment,
@@ -24,6 +23,7 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -118,7 +118,6 @@ def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]
 
 def test_rt_calibration_accumulates_support_across_partition_boundaries() -> None:
     samples = tuple(f"s{i:02}" for i in range(24))
-    orders = {sample: i for i, sample in enumerate(samples)}
     groups = tuple(
         tuple(
             _owner(
@@ -128,9 +127,13 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
         )
         for feature in range(12)
     )
-    whole = BatchRtWarpAccumulator(injection_order=orders)
+    whole = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
     whole.add_groups(groups)
-    partitioned = BatchRtWarpAccumulator(injection_order=orders)
+    partitioned = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
     for group in reversed(groups):
         partitioned.add_groups((group,))
     assert partitioned.freeze() == whole.freeze()
@@ -141,20 +144,58 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
 
 def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
     samples = tuple(f"s{i:02}" for i in range(24))
-    calibration = BatchRtWarpAccumulator(
-        injection_order={sample: i for i, sample in enumerate(samples)},
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=samples,
         sample_cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
     )
     calibration.add_groups(
         tuple(
             tuple(
-                _owner(sample, f"f{feature}", apex_rt=8.0 + feature)
-                for sample in samples
+                _owner(
+                    sample, f"f{feature}", apex_rt=8.0 + feature + (5 if i >= 12 else 0)
+                )
+                for i, sample in enumerate(samples)
             )
             for feature in range(12)
         )
     )
-    assert calibration.freeze().knots_by_sample == ()
+    result = calibration.freeze()
+    assert result.common_rt_min("s00", 10) == pytest.approx(10)
+    assert result.common_rt_min("s12", 15) == pytest.approx(15)
+    assert all(result.has_support(sample) for sample in samples)
+
+
+@pytest.mark.parametrize(
+    "untrusted",
+    (
+        {"identity_conflict": True},
+        {"is_provisional": True},
+        {"quantification_eligible": False},
+        {"primary_identity_event": None},
+    ),
+)
+def test_observations_without_direct_clean_support_do_not_calibrate_others(
+    untrusted,
+) -> None:
+    samples = ("a", "b", "c", "d", "e")
+    groups = tuple(
+        tuple(
+            replace(_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
+            if sample == "e"
+            else _owner(sample, f"f{i}", apex_rt=8.0 + i)
+            for sample in samples
+        )
+        for i in range(12)
+    )
+    accumulator = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    accumulator.add_groups(groups)
+    calibration = accumulator.freeze()
+    assert not calibration.has_support("e")
+    assert calibration.samples["e"].anchor_count == 0
+    assert all(calibration.has_support(sample) for sample in samples[:-1])
+    assert all(len(group) == 5 for group in groups)
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
@@ -724,3 +765,67 @@ def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> N
     assert result.operation_counts.feature_summary_comparisons < (
         owner_count * (owner_count - 1) // 2
     )
+
+
+@pytest.mark.parametrize("unsupported_edge", ["start", "end"])
+@pytest.mark.parametrize("known_edge_excludes_other_apex", [False, True])
+def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
+    unsupported_edge: str, known_edge_excludes_other_apex: bool
+) -> None:
+    import numpy as np
+
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+    from xic_extractor.peak_detection.ms1_shape_identity import (
+        compare_local_peak_shapes,
+        prepare_local_peak_shape,
+    )
+
+    owners = []
+    for sample, apex, width in (("a", 10.0, 0.035), ("b", 10.05, 0.19)):
+        rt = np.linspace(apex - 0.4, apex + 0.4, 161)
+        shape = prepare_local_peak_shape(
+            rt, np.exp(-0.5 * ((rt - apex) / width) ** 2), apex_rt_min=apex
+        )
+        start, end = apex - 0.4, apex + 0.4
+        if known_edge_excludes_other_apex:
+            if unsupported_edge == "start" and sample == "a":
+                end = 10.02
+            elif unsupported_edge == "end" and sample == "b":
+                start = 10.03
+        owners.append(
+            replace(
+                _owner(sample, "peak", apex_rt=apex),
+                owner_peak_start_rt=start,
+                owner_peak_end_rt=end,
+                peak_shape=shape,
+            )
+        )
+    assert (
+        compare_local_peak_shapes(owners[0].peak_shape, owners[1].peak_shape).similarity
+        < 0.8
+    )
+    ranges = (
+        {"a": (10.0, 12.0), "b": (10.03, 12.0)}
+        if unsupported_edge == "start"
+        else {"a": (8.0, 10.0), "b": (8.0, 10.05)}
+    )
+    calibration = BatchRtCalibration.from_coordinate_knots(
+        tuple(
+            (sample, tuple((rt, rt) for rt in bounds))
+            for sample, bounds in ranges.items()
+        )
+    )
+    frame = SampleRtFrame().with_sample_calibration(calibration)
+    result = _infer_feature_memberships(
+        owners, config=AlignmentConfig(), rules=CID_NL_GROUPING_RULES, rt_frame=frame
+    )
+    # An edge excluding the other apex does not prove disjoint regions when
+    # the opposite boundary is unknown. It also cannot activate a shape veto.
+    assert _memberships(result) == {frozenset(owner.owner_id for owner in owners)}
+    for owner in owners:
+        boundary = (
+            owner.owner_peak_start_rt
+            if unsupported_edge == "start"
+            else owner.owner_peak_end_rt
+        )
+        assert frame.calibrated_rt_min(owner.sample_stem, boundary) is None

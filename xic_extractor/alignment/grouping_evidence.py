@@ -1,9 +1,10 @@
-"""Shared physical peak shape and signal-to-noise evidence for grouping."""
+"""Shared peak correspondence and signal-to-noise evidence for grouping."""
 
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from statistics import median
 from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -15,6 +16,7 @@ from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_s
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+    from xic_extractor.alignment.rt_frame import RtFrame
 
 DETECTION_LIMIT_SNR = 3.0
 QUANTITATION_LIMIT_SNR = 10.0
@@ -35,38 +37,135 @@ def envelope_fraction(
     )
 
 
-def peak_shape_union_conflict(
+def peak_correspondence_conflict(
     left: Sequence[SampleLocalMS1Owner],
     right: Sequence[SampleLocalMS1Owner],
     config: AlignmentConfig,
     *,
     trajectories: PeakTrajectories | None = None,
+    rt_frame: RtFrame | None = None,
 ) -> tuple[str, str] | None:
-    """A measured shape contradiction cannot be repaired by a mass/RT bridge.
+    """Whether two member sets measure separate peaks in one common RT frame.
 
-    Check the members, not just the joining edge: otherwise an intermediate
-    shape can transitively reunite two incompatible peaks. Missing/flat/short
-    traces supply no shape evidence, rather than a fabricated match or veto.
-    Explicit correspondence distinguished by physical peak order takes priority
-    over shape variation within that track; a mass/RT-only track does not.
+    Reject only disjoint group-consensus peak regions, not shifted apices
+    within overlapping regions. Every union compares the complete groups'
+    median regions rather than letting one narrow member veto a band.
+    When only one side has calibration support, both sides are compared in the
+    shared observed RT frame instead: missing support is not evidence of a
+    different peak. Without calibrated regions on either
+    side, the groups' median measured-shape similarity decides: chromatography
+    varies individual pairs, so one noisy pair cannot split a band, while an
+    unrelated background trace still differs from most members. Pairs
+    distinguished by physical peak order are not shape evidence.
+    Missing/flat/short traces supply no shape evidence.
     """
+    if not left or not right:
+        return None
+    left_regions = _calibrated_regions(left, rt_frame)
+    right_regions = _calibrated_regions(right, rt_frame)
+    if bool(left_regions) != bool(right_regions):
+        left_regions = _observed_regions(left)
+        right_regions = _observed_regions(right)
+    elif not left_regions:
+        return _median_shape_conflict(left, right, config, trajectories)
+    left_region = _consensus_region(left_regions.values())
+    right_region = _consensus_region(right_regions.values())
+    if not _regions_disjoint(left_region, right_region):
+        return None
+    return (
+        _farthest_member(left_regions, right_region[1]),
+        _farthest_member(right_regions, left_region[1]),
+    )
+
+
+_Region = tuple[float | None, float, float | None]
+
+
+def _calibrated_regions(
+    members: Sequence[SampleLocalMS1Owner], rt_frame: RtFrame | None
+) -> dict[str, _Region]:
+    if rt_frame is None:
+        return {}
+    return {
+        member.owner_id: region
+        for member in members
+        if (region := rt_frame.calibrated_peak_region(member)) is not None
+    }
+
+
+def _observed_regions(members: Sequence[SampleLocalMS1Owner]) -> dict[str, _Region]:
+    return {
+        member.owner_id: (
+            member.owner_peak_start_rt,
+            member.owner_apex_rt,
+            member.owner_peak_end_rt,
+        )
+        for member in members
+    }
+
+
+def _consensus_region(regions: Iterable[_Region]) -> _Region:
+    """Median supported edges and apex; an unsupported edge stays unknown."""
+    starts, apices, ends = [], [], []
+    for start, apex, end in regions:
+        apices.append(apex)
+        if start is not None:
+            starts.append(start)
+        if end is not None:
+            ends.append(end)
+    return (
+        median(starts) if starts else None,
+        median(apices),
+        median(ends) if ends else None,
+    )
+
+
+def _median_shape_conflict(
+    left: Sequence[SampleLocalMS1Owner],
+    right: Sequence[SampleLocalMS1Owner],
+    config: AlignmentConfig,
+    trajectories: PeakTrajectories | None,
+) -> tuple[str, str] | None:
+    pairs = []
     for first in left:
-        if first.peak_shape is None:
-            continue
         for second in right:
-            if second.peak_shape is None or first.owner_id == second.owner_id:
-                continue
-            if trajectories is not None and trajectories.supports_ordered_pair(
-                first.owner_id, second.owner_id
-            ):
-                continue
-            evidence = compare_local_peak_shapes(first.peak_shape, second.peak_shape)
             if (
-                evidence.similarity is not None
-                and evidence.similarity < config.min_peak_shape_similarity
+                first.peak_shape is None
+                or second.peak_shape is None
+                or first.owner_id == second.owner_id
+                or (
+                    trajectories is not None
+                    and trajectories.supports_ordered_pair(
+                        first.owner_id, second.owner_id
+                    )
+                )
             ):
-                return first.owner_id, second.owner_id
-    return None
+                continue
+            similarity = compare_local_peak_shapes(
+                first.peak_shape, second.peak_shape
+            ).similarity
+            if similarity is not None:
+                pairs.append((similarity, first.owner_id, second.owner_id))
+    if not pairs or median(item[0] for item in pairs) >= (
+        config.min_peak_shape_similarity
+    ):
+        return None
+    _, first_id, second_id = min(pairs)
+    return first_id, second_id
+
+
+def _regions_disjoint(left: _Region, right: _Region) -> bool:
+    left_start, _, left_end = left
+    right_start, _, right_end = right
+    return (
+        left_end is not None and right_start is not None and left_end < right_start
+    ) or (right_end is not None and left_start is not None and right_end < left_start)
+
+
+def _farthest_member(regions: Mapping[str, _Region], apex: float) -> str:
+    return max(
+        regions, key=lambda owner_id: (abs(regions[owner_id][1] - apex), owner_id)
+    )
 
 
 def min_owner_peak_snr(

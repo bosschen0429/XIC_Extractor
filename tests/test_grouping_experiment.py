@@ -17,6 +17,7 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingWorkset,
     replay_grouping,
 )
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -183,10 +184,10 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
     reference = mint_known_istd_reference_from_measurements(
-        [_make_target("early"), _make_target("late")],
+        [_make_target(f"standard{i}") for i in range(8)],
         {
-            (label, sample): rt + (2 if sample == "S1" else 0)
-            for label, rt in (("early", 3), ("late", 13))
+            (f"standard{i}", sample): 3 + 2 * i + (2 if sample == "S1" else 0)
+            for i in range(8)
             for sample in ("S0", "S1", "S2", "S3")
         },
     )
@@ -198,9 +199,15 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         known_istd_reference=reference,
     )
-    formal_frame = plan.context.rt_frame.with_sources(
-        known_istd_reference=reference
-    ).with_batch_calibration(BatchRtWarp((), 0))
+    formal_frame = plan.context.rt_frame.with_sources(known_istd_reference=reference)
+    formal_frame = formal_frame.with_sample_calibration(
+        BatchRtCalibrationAccumulator(
+            sample_stems=tuple(
+                formal_frame.sample_universe or formal_frame.injection_order
+            ),
+            sample_cohorts=formal_frame.sample_cohorts,
+        ).freeze(measured_istds=formal_frame.measured_istd_coordinates)
+    )
     assert formal_frame.common_rt_min("S1", 8) == pytest.approx(6)
     expected = replay_grouping(prepared.inputs, rt_coordinates=formal_frame)
     assert (

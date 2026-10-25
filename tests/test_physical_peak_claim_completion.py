@@ -65,6 +65,7 @@ def _view(
     broad_context=False,
     narrow_context=False,
     mz=500.0,
+    off_apex_difference=False,
 ):
     sample = fixture.sample(stem)
     rt = np.linspace(7.0, 9.2, 221)[crop:]
@@ -81,6 +82,8 @@ def _view(
             else (full_rt >= 9.0) & (full_rt <= (11.5 if crop else 11.0))
         )
         rt, raw = full_rt[selected] + center - 9.8, full_raw[selected]
+    if off_apex_difference:
+        raw[np.argmin(abs(rt - center - 0.3))] += 100.0
     prepared = prepare_physical_signal(rt, raw)
     query_rt = center + ((0.6 if crop else -0.5) if narrow_context else 0.0)
     evaluation = evaluate_physical_peak(
@@ -141,12 +144,28 @@ def _view(
 )
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize(
-    "broad_context,fresh_context",
-    [(False, False), (True, False), (True, True)],
-    ids=["selected-overlap", "retained-envelope", "fresh-envelope"],
+    "broad_context,fresh_context,off_apex_difference",
+    [
+        (False, False, False),
+        (True, False, False),
+        (True, True, False),
+        (False, False, True),
+    ],
+    ids=[
+        "selected-overlap",
+        "retained-envelope",
+        "fresh-envelope",
+        "off-apex-difference",
+    ],
 )
 def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
-    tmp_path, support, direct, reverse, broad_context, fresh_context
+    tmp_path,
+    support,
+    direct,
+    reverse,
+    broad_context,
+    fresh_context,
+    off_apex_difference,
 ):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("A", "B", "C", "D", "S")
@@ -210,11 +229,16 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             fixture,
             "S",
             center=8.06,
-            crop=index if broad_context else 45 + 15 * index,
+            crop=0
+            if off_apex_difference
+            else index
+            if broad_context
+            else 45 + 15 * index,
             support=support,
             broad_context=broad_context,
             narrow_context=fresh_context,
             mz=500.001 if fresh_context and index else 500.0,
+            off_apex_difference=off_apex_difference and index == 1,
         )
         assert assessment.content.method_result == ("SUPPORT" if support else "HOLD")
         backfills[
@@ -227,7 +251,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
     comparison_peaks = [pair[1].candidate_peaks[0] for pair in backfills.values()]
     if direct:
         comparison_peaks.append(pairs["S"][1].candidate_peaks[0])
-    assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == 2
+    assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == (
+        1 if off_apex_difference else 2
+    )
     assert (
         len({peak.content.peak_observation_content_id for peak in comparison_peaks})
         == 2
@@ -424,3 +450,32 @@ def test_lobe_comparison_uses_the_producing_profile(window_points, expected):
         for apex in (4.94, 5.06)
     ]
     assert compare_physical_peak_views(*views) == expected
+
+
+@pytest.mark.parametrize("difference", ["peak_height", "flanks"])
+def test_same_apex_does_not_hide_changed_peak_height_or_substantial_flanks(difference):
+    rt = np.linspace(4.0, 6.0, 201)
+    raw = 1000 * np.exp(-0.5 * ((rt - 5.0) / 0.3) ** 2)
+    other = raw.copy()
+    if difference == "peak_height":
+        # Even a small amplitude change is not evidence of one measured maximum.
+        other *= 1.01
+    else:
+        other[(abs(rt - 5.0) > 0.4) & (abs(rt - 5.0) < 0.6)] += 200
+        assert max(other) == max(raw)
+    views = [
+        PhysicalPeakView(
+            "source",
+            5.0,
+            4.0,
+            6.0,
+            mz,
+            20.0,
+            rt,
+            signal,
+            profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        )
+        for mz, signal in ((500.0, raw), (500.001, other))
+    ]
+    assert compare_physical_peak_views(*views) == "unresolved"
+    assert compare_physical_peak_views(*reversed(views)) == "unresolved"

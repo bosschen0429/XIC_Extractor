@@ -37,6 +37,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
@@ -65,6 +66,15 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     )
     assert detected.state == expected
+    reference = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="known-reference-contrast",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_REFERENCE_POLICY,
+    )
+    assert reference.state == expected
+    if expected == "unavailable":
+        assert reference.reason == "insufficient_reference_peak_contrast"
     backfill = evaluate_physical_peak(
         prepared,
         **question,
@@ -1430,6 +1440,7 @@ def test_is_provisional_peak_shape() -> None:
     "policy,reason",
     [
         (PHYSICAL_PEAK_POINT_POLICY, "insufficient_original_xic_support"),
+        (PHYSICAL_PEAK_REFERENCE_POLICY, "insufficient_original_xic_support"),
         (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
     ],
 )

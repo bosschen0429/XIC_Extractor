@@ -44,8 +44,15 @@ selected integral or grants membership.
 
 - Views must share an acquisition source and overlapping actual extraction m/z
   intervals. Sample attribution remains with the owning workflow.
-- Identical acquired samples in the common selected peak interval can prove
-  same-apex views. Differing apices additionally require identical measured
+- Same-apex views are equivalent when their acquired samples are identical
+  in the common selected peak interval. Small flank differences are also allowed
+  when both selected intervals retain exactly the same raw peak maximum, the
+  overlap contains at least five matching acquisition times, and the integral of
+  their absolute signal difference is at most 5% of the integral of their
+  pointwise maximum signal in that overlap. This is an amplitude-preserving
+  comparison tolerance, not an
+  error estimate or a replacement integral; neither trace is rescaled.
+  Differing apices still require identical measured
   overlap surrounding both apices and the physical segment owner assigning both
   queries to one lobe in their combined context. Resolved separate lobes stay
   distinct. Nearby RT, overlapping bounds, similar area or high correlation
@@ -155,9 +162,17 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   relative to fluctuations. The fixed factor 4 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   These checks are necessary lower bounds, not sufficient proof of chemical
-  identity or quantification readiness. Discovery uses the same original-support
-  and local-contrast qualification as Targeted, for every supported smoothing
-  window. Alternating low/high acquired values can fail top continuity even
+  identity or quantification readiness. An ISTD with a known reference RT uses
+  `reference_localized_contour_peak`: the same acquired-support, continuity,
+  complete-context and four-MAD floor, with full contour prominence instead of
+  nearest-valley relief. A broad contour with small ripples remains eligible for
+  reference-first identity selection; its apex, bounds and area are unchanged.
+  Insufficient contrast gives `insufficient_reference_peak_contrast`. The
+  physical question records this policy; broadness and overlap remain review
+  evidence, not permission to claim a pure constituent area.
+  Discovery uses the same original-support and local-contrast qualification as
+  non-ISTD Targeted, for every supported smoothing window. Alternating low/high
+  acquired values can fail top continuity even
   when their smoothed contour looks like a peak. Short-interval curvature can
   inflate noise, and small ripples can deny a broad peak local relief; these
   accepted limitations do not establish chemical absence. Existing overlap and provisional-quality

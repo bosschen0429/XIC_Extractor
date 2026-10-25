@@ -111,6 +111,25 @@ class RetainedGroupingCandidate:
         return self.peak_hypothesis.hypothesis_id
 
 
+def measured_calibration_anchor_groups(
+    scope: InitialGroupingScope,
+    candidates: Sequence[RetainedGroupingCandidate],
+) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+    """Combine membership agreement with independently measured method support."""
+    supported_ids = {
+        candidate.peak_hypothesis_id
+        for candidate in candidates
+        if candidate.direct_support_assessment is not None
+    }
+    # An observation-only owner can carry nominal method-query masses in its
+    # IdentityEvent. That projection is not measured support for calibration.
+    return tuple(
+        anchors
+        for owners in scope.calibration_anchor_groups
+        if (anchors := tuple(o for o in owners if o.owner_id in supported_ids))
+    )
+
+
 def bootstrap_cid_nl_initial_population(
     *,
     processing_owners: ProcessingOwnerReferences,

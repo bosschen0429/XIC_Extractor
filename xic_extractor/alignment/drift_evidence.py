@@ -4,13 +4,17 @@ import hashlib
 import json
 import math
 import statistics
-from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Literal
 
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.sample_rt_calibration import (
+    RtCalibrationPolicy,
+    build_batch_rt_calibration,
+    interpolate_calibrated_rt_min,
+)
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
@@ -18,7 +22,9 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 
-DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
+DriftPriorSource = Literal[
+    "targeted_istd_trend", "batch_istd_trend", "batch_anchor_calibration", "none"
+]
 
 
 @dataclass(frozen=True)
@@ -81,12 +87,12 @@ class KnownIstdReference:
             "workbook_sha256": self.workbook_sha256,
             "content_sha256": self.content_sha256,
             "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
-            "policy": "known_istd_batch_monotone_rt_map_same_target_fallback",
+            "policy": "measured_istd_shared_rt_fit_same_target_fallback",
         }
 
     @property
     def explanation_provenance(self) -> dict[str, object]:
-        """Project the batch map already used by grouping, without preparing it."""
+        """Project measured identity inputs and their bootstrap-only RT fit."""
         result: dict[str, object] = dict(self.provenance)
         if self.peak_selections:
             from dataclasses import asdict
@@ -99,6 +105,9 @@ class KnownIstdReference:
         knots_by_sample = prepared._knots_by_sample
         result["calibration"] = {
             "schema_version": "known_istd_calibration",
+            "role": "bootstrap_identity_reference",
+            "fit": "sample_rt_calibration_robust_local_linear",
+            "missing_measurements": "not_imputed",
             "rt_unit": "minute",
             "interpolation": "piecewise_linear",
             "extrapolation": "unavailable",
@@ -150,43 +159,20 @@ class KnownIstdReference:
             and self._prepared_batch._batch_context == context
         ):
             return self._prepared_batch
-        measured: dict[str, dict[str, float]] = {}
-        for label, sample, rt, _delta in self.coordinates:
-            if sample in sample_universe:
-                measured.setdefault(label, {})[sample] = rt
-        centers = {
-            label: statistics.median(values.values())
-            for label, values in measured.items()
-        }
-        order_by_sample = dict(orders)
-        if len(set(order_by_sample.values())) != len(order_by_sample):
-            order_by_sample = {}
-        observed_by_order = {
-            label: tuple(
-                sorted(
-                    (float(order_by_sample[sample]), rt)
-                    for sample, rt in values.items()
-                    if sample in order_by_sample
-                )
-            )
-            for label, values in measured.items()
-        }
-        sample_knots = []
-        for sample in samples:
-            knots = []
-            for label in sorted(centers, key=centers.__getitem__):
-                observed = measured[label].get(sample)
-                if observed is None and sample in order_by_sample:
-                    observed = interpolate_calibrated_rt_min(
-                        float(order_by_sample[sample]), observed_by_order[label]
-                    )
-                if observed is not None:
-                    knots.append((observed, centers[label]))
-            if len(knots) >= 2 and all(
-                left[0] < right[0] and left[1] < right[1]
-                for left, right in zip(knots, knots[1:], strict=False)
-            ):
-                sample_knots.append((sample, tuple(knots)))
+        calibration = build_batch_rt_calibration(
+            {},
+            sample_stems=samples,
+            measured_istds=tuple(
+                (label, sample, rt) for label, sample, rt, _ in self.coordinates
+            ),
+            prior_injections={},
+            policy=RtCalibrationPolicy(),
+        )
+        sample_knots = tuple(
+            (sample, result.knots)
+            for sample, result in calibration.samples.items()
+            if result.knots
+        )
         prepared = replace(
             self, _batch_context=context, _batch_knots=tuple(sample_knots)
         )
@@ -204,39 +190,6 @@ class KnownIstdReference:
         return interpolate_calibrated_rt_min(
             owner.owner_apex_rt, self._knots_by_sample.get(owner.sample_stem, ())
         )
-
-    def has_support(self, sample_stem: str) -> bool:
-        return sample_stem in self._knots_by_sample
-
-    @property
-    def coordinate_knots(
-        self,
-    ) -> tuple[tuple[str, tuple[tuple[float, float], ...]], ...]:
-        """Prepared bounded coordinates for curve-free grouping replay."""
-        return self._batch_knots
-
-    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-        return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
-
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
-        corrected = interpolate_calibrated_rt_min(
-            observed_rt, self._knots_by_sample.get(sample_stem, ())
-        )
-        return observed_rt if corrected is None else corrected
-
-    @cached_property
-    def _inverse_knots_by_sample(self) -> dict[str, tuple[tuple[float, float], ...]]:
-        return {
-            sample: tuple((reference, observed) for observed, reference in knots)
-            for sample, knots in self._batch_knots
-        }
-
-    def offset_min(self, sample_stem: str, common_rt: float) -> float:
-        """Invert the same bounded map used to group measured peaks."""
-        observed = interpolate_calibrated_rt_min(
-            common_rt, self._inverse_knots_by_sample.get(sample_stem, ())
-        )
-        return 0.0 if observed is None else observed - common_rt
 
     def bind(
         self,
@@ -335,18 +288,6 @@ class KnownIstdOwnerLookup:
         """A measured same-target binding must survive a closer unbound peak."""
         a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
         return a is not None and b is not None and a[0] == b[0]
-
-
-def interpolate_calibrated_rt_min(
-    value: float, knots: Sequence[Sequence[float]]
-) -> float | None:
-    """Apply validated monotone owner knots; coordinates outside are unavailable."""
-    if len(knots) < 2 or not knots[0][0] <= value <= knots[-1][0]:
-        return None
-    right = min(bisect_right(knots, value, key=lambda knot: knot[0]), len(knots) - 1)
-    left_x, left_y = knots[right - 1]
-    right_x, right_y = knots[right]
-    return left_y + (value - left_x) / (right_x - left_x) * (right_y - left_y)
 
 
 def mint_known_istd_reference_from_measurements(

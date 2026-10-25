@@ -3774,15 +3774,15 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     )
     assert contexts
     for context in contexts:
-        assert context.rt_frame.drift_source == "targeted_istd_trend"
+        assert context.rt_frame.drift_source == "batch_anchor_calibration"
         assert set(context.rt_frame.known_identity_bindings) == {
             (owner_id, "known") for owner_id in context.group.owner_ids
         }
         left, right = context.group.owners
         assert context.rt_frame.has_direct_reference_pair(left, right)
-        assert context.rt_frame.corrected_pair_delta_sec(left, right) == pytest.approx(
-            0
-        )
+        # One identity anchor closes the known group, but cannot define a
+        # general RT map or override the final shared coordinate owner.
+        assert context.rt_frame.corrected_pair_delta_sec(left, right) is None
     without_rt_context = replace(contexts[0], rt_frame=SampleRtFrame())
     assert without_rt_context.group is contexts[0].group
     assert without_rt_context.supports is contexts[0].supports

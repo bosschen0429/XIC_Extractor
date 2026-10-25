@@ -17,7 +17,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    estimate_batch_rt_warp,
     infer_feature_memberships,
     supports_existing_feature,
 )
@@ -28,6 +27,10 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import (
+    BatchRtCalibration,
+    BatchRtCalibrationAccumulator,
+)
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -134,6 +137,272 @@ def _synthetic_owner(
     )
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_calibrated_band_outweighs_free_shift_pattern_seed(reverse: bool) -> None:
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, owner_id, apex),
+            owner_peak_start_rt=start,
+            owner_peak_end_rt=end,
+        )
+        for sample, owner_id, apex, start, end in (
+            ("a", "observed", 7.75, 7.50, 8.18),
+            ("b", "early", 6.115, 5.90, 6.40),
+            ("b", "main-b", 7.76, 7.50, 8.18),
+            ("c", "main-c", 7.74, 7.50, 8.18),
+            ("d", "main-d", 7.75, 7.50, 8.18),
+        )
+    )
+    orders = {"a": 1, "b": 2, "c": 3, "d": 4}
+    frame = SampleRtFrame(injection_order=orders).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("a", ((7.74, 7.74), (9.5, 9.5))),
+                *((sample, ((5.0, 5.0), (9.5, 9.5))) for sample in ("b", "c", "d")),
+            )
+        )
+    )
+    # The first landmark's width extends beyond calibration support. The raw
+    # two-peak pattern can therefore match after a free shift, despite the
+    # measured apex coordinates placing the owners in different bands.
+    trajectories = resolve_peak_trajectories(
+        owners,
+        (
+            resolved_elution_context("a", ((7.75, 30.0), (8.45, 100.0))),
+            resolved_elution_context("b", ((6.115, 30.0), (6.815, 100.0))),
+        ),
+        config=AlignmentConfig(),
+        injection_order=orders,
+        rt_frame=frame,
+    )
+    assert any(
+        {"observed", "early"} <= set(track.owner_ids) for track in trajectories.tracks
+    )
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=frame,
+        peak_trajectories=trajectories,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("observed", "main-b", "main-c", "main-d")),
+        frozenset(("early",)),
+    }
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_raw_pattern_order_cannot_split_measured_common_bands(reverse: bool) -> None:
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, owner_id, apex),
+            owner_peak_start_rt=apex - 0.15,
+            owner_peak_end_rt=apex + 0.15,
+        )
+        for sample, owner_id, apex in (
+            ("a", "a-early", 10.0),
+            ("a", "a-late", 10.7),
+            ("b", "b-early", 9.3),
+            ("b", "b-late", 10.0),
+            ("c", "c-main", 10.0),
+            ("c", "c-late", 10.7),
+        )
+    )
+    orders = {"a": 1, "b": 2, "c": 3}
+    frame = SampleRtFrame(injection_order=orders).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("a", ((9.99, 9.99), (12.0, 12.0))),
+                ("b", ((8.0, 8.0), (12.0, 12.0))),
+                ("c", ((8.0, 8.0), (12.0, 12.0))),
+            )
+        )
+    )
+    trajectories = resolve_peak_trajectories(
+        owners,
+        (
+            resolved_elution_context("a", ((10.0, 30.0), (10.7, 100.0))),
+            resolved_elution_context("b", ((9.3, 30.0), (10.0, 100.0))),
+        ),
+        config=AlignmentConfig(),
+        injection_order=orders,
+        rt_frame=frame,
+    )
+    assert not trajectories.permits_membership(("a-early", "b-late"))
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=frame,
+        peak_trajectories=trajectories,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a-early", "b-late", "c-main")),
+        frozenset(("a-late", "c-late")),
+        frozenset(("b-early",)),
+    }
+    # Membership does not erase the caller's original localization geometry.
+    assert not trajectories.permits_membership(("a-early", "b-late"))
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+@pytest.mark.parametrize("include_supported_owner", (False, True))
+def test_unrelated_calibration_preserves_unsupported_raw_pattern(
+    reverse: bool, include_supported_owner: bool
+) -> None:
+    raw_owners = (
+        _synthetic_owner("a", "a-raw", 10.0),
+        _synthetic_owner("b", "b-raw", 11.0),
+    )
+    owners = raw_owners
+    if include_supported_owner:
+        owners += (
+            _synthetic_owner(
+                "a", "a-supported", 20.0, precursor_mz=600.0, product_mz=483.9526
+            ),
+        )
+    orders = {"a": 1, "b": 2}
+    frame = SampleRtFrame(injection_order=orders).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((sample, ((18.0, 18.0), (22.0, 22.0))) for sample in orders)
+        )
+    )
+    assert all(
+        frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt) is None
+        for owner in raw_owners
+    )
+    trajectories = resolve_peak_trajectories(
+        owners,
+        (
+            resolved_elution_context("a", ((10.0, 30.0), (10.7, 100.0))),
+            resolved_elution_context("b", ((11.0, 30.0), (11.7, 100.0))),
+        ),
+        config=AlignmentConfig(),
+        injection_order=orders,
+        rt_frame=frame,
+    )
+    assert any(
+        set(track.owner_ids) == {"a-raw", "b-raw"} for track in trajectories.tracks
+    )
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=frame,
+        peak_trajectories=trajectories,
+    )
+    expected = {frozenset(("a-raw", "b-raw"))}
+    if include_supported_owner:
+        expected.add(frozenset(("a-supported",)))
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_group_unions_do_not_cross_early_and_late_sample_assignments(
+    reverse: bool,
+) -> None:
+    # Retained m298 geometry, rounded in its already-calibrated frame. The
+    # peripheral "bridge" must not lend its RT to the entire early band;
+    # the competing early band must not fall back to a worse late assignment
+    # merely because its closest band already contains another QC owner.
+    rows = (
+        ("a", "a-early", 9, 13.29663, 298.139679, 182.092172, 13.08574, 13.83271),
+        ("b", "b-early", 10, 13.24687, 298.139889, 182.092161, 13.00025, 13.62336),
+        ("qc", "qc-low", 12, 13.22745, 298.139840, 182.091941, 13.01534, 13.76716),
+        ("first", "bridge", 1, 13.62648, 298.136047, 182.091889, 13.18043, 13.89318),
+        ("qc", "qc-high", 12, 13.30995, 298.151120, 182.107381, 13.05742, 14.13970),
+        ("c", "c-early", 7, 13.27739, 298.151052, 182.106604, 13.06649, 13.97713),
+        ("r", "r-late", 4, 14.01819, 298.139450, 182.092013, 13.64646, 14.26398),
+        ("s", "s-late", 18, 14.00938, 298.140195, 182.092070, 13.64239, 14.21320),
+        ("a", "a-late", 9, 14.03857, 298.151042, 182.106752, 13.50191, 14.28526),
+        ("b", "b-late", 10, 14.03733, 298.151085, 182.106867, 13.58118, 14.28465),
+    )
+    owners = tuple(
+        replace(
+            _synthetic_owner(
+                sample, owner_id, apex, precursor_mz=mz, product_mz=product
+            ),
+            owner_peak_start_rt=start,
+            owner_peak_end_rt=end,
+        )
+        for sample, owner_id, _, apex, mz, product, start, end in rows
+    )
+    orders = {row[0]: row[2] for row in rows}
+    frame = SampleRtFrame(injection_order=orders).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((sample, ((12.0, 12.0), (15.0, 15.0))) for sample in orders)
+        )
+    )
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=frame,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a-early", "b-early", "qc-low", "bridge")),
+        frozenset(("qc-high", "c-early")),
+        frozenset(("a-late", "b-late", "r-late", "s-late")),
+    }
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_injection_gap_does_not_discount_rt_in_union_priority(reverse: bool) -> None:
+    owners = (
+        _synthetic_owner(
+            "first",
+            "late-a",
+            21.47482461247,
+            precursor_mz=283.1120949147,
+            product_mz=167.0638763455,
+        ),
+        _synthetic_owner(
+            "middle",
+            "observed",
+            21.18422018628,
+            precursor_mz=283.1177673340,
+            product_mz=167.0639010014,
+        ),
+        _synthetic_owner(
+            "nearby",
+            "early-a",
+            21.19326981726,
+            precursor_mz=283.1156311035,
+            product_mz=167.0675008556,
+        ),
+        _synthetic_owner(
+            "last",
+            "early-b",
+            21.19326981726,
+            precursor_mz=283.1156311035,
+            product_mz=167.0675008556,
+        ),
+        _synthetic_owner(
+            "last",
+            "late-b",
+            21.47482461247,
+            precursor_mz=283.1120949147,
+            product_mz=167.0638763455,
+        ),
+    )
+    # The observed peak is 0.54 s from the early peak, not the late peak
+    # 17.44 s away. A larger injection gap must not make that RT error cheaper
+    # when supported pairings compete for the first irreversible union.
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        rt_frame=SampleRtFrame(
+            injection_order={"first": 3, "middle": 16, "nearby": 17, "last": 25}
+        ),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("observed", "early-a", "early-b")),
+        frozenset(("late-a", "late-b")),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("pattern_seed", [False, True])
@@ -228,6 +497,176 @@ def test_ordered_doublet_correspondence_survives_shape_disagreement():
     }
 
 
+@pytest.mark.parametrize("bootstrap", (False, True))
+@pytest.mark.parametrize(
+    "right_start, joins", ((10.2, True), (10.25, True), (10.3, False))
+)
+def test_peak_regions_need_overlap_not_mutual_apex_containment(
+    bootstrap: bool, right_start: float, joins: bool
+) -> None:
+    owners = (
+        replace(
+            _synthetic_owner("left", "left", 10.0),
+            owner_peak_start_rt=9.8,
+            owner_peak_end_rt=10.25,
+        ),
+        replace(
+            _synthetic_owner("right", "right", 10.5),
+            owner_peak_start_rt=right_start,
+            owner_peak_end_rt=10.8,
+        ),
+    )
+    frame = SampleRtFrame(
+        injection_order={"left": 0, "right": 1}
+    ).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((owner.sample_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
+        )
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+        bootstrap=bootstrap,
+    )
+    expected = (
+        {frozenset(("left", "right"))}
+        if joins
+        else {frozenset(("left",)), frozenset(("right",))}
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+    for candidate, peer in (owners, owners[::-1]):
+        assert (
+            supports_existing_feature(
+                candidate,
+                (peer,),
+                config=AlignmentConfig(),
+                rt_frame=frame,
+                rules=CID_NL_GROUPING_RULES,
+            )
+            is joins
+        )
+
+
+def test_grouping_and_backfill_use_common_peak_regions_not_apex_shape():
+    offsets = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, sample, apex),
+            owner_peak_start_rt=apex - half_width,
+            owner_peak_end_rt=apex + half_width,
+            peak_shape=prepare_local_peak_shape(
+                offsets + apex,
+                np.exp(-0.5 * (offsets / width) ** 2),
+                apex_rt_min=apex,
+            ),
+        )
+        for sample, apex, width, half_width in (
+            ("narrow", 10.0, 0.03, 0.1),
+            ("shifted-wide", 9.0, 0.25, 0.6),
+            ("late", 10.5, 0.03, 0.1),
+            ("unsupported", 10.0, 0.03, 0.1),
+        )
+    )
+    frame = SampleRtFrame(
+        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+    ).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            (
+                ("narrow", ((8.0, 8.0), (12.0, 12.0))),
+                ("shifted-wide", ((7.0, 8.0), (11.0, 12.0))),
+                ("late", ((8.0, 8.0), (12.0, 12.0))),
+            )
+        )
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("narrow", "shifted-wide")),
+        frozenset(("late",)),
+        frozenset(("unsupported",)),
+    }
+    # Without its own calibration support, "unsupported" is compared with
+    # "narrow" in the observed frame, where the two apices coincide.
+    for candidate, expected in zip(owners[1:], (True, False, True), strict=True):
+        assert (
+            supports_existing_feature(
+                candidate,
+                (owners[0],),
+                config=AlignmentConfig(),
+                rt_frame=frame,
+                rules=CID_NL_GROUPING_RULES,
+            )
+            is expected
+        )
+    assert [(owner.owner_apex_rt, owner.owner_area) for owner in owners] == [
+        (10.0, 1000.0),
+        (9.0, 1000.0),
+        (10.5, 1000.0),
+        (10.0, 1000.0),
+    ]
+
+
+@pytest.mark.parametrize("bootstrap", (False, True))
+def test_common_peak_region_uses_group_consensus_not_every_member_pair(bootstrap):
+    # Band a spans more than one member's narrow region (a1 and a4 exclude each
+    # other's apex); band b lies outside band a's consensus region.
+    owners = tuple(
+        replace(
+            _synthetic_owner(sample, sample, apex),
+            owner_peak_start_rt=apex - 0.1,
+            owner_peak_end_rt=apex + 0.1,
+        )
+        for sample, apex in (
+            ("a1", 10.0),
+            ("b1", 10.5),
+            ("a2", 10.04),
+            ("a3", 10.08),
+            ("b2", 10.54),
+            ("a4", 10.12),
+        )
+    )
+    frame = SampleRtFrame(
+        injection_order={owner.sample_stem: i for i, owner in enumerate(owners)}
+    ).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((owner.sample_stem, ((9.0, 9.0), (11.0, 11.0))) for owner in owners)
+        )
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+        bootstrap=bootstrap,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a1", "a2", "a3", "a4")),
+        frozenset(("b1", "b2")),
+    }
+    by_id = {owner.owner_id: owner for owner in owners}
+    band_a = tuple(by_id[owner_id] for owner_id in ("a1", "a2", "a3"))
+    assert supports_existing_feature(
+        by_id["a4"],
+        band_a,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert not supports_existing_feature(
+        by_id["b1"],
+        band_a,
+        config=AlignmentConfig(),
+        rt_frame=frame,
+        rules=CID_NL_GROUPING_RULES,
+    )
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     bootstrap: bool,
@@ -265,20 +704,33 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
     )
 
 
-def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> None:
+def test_singleton_extensions_follow_the_band_majority_shape() -> None:
     offsets = np.linspace(-0.6, 0.6, 121)
-    widths = {**{f"seed-{i}": 0.07 for i in range(1, 15)}, "wide": 0.25, "narrow": 0.03}
-    orders = {**{f"seed-{i}": i for i in range(1, 15)}, "wide": 40, "narrow": 70}
+    # "broader" differs only from the one narrow member (0.74 < 0.80) and
+    # matches the rest of the band (0.94); the ramp matches none of it.
+    gaussian = {
+        **{f"seed-{i}": 0.07 for i in range(1, 15)},
+        "narrow": 0.03,
+        "broader": 0.12,
+    }
+    orders = {
+        **{f"seed-{i}": i for i in range(1, 15)},
+        "narrow": 15,
+        "broader": 40,
+        "ramp": 70,
+    }
     owners = tuple(
         replace(
             _synthetic_owner(name, name, 10.0),
             peak_shape=prepare_local_peak_shape(
                 offsets + 10,
-                np.exp(-0.5 * (offsets / width) ** 2),
+                np.exp(-0.5 * (offsets / gaussian[name]) ** 2)
+                if name in gaussian
+                else 3 - offsets,
                 apex_rt_min=10,
             ),
         )
-        for name, width in widths.items()
+        for name in orders
     )
     result = infer_feature_memberships(
         owners,
@@ -286,8 +738,10 @@ def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> N
         rt_frame=SampleRtFrame(injection_order=orders),
         rules=CID_NL_GROUPING_RULES,
     )
-    assert sorted(len(group.owner_ids) for group in result.groups) == [1, 15]
-    assert not any({"wide", "narrow"}.issubset(g.owner_ids) for g in result.groups)
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset((*(f"seed-{i}" for i in range(1, 15)), "narrow", "broader")),
+        frozenset(("ramp",)),
+    }
 
 
 @pytest.mark.parametrize("with_order", [False, True])
@@ -392,7 +846,7 @@ def test_tissue_background_observation_does_not_join_four_localized_peaks() -> N
         if decision.sample_stem == "NormalBC2302_DNA"
     )
     assert rejected.state == "proven_incompatible"
-    assert rejected.reason == "peak_shape_mismatch"
+    assert rejected.reason == "peak_correspondence_mismatch"
     assert rejected.witness_owner_ids
 
 
@@ -976,12 +1430,12 @@ def test_estimated_warp_recovers_an_injected_early_shift() -> None:
                 for sample in orders
             )
         )
-    warp = estimate_batch_rt_warp(
-        groups,
-        owners_by_id={},
-        injection_order=orders,
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=tuple(orders), sample_cohorts=dict.fromkeys(orders, "batch")
     )
-    assert warp.anchor_group_count == 36
+    calibration.add_groups(groups)
+    warp = calibration.freeze()
+    assert len(warp.knots) == 36
     assert warp.offset_min("s10", 7.0) * 60.0 < -25.0
     assert abs(warp.offset_min("s10", 27.0) * 60.0) < 8.0
     for sample in ("s01", "s20"):
@@ -1198,6 +1652,49 @@ def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) ->
         frozenset(owner.owner_id for owner in band) for band in bands
     }
     assert all(group.disposition == "assigned" for group in result.groups)
+
+
+@pytest.mark.parametrize("occupy_early_band", (False, True))
+@pytest.mark.parametrize("reverse", (False, True))
+def test_singleton_ambiguity_uses_remaining_band_choices(
+    occupy_early_band: bool, reverse: bool
+) -> None:
+    orders = {"probe": 1, "a": 2, "b": 3, "distant": 20}
+    owners = tuple(
+        _synthetic_owner(sample, f"{band}-{sample}", rt)
+        for band, rt in (("early", 10.0), ("late", 10.18))
+        for sample in ("a", "b", "distant")
+    ) + (_synthetic_owner("probe", "between", 10.09),)
+    if occupy_early_band:
+        owners += (_synthetic_owner("probe", "early-probe", 10.0),)
+    # Pairwise uncertainty at the distant injection makes the probe peaks
+    # compete. Once early-probe joins the early band, only the late band can
+    # admit between. Without that occupied slot, both choices remain viable.
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    early = {f"early-{sample}" for sample in ("a", "b", "distant")}
+    late = {f"late-{sample}" for sample in ("a", "b", "distant")}
+    if occupy_early_band:
+        early.add("early-probe")
+        late.add("between")
+    expected = {frozenset(early), frozenset(late)}
+    if not occupy_early_band:
+        expected.add(frozenset(("between",)))
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+    assert all(
+        group.disposition == ("assigned" if len(group.owner_ids) > 1 else "undecided")
+        for group in result.groups
+    )
+    between = next(
+        decision
+        for decision in result.sparse_decisions
+        if decision.owner_id == "between"
+    )
+    assert between.state == ("assigned" if occupy_early_band else "evaluated_undecided")
 
 
 def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> None:
