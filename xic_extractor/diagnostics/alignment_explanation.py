@@ -21,6 +21,7 @@ from xic_extractor.diagnostics.explanation_review import (
     REVIEW_SCHEMA_VERSION,
     pack_cells,
     unpack_cells,
+    validate_membership_risks,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
@@ -571,6 +572,11 @@ def _object(payload: str | bytes) -> dict[str, Any]:
     value = json.loads(payload)
     if not isinstance(value, dict):
         raise ExplanationError("malformed explanation: expected object payload")
+    if "membership_risks" in value:
+        try:
+            validate_membership_risks(value["membership_risks"])
+        except ValueError as exc:
+            raise ExplanationError(f"malformed explanation: {exc}") from exc
     return value
 
 

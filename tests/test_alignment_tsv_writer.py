@@ -46,6 +46,9 @@ REVIEW_COLUMNS = [
     "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
+    "membership_risk_status",
+    "membership_risk_flags",
+    "membership_risks_json",
     "representative_samples",
     "family_evidence",
     "warning",
@@ -76,6 +79,9 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
 
     assert list(rows[0]) == REVIEW_COLUMNS
     assert rows[0] == {
+        "membership_risk_status": "not_recorded",
+        "membership_risk_flags": "",
+        "membership_risks_json": "[]",
         "feature_family_id": "ALN000001",
         "group_hypothesis_id": "ALN000001",
         "public_family_id": "ALN000001",

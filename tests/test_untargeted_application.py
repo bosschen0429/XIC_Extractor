@@ -60,6 +60,7 @@ from xic_extractor.xic_models import XICTrace
 def _bind_mock_publication_inputs(completed, kwargs):
     completed.processing_request_id = "request-test"
     completed.processing_attempt_id = "attempt-test"
+    completed.initial_groups = ()
     candidates = kwargs["candidates_by_sample"]
     reference = kwargs.get("known_istd_reference")
     completed.publication_inputs = SimpleNamespace(
@@ -574,6 +575,11 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     output_dir.mkdir()
     matrix_path = output_dir / "alignment_matrix.tsv"
     report_path = output_dir / "cid_nl_explanation.sqlite"
+    has_membership_risk = any(
+        decision.accepted_risk is not None and decision.accepted_risk.risk_flags
+        for group in completed.initial_groups
+        for decision in group.inference_decisions
+    )
     reference = tmp_path / "reference.sqlite"
 
     def rows(path):
@@ -691,7 +697,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         if failure is None:
             result = run()
             assert matrix_path.read_bytes() == matrix_bytes
-            if not emit_explanation:
+            if not emit_explanation and not has_membership_risk:
                 # Nothing consumes the children, so nothing is written for them
                 # and the run still releases every one.
                 assert not report_path.exists()

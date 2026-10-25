@@ -257,6 +257,19 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
         == 0
     )
     assert (tmp_path / "replay" / "members.tsv").is_file()
+    with (tmp_path / "replay" / "decisions.tsv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        decisions = list(csv.DictReader(stream, delimiter="\t"))
+    risks = [
+        json.loads(d["accepted_risk_json"])
+        for d in decisions
+        if d["accepted_risk_json"]
+    ]
+    assert risks
+    assert all(
+        risk["phase"] == "initial" and risk["selected_owner_ids"] for risk in risks
+    )
     assert (
         '"changed_observation_count": 0'
         in (tmp_path / "replay" / "summary.json").read_text()
@@ -355,6 +368,9 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
     corrected = replay_grouping(inputs, rt_coordinates=Coordinates())
     assert group_signature(raw) != group_signature(corrected)
     assert len(corrected) == 1
+    assert {
+        decision.accepted_risk.rt_basis for decision in corrected[0].inference_decisions
+    } == {"diagnostic_override"}
     assert (
         next(
             owner for owner in corrected[0].owners if owner.owner_id == shifted.owner_id

@@ -734,7 +734,7 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
             )
 
 
-def _quality_review_report(tmp_path):
+def _quality_review_report(tmp_path, *, membership_risks=None):
     """Two samples in one feature: advisory facts traverse the actual review store."""
     from types import SimpleNamespace as NS
 
@@ -778,6 +778,8 @@ def _quality_review_report(tmp_path):
             source="raw_trapezoid",
         )
         cells.append(review_cell(decision))
+        if membership_risks is not None:
+            cells[-1]["membership_risks"] = membership_risks.get(sid, [])
     with ExplanationReportWriter(report, review_only=True) as writer:
         keys = [("C1", "S1"), ("C2", "S2")]
         for cid, sid in keys:
@@ -851,3 +853,172 @@ def test_old_review_cell_encoding_keeps_quality_not_recorded():
     )
     assert decoded["review-cell:r:0"]["value"] == 123.0
     assert decoded["review-cell:r:0"]["signal_quality"] == []
+    assert decoded["review-cell:r:0"]["membership_risks"] == []
+
+
+def _competition_review_report(tmp_path):
+    risk = {
+        "status": "evaluated_alternative",
+        "phase": "initial",
+        "selected_owner_ids": ["a", "b"],
+        "alternative_partition": [["a"], ["b", "c"]],
+        "equivalent_alternatives": [],
+        "selected_cost": 1.2,
+        "alternative_cost": 1.23,
+        "cost_gap": 0.03,
+        "rt_basis": "raw",
+        "evidence_basis": "bounded_assignment",
+        "soft_contradictions": [],
+        "risk_flags": ["accepted_competition"],
+    }
+    return _quality_review_report(tmp_path, membership_risks={"S2": [risk]})
+
+
+def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, matrix = _competition_review_report(tmp_path)
+    original = matrix.read_bytes()
+    payload = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload
+    rows = {
+        row["sample_id"]: row for item in payload["items"] for row in item["samples"]
+    }
+    assert rows["S1"]["membership_risks"] == []
+    risk = rows["S2"]["membership_risks"][0]
+    assert risk["cost_gap"] == 0.03
+    assert risk["alternative_partition"] == [["a"], ["b", "c"]]
+    assert rows["S1"]["quantitative_value"] == 1000.0
+    assert rows["S2"]["quantitative_value"] == 2000.0
+    assert matrix.read_bytes() == original
+
+
+@pytest.mark.parametrize("full_audit", (False, True))
+def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
+    tmp_path, monkeypatch, full_audit
+):
+    import csv
+    from dataclasses import asdict
+
+    from xic_extractor.alignment.untargeted_finalized_matrix import (
+        project_completed_untarget_batch_writer_inputs,
+    )
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
+
+    completed, _, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    risks = {
+        d.owner_id: d.accepted_risk
+        for group in completed.initial_groups
+        for d in group.inference_decisions
+        if d.accepted_risk is not None
+    }
+    assert len(risks) == 2
+    expected = {
+        member.canonical_sample_identity_id: json.loads(
+            json.dumps(asdict(risks[member.subject_id]))
+        )
+        for group in completed.initial_groups
+        for member in group.member_subjects
+    }
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result, membership_risks_by_owner=risks
+    )
+    original = matrix.read_bytes()
+    report = write_cid_nl_explanation(
+        tmp_path / "produced.sqlite",
+        full_audit=full_audit,
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    cells = read_explanation_metadata(report).records["cell_decisions"].values()
+    assert {
+        cell["canonical_sample_identity_id"]: cell["membership_risks"][0]
+        for cell in cells
+    } == expected
+    review = tmp_path / "review.tsv"
+    write_alignment_review_tsv(
+        review,
+        writer.matrix,
+        alignment_config=config,
+        production_decisions=writer.production_decisions,
+    )
+    with review.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    actual = {}
+    for row in rows:
+        assert row["membership_risk_status"] == "recorded"
+        for risk in json.loads(row["membership_risks_json"]):
+            actual[risk.pop("canonical_sample_identity_id")] = risk
+    assert actual == expected
+    assert matrix.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("cost_gap", "0.03"),
+        ("selected_cost", True),
+        ("alternative_partition", ["not-a-group"]),
+        ("soft_contradictions", "shape_disagreement"),
+    ),
+)
+def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
+    import zlib
+
+    report, _ = _competition_review_report(tmp_path)
+    with sqlite3.connect(report) as db:
+        payload = db.execute("SELECT payload FROM row_cells").fetchone()[0]
+        cells = json.loads(zlib.decompress(payload))
+        cells[1][9][0][field] = value
+        db.execute(
+            "UPDATE row_cells SET payload=?",
+            (zlib.compress(json.dumps(cells).encode()),),
+        )
+    with pytest.raises((ExplanationError, ValueError), match="membership risk"):
+        read_explanation_metadata(report)
+
+
+def test_production_publication_automatically_includes_recorded_risk(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.alignment.owner_build_route_receipt import (
+        _mint_retained_untargeted_cid_nl_route_receipt,
+    )
+    from xic_extractor.applications.untargeted.publication import (
+        UntargetedPublicationPolicy,
+        publish_untargeted_outputs,
+    )
+    from xic_extractor.execution.timing import TimingRecorder
+
+    completed, _, candidates, _, config = _owner_run(tmp_path, monkeypatch, "positive")
+    completed = completed.bind_publication_inputs(
+        candidates_by_sample=candidates, alignment_config=config
+    )
+    policy = UntargetedPublicationPolicy()
+    directory = tmp_path / "published"
+    outputs = publish_untargeted_outputs(
+        completed,
+        output_dir=directory,
+        outputs=policy.output_paths(directory),
+        policy=policy,
+        metadata={},
+        timing_recorder=TimingRecorder("alignment", enabled=False),
+        should_cancel=None,
+        owner_build_route_receipt=_mint_retained_untargeted_cid_nl_route_receipt(
+            configured_backend="raw"
+        ),
+    )
+    assert outputs.evidence is not None
+    assert outputs.evidence.matrix_path == outputs.matrix_tsv
+    metadata = read_explanation_metadata(outputs.evidence.report_path)
+    assert metadata.summary["retention"] == "review"
+    cells = list(metadata.records["cell_decisions"].values())
+    assert len(cells) == 2
+    assert all(cell["membership_risks"] for cell in cells)
+    assert all(cell["value"] > 0 for cell in cells)

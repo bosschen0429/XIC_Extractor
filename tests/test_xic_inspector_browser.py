@@ -630,3 +630,27 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     expect(strong).to_contain_text("1,000")
     expect(weak).to_contain_text("2,000")
     assert matrix.read_bytes() == before
+
+
+def test_accepted_competition_is_visible_only_on_its_sample(review_page, tmp_path):
+    from tests.test_explanation_review import _competition_review_report
+
+    report, matrix = _competition_review_report(tmp_path)
+    before = matrix.read_bytes()
+    payload = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload
+    page = review_page
+    page.set_content('<div id="risk-view"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload => XicInspector.mount(document.getElementById('risk-view'), payload)",
+        payload,
+    )
+    strong = page.locator('[data-sample-row="S1"]')
+    competing = page.locator('[data-sample-row="S2"]')
+    expect(strong).not_to_contain_text("已配對，有其他合理候選")
+    expect(competing).to_contain_text("已配對，有其他合理候選")
+    expect(strong).to_contain_text("1,000")
+    expect(competing).to_contain_text("2,000")
+    assert matrix.read_bytes() == before

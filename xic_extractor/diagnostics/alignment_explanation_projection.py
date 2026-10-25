@@ -271,6 +271,12 @@ def prepare_alignment_explanation(
         request_id = request.processing_request_id
         subjects = cid_nl_method_subject_batch_from_request(request)
         memberships = dict(subjects.candidate_memberships)
+        membership_risks = {
+            decision.owner_id: asdict(decision.accepted_risk)
+            for group in completed.initial_groups
+            for decision in group.inference_decisions
+            if decision.accepted_risk is not None
+        }
         samples = {
             sample.metadata.raw_stem: sample for sample in application.canonical_samples
         }
@@ -714,6 +720,16 @@ def prepare_alignment_explanation(
             }
             for group in core.final_population:
                 emit_group("final_groups", group, methods)
+            risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = (
+                defaultdict(list)
+            )
+            for group in core.final_population:
+                for member in group.member_subjects:
+                    if risk := membership_risks.get(member.subject_id):
+                        risks_by_group_sample[
+                            group.group_hypothesis_id,
+                            member.canonical_sample_identity_id,
+                        ].append(risk)
 
             for observation in (
                 child.scientific_core.cell_observations if full_audit else ()
@@ -760,6 +776,19 @@ def prepare_alignment_explanation(
             for row in child.completed_projection.rows:
                 group_id = row.row_key.group_hypothesis_id
                 related = group_candidates[group_id]
+                cells = [
+                    {
+                        **review_cell(decision),
+                        "membership_risks": risks_by_group_sample.get(
+                            (
+                                group_id,
+                                decision.subject.canonical_sample.identity.sample_identity_id,
+                            ),
+                            [],
+                        ),
+                    }
+                    for decision in row.decisions
+                ]
                 add(
                     "rows",
                     row.row_key.untarget_row_key_id,
@@ -770,6 +799,14 @@ def prepare_alignment_explanation(
                             "destination": row.route.destination,
                             "reason": row.route.reason,
                         },
+                        "membership_risk_flags": sorted(
+                            {
+                                flag
+                                for cell in cells
+                                for risk in cell["membership_risks"]
+                                for flag in risk["risk_flags"]
+                            }
+                        ),
                     },
                     related,
                 )
@@ -777,11 +814,11 @@ def prepare_alignment_explanation(
                     sink.add_row_cells(
                         row.row_key.untarget_row_key_id,
                         group_id,
-                        [review_cell(decision) for decision in row.decisions],
+                        cells,
                         sample_ordinals,
                     )
                     continue
-                for decision in row.decisions:
+                for decision, cell in zip(row.decisions, cells, strict=True):
                     add(
                         "cell_decisions",
                         decision.decision_id,
@@ -790,6 +827,7 @@ def prepare_alignment_explanation(
                                 decision, "decision_id", "variant", "value", "source"
                             ),
                             "signal_quality": review_cell(decision)["signal_quality"],
+                            "membership_risks": cell["membership_risks"],
                             "row_key_id": row.row_key.untarget_row_key_id,
                             "group_hypothesis_id": group_id,
                             "canonical_sample_identity_id": (

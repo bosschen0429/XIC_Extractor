@@ -70,8 +70,9 @@ The conflict alone does not identify which cross-sample correspondence is wrong.
 A local peak position is directly observed; linking it to a peak in another
 sample remains an inference. When evidence is sufficient to rule out a
 correspondence, withdraw that correspondence and the conclusions that depend on
-it. Otherwise, retain the unresolved state without rejecting the entire class
-of evidence.
+it. Otherwise, preserve the uncertainty in the decision facts without rejecting
+the entire class of evidence. A selected configuration does not erase its
+reasonable alternatives.
 
 Local maxima, partitioned segments, and independently acceptable physical peaks
 are not interchangeable. Using them as evidence of distinctness must respect
@@ -300,111 +301,111 @@ frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitte
 ### Decide membership
 
 [Final grouping](../../xic_extractor/alignment/feature_membership_inference.py)
-builds candidates within connected mass neighborhoods, compares RT, precursor
-mass, and product mass, and handles competition within each sample. Currently:
+selects a feasible complete configuration rather than withdrawing a choice
+because another one is close. This policy applies to Untargeted final/regroup
+membership, not bootstrap, Targeted selection, or Backfill admission.
 
-- Ordinary inference does not force trajectory seeds together once its owners
-  supply measured common-coordinate apices. A shared track cannot replace
-  either endpoint's measured RT separation with zero. Tracks connected through
-  raw-frame pattern matching also lose their derived membership exclusions;
-  common-frame pattern correspondences retain physical-order evidence. The
-  caller's original trajectories and localization links remain unchanged.
-  Without measured apices, ordinary inference retains raw-pattern seeds;
-  directional bootstrap keeps its existing seed authority.
-- Pairwise precursor tolerance limits candidates; product deviation is a soft
-  cost, observed loss is not a separate veto, and a cumulative min-max envelope
-  does not independently veto membership.
-- Ordinary edge union priority uses a fixed RT scale: a larger injection gap
-  does not discount RT separation and move that edge ahead of closer support.
-  Per-sample ambiguity retains its gap-dependent uncertainty allowance; that
-  allowance does not grant union priority. Both costs retain precursor and
-  product evidence. Candidate eligibility and sparse/distant comparisons keep
-  their existing allowances.
-- Once both sides are established bands with common-coordinate support, union
-  priority uses their median measured RT and mass summaries, refreshed after
-  each merge, rather than one connecting pair's old cost. They merge only as
-  reciprocal best alternatives. A closer alternative remains in that comparison
-  when its sample occupancy prevents a union; that conflict does not make a
-  worse band the correct match. Singleton growth and bands without measured
-  common-coordinate support retain the local pair priority.
-- Supported common-coordinate apices and measured peak edges are the primary
-  physical correspondence check. Each side of a proposed union contributes a
-  consensus region: the median of its members' supported apices and measured
-  edges. Only completely disjoint consensus intervals exclude correspondence;
-  overlapping or touching intervals do not require either apex to lie inside
-  the other interval. When only one side has calibration support, both
-  sides are compared the same way in the observed RT frame; missing calibration
-  support is not evidence of a different peak.
-  A peak edge outside the calibration span remains unknown: it is neither
-  extrapolated nor clipped into a new measured boundary. It cannot establish
-  disjointness on that side or switch supported apices to a raw-shape veto.
-  Every union compares the complete groups' consensus intervals, not just the
-  connecting pair. Overlap removes this veto; it does not itself establish
-  membership. This is a correspondence constraint, not proof of chemical
-  identity; same-sample
-  competition and physical order still apply.
-- When neither side has calibration support, measured peak
-  shape supplies the fallback evidence. The owner adapter
-  retains an apex-relative, own-max Gaussian-smoothed shape from the selected
-  raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
-  translates RT but does not stretch width. Only in this private derivative,
-  an observed nonpositive gap separates the selected apex's positive signal
-  island from neighboring signal; continuous background is not subtracted.
-  This does not reselect the peak or change the measured observation.
-  A median local Pearson similarity across the two sides' member pairs below
-  `min_peak_shape_similarity` (default 0.80) prevents ordinary membership in
-  that fallback; a single dissimilar pair does not. Pairs distinguished by
-  physical peak order are not shape evidence. The fallback cannot veto
-  supported common-coordinate regions.
-  At least five acquired points per trace and half of the shared +/-0.35-minute
-  grid are required. Fine-shape comparison also requires five measured points
-  at or above half height in each retained primary signal; zeros, smoothing and
-  interpolation do not supply that resolution. With fewer points, only the
-  coarse contrast between a localized signal (both observed edges below half
-  height) and a sustained signal (both edges at or above half height) can supply
-  a shape veto, still using the same Pearson threshold. Insufficient context,
-  unresolved primary shape, missing legacy resolution metadata and flat traces
-  remain unassessed, not positive evidence of identity.
-  Shape agreement alone does not establish membership. A measured contradiction
-  applies to the entire proposed union, including trajectory seeds, singleton
-  admission and separated-band bridges; intermediate members cannot hide it.
-  Directional assignment and Backfill admission consume the same region/shape rule.
-  Simultaneous Backfill candidates are also compared with each other after
-  claim resolution. Both endpoints of a shape conflict remain unassigned;
-  independent compatible additions can still join, without an ordering winner.
-  Explicit known-identity constraints remain separate from inferred membership.
-- Dense bands use their own trend over six neighboring injections in the shared
-  RT frame; sparse bands use broader calibrated comparisons. This feature-local
-  correspondence estimate is not another batch map or Backfill localization.
-- A band cannot contain two owners from the same sample.
-- Near-equivalent competitors remain unresolved; other independent support does
-  not disappear because of one contested pair.
-- A missing pair record means unevaluated, not incompatible, and group membership
-  does not manufacture positive pair evidence.
-- Final ordinary membership does not depend on input sample order. Singletons
-  and unresolved competition remain review-only; an assigned band is not
-  chemical identification.
+- A connected precursor-mass neighborhood is the comparison universe. Every
+  comparison in it uses common apices only when all members have supported
+  coordinates; otherwise the whole universe uses raw coordinates. Unsupported
+  peak edges remain unknown, not raw substitutes in a common-frame comparison.
+  Explicit diagnostic overrides keep their own basis label and grant no
+  calibration support. Missing support does not mean zero drift, and the
+  algorithm does not choose whichever coordinate system gives the cheaper result.
+- Physical peak ownership, one peak per sample per Feature, full-group precursor
+  mass tolerance, and retained physical trajectory separation constrain feasible
+  groups. Method-specific hard constraints remain with the method interpreter;
+  product scatter admitted by that interpreter contributes cost rather than
+  silently acquiring a new hard veto.
+- RT separation, mass deviation, injection gap and density, local trend, shape
+  disagreement, disjoint regions, and weak identity contribute costs. A larger
+  injection gap never makes the same RT error cheaper. Shape/region disagreement
+  is not a final-membership veto. Existing peak signal-quality facts reduce the
+  weight of RT/shape/region evidence; no noise or SNR is recalculated.
+- A singleton costs 1. A group costs 1 plus its maximum pair cost and local trend
+  penalty; configuration cost is the sum of group costs. The cost is not
+  multiplied by sample count. Whole-band merges and per-sample assignment use
+  this same objective and accept strict improvements. Every proposed group is
+  evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
+- Near-equivalent choices remain selected and carry competition flags. Measured
+  features resolve non-equivalent ties, not display IDs or input order. Truly
+  equivalent alternatives are retained. This is a bounded merge/assignment
+  search, not a claim of a global optimum over every possible partition.
+- Mixed trajectories retain independently observed raw pairs after calibrated
+  intermediaries are withdrawn. An A–C–B path does not become direct A–B support.
+  A shared raw track does not replace measured RT separation with zero or force
+  membership. Original localization geometry remains unchanged.
+- Final composite forward/reverse proposals are compared with the same complete
+  objective; disagreement is recorded rather than taking only their intersection.
+  Bootstrap still requires its conservative directional agreement.
+
+Final decisions record the selected members, nearest evaluated alternative
+configuration, equivalent alternatives, costs and gap, coordinate/evidence basis,
+accepted contradictions, and phase. Alternatives are final-state single-owner
+assignment, separation, or occupied-sample swaps, not stale merge proposals.
+No feasible alternative is explicit; a missing legacy fact means `not_recorded`,
+not zero risk. These are engineering decision costs, not identity probabilities.
+
+Risk is associated with owner and canonical sample identity, then projected to
+final rows and samples. Row flags are the union of sample facts, not a flag copied
+into every sample. Initial facts remain phase-qualified when Backfill extends a
+row; they do not claim to explain a Backfill decision. Compact/full explanation,
+review TSV and Inspector preserve these facts. Normal publication automatically
+includes the compact report when flags exist, and CLI prints its path. Risk flags
+do not grant or remove quantitative values, counted detections, or training
+eligibility; Matrix headers and the strict identity TSV remain unchanged.
+
+#### Conservative admission and shape measurement
+
+For conservative bootstrap and existing-feature admission, measured peak
+shape supplies fallback evidence when neither side has calibration support. The owner adapter
+retains an apex-relative, own-max Gaussian-smoothed shape from the selected
+raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
+translates RT but does not stretch width. Only in this private derivative,
+an observed nonpositive gap separates the selected apex's positive signal
+island from neighboring signal; continuous background is not subtracted.
+This does not reselect the peak or change the measured observation.
+A median local Pearson similarity across the two sides' member pairs below
+`min_peak_shape_similarity` (default 0.80) prevents ordinary membership in
+that fallback; a single dissimilar pair does not. Pairs distinguished by
+physical peak order are not shape evidence. The fallback cannot veto
+supported common-coordinate regions.
+At least five acquired points per trace and half of the shared +/-0.35-minute
+grid are required. Fine-shape comparison also requires five measured points
+at or above half height in each retained primary signal; zeros, smoothing and
+interpolation do not supply that resolution. With fewer points, only the
+coarse contrast between a localized signal (both observed edges below half
+height) and a sustained signal (both edges at or above half height) can supply
+a shape veto, still using the same Pearson threshold. Insufficient context,
+unresolved primary shape, missing legacy resolution metadata and flat traces
+remain unassessed, not positive evidence of identity.
+Shape agreement alone does not establish membership. A measured contradiction
+applies to the entire proposed union, including trajectory seeds, singleton
+admission and separated-band bridges; intermediate members cannot hide it.
+Directional assignment and Backfill admission consume the same region/shape rule.
+Simultaneous Backfill candidates are also compared with each other after
+claim resolution. Both endpoints of a shape conflict remain unassigned;
+independent compatible additions can still join, without an ordering winner.
+Explicit known-identity constraints remain separate from inferred membership.
 
 Bootstrap seed support consumes Discovery evidence scores and the existing MS2
-seed count. Alignment does not estimate noise or turn peak SNR into identity,
-membership, or Matrix write authority. Measurement-quality facts belong to the
-[peak signal-quality owner](signal-processing-rationale.md#short-scale-signal-quality). The current
-anchor_min_seed_events in CID_NL_ALIGNMENT_CONFIG is 1: an MS1-only physical
-observation counts as one event rather than using the generic default of 2.
-This does not mean all final-window decisions apply the same seed-rating gates.
-MS1-only Target owners separately use precursor, physical quality, and RT
-evidence; missing MS2 alone does not exclude them, nor does it admit them to a
-CID evidence group.
+seed count. Alignment does not turn peak SNR into identity or Matrix write
+authority. Measurement-quality facts belong to the
+[peak signal-quality owner](signal-processing-rationale.md#short-scale-signal-quality).
+The current `anchor_min_seed_events` in `CID_NL_ALIGNMENT_CONFIG` is 1: an MS1-only
+physical observation counts as one event rather than using the generic default
+of 2. Final membership does not inherit this seed-rating gate. MS1-only Target
+owners separately use precursor, physical quality and RT evidence; missing MS2
+alone neither excludes them nor admits them to a CID evidence group.
 
 ### Join groups and handle shoulders
 
-Ordinary grouping has an internal band bridge. With the prepared warp and full
-injection order, bands separated by unobserved injections may connect based on
-mass, corrected RT trend, sample disjointness, and mutual unique-best decisions.
-An injection gap alone is not evidence of distinct Features.
+Final grouping compares separated bands through the same complete-configuration
+cost and sample-occupancy constraints. An injection gap alone is not evidence of
+distinct Features; reciprocal-best agreement is not required.
 
 Initial membership is decided only by `infer_feature_memberships`, including
-local grouping, singleton assignment, and this internal bridge. The workflow
+local grouping, singleton assignment, and separated-band comparisons. The workflow
 consumes that result without a second merge. With owners, pattern evidence and
 RT frame fixed, Backfill search windows do not change initial membership;
 widening acquisition may change recovery, not the initial Feature boundary.

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
+
 if TYPE_CHECKING:
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
@@ -263,6 +265,7 @@ def write_completed_untargeted_outputs_atomic(
     timing_recorder: TimingRecorder,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
+    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
     before_write: Callable[[], None] | None = None,
     capture_artifact_fingerprints: bool = False,
 ) -> tuple[int, AlignmentArtifactFingerprintBatch | None]:
@@ -275,6 +278,7 @@ def write_completed_untargeted_outputs_atomic(
                 completed,
                 consume_child=consume_child,
                 ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                membership_risks_by_owner=membership_risks_by_owner,
             )
     if before_write is not None:
         before_write()
@@ -286,6 +290,7 @@ def write_completed_untargeted_outputs_atomic(
                     completed,
                     consume_child=consume_child,
                     ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                    membership_risks_by_owner=membership_risks_by_owner,
                 ),
                 sample_order=completed_untarget_batch_sample_order(completed),
                 metadata=metadata,

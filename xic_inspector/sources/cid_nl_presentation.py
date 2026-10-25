@@ -364,6 +364,41 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                 ),
             }
         )
+    risks = facts.get("membership_risks")
+    if "variant" in facts or risks is not None:
+        if not risks:
+            fields.append({"label": "配對風險", "value": "未記錄"})
+        for risk in risks or ():
+            selected = "已配對" if len(risk["selected_owner_ids"]) > 1 else "保持分開"
+            fields.append(
+                {
+                    "label": "配對風險",
+                    "value": (
+                        f"{selected}，有其他合理候選"
+                        if "accepted_competition" in risk.get("risk_flags", [])
+                        else f"{selected}，含矛盾或低支援證據"
+                        if risk.get("risk_flags")
+                        else "已評估，未標記風險"
+                    ),
+                }
+            )
+            for label, key in (
+                ("決策階段", "phase"),
+                ("選擇的成員", "selected_owner_ids"),
+                ("替代評估狀態", "status"),
+                ("風險標記", "risk_flags"),
+                ("接受的矛盾", "soft_contradictions"),
+                ("比較座標", "rt_basis"),
+                ("替代配置", "alternative_partition"),
+                ("成本差", "cost_gap"),
+            ):
+                value = risk.get(key)
+                fields.append(
+                    {
+                        "label": label,
+                        "value": str(value) if value is not None else "無可行替代",
+                    }
+                )
     qualities = facts.get("signal_quality", [] if "variant" in facts else None)
     if isinstance(qualities, list):
         if not qualities:
@@ -816,6 +851,9 @@ def build_sample(
         "decision_reason": _decision_reason(cells),
         "signal_quality": [
             quality for cell in cells for quality in cell.get("signal_quality", [])
+        ],
+        "membership_risks": [
+            risk for cell in cells for risk in cell.get("membership_risks", [])
         ],
         "decision_label": _decision_label(cells),
         "decision_refs": decision_refs,
