@@ -551,6 +551,11 @@ def write_grouping_result(
     }
     for group in groups:
         basis = group.inference_basis
+        risks = {
+            decision.owner_id: decision.accepted_risk
+            for decision in group.inference_decisions
+            if decision.accepted_risk is not None
+        }
         group_rows.append(
             {
                 "group_id": group.group_hypothesis_id,
@@ -565,6 +570,19 @@ def write_grouping_result(
         )
         for owner in group.owners:
             coordinates = coordinate_by_owner[owner.owner_id]
+            risk = risks.get(owner.owner_id)
+            comparison_rt = (
+                coordinates.corrected_rt_min(owner)
+                if coordinates
+                else owner.owner_apex_rt
+            )
+            if risk is not None:
+                # The selected universe can reject an available calibration,
+                # or use a weak estimate that the strong-only map cannot supply.
+                if risk.rt_basis == "raw":
+                    comparison_rt = owner.owner_apex_rt
+                elif risk.rt_estimate is not None:
+                    comparison_rt = risk.rt_estimate.rt_min
             members.append(
                 {
                     "group_id": group.group_hypothesis_id,
@@ -575,9 +593,10 @@ def write_grouping_result(
                     "sample_stem": owner.sample_stem,
                     "mz": owner.precursor_mz,
                     "observed_rt": owner.owner_apex_rt,
-                    "comparison_rt": coordinates.corrected_rt_min(owner)
-                    if coordinates
-                    else owner.owner_apex_rt,
+                    "comparison_rt": comparison_rt,
+                    "comparison_rt_basis": risk.rt_basis
+                    if risk is not None
+                    else "not_recorded",
                     "area": owner.owner_area,
                     "disposition": group.disposition,
                     "reason": basis.reason if basis else "",
@@ -635,6 +654,7 @@ def write_grouping_result(
             "mz",
             "observed_rt",
             "comparison_rt",
+            "comparison_rt_basis",
             "area",
             "disposition",
             "reason",

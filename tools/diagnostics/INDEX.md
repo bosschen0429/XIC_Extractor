@@ -557,12 +557,18 @@ snapshot.
 `--calibrate` calls the formal sample RT calibration owner on established
 baseline groups with at least three measured members. `--loess-fraction` controls
 its local regression neighborhood; `--rt-calibration` instead supplies an
-existing `sample_rt_calibration` JSON. Unsupported coordinates remain explicitly
-unavailable to correspondence consumers; displayed comparison RT falls back to
-observed RT. Calibration does not change measured RT or area. Historical frozen
-offset maps remain readable without refitting them.
+existing `sample_rt_calibration` JSON. Replay preserves the map's measured
+support and explicit weak estimates without promoting them to strong support.
+Calibration does not change measured RT or area. Historical frozen offset maps
+remain readable without refitting them.
 
-`groups.tsv` and `members.tsv` report grouping and observed/comparison RT;
+`groups.tsv` and `members.tsv` report grouping and observed/comparison RT.
+When a final decision is recorded, `comparison_rt` uses that decision's RT,
+including weak estimates or whole-universe raw fallback. `comparison_rt_basis`
+identifies the selected frame. Without a recorded decision, the RT remains the
+available coordinate projection and the basis is `not_recorded`; it does not
+claim that grouping used that coordinate.
+
 `decisions.tsv` exposes the grouping decisions when present, including optional
 `accepted_risk_json` with selected/alternative configurations and sample risk
 facts. An empty field means no recorded risk decision. `changes.tsv`
