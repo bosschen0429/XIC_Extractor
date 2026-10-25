@@ -6,26 +6,36 @@ Lead with the result. Separate observed facts, inference, unknowns, and the next
 decision. Report only checks actually run and link the Issue, PR, command, or
 artifact that carries detailed evidence.
 
-For ownership or refactoring changes, report what consumers no longer need to
-know, which duplicate computation/validation/conversion/tests were removed, and
-why remaining coupling is necessary. Link the
-[Change Locality](../architecture-contract.md#change-locality) evidence;
-passing tests or fewer lines alone do not establish decoupling.
+For refactoring, explain what becomes easier to understand or change and which
+behavior stays the same. Keep technical ownership and dependency evidence with
+[Change Locality](../architecture-contract.md#change-locality); a shorter diff
+or passing tests alone does not prove a simpler design.
 
 ## Pull Requests
 
-Use the repository PR template to describe final behavior and bounded scope,
-with Summary, Motivation, Testing, and Risks/Rollback. State breaking changes
-explicitly when present and include relevant Issue linkage. The body is the
-durable squash-merge review surface; link canonical Issue scope and record actual
-checks for the proposed head.
+The PR is a human review surface, not an agent completion log. Write in the
+user's language for someone judging intent and behavior without reading every
+line of the diff. Use familiar product terms; explain necessary internal terms
+at first use rather than making the reader decode owner/contract vocabulary.
 
-Established-owner local work uses this compact body. Add review guidance and
-expanded scope, source, or authority details only for the applicable cases in
-[`planning-workflows.md#task-shaping`](planning-workflows.md#task-shaping). Bind
-artifact evidence or required PR-gate results to exact producing/validated refs
-when their identity matters, and make compatibility with the current head clear.
-Hosted checks on the final remote SHA remain the merge authority.
+The [PR template](../../.github/pull_request_template.md) owns the body structure:
+Summary, Motivation, Testing, and Risks/Rollback. Before publishing, check that
+the reader can explain what changes, why it matters, what supports the claim,
+and what happens if it is wrong. Use the smallest useful before/after view;
+plain prose is enough, and code or file trees are not mandatory.
+
+Keep the outcome, material uncertainty, breaking changes, and rollback cost in
+the main text. Put commands, exact producing/validated refs, and detailed
+technical evidence in links or a collapsed details block, with enough context
+to show which claim and proposed head they support. Describe what tests actually
+confirmed, not just their count; distinguish manual inspection from execution.
+Do not fabricate before/after runs or scientific readiness. Hosted checks on
+the final remote SHA remain merge authority.
+
+Link the existing Issue rather than repeating its scope. The task-shaping
+contract determines what must be investigated, not extra headings that every
+PR must contain. Expand technical detail only when it changes the reviewer's
+decision; keep construction history and internal checklists out of the body.
 
 Review comments are evidence, not scope authority. Fix a comment when it proves
 an Issue/public-contract violation or a reachable loss introduced by the diff.
