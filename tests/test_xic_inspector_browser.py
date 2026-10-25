@@ -659,4 +659,6 @@ def test_accepted_competition_is_visible_only_on_its_sample(review_page, tmp_pat
         page.get_by_text("同分決勝：平均配合成本（越低越好）", exact=True)
     ).to_be_visible()
     expect(page.get_by_text("替代的平均配合成本", exact=True)).to_be_visible()
+    expect(page.get_by_text("中位數平移（較弱估計）", exact=True)).to_be_visible()
+    expect(page.get_by_text("最近對照距離（分鐘）", exact=True)).to_be_visible()
     assert matrix.read_bytes() == before

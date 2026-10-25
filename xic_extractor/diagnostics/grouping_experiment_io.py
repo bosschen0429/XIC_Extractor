@@ -30,6 +30,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     CalibrationKnot,
     RtCalibrationPolicy,
+    RtEstimateSupport,
     SampleRtCalibration,
 )
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
@@ -310,6 +311,9 @@ def read_rt_calibration(path: Path) -> BatchRtCalibration:
 def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
     if value.get("schema") != "sample_rt_calibration":
         raise ValueError("Expected a sample_rt_calibration JSON artifact")
+    version = value.get("schema_version", 1)
+    if version not in (1, 2, 3):
+        raise ValueError(f"Unsupported RT calibration version: {version}")
     samples = {}
     for row in value["samples"]:
         knots = tuple(
@@ -338,10 +342,10 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             standard_residuals=tuple(
                 tuple(item) for item in row.get("standard_residuals", ())
             ),
+            estimate_support=_read_estimate_support(row.get("estimate_support"))
+            if version >= 3
+            else None,
         )
-    version = value.get("schema_version", 1)
-    if version not in (1, 2):
-        raise ValueError(f"Unsupported RT calibration version: {version}")
     policy = dict(value["policy"])
     if version == 1:
         # Historical snapshots retain their exact frozen coordinates. Retired
@@ -361,6 +365,44 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
     )
 
 
+def _read_estimate_support(value: object) -> RtEstimateSupport | None:
+    """Decode new observation facts; old frozen knots cannot supply them."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("RT estimate support must be an object")
+    positions = value.get("positions_min")
+    if (
+        not isinstance(positions, list)
+        or len(positions) < 2
+        or any(
+            isinstance(x, bool)
+            or not isinstance(x, (int, float))
+            or not math.isfinite(x)
+            for x in positions
+        )
+        or any(a >= b for a, b in zip(positions, positions[1:], strict=False))
+    ):
+        raise ValueError("RT estimate positions must be finite and strictly increasing")
+    for key in ("median_shift_min", "shift_spread_min", "fit_spread_min"):
+        number = value.get(key)
+        if number is None and key == "fit_spread_min":
+            continue
+        if (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not math.isfinite(number)
+            or (key != "median_shift_min" and number < 0)
+        ):
+            raise ValueError(f"Invalid RT estimate {key}")
+    return RtEstimateSupport(
+        tuple(positions),
+        value["median_shift_min"],
+        value["shift_spread_min"],
+        value.get("fit_spread_min"),
+    )
+
+
 def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
     write_json(path, _rt_calibration_payload(calibration))
 
@@ -368,7 +410,7 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
 def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
     return {
         "schema": "sample_rt_calibration",
-        "schema_version": 2,
+        "schema_version": 3,
         "policy": asdict(calibration.policy),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [
@@ -380,6 +422,9 @@ def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
                 "perturbation_status": sample.perturbation_status,
                 "anchor_count": sample.anchor_count,
                 "standard_residuals": sample.standard_residuals,
+                "estimate_support": asdict(sample.estimate_support)
+                if sample.estimate_support is not None
+                else None,
             }
             for sample in calibration.samples.values()
         ],

@@ -773,6 +773,36 @@ def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None
     assert unsupported.basis == "trajectory_reference"
 
 
+def test_sparse_calibration_localizes_in_target_coordinates_without_strong_claim():
+    from xic_extractor.alignment.sample_rt_calibration import (
+        RtCalibrationPolicy,
+        build_batch_rt_calibration,
+    )
+
+    calibration = build_batch_rt_calibration(
+        {
+            "early": {"a": 8, "b": 8, "target": 10},
+            "late": {"a": 20, "b": 20, "target": 22},
+        },
+        sample_stems=("a", "b", "target"),
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    )
+    frame = SampleRtFrame(
+        injection_order={"a": 1, "target": 2, "b": 3},
+        sample_cohorts=dict.fromkeys(("a", "b", "target"), "batch"),
+    ).with_sample_calibration(calibration)
+    prediction = PeakTrajectory((), (("a", 10), ("b", 10))).locate(
+        "target",
+        rt_frame=frame,
+        backfill_half_window_min=1.0,
+    )
+    assert prediction.query_rt == pytest.approx(12)
+    assert prediction.basis == "estimated_trajectory_fit"
+    assert prediction.observed_rt is None
+    assert not frame.has_support("target")
+
+
 def test_backfill_frame_scope_does_not_borrow_an_outside_population_reference():
     frame = SampleRtFrame(
         injection_order={"a": 1, "target": 2, "b": 3, "outside": 4},

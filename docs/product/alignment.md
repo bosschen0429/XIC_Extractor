@@ -250,10 +250,10 @@ least eight distinct measured RT positions, and at least eight positions must
 retain nonzero robust weight in the final fit. Local neighborhoods include at
 least eight positions; they expand when rejected points would otherwise fill
 the final neighborhood. Distance weights remain unequal: eight positions are
-not a guarantee of precision or dense coverage. A deficient fit is unavailable,
-not replaced by a two-point line, constant, or interpolated pseudo-anchors.
-Non-monotone results also remain unavailable. With only ISTDs, contradictory
-landmark order remains unavailable rather than being resolved by the same
+not a guarantee of precision or dense coverage. A deficient strong fit is
+unavailable, not replaced by a two-point line or interpolated pseudo-anchors.
+Non-monotone strong fits also remain unavailable. With only ISTDs, contradictory
+landmark order cannot establish strong calibration from the same
 measurements. Ordinary corroboration can support a fit despite a conflicting
 standard; fitted standard residuals remain visible and do not reselect that
 standard's peak.
@@ -281,20 +281,39 @@ The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
 not feed their own results back into that fit. Historical frozen maps retain
 their coordinates on replay and are not retroactively refitted under this floor.
 
-The frozen map is linearly interpolated only within its supported anchor range,
-with a bounded inverse for sample-local Backfill queries. It never changes
-observed RT, peak boundaries, area or identity. Final pair scoring uses this
-common coordinate when both endpoints are supported, not a second ISTD override
-or a choice of whichever raw/corrected score is stronger. Non-RT evidence and
-known-identity constraints remain separate. Bootstrap's ISTD-only lookup retains
-the unique same-target fallback; it is not the final batch map.
+The strong-only map and inverse remain bounded by the supported anchor range.
+Final membership and localization explicitly use a graded query instead:
+
+- Inside a usable curve, preserve its LOESS coordinate exactly.
+- Outside it, use the nearest endpoint's constant shift (`boundary_shift`).
+  This weak continuation joins continuously and preserves order and a unique
+  inverse; it does not extend strong calibration support.
+- With at least two qualified distinct positions but no usable strong fit,
+  use their median reference-minus-observed shift (`median_shift`). Zero or
+  one position does not establish a batch shift. Failed strong-fit status is
+  retained, not relabelled as strong support.
+
+The frozen measured support is prepared once. Each answer carries its method,
+qualified position count, measured range, model residual spread, nearest-anchor
+distance and distance outside model support. These are descriptive facts, not
+probabilities or bounds on true error. Weak estimates multiply RT costs by 0.5,
+in addition to signal-quality weighting; mass and independent shape costs are
+unchanged. Accepted membership risks retain the applied query facts in the
+review outputs. Weak localization uses an `estimated_` basis and remains a
+forecast, not a physical observation. Neither query changes observed RT, peak
+boundaries, area, identity, or Backfill admission rules.
+
+Calibration schema v3 retains the measured support for these queries. Legacy
+v1/v2 coordinates remain exact and bounded, with quality unrecorded; old knots
+do not create weak estimates. Bootstrap's strong-only APIs and ISTD-only unique
+same-target fallback retain their existing meaning.
 
 Final grouping rebuilds correspondence in the frozen frame and carries those
 trajectories to localization. Unsupported coordinates are not measured zero
 drift: a supported apex cannot join an unsupported raw apex through
 ordinary correspondence. When both apices are unsupported, existing raw/shape
 evidence remains available. A Backfill forecast uses common coordinates only
-when its references and target inverse are supported; otherwise it estimates
+when its references and target inverse have estimates; otherwise it estimates
 the entire forecast in raw RT, without mixing coordinate systems. Historical
 frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitter.
 
@@ -306,7 +325,7 @@ because another one is close. This policy applies to Untargeted final/regroup
 membership, not bootstrap, Targeted selection, or Backfill admission.
 
 - A connected precursor-mass neighborhood is the comparison universe. Every
-  comparison in it uses common apices only when all members have supported
+  comparison in it uses common apices only when all members have estimated
   coordinates; otherwise the whole universe uses raw coordinates. Unsupported
   peak edges remain unknown, not raw substitutes in a common-frame comparison.
   Explicit diagnostic overrides keep their own basis label and grant no

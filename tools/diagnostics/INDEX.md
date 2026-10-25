@@ -215,8 +215,12 @@ Matrix access.
 - Robust local-linear regression fits each sample against correspondence
   medians, with the CLI's `--loess-fraction`. The frozen result must increase
   strictly on both axes. A calibrated RT exists only inside that sample's
-  supported anchor span; outside it is unavailable, never extrapolated.
-  Fewer than two knots, or a non-monotone result, leave the sample uncalibrated.
+  supported anchor span. Strong fits require at least eight distinct measured
+  positions with nonzero final robust weight. The v3 sidecar also freezes
+  qualified measured support for explicitly weak median/boundary-shift queries;
+  these do not upgrade strong support. See the
+  [graded RT contract](../../docs/product/alignment.md#current-implementation)
+  for final membership and localization behavior.
 - Measured data decides a perturbation; the
   [injection timeline](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic)
   explains it. The front shift is the median shift at the batch's earliest

@@ -317,7 +317,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     payload = {
         "schema": "sample_rt_calibration",
-        "schema_version": 2,
+        "schema_version": 3,
         "evidence_status": "diagnostic_only",
         "alignment_cells": str(args.alignment_cells.resolve()),
         "injection_timeline": (
@@ -340,6 +340,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     list(knot)
                     for knot in calibration.samples[str(row["sample_stem"])].knots
                 ],
+                "estimate_support": asdict(support)
+                if (
+                    support := calibration.samples[
+                        str(row["sample_stem"])
+                    ].estimate_support
+                )
+                is not None
+                else None,
             }
             for row in sample_rows
         ],

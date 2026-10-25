@@ -415,6 +415,41 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                     )
             else:
                 fields.append({"label": "同分決勝資訊", "value": "未記錄"})
+            estimate = risk.get("rt_estimate")
+            if isinstance(estimate, dict):
+                methods = {
+                    "loess": "LOESS 範圍內校正",
+                    "median_shift": "中位數平移（較弱估計）",
+                    "boundary_shift": "邊界位移（較弱估計）",
+                    "retained_map": "既有座標（品質未記錄）",
+                    "diagnostic_override": "診斷指定座標",
+                }
+                fields.append(
+                    {
+                        "label": "RT 估計方法",
+                        "value": methods.get(estimate["method"], estimate["method"]),
+                    }
+                )
+                for label, key in (
+                    ("估計 RT（分鐘）", "rt_min"),
+                    ("合格對照位置數", "anchor_count"),
+                    ("對照範圍（原始分鐘）", "anchor_range_min"),
+                    ("殘差幅度（分鐘）", "residual_spread_min"),
+                    ("最近對照距離（分鐘）", "nearest_anchor_distance_min"),
+                    ("超出支援範圍（分鐘）", "outside_anchor_range_min"),
+                    ("強模型狀態", "fit_status"),
+                ):
+                    value = estimate.get(key)
+                    fields.append(
+                        {
+                            "label": label,
+                            "value": str(value) if value is not None else "未記錄",
+                        }
+                    )
+            else:
+                fields.append(
+                    {"label": "RT 估計品質", "value": "未記錄或未用於本次比較"}
+                )
     qualities = facts.get("signal_quality", [] if "variant" in facts else None)
     if isinstance(qualities, list):
         if not qualities:

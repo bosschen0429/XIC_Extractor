@@ -12,6 +12,10 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import (
+    RtCalibrationPolicy,
+    build_batch_rt_calibration,
+)
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 
 
@@ -23,6 +27,38 @@ def infer(owners, **kwargs):
         rt_frame=SampleRtFrame(),
         **kwargs,
     )
+
+
+@pytest.mark.parametrize("missing_sample", (False, True))
+def test_final_membership_uses_weak_common_frame_without_mixing_raw(missing_sample):
+    samples = ("a", "b", "c", "d")
+    calibration = build_batch_rt_calibration(
+        {"early": {"a": 10, "b": 15, "c": 15}, "late": {"a": 20, "b": 25, "c": 25}},
+        sample_stems=samples,
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    )
+    frame = SampleRtFrame().with_sample_calibration(calibration)
+    owners = (
+        _owner("a", "shifted", apex_rt=11),
+        _owner("b", "reference", apex_rt=16),
+        _owner("d" if missing_sample else "c", "last", apex_rt=16),
+    )
+    result = infer_feature_memberships(
+        owners, rules=CID_NL_GROUPING_RULES, config=AlignmentConfig(), rt_frame=frame
+    )
+    assert len(result.groups) == (2 if missing_sample else 1)
+    for decision in result.sparse_decisions:
+        risk = decision.accepted_risk
+        assert risk is not None
+        assert risk.rt_basis == ("raw" if missing_sample else "drift_corrected")
+        if missing_sample:
+            assert risk.rt_estimate is None
+        else:
+            assert risk.rt_estimate.method == "median_shift"
+            assert risk.rt_estimate.rt_min == 16
+            assert "low_rt_support" in risk.risk_flags
+    assert not frame.has_support("a")  # No promotion of bootstrap support.
 
 
 def test_weak_final_owner_is_selected_without_granting_quantitation():
@@ -41,6 +77,49 @@ def test_weak_final_owner_is_selected_without_granting_quantitation():
     assert "weak_identity" in risk.risk_flags
     assert not weak.quantification_eligible
     assert len(infer((strong, weak), bootstrap=True).groups) == 2
+
+
+def test_weak_calibration_halves_only_rt_cost_not_mass_or_shape():
+    from xic_extractor.alignment.membership_selection import MembershipComparison
+    from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+
+    x = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _owner(s, s, apex_rt=rt, precursor_mz=mz),
+            owner_peak_start_rt=9.0,
+            owner_peak_end_rt=11.0,
+            peak_shape=prepare_local_peak_shape(
+                x + rt, np.exp(-0.5 * (x / width) ** 2), apex_rt_min=rt
+            ),
+        )
+        for s, rt, mz, width in (("a", 10, 500, 0.03), ("b", 10.5, 500.001, 0.25))
+    )
+    calibration = build_batch_rt_calibration(
+        {"early": dict.fromkeys("abc", 8), "late": dict.fromkeys("abc", 20)},
+        sample_stems=tuple("abc"),
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    )
+    config = AlignmentConfig()
+    costs = []
+    for frame in (
+        SampleRtFrame(),
+        SampleRtFrame().with_sample_calibration(calibration),
+    ):
+        comparison = MembershipComparison(
+            owners,
+            rules=CID_NL_GROUPING_RULES,
+            config=config,
+            rt_frame=frame,
+            trajectories=PeakTrajectories(),
+        )
+        cost, contradictions = comparison.pair(*(o.owner_id for o in owners))
+        assert "shape_disagreement" in contradictions
+        costs.append(cost)
+    rt_cost = 0.70 * 0.75 * 30 / config.preferred_rt_sec
+    assert costs[0] - costs[1] == pytest.approx(rt_cost / 2)
+    assert costs[1] > rt_cost / 2  # Independent mass/shape penalties remain.
 
 
 def test_soft_shape_contradiction_is_selected_and_recorded():

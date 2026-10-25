@@ -300,13 +300,11 @@ class PeakTrajectory:
                 float(np.median([rt for _, rt in self.sample_apices])),
                 "trajectory_reference",
             )
-        common = [rt_frame.calibrated_rt_min(sample, rt) for sample, rt in nearest]
-        calibrated = rt_frame.has_support(sample_stem) and all(
-            value is not None for value in common
-        )
+        common = [rt_frame.estimate_rt(sample, rt) for sample, rt in nearest]
+        common_available = all(value is not None for value in common)
         coordinates = (
-            [float(value) for value in common if value is not None]
-            if calibrated
+            [value.rt_min for value in common if value is not None]
+            if common_available
             else [rt for _, rt in nearest]
         )
         fitted = _fit_rt_trajectory(
@@ -315,10 +313,18 @@ class PeakTrajectory:
             order,
             backfill_half_window_min=backfill_half_window_min,
         )
-        if calibrated:
-            observed = rt_frame.observed_rt_min(sample_stem, fitted.query_rt)
-            if observed is not None:
-                return PeakLocation(max(0.0, observed), f"calibrated_{fitted.basis}")
+        if common_available:
+            target_estimate = rt_frame.estimate_observed_rt(
+                sample_stem, fitted.query_rt
+            )
+            if target_estimate is not None:
+                weak = target_estimate.rt_weight < 1.0 or any(
+                    value is not None and value.rt_weight < 1.0 for value in common
+                )
+                return PeakLocation(
+                    max(0.0, target_estimate.rt_min),
+                    f"{'estimated' if weak else 'calibrated'}_{fitted.basis}",
+                )
             # The inverse is unsupported: refit wholly in observed coordinates,
             # never label a raw/common mixture as a calibrated localization.
             fitted = _fit_rt_trajectory(
