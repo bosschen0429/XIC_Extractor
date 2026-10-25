@@ -41,7 +41,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
@@ -338,14 +337,14 @@ def _trace_quality(
                 raw_seg = np.asarray(
                     intensity[segment.start_index : segment.end_index], dtype=float
                 )
-                rt_seg = np.asarray(
-                    rt[segment.start_index : segment.end_index], dtype=float
-                )
                 if is_provisional_peak_shape(
-                    rt_seg,
                     raw_seg,
                     apex_index=segment.apex_index - segment.start_index,
-                    raw_noise_mad=short_scale_noise_mad(rt_seg, raw_seg),
+                    signal_quality=(
+                        evaluation.integration.signal_quality
+                        if evaluation.integration is not None
+                        else None
+                    ),
                 ):
                     return "provisional"
                 break

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,7 +22,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
 )
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
@@ -46,7 +44,7 @@ def test_istd_context_uses_expected_rt_prior() -> None:
         paired_istd_fwhm=None,
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=3))
+    ctx = builder(_candidate(apex_index=3, apex_rt=10.0, intensity=7.0))
 
     assert ctx.rt_prior == pytest.approx(10.0)
     assert ctx.rt_prior_sigma is None
@@ -54,8 +52,8 @@ def test_istd_context_uses_expected_rt_prior() -> None:
     assert ctx.active_trace_source == MS1_MORPHOLOGY_AREA_SOURCE
     assert ctx.morphology_trace_method == MS1_MORPHOLOGY_TRACE_METHOD
     assert ctx.morphology_trace_window_points == DEFAULT_GAUSSIAN15_WINDOW_POINTS
-    assert ctx.baseline_array is not None
-    assert np.all(ctx.baseline_array == 0.0)
+    assert ctx.signal_quality is not None
+    assert ctx.signal_quality.noise_sigma is not None
 
 
 def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> None:
@@ -76,7 +74,7 @@ def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> No
         paired_istd_fwhm=None,
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=4))
+    ctx = builder(_candidate(apex_index=4, apex_rt=10.0, intensity=10.0))
 
     assert ctx.morphology_trace_method == MS1_MORPHOLOGY_TRACE_METHOD
     assert ctx.morphology_trace_window_points == 7
@@ -99,7 +97,7 @@ def test_analyte_context_keeps_shape_ratio_with_expected_rt() -> None:
         paired_istd_fwhm=2.0,
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=3))
+    ctx = builder(_candidate(apex_index=3, apex_rt=10.0, intensity=7.0))
 
     assert ctx.rt_prior == 10.0
     assert ctx.rt_prior_sigma is None
@@ -126,7 +124,7 @@ def test_context_without_other_sample_data_uses_expected_rt() -> None:
         paired_istd_fwhm=None,
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=3))
+    ctx = builder(_candidate(apex_index=3, apex_rt=10.0, intensity=7.0))
 
     assert ctx.rt_prior == 10.0
     assert ctx.rt_prior_sigma is None
@@ -138,7 +136,7 @@ def test_scoring_context_uses_complete_candidate_ms2_evidence() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
     )
-    candidate = SimpleNamespace(selection_apex_index=3)
+    candidate = _candidate(apex_index=3, apex_rt=10.0, intensity=7.0)
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
         sample_name="S2",
@@ -195,7 +193,7 @@ def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
         ),
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=3))
+    ctx = builder(_candidate(apex_index=3, apex_rt=10.0, intensity=7.0))
 
     assert ctx.ms2_present is True
     assert ctx.nl_match is False
@@ -245,7 +243,7 @@ def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
         ),
     )
 
-    ctx = builder(SimpleNamespace(selection_apex_index=3))
+    ctx = builder(_candidate(apex_index=3, apex_rt=10.0, intensity=7.0))
 
     assert ctx.ms2_trace_strength == "strong"
     assert ctx.ms2_alignment_source == "region"
@@ -307,50 +305,6 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
     assert selected.candidate is candidate_with_nl
 
 
-def test_scoring_context_caches_asls_without_retained_intermediate(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    call_count = 0
-
-    def _fake_asls(values: np.ndarray) -> np.ndarray:
-        nonlocal call_count
-        call_count += 1
-        return np.zeros_like(values)
-
-    monkeypatch.setattr(
-        "xic_extractor.peak_detection.scoring_metrics.asls_baseline",
-        _fake_asls,
-    )
-
-    rt = np.linspace(9.6, 10.4, 401)
-    intensity = 300 * np.exp(-(((rt - 10.00) / 0.03) ** 2))
-    intensity += 300 * np.exp(-(((rt - 10.25) / 0.03) ** 2))
-    intensity += 2.0
-
-    factory = build_scoring_context_factory(
-        config=_config(),
-    )
-    builder = factory(
-        target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="S2",
-        rt=rt,
-        intensity=intensity,
-        prepared_result=replace(_prepared(rt, intensity), baseline_unclipped=None),
-        istd_rt_in_this_sample=None,
-        paired_istd_fwhm=None,
-    )
-
-    result = find_peak_and_area(
-        rt,
-        intensity,
-        _config(),
-        scoring_context_builder=builder,
-    )
-
-    assert result.status == "OK"
-    assert call_count == 1
-
-
 def _config(**overrides: object) -> ExtractionConfig:
     config = ExtractionConfig(
         data_dir=Path("."),
@@ -386,6 +340,8 @@ def _target(*, label: str, is_istd: bool, istd_pair: str) -> Target:
 
 def _candidate(*, apex_index: int, apex_rt: float, intensity: float) -> SimpleNamespace:
     return SimpleNamespace(
+        physical_segment=None,
+        peak=SimpleNamespace(peak_start=apex_rt - 0.3, peak_end=apex_rt + 0.3),
         selection_apex_index=apex_index,
         selection_apex_rt=apex_rt,
         selection_apex_intensity=intensity,

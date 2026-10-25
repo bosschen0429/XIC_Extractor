@@ -40,6 +40,7 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
+from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -267,6 +268,9 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     if integration is not None:
         integration["raw_scan_indices"] = tuple(integration["raw_scan_indices"])
         integration["boundary_sources"] = tuple(integration["boundary_sources"])
+        integration["signal_quality"] = signal_quality_from_payload(
+            integration.get("signal_quality")
+        )
         value["selected_integration"] = IntegrationResult(**integration)
     # Retained snapshots may include the retired, non-semantic audit envelope.
     value.pop("region_audit", None)

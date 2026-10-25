@@ -465,7 +465,12 @@ def _integration_identity(integration: IntegrationResult) -> dict[str, object]:
         raise CellDecisionContractError(
             "decision basis requires an exact IntegrationResult"
         )
-    return {item.name: getattr(integration, item.name) for item in fields(integration)}
+    # Advisory measurement quality does not mint a different quantitative decision.
+    return {
+        item.name: getattr(integration, item.name)
+        for item in fields(integration)
+        if item.name != "signal_quality"
+    }
 
 
 def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:

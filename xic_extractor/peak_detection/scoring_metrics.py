@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from xic_extractor.peak_detection.baseline import asls_baseline
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 LABEL_SYMMETRY = "symmetry"
 LABEL_LOCAL_SN = "local_sn"
@@ -19,25 +19,10 @@ LABEL_PEAK_WIDTH = "peak_width"
 # biological-matrix validation artifact.
 _SYMMETRY_SOFT_LOW, _SYMMETRY_SOFT_HIGH = 0.5, 2.0
 _SYMMETRY_HARD_LOW, _SYMMETRY_HARD_HIGH = 0.3, 3.0
-_SN_SOFT_THRESHOLD = 3.0
-_SN_HARD_THRESHOLD = 2.0
-_SN_DIRTY_SOFT_THRESHOLD = 2.0
-_SN_DIRTY_HARD_THRESHOLD = 1.3
 _RT_PRIOR_SIGMA_SOFT = 2.0
 _RT_PRIOR_SIGMA_HARD = 5.0
 _RT_PRIOR_NO_SIGMA_SOFT_MIN = 0.2
 _RT_PRIOR_NO_SIGMA_HARD_MIN = 1.0
-
-
-def short_scale_noise_mad(rt: np.ndarray, intensity: np.ndarray) -> float:
-    """Unscaled MAD of normalized, RT-weighted three-point residuals."""
-    if len(intensity) < 3:
-        return 0.0
-    weight = (rt[2:] - rt[1:-1]) / (rt[2:] - rt[:-2])
-    residual = (
-        weight * intensity[:-2] + (1.0 - weight) * intensity[2:] - intensity[1:-1]
-    ) / np.sqrt(1.0 + weight**2 + (1.0 - weight) ** 2)
-    return float(np.median(np.abs(residual - np.median(residual))))
 
 
 def symmetry_severity(half_width_ratio: float) -> tuple[int, str]:
@@ -50,55 +35,9 @@ def symmetry_severity(half_width_ratio: float) -> tuple[int, str]:
     return 0, LABEL_SYMMETRY
 
 
-def local_sn_severity(
-    intensity: np.ndarray,
-    apex_index: int,
-    *,
-    baseline: np.ndarray | None = None,
-    residual_mad: float | None = None,
-) -> tuple[int, str]:
-    """S/N ratio of peak apex vs. MAD of trace residual after AsLS baseline."""
-    values = np.asarray(intensity, dtype=float)
-    if len(values) < 5 or apex_index < 0 or apex_index >= len(values):
-        return 2, LABEL_LOCAL_SN
-    cached_baseline = baseline
-    mad = residual_mad
-    if cached_baseline is None or mad is None:
-        cached_baseline, mad = compute_local_sn_cache(values)
-    if cached_baseline is None or mad is None:
-        return 2, LABEL_LOCAL_SN
-    if mad <= 0:
-        return 0, LABEL_LOCAL_SN
-    peak_above_baseline = float(values[apex_index] - cached_baseline[apex_index])
-    ratio = peak_above_baseline / mad
-    hard = _SN_HARD_THRESHOLD
-    soft = _SN_SOFT_THRESHOLD
-    if ratio < hard:
-        return 2, LABEL_LOCAL_SN
-    if ratio < soft:
-        return 1, LABEL_LOCAL_SN
-    return 0, LABEL_LOCAL_SN
-
-
-def compute_local_sn_cache(
-    intensity: np.ndarray,
-    *,
-    baseline_unclipped: tuple[float, ...] | None = None,
-) -> tuple[np.ndarray | None, float | None]:
-    """Return unclipped AsLS and whole-trace residual MAD, reusing live preparation."""
-    values = np.asarray(intensity, dtype=float)
-    if len(values) < 5 or not np.all(np.isfinite(values)):
-        return None, None
-    if baseline_unclipped is None:
-        try:
-            baseline = asls_baseline(values)
-        except ValueError:
-            return None, None
-    else:
-        baseline = np.asarray(baseline_unclipped, dtype=float)
-    residual = values - baseline
-    mad = float(np.median(np.abs(residual - np.median(residual))))
-    return baseline, mad
+def local_sn_severity(quality: SignalQuality | None) -> tuple[int, str]:
+    """Use the quality owner's severity; missing noise is not strong evidence."""
+    return (quality.scoring_severity if quality is not None else 2), LABEL_LOCAL_SN
 
 
 def nl_support_severity(ms2_present: bool, nl_match: bool) -> tuple[int, str]:

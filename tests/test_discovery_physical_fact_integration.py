@@ -1086,12 +1086,12 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
 
 
 @pytest.mark.parametrize("shared_request_count", (1, 2))
-@pytest.mark.parametrize("provisional", (False, True))
+@pytest.mark.parametrize("rising_background", (False, True))
 def test_qualification_survives_physical_fact_reuse(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     shared_request_count: int,
-    provisional: bool,
+    rising_background: bool,
 ) -> None:
     from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 
@@ -1104,10 +1104,9 @@ def test_qualification_survives_physical_fact_reuse(
     )
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
-    # Both have a well-supported baseline-corrected peak. A rising background
-    # leaves low raw apex-to-edge contrast and therefore a provisional marker;
-    # it does not change the baseline-corrected physical qualification.
-    background = 1000.0 + (1000.0 * (raw.rt - raw.rt[0]) if provisional else 0.0)
+    # A rising background is not acquired noise: the completed raw SNR stays
+    # strong even when raw apex-to-edge contrast is low.
+    background = 1000.0 + (1000.0 * (raw.rt - raw.rt[0]) if rising_background else 0.0)
     noise = np.random.default_rng(0).normal(size=raw.rt.size)
     raw.intensity = (
         background + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2) + noise
@@ -1130,23 +1129,14 @@ def test_qualification_survives_physical_fact_reuse(
     )
 
     (candidate,) = result.candidates
-    assert candidate.ms1_trace_quality == ("provisional" if provisional else "clean")
-    assert candidate.is_provisional is provisional
+    assert candidate.ms1_trace_quality == "clean"
+    assert candidate.is_provisional is False
     assert result.measurements.reacquisition_request_count == 0
     assert raw.raw_chromatogram_call_count == 1
     assert qualifier.call_count == 1
-    _, qualified_raw = qualifier.call_args.args
-    apex = qualifier.call_args.kwargs["apex_index"]
-    edge_count = max(1, min(5, len(qualified_raw) // 6))
-    edge = max(
-        np.median(qualified_raw[:edge_count]), np.median(qualified_raw[-edge_count:])
-    )
-    centre = np.median(qualified_raw[max(0, apex - 1) : apex + 2])
-    snr = (centre - edge) / qualifier.call_args.kwargs["raw_noise_mad"]
-    if provisional:
-        assert centre / edge < 1.5 and snr < 5.0
-    else:
-        assert snr >= 5.0
+    quality = qualifier.call_args.kwargs["signal_quality"]
+    assert quality.status == "available"
+    assert quality.signal_to_noise >= 5.0 / 1.4826
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(

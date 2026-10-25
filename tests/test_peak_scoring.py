@@ -12,6 +12,7 @@ from xic_extractor.peak_detection.scoring_models import (
     Confidence,
     ScoringContext,
 )
+from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 
 
 def _make_candidate(apex_rt: float, apex_intensity: float) -> PeakCandidate:
@@ -60,6 +61,9 @@ def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -87,6 +91,9 @@ def test_score_candidate_records_positive_and_negative_evidence() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -114,6 +121,9 @@ def test_score_candidate_records_rt_review_support_without_pair_bonus() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -138,6 +148,9 @@ def test_score_candidate_records_strong_ms2_trace_support() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -169,6 +182,9 @@ def test_sparse_apex_fallback_ms2_does_not_count_as_strong_trace_support() -> No
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -201,6 +217,9 @@ def test_score_candidate_records_moderate_ms2_trace_support() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -232,6 +251,9 @@ def test_score_candidate_records_same_apex_cwt_support() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -272,6 +294,9 @@ def test_cwt_only_candidate_does_not_receive_same_apex_support_bonus() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -301,6 +326,9 @@ def test_cwt_support_requires_chemical_evidence_when_nl_is_required() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -325,6 +353,9 @@ def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -352,6 +383,9 @@ def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -375,9 +409,13 @@ def test_reason_text_leads_with_decision_then_support_concerns_and_caps() -> Non
     cand = _make_candidate(apex_rt=10.8, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
     y = 1000 * np.exp(-(((x - 10.8) / 0.1) ** 2)) + 5
+    y += np.random.default_rng(916).normal(0.0, 0.01, len(x))
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=180
+        ),
         apex_index=180,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -405,6 +443,9 @@ def test_score_candidate_no_nl_target_records_no_nl_support() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -435,6 +476,9 @@ def test_score_candidate_no_ms2_default_reason_is_not_counted() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -463,6 +507,9 @@ def test_score_candidate_no_ms2_allowed_reason_is_accepted() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -491,6 +538,9 @@ def test_score_candidate_maps_rt_centrality_and_noise_shape_concerns() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -515,6 +565,9 @@ def test_score_candidate_caps_out_of_window_peak_without_rt_prior() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=67,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -542,6 +595,9 @@ def test_score_candidate_allows_out_of_window_peak_with_close_rt_prior() -> None
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=67,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -569,6 +625,9 @@ def test_score_candidate_keeps_in_window_edge_peak_as_rt_centrality_concern() ->
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=41,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -612,6 +671,9 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -660,6 +722,9 @@ def test_score_candidate_formats_adap_like_quality_flags_as_minor_concerns() -> 
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -694,6 +759,9 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -730,6 +798,9 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,
@@ -770,6 +841,9 @@ def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags()
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
+        signal_quality=measure_signal_quality(
+            x, y, baseline=np.full_like(y, 5.0), apex_index=100
+        ),
         apex_index=100,
         half_width_ratio=1.0,
         fwhm_ratio=1.0,

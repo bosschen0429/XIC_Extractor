@@ -722,3 +722,122 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
                 dll_dir=tmp_path,
                 group_id=group_id,
             )
+
+
+def _quality_review_report(tmp_path):
+    """Two samples in one feature: advisory facts traverse the actual review store."""
+    from types import SimpleNamespace as NS
+
+    from xic_extractor.diagnostics.explanation_review import review_cell
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    matrix = tmp_path / "quality-matrix.tsv"
+    matrix.write_text(
+        "cluster_id\tprecursor_mz\trt_apex_min\tS1\tS2\nrow-1\t500\t1\t1000\t2000\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "quality-review.sqlite"
+    cells = []
+    for sid, value, ratio in (("S1", 1000.0, 20.0), ("S2", 2000.0, 2.0)):
+        quality = SignalQuality(
+            "available",
+            noise_sigma=10.0,
+            signal_to_noise=ratio,
+            low_signal_to_noise=ratio < 10.0 / 1.4826,
+        )
+        observation = NS(
+            content=NS(
+                peak_observation_content_id=f"obs-{sid}",
+                integration=NS(signal_quality=quality),
+            ),
+            capture_stage="initial_capture",
+        )
+        cell = NS(
+            peak_observation=observation,
+            content=NS(
+                method_result="SUPPORT",
+                reason_codes=(),
+                peak_observation_content_id=f"obs-{sid}",
+            ),
+        )
+        decision = NS(
+            subject=NS(canonical_sample=NS(identity=NS(sample_identity_id=sid))),
+            evidence=NS(effective_cells=(cell,), evidence_states=()),
+            variant="quantified",
+            value=value,
+            source="raw_trapezoid",
+        )
+        cells.append(review_cell(decision))
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        keys = [("C1", "S1"), ("C2", "S2")]
+        for cid, sid in keys:
+            writer.add_candidate(
+                cid,
+                sid,
+                {
+                    "candidate_id": cid,
+                    "canonical_sample_identity_id": sid,
+                    "precursor_mz": 500.0,
+                    "rt_apex_min": 1.0,
+                },
+            )
+        writer.add_record(
+            "final_groups",
+            "G1",
+            {"group_hypothesis_id": "G1", "disposition": "completed"},
+            keys,
+        )
+        writer.add_record(
+            "rows", "row-1", {"row_key_id": "row-1", "group_hypothesis_id": "G1"}, keys
+        )
+        writer.add_row_cells("row-1", "G1", cells, {"S1": 0, "S2": 1})
+        writer.finalize(
+            {
+                "processing_request_id": "quality-request",
+                "processing_attempt_id": "quality-attempt",
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"sample_stem": sid, "canonical_sample_identity_id": sid}
+                    for sid in ("S1", "S2")
+                ],
+            }
+        )
+    return report, matrix
+
+
+def test_signal_quality_survives_review_storage_without_changing_results(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, matrix = _quality_review_report(tmp_path)
+    original = matrix.read_bytes()
+    payload = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload
+    rows = {
+        row["sample_id"]: row for item in payload["items"] for row in item["samples"]
+    }
+    assert rows["S1"]["signal_quality"][0]["low_signal_to_noise"] is False
+    assert rows["S2"]["signal_quality"][0]["low_signal_to_noise"] is True
+    assert rows["S1"]["quantitative_value"] == 1000.0
+    assert rows["S2"]["quantitative_value"] == 2000.0
+    assert rows["S1"]["status_kind"] == rows["S2"]["status_kind"] == "rest"
+    assert matrix.read_bytes() == original
+
+
+def test_old_review_cell_encoding_keeps_quality_not_recorded():
+    import zlib
+
+    from xic_extractor.diagnostics.explanation_review import unpack_cells
+
+    old = [
+        [0, "quantified", 123.0, "raw_trapezoid", [], [], "discovery_support", ["obs"]]
+    ]
+    decoded = unpack_cells(
+        zlib.compress(json.dumps(old).encode()),
+        row_id="r",
+        group_id="g",
+        sample_ids=("S1",),
+    )
+    assert decoded["review-cell:r:0"]["value"] == 123.0
+    assert decoded["review-cell:r:0"]["signal_quality"] == []

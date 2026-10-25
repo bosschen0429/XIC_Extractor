@@ -1,4 +1,4 @@
-"""Shared peak correspondence and signal-to-noise evidence for grouping."""
+"""Shared peak correspondence evidence for grouping."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
-from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
@@ -17,9 +16,6 @@ from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_s
 if TYPE_CHECKING:
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
     from xic_extractor.alignment.rt_frame import RtFrame
-
-DETECTION_LIMIT_SNR = 3.0
-QUANTITATION_LIMIT_SNR = 10.0
 
 
 def pair_ppm(left: float, right: float) -> float:
@@ -165,38 +161,6 @@ def _regions_disjoint(left: _Region, right: _Region) -> bool:
 def _farthest_member(regions: Mapping[str, _Region], apex: float) -> str:
     return max(
         regions, key=lambda owner_id: (abs(regions[owner_id][1] - apex), owner_id)
-    )
-
-
-def min_owner_peak_snr(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-) -> float | None:
-    left_snr = owner_peak_snr(left)
-    right_snr = owner_peak_snr(right)
-    if left_snr is None or right_snr is None:
-        return None
-    return min(left_snr, right_snr)
-
-
-def owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
-    """Signal-to-noise of the peak Alignment resolved for this owner."""
-    integration = owner.selected_integration
-    if integration is None:
-        return None
-    residual = integration.baseline_residual_mad
-    if residual is None or residual <= 0.0:
-        return None
-    return integration.height_raw / residual
-
-
-def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
-    """Whether the resolved peak clears the quantitation-limit convention."""
-    snr = owner_peak_snr(owner)
-    return (
-        owner_quantification_eligible(owner)
-        and snr is not None
-        and snr >= QUANTITATION_LIMIT_SNR
     )
 
 

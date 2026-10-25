@@ -2035,3 +2035,58 @@ def _positive_area(value: float | None) -> TypeGuard[float]:
         and math.isfinite(value)
         and value > 0
     )
+
+
+def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path):
+    from dataclasses import replace
+
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_cells_tsv,
+        write_alignment_matrix_tsv,
+    )
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    cells = tuple(
+        _cell(sid, "detected", area=value)
+        for sid, value in (("S1", 1000.0), ("S2", 2000.0))
+    )
+    before = AlignmentMatrix(
+        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        cells=cells,
+        sample_order=("S1", "S2"),
+    )
+    after = replace(
+        before,
+        cells=tuple(
+            replace(
+                cell,
+                selected_integration=replace(
+                    cell.selected_integration,
+                    signal_quality=SignalQuality(
+                        "available",
+                        noise_sigma=10.0,
+                        signal_to_noise=ratio,
+                        low_signal_to_noise=ratio < 10 / 1.4826,
+                    ),
+                ),
+            )
+            for cell, ratio in zip(cells, (20.0, 2.0), strict=True)
+        ),
+    )
+    first = write_alignment_matrix_tsv(
+        tmp_path / "before.tsv",
+        before,
+        alignment_config=AlignmentConfig(),
+        production_decisions=_production_decisions(before),
+    )
+    second = write_alignment_matrix_tsv(
+        tmp_path / "after.tsv",
+        after,
+        alignment_config=AlignmentConfig(),
+        production_decisions=_production_decisions(after),
+    )
+    assert first.read_bytes() == second.read_bytes()
+    rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "review-cells.tsv", after))
+    assert [row["sample_stem"] for row in rows] == ["S1", "S2"]
+    assert [row["low_signal_to_noise"] for row in rows] == ["FALSE", "TRUE"]
+    assert [row["signal_to_noise"] for row in rows] == ["20", "2"]

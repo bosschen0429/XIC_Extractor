@@ -8,6 +8,7 @@ import numpy as np
 
 from xic_extractor.ms2_trace_evidence import MS2TraceStrength
 from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.evidence_facts import CandidateEvidenceFacts
@@ -69,8 +70,8 @@ class ScoringContext:
     ms1_peak_group_strict_nl_event_count: int | None = None
     outside_ms1_peak_group_trigger_scan_count: int | None = None
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
-    baseline_array: np.ndarray | None = None
-    residual_mad: float | None = None
+    signal_quality: SignalQuality | None = None
+    baseline_method: str = ""
 
     active_trace_source: str = ""
     morphology_trace_method: str = ""

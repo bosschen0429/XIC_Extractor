@@ -97,6 +97,10 @@ ALIGNMENT_CELLS_COLUMNS = (
     "peak_end_rt",
     "rt_delta_sec",
     "trace_quality",
+    "signal_quality_status",
+    "noise_sigma",
+    "signal_to_noise",
+    "low_signal_to_noise",
     "scan_support_score",
     "source_candidate_id",
     "neutral_loss_tag",
@@ -316,6 +320,11 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
     for cell in matrix.cells:
         cluster = clusters_by_id[cell.cluster_id]
+        quality = (
+            cell.selected_integration.signal_quality
+            if cell.selected_integration is not None
+            else None
+        )
         yield {
             "feature_family_id": cell.cluster_id,
             "group_hypothesis_id": cell.group_hypothesis_id,
@@ -338,6 +347,18 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "peak_end_rt": format_value(cell.peak_end_rt),
             "rt_delta_sec": format_value(cell.rt_delta_sec),
             "trace_quality": cell.trace_quality,
+            "signal_quality_status": quality.status
+            if quality is not None
+            else "not_recorded",
+            "noise_sigma": format_value(quality.noise_sigma)
+            if quality is not None
+            else "",
+            "signal_to_noise": format_value(quality.signal_to_noise)
+            if quality is not None
+            else "",
+            "low_signal_to_noise": quality.low_signal_to_noise
+            if quality is not None and quality.low_signal_to_noise is not None
+            else "",
             "scan_support_score": format_value(cell.scan_support_score),
             "source_candidate_id": cell.source_candidate_id or "",
             "neutral_loss_tag": cluster.neutral_loss_tag,

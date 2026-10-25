@@ -38,6 +38,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_TRACE_METHOD,
     gaussian15_positive_asls_residual_metrics,
 )
+from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -76,7 +77,7 @@ _CONTENT_PAYLOAD_FIELDS = frozenset(
     }
 )
 _INTEGRATION_PAYLOAD_FIELDS = frozenset(
-    field.name for field in fields(IntegrationResult)
+    field.name for field in fields(IntegrationResult) if field.name != "signal_quality"
 )
 _INTEGRATION_TEXT_FIELDS = frozenset(
     {
@@ -187,6 +188,7 @@ def verify_persisted_peak_observation_claims(
     integration_payload = _exact_payload_mapping(
         content["integration"],
         expected_fields=_INTEGRATION_PAYLOAD_FIELDS,
+        optional_fields=frozenset({"signal_quality"}),
         field="peak observation integration",
     )
     for field_name in _INTEGRATION_TEXT_FIELDS:
@@ -216,6 +218,9 @@ def verify_persisted_peak_observation_claims(
     integration_values = dict(integration_payload)
     integration_values["boundary_sources"] = boundary_sources
     integration_values["raw_scan_indices"] = raw_scan_indices
+    integration_values["signal_quality"] = signal_quality_from_payload(
+        integration_payload.get("signal_quality")
+    )
     try:
         integration = IntegrationResult(**cast(dict[str, Any], integration_values))
         content_id = _required_text(
@@ -814,13 +819,16 @@ def _physical_content_basis(
     intensity: tuple[float, ...],
     integration: IntegrationResult,
 ) -> dict[str, object]:
+    # Measurement quality is advisory, not part of physical peak identity.
+    integration_basis = asdict(integration)
+    integration_basis.pop("signal_quality")
     return {
         "schema": "ms1_peak_observation_content",
         "canonical_sample_identity_id": canonical_sample_identity_id,
         "mz": mz,
         "rt": list(rt),
         "intensity": list(intensity),
-        "integration": asdict(integration),
+        "integration": integration_basis,
     }
 
 
@@ -831,7 +839,11 @@ def _content_payload(content: PeakObservationContent) -> dict[str, object]:
         "mz": content.mz,
         "rt": list(content.rt),
         "intensity": list(content.intensity),
-        "integration": asdict(content.integration),
+        "integration": {
+            key: value
+            for key, value in asdict(content.integration).items()
+            if key != "signal_quality" or value is not None
+        },
     }
 
 
@@ -840,11 +852,13 @@ def _exact_payload_mapping(
     *,
     expected_fields: frozenset[str],
     field: str,
+    optional_fields: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise PeakObservationContractError(f"{field} must be a JSON object")
     normalized = dict(value)
     actual_fields = frozenset(normalized)
+    expected_fields = expected_fields | (actual_fields & optional_fields)
     if actual_fields != expected_fields:
         missing = ", ".join(sorted(expected_fields - actual_fields))
         unexpected = ", ".join(sorted(actual_fields - expected_fields))

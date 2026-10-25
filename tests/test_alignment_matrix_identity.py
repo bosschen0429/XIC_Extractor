@@ -9,7 +9,6 @@ from xic_extractor.alignment.matrix_identity import (
     build_matrix_identity_decisions,
     matrix_identity_row_decision_record,
 )
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_ONLY_BLOCKED_REASON,
     HIGH_BACKFILL_CAPPED_FLAG,
@@ -120,38 +119,6 @@ def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> N
     assert decision.identity_confidence == "medium"
     assert decision.primary_evidence == "multi_sample_detected"
     assert decision.identity_reason == "multi_sample_detected"
-
-
-def test_moderate_complete_link_uses_medium_multi_sample_identity_policy() -> None:
-    matrix = _bounded_continuity_matrix(
-        snr=50.0,
-        evidence="owner_complete_link_moderate;owner_count=2",
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-
-    assert decision.include_in_primary_matrix is True
-    assert decision.identity_decision == "production_family"
-    assert decision.identity_confidence == "medium"
-    assert decision.primary_evidence == "multi_sample_detected"
-    assert decision.identity_reason == "multi_sample_detected"
-
-
-def test_moderate_complete_link_requires_two_quantitation_grade_owners() -> None:
-    matrix = _bounded_continuity_matrix(
-        snr=4.0,
-        evidence="owner_complete_link_moderate;owner_count=2",
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-
-    assert decision.include_in_primary_matrix is False
-    assert decision.identity_decision == "provisional_discovery"
-    assert decision.identity_confidence == "review"
-    assert decision.primary_evidence == "multi_sample_detected"
-    assert decision.identity_reason == (
-        "moderate_complete_link_below_quantitation_limit"
-    )
 
 
 def test_matrix_identity_decision_record_explains_row_projection_policy() -> None:
@@ -1029,123 +996,3 @@ def _owner(
             ),
         ),
     )
-
-
-def _quantitation_owner(
-    sample_stem: str,
-    *,
-    snr: float,
-    apex_on_left_boundary: bool = False,
-) -> SampleLocalMS1Owner:
-    return SampleLocalMS1Owner(
-        owner_id=f"owner:{sample_stem}",
-        sample_stem=sample_stem,
-        raw_file=f"{sample_stem}.raw",
-        precursor_mz=500.0,
-        owner_apex_rt=8.45 if apex_on_left_boundary else 8.5,
-        owner_peak_start_rt=8.45,
-        owner_peak_end_rt=8.55,
-        owner_area=1000.0,
-        owner_height=snr * 10.0,
-        primary_identity_event=None,
-        supporting_events=(),
-        identity_conflict=False,
-        assignment_reason="",
-        selected_integration=IntegrationResult(
-            rt_left_min=8.45,
-            rt_apex_min=8.45 if apex_on_left_boundary else 8.5,
-            rt_right_min=8.55,
-            raw_apex_rt_min=8.5,
-            rt_width_min=0.1,
-            height_raw=snr * 10.0,
-            height_smoothed=snr * 10.0,
-            area_raw_counts_seconds=1000.0,
-            baseline_residual_mad=10.0,
-        ),
-    )
-
-
-def _bounded_continuity_matrix(*, snr: float, evidence: str) -> AlignmentMatrix:
-    return _matrix(
-        _feature(
-            "FAM001",
-            evidence=evidence,
-            owners=(
-                _quantitation_owner("s1", snr=snr),
-                _quantitation_owner("s2", snr=snr),
-            ),
-        ),
-        (
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 110.0),
-        ),
-    )
-
-
-def test_bounded_continuity_publishes_quantifiable_peaks() -> None:
-    decisions = build_matrix_identity_decisions(
-        _bounded_continuity_matrix(
-            snr=50.0,
-            evidence="owner_bounded_continuity;owner_count=2",
-        ),
-        AlignmentConfig(),
-    )
-
-    decision = decisions.row("FAM001")
-    assert decision.include_in_primary_matrix
-    assert decision.identity_decision == "production_family"
-
-
-def test_bounded_continuity_holds_peaks_below_quantitation_limit() -> None:
-    decisions = build_matrix_identity_decisions(
-        _bounded_continuity_matrix(
-            snr=4.0,
-            evidence="owner_bounded_continuity;owner_count=2",
-        ),
-        AlignmentConfig(),
-    )
-
-    decision = decisions.row("FAM001")
-    assert not decision.include_in_primary_matrix
-    assert decision.identity_decision == "provisional_discovery"
-    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
-
-
-def test_bounded_continuity_does_not_count_endpoint_apex_as_quantifiable() -> None:
-    matrix = _matrix(
-        _feature(
-            "FAM001",
-            evidence="owner_bounded_continuity;owner_count=2",
-            owners=(
-                _quantitation_owner("s1", snr=50.0),
-                _quantitation_owner(
-                    "s2",
-                    snr=50.0,
-                    apex_on_left_boundary=True,
-                ),
-            ),
-        ),
-        (
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 110.0),
-        ),
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-
-    assert not decision.include_in_primary_matrix
-    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
-
-
-def test_quantitation_gate_does_not_reach_other_grouping_policies() -> None:
-    decisions = build_matrix_identity_decisions(
-        _bounded_continuity_matrix(
-            snr=4.0,
-            evidence="owner_full_batch_continuity;owner_count=2",
-        ),
-        AlignmentConfig(),
-    )
-
-    decision = decisions.row("FAM001")
-    assert decision.include_in_primary_matrix
-    assert decision.identity_reason != "bounded_continuity_below_quantitation_limit"

@@ -430,3 +430,41 @@ def _ms2_evidence(*, nl_match: bool) -> CandidateMS2Evidence:
         best_product_base_ratio=0.3,
         alignment_source="region",
     )
+
+
+def test_legacy_integration_records_raw_interval_sigma_without_redefining_area():
+    from xic_extractor.peak_detection.baseline import asls_baseline
+
+    rt = np.linspace(8.0, 9.0, 15)
+    raw = 10 + 80 * np.exp(-0.5 * ((rt - 8.5) / 0.1) ** 2)
+    raw += np.random.default_rng(916).normal(0, 2, len(rt))
+    selected = _candidate(8.5, left=8.0, right=9.0, area=1234.0)
+    result = PeakDetectionResult(
+        status="OK",
+        peak=selected.peak,
+        n_points=len(rt),
+        max_smoothed=80.0,
+        n_prominent_peaks=1,
+        candidates=(selected,),
+    )
+    hypothesis = build_peak_hypotheses(
+        sample_name="S1",
+        target_label="A",
+        role="Analyte",
+        istd_pair="",
+        resolver_mode="savgol",
+        peak_result=result,
+        rt=rt,
+        intensity=raw,
+    )[0]
+    integration = hypothesis.integration
+    residual = np.diff(raw, n=2) / np.sqrt(6.0)
+    expected_sigma = 1.4826 * np.median(np.abs(residual - np.median(residual)))
+    quality = integration.signal_quality
+    assert quality.status == "available"
+    assert quality.noise_sigma == pytest.approx(expected_sigma)
+    assert quality.signal_to_noise == pytest.approx(
+        (raw[7] - asls_baseline(raw)[7]) / expected_sigma
+    )
+    assert integration.area_raw_counts_seconds == 1234.0
+    assert integration.area_uncertainty_noise_source == "asls_residual"

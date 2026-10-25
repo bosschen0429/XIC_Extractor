@@ -14,9 +14,9 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResult
-from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
+from xic_extractor.peak_detection.signal_quality import candidate_signal_quality
 
 
 class _ScoringContextBuilder(Protocol):
@@ -70,12 +70,13 @@ def build_scoring_context_factory(
         shape_signal = np.asarray(
             prepared.positive_signal if prepared is not None else (), dtype=float
         )
-        baseline_array, residual_mad = compute_local_sn_cache(
-            intensity_values, baseline_unclipped=prepared_result.baseline_unclipped
+        baseline_array = (
+            np.asarray(prepared_result.baseline_unclipped, dtype=float)
+            if prepared_result.baseline_unclipped is not None
+            else None
         )
         morphology_window_points = configured_morphology_window_points(config)
         active_intensity_values = intensity_values
-        active_baseline_array = baseline_array
         active_trace_source = "raw"
         morphology_trace_method = ""
         morphology_trace_window_points: int | None = None
@@ -86,13 +87,11 @@ def build_scoring_context_factory(
                     baseline_array,
                     window_points=morphology_window_points,
                 )
-                active_baseline_array = np.zeros_like(active_intensity_values)
                 active_trace_source = MS1_MORPHOLOGY_AREA_SOURCE
                 morphology_trace_method = MS1_MORPHOLOGY_TRACE_METHOD
                 morphology_trace_window_points = morphology_window_points
             except (TypeError, ValueError, FloatingPointError):
                 active_intensity_values = intensity_values
-                active_baseline_array = baseline_array
 
         def builder(candidate: PeakCandidate) -> ScoringContext:
             candidate_ms2 = (
@@ -205,8 +204,15 @@ def build_scoring_context_factory(
                 outside_ms1_peak_group_strict_nl_scan_count=(
                     outside_ms1_peak_group_strict_nl_scan_count
                 ),
-                baseline_array=active_baseline_array,
-                residual_mad=residual_mad,
+                signal_quality=candidate_signal_quality(
+                    candidate,
+                    rt_values,
+                    intensity_values,
+                    np.asarray(prepared.baseline) if prepared is not None else None,
+                ),
+                baseline_method=prepared.profile.baseline_method
+                if prepared is not None
+                else "",
                 active_trace_source=active_trace_source,
                 morphology_trace_method=morphology_trace_method,
                 morphology_trace_window_points=morphology_trace_window_points,

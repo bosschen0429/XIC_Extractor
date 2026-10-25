@@ -12,8 +12,8 @@ from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
 )
-from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
 from xic_extractor.peak_detection.selected_envelope import TraceInterval
+from xic_extractor.peak_detection.signal_quality import short_scale_noise_sigma
 
 ChromPeakSegmentStatus = Literal[
     "OK",
@@ -42,7 +42,7 @@ class ChromPeakSegmentPolicy:
     morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
     morphology_min_sigma_rt: float = 0.0
-    min_prominence_noise_mad: float = 0.0
+    min_prominence_noise_sigma: float = 0.0
     min_prominence_fraction_of_envelope: float = 0.04
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
@@ -138,7 +138,7 @@ def enumerate_chrom_peak_segments(
         intensity if acquired_intensity_values is None else acquired_intensity_values
     )
     seeds = _apex_seeds(morphology_trace, context_interval, active_policy)
-    if active_policy.min_prominence_noise_mad > 0.0:
+    if active_policy.min_prominence_noise_sigma > 0.0:
         seeds = _supported_apex_seeds(
             seeds,
             morphology_trace,
@@ -461,7 +461,7 @@ def _supported_apex_seeds(
     ):
         left, right = start + int(left), start + int(right) + 1
         prominence_by_index[seed.index] = float(prominence)
-        noise = short_scale_noise_mad(rt[left:right], acquired[left:right])
+        noise = short_scale_noise_sigma(rt[left:right], acquired[left:right]) or 0.0
         # A subordinate bump cannot dilute its noise estimate with distant
         # zero background. Include the acquired contour toward an adjacent
         # higher lobe when both belong to the same connected envelope.
@@ -479,12 +479,13 @@ def _supported_apex_seeds(
             contour_left, contour_right = sorted((seed.index, neighbor.index))
             noise = max(
                 noise,
-                short_scale_noise_mad(
+                short_scale_noise_sigma(
                     rt[contour_left : contour_right + 1],
                     acquired[contour_left : contour_right + 1],
-                ),
+                )
+                or 0.0,
             )
-        if prominence >= policy.min_prominence_noise_mad * noise:
+        if prominence >= policy.min_prominence_noise_sigma * noise:
             supported.add(seed.index)
     # Noise significance does not make a bump a separate chromatographic peak.
     # Compare its prominence with the whole connected envelope before using a
@@ -521,7 +522,7 @@ def _restore_rt_envelope_clear_splits(
     policy: ChromPeakSegmentPolicy,
 ) -> tuple[_ApexSeed, ...]:
     canonical_seeds = _apex_seeds(canonical_residual, context, policy)
-    if policy.min_prominence_noise_mad > 0.0:
+    if policy.min_prominence_noise_sigma > 0.0:
         canonical_seeds = _supported_apex_seeds(
             canonical_seeds,
             canonical_residual,

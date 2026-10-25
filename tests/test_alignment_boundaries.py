@@ -84,3 +84,23 @@ def _imported_module_names(node):
         )
         return imported_names
     return []
+
+
+def test_alignment_consumes_quality_facts_without_importing_noise_estimators():
+    root = Path(__file__).parents[1] / "xic_extractor" / "alignment"
+    forbidden = (
+        "xic_extractor.peak_detection.baseline",
+        "xic_extractor.peak_detection.signal_quality.short_scale_noise_sigma",
+        "xic_extractor.peak_detection.signal_quality.measure_signal_quality",
+        "xic_extractor.peak_detection.signal_quality.candidate_signal_quality",
+    )
+    violations = []
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        violations.extend(
+            (str(path.relative_to(root)), name)
+            for node in ast.walk(tree)
+            for name in _imported_module_names(node)
+            if name.startswith(forbidden)
+        )
+    assert violations == []

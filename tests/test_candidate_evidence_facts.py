@@ -47,6 +47,7 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 
 def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:
@@ -548,8 +549,12 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
         ms2_alignment_source="region",
         trigger_scan_count=3,
         strict_nl_scan_count=2,
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
         active_trace_source="gaussian15_positive_asls_residual",
         morphology_trace_method="gaussian_15",
         morphology_trace_window_points=15,
@@ -611,8 +616,12 @@ def test_candidate_evidence_facts_preserve_gaussian15_ms1_peak_group_scope() -> 
         ms1_peak_group_strict_nl_event_count=1,
         outside_ms1_peak_group_trigger_scan_count=1,
         outside_ms1_peak_group_strict_nl_scan_count=1,
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
     )
 
     facts = build_candidate_evidence_facts(candidate, ctx, role="Analyte")
@@ -644,8 +653,12 @@ def test_candidate_facts_drive_semantics_and_projection_without_score_labels() -
         rt_min=8.0,
         rt_max=9.0,
         ms2_trace_strength="moderate",
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
     )
     facts = build_candidate_evidence_facts(candidate, ctx, role="ISTD", istd_pair="")
 
@@ -674,8 +687,12 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
         rt_prior_sigma=0.1,
         rt_min=8.0,
         rt_max=9.0,
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
     )
 
     scored = score_candidate(
@@ -728,8 +745,12 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
         rt_prior_sigma=0.1,
         rt_min=8.0,
         rt_max=9.0,
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
     )
     facts = build_candidate_evidence_facts(
         candidate,
@@ -764,8 +785,12 @@ def test_nl_fail_with_paired_istd_rt_mismatch_is_not_counted() -> None:
         rt_prior_sigma=0.1,
         rt_min=11.0,
         rt_max=11.5,
-        baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
-        residual_mad=5.0,
+        signal_quality=SignalQuality(
+            "available",
+            noise_sigma=5.0,
+            signal_to_noise=181.0,
+            low_signal_to_noise=False,
+        ),
         trigger_scan_count=1,
         strict_nl_scan_count=0,
     )

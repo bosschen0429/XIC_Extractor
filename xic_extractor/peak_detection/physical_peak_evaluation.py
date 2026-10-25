@@ -45,7 +45,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
     validate_prepared_signal_identity,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    _PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
@@ -69,14 +68,13 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalProjection,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_metrics import (
-    short_scale_noise_mad,
+from xic_extractor.peak_detection.signal_quality import (
+    BACKFILL_MIN_CONTRAST_SIGMA,
+    DISCOVERY_MIN_CONTRAST_SIGMA,
+    MAD_TO_SIGMA,
+    measure_signal_quality,
+    short_scale_noise_sigma,
 )
-
-# Backfill without a direct identity observation needs separation from measured
-# local background, not merely a smoothed maximum. MAD is unscaled; three robust
-# noise standard deviations are a screening rule, not a measured blank FPR.
-_BACKFILL_LOCAL_CONTRAST_MIN_MAD = 3.0 * 1.4826
 
 
 def _physical_text(value: object, *, field: str) -> str:
@@ -267,7 +265,7 @@ def enumerate_physical_segment_universe(
             baseline_return_min_residual=0.0,
             include_baseline_return_samples=True,
             clear_valley_max_fraction=0.50,
-            min_prominence_noise_mad=_PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
+            min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
             min_prominence_fraction_of_envelope=(
                 prepared.profile.segment_min_prominence_fraction
             ),
@@ -298,9 +296,10 @@ def enumerate_physical_segment_universe(
                     quantitation_context_rt_end=context_end,
                     policy=replace(
                         segment_policy,
-                        baseline_return_min_residual=short_scale_noise_mad(
-                            rt, acquired
-                        ),
+                        baseline_return_min_residual=(
+                            short_scale_noise_sigma(rt, acquired) or 0.0
+                        )
+                        / MAD_TO_SIGMA,
                     ),
                     acquired_intensity_values=acquired,
                 )
@@ -823,13 +822,13 @@ def _physical_segment_support_failure(
     if selection_policy_version != PHYSICAL_PEAK_REFERENCE_POLICY:
         prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
-    noise_mad = short_scale_noise_mad(rt, acquired)
+    noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
     minimum_contrast = (
-        _BACKFILL_LOCAL_CONTRAST_MIN_MAD
+        BACKFILL_MIN_CONTRAST_SIGMA
         if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
-        else _PHYSICAL_LOCAL_CONTRAST_MIN_MAD
+        else DISCOVERY_MIN_CONTRAST_SIGMA
     )
-    if prominence < minimum_contrast * noise_mad:
+    if prominence < minimum_contrast * noise_sigma:
         if selection_policy_version == PHYSICAL_PEAK_REFERENCE_POLICY:
             return "insufficient_reference_peak_contrast"
         return (
@@ -1065,6 +1064,15 @@ def _physical_raw_descriptor_projection(
         ms1_morphology_trace_method=prepared.profile.method,
         ms1_morphology_trace_window_points=prepared.profile.window_points,
         ms1_morphology_trace_effective_points=prepared.profile.window_points,
+        signal_quality=measure_signal_quality(
+            rt,
+            raw,
+            baseline=np.asarray(
+                prepared.baseline[selected.start_index : selected.end_index],
+                dtype=float,
+            ),
+            apex_index=selected.apex_index - selected.start_index,
+        ),
     )
 
 

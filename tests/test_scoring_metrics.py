@@ -1,9 +1,7 @@
 import numpy as np
 import pytest
 
-from xic_extractor.peak_detection.baseline import asls_baseline
 from xic_extractor.peak_detection.scoring_metrics import (
-    compute_local_sn_cache,
     local_sn_severity,
     nl_support_severity,
     noise_shape_severity,
@@ -12,6 +10,7 @@ from xic_extractor.peak_detection.scoring_metrics import (
     rt_prior_severity,
     symmetry_severity,
 )
+from xic_extractor.peak_detection.signal_quality import MAD_TO_SIGMA, SignalQuality
 
 
 @pytest.mark.parametrize(
@@ -42,79 +41,27 @@ def test_symmetry_nan_is_major() -> None:
     assert label == "symmetry"
 
 
-def _make_trace(
-    peak_height: float, noise_std: float = 0.05, n: int = 400, seed: int = 0
-) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    x = np.arange(n)
-    peak = peak_height * np.exp(-((x - n / 2) ** 2) / (2 * 5**2))
-    noise = rng.normal(0.0, noise_std, n)
-    return peak + noise + 1.0
-
-
-def test_sn_cache_reuses_live_baseline_with_whole_trace_residual_mad(
-    monkeypatch,
-) -> None:
-    values = _make_trace(10.0)
-    baseline = asls_baseline(values)
-    residual = values - baseline
-    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
-
-    def unexpected_solve(*_args, **_kwargs):
-        raise AssertionError("live baseline must not be solved again")
-
-    monkeypatch.setattr(
-        "xic_extractor.peak_detection.scoring_metrics.asls_baseline", unexpected_solve
+@pytest.mark.parametrize(
+    "mad_ratio,expected",
+    [(0.0, 2), (1.999, 2), (2.0, 1), (2.999, 1), (3.0, 0), (10.0, 0)],
+)
+def test_local_sn_consumes_completed_quality(mad_ratio: float, expected: int) -> None:
+    quality = SignalQuality(
+        "available", noise_sigma=1.0, signal_to_noise=mad_ratio / MAD_TO_SIGMA
     )
-    actual_baseline, mad = compute_local_sn_cache(
-        values, baseline_unclipped=tuple(baseline)
-    )
-    np.testing.assert_array_equal(actual_baseline, baseline)
-    assert mad == expected_mad
+    assert local_sn_severity(quality) == (expected, "local_sn")
 
 
-@pytest.mark.parametrize("error", [ValueError, FloatingPointError, TypeError])
-def test_standalone_sn_cache_preserves_solver_exception_policy(
-    monkeypatch, error
-) -> None:
-    def failed_solve(*_args, **_kwargs):
-        raise error("controlled solver failure")
-
-    monkeypatch.setattr(
-        "xic_extractor.peak_detection.scoring_metrics.asls_baseline", failed_solve
-    )
-    if error is ValueError:
-        assert compute_local_sn_cache(_make_trace(10.0)) == (None, None)
-    else:
-        with pytest.raises(error, match="controlled solver failure"):
-            compute_local_sn_cache(_make_trace(10.0))
-
-
-def test_local_sn_pass_high_peak() -> None:
-    y = _make_trace(peak_height=10.0, noise_std=0.05)
-    sev, label = local_sn_severity(y, apex_index=200)
-    assert sev == 0
-    assert label == "local_sn"
-
-
-def test_local_sn_minor_low_peak() -> None:
-    y = _make_trace(peak_height=0.03, noise_std=0.05)
-    sev, _ = local_sn_severity(y, apex_index=200)
-    assert sev == 1
-
-
-def test_local_sn_major_no_peak() -> None:
-    y = _make_trace(peak_height=0.0, noise_std=0.05)
-    sev, _ = local_sn_severity(y, apex_index=200)
-    assert sev == 2
-
-
-def test_local_sn_invalid_trace_is_major() -> None:
-    y = _make_trace(peak_height=10.0)
-    y[200] = np.nan
-    sev, label = local_sn_severity(y, apex_index=200)
-    assert sev == 2
-    assert label == "local_sn"
+@pytest.mark.parametrize(
+    "quality",
+    [
+        None,
+        SignalQuality("zero_noise", noise_sigma=0.0),
+        SignalQuality("missing_baseline"),
+    ],
+)
+def test_local_sn_unknown_is_major(quality) -> None:
+    assert local_sn_severity(quality) == (2, "local_sn")
 
 
 def test_nl_present_and_match_is_pass() -> None:

@@ -41,6 +41,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_metrics,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
 OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
@@ -324,6 +325,7 @@ def _integration_from_candidate(
 ) -> IntegrationResult:
     baseline = None
     morphology_metrics = None
+    quality = None
     raw_scan_indices: tuple[int, ...] = ()
     if rt is not None and intensity is not None:
         rt_values = np.asarray(rt, dtype=float)
@@ -340,6 +342,16 @@ def _integration_from_candidate(
             asls_baseline(intensity_values)
             if baseline_integration_method == "asls"
             else None
+        )
+        quality = measure_signal_quality(
+            rt_values[bounded_left:bounded_right],
+            intensity_values[bounded_left:bounded_right],
+            baseline=(
+                baseline_values[bounded_left:bounded_right]
+                if baseline_values is not None
+                else None
+            ),
+            apex_index=candidate.selection_apex_index - bounded_left,
         )
         baseline = integrate_with_baseline(
             intensity_values,
@@ -367,6 +379,7 @@ def _integration_from_candidate(
         height_raw=candidate.raw_apex_intensity,
         height_smoothed=candidate.selection_apex_intensity,
         area_raw_counts_seconds=candidate.peak.area,
+        signal_quality=quality,
         area_baseline_corrected=(
             baseline.area_baseline_corrected if baseline is not None else None
         ),

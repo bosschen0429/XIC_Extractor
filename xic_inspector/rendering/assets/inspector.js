@@ -476,6 +476,12 @@
   }
   function sampleNotices(item,row){
     const notices=[], count=candidates(item,row.sample_id).length, curve=(item.curves||[]).some(c=>c.sample_id===row.sample_id&&c.raw_rts?.length);
+    const quality=row.signal_quality;
+    if(Array.isArray(quality)){
+      if(quality.some(q=>q.low_signal_to_noise===true))notices.push({kind:'signal',label:'低 SNR（非 LOQ 判定）',short:'低 SNR'});
+      else if(!quality.length||quality.every(q=>q.status==='not_recorded'))notices.push({kind:'signal',label:'SNR 未記錄',short:'SNR 未記錄'});
+      else if(quality.some(q=>q.signal_to_noise==null))notices.push({kind:'signal',label:'SNR 未知',short:'SNR 未知'});
+    }
     if(count>1&&!channelRoles(item,row.sample_id))notices.push({kind:'candidates',label:`${count} 個候選`,short:`${count} 候選`});
     if(!has(row,'quantitative_value'))notices.push({kind:'missing',label:'無單一結果',short:'無單一結果'});
     else if(row.quantitative_value===null)notices.push({kind:'null',label:'空值',short:'空值'});

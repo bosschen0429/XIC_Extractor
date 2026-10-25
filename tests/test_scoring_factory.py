@@ -15,7 +15,7 @@ from xic_extractor.extraction.scoring_factory import (
     selected_candidate,
     selected_shape_metrics,
 )
-from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
+from xic_extractor.peak_detection.baseline import asls_baseline_on_rt
 from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
@@ -24,12 +24,14 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.ms1_morphology import (
     compute_shape_metrics,
-    gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
-from xic_extractor.peak_detection.scoring_metrics import local_sn_severity
+from xic_extractor.peak_detection.signal_quality import (
+    candidate_signal_quality,
+    short_scale_noise_sigma,
+)
 
 
 @pytest.mark.parametrize(
@@ -188,7 +190,7 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
     "window_points,sample_count",
     [(window, count) for window in (7, 15) for count in range(5, window)],
 )
-def test_missing_prepared_shape_keeps_legacy_active_sn(
+def test_missing_prepared_shape_keeps_quality_unknown(
     window_points: int, sample_count: int
 ) -> None:
     rt = np.linspace(0.0, 2.0, sample_count)
@@ -211,16 +213,10 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
     )(candidate)
     assert ctx.half_width_ratio == 1.0
     assert ctx.fwhm_ratio is None
-    expected_baseline = asls_baseline(intensity)
-    residual = intensity - expected_baseline
-    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
-    np.testing.assert_array_equal(
-        ctx.intensity_array,
-        gaussian15_positive_asls_residual_trace(intensity, expected_baseline),
-    )
-    np.testing.assert_array_equal(ctx.baseline_array, np.zeros(sample_count))
-    assert ctx.residual_mad == expected_mad
-    assert ctx.active_trace_source == "gaussian15_positive_asls_residual"
+    np.testing.assert_array_equal(ctx.intensity_array, intensity)
+    assert ctx.signal_quality is not None
+    assert ctx.signal_quality.signal_to_noise is None
+    assert ctx.active_trace_source == "raw"
     assert (
         selected_shape_metrics(prepared_result, _peak_result(candidate, len(rt)))
         is None
@@ -238,236 +234,138 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
 
 
 @pytest.mark.parametrize("window_points", [7, 15])
-def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
-    monkeypatch: pytest.MonkeyPatch, window_points: int
-) -> None:
+def test_rebuilt_factories_share_physical_baseline_and_raw_noise(
+    monkeypatch, window_points
+):
     import xic_extractor.peak_detection.physical_peak_evaluation as physical_owner
-    import xic_extractor.peak_detection.scoring_metrics as sn_owner
 
     rt = np.linspace(0.0, 2.0, 301)
-    intensity = 100.0 * np.exp(-0.5 * ((rt - 1.0) / 0.1) ** 2)
-    intensity += np.random.default_rng(20260926).normal(0.0, 1.0, len(rt))
-    expected_baseline = _uniform_rt_baseline_oracle(rt, intensity)
-    assert np.any(expected_baseline < 0.0)
-    residual = intensity - expected_baseline
-    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
-    expected_active = gaussian15_positive_asls_residual_trace(
-        intensity, expected_baseline
-    )
-    clipped_residual = intensity - np.maximum(expected_baseline, 0.0)
-    clipped_mad = float(
-        np.median(np.abs(clipped_residual - np.median(clipped_residual)))
-    )
-    assert clipped_mad != pytest.approx(expected_mad)
-    solves = {"physical": 0, "sn": 0}
+    raw = _gaussian(rt) + np.random.default_rng(42).normal(0.0, 1.0, len(rt))
+    solves = 0
 
-    def counted_physical(*args, **kwargs):
-        solves["physical"] += 1
+    def counted(*args, **kwargs):
+        nonlocal solves
+        solves += 1
         return asls_baseline_on_rt(*args, **kwargs)
 
-    def counted_sn(*args, **kwargs):
-        solves["sn"] += 1
-        return asls_baseline(*args, **kwargs)
-
-    monkeypatch.setattr(physical_owner, "asls_baseline_on_rt", counted_physical)
-    monkeypatch.setattr(sn_owner, "asls_baseline", counted_sn)
-    prepared_result = prepare_physical_signal(
-        rt, intensity, profile=SignalProcessingProfile(window_points=window_points)
+    monkeypatch.setattr(physical_owner, "asls_baseline_on_rt", counted)
+    result = prepare_physical_signal(
+        rt, raw, profile=SignalProcessingProfile(window_points=window_points)
     )
-    assert prepared_result.prepared is not None
-    np.testing.assert_allclose(
-        prepared_result.prepared.baseline,
-        np.maximum(expected_baseline, 0.0),
-        rtol=2e-6,
-        atol=1e-7,
-    )
+    assert result.prepared is not None
     for _ in range(2):
-        factory = build_scoring_context_factory(
-            config=_config(),
-        )
+        factory = build_scoring_context_factory(config=_config())
         builder = factory(
-            target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-            sample_name="SampleA",
+            target=_target(label="A", is_istd=False, istd_pair=""),
+            sample_name="S",
             rt=rt,
-            intensity=intensity,
-            prepared_result=prepared_result,
+            intensity=raw,
+            prepared_result=result,
             istd_rt_in_this_sample=None,
             paired_istd_fwhm=None,
         )
         for apex in (150, 151):
-            candidate = _candidate(apex_index=apex)
+            candidate = _quality_candidate(apex)
             ctx = builder(candidate)
-            np.testing.assert_allclose(
-                ctx.intensity_array, expected_active, rtol=2e-6, atol=1e-7
+            expected = candidate_signal_quality(
+                candidate, rt, raw, np.asarray(result.prepared.baseline)
             )
-            np.testing.assert_array_equal(ctx.baseline_array, np.zeros(len(rt)))
-            assert ctx.residual_mad == pytest.approx(expected_mad, rel=2e-6)
-            assert ctx.active_trace_source == "gaussian15_positive_asls_residual"
-            assert ctx.morphology_trace_method == "gaussian_15"
-            assert ctx.morphology_trace_window_points == 15
-            facts = build_candidate_evidence_facts(candidate, ctx).trace
-            assert facts.local_sn_ratio == pytest.approx(
-                expected_active[apex] / expected_mad, rel=2e-6
+            assert ctx.signal_quality == expected
+            assert expected.noise_sigma == short_scale_noise_sigma(rt, raw)
+            assert expected.signal_to_noise == pytest.approx(
+                max(0.0, raw[apex] - result.prepared.baseline[apex])
+                / expected.noise_sigma
             )
-            assert local_sn_severity(
-                ctx.intensity_array,
-                apex,
-                baseline=ctx.baseline_array,
-                residual_mad=ctx.residual_mad,
-            ) == local_sn_severity(
-                expected_active,
-                apex,
-                baseline=np.zeros(len(rt)),
-                residual_mad=expected_mad,
+            assert (
+                build_candidate_evidence_facts(candidate, ctx).trace.local_sn_ratio
+                == expected.signal_to_noise
             )
-    np.testing.assert_allclose(
-        prepared_result.baseline_unclipped, expected_baseline, rtol=2e-6, atol=1e-7
-    )
-    live_residual = intensity - np.asarray(prepared_result.baseline_unclipped)
-    live_mad = float(np.median(np.abs(live_residual - np.median(live_residual))))
-    assert ctx.residual_mad == live_mad
-    assert solves == {"physical": 1, "sn": 0}
+    assert solves == 1
 
 
 @pytest.mark.parametrize(
     "absence",
     ["asls_failure", "physical_smoothing_failure", "nonpositive_raw", "restored"],
 )
-def test_missing_live_baseline_keeps_standalone_sn(
-    monkeypatch: pytest.MonkeyPatch, absence: str
-) -> None:
+def test_missing_baseline_never_triggers_another_solve(monkeypatch, absence):
     import xic_extractor.peak_detection.physical_peak_evaluation as physical_owner
-    import xic_extractor.peak_detection.scoring_metrics as sn_owner
 
     rt = np.linspace(0.0, 2.0, 31)
-    intensity = _gaussian(rt)
+    raw = _gaussian(rt)
     if absence == "nonpositive_raw":
-        intensity = -np.linspace(1.0, 2.0, len(rt))
-    expected_baseline = asls_baseline(intensity)
-    residual = intensity - expected_baseline
-    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
+        raw = -np.linspace(1.0, 2.0, len(rt))
 
-    def failed_owner(*_args, **_kwargs):
-        raise ValueError("controlled owner failure")
+    def failed(*args, **kwargs):
+        raise ValueError("controlled failure")
 
     if absence == "asls_failure":
-        monkeypatch.setattr(physical_owner, "asls_baseline_on_rt", failed_owner)
+        monkeypatch.setattr(physical_owner, "asls_baseline_on_rt", failed)
     elif absence == "physical_smoothing_failure":
-        monkeypatch.setattr(
-            physical_owner, "canonical_gaussian_signal_traces", failed_owner
-        )
-    prepared_result = _prepared(rt, intensity)
+        monkeypatch.setattr(physical_owner, "canonical_gaussian_signal_traces", failed)
+    result = _prepared(rt, raw)
     if absence == "restored":
-        prepared_result = replace(prepared_result, baseline_unclipped=None)
-    assert prepared_result.baseline_unclipped is None
-    if absence != "restored":
-        assert prepared_result.prepared is None
-    calls = 0
-
-    def counted_sn(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return asls_baseline(*args, **kwargs)
-
-    monkeypatch.setattr(sn_owner, "asls_baseline", counted_sn)
+        result = replace(result, baseline_unclipped=None)
     factory = build_scoring_context_factory(config=_config())
+    candidate = _quality_candidate(15)
     ctx = factory(
-        target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA",
+        target=_target(label="A", is_istd=False, istd_pair=""),
+        sample_name="S",
         rt=rt,
-        intensity=intensity,
-        prepared_result=prepared_result,
+        intensity=raw,
+        prepared_result=result,
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-    )(_candidate(apex_index=15))
-    np.testing.assert_array_equal(
-        ctx.intensity_array,
-        gaussian15_positive_asls_residual_trace(intensity, expected_baseline),
-    )
-    assert ctx.residual_mad == expected_mad
-    assert calls == 1
-
-
-@pytest.mark.parametrize(
-    "intensity",
-    [np.array([0.0, 1.0, 0.0]), np.array([0.0, 1.0, np.nan, 1.0, 0.0])],
-)
-def test_missing_sn_cache_keeps_raw_context(intensity: np.ndarray) -> None:
-    rt = np.arange(len(intensity), dtype=float)
-    factory = build_scoring_context_factory(config=_config())
-    ctx = factory(
-        target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA",
-        rt=rt,
-        intensity=intensity,
-        prepared_result=_prepared(rt, intensity),
-        istd_rt_in_this_sample=None,
-        paired_istd_fwhm=None,
-    )(_candidate(apex_index=1))
-    np.testing.assert_array_equal(ctx.intensity_array, intensity)
-    assert ctx.baseline_array is None
-    assert ctx.residual_mad is None
-    assert ctx.active_trace_source == "raw"
-    assert ctx.morphology_trace_method == ""
-    assert ctx.morphology_trace_window_points is None
+    )(candidate)
+    np.testing.assert_array_equal(ctx.intensity_array, raw)
+    assert ctx.signal_quality is not None
+    if absence == "restored":
+        assert result.prepared is not None
+        assert ctx.signal_quality == candidate_signal_quality(
+            candidate, rt, raw, np.asarray(result.prepared.baseline)
+        )
+    else:
+        assert ctx.signal_quality.signal_to_noise is None
 
 
 @pytest.mark.parametrize("error", [TypeError, ValueError, FloatingPointError])
-def test_scoring_smoothing_failure_retains_raw_sn_fallback(
-    monkeypatch: pytest.MonkeyPatch, error: type[Exception]
-) -> None:
+def test_morphology_failure_does_not_change_raw_signal_quality(monkeypatch, error):
     import xic_extractor.extraction.scoring_factory as factory_owner
 
     rt = np.linspace(0.0, 2.0, 31)
-    intensity = _gaussian(rt)
-    expected_baseline = _uniform_rt_baseline_oracle(rt, intensity)
-    residual = intensity - expected_baseline
-    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
-    prepared_result = _prepared(rt, intensity)
+    raw = _gaussian(rt)
+    result = _prepared(rt, raw)
+    assert result.prepared is not None
+    candidate = _quality_candidate(15)
+    expected = candidate_signal_quality(
+        candidate, rt, raw, np.asarray(result.prepared.baseline)
+    )
 
-    def fail_smoothing(*_args, **_kwargs):
+    def failed(*args, **kwargs):
         raise error("controlled smoothing failure")
 
     monkeypatch.setattr(
-        factory_owner, "gaussian15_positive_asls_residual_trace", fail_smoothing
+        factory_owner, "gaussian15_positive_asls_residual_trace", failed
     )
     factory = build_scoring_context_factory(config=_config())
     ctx = factory(
-        target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA",
+        target=_target(label="A", is_istd=False, istd_pair=""),
+        sample_name="S",
         rt=rt,
-        intensity=intensity,
-        prepared_result=prepared_result,
+        intensity=raw,
+        prepared_result=result,
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-    )(_candidate(apex_index=15))
-    np.testing.assert_array_equal(ctx.intensity_array, intensity)
-    np.testing.assert_allclose(
-        ctx.baseline_array, expected_baseline, rtol=2e-6, atol=1e-7
-    )
-    assert ctx.residual_mad == pytest.approx(expected_mad, rel=2e-6)
+    )(candidate)
+    np.testing.assert_array_equal(ctx.intensity_array, raw)
+    assert ctx.signal_quality == expected
     assert ctx.active_trace_source == "raw"
-    assert ctx.morphology_trace_method == ""
-    assert ctx.morphology_trace_window_points is None
 
 
-def _uniform_rt_baseline_oracle(rt: np.ndarray, intensity: np.ndarray) -> np.ndarray:
-    """Independent dense normal equations for the uniform RT AsLS objective."""
-    spacing = float(rt[1] - rt[0])
-    np.testing.assert_allclose(np.diff(rt), spacing, rtol=1e-12)
-    curvature = np.diff(np.eye(len(rt)), n=2, axis=0)
-    # lambda = 1 minutes^4; trapezoidal data cells halve the endpoint weights.
-    penalty = (curvature.T @ curvature) / spacing**4
-    cells = np.ones(len(rt))
-    cells[[0, -1]] = 0.5
-    weights = np.ones(len(rt))
-    for _ in range(10):
-        data_weights = cells * weights
-        baseline = np.linalg.solve(
-            penalty + np.diag(data_weights), data_weights * intensity
-        )
-        weights = np.where(intensity > baseline, 0.01, 0.99)
-    return baseline
+def _quality_candidate(apex: int) -> PeakCandidate:
+    candidate = _candidate(apex_index=apex)
+    return replace(
+        candidate, peak=replace(candidate.peak, peak_start=0.0, peak_end=2.0)
+    )
 
 
 def _gaussian(rt: np.ndarray, *, sigma: float = 0.1) -> np.ndarray:

@@ -120,7 +120,7 @@ def test_supported_broad_peak_does_not_quantify_each_surface_ripple() -> None:
         policy=ChromPeakSegmentPolicy(
             morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
-            min_prominence_noise_mad=2.0,
+            min_prominence_noise_sigma=2.0 / 1.4826,
         ),
         acquired_intensity_values=signal,
     )
@@ -154,7 +154,7 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
             min_apex_fraction_of_context=0.0,
             morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
-            min_prominence_noise_mad=2.0,
+            min_prominence_noise_sigma=2.0 / 1.4826,
         ),
         acquired_intensity_values=signal,
     )
@@ -181,7 +181,7 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
         policy=ChromPeakSegmentPolicy(
             morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
-            min_prominence_noise_mad=2.0,
+            min_prominence_noise_sigma=2.0 / 1.4826,
         ),
         acquired_intensity_values=signal,
     )
@@ -227,7 +227,7 @@ def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
             morphology_trace_method="rt_envelope",
             morphology_min_sigma_rt=0.08,
             min_apex_fraction_of_context=0.0,
-            min_prominence_noise_mad=2.0,
+            min_prominence_noise_sigma=2.0 / 1.4826,
             baseline_return_fraction=0.0,
             baseline_return_min_residual=0.0,
             include_baseline_return_samples=True,
@@ -263,7 +263,7 @@ def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:
             policy=ChromPeakSegmentPolicy(
                 morphology_trace_method="rt_envelope",
                 morphology_min_sigma_rt=0.08,
-                min_prominence_noise_mad=2.0,
+                min_prominence_noise_sigma=2.0 / 1.4826,
             ),
             acquired_intensity_values=signal,
         )
