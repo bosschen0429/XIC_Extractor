@@ -330,7 +330,8 @@ class MembershipComparison:
             candidate = canonical_partition(
                 [g for g in others if g != target] + [new_current, new_target]
             )
-            if math.isfinite(self.cost(candidate)):
+            # Swapping two same-sample singletons is not a different membership.
+            if candidate != partition and math.isfinite(self.cost(candidate)):
                 variants.add(candidate)
         return tuple(
             sorted(variants, key=lambda p: (self.cost(p), self.partition_key(p)))

@@ -80,6 +80,44 @@ locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
 
+### 2026-10-25 Unresolved Membership Is Not One Uniform Failure Class
+
+#913 retained 44-sample snapshot, same input hash as the replay entry below.
+Evidence: `diagnostic_only` for the cause census; `expected_diff` for removing
+unchanged-partition alternatives from risk decisions. Swapping two same-sample
+singletons does not change membership and cannot establish competition. The
+regression reproduces that false risk; full replay preserves all group/member
+outputs and non-risk decision fields, changes only 94 risk records, and leaves
+no unchanged-partition alternatives among 35,459 recorded decisions.
+
+- All 965 unresolved groups are singletons. In the retained comparison scope,
+  224 are alone, 317 have no feasible cross-sample pair, and 94 have a feasible
+  pair but cannot join/swap into a complete existing group. Another 306 have a
+  more costly alternative; 24 have a different partition within 0.05 cost.
+- Among the 317 without a feasible pair, the least-blocked target has an RT
+  scope violation in 270 cases (61 also exceed precursor tolerance), distinct
+  tracks in 29, and precursor tolerance alone in 18. The snapshot's outer RT
+  comparison limit is 180 seconds. These target summaries do not prove the
+  absence of a chemical match outside the retained scope.
+- The 24 near alternatives comprise 12 joins and 12 same-sample swaps. Six
+  swaps have equal cost because other group members still determine the
+  maximum pair penalty. Equal objective values are not identical measurements
+  or independent evidence that both candidates are the same analyte.
+- A diagnostic larger split move was tested for all 94 pair-compatible but
+  group-incompatible singletons. Only one lowers the objective; its three-plus-
+  one partition still leaves one singleton. It does not support a general
+  unresolved reduction or changing the default search. This was not activated.
+- Artifacts: `output/issue-913/unresolved-probe/diagnosis.json`,
+  `output/issue-913/noop-expected-diff.json`, and
+  `output/issue-913/unresolved-counterfactual.json`. Pair-reason reconstruction
+  was cross-checked against 87,534 actual pair costs; counterfactual inputs
+  reproduce all 118 inspected retained risk decisions exactly.
+
+Rerun when the candidate universe, RT support, costs, or search moves change.
+Unknown historic signal-quality facts contribute to `low_rt_support`; that flag
+alone does not diagnose RT calibration failure. No RAW or chemical-truth oracle
+was added by this replay investigation.
+
 ### 2026-10-25 Final Membership Replay Reuses Costs Without Changing Decisions
 
 #913, Evidence: `exact_safe`; verdict: `optimized`. Baseline is `a51d0473f`,
@@ -104,12 +142,8 @@ Discovery, RAW acquisition and Backfill are excluded.
 - Artifacts: `output/issue-913/perf-full-{before,after}/timing.json`,
   `output/issue-913/perf-interleaved.json`, and `current-small.pstats` in the
   same task directory. The profiler is call-cost evidence, not benchmark timing.
-- The unchanged 965 unresolved groups are singletons: 224 are alone in their
-  comparison partition; 359 have other groups but no feasible bounded move;
-  115 have an alternative within 0.05 cost (100 exactly equivalent within the
-  policy tolerance); 267 have a more costly alternative. This is a bounded
-  search diagnosis, not chemical truth or a reason to relax physical gates.
-  `output/issue-913/unresolved-census.json` retains the census and limitations.
+- Unresolved interpretation is owned by the cause census above, not the
+  performance comparison; output parity does not validate the risk semantics.
 
 Rerun when membership costs/search, the comparison universe, or snapshot changes.
 Historical concurrent-run elapsed times are not an isolated optimization baseline.

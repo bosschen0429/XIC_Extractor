@@ -80,6 +80,21 @@ def test_competition_selects_one_without_losing_other_owners():
     )
 
 
+def test_same_sample_singleton_swap_is_not_a_competing_membership():
+    owners = (
+        _owner("a", "early", apex_rt=10),
+        _owner("a", "late", apex_rt=10.2),
+    )
+    result = infer(owners)
+    assert sorted(len(g.owner_ids) for g in result.groups) == [1, 1]
+    for decision in result.sparse_decisions:
+        risk = decision.accepted_risk
+        assert risk.status == "no_feasible_alternative"
+        assert risk.alternative_partition is None
+        assert risk.equivalent_alternatives == ()
+        assert "accepted_competition" not in risk.risk_flags
+
+
 def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
     owners = (
         _owner("a", "early", apex_rt=10),
