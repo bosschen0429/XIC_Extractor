@@ -170,6 +170,7 @@ def construct_cross_sample_peak_group_hypotheses(
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
+    accept_competition: bool = False,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Infer feature membership and mint its canonical CrossSample identity.
@@ -204,6 +205,7 @@ def construct_cross_sample_peak_group_hypotheses(
         rules=rules,
         known_identity_bindings=known_identity_bindings,
         bootstrap=bootstrap,
+        accept_competition=accept_competition,
         peak_trajectories=peak_trajectories,
     )
     if operation_counts_sink is not None:
@@ -233,7 +235,10 @@ def construct_cross_sample_peak_group_hypotheses(
             group_identity=group_identity,
             public_family_id=f"FAM{index:06d}",
             evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
-            identity_conflict=any(owner.identity_conflict for owner in group),
+            identity_conflict=not (
+                accept_competition and not bootstrap and basis.disposition == "assigned"
+            )
+            and any(owner.identity_conflict for owner in group),
             review_only=unresolved,
         )
         hypotheses.append(

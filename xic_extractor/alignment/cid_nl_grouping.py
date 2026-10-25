@@ -97,7 +97,7 @@ def cid_nl_pair_mass_fraction(
     left: SampleLocalMS1Owner, right: SampleLocalMS1Owner, config: AlignmentConfig
 ) -> float:
     first, second = left.primary_identity_event, right.primary_identity_event
-    if first is None or second is None:
+    if first is None or second is None or compatible_composite_owners(left, right):
         return 0.0
     return cid_nl_mass_fraction(
         max(first.product_mz, second.product_mz),

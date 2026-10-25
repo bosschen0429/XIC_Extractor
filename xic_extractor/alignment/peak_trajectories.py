@@ -350,6 +350,7 @@ class PeakTrajectories:
         default=None, repr=False, compare=False
     )
     _raw_linked_owners: frozenset[str] = field(default_factory=frozenset, repr=False)
+    _raw_pairs: tuple[tuple[str, str], ...] = field(default=(), repr=False)
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
     _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
 
@@ -417,7 +418,7 @@ class PeakTrajectories:
         return dict(self._track_by_owner)
 
     def common_frame_membership(
-        self, calibrated_owner_ids: Iterable[str]
+        self, calibrated_owner_ids: Iterable[str], *, preserve_independent: bool = False
     ) -> PeakTrajectories:
         """Withdraw raw-linked tracks that touch measured common coordinates.
 
@@ -430,6 +431,33 @@ class PeakTrajectories:
         )
         if not raw_calibrated_owners:
             return self
+        if preserve_independent:
+            retained = [
+                track
+                for track in self.tracks
+                if not raw_calibrated_owners.intersection(track.owner_ids)
+            ]
+            for track in self.tracks:
+                if not raw_calibrated_owners.intersection(track.owner_ids):
+                    continue
+                allowed = set(track.owner_ids) - raw_calibrated_owners
+                neighbors: dict[str, set[str]] = defaultdict(set)
+                for first, second in self._raw_pairs:
+                    if first in allowed and second in allowed:
+                        neighbors[first].add(second)
+                        neighbors[second].add(first)
+                while neighbors:
+                    pending = [next(iter(neighbors))]
+                    connected: set[str] = set()
+                    while pending:
+                        owner_id = pending.pop()
+                        if owner_id not in connected:
+                            connected.add(owner_id)
+                            pending.extend(neighbors.pop(owner_id, ()))
+                    # Membership-only components must not borrow localization
+                    # positions through a withdrawn calibrated intermediary.
+                    retained.append(PeakTrajectory(tuple(sorted(connected)), ()))
+            return self.membership_subset(retained)
         return self.membership_subset(
             tuple(
                 track
@@ -446,6 +474,7 @@ class PeakTrajectories:
             self.source_contexts,
             physical_order=self.physical_order,
             _raw_linked_owners=self._raw_linked_owners,
+            _raw_pairs=self._raw_pairs,
         )
 
     def supports_ordered_pair(self, first: str, second: str) -> bool:
@@ -817,6 +846,7 @@ def resolve_peak_trajectories(
     regions = _comparison_regions(patterns, matches)
     supported_nodes: set[int] = set()
     raw_linked_nodes: set[int] = set()
+    raw_pairs: set[tuple[int, int]] = set()
     neighbors: list[set[int]] = [set() for _ in nodes]
     for left, right, match, _, calibrated in matches:
         region = regions[left.nodes[0]]
@@ -837,6 +867,7 @@ def resolve_peak_trajectories(
         if not calibrated:
             for i, j in match.pairs:
                 first, second = left.nodes[i], right.nodes[j]
+                raw_pairs.add((first, second))
                 if roots[first] != roots[second]:
                     raw_linked_nodes.update((first, second))
         # Already-connected matches still authorize locations.
@@ -896,6 +927,7 @@ def resolve_peak_trajectories(
             }
         )
     )
+    owner_by_node = {node: owner_id for owner_id, node in owner_nodes.items()}
     return PeakTrajectories(
         tuple(track for track, _ in tracks),
         comparisons,
@@ -912,6 +944,18 @@ def resolve_peak_trajectories(
             for root, owner_ids in bound.items()
             if root in raw_linked_roots
             for owner_id in owner_ids
+        ),
+        _raw_pairs=tuple(
+            sorted(
+                {
+                    (
+                        min(owner_by_node[first], owner_by_node[second]),
+                        max(owner_by_node[first], owner_by_node[second]),
+                    )
+                    for first, second in raw_pairs
+                    if first in owner_by_node and second in owner_by_node
+                }
+            )
         ),
     )
 
