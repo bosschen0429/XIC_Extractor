@@ -349,6 +349,7 @@ class PeakTrajectories:
     _localization_links: _LocalizationLinks | None = field(
         default=None, repr=False, compare=False
     )
+    _raw_linked_owners: frozenset[str] = field(default_factory=frozenset, repr=False)
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
     _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
 
@@ -414,6 +415,32 @@ class PeakTrajectories:
 
     def owner_track_indices(self) -> dict[str, int]:
         return dict(self._track_by_owner)
+
+    def common_frame_membership(self) -> PeakTrajectories:
+        """Keep only correspondence established without raw-frame matching.
+
+        Raw links remain useful localization geometry, but their inferred track
+        separation cannot override measured common-coordinate membership.
+        """
+        if not self._raw_linked_owners:
+            return self
+        return self.membership_subset(
+            tuple(
+                track
+                for track in self.tracks
+                if not self._raw_linked_owners.intersection(track.owner_ids)
+            )
+        )
+
+    def membership_subset(self, tracks: Sequence[PeakTrajectory]) -> PeakTrajectories:
+        """Project membership authority without borrowing localization indices."""
+        return PeakTrajectories(
+            tuple(tracks),
+            self.pattern_comparisons,
+            self.source_contexts,
+            physical_order=self.physical_order,
+            _raw_linked_owners=self._raw_linked_owners,
+        )
 
     def supports_ordered_pair(self, first: str, second: str) -> bool:
         """Positive correspondence in a track distinguished by physical order."""
@@ -651,7 +678,7 @@ class _OrderRegion:
 
 def _comparison_regions(
     patterns: tuple[_Pattern, ...],
-    matches: Sequence[tuple[_Pattern, _Pattern, _Match, int]],
+    matches: Sequence[tuple[_Pattern, _Pattern, _Match, int, bool]],
 ) -> dict[int, _OrderRegion]:
     """Partition the order graph by all possible correspondence links.
 
@@ -675,7 +702,7 @@ def _comparison_regions(
     for pattern in patterns:
         for node in pattern.nodes[1:]:
             join(pattern.nodes[0], node)
-    for left, right, _, _ in matches:
+    for left, right, _, _, _ in matches:
         join(left.nodes[0], right.nodes[0])
     nodes_by_region: dict[int, list[int]] = defaultdict(list)
     patterns_by_region: dict[int, list[_Pattern]] = defaultdict(list)
@@ -763,7 +790,7 @@ def resolve_peak_trajectories(
                 injection_order.get(left.sample, 0)
                 - injection_order.get(right.sample, 0)
             )
-            matches.append((left, right, match, gap))
+            matches.append((left, right, match, gap, calibrated))
     matches.sort(
         key=lambda item: (
             -len(item[2].pairs),
@@ -783,8 +810,9 @@ def resolve_peak_trajectories(
         return PeakTrajectories((), comparisons, retained_contexts)
     regions = _comparison_regions(patterns, matches)
     supported_nodes: set[int] = set()
+    raw_linked_nodes: set[int] = set()
     neighbors: list[set[int]] = [set() for _ in nodes]
-    for left, right, match, _ in matches:
+    for left, right, match, _, calibrated in matches:
         region = regions[left.nodes[0]]
         proposed = [roots[index] for index in region.nodes]
         changed = False
@@ -800,6 +828,11 @@ def resolve_peak_trajectories(
                 proposed = [keep if root == absorbed else root for root in proposed]
         if changed and not _preserves_order(proposed, region.patterns):
             continue
+        if not calibrated:
+            for i, j in match.pairs:
+                first, second = left.nodes[i], right.nodes[j]
+                if roots[first] != roots[second]:
+                    raw_linked_nodes.update((first, second))
         # Already-connected matches still authorize locations.
         for i, j in match.pairs:
             first, second = left.nodes[i], right.nodes[j]
@@ -812,6 +845,7 @@ def resolve_peak_trajectories(
         supported_nodes.update(left.nodes[i] for i, _ in match.pairs)
         supported_nodes.update(right.nodes[j] for _, j in match.pairs)
     supported_roots = {roots[index] for index in supported_nodes}
+    raw_linked_roots = {roots[index] for index in raw_linked_nodes}
     members: dict[int, list[int]] = defaultdict(list)
     bound: dict[int, list[str]] = defaultdict(list)
     for index, root in enumerate(roots):
@@ -866,6 +900,12 @@ def resolve_peak_trajectories(
             owner_nodes,
             tuple(indices for _, indices in tracks),
             tuple(frozenset(adjacent) for adjacent in neighbors),
+        ),
+        _raw_linked_owners=frozenset(
+            owner_id
+            for root, owner_ids in bound.items()
+            if root in raw_linked_roots
+            for owner_id in owner_ids
         ),
     )
 

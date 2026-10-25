@@ -47,10 +47,9 @@ def peak_correspondence_conflict(
 ) -> tuple[str, str] | None:
     """Whether two member sets measure separate peaks in one common RT frame.
 
-    Compare each group's consensus peak region rather than every member pair:
-    one narrow or locally miscalibrated member cannot veto an otherwise
-    coincident group, and an intermediate member still cannot bridge two
-    separated bands because every union is checked against complete groups.
+    Reject only disjoint group-consensus peak regions, not shifted apices
+    within overlapping regions. Every union compares the complete groups'
+    median regions rather than letting one narrow member veto a band.
     When only one side has calibration support, both sides are compared in the
     shared observed RT frame instead: missing support is not evidence of a
     different peak. Without calibrated regions on either
@@ -71,10 +70,7 @@ def peak_correspondence_conflict(
         return _median_shape_conflict(left, right, config, trajectories)
     left_region = _consensus_region(left_regions.values())
     right_region = _consensus_region(right_regions.values())
-    if not (
-        _apex_outside(left_region, right_region[1])
-        or _apex_outside(right_region, left_region[1])
-    ):
+    if not _regions_disjoint(left_region, right_region):
         return None
     return (
         _farthest_member(left_regions, right_region[1]),
@@ -158,9 +154,12 @@ def _median_shape_conflict(
     return first_id, second_id
 
 
-def _apex_outside(region: _Region, apex: float) -> bool:
-    start, _, end = region
-    return (start is not None and apex < start) or (end is not None and apex > end)
+def _regions_disjoint(left: _Region, right: _Region) -> bool:
+    left_start, _, left_end = left
+    right_start, _, right_end = right
+    return (
+        left_end is not None and right_start is not None and left_end < right_start
+    ) or (right_end is not None and left_start is not None and right_end < left_start)
 
 
 def _farthest_member(regions: Mapping[str, _Region], apex: float) -> str:

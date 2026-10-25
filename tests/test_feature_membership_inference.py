@@ -768,9 +768,9 @@ def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> N
 
 
 @pytest.mark.parametrize("unsupported_edge", ["start", "end"])
-@pytest.mark.parametrize("measured_exclusion", [False, True])
+@pytest.mark.parametrize("known_edge_excludes_other_apex", [False, True])
 def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
-    unsupported_edge: str, measured_exclusion: bool
+    unsupported_edge: str, known_edge_excludes_other_apex: bool
 ) -> None:
     import numpy as np
 
@@ -787,7 +787,7 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
             rt, np.exp(-0.5 * ((rt - apex) / width) ** 2), apex_rt_min=apex
         )
         start, end = apex - 0.4, apex + 0.4
-        if measured_exclusion:
+        if known_edge_excludes_other_apex:
             if unsupported_edge == "start" and sample == "a":
                 end = 10.02
             elif unsupported_edge == "end" and sample == "b":
@@ -819,12 +819,9 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
     result = _infer_feature_memberships(
         owners, config=AlignmentConfig(), rules=CID_NL_GROUPING_RULES, rt_frame=frame
     )
-    expected = (
-        {frozenset((owner.owner_id,)) for owner in owners}
-        if measured_exclusion
-        else {frozenset(owner.owner_id for owner in owners)}
-    )
-    assert _memberships(result) == expected
+    # An edge excluding the other apex does not prove disjoint regions when
+    # the opposite boundary is unknown. It also cannot activate a shape veto.
+    assert _memberships(result) == {frozenset(owner.owner_id for owner in owners)}
     for owner in owners:
         boundary = (
             owner.owner_peak_start_rt

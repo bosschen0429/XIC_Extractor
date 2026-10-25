@@ -303,8 +303,14 @@ frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitte
 builds candidates within connected mass neighborhoods, compares RT, precursor
 mass, and product mass, and handles competition within each sample. Currently:
 
-- Eligible trajectory seeds connect directly before ordinary edges are processed.
-- Sharing a track affects RT cost and some ambiguity handling.
+- Ordinary inference does not force trajectory seeds together once its owners
+  supply measured common-coordinate apices. A shared track cannot replace
+  either endpoint's measured RT separation with zero. Tracks connected through
+  raw-frame pattern matching also lose their derived membership exclusions;
+  common-frame pattern correspondences retain physical-order evidence. The
+  caller's original trajectories and localization links remain unchanged.
+  Without measured apices, ordinary inference retains raw-pattern seeds;
+  directional bootstrap keeps its existing seed authority.
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
@@ -314,20 +320,28 @@ mass, and product mass, and handles competition within each sample. Currently:
   allowance does not grant union priority. Both costs retain precursor and
   product evidence. Candidate eligibility and sparse/distant comparisons keep
   their existing allowances.
+- Once both sides are established bands with common-coordinate support, union
+  priority uses their median measured RT and mass summaries, refreshed after
+  each merge, rather than one connecting pair's old cost. They merge only as
+  reciprocal best alternatives. A closer alternative remains in that comparison
+  when its sample occupancy prevents a union; that conflict does not make a
+  worse band the correct match. Singleton growth and bands without measured
+  common-coordinate support retain the local pair priority.
 - Supported common-coordinate apices and measured peak edges are the primary
   physical correspondence check. Each side of a proposed union contributes a
   consensus region: the median of its members' supported apices and measured
-  edges. A consensus apex outside the other side's consensus edges excludes
-  correspondence, so one narrow or locally miscalibrated member cannot veto an
-  otherwise coincident group. When only one side has calibration support, both
+  edges. Only completely disjoint consensus intervals exclude correspondence;
+  overlapping or touching intervals do not require either apex to lie inside
+  the other interval. When only one side has calibration support, both
   sides are compared the same way in the observed RT frame; missing calibration
   support is not evidence of a different peak.
   A peak edge outside the calibration span remains unknown: it is neither
   extrapolated nor clipped into a new measured boundary. It cannot establish
-  exclusion or switch supported apices to a raw-shape veto. Every union is
-  checked against the complete groups, so a chain of overlapping neighbors
-  cannot pull a separated band in. This is a
-  correspondence constraint, not proof of chemical identity; same-sample
+  disjointness on that side or switch supported apices to a raw-shape veto.
+  Every union compares the complete groups' consensus intervals, not just the
+  connecting pair. Overlap removes this veto; it does not itself establish
+  membership. This is a correspondence constraint, not proof of chemical
+  identity; same-sample
   competition and physical order still apply.
 - When neither side has calibration support, measured peak
   shape supplies the fallback evidence. The owner adapter
