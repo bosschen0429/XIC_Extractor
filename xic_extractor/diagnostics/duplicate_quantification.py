@@ -46,11 +46,14 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
         record["source_feature_family_ids"]: record["peak_hypothesis_id"]
         for record in identity
     }
+    cell_ledger = alignment_dir / "alignment_backfill_cell_evidence.tsv"
+    if not cell_ledger.is_file():
+        cell_ledger = alignment_dir / "alignment_cells.tsv"
     backfill_apex = {
         (group_by_family[record["feature_family_id"]], record["sample_stem"]): float(
             record["apex_rt"]
         )
-        for record in _read_tsv(alignment_dir / "alignment_backfill_cell_evidence.tsv")
+        for record in _read_tsv(cell_ledger)
         if record["apex_rt"] and record["feature_family_id"] in group_by_family
     }
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME

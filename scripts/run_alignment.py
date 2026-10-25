@@ -260,14 +260,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         context = UntargetedExecutionContext(timing_recorder=timing_recorder)
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
         try:
+            if profiler is not None:
+                profiler.enable()
             if args.stop_after == "grouping":
                 snapshot = snapshot_untargeted_grouping(request, context)
-            elif profiler is None:
-                outputs = run_untargeted_application(request, context)
             else:
-                outputs = profiler.runcall(run_untargeted_application, request, context)
+                outputs = run_untargeted_application(request, context)
         finally:
             if profiler is not None:
+                profiler.disable()
                 _write_cprofile_outputs(
                     profiler,
                     _profile_output_dir(args, output_dir),

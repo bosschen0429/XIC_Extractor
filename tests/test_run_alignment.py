@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import pstats
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -2103,10 +2104,12 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
     assert capsys.readouterr().err
 
 
+@pytest.mark.parametrize("profile", ("off", "cprofile"))
 def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    profile: str,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     _write_empty_batch_index(batch_index)
@@ -2144,6 +2147,10 @@ def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
             str(output_dir),
             "--stop-after",
             "grouping",
+            "--profile",
+            profile,
+            "--profile-output-dir",
+            str(tmp_path / "profile"),
         ]
     )
 
@@ -2153,3 +2160,9 @@ def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
     assert sorted(path.name for path in output_dir.iterdir()) == [
         "grouping-inputs.json.gz"
     ]
+    if profile == "cprofile":
+        stats = pstats.Stats(str(tmp_path / "profile" / "profile.prof"))
+        assert any(name == "fake_snapshot" for _, _, name in stats.stats)
+        assert "fake_snapshot" in (tmp_path / "profile" / "profile_top.txt").read_text(
+            encoding="utf-8"
+        )
