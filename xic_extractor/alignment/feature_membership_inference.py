@@ -1167,8 +1167,8 @@ def _window_inference(
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
     """Find all RT bands in each mass neighbourhood in one finite pass.
 
-    Raw ordered patterns can seed this graph before measured RT coordinates
-    exist. Calibrated bands use measured RT and mass, not forced pattern unions
+    Raw ordered patterns can seed owners without measured RT coordinates.
+    Calibrated bands use measured RT and mass, not forced pattern unions
     or zero-distance shortcuts. Every union keeps one physical owner per sample
     and distinct tracks apart.
     A feature's six nearest injections provide its RT trend once it has enough
@@ -1197,12 +1197,13 @@ def _window_inference(
         if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt))
         is not None
     }
-    if common_rt:
-        trajectories = trajectories.common_frame_membership()
-    trajectory_seeds = (
-        _trajectory_seeds(owners, trajectories, config, rules=rules, rt_frame=rt_frame)
-        if not common_rt
-        else ()
+    trajectories = trajectories.common_frame_membership(common_rt)
+    trajectory_seeds = _trajectory_seeds(
+        tuple(owner for owner in owners if owner.owner_id not in common_rt),
+        trajectories,
+        config,
+        rules=rules,
+        rt_frame=rt_frame,
     )
     ordinary_by_id = {owner.owner_id: owner for owner in owners}
     track_indices = trajectories.owner_track_indices()

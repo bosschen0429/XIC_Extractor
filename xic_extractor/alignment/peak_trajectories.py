@@ -416,19 +416,25 @@ class PeakTrajectories:
     def owner_track_indices(self) -> dict[str, int]:
         return dict(self._track_by_owner)
 
-    def common_frame_membership(self) -> PeakTrajectories:
-        """Keep only correspondence established without raw-frame matching.
+    def common_frame_membership(
+        self, calibrated_owner_ids: Iterable[str]
+    ) -> PeakTrajectories:
+        """Withdraw raw-linked tracks that touch measured common coordinates.
 
         Raw links remain useful localization geometry, but their inferred track
         separation cannot override measured common-coordinate membership.
+        Tracks whose owners lack calibration support retain their raw evidence.
         """
-        if not self._raw_linked_owners:
+        raw_calibrated_owners = self._raw_linked_owners.intersection(
+            calibrated_owner_ids
+        )
+        if not raw_calibrated_owners:
             return self
         return self.membership_subset(
             tuple(
                 track
                 for track in self.tracks
-                if not self._raw_linked_owners.intersection(track.owner_ids)
+                if not raw_calibrated_owners.intersection(track.owner_ids)
             )
         )
 

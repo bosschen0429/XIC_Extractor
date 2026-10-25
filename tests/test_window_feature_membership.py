@@ -246,6 +246,58 @@ def test_raw_pattern_order_cannot_split_measured_common_bands(reverse: bool) -> 
 
 
 @pytest.mark.parametrize("reverse", (False, True))
+@pytest.mark.parametrize("include_supported_owner", (False, True))
+def test_unrelated_calibration_preserves_unsupported_raw_pattern(
+    reverse: bool, include_supported_owner: bool
+) -> None:
+    raw_owners = (
+        _synthetic_owner("a", "a-raw", 10.0),
+        _synthetic_owner("b", "b-raw", 11.0),
+    )
+    owners = raw_owners
+    if include_supported_owner:
+        owners += (
+            _synthetic_owner(
+                "a", "a-supported", 20.0, precursor_mz=600.0, product_mz=483.9526
+            ),
+        )
+    orders = {"a": 1, "b": 2}
+    frame = SampleRtFrame(injection_order=orders).with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((sample, ((18.0, 18.0), (22.0, 22.0))) for sample in orders)
+        )
+    )
+    assert all(
+        frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt) is None
+        for owner in raw_owners
+    )
+    trajectories = resolve_peak_trajectories(
+        owners,
+        (
+            resolved_elution_context("a", ((10.0, 30.0), (10.7, 100.0))),
+            resolved_elution_context("b", ((11.0, 30.0), (11.7, 100.0))),
+        ),
+        config=AlignmentConfig(),
+        injection_order=orders,
+        rt_frame=frame,
+    )
+    assert any(
+        set(track.owner_ids) == {"a-raw", "b-raw"} for track in trajectories.tracks
+    )
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=AlignmentConfig(),
+        rules=CID_NL_GROUPING_RULES,
+        rt_frame=frame,
+        peak_trajectories=trajectories,
+    )
+    expected = {frozenset(("a-raw", "b-raw"))}
+    if include_supported_owner:
+        expected.add(frozenset(("a-supported",)))
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+
+
+@pytest.mark.parametrize("reverse", (False, True))
 def test_group_unions_do_not_cross_early_and_late_sample_assignments(
     reverse: bool,
 ) -> None:
