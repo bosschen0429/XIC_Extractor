@@ -364,6 +364,35 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                 ),
             }
         )
+    qualities = facts.get("signal_quality", [] if "variant" in facts else None)
+    if isinstance(qualities, list):
+        if not qualities:
+            fields.append({"label": "訊號品質", "value": "未記錄"})
+        for index, quality in enumerate(qualities, 1):
+            if not isinstance(quality, dict):
+                continue
+            ratio = quality.get("signal_to_noise")
+            label = f"觀察 {index} SNR"
+            if isinstance(ratio, (int, float)):
+                fields.append({"label": label, "value": _format_measurement(ratio)})
+                if quality.get("low_signal_to_noise") is True:
+                    fields.append(
+                        {
+                            "label": "訊號品質提示",
+                            "value": (
+                                "低 SNR（僅供 review，不改變 Matrix 值；非 LOQ 判定）"
+                            ),
+                        }
+                    )
+            else:
+                fields.append(
+                    {
+                        "label": label,
+                        "value": "未記錄"
+                        if quality.get("status") == "not_recorded"
+                        else "未知",
+                    }
+                )
     observations = facts.get("observations")
     if isinstance(observations, list):
         fields.append({"label": "終端觀察數", "value": len(observations)})
@@ -785,6 +814,9 @@ def build_sample(
         }.get(item.details["sample_status"][sid], "未提供定量決策"),
         **({"quantitative_value": values[0]} if len(values) == 1 else {}),
         "decision_reason": _decision_reason(cells),
+        "signal_quality": [
+            quality for cell in cells for quality in cell.get("signal_quality", [])
+        ],
         "decision_label": _decision_label(cells),
         "decision_refs": decision_refs,
         "evidence_status": "available"

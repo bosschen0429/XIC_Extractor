@@ -967,3 +967,36 @@ def _integration_with_derived_facts(trace: Trace) -> IntegrationResult:
         rt=trace.rt,
         intensity=trace.intensity,
     )[0].integration
+
+
+def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    identity = _identity_fixture(tmp_path)
+    old = _mint_standard_reference(identity.owners, identity.sample)
+    quality = SignalQuality(
+        "available", noise_sigma=10.0, signal_to_noise=2.0, low_signal_to_noise=True
+    )
+    enriched = replace(
+        old.content,
+        integration=replace(old.content.integration, signal_quality=quality),
+    )
+    assert (
+        enriched.peak_observation_content_id == old.content.peak_observation_content_id
+    )
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(enriched, old.generation_provenance)
+    )["content"]
+    assert payload["integration"]["signal_quality"]["signal_to_noise"] == 2.0
+    verified = verify_persisted_peak_observation_claims(payload)
+    assert (
+        verified.peak_observation_content_id == old.content.peak_observation_content_id
+    )
+    legacy = json.loads(
+        canonical_peak_observation_ref_bytes(old.content, old.generation_provenance)
+    )["content"]
+    assert "signal_quality" not in legacy["integration"]
+    assert (
+        verify_persisted_peak_observation_claims(legacy).peak_observation_content_id
+        == verified.peak_observation_content_id
+    )

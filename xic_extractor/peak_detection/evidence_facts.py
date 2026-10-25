@@ -36,7 +36,6 @@ from xic_extractor.peak_detection.ms1_trace_detection import (
     validate_ms1_trace_arrays,
 )
 from xic_extractor.peak_detection.scoring_metrics import (
-    compute_local_sn_cache,
     noise_shape_severity,
     peak_width_severity,
     rt_centrality_severity,
@@ -64,6 +63,7 @@ class TraceEvidenceFacts:
     local_sn_quality: EvidenceQuality = "unknown"
     baseline_method: str = ""
     residual_mad: float | None = None
+    noise_sigma: float | None = None
     noise_source: str = ""
     active_trace_source: str = ""
     morphology_trace_method: str = ""
@@ -566,7 +566,11 @@ def _trace_facts(candidate: Any, ctx: Any) -> TraceEvidenceFacts:
         local_sn_ratio=local_ratio,
         local_sn_quality=local_quality,
         baseline_method=baseline_method,
-        residual_mad=_optional_float(getattr(ctx, "residual_mad", None)),
+        noise_sigma=(
+            ctx.signal_quality.noise_sigma
+            if getattr(ctx, "signal_quality", None) is not None
+            else None
+        ),
         noise_source=noise_source,
         active_trace_source=str(getattr(ctx, "active_trace_source", "") or ""),
         morphology_trace_method=str(getattr(ctx, "morphology_trace_method", "") or ""),
@@ -597,46 +601,15 @@ def _trace_facts(candidate: Any, ctx: Any) -> TraceEvidenceFacts:
 
 
 def _local_sn_facts(ctx: Any) -> tuple[float | None, EvidenceQuality, str, str]:
-    intensity = np.asarray(getattr(ctx, "intensity_array", []), dtype=float)
-    apex_index = int(getattr(ctx, "apex_index", -1))
-    baseline = getattr(ctx, "baseline_array", None)
-    residual_mad = getattr(ctx, "residual_mad", None)
-    active_source = str(getattr(ctx, "active_trace_source", "") or "")
-    baseline_method = ""
-    noise_source = ""
-    if baseline is not None:
-        baseline = np.asarray(baseline, dtype=float)
-        baseline_method = "asls"
-        if active_source and active_source != "raw":
-            baseline_method = active_source
-    if residual_mad is not None:
-        noise_source = "residual_mad"
-    if (
-        intensity.ndim == 1
-        and baseline is not None
-        and len(intensity) == len(baseline)
-        and 0 <= apex_index < len(intensity)
-        and residual_mad is not None
-    ):
-        mad = float(residual_mad)
-        if mad <= 0:
-            return None, "strong", baseline_method, noise_source
-        ratio = float((intensity[apex_index] - baseline[apex_index]) / mad)
-        quality = _sn_quality(ratio)
-        return ratio, quality, baseline_method, noise_source
-    if intensity.ndim == 1 and 0 <= apex_index < len(intensity):
-        computed_baseline, computed_mad = compute_local_sn_cache(intensity)
-        if computed_baseline is not None and computed_mad is not None:
-            baseline_method = "asls"
-            noise_source = "residual_mad"
-            if computed_mad <= 0:
-                return None, "strong", baseline_method, noise_source
-            ratio = float(
-                (intensity[apex_index] - computed_baseline[apex_index]) / computed_mad
-            )
-            quality = _sn_quality(ratio)
-            return ratio, quality, baseline_method, noise_source
-    return None, "poor", baseline_method, noise_source
+    quality = getattr(ctx, "signal_quality", None)
+    if quality is None:
+        return None, "unknown", "", ""
+    return (
+        quality.signal_to_noise,
+        quality.scoring_quality,
+        str(getattr(ctx, "baseline_method", "")),
+        "rt_weighted_three_point_residual_sigma",
+    )
 
 
 def _chemical_facts(candidate: Any, ctx: Any) -> ChemicalEvidenceFacts:
@@ -843,16 +816,6 @@ def _candidate_height(candidate: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return value if _is_finite(value) else 0.0
-
-
-def _sn_quality(ratio: float) -> EvidenceQuality:
-    hard = 2.0
-    soft = 3.0
-    if ratio < hard:
-        return "poor"
-    if ratio < soft:
-        return "borderline"
-    return "strong"
 
 
 def _severity_quality(

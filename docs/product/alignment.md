@@ -385,9 +385,10 @@ mass, and product mass, and handles competition within each sample. Currently:
   and unresolved competition remain review-only; an assigned band is not
   chemical identification.
 
-Bootstrap seed support uses height/baseline-residual MAD from the owner's
-selected integration and the existing MS2 seed count. Paths without baseline
-residuals retain the Discovery-score fallback. The current
+Bootstrap seed support consumes Discovery evidence scores and the existing MS2
+seed count. Alignment does not estimate noise or turn peak SNR into identity,
+membership, or Matrix write authority. Measurement-quality facts belong to the
+[peak signal-quality owner](signal-processing-rationale.md#short-scale-signal-quality). The current
 anchor_min_seed_events in CID_NL_ALIGNMENT_CONFIG is 1: an MS1-only physical
 observation counts as one event rather than using the generic default of 2.
 This does not mean all final-window decisions apply the same seed-rating gates.

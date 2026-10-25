@@ -652,39 +652,18 @@ def _resolved_owner(
     )
 
 
-def test_resolved_peak_snr_admits_owners_discovery_scored_low() -> None:
+@pytest.mark.parametrize("snr", [0.0, 1.5, 5.0, 50.0])
+@pytest.mark.parametrize(
+    "score,expected", [(18, "weak"), (55, "moderate"), (90, "strong")]
+)
+def test_peak_noise_cannot_override_discovery_identity_support(snr, score, expected):
     edge = evaluate_owner_edge(
-        _resolved_owner("s1", snr=50.0),
-        _resolved_owner("s2", snr=50.0, owner_apex_rt=10.10),
+        _resolved_owner("s1", snr=snr, evidence_score=score),
+        _resolved_owner("s2", snr=snr, evidence_score=score, owner_apex_rt=10.10),
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
     )
-
-    assert edge.seed_support_level == "strong"
-    assert edge.decision == "strong_edge"
-
-
-def test_resolved_peak_snr_between_lod_and_loq_is_moderate() -> None:
-    edge = evaluate_owner_edge(
-        _resolved_owner("s1", snr=5.0),
-        _resolved_owner("s2", snr=5.0, owner_apex_rt=10.10),
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.seed_support_level == "moderate"
-
-
-def test_resolved_peak_below_detection_limit_stays_weak() -> None:
-    edge = evaluate_owner_edge(
-        _resolved_owner("s1", snr=50.0),
-        _resolved_owner("s2", snr=1.5, owner_apex_rt=10.10),
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.seed_support_level == "weak"
-    assert edge.decision == "weak_edge"
+    assert edge.seed_support_level == expected
 
 
 def test_owner_without_baseline_residual_keeps_discovery_rating() -> None:

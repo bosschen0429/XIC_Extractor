@@ -8,6 +8,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 
 def _cfg() -> ExtractionConfig:
@@ -58,6 +59,7 @@ def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
             rt_array=rt,
             intensity_array=y,
             apex_index=candidate.selection_apex_index,
+            signal_quality=SignalQuality("available", 1.0, 100.0, False),
             half_width_ratio=1.0,
             fwhm_ratio=1.0,
             ms2_present=True,

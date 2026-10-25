@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import numpy as np
 
+from xic_extractor.peak_detection.signal_quality import (
+    PROVISIONAL_MAX_SNR,
+    SignalQuality,
+)
+
 
 def is_provisional_peak_shape(
-    rt: np.ndarray,
     raw: np.ndarray,
     *,
     apex_index: int,
-    raw_noise_mad: float,
+    signal_quality: SignalQuality | None,
 ) -> bool:
-    """Determine if a peak has marginal contrast (<1.5x) and low SNR (<5.0)."""
-    if raw_noise_mad <= 0.0:
+    """Describe marginal contrast using the peak owner's completed S/N fact."""
+    if signal_quality is None or signal_quality.signal_to_noise is None:
         return False
     edge_count = max(1, min(5, len(raw) // 6))
     edge = max(
@@ -22,5 +26,4 @@ def is_provisional_peak_shape(
     )
     centre = float(np.median(raw[max(0, apex_index - 1) : apex_index + 2]))
     contrast = (centre / edge) if edge > 0.0 else float("inf")
-    snr = (centre - edge) / raw_noise_mad
-    return contrast < 1.5 and snr < 5.0
+    return contrast < 1.5 and signal_quality.signal_to_noise < PROVISIONAL_MAX_SNR

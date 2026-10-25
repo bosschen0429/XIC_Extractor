@@ -65,12 +65,7 @@ def score_candidate(
     )
     severities: list[tuple[int, str]] = [
         symmetry_severity(ctx.half_width_ratio),
-        local_sn_severity(
-            ctx.intensity_array,
-            ctx.apex_index,
-            baseline=ctx.baseline_array,
-            residual_mad=ctx.residual_mad,
-        ),
+        local_sn_severity(ctx.signal_quality),
         (
             nl_support_severity(ctx.ms2_present, ctx.nl_match)
             if ctx.neutral_loss_required

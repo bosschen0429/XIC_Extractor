@@ -10,9 +10,6 @@ from xic_extractor.alignment.cell_quality import (
     decision_map_by_family,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.grouping_evidence import (
-    owner_peak_meets_quantitation_limit,
-)
 from xic_extractor.alignment.identity_gates import (
     EXTREME_BACKFILL_REASON,
     WEAK_SEED_BACKFILL_REASON,
@@ -253,7 +250,6 @@ def decide_matrix_identity_row(
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         promotion_policy=promotion_policy,
-        quantitation_grade_owner_count=_quantitation_grade_owner_count(cluster),
     )
     return MatrixIdentityRowDecision(
         feature_family_id=family_id,
@@ -346,7 +342,6 @@ def _promotion_decision(
     ambiguous_count: int,
     backfill_dependency: str | None,
     promotion_policy: BackfillPromotionDecision,
-    quantitation_grade_owner_count: int,
 ) -> tuple[bool, IdentityDecision, IdentityConfidence, str]:
     if bool(getattr(cluster, "review_only", False)):
         return False, "audit_family", "review", "review_only"
@@ -427,28 +422,6 @@ def _promotion_decision(
             "review",
             "insufficient_detected_identity_support",
         )
-    detection_grade_group = evidence.startswith(
-        ("owner_bounded_continuity", "owner_complete_link_moderate")
-    )
-    if primary_evidence == "multi_sample_detected" and detection_grade_group:
-        # Detection-grade grouping evidence can establish one family without
-        # authorizing a published quantity. Publish only where the resolved
-        # peaks are quantifiable; the rest stay reviewable without losing the
-        # grouping, so Backfill scope and family identity keep the benefit.
-        # The primary evidence token stays `multi_sample_detected` because
-        # `promotion_policy` scopes itself on that value.
-        if quantitation_grade_owner_count < 2:
-            reason = (
-                "moderate_complete_link_below_quantitation_limit"
-                if evidence.startswith("owner_complete_link_moderate")
-                else "bounded_continuity_below_quantitation_limit"
-            )
-            return (
-                False,
-                "provisional_discovery",
-                "review",
-                reason,
-            )
     if primary_evidence == "multi_sample_detected":
         if backfill_cell_only_block:
             return (
@@ -549,14 +522,6 @@ def _row_flags(
     return flags
 
 
-def _quantitation_grade_owner_count(cluster: Any) -> int:
-    return sum(
-        1
-        for owner in getattr(cluster, "owners", ())
-        if owner_peak_meets_quantitation_limit(owner)
-    )
-
-
 def _primary_evidence(
     cluster: Any,
     evidence: str,
@@ -576,12 +541,6 @@ def _primary_evidence(
             "multi_sample_detected"
             if q_detected >= 2
             else "owner_targeted_istd_trajectory"
-        )
-    if evidence.startswith("owner_complete_link_moderate"):
-        return (
-            "multi_sample_detected"
-            if q_detected >= 2
-            else "owner_complete_link_moderate"
         )
     if evidence.startswith("owner_complete_link"):
         return "owner_complete_link"

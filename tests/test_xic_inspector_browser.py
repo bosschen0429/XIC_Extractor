@@ -603,3 +603,30 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     expect(observed).to_have_class("tgt-detail-row")
     expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
     expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")
+
+
+def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
+    review_page, tmp_path
+):
+    from tests.test_explanation_review import _quality_review_report
+
+    report, matrix = _quality_review_report(tmp_path)
+    before = matrix.read_bytes()
+    payload = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload
+    page = review_page
+    page.set_content('<div id="quality-view"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload => XicInspector.mount("
+        "document.getElementById('quality-view'), payload)",
+        payload,
+    )
+    strong = page.locator('[data-sample-row="S1"]')
+    weak = page.locator('[data-sample-row="S2"]')
+    expect(strong).not_to_contain_text("低 SNR")
+    expect(weak).to_contain_text("低 SNR（非 LOQ 判定）")
+    expect(strong).to_contain_text("1,000")
+    expect(weak).to_contain_text("2,000")
+    assert matrix.read_bytes() == before

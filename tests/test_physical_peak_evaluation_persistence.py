@@ -1413,27 +1413,27 @@ def test_current_discovery_qualification_persists_exactly(
 
 
 def test_is_provisional_peak_shape() -> None:
-    # Silent baseline (noise_mad == 0.0): genuine sparse peaks like C010 / C060
-    rt_sparse = np.array([8.0, 8.1, 8.2])
-    raw_sparse = np.array([0.0, 500.0, 0.0])
-    assert not is_provisional_peak_shape(
-        rt_sparse, raw_sparse, apex_index=1, raw_noise_mad=0.0
-    )
+    from xic_extractor.peak_detection.signal_quality import MAD_TO_SIGMA, SignalQuality
 
-    # High contrast and high SNR peak
-    rt_clear = np.linspace(8.0, 8.6, 7)
-    raw_clear = np.array([100.0, 150.0, 400.0, 1000.0, 420.0, 160.0, 95.0])
+    sparse = np.array([0.0, 500.0, 0.0])
     assert not is_provisional_peak_shape(
-        rt_clear, raw_clear, apex_index=3, raw_noise_mad=30.0
+        sparse,
+        apex_index=1,
+        signal_quality=SignalQuality("zero_noise", noise_sigma=0.0),
     )
-
-    # Low contrast (< 1.5) and low SNR (< 5.0) in noisy baseline -> provisional
-    rt_noisy = np.linspace(8.0, 8.6, 7)
-    raw_noisy = np.array([100.0, 110.0, 120.0, 130.0, 115.0, 105.0, 100.0])
-    # contrast = 130 / 100 = 1.3 (< 1.5), snr = (130 - 100) / 10 = 3.0 (< 5.0)
+    clear = np.array([100.0, 150.0, 400.0, 1000.0, 420.0, 160.0, 95.0])
+    assert not is_provisional_peak_shape(
+        clear,
+        apex_index=3,
+        signal_quality=SignalQuality("available", signal_to_noise=30.0 / MAD_TO_SIGMA),
+    )
+    noisy = np.array([100.0, 110.0, 120.0, 130.0, 115.0, 105.0, 100.0])
     assert is_provisional_peak_shape(
-        rt_noisy, raw_noisy, apex_index=3, raw_noise_mad=10.0
+        noisy,
+        apex_index=3,
+        signal_quality=SignalQuality("available", signal_to_noise=3.0 / MAD_TO_SIGMA),
     )
+    assert not is_provisional_peak_shape(noisy, apex_index=3, signal_quality=None)
 
 
 @pytest.mark.parametrize(
@@ -2062,3 +2062,42 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
     observed_mass = float(np.trapezoid(prepared.prepared.positive_signal, rt)) * 60.0
     assert 0.96 * observed_mass < answer.facts.area_counts_seconds < observed_mass
     assert prepared.prepared.raw[middle - 1 : middle + 2] == (0.0, 0.0, 0.0)
+
+
+def test_optional_quality_round_trip_and_old_payload_rehydration():
+    from dataclasses import replace
+
+    from xic_extractor.peak_detection.physical_peak_codec import (
+        rehydrate_physical_peak_evaluation,
+    )
+
+    rt = np.linspace(0.0, 2.0, 101)
+    raw = 10.0 + 200.0 * np.exp(-0.5 * ((rt - 1.0) / 0.1) ** 2)
+    raw += np.random.default_rng(916).normal(0.0, 0.5, len(rt))
+    profile = SignalProcessingProfile()
+    current = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw, profile=profile),
+        selection_subject_id="quality",
+        query_rt_min=1.0,
+    )
+    assert current.integration is not None
+    assert current.integration.signal_quality.status == "available"
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=current
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == current
+    old = replace(
+        current, integration=replace(current.integration, signal_quality=None)
+    )
+    old_payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=old
+    )
+    assert b'"signal_quality"' not in old_payload
+    restored = deserialize_physical_peak_evaluation(old_payload)[-1]
+    assert restored.integration.signal_quality is None
+    assert (
+        rehydrate_physical_peak_evaluation(rt, raw, profile=profile, expected=restored)
+        == old
+    )
+    assert old.facts == current.facts
+    assert old.answer == current.answer

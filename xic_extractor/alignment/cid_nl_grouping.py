@@ -13,10 +13,7 @@ from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import (
-    DETECTION_LIMIT_SNR,
-    QUANTITATION_LIMIT_SNR,
     envelope_fraction,
-    min_owner_peak_snr,
     pair_ppm,
 )
 from xic_extractor.alignment.grouping_rules import (
@@ -292,42 +289,7 @@ def classify_seed_support(
     right: SampleLocalMS1Owner,
     config: AlignmentConfig,
 ) -> SeedSupportLevel:
-    """Rate the pair on the peaks Alignment resolved, not on Discovery's score.
-
-    Discovery's ``evidence_score`` is dominated by whether Discovery itself
-    found an MS1 peak.  Every owner exists because ownership re-extracted the
-    XIC and did find one, so reading that score back here judges an owner by a
-    search its own construction superseded.  Rate the resolved peaks instead,
-    at the detection- and quantitation-limit conventions, and keep the MS2 seed
-    count, which Alignment does not re-derive.  Owners whose integration never
-    recorded a baseline residual keep the Discovery-score rating.
-    """
-    left_event = left.primary_identity_event
-    right_event = right.primary_identity_event
-    min_snr = min_owner_peak_snr(left, right)
-    if left_event is None or right_event is None:
-        if min_snr is not None and min_snr >= QUANTITATION_LIMIT_SNR:
-            return "strong"
-        if min_snr is not None and min_snr >= DETECTION_LIMIT_SNR:
-            return "moderate"
-        return "weak"
-    min_seed_count = min(left_event.seed_event_count, right_event.seed_event_count)
-    if min_snr is None:
-        return _discovery_seed_support_level(left, right, config)
-    if min_snr >= QUANTITATION_LIMIT_SNR and (
-        min_seed_count >= config.anchor_min_seed_events
-    ):
-        return "strong"
-    if min_snr >= DETECTION_LIMIT_SNR and min_seed_count >= 1:
-        return "moderate"
-    return "weak"
-
-
-def _discovery_seed_support_level(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> SeedSupportLevel:
+    """Consume Discovery identity evidence without re-estimating peak noise."""
     left_event = left.primary_identity_event
     right_event = right.primary_identity_event
     if left_event is None or right_event is None:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
+from dataclasses import asdict, replace
+from typing import cast
 
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -34,6 +37,10 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
     PhysicalSegmentUniverse,
     PreparedSignalProjection,
+)
+from xic_extractor.peak_detection.signal_quality import (
+    SignalQuality,
+    SignalQualityStatus,
 )
 
 _PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"
@@ -185,6 +192,16 @@ def rehydrate_physical_peak_evaluation(
         selection_policy_version=expected.question.selection_policy_version,
         search_rt_window=expected.question.search_rt_window,
     )
+    # Old persisted evaluations did not record this advisory fact. Rehydrating
+    # their physical decision must not silently manufacture recorded quality.
+    if (
+        expected.integration is not None
+        and expected.integration.signal_quality is None
+        and actual.integration is not None
+    ):
+        actual = replace(
+            actual, integration=replace(actual.integration, signal_quality=None)
+        )
     if actual != expected:
         raise ValueError(
             "persisted physical evaluation does not match live owner result"
@@ -445,6 +462,8 @@ def _integration_payload(integration: IntegrationResult) -> dict[str, object]:
             payload[key] = list(value)
         else:
             payload[key] = value
+    if integration.signal_quality is not None:
+        payload["signal_quality"] = asdict(integration.signal_quality)
     return payload
 
 
@@ -705,7 +724,12 @@ def _physical_integration_from_payload(value: object) -> IntegrationResult | Non
     if value is None:
         return None
     integration = _physical_mapping(value, label="integration")
-    _require_physical_keys(integration, _INTEGRATION_KEYS, label="integration")
+    keys = (
+        (*_INTEGRATION_KEYS, "signal_quality")
+        if "signal_quality" in integration
+        else _INTEGRATION_KEYS
+    )
+    _require_physical_keys(integration, keys, label="integration")
     required_float_fields = (
         "rt_left_min",
         "rt_apex_min",
@@ -732,6 +756,7 @@ def _physical_integration_from_payload(value: object) -> IntegrationResult | Non
         for key in optional_float_fields
     }
     return IntegrationResult(
+        signal_quality=signal_quality_from_payload(integration.get("signal_quality")),
         rt_left_min=required["rt_left_min"],
         rt_apex_min=required["rt_apex_min"],
         rt_right_min=required["rt_right_min"],
@@ -785,6 +810,50 @@ def _physical_integration_from_payload(value: object) -> IntegrationResult | Non
             field="ms1_morphology_trace_effective_points",
         ),
     )
+
+
+def signal_quality_from_payload(value: object) -> SignalQuality | None:
+    """Read optional quality facts in physical, observation and replay payloads."""
+    if value is None:
+        return None
+    quality = _physical_mapping(value, label="signal_quality")
+    if set(quality) != {
+        "status",
+        "noise_sigma",
+        "signal_to_noise",
+        "low_signal_to_noise",
+    }:
+        raise ValueError("signal_quality fields must match the declared schema")
+    status = quality["status"]
+    if status not in (
+        "available",
+        "insufficient_points",
+        "invalid_trace",
+        "missing_baseline",
+        "zero_noise",
+    ):
+        raise ValueError("signal_quality has an unknown status")
+    values: dict[str, float | None] = {}
+    for key in ("noise_sigma", "signal_to_noise"):
+        number = quality[key]
+        if number is not None and (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not math.isfinite(number)
+            or number < 0
+        ):
+            raise ValueError(f"signal_quality {key} must be finite and nonnegative")
+        values[key] = None if number is None else float(number)
+    low = quality["low_signal_to_noise"]
+    if low is not None and not isinstance(low, bool):
+        raise ValueError("signal_quality low_signal_to_noise must be boolean or null")
+    sigma, ratio = values["noise_sigma"], values["signal_to_noise"]
+    if status == "available":
+        if sigma is None or sigma <= 0 or ratio is None or low is None:
+            raise ValueError("available signal_quality requires positive noise and S/N")
+    elif ratio is not None or low is not None:
+        raise ValueError("unavailable signal_quality cannot claim S/N or good quality")
+    return SignalQuality(cast(SignalQualityStatus, status), sigma, ratio, low)
 
 
 def _unique_physical_mapping(

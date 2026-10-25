@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import zlib
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 from typing import Any
 
 REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
@@ -112,6 +113,7 @@ def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -
             cell.get("reason_codes", []),
             cell.get("support_origin", "unavailable"),
             cell.get("observation_ids", []),
+            cell.get("signal_quality", []),
         ]
         for cell in cells
     ]
@@ -131,7 +133,8 @@ def unpack_cells(
     values = json.loads(zlib.decompress(payload))
     result = {}
     for position, cell in enumerate(values):
-        sample, variant, value, source, states, reasons, origin, observations = cell
+        sample, variant, value, source, states, reasons, origin, observations = cell[:8]
+        quality = cell[8] if len(cell) > 8 else []
         if (
             isinstance(sample, bool)
             or not isinstance(sample, int)
@@ -151,6 +154,7 @@ def unpack_cells(
             "reason_codes": reasons,
             "support_origin": origin,
             "observation_ids": observations,
+            "signal_quality": quality,
         }
     return result
 
@@ -173,6 +177,17 @@ def review_cell(decision: Any) -> dict[str, Any]:
         if "initial_capture" in stages
         else "unavailable"
     )
+    qualities = {}
+    for cell in cells:
+        observation = cell.peak_observation
+        if observation is None:
+            continue
+        content = observation.content
+        quality = content.integration.signal_quality
+        qualities[content.peak_observation_content_id] = {
+            "observation_id": content.peak_observation_content_id,
+            **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
+        }
     return {
         "canonical_sample_identity_id": (
             decision.subject.canonical_sample.identity.sample_identity_id
@@ -185,6 +200,7 @@ def review_cell(decision: Any) -> dict[str, Any]:
             {reason for cell in cells for reason in cell.content.reason_codes}
         ),
         "support_origin": origin,
+        "signal_quality": [qualities[key] for key in sorted(qualities)],
         "observation_ids": sorted(
             {
                 cell.content.peak_observation_content_id

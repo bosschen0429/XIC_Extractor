@@ -184,6 +184,41 @@ relief. A dropout can also suppress a weaker lobe's seed and merge an otherwise
 resolved pair. These limitations remain explicit regression cases, not
 exceptions or alternate calculations in the owner.
 
+## Short-Scale Signal Quality
+
+`peak_detection/signal_quality.py` owns the RT-weighted three-point residual
+estimator described above. It returns `noise_sigma = 1.4826 * MAD(residual)`;
+the MAD is centered at the residual median, and each residual is normalized
+by its interpolation-coefficient norm. This scale assumes independent,
+approximately Gaussian measurement noise. It describes acquired raw noise,
+not noise after Gaussian smoothing or AsLS peak subtraction.
+
+For a selected peak, SNR is `max(raw[apex] - baseline[apex], 0) / noise_sigma`.
+Both noise and signal use its selected integration interval and apex; the
+baseline is the producer's existing baseline, not another solve. Physical
+capture and scoring share the clipped physical baseline. Legacy nonphysical
+integration retains its existing AsLS baseline semantics. Physical prominence
+and nearest-valley relief remain distinct contrast gates, not SNR numerators.
+
+Thresholds retain their previous units-equivalent values: Discovery relief is
+`4 / 1.4826` sigma, Backfill contrast is 3 sigma, provisional SNR is below
+`5 / 1.4826` together with low raw contrast, and scoring transitions are
+`2 / 1.4826` and `3 / 1.4826`. These are quality/qualification policies,
+not calibrated detection probabilities or validated LOD/LOQ.
+
+`IntegrationResult.signal_quality` carries status, noise sigma, SNR and the
+advisory `low_signal_to_noise` flag (SNR below `10 / 1.4826`). Fewer than three
+points, invalid RT/intensity, missing baseline, and zero noise cannot produce
+a good-quality or infinite-SNR answer. Old artifacts lacking the field remain
+not recorded, including after physical rehydration. The advisory fact is not
+part of physical content identity. Existing `baseline_residual_mad` and area
+uncertainty retain their original AsLS-residual meaning.
+
+Cell review TSVs and Inspector retain the sample/observation attribution.
+A low-SNR hint does not blank or zero Matrix values, change headers, authorize
+writing, or change membership/disposition/counting. A short peak's curvature,
+correlated noise and censored observations remain estimator limitations.
+
 ## What The Canonical Signal Establishes
 
 One profile gives boundary, intensity, area, and shape consumers a reproducible

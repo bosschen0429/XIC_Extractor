@@ -41,6 +41,50 @@ def _snapshot_grouping(
     )
 
 
+def test_retained_snapshot_ignores_only_retired_alignment_keys(tmp_path):
+    inputs = GroupingInputs(
+        sample_stems=(),
+        injection_order={},
+        alignment_config=AlignmentConfig(),
+        worksets=(),
+        candidate_ids_by_owner={},
+    )
+    path = tmp_path / "legacy.json.gz"
+    write_grouping_inputs(path, inputs, provenance={})
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    # Compatibility for saved grouping snapshots, not a permissive config API.
+    # Remove this case only when those snapshots are no longer supported.
+    payload["alignment_config"].update(
+        duplicate_fold_ppm=5.0,
+        duplicate_fold_rt_sec=2.0,
+        duplicate_fold_product_ppm=10.0,
+        duplicate_fold_observed_loss_ppm=10.0,
+        duplicate_fold_min_detected_overlap=0.8,
+        duplicate_fold_min_shared_detected_count=3,
+        duplicate_fold_min_detected_jaccard=0.6,
+        duplicate_fold_min_present_overlap=0.8,
+        anchor_priorities=["HIGH"],
+        anchor_min_scan_support_score=0.5,
+        mz_bucket_neighbor_radius=2,
+        owner_window_overlap_fraction=0.5,
+        owner_tail_seed_guard_sec=30.0,
+        owner_tail_max_secondary_ratio=0.3,
+        owner_backfill_min_detected_samples=1,
+        identity_rt_candidate_window_sec=180.0,
+    )
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    restored, _ = read_grouping_inputs(path)
+    assert restored == inputs
+
+    payload["alignment_config"]["max_ppmm"] = 30.0
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    with pytest.raises(TypeError, match="max_ppmm"):
+        read_grouping_inputs(path)
+
+
 @pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
 def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
     tmp_path, saved_acquisition_window

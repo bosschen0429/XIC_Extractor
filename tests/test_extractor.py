@@ -25,6 +25,7 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent, RawReaderError
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
@@ -2049,6 +2050,7 @@ def _typed_candidate_score(
             rt_array=rt_array,
             intensity_array=intensity_array,
             apex_index=apex_index,
+            signal_quality=SignalQuality("available", 1.0, 100.0, False),
             half_width_ratio=1.0,
             fwhm_ratio=1.0,
             ms2_present=ms2_present,

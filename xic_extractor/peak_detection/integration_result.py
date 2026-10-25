@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from xic_extractor.peak_detection.signal_quality import SignalQuality
+
 _FLOAT_FIELDS = (
     "rt_left_min",
     "rt_apex_min",
@@ -53,6 +55,7 @@ class IntegrationResult:
     ms1_morphology_trace_method: str = ""
     ms1_morphology_trace_window_points: int | None = None
     ms1_morphology_trace_effective_points: int | None = None
+    signal_quality: SignalQuality | None = None
 
     def __post_init__(self) -> None:
         for field_name in _FLOAT_FIELDS:

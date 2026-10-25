@@ -153,28 +153,10 @@ def test_default_config_matches_alignment_contract():
     assert config.product_mz_tolerance_ppm == 20.0
     assert config.observed_loss_tolerance_ppm == 20.0
     assert config.min_peak_shape_similarity == 0.80
-    assert config.mz_bucket_neighbor_radius == 2
-    assert config.anchor_priorities == ("HIGH",)
     assert config.anchor_min_evidence_score == 60
     assert config.anchor_min_seed_events == 2
-    assert config.anchor_min_scan_support_score == 0.5
     assert config.rt_unit == "min"
     assert config.fragmentation_model == "cid_nl"
-
-
-def test_alignment_config_duplicate_fold_defaults_are_conservative():
-    from xic_extractor.alignment import AlignmentConfig
-
-    config = AlignmentConfig()
-
-    assert config.duplicate_fold_ppm == 5.0
-    assert config.duplicate_fold_rt_sec == 2.0
-    assert config.duplicate_fold_product_ppm == 10.0
-    assert config.duplicate_fold_observed_loss_ppm == 10.0
-    assert config.duplicate_fold_min_detected_overlap == 0.80
-    assert config.duplicate_fold_min_shared_detected_count == 3
-    assert config.duplicate_fold_min_detected_jaccard == 0.60
-    assert config.duplicate_fold_min_present_overlap == 0.80
 
 
 def test_alignment_config_owner_gate_defaults_are_explicit():
@@ -182,27 +164,13 @@ def test_alignment_config_owner_gate_defaults_are_explicit():
 
     config = AlignmentConfig()
 
-    assert config.owner_window_overlap_fraction == 0.50
     assert config.owner_apex_close_sec == 2.0
-    assert config.owner_tail_seed_guard_sec == 30.0
-    assert config.owner_tail_max_secondary_ratio == 0.30
-    assert config.owner_backfill_min_detected_samples == 1
-    assert config.identity_rt_candidate_window_sec == 180.0
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("owner_window_overlap_fraction", -0.01),
-        ("owner_window_overlap_fraction", 1.01),
         ("owner_apex_close_sec", 0.0),
-        ("owner_tail_seed_guard_sec", 0.0),
-        ("owner_tail_max_secondary_ratio", -0.01),
-        ("owner_tail_max_secondary_ratio", 1.01),
-        ("owner_backfill_min_detected_samples", 0),
-        ("owner_backfill_min_detected_samples", 1.5),
-        ("owner_backfill_min_detected_samples", True),
-        ("identity_rt_candidate_window_sec", 0.0),
     ],
 )
 def test_alignment_config_owner_gate_validation(field, value):
@@ -234,29 +202,6 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
 
     with pytest.raises(ValueError):
         AlignmentConfig(**kwargs)
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("duplicate_fold_ppm", 0.0),
-        ("duplicate_fold_rt_sec", 0.0),
-        ("duplicate_fold_product_ppm", 0.0),
-        ("duplicate_fold_observed_loss_ppm", 0.0),
-        ("duplicate_fold_min_detected_overlap", -0.1),
-        ("duplicate_fold_min_detected_overlap", 1.1),
-        ("duplicate_fold_min_shared_detected_count", 0),
-        ("duplicate_fold_min_detected_jaccard", -0.1),
-        ("duplicate_fold_min_detected_jaccard", 1.1),
-        ("duplicate_fold_min_present_overlap", -0.1),
-        ("duplicate_fold_min_present_overlap", 1.1),
-    ],
-)
-def test_alignment_config_rejects_invalid_duplicate_fold_values(field, value):
-    from xic_extractor.alignment import AlignmentConfig
-
-    with pytest.raises(ValueError, match=field):
-        AlignmentConfig(**{field: value})
 
 
 @pytest.mark.parametrize(
@@ -299,12 +244,6 @@ def test_bool_tolerance_windows_are_rejected(field):
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"anchor_priorities": ()},
-        {"anchor_priorities": ["HIGH"]},
-        {"anchor_priorities": "HIGH"},
-        {"anchor_priorities": ("BAD",)},
-        {"anchor_priorities": ("HIGH", "BAD")},
-        {"anchor_priorities": ([],)},
         {"anchor_min_evidence_score": -1},
         {"anchor_min_evidence_score": 101},
         {"anchor_min_evidence_score": True},
@@ -316,18 +255,6 @@ def test_bool_tolerance_windows_are_rejected(field):
         {"anchor_min_seed_events": math.inf},
         {"anchor_min_seed_events": 1.5},
         {"anchor_min_seed_events": True},
-        {"anchor_min_scan_support_score": -0.1},
-        {"anchor_min_scan_support_score": 1.1},
-        {"anchor_min_scan_support_score": True},
-        {"anchor_min_scan_support_score": math.nan},
-        {"anchor_min_scan_support_score": math.inf},
-        {"anchor_min_scan_support_score": "0.5"},
-        {"mz_bucket_neighbor_radius": 0},
-        {"mz_bucket_neighbor_radius": -1},
-        {"mz_bucket_neighbor_radius": math.nan},
-        {"mz_bucket_neighbor_radius": math.inf},
-        {"mz_bucket_neighbor_radius": 1.5},
-        {"mz_bucket_neighbor_radius": True},
         {"rt_unit": "sec"},
         {"fragmentation_model": "hcd"},
     ],

@@ -789,6 +789,7 @@ def prepare_alignment_explanation(
                             **_fields(
                                 decision, "decision_id", "variant", "value", "source"
                             ),
+                            "signal_quality": review_cell(decision)["signal_quality"],
                             "row_key_id": row.row_key.untarget_row_key_id,
                             "group_hypothesis_id": group_id,
                             "canonical_sample_identity_id": (
