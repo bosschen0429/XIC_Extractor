@@ -1602,6 +1602,49 @@ def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) ->
     assert all(group.disposition == "assigned" for group in result.groups)
 
 
+@pytest.mark.parametrize("occupy_early_band", (False, True))
+@pytest.mark.parametrize("reverse", (False, True))
+def test_singleton_ambiguity_uses_remaining_band_choices(
+    occupy_early_band: bool, reverse: bool
+) -> None:
+    orders = {"probe": 1, "a": 2, "b": 3, "distant": 20}
+    owners = tuple(
+        _synthetic_owner(sample, f"{band}-{sample}", rt)
+        for band, rt in (("early", 10.0), ("late", 10.18))
+        for sample in ("a", "b", "distant")
+    ) + (_synthetic_owner("probe", "between", 10.09),)
+    if occupy_early_band:
+        owners += (_synthetic_owner("probe", "early-probe", 10.0),)
+    # Pairwise uncertainty at the distant injection makes the probe peaks
+    # compete. Once early-probe joins the early band, only the late band can
+    # admit between. Without that occupied slot, both choices remain viable.
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    early = {f"early-{sample}" for sample in ("a", "b", "distant")}
+    late = {f"late-{sample}" for sample in ("a", "b", "distant")}
+    if occupy_early_band:
+        early.add("early-probe")
+        late.add("between")
+    expected = {frozenset(early), frozenset(late)}
+    if not occupy_early_band:
+        expected.add(frozenset(("between",)))
+    assert {frozenset(group.owner_ids) for group in result.groups} == expected
+    assert all(
+        group.disposition == ("assigned" if len(group.owner_ids) > 1 else "undecided")
+        for group in result.groups
+    )
+    between = next(
+        decision
+        for decision in result.sparse_decisions
+        if decision.owner_id == "between"
+    )
+    assert between.state == ("assigned" if occupy_early_band else "evaluated_undecided")
+
+
 def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> None:
     local = tuple(
         _synthetic_owner(

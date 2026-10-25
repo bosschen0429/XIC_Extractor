@@ -1843,7 +1843,7 @@ def _assign_window_singletons(
     trajectories: PeakTrajectories,
     shape_conflicts: dict[str, set[str]],
 ) -> None:
-    """Resolve remaining owner-to-band competition against fixed band medians."""
+    """Reassess singleton competition against the established bands."""
     bands = {key: tuple(group) for key, group in members.items() if len(group) >= 2}
     if not bands:
         return
@@ -1854,8 +1854,10 @@ def _assign_window_singletons(
     }
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
+    # Identity-ineligible owners never enter a window. Earlier pairwise
+    # ambiguity must be reconsidered against the remaining band choices.
     for group in members.values():
-        if len(group) != 1 or group[0].owner_id in weak:
+        if len(group) != 1:
             continue
         owner = group[0]
         row_candidates = []
@@ -1922,6 +1924,7 @@ def _assign_window_singletons(
                 continue
             members[selected].append(owner)
             members.pop(owner.owner_id)
+            weak.pop(owner.owner_id, None)
 
 
 def _feature_rt_may_support(
