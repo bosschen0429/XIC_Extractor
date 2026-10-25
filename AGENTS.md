@@ -14,7 +14,9 @@ uses the affected source, existing tests, and the relevant branch below.
 | Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
 | Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
 | Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
-| Test selection, new regression coverage, fixture design, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
+| Test selection, new regression coverage, fixture design, UI demonstration, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
+| Change UI styling or theme roles | Read [UI Presentation](docs/architecture-contract.md#ui-presentation). |
+| Change import loading in startup-sensitive or lightweight readers | Read [Dependency Direction](docs/architecture-contract.md#dependency-direction). |
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
@@ -41,9 +43,8 @@ uses the affected source, existing tests, and the relevant branch below.
   derived-fact, and internal-defense changes use the XIC technical criteria in
   [Change Locality](docs/architecture-contract.md#change-locality).
   [`testing.md`](docs/agent/testing.md) owns test worth.
-- **Human reviewability:** 修改核心流程時，讓維護者能沿正式入口讀懂「輸入 → 計算／判斷 → 輸出」，將同一規則的知識集中在其正式 owner，讓 caller 消費完成的答案。合併重複實作前，確認它們承載同一規則、具有相容語意與相同變更理由；僅因程式形狀相似，不足以建立共用抽象。可讀性重構須指出實際減少的概念、跨檔追蹤或半成品組裝；保留有實際語意或信任邊界用途的型別與驗證，不以單一 caller 或行數作硬性拆合門檻。
 - 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
-- **Responsibility boundary & domain purity:** core domain algorithms operate purely on in-memory domain models. Never mix RAW/DLL I/O, multiprocessing, byte hashing, or finalization formatting into mathematical or alignment algorithms. Downstream internal routines must not re-validate authoritative upstream entities.
+- **Responsibility boundary & domain purity:** core domain algorithms operate purely on in-memory domain models. Never mix RAW/DLL I/O, multiprocessing, byte hashing, or finalization formatting into mathematical or alignment algorithms.
 - **Final-state artifacts:** code, comments, tests, and docs describe current
   behavior and non-obvious constraints. Cleanup history and rejected options
   stay in Git/PR history unless a current consumer needs the rationale.
