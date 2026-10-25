@@ -160,7 +160,7 @@ class MembershipComparison:
         )
 
     def pair(self, first: str, second: str) -> tuple[float, tuple[str, ...]]:
-        key = (min(first, second), max(first, second))
+        key = (first, second) if first <= second else (second, first)
         if key not in self.pairs:
             self.pairs[key] = self._pair(first, second)
         return self.pairs[key]
@@ -232,6 +232,11 @@ class MembershipComparison:
         return cost, tuple(contradictions)
 
     def group_cost(self, group: tuple[str, ...]) -> float:
+        # Production partitions are already canonical; reuse their cost without
+        # sorting the same group again for every assignment and merge proposal.
+        cached = self.group_costs.get(group)
+        if cached is not None:
+            return cached
         key = tuple(sorted(group))
         if key not in self.group_costs:
             if len({self.owners[p].sample_stem for p in key}) != len(key):
@@ -243,7 +248,14 @@ class MembershipComparison:
                 if not math.isfinite(pair_cost):
                     break
             trend = 0.0
-            if len(key) > 2 and math.isfinite(pair_cost):
+            # A neighbor median stays inside the group's RT range. A range of
+            # at most 90 seconds therefore cannot incur the trend penalty.
+            if (
+                len(key) > 2
+                and math.isfinite(pair_cost)
+                and (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
+                > 90.0
+            ):
                 for owner_id in key:
                     owner = self.owners[owner_id]
                     if owner.sample_stem not in self.orders:

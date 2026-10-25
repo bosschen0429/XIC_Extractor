@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-17
+**Last updated:** 2026-10-25
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,40 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-10-25 Final Membership Replay Reuses Costs Without Changing Decisions
+
+#913, Evidence: `exact_safe`; verdict: `optimized`. Baseline is `a51d0473f`,
+not the earlier pre-membership-policy implementation. The retained 44-sample
+snapshot contains 35,677 owners (SHA-256
+`3449cac3c205b39f205211b98faebf4dc78227b311d0f492758341e3f075e46c`).
+Discovery, RAW acquisition and Backfill are excluded.
+
+- Separate same-runtime runs measured `replay_grouping` at 240.43 s before and
+  177.91 s after. Loading was 26.45/25.85 s; writing was 12.46/12.38 s, excluded
+  from replay timing. Inclusive merge spans were 158.91/120.26 s, while risk
+  spans were 21.67/15.18 s: merge evaluation, not risk publication, dominates.
+- Reuse canonical group-cost cache hits before sorting, canonicalize pair keys
+  with one comparison, and omit neighbor-trend evaluation when the entire RT
+  range is at most 90 seconds. A median cannot escape that range, so the
+  existing trend penalty is exactly zero; its threshold and policy are unchanged.
+- Six interleaved small-band replays (352 owners, three per implementation,
+  fresh comparison caches) had medians 5.088/4.062 s and ranges
+  5.003–5.132/4.032–4.118 s. Full and small outputs each preserve all five TSVs
+  byte-for-byte, including risk decisions. The full comparison has one run per
+  variant; do not interpret its percentage as a stable production speedup.
+- Artifacts: `output/issue-913/perf-full-{before,after}/timing.json`,
+  `output/issue-913/perf-interleaved.json`, and `current-small.pstats` in the
+  same task directory. The profiler is call-cost evidence, not benchmark timing.
+- The unchanged 965 unresolved groups are singletons: 224 are alone in their
+  comparison partition; 359 have other groups but no feasible bounded move;
+  115 have an alternative within 0.05 cost (100 exactly equivalent within the
+  policy tolerance); 267 have a more costly alternative. This is a bounded
+  search diagnosis, not chemical truth or a reason to relax physical gates.
+  `output/issue-913/unresolved-census.json` retains the census and limitations.
+
+Rerun when membership costs/search, the comparison universe, or snapshot changes.
+Historical concurrent-run elapsed times are not an isolated optimization baseline.
 
 ### 2026-09-28 Inferred Precursor MS1 Ion Offsets By m/z Band
 

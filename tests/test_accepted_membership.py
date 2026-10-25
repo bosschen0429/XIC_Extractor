@@ -137,6 +137,31 @@ def test_complete_group_cost_prevents_blind_pair_chain_union():
     assert sorted(map(len, comparison.merge(((a,), (b,), (c,))))) == [1, 2]
 
 
+@pytest.mark.parametrize("span_min", (0.0, 1.49, 1.5, 1.51, 2.0))
+def test_group_trend_cost_preserves_ninety_second_boundary(span_min):
+    from xic_extractor.alignment.membership_selection import MembershipComparison
+    from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+
+    owners = tuple(
+        _owner(s, s, apex_rt=rt)
+        for s, rt in (("a", 10.0), ("b", 10.0), ("c", 10.0 + span_min))
+    )
+    comparison = MembershipComparison(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={"a": 1, "b": 2, "c": 3}),
+        trajectories=PeakTrajectories(),
+    )
+    a, b, c = (o.owner_id for o in owners)
+    comparison.pairs.update({(a, b): (0.2, ()), (b, c): (0.2, ()), (a, c): (0.2, ())})
+    # The last owner's two neighbors both have RT 10; it has the largest
+    # residual. The other two residuals are half as large.
+    expected = 1.2 + 0.2 * max(0.0, span_min * 60 / 90 - 1)
+    assert comparison.group_cost((a, b, c)) == pytest.approx(expected)
+    assert comparison.group_cost((c, a, b)) == pytest.approx(expected)
+
+
 @pytest.mark.parametrize("direct", (False, True))
 def test_mixed_trajectory_retains_only_independent_raw_pairs(direct):
     from tests.alignment_pipeline_helpers import resolved_elution_context
