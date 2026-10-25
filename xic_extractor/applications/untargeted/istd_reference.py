@@ -30,10 +30,8 @@ def extract_batch_known_istd_reference(
     from dataclasses import replace
 
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
-    from xic_extractor.extraction.target_extraction import (
-        process_file,
-    )
+    from xic_extractor.extraction.process_backend import run_process
+    from xic_extractor.extraction.serial_backend import run_serial
     from xic_extractor.extraction.targeted_istd_backfill import (
         resolve_istd_reference_peaks,
     )
@@ -42,15 +40,17 @@ def extract_batch_known_istd_reference(
     if not istd_targets:
         raise ValueError("No ISTD targets (is_istd=True) found in targets")
     config = replace(peak_config, dll_dir=dll_dir)
-    scoring_context_factory = build_scoring_context_factory(config=config)
+    samples = sorted(raw_paths_by_sample.items())
+    # Same RAW-batch backend choice as Targeted's run_pipeline.
+    run_batch = run_process if config.parallel_mode == "process" else run_serial
+    output = run_batch(
+        config,
+        istd_targets,
+        raw_paths=[raw_path for _, raw_path in samples],
+        injection_order={},
+    )
     results_by_sample = {}
-    for sample_stem, raw_path in sorted(raw_paths_by_sample.items()):
-        result, _ = process_file(
-            config,
-            istd_targets,
-            raw_path,
-            scoring_context_factory=scoring_context_factory,
-        )
+    for (sample_stem, _), result in zip(samples, output.file_results, strict=True):
         if result.error is not None:
             raise RuntimeError(
                 f"ISTD extraction failed for {sample_stem}: {result.error}"

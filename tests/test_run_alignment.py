@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import pstats
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -2101,3 +2102,67 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
         == 2
     )
     assert capsys.readouterr().err
+
+
+@pytest.mark.parametrize("profile", ("off", "cprofile"))
+def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    profile: str,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    _write_empty_batch_index(batch_index)
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    output_dir = tmp_path / "grouping"
+    captured = {}
+
+    def fake_snapshot(request, context=None):
+        captured.update(request=request)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        snapshot = output_dir / "grouping-inputs.json.gz"
+        snapshot.write_bytes(b"x")
+        return snapshot
+
+    def fail_alignment(request, context=None):
+        pytest.fail("--stop-after grouping must not run Backfill or publication")
+
+    monkeypatch.setattr(run_alignment, "snapshot_untargeted_grouping", fake_snapshot)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_alignment)
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+            "--stop-after",
+            "grouping",
+            "--profile",
+            profile,
+            "--profile-output-dir",
+            str(tmp_path / "profile"),
+        ]
+    )
+
+    assert code == 0
+    assert captured["request"].peak_config.parallel_mode == "process"
+    assert "Grouping snapshot:" in capsys.readouterr().out
+    assert sorted(path.name for path in output_dir.iterdir()) == [
+        "grouping-inputs.json.gz"
+    ]
+    if profile == "cprofile":
+        stats = pstats.Stats(str(tmp_path / "profile" / "profile.prof"))
+        assert any(name == "fake_snapshot" for _, _, name in stats.stats)
+        assert "fake_snapshot" in (tmp_path / "profile" / "profile_top.txt").read_text(
+            encoding="utf-8"
+        )

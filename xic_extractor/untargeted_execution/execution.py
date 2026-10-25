@@ -59,6 +59,10 @@ from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
+from xic_extractor.untargeted_execution.grouping_experiment import (
+    PreparedGroupingExperiment,
+    grouping_experiment_from_prepared,
+)
 from xic_extractor.untargeted_execution.input_planning import (
     PreparedUntargetedAlignmentWorksets,
     UntargetedInputPlan,
@@ -107,11 +111,11 @@ class _GroupingInputs:
 
 
 @dataclass(frozen=True, slots=True)
-class _InitialAcquisitionPartition:
-    """One sealed snapshot with independently readable grouping and acquisition."""
+class _GroupingPartition:
+    """Grouping checkpoint in the result table, with optional initial acquisition."""
 
     grouping: _GroupingInputs
-    initial_results: tuple[UntargetedInitialSampleResult, ...]
+    initial_results: tuple[UntargetedInitialSampleResult, ...] = ()
     children: tuple[()] = ()
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
@@ -124,6 +128,15 @@ _GLOBAL_CLOSURE_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_application_result",
     schema_version="cid_nl_global_closure",
+    validation_status="diagnostic_only",
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf",
+)
+
+_GROUPING_CLOSURE_CONTRACT = mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
+    semantic_role="frozen_grouping_snapshot",
+    schema_version="grouping_snapshot_closure",
     validation_status="diagnostic_only",
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
@@ -259,10 +272,12 @@ class UntargetedPartitionPipelineAdapter:
         acquisition_workers: int = 1,
         acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
+        grouping_only: bool = False,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
         self._retain_partition_spool = bool(retain_partition_spool)
+        self._grouping_only = grouping_only
         self._plan = plan
         self._alignment_config = alignment_config
         sample_universe = frozenset(
@@ -366,7 +381,7 @@ class UntargetedPartitionPipelineAdapter:
             else raw_workers // self._acquisition_workers
         )
         partitions: list[WorkPartition[tuple[CidNlMethodSubject, ...]]] = []
-        for phase in ("initial", "backfill"):
+        for phase in ("initial",) if grouping_only else ("initial", "backfill"):
             for index, subjects in enumerate(subject_partitions):
                 partition_key = f"partition-{index:05d}-{phase}"
                 partitions.append(
@@ -387,6 +402,8 @@ class UntargetedPartitionPipelineAdapter:
         self._partitions = tuple(partitions)
         self._bootstrap_count = len(subject_partitions)
         self._initial_partitions: dict[int, SealedPartition] = {}
+        self._final_groupings: dict[int, SealedPartition] = {}
+        self._initial_job_count = 0
         self._batch_preparation = UntargetedBatchGroupingPreparation(context)
         self._initial_store: StreamedResultStore | None = None
         self._partition_subject_batches = {
@@ -472,14 +489,23 @@ class UntargetedPartitionPipelineAdapter:
 
     def execution_phases(
         self,
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> tuple[PartitionPipelinePhase[tuple[CidNlMethodSubject, ...]], ...]:
         """Operational chunks never close the batch's scientific evidence scope."""
-        return (
+        phases: tuple[PartitionPipelinePhase[tuple[CidNlMethodSubject, ...]], ...] = (
             PartitionPipelinePhase("initial-acquisition", self.bootstrap_partitions),
             PartitionPipelinePhase(
-                "batch-search-preparation",
-                self._partitions[self._bootstrap_count :],
-                self.prepare_batch_search,
+                "final-grouping",
+                (),
+                partial(self.prepare_batch_search, progress_callback=progress_callback),
+            ),
+        )
+        if self._grouping_only:
+            return phases
+        return phases + (
+            PartitionPipelinePhase(
+                "backfill", self._partitions[self._bootstrap_count :]
             ),
         )
 
@@ -544,17 +570,44 @@ class UntargetedPartitionPipelineAdapter:
         self,
         store: StreamedResultStore,
         check_cancellation: Callable[[], None],
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> None:
-        """Freeze batch RT calibration once every initial partition is sealed.
+        """Finish the frozen-calibration grouping phase before any Backfill.
 
-        Each Backfill partition then regroups only its own spooled initial
-        grouping against this frozen calibration.
+        Keep only one partition's grouping resident. Both full execution and
+        snapshots consume these answers; neither regroups in the Backfill lane.
         """
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
         check_cancellation()
         self._batch_preparation.freeze_calibration()
         self._initial_store = store
+        for partition in self.bootstrap_partitions:
+            check_cancellation()
+            initial = cast(
+                _GroupingInputs,
+                store.read_header_field(
+                    self._initial_partitions[partition.index].index, "grouping"
+                ),
+            )
+            prepared = self._batch_preparation.finalize_grouping(
+                initial.batch, initial.prepared, progress_callback=progress_callback
+            )
+            check_cancellation()
+            self._final_groupings[partition.index] = store.append(
+                f"partition-{partition.index:05d}-grouping",
+                _GroupingPartition(_GroupingInputs(initial.batch, prepared)),
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "partition_progress",
+                        "stage": "final_grouping",
+                        "completed": partition.index + 1,
+                        "total": self._bootstrap_count,
+                    }
+                )
 
     def execute_acquisition(
         self,
@@ -590,27 +643,26 @@ class UntargetedPartitionPipelineAdapter:
             initial_partition = self._initial_partitions[
                 partition.index - self._bootstrap_count
             ]
-            # Grouping inputs and acquisition records are read independently
-            # from this partition's own initial snapshot.
-            initial_grouping = cast(
+            # Reuse the final phase answer and the original acquisition records.
+            final_grouping_inputs = cast(
                 _GroupingInputs,
-                store.read_header_field(initial_partition.index, "grouping"),
+                store.read_header_field(
+                    self._final_groupings[
+                        partition.index - self._bootstrap_count
+                    ].index,
+                    "grouping",
+                ),
             )
-            batch = replace(initial_grouping.batch, prepared_grouping=None)
+            batch = replace(final_grouping_inputs.batch, prepared_grouping=None)
             initial_results = cast(
                 tuple[UntargetedInitialSampleResult, ...],
                 store.read_tuple(initial_partition.index, "initial_results"),
             )
-            preparation = self._batch_preparation
 
             def final_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],
             ) -> UntargetedPreparedGrouping:
-                return preparation.finalize_grouping(
-                    batch,
-                    initial_grouping.prepared,
-                    progress_callback=progress_callback,
-                )
+                return final_grouping_inputs.prepared
 
             grouping_callback = final_grouping
 
@@ -635,7 +687,11 @@ class UntargetedPartitionPipelineAdapter:
                 raise RuntimeError("process worker pools are already closed")
             pool = self._process_pools[0]
             if pool.stopped:
-                raise RuntimeError("process worker pool failure stopped admission")
+                cause = pool.first_error
+                raise RuntimeError(
+                    "process worker pool failure stopped admission: "
+                    f"{type(cause).__name__}: {cause}"
+                ) from cause
             pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool = (
                 nullcontext(pool)
             )
@@ -683,7 +739,7 @@ class UntargetedPartitionPipelineAdapter:
             prepared = leaf.prepared_grouping
             sealed = store.append(
                 partition.partition_key,
-                _InitialAcquisitionPartition(
+                _GroupingPartition(
                     grouping=_GroupingInputs(batch, prepared),
                     initial_results=tuple(
                         UntargetedInitialSampleResult(result.job, result.adapter_result)
@@ -692,6 +748,7 @@ class UntargetedPartitionPipelineAdapter:
                 ),
             )
             self._batch_preparation.add_initial(prepared)
+            self._initial_job_count += len(batch.jobs)
             self._initial_partitions[partition.index] = sealed
             persisted = PersistedUntargetedPartition(sealed, 0, ())
             return PartitionCompositionOutput(result=persisted, sealed=sealed)
@@ -768,7 +825,26 @@ class UntargetedPartitionPipelineAdapter:
         composition_outputs: Sequence[
             PartitionCompositionOutput[PersistedUntargetedPartition]
         ],
-    ) -> FinalizedUntargetBatchApplicationResult:
+    ) -> FinalizedUntargetBatchApplicationResult | PreparedGroupingExperiment:
+        if self._grouping_only:
+            sample_stems = tuple(
+                sample.metadata.raw_stem for sample in self._plan.context.samples
+            )
+            return grouping_experiment_from_prepared(
+                (
+                    cast(
+                        _GroupingInputs,
+                        store.read_header_field(
+                            self._final_groupings[index].index, "grouping"
+                        ),
+                    ).prepared
+                    for index in range(self._bootstrap_count)
+                ),
+                sample_stems=sample_stems,
+                injection_order=self._plan.context.rt_frame.injection_order,
+                alignment_config=self._alignment_config,
+                initial_job_count=self._initial_job_count,
+            )
         return compose_untargeted_batch(
             self._plan,
             store=store,
@@ -781,21 +857,30 @@ class UntargetedPartitionPipelineAdapter:
 
     def create_global_closure_artifacts(
         self,
-        application_result: FinalizedUntargetBatchApplicationResult,
+        application_result: FinalizedUntargetBatchApplicationResult
+        | PreparedGroupingExperiment,
     ) -> tuple[
         Sequence[RuntimeArtifactRegistrationReceipt],
         Sequence[WorkUnitSettlement],
     ]:
         key = self._global_closure_work_unit_key
+        snapshot = isinstance(application_result, PreparedGroupingExperiment)
+        result_counts = (
+            {"group_count": len(application_result.groups)}
+            if isinstance(application_result, PreparedGroupingExperiment)
+            else {"completed_children_count": len(application_result.children)}
+        )
         artifact = mint_evidence_artifact_ref(
             producer_processing_request_id=(self._owners.request.processing_request_id),
             producer_processing_attempt_id=(self._owners.attempt.processing_attempt_id),
-            semantic_contract=_GLOBAL_CLOSURE_CONTRACT,
+            semantic_contract=(
+                _GROUPING_CLOSURE_CONTRACT if snapshot else _GLOBAL_CLOSURE_CONTRACT
+            ),
             payload_bytes=(
                 json.dumps(
                     {
                         "work_unit_key": key,
-                        "completed_children_count": len(application_result.children),
+                        **result_counts,
                     },
                     sort_keys=True,
                     separators=(",", ":"),
@@ -816,9 +901,13 @@ class UntargetedPartitionPipelineAdapter:
     def build_workflow_result(
         self,
         runtime_receipt: RuntimeFinalizationReceipt,
-        application_result: FinalizedUntargetBatchApplicationResult,
+        application_result: FinalizedUntargetBatchApplicationResult
+        | PreparedGroupingExperiment,
         store: StreamedResultStore,
-    ) -> CompletedUntargetBatchWorkflowResult:
+    ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
+        if isinstance(application_result, PreparedGroupingExperiment):
+            store.cleanup()
+            return application_result
         return CompletedUntargetBatchWorkflowResult.from_runtime(
             runtime_receipt=runtime_receipt,
             application_result=application_result,
@@ -845,7 +934,8 @@ def execute_untargeted_plan(
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
-) -> CompletedUntargetBatchWorkflowResult:
+    grouping_only: bool = False,
+) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
     """Spill complete subject results, then close the exact global population.
 
     A partition contains every sample for its subjects, preserving grouping and
@@ -860,6 +950,10 @@ def execute_untargeted_plan(
         raise ValueError("raw_workers must be a positive integer")
     if raw_worker_backend not in {"process", "thread"}:
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
+    if grouping_only and any(
+        subject.composition is not None for subject in plan.subject_batch.subjects
+    ):
+        raise ValueError("Grouping replay requires a scalar CID-NL preset")
 
     requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
     # A shared cache directory outlives the run; the default one is the run's own.
@@ -878,12 +972,13 @@ def execute_untargeted_plan(
         acquisition_workers=requested_acquisition_workers,
         acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
+        grouping_only=grouping_only,
     )
     completed_once = False
     try:
         result = PartitionPipelineScheduler.execute(
             adapter,
-            phases=adapter.execution_phases(),
+            phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
             telemetry_provider=telemetry_provider,
             recovery_marker=recovery_marker,

@@ -4,6 +4,7 @@ import csv
 import gzip
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,9 +25,20 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     write_grouping_inputs,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
-from xic_extractor.untargeted_execution.grouping_experiment import (
-    prepare_grouping_experiment,
-)
+from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
+
+
+def _snapshot_grouping(
+    plan, *, spool_directory, workers, alignment_config, known_istd_reference=None
+):
+    return execute_prepared_alignment(
+        plan,
+        output_dir=spool_directory,
+        raw_workers=workers,
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+        grouping_only=True,
+    )
 
 
 @pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
@@ -108,10 +120,25 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         assert owner.peak_shape.edge_intensity_ratio is None
 
 
-def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("raw_workers", [1, 4])
+def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
+    tmp_path, monkeypatch, raw_workers
 ):
+    import xic_extractor.applications.untargeted.application as application
     import xic_extractor.untargeted_execution.partition.workers as workers
+    from tests.alignment_pipeline_helpers import write_batch
+    from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+    from xic_extractor.execution.partitions import PartitionPipelineScheduler
+
+    scheduled = []
+    execute = PartitionPipelineScheduler.execute
+
+    def observe_scheduler(adapter, **kwargs):
+        scheduled.append(kwargs)
+        return execute(adapter, **kwargs)
+
+    monkeypatch.setattr(PartitionPipelineScheduler, "execute", observe_scheduler)
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
 
@@ -120,25 +147,48 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
 
     monkeypatch.setattr(workers, "_execute_backfill_batch", forbidden)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
-    prepared = prepare_grouping_experiment(
-        plan,
-        mz_ranges=((499, 501),),
-        spool_directory=tmp_path,
-        workers=1,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    closed = []
+    monkeypatch.setattr(
+        application,
+        "prepare_untargeted_alignment_inputs",
+        lambda **kwargs: SimpleNamespace(plan=plan, close=lambda: closed.append(True)),
     )
-    assert prepared.selected_partition_count == 1
-    assert len(prepared.groups) == 1
-    assert prepared.inputs.sample_stems == ("S0", "S1", "S2", "S3")
-    snapshot = tmp_path / "inputs.json.gz"
-    write_grouping_inputs(
-        snapshot, prepared.inputs, provenance={"case": "cross-subject"}
+    snapshot = application.snapshot_untargeted_grouping(
+        UntargetedRequest(
+            discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "snapshot",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            discovery_settings=plan.context.settings,
+            peak_config=plan.context.peak_config,
+            execution=UntargetedExecutionPolicy(
+                raw_workers=raw_workers,
+                raw_worker_backend="thread",
+                max_partition_jobs=8,
+            ),
+        )
     )
+    inputs, provenance = read_grouping_inputs(snapshot)
+    groups = replay_grouping(inputs)
+    assert len(groups) == 1
+    assert closed == [True]
+    assert len(scheduled) == 1
+    assert [phase.name for phase in scheduled[0]["phases"]] == [
+        "initial-acquisition",
+        "final-grouping",
+    ]
+    assert provenance["initial_job_count"] == 2
+    assert inputs.sample_stems == ("S0", "S1", "S2", "S3")
+    assert {owner.sample_stem for group in groups for owner in group.owners} == {
+        "S0",
+        "S1",
+    }
+    assert not (snapshot.parent / "alignment_matrix.tsv").exists()
     restored, provenance = read_grouping_inputs(snapshot)
-    assert provenance == {"case": "cross-subject"}
     original_shapes = {
         owner.owner_id: owner.peak_shape
-        for workset in prepared.inputs.worksets
+        for workset in inputs.worksets
         for owner in workset.owners
     }
     assert original_shapes
@@ -148,9 +198,7 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
         for workset in restored.worksets
         for owner in workset.owners
     } == original_shapes
-    assert group_signature(replay_grouping(restored)) == group_signature(
-        prepared.groups
-    )
+    assert group_signature(replay_grouping(restored)) == group_signature(groups)
     monkeypatch.setattr(workers, "_open_job_raw", forbidden)
     assert (
         main(
@@ -191,9 +239,8 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
             for sample in ("S0", "S1", "S2", "S3")
         },
     )
-    prepared = prepare_grouping_experiment(
+    prepared = _snapshot_grouping(
         plan,
-        mz_ranges=((499, 501),),
         spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -239,9 +286,8 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
-    inputs = prepare_grouping_experiment(
+    inputs = _snapshot_grouping(
         plan,
-        mz_ranges=((499, 501),),
         spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -534,3 +580,57 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         frozenset(("c", "d")),
     }
     assert all(group.disposition == "established" for group in groups)
+
+
+def test_compare_membership_reports_merges_and_splits_against_previous_replay(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    from xic_extractor.diagnostics.grouping_experiment_io import (
+        compare_membership,
+        write_table,
+    )
+
+    def owner(owner_id, sample, rt):
+        return SimpleNamespace(
+            owner_id=owner_id, sample_stem=sample, owner_apex_rt=rt, precursor_mz=300.0
+        )
+
+    a, b, c = owner("a", "s1", 10.0), owner("b", "s2", 10.0), owner("c", "s3", 10.1)
+    d, e = owner("d", "s1", 12.0), owner("e", "s2", 12.05)
+    previous = tmp_path / "members.tsv"
+    write_table(
+        previous,
+        [
+            {"group_id": group, "owner_id": owner_id}
+            for group, owner_id in (
+                ("G1", "a"),
+                ("G1", "b"),
+                ("G2", "c"),
+                ("G3", "d"),
+                ("G3", "e"),
+            )
+        ],
+        ("group_id", "owner_id"),
+    )
+    groups = [
+        SimpleNamespace(group_hypothesis_id="H1", owners=(a, b, c)),
+        SimpleNamespace(group_hypothesis_id="H2", owners=(d,)),
+        SimpleNamespace(group_hypothesis_id="H3", owners=(e,)),
+    ]
+
+    rows, counts = compare_membership(previous, groups)
+
+    assert counts == {
+        "compared_owner_count": 5,
+        "merge_count": 1,
+        "split_count": 1,
+        "merge_within_10s_count": 1,
+        "split_within_10s_count": 1,
+    }
+    merge = next(row for row in rows if row["change"] == "merge")
+    assert (merge["group_id"], merge["part_sizes"]) == ("H1", "2|1")
+    assert round(merge["apex_gap_sec"], 6) == 6.0
+    split = next(row for row in rows if row["change"] == "split")
+    assert (split["group_id"], split["part_samples"]) == ("G3", "s1|s2")

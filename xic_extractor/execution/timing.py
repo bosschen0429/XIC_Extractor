@@ -54,6 +54,7 @@ class TimingRecorder:
         instrument_writers: bool = False,
         process_memory_sampler: ProcessMemoryCollector | None = None,
         timer: Callable[[], float] = perf_counter,
+        wall_clock: Callable[[], float] = perf_counter,
     ) -> None:
         if live_history_limit < 1 or live_observation_limit < 1:
             raise ValueError("live_history_limit must be positive")
@@ -68,6 +69,10 @@ class TimingRecorder:
             process_memory_sampler or ProcessTreeMemorySampler()
         )
         self._timer = timer
+        # Run wall uses its own clock so it cannot consume an injected timer.
+        self._wall_clock = wall_clock
+        self._started_at = wall_clock()
+        self._top_level_wall_sec = 0.0
         self._records: list[TimingRecord] = []
         self._exclusive_elapsed: list[float | None] = []
         self._span_semantics: list[dict[str, str]] = []
@@ -322,6 +327,8 @@ class TimingRecorder:
                 # not recorded until its scope closes, so retain the child
                 # duration on the stack rather than summing completed records.
                 self._span_stack[-1][2] += max(0.0, elapsed)
+            else:
+                self._top_level_wall_sec += max(0.0, elapsed)
             self._append_record(
                 TimingRecord(
                     stage=stage,
@@ -353,20 +360,38 @@ class TimingRecorder:
         self._partition_timeline = [dict(entry) for entry in timeline]
         self._write_live()
 
+    def wall_coverage(self) -> dict[str, float]:
+        """Run wall time since the recorder started that no top-level stage covers.
+
+        An uninstrumented stage shows up here instead of disappearing from the
+        report.
+        """
+        run_wall = max(0.0, self._wall_clock() - self._started_at)
+        unattributed = max(0.0, run_wall - self._top_level_wall_sec)
+        return {
+            "run_wall_sec": run_wall,
+            "attributed_wall_sec": min(run_wall, self._top_level_wall_sec),
+            "unattributed_wall_sec": unattributed,
+            "unattributed_fraction": unattributed / run_wall if run_wall else 0.0,
+        }
+
     def to_json_dict(self) -> dict[str, object]:
         from xic_extractor.execution.timing_summary import summarize_timing_records
 
+        summaries = summarize_timing_records(
+            self._records,
+            exclusive_elapsed=self._exclusive_elapsed,
+            measurement_observations=self._measurement_observations,
+            span_semantics=self._span_semantics,
+        )
+        if self.enabled:
+            summaries["wall_coverage"] = self.wall_coverage()
         result: dict[str, object] = {
             "schema_version": "timing",
             "run_id": self.run_id,
             "pipeline": self.pipeline,
             "records": [record.to_json_dict() for record in self._records],
-            "summaries": summarize_timing_records(
-                self._records,
-                exclusive_elapsed=self._exclusive_elapsed,
-                measurement_observations=self._measurement_observations,
-                span_semantics=self._span_semantics,
-            ),
+            "summaries": summaries,
             "measurement_contract": dict(self._measurement_contract),
             "measurement_observations": list(self._measurement_observations),
             "span_semantics": list(self._span_semantics),

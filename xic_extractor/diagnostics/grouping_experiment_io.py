@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 import gzip
 import json
 import math
-from collections import Counter
+import statistics
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -370,6 +372,87 @@ def group_signature(groups: Sequence[CrossSamplePeakGroupHypothesis]) -> tuple:
             for group in groups
         )
     )
+
+
+def compare_membership(
+    previous_members: Path,
+    groups: Sequence[CrossSamplePeakGroupHypothesis],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Group merges and splits against a previous replay of the same snapshot.
+
+    Owner identities come from the shared snapshot, so another code version's
+    `members.tsv` maps onto the current groups. The gap is the spread of the
+    parts' median observed apex RT.
+    """
+    with previous_members.open(encoding="utf-8", newline="") as stream:
+        before = {
+            row["owner_id"]: row["group_id"]
+            for row in csv.DictReader(stream, delimiter="	")
+        }
+    owners = {owner.owner_id: owner for group in groups for owner in group.owners}
+    after = {
+        owner.owner_id: group.group_hypothesis_id
+        for group in groups
+        for owner in group.owners
+    }
+    shared = before.keys() & after.keys()
+    rows = [
+        *_membership_changes("merge", after, before, shared, owners),
+        *_membership_changes("split", before, after, shared, owners),
+    ]
+    return rows, {
+        "compared_owner_count": len(shared),
+        "merge_count": sum(row["change"] == "merge" for row in rows),
+        "split_count": sum(row["change"] == "split" for row in rows),
+        "merge_within_10s_count": sum(
+            row["change"] == "merge" and row["apex_gap_sec"] < 10 for row in rows
+        ),
+        "split_within_10s_count": sum(
+            row["change"] == "split" and row["apex_gap_sec"] < 10 for row in rows
+        ),
+    }
+
+
+def _membership_changes(
+    change: str,
+    whole: Mapping[str, str],
+    parts: Mapping[str, str],
+    shared: set[str],
+    owners: Mapping[str, SampleLocalMS1Owner],
+) -> list[dict[str, Any]]:
+    """Rows where one group of `whole` holds owners of several `parts` groups."""
+    by_whole: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for owner_id in shared:
+        by_whole[whole[owner_id]][parts[owner_id]].append(owner_id)
+    rows = []
+    for whole_id, split in sorted(by_whole.items()):
+        if len(split) < 2:
+            continue
+        medians = {
+            part: statistics.median(owners[o].owner_apex_rt for o in members)
+            for part, members in split.items()
+        }
+        ordered = sorted(split, key=lambda part: (medians[part], part))
+        rows.append(
+            {
+                "change": change,
+                "group_id": whole_id,
+                "mz": statistics.median(
+                    owners[o].precursor_mz
+                    for members in split.values()
+                    for o in members
+                ),
+                "part_count": len(split),
+                "part_sizes": "|".join(str(len(split[part])) for part in ordered),
+                "part_apex_rt": "|".join(f"{medians[part]:.4f}" for part in ordered),
+                "apex_gap_sec": (medians[ordered[-1]] - medians[ordered[0]]) * 60.0,
+                "part_samples": "|".join(
+                    ",".join(sorted(owners[o].sample_stem for o in split[part]))
+                    for part in ordered
+                ),
+            }
+        )
+    return rows
 
 
 def write_grouping_result(

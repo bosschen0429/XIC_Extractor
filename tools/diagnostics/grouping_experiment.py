@@ -1,4 +1,7 @@
-"""Query Discovery, prepare bounded grouping inputs, and replay without RAW."""
+"""Query Discovery and replay grouping snapshots without RAW.
+
+Write a snapshot with `scripts.run_alignment --stop-after grouping`.
+"""
 
 from __future__ import annotations
 
@@ -17,34 +20,15 @@ from xic_extractor.alignment.grouping_experiment import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
-from xic_extractor.applications.untargeted.istd_reference import (
-    read_known_istd_reference,
-)
-from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
-from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    resolve_signal_processing_profile,
-)
 from xic_extractor.diagnostics.grouping_experiment_io import (
-    group_signature,
+    compare_membership,
     query_discovery,
     read_grouping_inputs,
     read_rt_calibration,
-    write_grouping_inputs,
     write_grouping_result,
     write_json,
     write_rt_calibration,
     write_table,
-)
-from xic_extractor.discovery.csv_reader import read_discovery_batch_index
-from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import read_analysis_set
-from xic_extractor.untargeted_execution.alignment import (
-    prepare_untargeted_alignment_inputs,
-)
-from xic_extractor.untargeted_execution.grouping_experiment import (
-    prepare_grouping_experiment,
 )
 
 
@@ -66,24 +50,13 @@ def _parser() -> argparse.ArgumentParser:
     query = commands.add_parser(
         "query", help="Query measured candidates across every sample; no RAW"
     )
-    prepare = commands.add_parser(
-        "prepare", help="Assess selected whole partitions once; stop before Backfill"
-    )
     replay = commands.add_parser(
         "replay", help="Regroup compact observations without RAW or Backfill"
     )
-    for command in (query, prepare, replay):
+    for command in (query, replay):
         command.add_argument("--output-dir", required=True, type=Path)
-    for command in (query, prepare):
-        command.add_argument("--discovery-batch-index", required=True, type=Path)
-        command.add_argument("--mz-range", action="append", type=_range, required=True)
-    prepare.add_argument("--raw-dir", required=True, type=Path)
-    prepare.add_argument("--dll-dir", required=True, type=Path)
-    prepare.add_argument("--preset", default="dna_dr")
-    prepare.add_argument("--sample-metadata", type=Path)
-    prepare.add_argument("--known-istd-reference", type=Path)
-    prepare.add_argument("--acquisition-cache-dir", type=Path)
-    prepare.add_argument("--workers", type=int, default=4)
+    query.add_argument("--discovery-batch-index", required=True, type=Path)
+    query.add_argument("--mz-range", action="append", type=_range, required=True)
     replay.add_argument("--inputs", required=True, type=Path)
     replay.add_argument(
         "--set",
@@ -102,80 +75,33 @@ def _parser() -> argparse.ArgumentParser:
         "--rt-calibration", type=Path, help="Use an existing sample_rt_calibration JSON"
     )
     replay.add_argument("--loess-fraction", type=float, default=0.3)
+    replay.add_argument(
+        "--compare-to",
+        type=Path,
+        help="Previous replay output dir of the same snapshot (e.g. another commit)",
+    )
     return parser
 
 
-def _prepare(args: argparse.Namespace) -> dict:
-    recipe = bind_cid_nl_recipe(load_preset(args.preset), "align_only")
-    profile = resolve_signal_processing_profile()
-    peak_config = ExtractionConfig(
-        data_dir=args.raw_dir,
-        dll_dir=args.dll_dir,
-        output_csv=args.output_dir / "unused.csv",
-        diagnostics_csv=args.output_dir / "unused-diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
-        nl_min_intensity_ratio=recipe.discovery_settings.nl_min_intensity_ratio,
-        resolver_mode=recipe.discovery_settings.resolver_mode,
-        signal_processing_method=profile.method,
-        signal_processing_window_points=profile.window_points,
-        ms1_morphology_smoothing_window_points=profile.window_points,
+def _membership_comparison(args: argparse.Namespace, groups) -> dict[str, Any]:
+    if args.compare_to is None:
+        return {}
+    rows, counts = compare_membership(args.compare_to / "members.tsv", groups)
+    write_table(
+        args.output_dir / "membership-diff.tsv",
+        rows,
+        (
+            "change",
+            "group_id",
+            "mz",
+            "part_count",
+            "part_sizes",
+            "part_apex_rt",
+            "apex_gap_sec",
+            "part_samples",
+        ),
     )
-    batch = read_discovery_batch_index(args.discovery_batch_index)
-    resources = prepare_untargeted_alignment_inputs(
-        discovery_batch=batch,
-        candidates_by_sample=DiscoveryInputSource(batch),
-        raw_dir=args.raw_dir,
-        dll_dir=args.dll_dir,
-        output_dir=args.output_dir,
-        settings=recipe.discovery_settings,
-        peak_config=peak_config,
-        sample_metadata=read_analysis_set(
-            args.raw_dir, args.dll_dir, sequence_source=args.sample_metadata
-        ).sample_metadata
-        if args.sample_metadata
-        else None,
-        signal_processing_profile=profile,
-        raw_workers=args.workers,
-    )
-    try:
-        prepared = prepare_grouping_experiment(
-            resources.plan,
-            mz_ranges=args.mz_range,
-            spool_directory=args.output_dir,
-            alignment_config=recipe.alignment_config,
-            known_istd_reference=read_known_istd_reference(args.known_istd_reference)
-            if args.known_istd_reference
-            else None,
-            acquisition_cache_dir=args.acquisition_cache_dir,
-            workers=args.workers,
-            progress=lambda message: print(message, flush=True),
-        )
-        provenance = {
-            "discovery_batch_index": str(args.discovery_batch_index.resolve()),
-            "mz_ranges": args.mz_range,
-            "preset": args.preset,
-            "selected_partition_count": prepared.selected_partition_count,
-            "total_partition_count": prepared.total_partition_count,
-            "initial_job_count": prepared.initial_job_count,
-        }
-        snapshot = args.output_dir / "grouping-inputs.json.gz"
-        write_grouping_inputs(snapshot, prepared.inputs, provenance=provenance)
-        restored, _ = read_grouping_inputs(snapshot)
-        replayed = replay_grouping(restored)
-        if group_signature(replayed) != group_signature(prepared.groups):
-            raise ValueError("Snapshot replay differs from formal initial grouping")
-        return {
-            **provenance,
-            **write_grouping_result(args.output_dir, restored, replayed),
-            "snapshot_bytes": snapshot.stat().st_size,
-            "baseline_parity": True,
-        }
-    finally:
-        resources.close()
+    return {"compared_to": str(args.compare_to), "membership_diff": counts}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -214,8 +140,6 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_count": len(rows),
                 "mz_ranges": args.mz_range,
             }
-        elif args.command == "prepare":
-            summary = _prepare(args)
         else:
             inputs, provenance = read_grouping_inputs(args.inputs)
             config_values = asdict(inputs.alignment_config)
@@ -258,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                     rt_coordinates=rt_frame,
                 ),
                 "source": provenance,
+                **_membership_comparison(args, groups),
                 "overrides": overrides,
                 "rt_calibration": bool(calibration),
                 "calibration_knot_count": len(calibration.knots) if calibration else 0,

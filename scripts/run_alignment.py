@@ -20,6 +20,7 @@ from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteRec
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
+    snapshot_untargeted_grouping,
 )
 from xic_extractor.applications.untargeted.istd_reference import (
     read_known_istd_reference,
@@ -259,12 +260,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         context = UntargetedExecutionContext(timing_recorder=timing_recorder)
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
         try:
-            if profiler is None:
-                outputs = run_untargeted_application(request, context)
+            if profiler is not None:
+                profiler.enable()
+            if args.stop_after == "grouping":
+                snapshot = snapshot_untargeted_grouping(request, context)
             else:
-                outputs = profiler.runcall(run_untargeted_application, request, context)
+                outputs = run_untargeted_application(request, context)
         finally:
             if profiler is not None:
+                profiler.disable()
                 _write_cprofile_outputs(
                     profiler,
                     _profile_output_dir(args, output_dir),
@@ -285,7 +289,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timing_path = args.timing_output.resolve()
                 timing_recorder.write_json(timing_path)
                 print(f"Timing JSON: {timing_path}")
+                coverage = timing_recorder.wall_coverage()
+                if coverage["unattributed_fraction"] > 0.05:
+                    print(
+                        "Timing warning: "
+                        f"{coverage['unattributed_wall_sec'] / 60:.1f} min "
+                        f"({coverage['unattributed_fraction']:.0%}) of wall time "
+                        "is outside every recorded stage",
+                        file=sys.stderr,
+                    )
 
+    if args.stop_after == "grouping":
+        print(f"Grouping snapshot: {snapshot}")
+        return 0
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
     if outputs.matrix_tsv is not None:
@@ -550,6 +566,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Revisit missing group cells (default: enabled); "
             "--no-backfill leaves them unsearched."
+        ),
+    )
+    parser.add_argument(
+        "--stop-after",
+        choices=("grouping",),
+        help=(
+            "Stop after initial assessment, RT calibration and grouping; write "
+            "grouping-inputs.json.gz for tools.diagnostics.grouping_experiment "
+            "replay instead of running Backfill and publication."
         ),
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
@@ -930,6 +955,7 @@ def _peak_config(
         resolver_mode=resolver_mode,
         baseline_integration_method=baseline_integration_method,
         mass_recalibration=mass_recalibration,
+        parallel_mode="process",
     )
 
 

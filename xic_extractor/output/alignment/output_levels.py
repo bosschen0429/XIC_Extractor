@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Literal
 
 # The explanation report is a per-cell projection of results already written
-# elsewhere. It is diagnostic, so only the diagnostic levels produce it.
+# elsewhere. Diagnostic and validation levels produce it; validation-minimal
+# keeps the compact form so a run can be scored without a rerun.
 EXPLANATION_ARTIFACT_NAME = "cid_nl_explanation.sqlite"
 
 AlignmentOutputLevel = Literal[
@@ -44,6 +45,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_backfill_cell_evidence.tsv",
+        EXPLANATION_ARTIFACT_NAME,
     ),
 }
 

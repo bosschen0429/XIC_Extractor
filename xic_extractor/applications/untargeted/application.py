@@ -5,10 +5,13 @@ import json
 from collections.abc import Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.alignment.backfill.peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_experiment import replay_grouping
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
@@ -21,7 +24,15 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+from xic_extractor.diagnostics.grouping_experiment_io import (
+    group_signature,
+    read_grouping_inputs,
+    write_grouping_inputs,
+)
+from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchInput,
+    read_discovery_batch_index,
+)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.output_levels import (
@@ -32,7 +43,16 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
 )
-from xic_extractor.untargeted_execution.alignment import complete_untargeted_alignment
+from xic_extractor.untargeted_execution.alignment import (
+    complete_untargeted_alignment,
+    execute_prepared_alignment,
+    prepare_untargeted_alignment_inputs,
+)
+from xic_extractor.untargeted_execution.grouping_experiment import (
+    PreparedGroupingExperiment,
+)
+
+GROUPING_SNAPSHOT_NAME = "grouping-inputs.json.gz"
 
 
 class AlignmentProcessExecutionError(RuntimeError):
@@ -80,39 +100,9 @@ def run_untargeted_application(
         run_metadata_json=request.output_dir / "alignment_run_metadata.json",
     )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
-    if request.known_istd_reference is not None:
-        resolved_known_istd_reference = request.known_istd_reference
-    elif request.targets_csv is not None:
-        from xic_extractor.acquisition.raw_paths import existing_raw_paths
-        from xic_extractor.configuration.targets import read_istd_targets
-
-        selection = read_istd_targets(request.targets_csv).for_method(
-            request.discovery_settings.neutral_loss_profiles
-        )
-        resolved_known_istd_reference = None
-        if selection.targets:
-            raw_paths_by_sample = existing_raw_paths(
-                sample_order=batch.sample_order,
-                raw_files=batch.raw_files,
-                raw_dir=request.raw_dir,
-            )
-            resolved_known_istd_reference = extract_batch_known_istd_reference(
-                targets=selection.targets,
-                raw_paths_by_sample=raw_paths_by_sample,
-                dll_dir=request.dll_dir,
-                peak_config=request.peak_config,
-                sample_metadata=request.sample_metadata,
-                source_identifier=str(request.targets_csv.resolve()),
-                source_sha256=hashlib.sha256(
-                    request.targets_csv.read_bytes()
-                ).hexdigest(),
-            )
-    elif request.known_istd_reference_workbook is not None:
-        resolved_known_istd_reference = read_known_istd_reference(
-            request.known_istd_reference_workbook
-        )
-    else:
-        resolved_known_istd_reference = None
+    resolved_known_istd_reference = _resolve_known_istd_reference(
+        request, batch, recorder
+    )
 
     metadata = alignment_metadata(
         discovery_batch_index=request.discovery_batch_index,
@@ -205,6 +195,122 @@ def run_untargeted_application(
         should_cancel=context.should_cancel,
         owner_build_route_receipt=owner_build_route_receipt,
     )
+
+
+def _resolve_known_istd_reference(
+    request: UntargetedRequest,
+    batch: DiscoveryBatchInput,
+    recorder: TimingRecorder,
+) -> KnownIstdReference | None:
+    if request.known_istd_reference is not None:
+        return request.known_istd_reference
+    if request.targets_csv is not None:
+        from xic_extractor.acquisition.raw_paths import existing_raw_paths
+        from xic_extractor.configuration.targets import read_istd_targets
+
+        selection = read_istd_targets(request.targets_csv).for_method(
+            request.discovery_settings.neutral_loss_profiles
+        )
+        if not selection.targets:
+            return None
+        raw_paths_by_sample = existing_raw_paths(
+            sample_order=batch.sample_order,
+            raw_files=batch.raw_files,
+            raw_dir=request.raw_dir,
+        )
+        with recorder.stage("alignment.known_istd_reference") as stage:
+            stage.metrics["raw_file_count"] = len(raw_paths_by_sample)
+            stage.metrics["istd_target_count"] = len(selection.targets)
+            return extract_batch_known_istd_reference(
+                targets=selection.targets,
+                raw_paths_by_sample=raw_paths_by_sample,
+                dll_dir=request.dll_dir,
+                peak_config=request.peak_config,
+                sample_metadata=request.sample_metadata,
+                source_identifier=str(request.targets_csv.resolve()),
+                source_sha256=hashlib.sha256(
+                    request.targets_csv.read_bytes()
+                ).hexdigest(),
+            )
+    if request.known_istd_reference_workbook is not None:
+        return read_known_istd_reference(request.known_istd_reference_workbook)
+    return None
+
+
+def snapshot_untargeted_grouping(
+    request: UntargetedRequest,
+    context: UntargetedExecutionContext | None = None,
+) -> Path:
+    """Run the formal Alignment up to grouping and write its replay snapshot.
+
+    Same inputs, ISTD reference, initial assessment, calibration and grouping
+    as a full run; stops before Backfill and publication.
+    """
+    context = context or UntargetedExecutionContext()
+    recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
+    with recorder.stage("alignment.read_batch_index"):
+        batch = read_discovery_batch_index(request.discovery_batch_index)
+    candidates_by_sample = DiscoveryInputSource(batch)
+    known_istd_reference = _resolve_known_istd_reference(request, batch, recorder)
+    snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
+    if snapshot.exists():
+        raise ValueError(f"grouping snapshot already exists: {snapshot}")
+    prepared = prepare_untargeted_alignment_inputs(
+        discovery_batch=batch,
+        candidates_by_sample=candidates_by_sample,
+        raw_dir=request.raw_dir,
+        dll_dir=request.dll_dir,
+        output_dir=request.output_dir,
+        settings=request.discovery_settings,
+        peak_config=request.peak_config,
+        sample_metadata=request.sample_metadata,
+        timing_recorder=recorder,
+        signal_processing_profile=request.resolve_processing_profile(),
+        raw_workers=request.execution.raw_workers,
+        raw_worker_backend=request.execution.raw_worker_backend,
+        should_cancel=context.should_cancel,
+    )
+    try:
+        with recorder.stage("alignment.grouping_snapshot") as stage:
+            grouping = cast(
+                PreparedGroupingExperiment,
+                execute_prepared_alignment(
+                    prepared.plan,
+                    output_dir=request.output_dir,
+                    alignment_config=request.alignment_config,
+                    known_istd_reference=known_istd_reference,
+                    timing_recorder=recorder,
+                    acquisition_cache_dir=request.execution.acquisition_cache_dir,
+                    retain_acquisition_cache=request.execution.retain_acquisition_cache,
+                    raw_workers=request.execution.raw_workers,
+                    raw_worker_backend=request.execution.raw_worker_backend,
+                    max_partition_jobs=request.execution.max_partition_jobs,
+                    should_cancel=context.should_cancel,
+                    grouping_only=True,
+                ),
+            )
+            write_grouping_inputs(
+                snapshot,
+                grouping.inputs,
+                provenance={
+                    "discovery_batch_index": str(
+                        request.discovery_batch_index.resolve()
+                    ),
+                    "partition_count": grouping.total_partition_count,
+                    "initial_job_count": grouping.initial_job_count,
+                },
+            )
+            stage.metrics["partition_count"] = grouping.total_partition_count
+            stage.metrics["group_count"] = len(grouping.groups)
+        with recorder.stage("alignment.grouping_snapshot.verify"):
+            restored, _ = read_grouping_inputs(snapshot)
+            if group_signature(replay_grouping(restored)) != group_signature(
+                grouping.groups
+            ):
+                raise ValueError("Snapshot replay differs from formal initial grouping")
+    finally:
+        prepared.close()
+    return snapshot
 
 
 # No level writes these any more. They stay owned so that a copy left by an
