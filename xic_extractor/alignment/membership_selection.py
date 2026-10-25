@@ -83,19 +83,38 @@ class MembershipComparison:
         self.measured_keys = {o.owner_id: measured_owner_key(o) for o in owners}
         self.rules, self.config, self.trajectories = rules, config, trajectories
         regions = {o.owner_id: rt_frame.calibrated_peak_region(o) for o in owners}
-        common = bool(owners) and all(
-            r is not None and r[0] is not None and r[2] is not None
-            for r in regions.values()
+        coordinates = {o.owner_id: rt_frame.membership_coordinate(o) for o in owners}
+        common = bool(owners) and all(c is not None for c in coordinates.values())
+        self.rt_basis = (
+            "diagnostic_override"
+            if common
+            and any(
+                c is not None and c[1] == "diagnostic_override"
+                for c in coordinates.values()
+            )
+            else "drift_corrected"
+            if common
+            else "raw"
         )
-        self.rt_basis = "drift_corrected" if common else "raw"
+        self.rts = (
+            {
+                key: coordinate[0]
+                for key, coordinate in coordinates.items()
+                if coordinate is not None
+            }
+            if common
+            else {o.owner_id: o.owner_apex_rt for o in owners}
+        )
         self.regions = {
-            o.owner_id: regions[o.owner_id]
+            o.owner_id: (
+                regions[o.owner_id]
+                if self.rt_basis == "drift_corrected"
+                and regions[o.owner_id] is not None
+                else (None, self.rts[o.owner_id], None)
+            )
             if common
             else (o.owner_peak_start_rt, o.owner_apex_rt, o.owner_peak_end_rt)
             for o in owners
-        }
-        self.rts = {
-            key: region[1] for key, region in self.regions.items() if region is not None
         }
         self.orders = rt_frame.injection_order
         self.quality = {}
@@ -215,9 +234,14 @@ class MembershipComparison:
     def group_cost(self, group: tuple[str, ...]) -> float:
         key = tuple(sorted(group))
         if key not in self.group_costs:
-            pair_cost = max(
-                (self.pair(a, b)[0] for a, b in combinations(key, 2)), default=0.0
-            )
+            if len({self.owners[p].sample_stem for p in key}) != len(key):
+                self.group_costs[key] = math.inf
+                return math.inf
+            pair_cost = 0.0
+            for first, second in combinations(key, 2):
+                pair_cost = max(pair_cost, self.pair(first, second)[0])
+                if not math.isfinite(pair_cost):
+                    break
             trend = 0.0
             if len(key) > 2 and math.isfinite(pair_cost):
                 for owner_id in key:
@@ -231,7 +255,7 @@ class MembershipComparison:
                                 self.orders.get(self.owners[p].sample_stem, 0)
                                 - self.orders[owner.sample_stem]
                             ),
-                            measured_owner_key(self.owners[p]),
+                            self.measured_keys[p],
                         ),
                     )[:6]
                     residual = (
@@ -333,7 +357,14 @@ class MembershipComparison:
                     flags.add("accepted_competition")
                 if contradictions:
                     flags.add("accepted_contradiction")
-                if self.rt_basis == "raw" or self.quality[owner_id] < 1.0:
+                region = self.regions[owner_id]
+                assert region is not None
+                if (
+                    self.rt_basis != "drift_corrected"
+                    or region[0] is None
+                    or region[2] is None
+                    or self.quality[owner_id] < 1.0
+                ):
                     flags.add("low_rt_support")
                 if owner_id in self.weak:
                     flags.add("weak_identity")

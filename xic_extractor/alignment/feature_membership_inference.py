@@ -457,8 +457,7 @@ def infer_feature_memberships(
             (
                 o.owner_id
                 for o in ordinary
-                if rt_frame.calibrated_rt_min(o.sample_stem, o.owner_apex_rt)
-                is not None
+                if rt_frame.membership_coordinate(o) is not None
             ),
             preserve_independent=True,
         )

@@ -192,7 +192,9 @@ def test_calibrated_band_outweighs_free_shift_pattern_seed(reverse: bool) -> Non
 
 
 @pytest.mark.parametrize("reverse", (False, True))
-def test_partial_region_calibration_uses_one_raw_basis(reverse: bool) -> None:
+def test_partial_region_calibration_keeps_supported_common_apices(
+    reverse: bool,
+) -> None:
     owners = tuple(
         replace(
             _synthetic_owner(sample, owner_id, apex),
@@ -240,9 +242,16 @@ def test_partial_region_calibration_uses_one_raw_basis(reverse: bool) -> None:
         frozenset(("a-early", "b-early", "c-main")),
         frozenset(("a-late", "b-late", "c-late")),
     }
-    # a-early's region extends beyond its calibrated support. The whole
-    # competition uses raw coordinates, not a favorable per-pair mixture.
-    assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {"raw"}
+    # a-early's edge extends beyond its calibrated support; its apex does not.
+    # Unknown edges cannot discard measured apex coordinates or import raw edges.
+    assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {
+        "drift_corrected"
+    }
+    assert "low_rt_support" in next(
+        d.accepted_risk.risk_flags
+        for d in result.sparse_decisions
+        if d.owner_id == "a-early"
+    )
     # Membership does not erase the caller's original localization geometry.
     assert not trajectories.permits_membership(("a-early", "b-late"))
 
