@@ -137,6 +137,63 @@ def _synthetic_owner(
     )
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_injection_gap_does_not_discount_rt_in_union_priority(reverse: bool) -> None:
+    owners = (
+        _synthetic_owner(
+            "first",
+            "late-a",
+            21.47482461247,
+            precursor_mz=283.1120949147,
+            product_mz=167.0638763455,
+        ),
+        _synthetic_owner(
+            "middle",
+            "observed",
+            21.18422018628,
+            precursor_mz=283.1177673340,
+            product_mz=167.0639010014,
+        ),
+        _synthetic_owner(
+            "nearby",
+            "early-a",
+            21.19326981726,
+            precursor_mz=283.1156311035,
+            product_mz=167.0675008556,
+        ),
+        _synthetic_owner(
+            "last",
+            "early-b",
+            21.19326981726,
+            precursor_mz=283.1156311035,
+            product_mz=167.0675008556,
+        ),
+        _synthetic_owner(
+            "last",
+            "late-b",
+            21.47482461247,
+            precursor_mz=283.1120949147,
+            product_mz=167.0638763455,
+        ),
+    )
+    # The observed peak is 0.54 s from the early peak, not the late peak
+    # 17.44 s away. A larger injection gap must not make that RT error cheaper
+    # when supported pairings compete for the first irreversible union.
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        rt_frame=SampleRtFrame(
+            injection_order={"first": 3, "middle": 16, "nearby": 17, "last": 25}
+        ),
+        rules=CID_NL_GROUPING_RULES,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("observed", "early-a", "early-b")),
+        frozenset(("late-a", "late-b")),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+
+
 @pytest.mark.parametrize("bootstrap", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("pattern_seed", [False, True])

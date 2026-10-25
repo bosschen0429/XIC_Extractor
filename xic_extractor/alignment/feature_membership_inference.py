@@ -1017,6 +1017,14 @@ def _directional_inference(
     return _DirectionalResult(groups, tuple(decisions), frozenset(uncertain))
 
 
+@dataclass(frozen=True, slots=True)
+class _WindowEdge:
+    left_id: str
+    right_id: str
+    ambiguity_cost: float
+    union_priority: float
+
+
 def _window_inference(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -1128,7 +1136,10 @@ def _window_inference(
             for owner_id in ambiguous_window:
                 weak[owner_id] = "alternative_bands_have_near_equal_cost"
             counts["ambiguous_assignments"] += len(ambiguous_window)
-            for _, left_id, right_id in sorted(arcs):
+            for arc in sorted(
+                arcs, key=lambda arc: (arc.union_priority, arc.left_id, arc.right_id)
+            ):
+                left_id, right_id = arc.left_id, arc.right_id
                 if left_id in ambiguous_window or right_id in ambiguous_window:
                     continue
                 if (left_id, right_id) in ambiguous_arcs or (
@@ -1224,7 +1235,7 @@ def _window_candidate_edges(
     trajectories: PeakTrajectories,
     counts: Counter[str],
     shape_conflicts: dict[str, set[str]],
-) -> list[tuple[float, str, str]]:
+) -> list[_WindowEdge]:
     """Apply pair eligibility and score supported edges in one mass window."""
     window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
     sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
@@ -1235,7 +1246,7 @@ def _window_candidate_edges(
         - bisect_left(window_rts, corrected_rt[owner.owner_id] - sparse_radius_min)
         for owner in window
     }
-    arcs: list[tuple[float, str, str]] = []
+    arcs: list[_WindowEdge] = []
     by_order = sorted(
         window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
     )
@@ -1307,31 +1318,45 @@ def _window_candidate_edges(
                 / config.max_ppm
             )
             method_fraction = rules.pair_mass_fraction(left, right, config)
-            cost = (
+            non_rt_cost = (
                 (0.20 if sparse_fallback else 0.0)
-                + 0.70
-                * rt_delta_sec
-                / (
-                    rt_limit_sec
-                    if sparse_fallback or distant_dense_pair
-                    else config.preferred_rt_sec + 3.0 * gap
-                )
                 + 0.15 * min(precursor_fraction, 2.0)
                 + 0.15 * min(method_fraction, 2.0)
             )
-            arcs.append((cost, left.owner_id, right.owner_id))
+            rt_scale = (
+                rt_limit_sec
+                if sparse_fallback or distant_dense_pair
+                else config.preferred_rt_sec
+            )
+            # Retain the uncertainty allowance for per-sample competition.
+            # It must not make a distant pair outrank closer RT support when
+            # committing unions: a missing injection is not stronger evidence.
+            ambiguity_rt_scale = (
+                rt_scale
+                if sparse_fallback or distant_dense_pair
+                else rt_scale + 3.0 * gap
+            )
+            arcs.append(
+                _WindowEdge(
+                    left.owner_id,
+                    right.owner_id,
+                    non_rt_cost + 0.70 * rt_delta_sec / ambiguity_rt_scale,
+                    non_rt_cost + 0.70 * rt_delta_sec / rt_scale,
+                )
+            )
     return arcs
 
 
 def _ambiguous_window_edges(
-    arcs: Sequence[tuple[float, str, str]],
+    arcs: Sequence[_WindowEdge],
     owner_by_id: Mapping[str, SampleLocalMS1Owner],
     seeded_owners: set[str],
 ) -> tuple[set[str], set[tuple[str, str]]]:
     """Resolve per-sample competition without discarding independent support."""
     competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
     neighbors: dict[str, set[str]] = defaultdict(set)
-    for cost, left_id, right_id in arcs:
+    for arc in arcs:
+        cost, left_id, right_id = arc.ambiguity_cost, arc.left_id, arc.right_id
         competing[(left_id, owner_by_id[right_id].sample_stem)].append((cost, right_id))
         competing[(right_id, owner_by_id[left_id].sample_stem)].append((cost, left_id))
         neighbors[left_id].add(right_id)

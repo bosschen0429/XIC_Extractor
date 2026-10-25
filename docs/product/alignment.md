@@ -308,6 +308,12 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
+- Ordinary edge union priority uses a fixed RT scale: a larger injection gap
+  does not discount RT separation and move that edge ahead of closer support.
+  Per-sample ambiguity retains its gap-dependent uncertainty allowance; that
+  allowance does not grant union priority. Both costs retain precursor and
+  product evidence. Candidate eligibility and sparse/distant comparisons keep
+  their existing allowances.
 - Supported common-coordinate apices and measured peak edges are the primary
   physical correspondence check. Each side of a proposed union contributes a
   consensus region: the median of its members' supported apices and measured
