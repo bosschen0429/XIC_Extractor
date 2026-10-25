@@ -27,10 +27,10 @@ edit. Global Codex rules own general operating defaults.
 
 ## Always-On Gates
 
-- **Mission lock:** the current Issue/Current Packet is the durable task
-  authority when one exists. TaskFrame keeps only its locator, volatile
-  decisions/progress, and evidence receipts; do not copy the packet's scope or
-  acceptance into another contract.
+- **Mission lock:** the Issue/Current Packet preserves the accepted task contract
+  when one exists. Follow [Direction Updates](docs/agent/planning-workflows.md#direction-updates)
+  when user instructions change it; TaskFrame links to that contract rather than
+  duplicating its scope or acceptance.
 - **Structural observation:** use Codebase Memory (CBM) first for callers,
   dependencies, impact, and reachability. Check its checkout/freshness and scope
   coverage once; a stale or different-worktree index is only a locator. Use
