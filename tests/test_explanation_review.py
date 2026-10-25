@@ -391,6 +391,16 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
             )
 
         assert values(old) == values(new)
+        for detail in (old, new):
+            for cell in detail["records"]["cell_decisions"]:
+                assert cell["signal_quality"]
+                assert all(
+                    quality["status"] != "not_recorded"
+                    for quality in cell["signal_quality"]
+                )
+        assert [c["signal_quality"] for c in old["records"]["cell_decisions"]] == [
+            c["signal_quality"] for c in new["records"]["cell_decisions"]
+        ]
         assert (
             old["records"]["final_groups"][0]["member_subjects"]
             == new["records"]["final_groups"][0]["member_subjects"]
