@@ -404,7 +404,7 @@ def _coverage_context(
         samples=resolved,
         sample_order=sample_order,
         raw_sample_stems=frozenset(sample_order),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
+        alignment_config=AlignmentConfig(),
     )
 
 

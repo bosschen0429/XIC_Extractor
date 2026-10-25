@@ -46,6 +46,7 @@ from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 from xic_extractor.precursor_evidence import PrecursorLossAssessment
 
 
@@ -989,6 +990,7 @@ def _clean_typed_facts(candidate: PeakCandidate) -> CandidateEvidenceFacts:
             rt_array=rt_array,
             intensity_array=intensity_array,
             apex_index=100,
+            signal_quality=SignalQuality("available", 1.0, 100.0, False),
             half_width_ratio=1.0,
             fwhm_ratio=1.0,
             ms2_present=True,
