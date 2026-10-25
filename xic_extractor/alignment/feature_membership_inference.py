@@ -488,7 +488,7 @@ def infer_feature_memberships(
             directional_partitions=tuple(result.groups for result in directions),
         )
         algorithm = "bounded_complete_group_selection"
-        objective = "minimum_complete_group_cost_over_merge_and_sample_assignment_moves"
+        objective = "minimum_complete_group_cost_then_mean_peer_fit_over_bounded_moves"
         termination = "no_improving_bounded_move"
     elif use_directional:
         trajectory_seeds = _trajectory_seeds(
@@ -664,14 +664,18 @@ def _accepted_final_memberships(
                 ):
                     moves.append(candidate)
             if not moves:
-                break
+                refined, alternatives_by_owner = comparison.refine_choices(partition)
+                if refined == partition:
+                    break
+                partition = refined
+                continue
             partition = comparison.merge(
                 min(
                     moves,
                     key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
                 )
             )
-        risks = comparison.risks(partition)
+        risks = comparison.risks(partition, alternatives_by_owner=alternatives_by_owner)
         if len(direction_candidates) == 2:
             left = {
                 owner_id: group

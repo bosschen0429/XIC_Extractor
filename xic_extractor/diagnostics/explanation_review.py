@@ -58,7 +58,14 @@ def validate_membership_risks(risks: object) -> None:
             and isinstance(equivalents, list)
             and all(partition(value) for value in equivalents)
         )
-        for key in ("selected_cost", "alternative_cost", "cost_gap"):
+        for key in (
+            "selected_cost",
+            "alternative_cost",
+            "cost_gap",
+            "selected_peer_fit",
+            "alternative_peer_fit",
+            "peer_fit_gap",
+        ):
             value = risk.get(key)
             if value is None and key != "selected_cost":
                 continue

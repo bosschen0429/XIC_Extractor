@@ -327,10 +327,18 @@ membership, not bootstrap, Targeted selection, or Backfill admission.
   multiplied by sample count. Whole-band merges and per-sample assignment use
   this same objective and accept strict improvements. Every proposed group is
   evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
-- Near-equivalent choices remain selected and carry competition flags. Measured
-  features resolve non-equivalent ties, not display IDs or input order. Truly
-  equivalent alternatives are retained. This is a bounded merge/assignment
-  search, not a claim of a global optimum over every possible partition.
+- On equal primary cost, compare average owner-to-peer fit across the complete
+  configuration: each grouped owner contributes its mean pair cost to its
+  peers; a singleton retains cost 1. This secondary comparison adds no weight
+  to the primary objective and never increases its cost. Evaluated single-owner
+  assignments, separations and occupied-sample swaps can improve the selection,
+  rather than merely appearing as warnings. Reassess merges/sample assignments
+  after an accepted move until no improving bounded move remains.
+- Near-equivalent choices remain selected and carry competition flags. Fixed
+  measured features choose the representative only when both decision costs
+  are equivalent, never display IDs or input order. Truly equivalent
+  alternatives are retained. This is a bounded merge/assignment search, not a
+  claim of a global optimum over every possible partition.
 - Mixed trajectories retain independently observed raw pairs after calibrated
   intermediaries are withdrawn. An A–C–B path does not become direct A–B support.
   A shared raw track does not replace measured RT separation with zero or force
@@ -340,7 +348,8 @@ membership, not bootstrap, Targeted selection, or Backfill admission.
   Bootstrap still requires its conservative directional agreement.
 
 Final decisions record the selected members, nearest evaluated alternative
-configuration, equivalent alternatives, costs and gap, coordinate/evidence basis,
+configuration, equivalent alternatives, primary and peer-fit costs and gaps,
+coordinate/evidence basis,
 accepted contradictions, and phase. Alternatives are final-state single-owner
 assignment, separation, or occupied-sample swaps, not stale merge proposals.
 No feasible alternative is explicit; a missing legacy fact means `not_recorded`,

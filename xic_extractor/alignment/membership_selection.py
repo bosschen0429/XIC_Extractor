@@ -38,6 +38,9 @@ class AcceptedMembershipRisk:
     evidence_basis: str
     soft_contradictions: tuple[str, ...]
     risk_flags: tuple[str, ...]
+    selected_peer_fit: float | None = None
+    alternative_peer_fit: float | None = None
+    peer_fit_gap: float | None = None
 
 
 def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
@@ -150,6 +153,7 @@ class MembershipComparison:
         }
         self.pairs: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
         self.group_costs: dict[tuple[str, ...], float] = {}
+        self.group_peer_fits: dict[tuple[str, ...], float] = {}
 
     def partition_key(self, partition: Partition) -> tuple[object, ...]:
         return tuple(
@@ -281,6 +285,64 @@ class MembershipComparison:
     def cost(self, partition: Partition) -> float:
         return math.fsum(self.group_cost(group) for group in partition)
 
+    def peer_fit(self, partition: Partition) -> float:
+        """Mean owner-to-peer cost; separation retains its unit cost.
+
+        This only resolves primary-cost ties. Unlike the worst pair, it sees
+        whether a replacement fits the other members, without adding a weight
+        or weakening the complete-group cost.
+        """
+        for group in partition:
+            if group not in self.group_peer_fits:
+                self.group_peer_fits[group] = (
+                    math.fsum(self.pair(a, b)[0] for a, b in combinations(group, 2))
+                    / (len(group) * (len(group) - 1) / 2)
+                    if len(group) > 1
+                    else 1.0
+                )
+        return (
+            math.fsum(len(g) * self.group_peer_fits[g] for g in partition)
+            / len(self.owners)
+            if self.owners
+            else 0.0
+        )
+
+    def refine_choices(
+        self, partition: Partition
+    ) -> tuple[Partition, dict[str, tuple[Partition, ...]]]:
+        """Act on better retained alternatives, rather than merely flag them.
+
+        Primary cost never increases. On a primary tie, a strict improvement
+        in average peer fit selects the representative. Reuse the final sweep
+        for risk publication instead of evaluating every alternative twice.
+        """
+        while True:
+            alternatives_by_owner = {
+                owner_id: self.alternatives(owner_id, partition)
+                for group in partition
+                for owner_id in group
+            }
+            selected_cost, selected_fit = self.cost(partition), self.peer_fit(partition)
+            improvements = {
+                candidate
+                for alternatives in alternatives_by_owner.values()
+                for candidate in alternatives
+                if self.cost(candidate) < selected_cost - 1e-12
+                or (
+                    self.cost(candidate) <= selected_cost
+                    and self.peer_fit(candidate) < selected_fit - 1e-12
+                )
+            }
+            if not improvements:
+                return partition, alternatives_by_owner
+            best_cost = min(self.cost(p) for p in improvements)
+            partition = self.merge(
+                min(
+                    (p for p in improvements if self.cost(p) == best_cost),
+                    key=lambda p: (self.peer_fit(p), self.partition_key(p)),
+                )
+            )
+
     def merge(self, partition: Partition) -> Partition:
         """Refresh full-band costs after every accepted union; no mutual-best gate."""
         active = set(partition)
@@ -333,16 +395,34 @@ class MembershipComparison:
             # Swapping two same-sample singletons is not a different membership.
             if candidate != partition and math.isfinite(self.cost(candidate)):
                 variants.add(candidate)
+        ordered = sorted(variants, key=lambda p: (self.cost(p), self.partition_key(p)))
+        if not ordered:
+            return ()
+        # Only the best primary-cost tier can win. Do not scan every pair in
+        # more expensive alternatives merely to order their unused tie-breaks.
+        best_cost = self.cost(ordered[0])
+        best = [p for p in ordered if self.cost(p) == best_cost]
+        rest = [p for p in ordered if self.cost(p) != best_cost]
         return tuple(
-            sorted(variants, key=lambda p: (self.cost(p), self.partition_key(p)))
-        )
+            sorted(best, key=lambda p: (self.peer_fit(p), self.partition_key(p)))
+        ) + tuple(rest)
 
-    def risks(self, partition: Partition) -> dict[str, AcceptedMembershipRisk]:
+    def risks(
+        self,
+        partition: Partition,
+        *,
+        alternatives_by_owner: dict[str, tuple[Partition, ...]] | None = None,
+    ) -> dict[str, AcceptedMembershipRisk]:
         result = {}
         selected_cost = self.cost(partition)
+        selected_fit = self.peer_fit(partition)
         for group in partition:
             for owner_id in group:
-                alternatives = self.alternatives(owner_id, partition)
+                alternatives = (
+                    alternatives_by_owner[owner_id]
+                    if alternatives_by_owner is not None
+                    else self.alternatives(owner_id, partition)
+                )
                 alternative = alternatives[0] if alternatives else None
                 alternative_cost = (
                     self.cost(alternative) if alternative is not None else None
@@ -352,8 +432,14 @@ class MembershipComparison:
                     if alternative_cost is not None
                     else None
                 )
+                alternative_fit = (
+                    self.peer_fit(alternative) if alternative is not None else None
+                )
                 equivalents = tuple(
-                    p for p in alternatives if abs(self.cost(p) - selected_cost) <= 1e-9
+                    p
+                    for p in alternatives
+                    if abs(self.cost(p) - selected_cost) <= 1e-9
+                    and abs(self.peer_fit(p) - selected_fit) <= 1e-9
                 )
                 contradictions = tuple(
                     sorted(
@@ -395,8 +481,13 @@ class MembershipComparison:
                     alternative_cost,
                     gap,
                     self.rt_basis,
-                    "bounded_merge_and_sample_assignment;complete_group_cost",
+                    "bounded_merge_and_sample_assignment;complete_group_cost;mean_peer_fit_tiebreak",
                     contradictions,
                     tuple(sorted(flags)),
+                    selected_fit,
+                    alternative_fit,
+                    alternative_fit - selected_fit
+                    if alternative_fit is not None
+                    else None,
                 )
         return result

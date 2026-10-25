@@ -653,4 +653,10 @@ def test_accepted_competition_is_visible_only_on_its_sample(review_page, tmp_pat
     expect(competing).to_contain_text("已配對，有其他合理候選")
     expect(strong).to_contain_text("1,000")
     expect(competing).to_contain_text("2,000")
+    competing.get_by_role("button", name="查看定量依據").click()
+    page.get_by_text("完整紀錄與引用", exact=True).click()
+    expect(
+        page.get_by_text("同分決勝：平均配合成本（越低越好）", exact=True)
+    ).to_be_visible()
+    expect(page.get_by_text("替代的平均配合成本", exact=True)).to_be_visible()
     assert matrix.read_bytes() == before

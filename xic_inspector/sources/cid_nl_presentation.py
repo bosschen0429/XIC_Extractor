@@ -399,6 +399,22 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                         "value": str(value) if value is not None else "無可行替代",
                     }
                 )
+            if risk.get("selected_peer_fit") is not None:
+                fields.append(
+                    {
+                        "label": "同分決勝：平均配合成本（越低越好）",
+                        "value": str(risk["selected_peer_fit"]),
+                    }
+                )
+                if risk.get("alternative_peer_fit") is not None:
+                    fields.append(
+                        {
+                            "label": "替代的平均配合成本",
+                            "value": str(risk["alternative_peer_fit"]),
+                        }
+                    )
+            else:
+                fields.append({"label": "同分決勝資訊", "value": "未記錄"})
     qualities = facts.get("signal_quality", [] if "variant" in facts else None)
     if isinstance(qualities, list):
         if not qualities:

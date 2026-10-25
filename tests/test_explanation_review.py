@@ -870,6 +870,9 @@ def _competition_review_report(tmp_path):
         "evidence_basis": "bounded_assignment",
         "soft_contradictions": [],
         "risk_flags": ["accepted_competition"],
+        "selected_peer_fit": 0.25,
+        "alternative_peer_fit": 0.4,
+        "peer_fit_gap": 0.15,
     }
     return _quality_review_report(tmp_path, membership_risks={"S2": [risk]})
 
@@ -916,6 +919,7 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         if d.accepted_risk is not None
     }
     assert len(risks) == 2
+    assert all(risk.selected_peer_fit is not None for risk in risks.values())
     expected = {
         member.canonical_sample_identity_id: json.loads(
             json.dumps(asdict(risks[member.subject_id]))
@@ -964,6 +968,9 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     (
         ("cost_gap", "0.03"),
         ("selected_cost", True),
+        ("selected_peer_fit", "0.25"),
+        ("alternative_peer_fit", True),
+        ("peer_fit_gap", "0.15"),
         ("alternative_partition", ["not-a-group"]),
         ("soft_contradictions", "shape_disagreement"),
     ),

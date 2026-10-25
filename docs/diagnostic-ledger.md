@@ -80,43 +80,45 @@ locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
 
-### 2026-10-25 Unresolved Membership Is Not One Uniform Failure Class
+### 2026-10-25 Average Peer Fit Resolves Flat Worst-Pair Choices
 
-#913 retained 44-sample snapshot, same input hash as the replay entry below.
-Evidence: `diagnostic_only` for the cause census; `expected_diff` for removing
-unchanged-partition alternatives from risk decisions. Swapping two same-sample
-singletons does not change membership and cannot establish competition. The
-regression reproduces that false risk; full replay preserves all group/member
-outputs and non-risk decision fields, changes only 94 risk records, and leaves
-no unchanged-partition alternatives among 35,459 recorded decisions.
+#913 section I, Evidence: `expected_diff`. The retained 44-sample snapshot has
+the same input hash as the replay entry below; comparison baseline is
+`83749217`. The primary maximum-pair cost can remain unchanged when replacing a
+non-extreme member. It is not evidence that the candidates fit equally well.
+The current bounded search acts on better alternatives and resolves primary
+ties by average owner-to-peer cost without increasing the primary cost.
 
-- All 965 unresolved groups are singletons. In the retained comparison scope,
-  224 are alone, 317 have no feasible cross-sample pair, and 94 have a feasible
-  pair but cannot join/swap into a complete existing group. Another 306 have a
-  more costly alternative; 24 have a different partition within 0.05 cost.
-- Among the 317 without a feasible pair, the least-blocked target has an RT
-  scope violation in 270 cases (61 also exceed precursor tolerance), distinct
-  tracks in 29, and precursor tolerance alone in 18. The snapshot's outer RT
-  comparison limit is 180 seconds. These target summaries do not prove the
-  absence of a chemical match outside the retained scope.
-- The 24 near alternatives comprise 12 joins and 12 same-sample swaps. Six
-  swaps have equal cost because other group members still determine the
-  maximum pair penalty. Equal objective values are not identical measurements
-  or independent evidence that both candidates are the same analyte.
-- A diagnostic larger split move was tested for all 94 pair-compatible but
-  group-incompatible singletons. Only one lowers the objective; its three-plus-
-  one partition still leaves one singleton. It does not support a general
-  unresolved reduction or changing the default search. This was not activated.
-- Artifacts: `output/issue-913/unresolved-probe/diagnosis.json`,
-  `output/issue-913/noop-expected-diff.json`, and
-  `output/issue-913/unresolved-counterfactual.json`. Pair-reason reconstruction
-  was cross-checked against 87,534 actual pair costs; counterfactual inputs
-  reproduce all 118 inspected retained risk decisions exactly.
+- At m/z about 310.14, `DNA+RNA_SBO+water_1` now contributes its 34.561-minute
+  peak to the 32-member group instead of its 34.520-minute peak. Primary cost
+  stays 46.59519548; selected peer fit 0.21365894 beats alternative 0.21441450.
+- At m/z about 326.146, `DNA+RNA_SBO_fumes_3` retains B at 26.8577 minutes,
+  rather than A at 25.9906. Primary cost stays 37.70535310; selected peer fit
+  0.28257755 beats alternative 0.28446526. Local RAW inspection of six sources
+  supports the explanation; it does not reselect or integrate their peaks.
+- All 35,677 owner observations and areas are retained. There are still 4,166
+  groups and 965 singletons. Membership sets change for 668 owners, including
+  unchanged peers of moved owners; this is not a count of 668 replaced peaks.
+  No selected primary cost increases, no group repeats a sample, all 35,459
+  risk decisions bind their final membership, and no unchanged partition is
+  reported as an alternative. Primary-cost competition flags remain visible.
+- None of the 346 formerly equivalent risk decisions remains equivalent under
+  both costs. A different candidate can still be plausible without being an
+  equally supported answer. Missing historical signal-quality facts explain
+  the retained `low_rt_support` flags, not a demonstrated calibration failure.
+- Single-run replay is 214.81 s, excluding 25.37 s loading and 12.27 s writing.
+  This includes additional choice refinement; it is not an output-preserving
+  optimization claim or whole-workflow timing. Discovery and Backfill are
+  excluded. The separate local RAW inspection is not included in replay time.
+- Artifacts: `output/issue-913/peer-fit-expected-diff.json`,
+  `output/issue-913/peer-fit-full/timing.json`, and
+  `output/issue-913/case326-raw/inspector.html`. The timing receipt binds the
+  producing source hash; the Issue carries the implementation receipt.
 
-Rerun when the candidate universe, RT support, costs, or search moves change.
-Unknown historic signal-quality facts contribute to `low_rt_support`; that flag
-alone does not diagnose RT calibration failure. No RAW or chemical-truth oracle
-was added by this replay investigation.
+Rerun when candidate scope, costs, or bounded search changes. Do not repeat RAW
+acquisition or demand chemical truth merely to resolve this known scoring
+plateau. Singleton count alone does not measure whether the better-supported
+representative was selected.
 
 ### 2026-10-25 Final Membership Replay Reuses Costs Without Changing Decisions
 
@@ -142,7 +144,7 @@ Discovery, RAW acquisition and Backfill are excluded.
 - Artifacts: `output/issue-913/perf-full-{before,after}/timing.json`,
   `output/issue-913/perf-interleaved.json`, and `current-small.pstats` in the
   same task directory. The profiler is call-cost evidence, not benchmark timing.
-- Unresolved interpretation is owned by the cause census above, not the
+- Current membership interpretation is owned by the peer-fit entry above, not the
   performance comparison; output parity does not validate the risk semantics.
 
 Rerun when membership costs/search, the comparison universe, or snapshot changes.

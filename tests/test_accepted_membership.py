@@ -95,6 +95,36 @@ def test_same_sample_singleton_swap_is_not_a_competing_membership():
         assert "accepted_competition" not in risk.risk_flags
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
+    # Fixed extreme peers set the same maximum pair cost before and after
+    # swapping s5's peaks. The earlier peak fits the earlier band better.
+    specification = (
+        ("s1", "early", 10.4),
+        ("s1", "late", 10.65),
+        ("s2", "anchor", 10.15),
+        ("s4", "early", 11.35),
+        ("s4", "late", 11.45),
+        ("s5", "early", 10.75),
+        ("s5", "late", 11.25),
+    )
+    owners = tuple(_owner(s, name, apex_rt=rt) for s, name, rt in specification)
+    if reverse:
+        owners = tuple(
+            replace(owner, owner_id=f"renamed-{i}")
+            for i, owner in enumerate(reversed(owners))
+        )
+    measured = {o.owner_id: (o.sample_stem, o.owner_apex_rt) for o in owners}
+    result = infer(owners)
+    earlier = next(
+        {measured[key] for key in g.owner_ids}
+        for g in result.groups
+        if any(measured[key][0] == "s2" for key in g.owner_ids)
+    )
+    assert ("s5", 10.75) in earlier
+    assert ("s5", 11.25) not in earlier
+
+
 def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
     owners = (
         _owner("a", "early", apex_rt=10),
