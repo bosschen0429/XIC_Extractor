@@ -239,6 +239,8 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    HOLD. Accepted choices use `AcceptedMembershipRisk` with `phase=backfill`,
    including `backfill_competition` for contested claims. Final row/sample,
    review TSV and compact explanation/Inspector retain these same facts.
+   Inspector's loaded-item search accepts the phase and exact risk flag text,
+   without filtering out the selected numeric value.
    Claim resolution runs once before new members or numeric cells are created. A SUPPORT proposal that
    cannot join its requested feature does not veto an otherwise valid recovery.
    Each view uses its actual extraction m/z interval, not a second preferred-ppm

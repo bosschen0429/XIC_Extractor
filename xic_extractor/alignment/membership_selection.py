@@ -1,7 +1,7 @@
 """Bounded final-membership costs and decisions over admitted peak owners.
 
-The membership entry owns activation. Bootstrap and Backfill admission do not
-consume this policy. All comparisons in a mass neighbourhood share one RT basis.
+Final membership and bounded Backfill assignments consume this policy;
+bootstrap remains conservative. A comparison universe shares one RT basis.
 """
 
 from __future__ import annotations
