@@ -6,6 +6,7 @@ from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
+from heapq import heappop, heappush
 from itertools import combinations
 from typing import Literal, cast
 
@@ -1305,32 +1306,57 @@ def _join_window_bands(
         )
         return cost, first_id, second_id
 
-    costs = {
-        (left, right): priority(left, right)
-        for left in links
-        for right in links[left]
-        if left < right
+    costs: dict[tuple[str, str], tuple[float, str, str]] = {}
+    candidates: list[tuple[tuple[float, str, str], tuple[str, str]]] = []
+    incident: dict[str, list[tuple[tuple[float, str, str], tuple[str, str]]]] = {
+        key: [] for key in members
     }
+
+    def refresh_cost(left: str, right: str) -> None:
+        pair = (left, right)
+        value = priority(left, right)
+        costs[pair] = value
+        entry = (value, pair)
+        heappush(candidates, entry)
+        heappush(incident[left], entry)
+        heappush(incident[right], entry)
+
+    def best_cost(key: str) -> float:
+        heap = incident[key]
+        while heap and costs.get(heap[0][1]) != heap[0][0]:
+            heappop(heap)
+        return heap[0][0][0] if heap else math.inf
+
+    for left in links:
+        for right in links[left]:
+            if left < right:
+                refresh_cost(left, right)
     while costs:
-        best: dict[str, float] = {}
-        for (left, right), (cost, _, _) in costs.items():
-            best[left] = min(best.get(left, math.inf), cost)
-            best[right] = min(best.get(right, math.inf), cost)
-        available = (
-            pair
-            for pair, (cost, _, _) in costs.items()
-            if not samples[pair[0]] & samples[pair[1]]
-            and (
-                min(len(members[pair[0]]), len(members[pair[1]])) < 2
-                or centers[pair[0]][0] is None
-                or centers[pair[1]][0] is None
-                or cost <= best[pair[0]]
-                and cost <= best[pair[1]]
-            )
-        )
-        pair = min(available, key=costs.__getitem__, default=None)
-        if pair is None:
+        deferred = []
+        while candidates:
+            value, pair = heappop(candidates)
+            if costs.get(pair) != value:
+                continue
+            left, right = pair
+            if samples[left] & samples[right]:
+                # Occupancy cannot disappear as bands grow. Retain its cost as
+                # an alternative, but it never becomes a merge candidate.
+                continue
+            if (
+                min(len(members[left]), len(members[right])) < 2
+                or centers[left][0] is None
+                or centers[right][0] is None
+                or value[0] <= best_cost(left)
+                and value[0] <= best_cost(right)
+            ):
+                break
+            deferred.append((value, pair))
+        else:
             return
+        # Removing or merging an edge can expose a previously blocked band's
+        # best alternative. Reconsider those edges, not the entire graph.
+        for entry in deferred:
+            heappush(candidates, entry)
         left, right = pair
         del costs[pair]
         del links[left][right]
@@ -1373,7 +1399,7 @@ def _join_window_bands(
             links[left][neighbor] = links[neighbor][left] = kept
         for neighbor in links[left]:
             first, second = sorted((left, neighbor))
-            costs[(first, second)] = priority(first, second)
+            refresh_cost(first, second)
 
 
 def _window_inference(
