@@ -120,6 +120,9 @@ is the Python, CLI, and HTML application entry. It snapshots inputs, acquires
 once, rejects incomplete populations at the workflow handoff, composes the
 scientific result, and publishes only a complete finalized Target population.
 Cancellation after acquisition or composition skips publication.
+The workflow consumes acquisition results directly and the writer reads the
+completed publication model without mutating it. Neither handoff clones the
+full result or its trace arrays.
 
 Foreground acquisition and the per-Target runtime receipt are separate
 lifecycles. The receipt acknowledges the retained-acquisition handoff, not

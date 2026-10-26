@@ -172,16 +172,16 @@ class _PreparedTargetedProductionWorkflow:
     results_by_sample: tuple[tuple[ResolvedCanonicalSampleIdentity, FileResult], ...]
     raw_stems: frozenset[str]
     acquisition_file_ids: tuple[int, ...]
-    acquisition_snapshot: RunOutput
+    acquisition_evidence: RunOutput
 
 
 @dataclass(frozen=True, slots=True)
 class CompletedTargetedProductionWorkflow:
-    """Owner-completed science and the exact public result model it produced."""
+    """Owner-completed science and a publication model consumed without mutation."""
 
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
     _acquisition_file_ids: tuple[int, ...]
-    _publication_snapshot: RunOutput
+    _publication_output: RunOutput
     _mint_token: InitVar[object] = None
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -195,7 +195,7 @@ class CompletedTargetedProductionWorkflow:
         request: TargetedApplicationRequest,
         acquisition_evidence: RunOutput,
     ) -> RunOutput:
-        """Bind a publication request and isolate its already-completed result view."""
+        """Bind a publication request and return its already-completed result view."""
 
         acquisition_file_ids = tuple(
             id(file_result) for file_result in acquisition_evidence.file_results
@@ -205,7 +205,7 @@ class CompletedTargetedProductionWorkflow:
                 "prepared Targeted workflow crossed the acquisition evidence"
             )
         _validate_target_population(request, self.finalized_results)
-        return deepcopy(self._publication_snapshot)
+        return self._publication_output
 
     def __len__(self) -> int:
         return len(self.finalized_results)
@@ -246,13 +246,13 @@ def execute_targeted_production_workflow(
         expected_processing_request=prepared.owners.request,
         expected_samples=prepared.samples,
     )
-    publication_snapshot = _build_publication_output(
-        finalized_results, prepared.acquisition_snapshot, config=request.config
+    publication_output = _build_publication_output(
+        finalized_results, prepared.acquisition_evidence, config=request.config
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
         _acquisition_file_ids=prepared.acquisition_file_ids,
-        _publication_snapshot=publication_snapshot,
+        _publication_output=publication_output,
         _mint_token=_COMPLETED_WORKFLOW_MINT_TOKEN,
     )
 
@@ -832,10 +832,9 @@ def _prepare_targeted_production_workflow(
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
     acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
-    acquisition_snapshot = deepcopy(acquisition_evidence)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
-        acquisition_snapshot.file_results,
+        acquisition_evidence.file_results,
     )
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
@@ -911,7 +910,7 @@ def _prepare_targeted_production_workflow(
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
         acquisition_file_ids=acquisition_file_ids,
-        acquisition_snapshot=acquisition_snapshot,
+        acquisition_evidence=acquisition_evidence,
     )
 
 
