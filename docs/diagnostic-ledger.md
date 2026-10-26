@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-25
+**Last updated:** 2026-10-26
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -1160,3 +1160,57 @@ Producing probes and receipts are under `output/trajectory-dp/`, including
 `verify.py`, `fixtures.py` and `run-1792121555778898700/results.json`. Reopen for
 changed matching semantics, a newly representative density regime or a broader
 performance claim; do not repeat RAW validation merely for this storage change.
+
+## Targeted batch preparation and post-acquisition reuse (#924)
+
+The fixed 158-sample, 14-target workload exposed repeated physical evaluation,
+trace serialization, owner lookup, immutable snapshot copying, shape comparison,
+and workbook style registration. These were repeated work, not Excel formulas.
+The accepted implementations reuse retained owner facts and batch shared work;
+they do not bypass a public admission check or change the numerical solver.
+Paired-ISTD recovery also avoids trajectory forecasts that its analyte consumer
+would discard. The generic trajectory route remains available for ISTDs.
+
+Evidence: `diagnostic_only`; performance oracle: `exact_safe`; disposition:
+`optimized` for the measured workload. The final full-population replay on
+`c099681a` takes 21.525-21.729 s through actual XLSX publication and result-value
+projection (19.278-19.442 s workflow). It uses the same retained acquisition
+snapshot and resolved inputs, with acquired trace preparation outside this
+post-acquisition interval, as in the per-file worker route. Both repeats preserve
+all 2,212 result rows and 5,167 diagnostics exactly against the frozen replay
+oracle. The strict Inspector reader accepts the workbook with 158 samples and
+14 targets. These replays do not measure fresh RAW I/O or prove scientific
+readiness; there is no 10-second latency claim.
+
+The paired-localization probe alternates old/new methods on each real call:
+2.269 s and 2,054 trend fits versus 0.007 s and no fits in the paired-only
+helper, with exact coordinates, tolerances and ordering. These are helper
+comparison counts, not the number of fits eliminated from the whole workflow;
+ISTD trajectory recovery still fits its references. The probe's extra baseline
+work is excluded from the standalone final timings above. The real eight-RAW
+run on `2632bd29` measures 1.751 s from the last completed RAW to CLI completion;
+completed-worker shutdown takes 0.000024 s instead of the earlier 5.964 s idle
+shutdown wait. Cancellation still waits for active worker cleanup.
+
+Preparation reads only selected files at their original location, without full
+RAW content hashing. The eight-header-worker control takes 32.370 s on the
+158-file workload; the first measurement took 70.874 s. OS/device caches were
+not cleared, so these data do not establish a cold-storage upper bound. Sixteen
+workers did not beat the warm eight-worker control. Do not raise the default
+worker count based on the unmatched cold/warm comparison.
+
+Thread-per-target prototypes regress (23.307 s serial versus 31.034/34.743 s
+with two/four threads). A prewarmed process-per-target prototype does not improve
+time and fails publication parity because live physical-evaluation bindings are
+same-process. Neither prototype is adopted. Do not repeat these routes without
+a new cost model and, for processes, an explicit transport ownership design.
+
+Receipts and diagnostic-only probes are under `output/issue_924/`:
+`final_paired_timing.json`, `final_paired_values.json`,
+`paired_only_comparison.json`, `worker_tail_async_8/timing.json`,
+`preparation_8_timing.json`, and `inspector_final_verification.json`.
+The source snapshot is `full_158/admitted_evidence.pkl`; it is a private
+same-process diagnostic input, not a supported public replay format. Reopen
+measurement when the input population, physical owner/binding, serialized
+identity, solver, publication contract or worker lifecycle changes. A fresh
+full RAW rerun is not needed merely to repeat these post-acquisition comparisons.
