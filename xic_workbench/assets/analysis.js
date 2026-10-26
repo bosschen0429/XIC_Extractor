@@ -2064,17 +2064,59 @@
     screen.append(inner);
     document.body.append(screen);
   }
+  function setDllDir(value) {
+    state.config.settings.dll_dir = value;
+    state.config.untargeted.dll_dir = value;
+    for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
+      if ($(id)) $(id).value = value;
+    }
+  }
+  function renderReaderSetup(reader) {
+    const dotnetMissing = reader.dotnet_errors.length > 0;
+    const dllMissing = reader.dll_errors.length > 0;
+    $("reader-setup").hidden = !dotnetMissing && !dllMissing;
+    $("reader-setup-dotnet").hidden = !dotnetMissing;
+    $("reader-setup-dll").hidden = !dllMissing;
+    $("reader-setup-command").textContent = reader.dotnet_install_command;
+    $("reader-setup-version").textContent = reader.version;
+    $("reader-setup-license").href = reader.license_url;
+    $("reader-setup-detail").replaceChildren(
+      ...[...reader.dotnet_errors, ...reader.dll_errors].map((text) => el("li", text)),
+    );
+  }
+  async function installThermoReader() {
+    const button = $("reader-setup-install");
+    button.disabled = true;
+    button.textContent = "下載中…";
+    try {
+      const result = await api("/api/thermo-reader/install", {
+        accept_license: $("reader-setup-accept").checked,
+      });
+      setDllDir(result.dll_dir);
+      state.config.thermo_reader = result.thermo_reader;
+      renderReaderSetup(result.thermo_reader);
+      done(result.message);
+    } catch (error) {
+      status(error.message, true);
+    } finally {
+      button.textContent = "下載並設定 RawFileReader";
+      button.disabled = !$("reader-setup-accept").checked;
+    }
+  }
   function bind() {
     document.addEventListener("input", (event) => {
       if (!["t-dll_dir", "u-dll_dir", "dll-dir"].includes(event.target.id)) return;
-      const value = event.target.value;
-      state.config.settings.dll_dir = value;
-      state.config.untargeted.dll_dir = value;
-      for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
-        if ($(id)) $(id).value = value;
-      }
+      setDllDir(event.target.value);
       dirty("targeted");
       dirty("untargeted");
+    });
+    $("reader-setup-accept").addEventListener("change", (event) => {
+      $("reader-setup-install").disabled = !event.target.checked;
+    });
+    $("reader-setup-install").addEventListener("click", installThermoReader);
+    $("reader-setup-copy").addEventListener("click", async () => {
+      await navigator.clipboard.writeText($("reader-setup-command").textContent);
+      done("已複製安裝指令。");
     });
     document
       .querySelectorAll("[data-view]")
@@ -2498,6 +2540,7 @@
     ui.setTheme(state.config.preferences.theme || "light");
     $("dll-dir").value = state.config.settings.dll_dir || "";
     applyThemeButton();
+    renderReaderSetup(state.config.thermo_reader);
     renderSettings(state.config.settings);
     renderTargetedMethods(state.config.targeted_methods || []);
     for (const [key, label, kind] of pathFields)

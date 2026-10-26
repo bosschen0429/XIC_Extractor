@@ -709,6 +709,52 @@ body.offline .brand-name small::before {
   font-size: 13px;
   font-weight: 550;
 }
+.reader-setup {
+  display: flex;
+  gap: 12px;
+  margin: 12px auto 0;
+  width: min(960px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid var(--warn-line);
+  border-radius: 10px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 13px;
+}
+.reader-setup[hidden] {
+  display: none;
+}
+.reader-setup-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.reader-setup-body h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.reader-setup-body p {
+  margin: 0;
+}
+.reader-setup-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.reader-setup-command code {
+  overflow-wrap: anywhere;
+}
+.reader-setup-accept {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.reader-setup-body ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
 .toasts {
   position: fixed;
   right: 20px;

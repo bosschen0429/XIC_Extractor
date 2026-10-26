@@ -146,7 +146,51 @@ def test_preflight_reports_missing_dotnet_runtime(tmp_path: Path) -> None:
         tmp_path, import_module_func=_broken_pythonnet_runtime
     )
 
-    assert any(".NET runtime" in error and "Install" in error for error in errors)
+    assert any(
+        ".NET 8 or later" in error and "Microsoft.DotNet.Runtime.10" in error
+        for error in errors
+    )
+
+
+def test_preflight_selects_dotnet_runtime_with_packaged_roll_forward_config(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    from xic_extractor.raw_reader import preflight_raw_reader
+
+    _write_expected_dlls(tmp_path)
+    selected: list[tuple[str, dict[str, str]]] = []
+    pythonnet = SimpleNamespace(
+        get_runtime_info=lambda: None,
+        set_runtime=lambda kind, **params: selected.append((kind, params)),
+    )
+
+    errors = preflight_raw_reader(tmp_path, import_module_func=lambda name: pythonnet)
+
+    assert errors == []
+    ((kind, params),) = selected
+    assert kind == "coreclr"
+    options = json.loads(Path(params["runtime_config"]).read_text(encoding="utf-8"))
+    assert options["runtimeOptions"]["framework"]["version"] == "8.0.0"
+    assert options["runtimeOptions"]["rollForward"] == "LatestMajor"
+
+
+def test_preflight_names_an_xcalibur_folder_as_an_older_rawfilereader(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.raw_reader import preflight_raw_reader
+
+    for name in (
+        "ThermoFisher.CommonCore.Data.dll",
+        "ThermoFisher.CommonCore.RawFileReader.dll",
+    ):
+        (tmp_path / name).write_text("", encoding="utf-8")
+
+    (error,) = preflight_raw_reader(tmp_path, import_module_func=_working_imports())
+
+    assert "older RawFileReader" in error
+    assert "xic-install-thermo-reader" in error
 
 
 def test_preflight_reports_missing_dll_dir(tmp_path: Path) -> None:
@@ -156,7 +200,8 @@ def test_preflight_reports_missing_dll_dir(tmp_path: Path) -> None:
     errors = preflight_raw_reader(missing, import_module_func=_working_imports())
 
     assert any(
-        "Xcalibur DLL directory" in error and str(missing) in error for error in errors
+        "RawFileReader DLL directory" in error and str(missing) in error
+        for error in errors
     )
 
 
@@ -189,7 +234,7 @@ def test_open_raw_raises_raw_reader_error_when_dll_load_fails(tmp_path: Path) ->
 def test_open_raw_raises_raw_reader_error_when_preflight_fails(tmp_path: Path) -> None:
     from xic_extractor.raw_reader import RawReaderError, open_raw
 
-    with pytest.raises(RawReaderError, match="Xcalibur DLL directory"):
+    with pytest.raises(RawReaderError, match="RawFileReader DLL directory"):
         open_raw(
             tmp_path / "sample.raw",
             tmp_path / "missing",

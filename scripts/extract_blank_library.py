@@ -10,6 +10,7 @@ from pathlib import Path
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
+from xic_extractor.thermo_reader_install import default_thermo_reader_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,9 +27,9 @@ def parse_args() -> argparse.Namespace:
         "--dll-dir",
         type=Path,
         default=Path(
-            os.getenv("THERMO_RAWFILE_READER_DLL_DIR", r"C:\Xcalibur\system\programs")
+            os.getenv("THERMO_RAWFILE_READER_DLL_DIR") or default_thermo_reader_dir()
         ),
-        help="Directory containing Thermo CommonCore DLLs.",
+        help="Directory containing the RawFileReader 8 DLLs.",
     )
     parser.add_argument(
         "--min-intensity",

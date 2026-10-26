@@ -93,6 +93,29 @@ class AnalysisWorkspace:
             "targeted_methods": self.targeted_methods(),
             "preferences": self.preferences(),
             "analysis": self.state(),
+            "thermo_reader": self.thermo_reader_status(settings.get("dll_dir", "")),
+        }
+
+    def thermo_reader_status(self, dll_dir: str) -> dict[str, Any]:
+        """What the RAW reader still needs on this computer, for first-run setup."""
+        from xic_extractor.raw_reader import (
+            DOTNET_INSTALL_COMMAND,
+            dotnet_runtime_errors,
+            thermo_dll_errors,
+        )
+        from xic_extractor.thermo_reader_install import (
+            THERMO_LICENSE_URL,
+            THERMO_READER_VERSION,
+        )
+
+        return {
+            "dotnet_errors": dotnet_runtime_errors(),
+            "dll_errors": thermo_dll_errors(Path(dll_dir))
+            if dll_dir
+            else ["RawFileReader DLL directory is not set."],
+            "dotnet_install_command": DOTNET_INSTALL_COMMAND,
+            "license_url": THERMO_LICENSE_URL,
+            "version": THERMO_READER_VERSION,
         }
 
     def targeted_methods(self) -> list[dict[str, str]]:
@@ -250,6 +273,19 @@ class AnalysisWorkspace:
             from xic_workbench.target_import import import_targets
 
             return {"targets": import_targets(Path(values["path"]))}
+        if action == "thermo-reader/install":
+            from xic_extractor.thermo_reader_install import install_thermo_reader
+            from xic_workbench.config_io import write_dll_dir
+
+            target = install_thermo_reader(
+                accept_license=values.get("accept_license") is True
+            )
+            write_dll_dir(str(target), config_dir=self.config_dir)
+            return {
+                "message": f"RawFileReader 已安裝，DLL 資料夾已設為 {target}",
+                "dll_dir": str(target),
+                "thermo_reader": self.thermo_reader_status(str(target)),
+            }
         if action == "untargeted/save":
             from xic_workbench.config_io import write_dll_dir
             from xic_workbench.discovery_config_io import write_discovery_config
