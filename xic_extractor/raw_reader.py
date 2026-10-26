@@ -45,6 +45,7 @@ from xic_extractor.ms2_scan_models import (
 )
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
     AcquisitionSourceIdentity,
     IdentityContractError,
     fingerprint_file_content,
@@ -79,6 +80,14 @@ _CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 _ASSEMBLIES_LOADED = False
 _ASSEMBLY_LOAD_LOCK = Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedRawMassRecalibration:
+    """One run's fitted result for an already identified RAW source."""
+
+    acquisition: AcquisitionSourceExpectation
+    result: MassRecalibrationResult
 
 
 class RawReaderError(Exception):
@@ -204,12 +213,7 @@ class RawFileHandle:
         lm_values: list[float | None] = []
         fit: list[tuple[float | None, float]] = []
         val: list[tuple[float | None, float]] = []
-        labels = [
-            str(item.Label).strip().rstrip(":").casefold()
-            for item in raw.GetTrailerExtraHeaderInformation()
-        ]
-        if _LM_CORRECTION_TRAILER in labels:
-            self._lm_trailer_index = labels.index(_LM_CORRECTION_TRAILER)
+        self._load_lm_trailer_index()
         for scan in range(
             raw.RunHeaderEx.FirstSpectrum, raw.RunHeaderEx.LastSpectrum + 1
         ):
@@ -257,6 +261,23 @@ class RawFileHandle:
         if corrected_p95 <= 3.0 and corrected_p95 < raw_p95:
             return replace(result, outcome="applied", a=float(a), b=float(b))
         return replace(result, reason="validation_failed")
+
+    def use_mass_recalibration_result(self, result: MassRecalibrationResult) -> None:
+        """Initialize a fresh handle from its run's source-bound probe result."""
+        self._mass_recalibration_result = result
+        if result.outcome == "applied":
+            self._load_lm_trailer_index()
+
+    def _load_lm_trailer_index(self) -> None:
+        labels = [
+            str(item.Label).strip().rstrip(":").casefold()
+            for item in self._raw_file.GetTrailerExtraHeaderInformation()
+        ]
+        self._lm_trailer_index = (
+            labels.index(_LM_CORRECTION_TRAILER)
+            if _LM_CORRECTION_TRAILER in labels
+            else None
+        )
 
     def _scan_lm(self, scan_number: int) -> float | None:
         values = getattr(
@@ -838,6 +859,7 @@ def open_raw(
     dll_dir: Path,
     *,
     mass_recalibration: MassRecalibration = MassRecalibration.NONE,
+    prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
     _expected_path_identity: tuple[int, int, int, int, int] | None = None,
     _raw_session_capability: RawAcquisitionSessionCapability | None = None,
@@ -849,6 +871,19 @@ def open_raw(
         expected_acquisition_source=expected_acquisition_source,
     )
     mass_recalibration = resolve_mass_recalibration(mass_recalibration)
+    if prepared_mass_recalibration is not None:
+        if prepared_mass_recalibration.result.policy is not mass_recalibration:
+            raise RawReaderError("prepared mass recalibration uses a different policy")
+        if expected_acquisition_source is not None and (
+            expected_acquisition_source
+            != prepared_mass_recalibration.acquisition.source
+        ):
+            raise RawReaderError("prepared mass recalibration belongs to another RAW")
+        expected_acquisition_source = prepared_mass_recalibration.acquisition.source
+        if _expected_path_identity is None:
+            _expected_path_identity = (
+                prepared_mass_recalibration.acquisition.path_identity
+            )
     errors = preflight_raw_reader(dll_dir, import_module_func=_import_module)
     if errors:
         raise RawReaderError(" ".join(errors))
@@ -904,13 +939,54 @@ def open_raw(
         if _raw_session_capability is None
         else _mint_raw_acquisition_session_receipt(_raw_session_capability)
     )
-    return _mint_owner_bound_raw_handle(
+    handle = _mint_owner_bound_raw_handle(
         raw_file,
         thermo,
         source_binding.source,
         raw_open_receipt,
         mass_recalibration,
     )
+    if prepared_mass_recalibration is not None:
+        try:
+            handle.use_mass_recalibration_result(prepared_mass_recalibration.result)
+        except BaseException:
+            handle.__exit__()
+            raise
+    return handle
+
+
+def prepare_batch_mass_recalibration(
+    inputs: Sequence[tuple[Path, AcquisitionSourceIdentity]],
+    dll_dir: Path,
+    policy: MassRecalibration,
+    *,
+    workers: int = 1,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, PreparedRawMassRecalibration]:
+    """Probe once per sample, close every handle, and share only small results."""
+    if policy is MassRecalibration.NONE:
+        return {}
+
+    def prepare(item: tuple[Path, AcquisitionSourceIdentity]):
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("mass recalibration preparation cancelled")
+        path, source = item
+        binding = _verify_expected_acquisition_source(path, source)
+        assert binding is not None
+        with open_raw(
+            path,
+            dll_dir,
+            mass_recalibration=policy,
+            expected_acquisition_source=source,
+            _expected_path_identity=binding.path_identity,
+        ) as raw:
+            return path.stem, PreparedRawMassRecalibration(
+                AcquisitionSourceExpectation(source, binding.path_identity),
+                raw.mass_recalibration_result,
+            )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return dict(pool.map(prepare, inputs))
 
 
 def read_raw_injection_header(path: Path, dll_dir: Path) -> InjectionHeader:

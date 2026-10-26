@@ -10,7 +10,10 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from xic_extractor.raw_reader import PreparedRawMassRecalibration
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
@@ -174,6 +177,9 @@ class UntargetedPartitionJob:
         default=None, compare=False
     )
     acquisition_cache_dir: Path | None = field(default=None, compare=False)
+    prepared_mass_recalibration: PreparedRawMassRecalibration | None = field(
+        default=None, compare=False
+    )
     _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
         init=False, repr=False, compare=False
     )
@@ -279,6 +285,7 @@ def build_sample_jobs(
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
     support_candidates: tuple[DiscoveryCandidate, ...] = (),
     acquisition_cache_dir: Path | None = None,
+    prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
 ) -> tuple[UntargetedPartitionJob, ...]:
     """Validate a sample once, then bind each subject to those same inputs."""
 
@@ -317,6 +324,7 @@ def build_sample_jobs(
         physical_records=physical_records,
         acquisition_source_expectation=acquisition_source_expectation,
         acquisition_cache_dir=acquisition_cache_dir,
+        prepared_mass_recalibration=prepared_mass_recalibration,
     )
     pinned = first._request_subjects
     subjects_by_id = (

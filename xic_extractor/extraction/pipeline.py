@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
@@ -34,7 +34,7 @@ def run_pipeline(
         raw_paths=raw_paths,
         injection_order=injection_order,
     )
-    acquisition_kwargs = (
+    acquisition_kwargs: dict[str, Any] = (
         {}
         if acquisition_sources_by_sample is None
         else {"acquisition_sources_by_sample": acquisition_sources_by_sample}

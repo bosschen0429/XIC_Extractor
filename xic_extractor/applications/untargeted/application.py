@@ -24,6 +24,7 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
 )
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -42,6 +43,10 @@ from xic_extractor.output.alignment.output_levels import (
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
+)
+from xic_extractor.raw_reader import (
+    PreparedRawMassRecalibration,
+    prepare_batch_mass_recalibration,
 )
 from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
@@ -100,8 +105,11 @@ def run_untargeted_application(
         run_metadata_json=request.output_dir / "alignment_run_metadata.json",
     )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
+    mass_recalibration_by_sample = _prepare_mass_recalibration(
+        request, batch, recorder, context
+    )
     resolved_known_istd_reference = _resolve_known_istd_reference(
-        request, batch, recorder
+        request, batch, recorder, mass_recalibration_by_sample
     )
 
     metadata = alignment_metadata(
@@ -182,6 +190,12 @@ def run_untargeted_application(
             retain_acquisition_cache=request.execution.retain_acquisition_cache,
             acquisition_cache_dir=request.execution.acquisition_cache_dir,
             max_partition_jobs=request.execution.max_partition_jobs,
+            mass_recalibration_by_sample=(
+                mass_recalibration_by_sample
+                if request.discovery_settings.mass_recalibration
+                is not MassRecalibration.NONE
+                else None
+            ),
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
@@ -197,10 +211,48 @@ def run_untargeted_application(
     )
 
 
+def _prepare_mass_recalibration(
+    request: UntargetedRequest,
+    batch: DiscoveryBatchInput,
+    recorder: TimingRecorder,
+    context: UntargetedExecutionContext,
+) -> dict[str, PreparedRawMassRecalibration]:
+    policy = request.discovery_settings.mass_recalibration
+    if (
+        policy is MassRecalibration.NONE
+        and request.known_istd_reference is None
+        and request.targets_csv is not None
+    ):
+        policy = request.peak_config.mass_recalibration
+    if policy is MassRecalibration.NONE:
+        return {}
+    from xic_extractor.acquisition.raw_paths import existing_raw_paths
+
+    paths = existing_raw_paths(
+        sample_order=batch.sample_order,
+        raw_files=batch.raw_files,
+        raw_dir=request.raw_dir,
+    )
+    with recorder.stage("alignment.mass_recalibration") as stage:
+        results = prepare_batch_mass_recalibration(
+            tuple(
+                (path, batch.candidate_receipts[stem].acquisition_source)
+                for stem, path in paths.items()
+            ),
+            request.dll_dir,
+            policy,
+            workers=request.execution.raw_workers,
+            should_cancel=context.should_cancel,
+        )
+        stage.metrics["raw_file_count"] = len(results)
+        return results
+
+
 def _resolve_known_istd_reference(
     request: UntargetedRequest,
     batch: DiscoveryBatchInput,
     recorder: TimingRecorder,
+    mass_recalibration_by_sample: dict[str, PreparedRawMassRecalibration] | None = None,
 ) -> KnownIstdReference | None:
     if request.known_istd_reference is not None:
         return request.known_istd_reference
@@ -226,6 +278,12 @@ def _resolve_known_istd_reference(
                 raw_paths_by_sample=raw_paths_by_sample,
                 dll_dir=request.dll_dir,
                 peak_config=request.peak_config,
+                mass_recalibration_by_sample=(
+                    mass_recalibration_by_sample
+                    if request.peak_config.mass_recalibration
+                    is not MassRecalibration.NONE
+                    else None
+                ),
                 sample_metadata=request.sample_metadata,
                 source_identifier=str(request.targets_csv.resolve()),
                 source_sha256=hashlib.sha256(
@@ -251,7 +309,12 @@ def snapshot_untargeted_grouping(
     with recorder.stage("alignment.read_batch_index"):
         batch = read_discovery_batch_index(request.discovery_batch_index)
     candidates_by_sample = DiscoveryInputSource(batch)
-    known_istd_reference = _resolve_known_istd_reference(request, batch, recorder)
+    mass_recalibration_by_sample = _prepare_mass_recalibration(
+        request, batch, recorder, context
+    )
+    known_istd_reference = _resolve_known_istd_reference(
+        request, batch, recorder, mass_recalibration_by_sample
+    )
     snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
     if snapshot.exists():
         raise ValueError(f"grouping snapshot already exists: {snapshot}")
@@ -287,6 +350,12 @@ def snapshot_untargeted_grouping(
                     max_partition_jobs=request.execution.max_partition_jobs,
                     should_cancel=context.should_cancel,
                     grouping_only=True,
+                    mass_recalibration_by_sample=(
+                        mass_recalibration_by_sample
+                        if request.discovery_settings.mass_recalibration
+                        is not MassRecalibration.NONE
+                        else None
+                    ),
                 ),
             )
             write_grouping_inputs(

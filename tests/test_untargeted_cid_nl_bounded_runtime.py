@@ -912,6 +912,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         prepared_worksets,
         acquisition_cache_dir=None,
         sparse=False,
+        mass_recalibration_by_sample=None,
     ):
         assert prepared_worksets.plan is _plan
         assert sparse is True
@@ -922,6 +923,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             prepared_worksets=prepared_worksets,
             acquisition_cache_dir=acquisition_cache_dir,
             sparse=sparse,
+            mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
 
     def close_without_raw(*_args, **_kwargs):

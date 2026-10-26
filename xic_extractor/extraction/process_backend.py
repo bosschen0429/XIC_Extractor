@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
+from xic_extractor.raw_reader import PreparedRawMassRecalibration
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import (
@@ -25,6 +26,8 @@ def run_process(
     should_stop: Callable[[], bool] | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> RunOutput:
     from xic_extractor.extraction import result_models
 
@@ -35,6 +38,7 @@ def run_process(
         progress_callback=progress_callback,
         should_stop=should_stop,
         acquisition_sources_by_sample=acquisition_sources_by_sample,
+        mass_recalibration_by_sample=mass_recalibration_by_sample,
     )
 
     file_results = [result.file_result for result in raw_results]
@@ -55,6 +59,8 @@ def collect_raw_file_results_process(
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
     runner: Callable[..., list[Any]] | None = None,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> list[RawFileExtractionResult]:
     from xic_extractor.extraction.jobs import (
         RawFileJob,
@@ -73,6 +79,11 @@ def collect_raw_file_results_process(
             expected_acquisition_source=_expected_source(
                 raw_path,
                 acquisition_sources_by_sample,
+            ),
+            prepared_mass_recalibration=(
+                None
+                if not mass_recalibration_by_sample
+                else mass_recalibration_by_sample[raw_path.stem]
             ),
         )
         for index, raw_path in enumerate(raw_paths, start=1)

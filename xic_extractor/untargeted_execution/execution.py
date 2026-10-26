@@ -55,7 +55,10 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-from xic_extractor.raw_reader import ensure_assemblies_loaded
+from xic_extractor.raw_reader import (
+    PreparedRawMassRecalibration,
+    ensure_assemblies_loaded,
+)
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
@@ -154,6 +157,8 @@ def materialize_untargeted_partition(
     prepared_worksets: PreparedUntargetedAlignmentWorksets | None = None,
     acquisition_cache_dir: Path | None = None,
     sparse: bool = False,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> UntargetedPartitionInputs:
     """Bind a finite subject partition to shared, already-validated inputs."""
 
@@ -225,6 +230,12 @@ def materialize_untargeted_partition(
     for source_template in templates:
         template = copy(source_template)
         object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
+        if mass_recalibration_by_sample:
+            object.__setattr__(
+                template,
+                "prepared_mass_recalibration",
+                mass_recalibration_by_sample[template.sample.metadata.raw_stem],
+            )
         bound_templates.append(template)
         subject_ids = (
             tuple(
@@ -273,6 +284,8 @@ class UntargetedPartitionPipelineAdapter:
         acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
+        mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+        | None = None,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
@@ -296,6 +309,7 @@ class UntargetedPartitionPipelineAdapter:
         self._raw_workers = raw_workers
         self._raw_worker_backend = raw_worker_backend
         self._acquisition_cache_dir = acquisition_cache_dir
+        self._mass_recalibration_by_sample = mass_recalibration_by_sample
 
         context = plan.context
         self._owners = context.processing_owners
@@ -564,6 +578,7 @@ class UntargetedPartitionPipelineAdapter:
             prepared_worksets=self._prepared_worksets,
             acquisition_cache_dir=self._acquisition_cache_dir,
             sparse=True,
+            mass_recalibration_by_sample=self._mass_recalibration_by_sample,
         )
 
     def prepare_batch_search(
@@ -935,6 +950,8 @@ def execute_untargeted_plan(
     acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
     grouping_only: bool = False,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
     """Spill complete subject results, then close the exact global population.
 
@@ -973,6 +990,7 @@ def execute_untargeted_plan(
         acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
+        mass_recalibration_by_sample=mass_recalibration_by_sample,
     )
     completed_once = False
     try:

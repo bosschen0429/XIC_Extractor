@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xic_extractor.raw_reader import PreparedRawMassRecalibration
+
 import os
 import shutil
 from collections import Counter
@@ -457,6 +462,8 @@ def complete_untargeted_alignment(
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -493,6 +500,7 @@ def complete_untargeted_alignment(
                 retain_acquisition_cache=retain_acquisition_cache,
                 acquisition_cache_dir=acquisition_cache_dir,
                 max_partition_jobs=max_partition_jobs,
+                mass_recalibration_by_sample=mass_recalibration_by_sample,
             ),
         )
         pending.callback(completed.close)
@@ -522,6 +530,8 @@ def execute_prepared_alignment(
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
     grouping_only: bool = False,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
     """One instrumented scheduler for complete Alignment and frozen grouping."""
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
@@ -575,6 +585,7 @@ def execute_prepared_alignment(
             pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
+            mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
     return completed
 
