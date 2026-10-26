@@ -87,6 +87,9 @@ class TargetedRun:
             config.data_dir,
             dll_dir=config.dll_dir,
             sequence_source=config.injection_order_source,
+            include_context=False,
+            progress=self._progress,
+            should_cancel=self._should_cancel,
         )["summary"]
         # The source here is a private queued-input copy, not a published path.
         sample_summary.pop("sequence_source", None)

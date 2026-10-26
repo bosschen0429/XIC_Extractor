@@ -19,7 +19,7 @@ from xic_extractor.sample_metadata import (
 )
 
 
-def _create_synthetic_docx(path: Path) -> None:
+def _create_synthetic_docx(path: Path, *, index_header: str = "ID") -> None:
     """Create a minimal synthetic docx with a sequence table and a remark table."""
     xml_content = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -89,6 +89,7 @@ def _create_synthetic_docx(path: Path) -> None:
   </w:body>
 </w:document>"""
 
+    xml_content = xml_content.replace("<w:t>ID</w:t>", f"<w:t>{index_header}</w:t>")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("word/document.xml", xml_content)
@@ -126,9 +127,10 @@ def test_normalize_for_matching() -> None:
     ) == normalize_for_matching("Breast Cancer Tissue_pooled_QC_1")
 
 
-def test_parse_docx_sequence(tmp_path: Path) -> None:
+@pytest.mark.parametrize("index_header", ["ID", ""])
+def test_parse_docx_sequence(tmp_path: Path, index_header: str) -> None:
     docx_file = tmp_path / "test_run.docx"
-    _create_synthetic_docx(docx_file)
+    _create_synthetic_docx(docx_file, index_header=index_header)
 
     rows = parse_sequence_file(docx_file)
     assert len(rows) == 4

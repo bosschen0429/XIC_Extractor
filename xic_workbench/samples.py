@@ -6,12 +6,12 @@ import csv
 import hashlib
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, cast
 
-from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES
+from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES, discover_raw_files
 from xic_extractor.raw_reader import read_analysis_set
 from xic_extractor.sample_groups import (
     resolve_sample_group,
@@ -25,6 +25,7 @@ from xic_extractor.sample_metadata import (
     SampleMetadata,
     SampleRole,
     is_sample_metadata_source,
+    load_and_match_sample_metadata,
     load_sample_metadata,
     match_sample_metadata,
     parse_sample_metadata,
@@ -63,6 +64,9 @@ def read_batch_samples(
     sequence_source: Path | None = None,
     import_sequence: bool = False,
     legacy_roles: dict[str, str] | None = None,
+    read_headers: bool = True,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Read RAW samples with the folder's confirmed annotations.
 
@@ -78,6 +82,9 @@ def read_batch_samples(
         dll_dir=dll_dir,
         sequence_source=sequence_source if importing else saved if confirmed else None,
         custom_roles=None if confirmed else legacy_roles,
+        read_headers=read_headers,
+        progress=progress,
+        should_cancel=should_cancel,
     )
     if importing and confirmed:
         kept = {row.raw_stem.casefold(): row for row in load_sample_metadata(saved)}
@@ -86,6 +93,8 @@ def read_batch_samples(
             for row in result["samples"]
         ]
     if importing and import_sequence:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("樣本資訊匯入已停止；原先確認的分組與排除未變更。")
         _write_confirmed(saved, from_payload(result["samples"]) or ())
         confirmed = True
     result["summary"]["annotation_source"] = (
@@ -393,19 +402,73 @@ def load_samples(
     dll_dir: Path | None = None,
     sequence_source: Path | None = None,
     custom_roles: dict[str, str] | None = None,
+    read_headers: bool = True,
+    include_context: bool = True,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
-    """One row per injection, as the RAW analysis-set owner resolves it."""
+    """Preview annotations without RAW I/O, or resolve acquired sample facts."""
 
-    if dll_dir is None:
-        raise ValueError("讀取 RAW 樣本需要 RawFileReader DLL 資料夾。")
-    analysis = read_analysis_set(
-        Path(raw_dir),
-        Path(dll_dir),
-        sequence_source=Path(sequence_source) if sequence_source else None,
-    )
-    rows = analysis.sample_metadata
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("樣本資訊讀取已停止。")
+    if read_headers:
+        if dll_dir is None:
+            raise ValueError("讀取 RAW 樣本需要 RawFileReader DLL 資料夾。")
+        analysis = read_analysis_set(
+            Path(raw_dir),
+            Path(dll_dir),
+            sequence_source=Path(sequence_source) if sequence_source else None,
+            include_context=include_context,
+            progress=progress,
+            should_cancel=should_cancel,
+        )
+        rows = analysis.sample_metadata
+        report = analysis.sequence
+        unreadable = [path.name for path in analysis.unreadable]
+        unopened = [path.name for path in analysis.unopened_context]
+    else:
+        if progress is not None:
+            progress(0, 0, "列出 RAW 檔名（不開啟 RAW）")
+        paths = discover_raw_files(Path(raw_dir))
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("樣本資訊讀取已停止。")
+        if progress is not None:
+            progress(0, 0, "解析上機資訊並配對檔名")
+        report = (
+            load_and_match_sample_metadata(
+                Path(sequence_source), [p.stem for p in paths]
+            )
+            if sequence_source
+            else None
+        )
+        # Preview names are RAW aliases, not acquired sample identities. Neither
+        # document order nor directory enumeration becomes injection chronology.
+        matched_stems = set(report.matched_raw_stems) if report is not None else set()
+        preview_rows = (
+            report.rows
+            if report is not None and paths
+            else tuple(
+                SampleMetadata(sample_name=path.stem, raw_stem=path.stem)
+                for path in paths
+            )
+        )
+        rows = tuple(
+            replace(
+                row,
+                sample_name=row.raw_stem,
+                injection_order=None,
+                batch_id=row.batch_id or Path(raw_dir).name,
+                sample_role=row.sample_role
+                if row.raw_stem in matched_stems
+                else "unknown",
+            )
+            for row in preview_rows
+        )
+        unreadable = []
+        unopened = []
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("樣本資訊讀取已停止。")
     stems = [row.raw_stem for row in rows]
-    report = analysis.sequence
     summary: dict[str, Any] = {
         "raw_count": len(stems),
         "matched_count": report.matched_count if report else 0,
@@ -420,7 +483,9 @@ def load_samples(
         if report
         else [],
     }
-    summary["unreadable_raw"] = [path.name for path in analysis.unreadable]
+    summary["unreadable_raw"] = unreadable
+    summary["unopened_context"] = unopened
+    summary["chronology_pending"] = not read_headers
     if sequence_source:
         summary["sequence_source"] = str(Path(sequence_source))
 

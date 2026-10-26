@@ -17,6 +17,7 @@ from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
 )
 from xic_extractor.analysis_set import (
+    ANALYSIS_SAMPLE_ROLES,
     AnalysisSet,
     discover_raw_files,
     select_analysis_set,
@@ -86,6 +87,7 @@ class _ThermoApi:
     mass_range_trace_type: Any
     ms2_order: Any
     ms1_order: Any = None
+    header_errors: tuple[type[Exception], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -882,12 +884,18 @@ def _injection_header(handle: RawFileHandle, path: Path) -> InjectionHeader:
     if creation is None:
         raise RawReaderError(f"RAW creation date is unavailable: {path}")
     info = raw.SampleInformation
+    try:
+        run_header = raw.RunHeaderEx
+        start_time = float(run_header.StartTime)
+        end_time = float(run_header.EndTime)
+    except handle._thermo.header_errors as exc:
+        raise RawReaderError(f"RAW has no selected MS device: {path}: {exc}") from exc
     return InjectionHeader(
         raw_path=str(path.resolve()),
         acquisition_source=str(info.RawFileName or "").strip(),
         creation_date=creation,
-        start_time_min=float(raw.RunHeaderEx.StartTime),
-        end_time_min=float(raw.RunHeaderEx.EndTime),
+        start_time_min=start_time,
+        end_time_min=end_time,
         instrument_method=str(info.InstrumentMethodFile or "").strip(),
     )
 
@@ -899,11 +907,16 @@ def read_analysis_set(
     *,
     sequence_source: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
+    include_context: bool = True,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> AnalysisSet:
     """Resolve who each RAW below root is and when it was injected.
 
     ``raw_paths`` names the RAW files when a caller already holds them (for
-    example a Discovery batch); otherwise every RAW below ``raw_root`` is read.
+    example a Discovery batch); otherwise files below ``raw_root`` are discovered.
+    With ``include_context=False``, explicit non-analysis annotations are resolved
+    before I/O; those files remain unordered context without opening their RAW.
 
     The RAW headers own order (acquisition clock, older batches first) and the
     sample name. 上機資訊 (``sequence_source``) and workbench rows
@@ -913,13 +926,53 @@ def read_analysis_set(
     guess; one that would not be analyzed is listed in ``unreadable``.
     """
     root = Path(raw_root)
+    paths = tuple(raw_paths) if raw_paths is not None else discover_raw_files(root)
+    sequence = (
+        load_and_match_sample_metadata(sequence_source, [path.stem for path in paths])
+        if sequence_source is not None
+        else None
+    )
+    matched_stems = set(sequence.matched_raw_stems) if sequence is not None else set()
+    overrides = (
+        {
+            row.raw_stem.casefold(): row
+            for row in sequence.rows
+            if row.raw_stem in matched_stems
+        }
+        if sequence is not None
+        else {}
+    )
+    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
     headers: list[InjectionHeader] = []
     header_rows: dict[str, SampleMetadata] = {}
     unread: dict[str, SampleMetadata] = {}
-    for path in raw_paths if raw_paths is not None else discover_raw_files(root):
+    unread_errors: dict[str, str] = {}
+    unopened: dict[str, SampleMetadata] = {}
+    for index, path in enumerate(paths):
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("RAW 樣本準備已停止。")
+        annotation = overrides.get(path.stem.casefold())
+        if (
+            not include_context
+            and annotation is not None
+            and (
+                annotation.excluded
+                or (
+                    annotation.sample_role != "unknown"
+                    and annotation.sample_role not in ANALYSIS_SAMPLE_ROLES
+                )
+            )
+        ):
+            unopened[str(path.resolve())] = replace(
+                annotation, batch_id=annotation.batch_id or root.name
+            )
+            continue
+        if progress is not None:
+            progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
         try:
             header, role, header_name = _analysis_header(path, dll_dir)
-        except (RawReaderError, ValueError):
+        except (RawReaderError, ValueError) as exc:
+            unread_errors[str(path.resolve())] = str(exc)
             unread[str(path.resolve())] = SampleMetadata(
                 sample_name=path.stem,
                 raw_stem=path.stem,
@@ -935,31 +988,14 @@ def read_analysis_set(
             batch_id=root.name,
         )
     timeline = build_injection_timeline(headers, PerturbationPolicy())
-    sequence = (
-        load_and_match_sample_metadata(
-            sequence_source,
-            tuple(injection.raw_stem for injection in timeline)
-            + tuple(row.raw_stem for row in unread.values()),
-        )
-        if sequence_source is not None
-        else None
-    )
-    overrides = (
-        {
-            row.raw_stem.casefold(): row
-            for row in sequence.rows
-            if row.raw_stem in set(sequence.matched_raw_stems)
-        }
-        if sequence is not None
-        else {}
-    )
-    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
     return select_analysis_set(
         timeline,
         header_rows,
         tuple(overrides.values()),
         unreadable=unread,
         sequence=sequence,
+        unopened_context=unopened,
+        unreadable_errors=unread_errors,
     )
 
 
@@ -1258,6 +1294,7 @@ def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:
         mass_range_trace_type=business.TraceType.MassRange,
         ms2_order=filter_enums.MSOrderType.Ms2,
         ms1_order=filter_enums.MSOrderType.Ms,
+        header_errors=(business.NoSelectedDeviceException,),
     )
 
 

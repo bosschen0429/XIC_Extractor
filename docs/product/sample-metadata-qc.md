@@ -151,6 +151,14 @@ and retains them with the result. Reloading the workbench restores these checks
 and the last loaded Untargeted sample summary. Queued Targeted work retains its
 frozen sequence and membership.
 
+Targeted resolves explicit roles and exclusions before opening RAW files. Known
+non-analysis files remain listed as unopened context, without pretending to have
+acquired their sample names or injection order. Its analyzed population is ordered
+by the acquired timestamps of the included injections. Consumers that need the
+full injection timeline continue to request context headers. A selected file
+without an MS device blocks analysis with its filename and vendor error; an
+explicitly excluded file does not need to open successfully.
+
 ### Sample groups and exclusions
 
 `sample_groups.resolve_sample_group` is the group decision owner: an explicit
@@ -173,8 +181,10 @@ Word, Excel, and ordinary delimited sequence tables share
 `sample_metadata.match_sample_metadata`. It uses `normalize_for_matching` and
 pairs repeated names by injection order with numerically ordered RAW suffixes
 only when that pairing is unambiguous. Reports distinguish matched, unmatched,
-and ambiguous names. Word table parsing belongs to `sequence_document`; the
-instrument-QC trend tool retains its own matching and classification rules.
+and ambiguous names. Word table parsing belongs to `sequence_document`; its
+numbered sequence column may have an `ID` heading or be untitled, while the
+acquisition columns distinguish it from inventory and method-detail tables.
+The instrument-QC trend tool retains its own matching and classification rules.
 
 Files with a `schema_version` column are persisted sample metadata, not fuzzy
 sequence tables. They bind only by case-insensitive **exact `raw_stem`**, never
@@ -194,6 +204,14 @@ its reason. A Targeted run reads the folder's file as its
 `injection_order_source` for that run only, and an Untargeted run reads the
 same file rather than rows a page may still hold. Roles saved in `discovery_gui.json`
 before this file existed seed their own RAW folder until it is confirmed.
+
+Listing samples and importing a sequence in the workbench preview filenames and
+annotations without opening RAW files or requiring a DLL. Unmatched roles stay
+unknown instead of silently overriding a future RAW-header role. Preview names
+are lookup aliases and injection order remains unset; actual sample identities
+and chronology are resolved before analysis. The job reports listing and parsing
+stages and can be cancelled before confirmed annotations are written. A failed
+or cancelled import preserves the previous confirmed file and editable inputs.
 
 The pre-run checklist words `sample_overview`: per-group counts, unassigned study
 samples, one-sample groups, and exclusions over the analyzed population. Naming

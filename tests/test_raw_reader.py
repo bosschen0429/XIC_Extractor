@@ -12,6 +12,35 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
     assert "clr" not in module.__dict__
 
 
+def test_injection_header_translates_missing_ms_device_with_file_context():
+    from datetime import datetime
+
+    from xic_extractor.raw_reader import RawReaderError, _injection_header
+
+    class MissingDevice(Exception):
+        pass
+
+    failure = MissingDevice("RunHeaderEx")
+
+    class VendorRaw:
+        SampleInformation = SimpleNamespace()
+
+        @property
+        def RunHeaderEx(self):
+            raise failure
+
+    handle = SimpleNamespace(
+        _raw_file=VendorRaw(),
+        sample_header=SimpleNamespace(creation_date=datetime(2026, 1, 1)),
+        _thermo=SimpleNamespace(header_errors=(MissingDevice,)),
+    )
+    with pytest.raises(
+        RawReaderError, match="no selected MS device.*NoMS.raw"
+    ) as error:
+        _injection_header(handle, Path("NoMS.raw"))
+    assert error.value.__cause__ is failure
+
+
 def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> None:
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds

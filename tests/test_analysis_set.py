@@ -280,6 +280,58 @@ def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
         read_analysis_set(tmp_path, tmp_path / "missing-dll")
 
 
+def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch):
+    from xic_extractor import raw_reader
+
+    paths = {name: tmp_path / f"{name}.raw" for name in ("S1", "S2", "Blank", "old")}
+    for path in paths.values():
+        path.write_bytes(b"")
+    opened = []
+
+    def read_header(path, dll_dir):
+        opened.append(path.name)
+        assert path.stem in {"S1", "S2"}, "excluded/context RAW must not be opened"
+        return (
+            header(str(path.resolve()), 20 if path.stem == "S1" else 10),
+            "study_sample",
+            path.stem,
+        )
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", read_header)
+    metadata = (
+        SampleMetadata("S1", "S1", group="Exposure"),
+        SampleMetadata("S2", "S2", sample_role="qc"),
+        SampleMetadata("Blank", "Blank", sample_role="blank"),
+        SampleMetadata("old", "old", excluded=True, exclusion_reason="replaced"),
+    )
+    analysis = raw_reader.read_analysis_set(
+        tmp_path, tmp_path, metadata, include_context=False
+    )
+    assert set(opened) == {"S1.raw", "S2.raw"}
+    assert [entry.raw_stem for entry in analysis.analyzed] == ["S2", "S1"]
+    assert [entry.injection_order for entry in analysis.analyzed] == [1, 2]
+    assert analysis.analyzed[1].metadata.group == "Exposure"
+    assert set(analysis.unopened_context) == {paths["Blank"], paths["old"]}
+    contexts = [entry for entry in analysis.entries if not entry.analyzed]
+    assert all(entry.metadata.injection_order is None for entry in contexts)
+    assert contexts[-1].metadata.exclusion_reason == "replaced"
+
+
+def test_selected_unreadable_header_reports_the_file_and_original_reason(
+    tmp_path, monkeypatch
+):
+    from xic_extractor import raw_reader
+
+    (tmp_path / "S1.raw").write_bytes(b"")
+
+    def fail_header(path, dll_dir):
+        raise raw_reader.RawReaderError("no MS controller")
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", fail_header)
+    with pytest.raises(ValueError, match="S1.raw.*no MS controller"):
+        raw_reader.read_analysis_set(tmp_path, tmp_path)
+
+
 def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     tmp_path: Path, monkeypatch
 ) -> None:

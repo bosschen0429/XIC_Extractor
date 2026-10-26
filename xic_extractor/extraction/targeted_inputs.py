@@ -92,6 +92,7 @@ def _analysis_set(config: ExtractionConfig) -> AnalysisSet:
         config.data_dir,
         config.dll_dir,
         sequence_source=config.injection_order_source,
+        include_context=False,
     )
 
 

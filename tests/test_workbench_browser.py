@@ -19,7 +19,11 @@ from tests.test_xic_inspector_api import _create_mock_db, _insert_link
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings, write_targets
-from xic_workbench.samples import sample_annotations_path
+from xic_workbench.samples import (
+    read_batch_samples,
+    sample_annotations_path,
+    save_batch_samples,
+)
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -313,18 +317,94 @@ def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch)
             "序號 7 出現 2 次：A、B",
             "A：檔名是 BC2312，描述寫 BC2303",
             "讀不到檔頭，已排除（不分析）：blank.raw",
+            "未配對的上機資訊：missing",
         ]
     )
     expect(page.locator("#samples-summary")).to_contain_text("1 筆上機資訊未配對")
     expect(page.locator("#samples-summary")).to_contain_text("以 RAW 為準")
     page.reload()
     expect(page.locator("body")).not_to_have_class("booting")
-    expect(page.locator("#samples-conflicts li")).to_have_count(3)
+    expect(page.locator("#samples-conflicts li")).to_have_count(4)
     expect(page.locator("#samples-summary")).to_contain_text("以 RAW 為準")
     summary["conflicts"] = []
     summary["unreadable_raw"] = []
+    summary["unmatched_sequence_names"] = []
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-conflicts")).to_be_hidden()
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
+    workbench, config_dir, tmp_path, monkeypatch, outcome
+):
+    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from xic_extractor import sample_metadata
+    from xic_workbench.samples import save_batch_samples
+
+    page = workbench
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir(exist_ok=True)
+    for name in ("NormalBC001_DNA", "QC_Pool_1"):
+        (raw_dir / f"{name}.raw").write_bytes(b"not an acquired RAW")
+    sequence = tmp_path / "sequence.docx"
+    _create_synthetic_docx(sequence)
+    save_batch_samples(
+        config_dir,
+        raw_dir,
+        [
+            asdict(
+                SampleMetadata("NormalBC001_DNA", "NormalBC001_DNA", group="Confirmed")
+            ),
+            asdict(SampleMetadata("QC_Pool_1", "QC_Pool_1", sample_role="pooled_qc")),
+        ],
+    )
+    saved_path = sample_annotations_path(config_dir, raw_dir)
+    original = saved_path.read_bytes()
+    entered = threading.Event()
+    release = threading.Event()
+    parse = sample_metadata._sequence_entries
+
+    def parse_document(path):
+        entered.set()
+        assert release.wait(HANDSHAKE_TIMEOUT_S)
+        if outcome == "failure":
+            raise ValueError("無法解析 Word 進樣表，請檢查文件")
+        return parse(path)
+
+    monkeypatch.setattr(sample_metadata, "_sequence_entries", parse_document)
+    monkeypatch.setattr(
+        "xic_workbench.samples.read_analysis_set",
+        lambda *a, **k: pytest.fail("preview opened RAW"),
+    )
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("2 個樣本")
+    page.locator("#t-injection_order_source").fill(str(sequence))
+    page.locator("#t-samples-import").click()
+    try:
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        expect(page.locator("#analysis-job-message")).to_contain_text("解析上機資訊")
+        expect(page.locator("#analysis-stop")).to_be_enabled()
+        if outcome == "cancel":
+            page.locator("#analysis-stop").click()
+            # The shared stop confirmation is an explicit user action.
+            with page.expect_response("**/api/analysis/cancel"):
+                page.get_by_role("button", name="停止工作", exact=True).last.click()
+    finally:
+        release.set()
+    if outcome == "success":
+        expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+        expect(page.locator("#t-samples-summary")).to_contain_text("配對 2 個")
+        expect(page.locator("#t-samples-conflicts")).to_contain_text(
+            "尚未讀取 RAW 檔頭"
+        )
+        assert load_sample_metadata(saved_path)[0].group == "Confirmed"
+    else:
+        expect(page.locator("#analysis-job-title")).to_contain_text(
+            "已停止" if outcome == "cancel" else "執行失敗"
+        )
+        assert saved_path.read_bytes() == original
+    expect(page.locator("#t-samples-import")).to_be_enabled()
+    expect(page.locator("#t-injection_order_source")).to_have_value(str(sequence))
 
 
 def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
@@ -2323,6 +2403,9 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _placeholder_batch(batch, ("TumorBC1_DNA", "TumorBC2_DNA", "NormalBC1_DNA", "QC_1"))
 
     # Targeted reads, edits and confirms the folder's sample metadata.
+    # Group editing consumes already confirmed roles, not preview filename guesses.
+    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config_dir, batch, rows)
     page.locator("#t-samples-refresh").click()
     expect(page.locator("#t-samples-count")).to_have_text("4 個樣本")
     checklist = page.locator("#target-checklist")
@@ -2358,8 +2441,8 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
         editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
     page.keyboard.press("Escape")
 
-    expect(checklist).to_contain_text("各組樣本數Tumor 1 · normal 1 · QC 1")
-    expect(checklist).to_contain_text("只有 1 個樣本的組別Tumor、normal")
+    expect(checklist).to_contain_text("各組樣本數normal 1 · QC 1 · Tumor 1")
+    expect(checklist).to_contain_text("只有 1 個樣本的組別normal、Tumor")
     expect(checklist).to_contain_text("排除的樣本1 個：clogged ×1")
     expect(checklist).not_to_contain_text("未標組別的研究樣本")
     expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
@@ -2421,6 +2504,9 @@ def test_naming_cards_apply_rename_and_merge_without_overwriting_manual_groups(
             "QC_1",
         ),
     )
+    # Group editing consumes already confirmed roles, not preview filename guesses.
+    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config_dir, batch, rows)
     page.locator("#t-samples-refresh").click()
     expect(page.locator("#t-samples-count")).to_have_text("6 個樣本")
     cards = page.locator("#t-group-cards .group-card")
