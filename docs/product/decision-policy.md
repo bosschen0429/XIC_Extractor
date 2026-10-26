@@ -155,8 +155,8 @@ generic evidence provider.
 | Decision role | Targeted rule |
 | --- | --- |
 | Unit | Candidate `PeakHypothesis` for a known target/sample pair |
-| Required evidence | Selected candidate or explicit no-peak state, target identity, target/sample applicability, positive MS1 state when counted, and provenance-valid trace context |
-| Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, role-incoherent paired context |
+| Required evidence | Selected candidate or explicit no-peak state, target identity, positive MS1 state when counted, and provenance-valid trace context |
+| Hard blockers | Invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, role-incoherent paired context |
 | Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, morphology, boundary assessability, local S/N |
 | Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
 | Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and Targeted output fields |
@@ -171,8 +171,10 @@ Targeted-specific rules to keep explicit:
 - Positive MS1 means a finite selected RT and positive area. Without that, the
   row or cell must project to explicit no-peak or not-counted state, not counted
   detection by implication.
-- Sample applicability gates can exclude a target/sample pair before scoring,
-  such as role or sample-matrix constraints.
+- Every configured Targeted target is evaluated for each selected analysis sample.
+  Sample names and legacy `sample_applicability` metadata do not gate targets or
+  paired-area references. Each target declares its own CID-NL tag; Untargeted
+  method-level dR/R/MeR selection does not restrict the Targeted list.
 - ISTD and analyte missing-MS2/NL behavior are not symmetric. A configured ISTD
   plausible dropout can be counted as `detected_flagged`; an analyte NL fail or
   missing MS2 needs paired support before it can count.

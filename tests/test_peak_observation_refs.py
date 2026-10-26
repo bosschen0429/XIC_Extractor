@@ -538,7 +538,7 @@ def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
         sample_name="Sample B",
     )
 
-    with pytest.raises(PeakObservationContractError, match="processing owner closure"):
+    with pytest.raises(PeakObservationContractError, match="processing owner.*closure"):
         mint_peak_observation_ref(
             processing_owners=identity.owners,
             sample=other.sample,
@@ -999,4 +999,107 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
     assert (
         verify_persisted_peak_observation_claims(legacy).peak_observation_content_id
         == verified.peak_observation_content_id
+    )
+
+
+@pytest.mark.parametrize(
+    "reuse_trace_provenance", ["none", "observation", "acquisition"]
+)
+def test_retained_candidate_batch_preserves_canonical_observation_bytes(
+    tmp_path,
+    monkeypatch,
+    reuse_trace_provenance,
+):
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+
+    identity = _identity_fixture(tmp_path)
+    rt = np.linspace(1.0, 2.0, 101)
+    raw = 10 + 1000 * np.exp(-((rt - 1.3) ** 2) / 0.0005)
+    raw += 300 * np.exp(-((rt - 1.7) ** 2) / 0.0005)
+    trace = _trace(
+        rt=tuple(rt),
+        intensity=tuple(raw),
+        rt_min=1.0,
+        rt_max=2.0,
+        acquisition_source_id=_source_id(identity.owners),
+    )
+    profile = SignalProcessingProfile(method="gaussian", window_points=9)
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    evaluations = tuple(
+        evaluate_physical_peak(
+            prepared,
+            selection_subject_id="Analyte",
+            query_rt_min=query,
+            request_context_rt_start_min=trace.rt_min,
+            request_context_rt_end_min=trace.rt_max,
+        )
+        for query in (1.3, 1.7)
+    )
+    expected = tuple(
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=trace,
+            integration=observation_owner.physical_peak_observation_integration(
+                evaluation
+            ),
+            selection_intensity=prepared.prepared.positive_signal,
+            resolver_mode="local_minimum",
+            proposal_sources=("canonical_physical_segment",),
+            physical_evaluation=evaluation,
+            signal_processing_profile=profile,
+        )
+        for evaluation in evaluations
+    )
+    acquired_provenance = (
+        observation_owner.prepare_peak_observation_provenance(
+            trace=trace,
+            selection_values=np.asarray(prepared.prepared.positive_signal),
+            selected_indices=expected[0].generation_provenance.selected_trace_indices,
+            resolver_mode="local_minimum",
+            proposal_sources=("canonical_physical_segment",),
+        )
+        if reuse_trace_provenance == "acquisition"
+        else None
+    )
+    serialized_traces = 0
+    original = observation_owner._canonical_trace_bytes
+
+    def counted_trace_bytes(trace):
+        nonlocal serialized_traces
+        serialized_traces += 1
+        return original(trace)
+
+    monkeypatch.setattr(
+        observation_owner, "_canonical_trace_bytes", counted_trace_bytes
+    )
+    actual = observation_owner.mint_physical_peak_observations(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=trace,
+        evaluations=evaluations,
+        signal_processing_profile=profile,
+        resolver_mode="local_minimum",
+        trace_observation=(
+            expected[0] if reuse_trace_provenance == "observation" else None
+        ),
+        acquired_trace_provenance=acquired_provenance,
+    )
+    assert serialized_traces == (1 if reuse_trace_provenance == "none" else 0)
+    assert len(actual) == 2
+    for reference, projected in zip(expected, actual, strict=True):
+        assert canonical_peak_observation_ref_bytes(
+            reference.content, reference.generation_provenance
+        ) == canonical_peak_observation_ref_bytes(
+            projected.content, projected.generation_provenance
+        )
+    assert (
+        actual[0].content.integration.area_ms1_morphology
+        > actual[1].content.integration.area_ms1_morphology
     )

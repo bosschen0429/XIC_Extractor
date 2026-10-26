@@ -230,7 +230,7 @@ def _paired_istd_observations(
                 ),
                 evaluation,
                 config=config,
-                scope=population.scope,
+                acquired_trace_provenance=pair.acquisition_observation_provenance,
             )
         )
     return tuple(observations)

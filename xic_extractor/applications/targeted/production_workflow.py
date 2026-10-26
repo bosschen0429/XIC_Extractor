@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import pickle
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, replace
@@ -184,7 +182,6 @@ class CompletedTargetedProductionWorkflow:
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
     _acquisition_file_ids: tuple[int, ...]
     _publication_snapshot: RunOutput
-    _publication_snapshot_sha256: str
     _mint_token: InitVar[object] = None
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -206,12 +203,6 @@ class CompletedTargetedProductionWorkflow:
         if acquisition_file_ids != self._acquisition_file_ids:
             raise TargetedOutputBoundaryError(
                 "prepared Targeted workflow crossed the acquisition evidence"
-            )
-        if _run_output_sha256(self._publication_snapshot) != (
-            self._publication_snapshot_sha256
-        ):
-            raise TargetedOutputBoundaryError(
-                "completed Targeted publication snapshot was mutated"
             )
         _validate_target_population(request, self.finalized_results)
         return deepcopy(self._publication_snapshot)
@@ -262,7 +253,6 @@ def execute_targeted_production_workflow(
         finalized_results=finalized_results,
         _acquisition_file_ids=prepared.acquisition_file_ids,
         _publication_snapshot=publication_snapshot,
-        _publication_snapshot_sha256=_run_output_sha256(publication_snapshot),
         _mint_token=_COMPLETED_WORKFLOW_MINT_TOKEN,
     )
 
@@ -925,14 +915,10 @@ def _prepare_targeted_production_workflow(
     )
 
 
-def _run_output_sha256(output: RunOutput) -> str:
-    return hashlib.sha256(pickle.dumps(output, protocol=5)).hexdigest()
-
-
 def snapshot_targeted_production_inputs(
     request: TargetedApplicationRequest,
 ) -> TargetedProductionInputSnapshot:
-    """Fingerprint every mutable scientific input for a production phase."""
+    """Snapshot local RAW revisions and scientific inputs for a production phase."""
 
     raw_paths = resolve_targeted_raw_paths(request.config)
     if not raw_paths:
@@ -955,7 +941,7 @@ def snapshot_targeted_production_inputs(
         should_cancel=request.should_stop,
     )
     if _raw_file_states(raw_paths) != raw_file_states:
-        raise RuntimeError("Targeted production inputs changed during fingerprinting")
+        raise RuntimeError("Targeted production inputs changed during preparation")
     return TargetedProductionInputSnapshot(
         config=deepcopy(request.config),
         raw_paths=tuple(raw_paths),

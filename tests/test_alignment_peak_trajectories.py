@@ -31,7 +31,12 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 @pytest.mark.parametrize("offset_scatter", [0.04, 2.0])
 def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
     offset_scatter,
+    monkeypatch,
 ):
+    def unused_trajectory_fit(*args, **kwargs):
+        raise AssertionError("paired ISTD localization does not consume a trend fit")
+
+    monkeypatch.setattr(PeakTrajectory, "locate", unused_trajectory_fit)
     trajectory = PeakTrajectory(
         (),
         (
@@ -41,8 +46,8 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
             ("other_batch", 40.0),
         ),
     )
-    result = trajectory.backfill_locations(
-        ("missing",),
+    results = trajectory.backfill_locations(
+        ("missing", "other_missing"),
         reference_samples=frozenset({"ref1", "ref2", "other_batch"}),
         rt_frame=SampleRtFrame(
             injection_order=({"ref1": 1, "ref2": 2, "missing": 3}),
@@ -51,6 +56,7 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
                     "ref1": "batch",
                     "ref2": "batch",
                     "missing": "batch",
+                    "other_missing": "batch",
                     "unconfirmed": "batch",
                     "other_batch": "different",
                 }
@@ -61,10 +67,16 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
             "ref1": 8.0,
             "ref2": 9.0,
             "missing": 15.0,
+            "other_missing": 18.0,
             "unconfirmed": 10.0,
             "other_batch": 10.0,
         },
-    )["missing"]
+    )
+    assert list(results) == ["missing", "other_missing"]
+    assert results["other_missing"].location.query_rt == pytest.approx(
+        20.0 + offset_scatter / 2.0
+    )
+    result = results["missing"]
     assert result.location.basis == "paired_istd"
     assert result.location.query_rt == pytest.approx(17.0 + offset_scatter / 2.0)
     assert result.reliable is (offset_scatter < 0.5)

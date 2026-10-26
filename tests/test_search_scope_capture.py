@@ -1372,7 +1372,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     if ripple:
         assert owner_hypothesis.integration.rt_left_min <= 6.8
         assert owner_hypothesis.integration.rt_right_min >= 9.2
-    assert trace_hashes == 1
+    assert trace_hashes == 0
     assert projections == 1
     assert evaluation_calls == 0
 

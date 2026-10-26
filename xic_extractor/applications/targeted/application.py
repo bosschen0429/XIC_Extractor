@@ -94,11 +94,15 @@ class TargetedApplicationService:
             execute_targeted_production_workflow,
             snapshot_targeted_production_inputs,
         )
-        from xic_extractor.processing_identity import FingerprintCancelledError
 
         try:
             input_snapshot = snapshot_targeted_production_inputs(resolved_request)
-        except FingerprintCancelledError:
+        except InterruptedError:
+            if (
+                resolved_request.should_stop is None
+                or not resolved_request.should_stop()
+            ):
+                raise
             from xic_extractor.extraction.result_models import RunOutput
 
             return TargetedApplicationExecution(

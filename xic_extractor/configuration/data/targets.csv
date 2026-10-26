@@ -7,7 +7,7 @@ N6-HE-dA,296.1354,23.5,dR,analyte,d4-N6-2HE-dA,
 d4-N6-2HE-dA,300.1605,23.5,dR,istd,,
 8-oxodG,284.0989,17.0,dR,analyte,15N5-8-oxodG,
 15N5-8-oxodG,289.0841,17.0,dR,istd,,
-8-oxo-Guo,300.0939,14.0,R,analyte,"[13C,15N2]-8-oxo-Guo",rna_containing
+8-oxo-Guo,300.0939,14.0,R,analyte,"[13C,15N2]-8-oxo-Guo",all
 "[13C,15N2]-8-oxo-Guo",303.0913,14.0,R,istd,,
 N6-medA,266.1248,25.5,dR,analyte,d3-N6-medA,
 d3-N6-medA,269.1436,25.5,dR,istd,,

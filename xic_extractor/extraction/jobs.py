@@ -113,7 +113,9 @@ def _run_jobs(
     results: list[Any] = []
     next_job_index = 0
 
-    with factory(max_workers=max_workers, mp_context=context) as executor:
+    executor = factory(max_workers=max_workers, mp_context=context)
+    completed = False
+    try:
         future_to_job: dict[Any, RawFileJob] = {}
 
         def _submit_until_capacity() -> None:
@@ -164,6 +166,12 @@ def _run_jobs(
                             message=f"{type(exc).__name__}: {exc}",
                         )
                     )
+        completed = len(results) == len(pending_jobs)
+    finally:
+        # A delivered result has already closed its RAW context. Idle process
+        # teardown can overlap downstream publication; cancellation and failures
+        # in the runner still drain active work before returning.
+        executor.shutdown(wait=not completed, cancel_futures=not completed)
     return results
 
 

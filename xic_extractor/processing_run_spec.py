@@ -173,6 +173,10 @@ class ProcessingAcquisitionInput:
         _required_text(self.sample_stem, field="sample_stem")
         if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
             raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
+        if self.acquisition_source.content_sha256 is None:
+            raise ValueError(
+                "Persisted Discovery inputs require a content-bound source"
+            )
         require_optional_lower_sha256(
             self.blank_library_sha256, field="blank_library_sha256"
         )

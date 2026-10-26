@@ -52,6 +52,36 @@ def test_annotation_file_is_one_per_raw_folder(tmp_path) -> None:
     assert first.name.startswith("Batch_A-") and first.suffix == ".tsv"
 
 
+def test_sequence_preview_does_not_wait_for_raw_headers(tmp_path, monkeypatch):
+    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+
+    raw_dir = _raw_batch(tmp_path, monkeypatch, ("NormalBC001_DNA", "QC_Pool_1"))
+    sequence = tmp_path / "sequence.docx"
+    _create_synthetic_docx(sequence)
+    monkeypatch.setattr(
+        "xic_workbench.samples.read_analysis_set",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("RAW opened")),
+    )
+    result = read_batch_samples(
+        tmp_path / "config",
+        raw_dir,
+        dll_dir=None,
+        sequence_source=sequence,
+        import_sequence=True,
+        read_headers=False,
+    )
+    assert result["summary"]["matched_count"] == 2
+    assert result["summary"]["chronology_pending"] is True
+    assert result["summary"]["unmatched_sequence_names"]
+    assert [row["sample_role"] for row in result["samples"]] == [
+        "study_sample",
+        "pooled_qc",
+    ]
+    assert all(row["injection_order"] is None for row in result["samples"])
+    saved = load_sample_metadata(sample_annotations_path(tmp_path / "config", raw_dir))
+    assert {row.raw_stem for row in saved} == {"NormalBC001_DNA", "QC_Pool_1"}
+
+
 def test_confirmed_annotations_are_the_folder_source_until_reimported(
     tmp_path, monkeypatch
 ) -> None:
@@ -350,3 +380,17 @@ def test_an_exclusion_without_reason_is_never_written(tmp_path, monkeypatch) -> 
     # The folder's file stays readable and unchanged.
     reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
     assert reread[1]["excluded"] is False
+
+
+def test_filename_preview_preserves_unknown_role_when_groups_are_saved(
+    tmp_path, monkeypatch
+):
+    config = tmp_path / "config"
+    raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "QC_1"))
+    result = read_batch_samples(config, raw_dir, dll_dir=None, read_headers=False)
+    assert all(row["sample_role"] == "unknown" for row in result["samples"])
+    result["samples"][0]["group"] = "Exposure"
+    save_batch_samples(config, raw_dir, result["samples"])
+    saved = load_sample_metadata(sample_annotations_path(config, raw_dir))
+    assert all(row.sample_role == "unknown" for row in saved)
+    assert saved[0].group == "Exposure"

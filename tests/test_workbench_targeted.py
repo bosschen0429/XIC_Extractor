@@ -282,10 +282,11 @@ def test_targeted_run_raises_cancellation_before_publication(
         should_cancel=lambda: True,
     )
 
-    with pytest.raises(InterruptedError, match="使用者要求停止"):
+    with pytest.raises(InterruptedError, match="樣本資訊讀取已停止"):
         run.execute()
 
     assert run.available_outputs == ()
+    assert run.cancellation_reason == "樣本資訊讀取已停止。"
 
 
 def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
@@ -316,8 +317,12 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
         diagnostics=[],
     )
 
+    cancelled = False
+
     class Service:
         def execute_application(self, _request):
+            nonlocal cancelled
+            cancelled = True
             return SimpleNamespace(active_output=output, published_paths=(published,))
 
     _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [target])
@@ -329,7 +334,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
     run = module.TargetedRun(
         config_dir,
         progress=lambda _current, _total, _name: None,
-        should_cancel=lambda: True,
+        should_cancel=lambda: cancelled,
     )
 
     summary = run.execute()
@@ -366,7 +371,7 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
     run = module.TargetedRun(
         tmp_path / "config",
         progress=lambda _current, _total, _name: None,
-        should_cancel=lambda: True,
+        should_cancel=lambda: False,
     )
 
     with pytest.raises(InterruptedError, match="fingerprinting stopped"):

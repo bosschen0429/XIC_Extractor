@@ -184,8 +184,13 @@ class PhysicalPeakEvaluation:
     facts: PhysicalPeakFacts | None
     integration: IntegrationResult | None
     operations: tuple[PhysicalPeakOperation, ...]
-    # Diagnostic evidence only: never part of scientific equality or identity.
+    # Live owner intermediates for projection; not scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+
+    def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:
+        # The complete answer graph is frozen dataclasses, tuples and scalars.
+        # Copies of mutable run containers can share it without walking signals.
+        return self
 
     @property
     def requires_overlap_review(self) -> bool:

@@ -47,7 +47,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import build_local_acquisition_source_identity
 
 
 @pytest.fixture(autouse=True)
@@ -360,12 +360,39 @@ def test_workbook_only_delivery_embeds_method_settings(
     assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
-def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
+@pytest.mark.parametrize("acquired_provenance", [False, True])
+def test_publication_returns_concrete_public_result_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, acquired_provenance: bool
+) -> None:
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
         sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
     )
+    if acquired_provenance:
+        from xic_extractor.extraction.result_assembly import (
+            prepare_acquired_observation,
+        )
+        from xic_extractor.peak_detection import observations
+
+        for file_result in output.file_results:
+            source = build_local_acquisition_source_identity(
+                config.data_dir / f"{file_result.sample_name}.raw",
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+            file_result.results[target.label] = prepare_acquired_observation(
+                file_result.results[target.label],
+                acquisition_source_id=source.acquisition_source_id,
+                resolver_mode=config.resolver_mode,
+            )
+
+        def unexpected_trace_serialization(_trace):
+            raise AssertionError("acquisition already serialized this trace")
+
+        monkeypatch.setattr(
+            observations, "_canonical_trace_bytes", unexpected_trace_serialization
+        )
     request = build_targeted_application_request(
         config,
         [target],
@@ -1351,7 +1378,7 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     stale_config, stale_target, stale_output = production_case(stale_root)
     stale_raw = stale_config.data_dir / "SampleA.raw"
     stale_raw.write_bytes(b"stale acquisition")
-    stale_source = build_acquisition_source_identity(
+    stale_source = build_local_acquisition_source_identity(
         stale_raw,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1468,6 +1495,11 @@ def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) 
     )
     completed = execute_targeted_production_workflow(request, output)
     publication = publish_targeted_outputs(request, completed, output)
+    published_extraction = publication.output.file_results[0].results[target.label]
+    published_trace = published_extraction.acquisition_trace
+    assert published_trace is not None
+    expected_raw = published_trace.intensity.copy()
+    published_trace.intensity.fill(0.0)
     publication.output.file_results[0].results.clear()
     publication.output.file_results.reverse()
     publication.output.diagnostics.append(
@@ -1487,23 +1519,16 @@ def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) 
         for row in replay.output.file_results
     } == expected_areas
     assert expected_areas["SampleA"] != expected_areas["SampleB"]
+    replayed = replay.output.file_results[0].results[target.label]
+    assert replayed.acquisition_trace is not None
+    np.testing.assert_array_equal(replayed.acquisition_trace.intensity, expected_raw)
+    assert replayed.physical_evaluation is not None
+    assert replayed.physical_evaluation.retained_prepared_signal is not None
+    np.testing.assert_array_equal(
+        replayed.physical_evaluation.retained_prepared_signal.raw, expected_raw
+    )
     assert replay.output.diagnostics == []
     assert replay.paths == publication.paths
-
-
-def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-    completed._publication_snapshot.file_results[0].group = "mutated"
-
-    with pytest.raises(TargetedOutputBoundaryError, match="snapshot was mutated"):
-        publish_targeted_outputs(request, completed, output)
 
 
 def test_publisher_rejects_reordered_acquisition_after_completion(
@@ -1580,7 +1605,7 @@ def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> No
     assert not config.output_csv.exists()
 
 
-def test_service_fingerprints_each_raw_only_once(
+def test_service_publishes_without_full_raw_fingerprinting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1610,10 +1635,8 @@ def test_service_fingerprints_each_raw_only_once(
         request
     )
 
-    assert fingerprinted == [
-        config.data_dir / "SampleA.raw",
-        config.data_dir / "SampleB.raw",
-    ]
+    assert fingerprinted == []
+    assert config.output_csv.with_suffix(".xlsx").is_file()
 
 
 def test_cancellation_after_typed_completion_never_invokes_publisher(
@@ -1645,7 +1668,7 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
     assert execution.published_paths == ()
 
 
-def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalization(
+def test_cancellation_during_input_preparation_skips_acquisition_and_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1793,6 +1816,16 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     initial_counts = []
 
     def execute_reverse_identity(context, *args, **kwargs):
+        from xic_extractor.peak_detection import observations
+
+        def unexpected_trace_serialization(_trace):
+            raise AssertionError(
+                "paired ISTD trace was already prepared during acquisition"
+            )
+
+        monkeypatch.setattr(
+            observations, "_canonical_trace_bytes", unexpected_trace_serialization
+        )
         context = replace(
             context,
             results_by_sample=tuple(
@@ -1825,6 +1858,18 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 for sample, file in context.results_by_sample
                 if sample.metadata.raw_stem == "SampleC"
             )
+        if not args[1].definition.target.is_istd:
+            from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    PeakTrajectory,
+                    "backfill_locations",
+                    lambda *_a, **_k: pytest.fail(
+                        "analyte recovery must not compute unused trajectory forecasts"
+                    ),
+                )
+                return original_execute(context, *args, **kwargs)
         return original_execute(context, *args, **kwargs)
 
     monkeypatch.setattr(

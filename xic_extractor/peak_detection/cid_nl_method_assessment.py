@@ -125,6 +125,10 @@ class CidNlMethodRelations:
     individual_relations: tuple[tuple[int, int], ...]
     set_relation_event_indexes: tuple[int, ...]
 
+    def __deepcopy__(self, memo: dict[int, object]) -> CidNlMethodRelations:
+        # Geometry, precursor answers, policy and relation indexes are immutable.
+        return self
+
     @property
     def supported_candidate_indexes(self) -> frozenset[int]:
         return frozenset(candidate for _event, candidate in self.individual_relations)

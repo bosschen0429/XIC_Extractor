@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
@@ -50,12 +50,14 @@ class AnalysisSetEntry:
 
 @dataclass(frozen=True)
 class AnalysisSet:
-    """Every injection stays in chronology; only analyzed entries are processed."""
+    """Acquired chronology and annotations; only analyzed entries are processed."""
 
     entries: tuple[AnalysisSetEntry, ...]
     sequence: SequenceMatchReport | None = None
     # Unreadable RAW that would not be analyzed; reported, not ordered.
     unreadable: tuple[Path, ...] = ()
+    # Explicit non-analysis inputs whose acquisition facts were not requested.
+    unopened_context: tuple[Path, ...] = ()
 
     @property
     def sample_metadata(self) -> tuple[SampleMetadata, ...]:
@@ -86,6 +88,8 @@ def select_analysis_set(
     *,
     unreadable: Mapping[str, SampleMetadata] | None = None,
     sequence: SequenceMatchReport | None = None,
+    unopened_context: Mapping[str, SampleMetadata] | None = None,
+    unreadable_errors: Mapping[str, str] | None = None,
 ) -> AnalysisSet:
     """Give each injection its sample facts and decide analysis membership.
 
@@ -112,7 +116,10 @@ def select_analysis_set(
         )
         excluded = row is not None and row.excluded
         if fallback_role in ANALYSIS_SAMPLE_ROLES and not excluded:
-            blocking.append(PureWindowsPath(path).name)
+            read_error = (unreadable_errors or {}).get(path, "")
+            blocking.append(
+                PureWindowsPath(path).name + (f" ({read_error})" if read_error else "")
+            )
         else:
             skipped.append(Path(path))
     if blocking:
@@ -124,7 +131,9 @@ def select_analysis_set(
     entries: list[AnalysisSetEntry] = []
     analyzed_stems: set[str] = set()
     names: set[str] = set()
-    raw_aliases = {injection.raw_stem for injection in timeline}
+    raw_aliases = {injection.raw_stem for injection in timeline} | {
+        row.raw_stem for row in (unopened_context or {}).values()
+    }
     for injection in timeline:
         copy_path = _local_copy_path(injection)
         raw_stem = injection.raw_stem
@@ -169,7 +178,22 @@ def select_analysis_set(
                 context_reason=reason,
             )
         )
-    return AnalysisSet(tuple(entries), sequence, tuple(skipped))
+    for path, row in (unopened_context or {}).items():
+        entries.append(
+            AnalysisSetEntry(
+                raw_path=Path(path),
+                copy_paths=(Path(path),),
+                metadata=replace(row, sample_name=row.raw_stem, injection_order=None),
+                role_source="sample_metadata",
+                context_reason="excluded" if row.excluded else "role",
+            )
+        )
+    return AnalysisSet(
+        tuple(entries),
+        sequence,
+        tuple(skipped),
+        tuple(Path(path) for path in unopened_context or ()),
+    )
 
 
 def _sample_name(

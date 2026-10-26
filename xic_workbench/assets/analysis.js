@@ -290,9 +290,19 @@
     }
     if (summary.unreadable_raw?.length)
       notes.push(`讀不到檔頭，已排除（不分析）：${summary.unreadable_raw.join("、")}`);
+    if (summary.chronology_pending)
+      notes.push("已完成文件／檔名配對，尚未讀取 RAW 檔頭；未知角色、注射順序與樣本名稱將在分析前依 RAW 確認。");
+    if (summary.unopened_context?.length)
+      notes.push(`未開啟非分析 RAW（角色或排除已明確指定）：${summary.unopened_context.join("、")}`);
+    if (summary.unmatched_sequence_names?.length)
+      notes.push(`未配對的上機資訊：${summary.unmatched_sequence_names.join("、")}`);
+    if (summary.ambiguous_sequence_names?.length)
+      notes.push(`需確認的重複／歧義配對：${summary.ambiguous_sequence_names.join("、")}`);
+    if (summary.unmatched_raw_stems?.length)
+      notes.push(`尚無上機資訊配對的 RAW：${summary.unmatched_raw_stems.join("、")}`);
     const unmatched = summary.unmatched_sequence_names?.length;
     $(`${prefix}-summary`).textContent =
-      `RAW ${summary.raw_count} 次上機 · 上機資訊配對 ${summary.matched_count} 個` +
+      `RAW ${summary.raw_count} ${summary.chronology_pending ? "個檔案" : "次上機"} · 上機資訊配對 ${summary.matched_count} 個` +
       (unmatched ? ` · ${unmatched} 筆上機資訊未配對` : "") +
       (notes.length ? ` · ${notes.length} 處要確認，注射順序與樣本名稱以 RAW 為準` : "");
     $(`${prefix}-conflicts`).replaceChildren(...notes.map((note) => el("li", note)));
@@ -413,8 +423,8 @@
           "info",
           "樣本與上機資訊（選用）",
           order
-            ? `上機資訊 ${pathTail(order)}；可讀取 RAW 後確認角色、組別與排除`
-            : "尚未讀取；可讀取 RAW 後確認角色、組別與排除",
+            ? `上機資訊 ${pathTail(order)}；可先列出檔名並確認角色、組別與排除`
+            : "尚未讀取；可先列出檔名並確認角色、組別與排除",
           refresh,
         ),
       ];
@@ -429,7 +439,9 @@
         "info",
         "各組樣本數",
         overview.groups.map((g) => `${g.group} ${g.count}`).join(" · ") ||
-          "沒有要分析的樣本",
+          (set.rows.some((row) => row.sample_role === "unknown")
+            ? "樣本角色待確認；執行時讀取 RAW 資訊"
+            : "沒有要分析的樣本"),
         edit,
       ),
     );
@@ -1013,7 +1025,7 @@
     $(sampleId(page, "role-summary")).replaceChildren(
       ...(set.rows.length
         ? []
-        : [el("span", "讀取 RAW 後可檢視樣本，並指定角色、組別與排除。", "subtle")]),
+        : [el("span", "先列出檔名或匯入上機資訊，即可指定角色、組別與排除；不必等待 RAW 掃描。", "subtle")]),
       ...roles
         .filter((role) => counts.has(role))
         .map((role) =>
@@ -1302,7 +1314,7 @@
   async function openAnnotations(page, mode, path = "") {
     const set = state.sampleSets[page];
     if (!set.rows.length) {
-      ui.toast("請先讀取 RAW 樣本。");
+      ui.toast("請先列出樣本檔名。");
       return;
     }
     state.annotation = { page, mode, preview: null };
@@ -1521,7 +1533,7 @@
     }
     if (!set.rows.length) {
       const tr = el("tr");
-      const td = el("td", "尚未讀取樣本。關閉此視窗後按「讀取 RAW 樣本」。");
+      const td = el("td", "尚未讀取樣本。關閉此視窗後按「列出樣本檔名」。");
       td.colSpan = 9;
       td.className = "subtle";
       tr.append(td);

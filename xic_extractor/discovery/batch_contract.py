@@ -247,6 +247,8 @@ def discovery_receipt_index_fields(
 
     _require_receipt(receipt)
     source = receipt.acquisition_source
+    if source.content_sha256 is None:
+        raise ValueError("Discovery batch indexes require a content-bound source")
     return {
         "discovery_receipt_id": receipt.discovery_receipt_id,
         "candidate_artifact_schema_version": (

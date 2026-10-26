@@ -1,6 +1,7 @@
 """Pure MS2 scan data shared by acquisition and domain processing."""
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,11 +53,24 @@ class Ms2ScanEvent:
     scan_number: int
 
 
+Ms2PrecursorScope = Callable[[float, Ms2PrecursorMetadata | None], bool]
+"""Whether an MS2 event's recorded precursor facts warrant reading its spectrum."""
+
+
 @dataclass(frozen=True)
 class Ms2Window:
-    """One sample's events from one requested retention-time window."""
+    """One sample's events from one requested retention-time window.
+
+    Events outside a precursor scope were acquired but not read; they still
+    count toward the window's scanned events.
+    """
 
     sample_key: str
     rt_min: float
     rt_max: float
     events: tuple[Ms2ScanEvent, ...]
+    unread_event_count: int = 0
+
+    @property
+    def scanned_event_count(self) -> int:
+        return len(self.events) + self.unread_event_count

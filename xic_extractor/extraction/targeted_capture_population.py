@@ -26,6 +26,7 @@ from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
 )
+from xic_extractor.extraction.result_assembly import TARGETED_ACQUISITION_TRACE_SOURCE
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
@@ -42,9 +43,9 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
+    PeakObservationGenerationProvenance,
     PeakObservationRef,
-    mint_peak_observation_ref,
-    physical_peak_observation_integration,
+    mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_ms1_observation_peak_hypothesis,
@@ -64,8 +65,6 @@ from xic_extractor.processing_identity import (
     resolve_request_acquisition_source,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-_TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
 
 ResultsBySample = tuple[
     tuple[ResolvedCanonicalSampleIdentity, FileResult],
@@ -283,6 +282,7 @@ def build_targeted_capture_population(
 ) -> TargetedCapturePopulation:
     """Capture every sample that retained a physical evaluation for ``target``."""
 
+    profile = targeted_signal_processing_profile(config)
     label = target.definition.target.label
     ms1_only = target.definition.target.neutral_loss_da is None
     method_subject = None if ms1_only else cid_nl_method_subject_from_target(target)
@@ -334,7 +334,7 @@ def build_targeted_capture_population(
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
             peak_config=config,
-            signal_processing_profile=targeted_signal_processing_profile(config),
+            signal_processing_profile=profile,
         ),
         evidence_providers=(
             ()
@@ -423,24 +423,31 @@ def build_targeted_capture_population(
                 )
             )
             continue
-        universe = []
-        for evaluation in result.candidate_physical_evaluations:
-            if (
-                evaluation is result.physical_evaluation
-                and selected_observation is not None
-            ):
-                universe.append(selected_observation)
-            else:
-                universe.append(
-                    mint_candidate_peak_observation(
-                        processing_owners,
-                        sample,
-                        trace,
-                        evaluation,
-                        config=config,
-                        scope=scope,
-                    )
-                )
+        alternate_evaluations = tuple(
+            evaluation
+            for evaluation in result.candidate_physical_evaluations
+            if evaluation is not result.physical_evaluation
+            or selected_observation is None
+        )
+        alternate_observations = iter(
+            mint_physical_peak_observations(
+                processing_owners=processing_owners,
+                sample=sample,
+                trace=trace,
+                evaluations=alternate_evaluations,
+                signal_processing_profile=profile,
+                resolver_mode=config.resolver_mode,
+                trace_observation=selected_observation,
+                acquired_trace_provenance=result.acquisition_observation_provenance,
+            )
+        )
+        universe = tuple(
+            selected_observation
+            if evaluation is result.physical_evaluation
+            and selected_observation is not None
+            else next(alternate_observations)
+            for evaluation in result.candidate_physical_evaluations
+        )
         entries.append(
             TargetedSampleCapture(
                 sample=sample,
@@ -449,7 +456,7 @@ def build_targeted_capture_population(
                 candidate_id=candidate_id,
                 captured=captured,
                 selected_observation=selected_observation,
-                observation_universe=tuple(universe),
+                observation_universe=universe,
             )
         )
     return TargetedCapturePopulation(
@@ -487,7 +494,7 @@ def bound_acquisition_trace(
     return replace(
         trace,
         sample_name=sample.metadata.sample_name,
-        source=_TRACE_SOURCE,
+        source=TARGETED_ACQUISITION_TRACE_SOURCE,
         acquisition_source_id=source.acquisition_source_id,
     )
 
@@ -521,23 +528,17 @@ def mint_candidate_peak_observation(
     evaluation: PhysicalPeakEvaluation,
     *,
     config: ExtractionConfig,
-    scope: TargetSearchScope,
+    acquired_trace_provenance: PeakObservationGenerationProvenance | None,
 ) -> PeakObservationRef:
-    return mint_peak_observation_ref(
+    return mint_physical_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
         trace=trace,
-        integration=physical_peak_observation_integration(evaluation),
-        selection_intensity=(
-            evaluation.retained_prepared_signal.positive_signal
-            if evaluation.retained_prepared_signal is not None
-            else None
-        ),
+        evaluations=(evaluation,),
         resolver_mode=config.resolver_mode,
-        proposal_sources=("canonical_physical_segment",),
-        physical_evaluation=evaluation,
-        signal_processing_profile=scope.method_constraints.signal_processing_profile,
-    )
+        signal_processing_profile=targeted_signal_processing_profile(config),
+        acquired_trace_provenance=acquired_trace_provenance,
+    )[0]
 
 
 def _capture_binding(
@@ -577,6 +578,7 @@ def _capture_binding(
         retained_selected_integration=None,
         selection_policy="capture_default",
         physical_evaluation=physical_evaluation,
+        acquired_trace_provenance=result.acquisition_observation_provenance,
     )
 
 

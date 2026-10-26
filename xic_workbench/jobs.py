@@ -106,7 +106,8 @@ class AnalysisJobs:
                 "message": "",
                 "started_at": time.time(),
                 "available_outputs": [],
-                "cancellable": kind in {"targeted", "untargeted", "inspector"},
+                "cancellable": kind
+                in {"targeted", "untargeted", "inspector", "samples"},
             }
             if kind == "samples":
                 # Both flows read samples; the job card follows the asking page.
@@ -261,6 +262,9 @@ class AnalysisJobs:
                 if values.get("sequence_source")
                 else None,
                 import_sequence=bool(values.get("import_sequence")),
+                read_headers=False,
+                progress=self._progress,
+                should_cancel=self._cancel.is_set,
                 legacy_roles=read_legacy_roles(
                     Path(values["raw_dir"]), config_dir=self.config_dir
                 ),

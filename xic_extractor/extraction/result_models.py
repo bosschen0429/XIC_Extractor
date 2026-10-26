@@ -26,6 +26,9 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.observations import (
+    PeakObservationGenerationProvenance,
+)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -53,6 +56,9 @@ class ExtractionResult:
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
     acquisition_trace: Trace | None = None
+    acquisition_observation_provenance: PeakObservationGenerationProvenance | None = (
+        None
+    )
     physical_evaluation: PhysicalPeakEvaluation | None = None
     candidate_physical_evaluations: tuple[PhysicalPeakEvaluation, ...] = ()
     cid_nl_products: tuple[MS2ProductEvidence, ...] = ()

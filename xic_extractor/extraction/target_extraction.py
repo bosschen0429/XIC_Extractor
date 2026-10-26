@@ -20,6 +20,7 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
+from xic_extractor.extraction.result_assembly import prepare_acquired_observation
 from xic_extractor.extraction.scoring_factory import (
     is_credible_istd_peak,
     paired_istd_fwhm,
@@ -29,6 +30,7 @@ from xic_extractor.extraction.targeted_peak_selection import (
     assess_targeted_candidate_population,
     discovery_settings_for_tag,
     prepare_targeted_method_seeds,
+    targeted_ms2_precursor_scope,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.ms2_scan_models import Ms2Window
@@ -70,6 +72,20 @@ def extract_raw_file_result(
         scoring_context_factory=scoring_context_factory,
         expected_acquisition_source=expected_acquisition_source,
     )
+    if expected_acquisition_source is not None:
+        file_result = replace(
+            file_result,
+            results={
+                label: prepare_acquired_observation(
+                    result,
+                    acquisition_source_id=(
+                        expected_acquisition_source.source.acquisition_source_id
+                    ),
+                    resolver_mode=config.resolver_mode,
+                )
+                for label, result in file_result.results.items()
+            },
+        )
     return result_models.RawFileExtractionResult(
         raw_index=raw_index,
         sample_name=file_result.sample_name,
@@ -109,11 +125,16 @@ def process_file(
             if not targets:
                 return result_models.FileResult(sample_name=sample_name, results={}), []
             start, end = raw.acquisition_rt_bounds()
+            precursor_scope = targeted_ms2_precursor_scope(targets)
             sample_window = (
                 acquire_ms2_window(
-                    raw, sample_key=sample_name, rt_min=start, rt_max=end
+                    raw,
+                    sample_key=sample_name,
+                    rt_min=start,
+                    rt_max=end,
+                    precursor_scope=precursor_scope,
                 )
-                if any(target.neutral_loss_da is not None for target in targets)
+                if precursor_scope is not None
                 else Ms2Window(
                     sample_key=sample_name, rt_min=start, rt_max=end, events=()
                 )
@@ -249,6 +270,7 @@ def extract_one_target(
                 sample_key=sample_name,
                 rt_min=context_rt_min,
                 rt_max=context_rt_max,
+                precursor_scope=targeted_ms2_precursor_scope([target]),
             )
             if target.neutral_loss_da is not None
             else Ms2Window(

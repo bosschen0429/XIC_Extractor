@@ -497,7 +497,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     tmp_path: Path,
 ) -> None:
     original_path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    renamed_path = _raw(tmp_path / "renamed_sample.raw", b"source-a")
     config = _config(tmp_path)
     original = _request(
         config,
@@ -506,6 +505,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
             injection_order={"sample_a": 1},
         ),
     )
+    renamed_path = original_path.rename(tmp_path / "renamed_sample.raw")
     renamed = _request(
         config,
         [renamed_path],
@@ -516,6 +516,33 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
 
     assert original.acquisition_sources == renamed.acquisition_sources
     assert original.processing_request_id != renamed.processing_request_id
+
+
+def test_targeted_request_uses_local_revision_without_reading_raw_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = _raw(tmp_path / "sample_a.raw", b"source-a")
+
+    def reject_content_read(*_args, **_kwargs):
+        pytest.fail("Normal Targeted preparation must not read full RAW content")
+
+    monkeypatch.setattr(Path, "open", reject_content_read)
+    request = _request(
+        _config(tmp_path),
+        [path],
+        resolved=ResolvedTargetedInputs(injection_order={"sample_a": 1}),
+    )
+    source = request.acquisition_sources[0]
+    state = path.stat()
+    assert source.content_sha256 is None
+    assert source.local_file_revision == (
+        state.st_dev,
+        state.st_ino,
+        state.st_size,
+        state.st_mtime_ns,
+        state.st_ctime_ns,
+    )
 
 
 def test_request_invalidates_changed_source_or_target_window(
@@ -634,8 +661,12 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
             ),
         )
 
-    with pytest.raises(IdentityContractError, match="duplicate"):
-        _request(config, [first, second])
+    # Byte-identical copies remain different local files without a content audit.
+    request = _request(config, [first, second])
+    assert (
+        len({source.acquisition_source_id for source in request.acquisition_sources})
+        == 2
+    )
 
     with pytest.raises(IdentityContractError, match="injection_order values"):
         _request(

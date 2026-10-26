@@ -12,6 +12,35 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
     assert "clr" not in module.__dict__
 
 
+def test_injection_header_translates_missing_ms_device_with_file_context():
+    from datetime import datetime
+
+    from xic_extractor.raw_reader import RawReaderError, _injection_header
+
+    class MissingDevice(Exception):
+        pass
+
+    failure = MissingDevice("RunHeaderEx")
+
+    class VendorRaw:
+        SampleInformation = SimpleNamespace()
+
+        @property
+        def RunHeaderEx(self):
+            raise failure
+
+    handle = SimpleNamespace(
+        _raw_file=VendorRaw(),
+        sample_header=SimpleNamespace(creation_date=datetime(2026, 1, 1)),
+        _thermo=SimpleNamespace(header_errors=(MissingDevice,)),
+    )
+    with pytest.raises(
+        RawReaderError, match="no selected MS device.*NoMS.raw"
+    ) as error:
+        _injection_header(handle, Path("NoMS.raw"))
+    assert error.value.__cause__ is failure
+
+
 def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> None:
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
@@ -528,17 +557,27 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     assert raw.disposed
 
 
+@pytest.mark.parametrize("local_revision", [False, True])
 def test_open_raw_uses_owner_verified_path_state_without_rehashing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    local_revision: bool,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_acquisition_source_identity,
+        build_local_acquisition_source_identity,
+    )
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
-    source = build_acquisition_source_identity(
+    source_builder = (
+        build_local_acquisition_source_identity
+        if local_revision
+        else build_acquisition_source_identity
+    )
+    source = source_builder(
         raw_path,
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
@@ -565,7 +604,7 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
         raw_path,
         tmp_path,
         expected_acquisition_source=source,
-        _expected_path_identity=path_identity,
+        _expected_path_identity=None if local_revision else path_identity,
         _import_module=_working_imports(),
         _thermo=_fake_thermo(_FakeRaw()),
     ):
@@ -573,18 +612,29 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
 
 
 @pytest.mark.parametrize("replacement_phase", ["before_open", "during_open"])
+@pytest.mark.parametrize("local_revision", [False, True])
 def test_open_raw_rejects_stale_owner_verified_path_state(
-    tmp_path: Path, replacement_phase: str
+    tmp_path: Path,
+    replacement_phase: str,
+    local_revision: bool,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_acquisition_source_identity,
+        build_local_acquisition_source_identity,
+    )
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     replacement_path = tmp_path / "replacement.raw"
     raw_path.write_bytes(b"sample-a")
     replacement_path.write_bytes(b"sample-b")
-    source = build_acquisition_source_identity(
+    source_builder = (
+        build_local_acquisition_source_identity
+        if local_revision
+        else build_acquisition_source_identity
+    )
+    source = source_builder(
         raw_path,
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
@@ -609,7 +659,7 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
             return raw
 
         thermo.raw_file_reader_adapter.FileFactory = replace_during_open
-        message = "RAW source path changed while the vendor handle was opening"
+        message = "RAW source .*changed while the vendor handle was opening"
 
     with pytest.raises(
         raw_reader.RawReaderError,
@@ -619,7 +669,7 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
             raw_path,
             tmp_path,
             expected_acquisition_source=source,
-            _expected_path_identity=path_identity,
+            _expected_path_identity=None if local_revision else path_identity,
             _import_module=_working_imports(),
             _thermo=thermo,
         )
@@ -1015,6 +1065,51 @@ def test_iter_ms2_scan_subset_matches_full_window_for_selected_scans() -> None:
         selected[0].scan.intensities,
         full[1].scan.intensities,
     )
+
+
+def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
+    from xic_extractor.precursor_evidence import PrecursorMassScope
+    from xic_extractor.raw_reader import RawFileHandle
+
+    class _TrackingRaw(_FakeRaw):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.scan_calls = []
+
+        def ScanNumberFromRetentionTime(self, rt: float) -> int:
+            return 1 if rt <= 8.0 else 3
+
+        def GetSimplifiedScan(self, scan_number):
+            self.scan_calls.append(scan_number)
+            return super().GetSimplifiedScan(scan_number)
+
+    raw = _TrackingRaw(
+        filters={
+            1: _FakeFilter(is_ms2=True, precursor_mz=258.1),
+            2: _FakeFilter(is_ms2=True, precursor_mz=400.2),
+            3: _FakeFilter(is_ms2=False, precursor_mz=258.1),
+        },
+        scans={
+            1: _FakeScan([142.05], [50.0]),
+            2: _FakeScan([284.15], [60.0]),
+        },
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+    full = tuple(handle.iter_ms2_scans(rt_min=8.0, rt_max=8.2))
+    raw.scan_calls.clear()
+
+    events, unread = handle.read_ms2_window(
+        8.0,
+        8.2,
+        precursor_scope=PrecursorMassScope.around(
+            ((258.1, 0.005),), maximum_inference_radius_da=0.8
+        ),
+    )
+
+    assert [event.scan_number for event in full] == [1, 2]
+    assert events == full[:1]
+    assert unread == 1
+    assert raw.scan_calls == [1]
 
 
 def _write_expected_dlls(path: Path) -> None:

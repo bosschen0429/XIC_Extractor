@@ -113,3 +113,7 @@ class PeakDetectionResult:
     candidate_scores: tuple[PeakCandidateScore, ...] = ()
     selection_reference_rt: float | None = None
     paired_istd_anchor_rt: float | None = None
+
+    def __deepcopy__(self, memo: dict[int, object]) -> PeakDetectionResult:
+        # Peak geometry, scores and evidence facts are frozen scalar/tuple graphs.
+        return self

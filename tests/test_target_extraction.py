@@ -684,6 +684,82 @@ def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path)
         assert {p.precursor_mz for p in result.cid_nl_products} == {target.mz}
 
 
+def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Window
+
+    target = _intent_target(8.0)
+    product = target.mz - target.neutral_loss_da
+
+    def event(number, rt, selected, *, mono=None):
+        scan = Ms2Scan(
+            number,
+            rt,
+            selected,
+            np.array([product, selected - target.neutral_loss_da]),
+            np.array([1000.0, 900.0]),
+            1000.0,
+            Ms2PrecursorMetadata(
+                monoisotopic_mz=mono,
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=number - 1,
+            ),
+        )
+        return Ms2ScanEvent(scan, None, number)
+
+    events = (
+        event(7, 7.98, target.mz),
+        event(9, 8.0, target.mz + 0.5),
+        event(11, 8.02, target.mz + 1.00335, mono=target.mz),
+        event(13, 8.04, 400.2),
+    )
+    rt = np.linspace(0, 12, 1201)
+    reads = []
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            return rt, 10 + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+
+        def iter_ms2_scans(self, low, high):
+            reads.append((low, high))
+            return iter(events)
+
+    config = _strategy_config(tmp_path)
+
+    def extract(sample_window):
+        results = {}
+        target_extraction.extract_one_target(
+            Raw(),
+            config,
+            "sample",
+            target,
+            reference_rt=8.0,
+            sample_window=sample_window,
+            results=results,
+            diagnostics=[],
+            scoring_context_factory=build_scoring_context_factory(config=config),
+        )
+        return results[target.label]
+
+    unscoped = extract(Ms2Window("sample", 0.0, 12.0, events))
+    scoped = extract(None)
+
+    assert reads == [(0.0, 12.0)]
+    assert {p.precursor_mz_basis for p in unscoped.cid_nl_products} == {
+        "scan_precursor",
+        "scan_monoisotopic",
+        "product_plus_neutral_loss",
+    }
+    assert scoped.cid_nl_products == unscoped.cid_nl_products
+    assert scoped.cid_nl_evaluation_receipt == unscoped.cid_nl_evaluation_receipt
+    assert scoped.cid_nl_evaluation_receipt.scanned_event_count == len(events)
+    assert scoped.selected_cid_nl_supported == unscoped.selected_cid_nl_supported
+
+
 @pytest.mark.parametrize("neighbour_loss_match", [False, True])
 def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
     tmp_path, neighbour_loss_match
