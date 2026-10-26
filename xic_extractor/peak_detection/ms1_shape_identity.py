@@ -247,22 +247,26 @@ class LocalPeakShapeComparisons:
     """
 
     def __init__(self, shapes: Iterable[LocalPeakShape]) -> None:
-        self._blocks: dict[LocalPeakShape, tuple[_ShapeComparisonBlock, int]] = {}
+        # Retain the objects while indexing by identity; comparing a prepared
+        # pair must not hash every grid value again.
+        self._shapes = tuple(shapes)
+        rows: dict[LocalPeakShape, tuple[_ShapeComparisonBlock, int]] = {}
         groups: dict[tuple[float, int], list[LocalPeakShape]] = defaultdict(list)
-        for shape in dict.fromkeys(shapes):
+        for shape in dict.fromkeys(self._shapes):
             groups[(shape.half_window_min, len(shape.intensity))].append(shape)
         for group in groups.values():
             for start in range(0, len(group), 256):
                 shapes_in_block = group[start : start + 256]
                 block = _joint_shape_correlations(shapes_in_block)
                 for row, shape in enumerate(shapes_in_block):
-                    self._blocks[shape] = (block, row)
+                    rows[shape] = (block, row)
+        self._blocks = {id(shape): rows[shape] for shape in self._shapes}
 
     def compare(
         self, left: LocalPeakShape, right: LocalPeakShape
     ) -> ShapeSimilarityResult:
-        first = self._blocks.get(left)
-        second = self._blocks.get(right)
+        first = self._blocks.get(id(left))
+        second = self._blocks.get(id(right))
         if (
             first is None
             or second is None
