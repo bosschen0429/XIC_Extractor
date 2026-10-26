@@ -31,9 +31,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    validate_bounded_physical_peak_evaluation,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
@@ -141,7 +138,6 @@ class CaptureCandidateBinding:
                 "retained capture selection must use one exact IntegrationResult"
             )
         if self.source_physical_evaluation is not None:
-            validate_bounded_physical_peak_evaluation(self.source_physical_evaluation)
             if (
                 self.physical_evaluation is None
                 or self.source_physical_evaluation.question.query_rt_min
@@ -153,7 +149,6 @@ class CaptureCandidateBinding:
                     "fresh physical capture lost its source question"
                 )
         if self.physical_evaluation is not None:
-            validate_bounded_physical_peak_evaluation(self.physical_evaluation)
             question = self.physical_evaluation.question
             if (
                 self.selection_policy != "capture_default"
@@ -290,7 +285,6 @@ def physical_capture_input_payload(
     """Pin the profile and owner-issued physical answers in request identity."""
     candidates = {}
     for candidate_id, evaluation in sorted(evaluations.items()):
-        validate_bounded_physical_peak_evaluation(evaluation)
         candidates[candidate_id] = _physical_evaluation_identity(evaluation)
     return {
         "schema_version": "physical_capture_inputs",
@@ -300,8 +294,8 @@ def physical_capture_input_payload(
 
 
 def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[str, str]:
-    # Raw payload inputs are validated above; scope bindings validated their
-    # physical owners at construction. This projection only joins identities.
+    # Physical production and decoding validate the immutable owner answers.
+    # Request/scope projection only joins their established identities.
     return {
         "prepared_signal_id": evaluation.prepared.prepared_signal_id,
         "physical_question_id": evaluation.question.physical_question_id,

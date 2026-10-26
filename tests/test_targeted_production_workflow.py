@@ -1070,6 +1070,7 @@ def production_case(
     *,
     sample_names: tuple[str, ...] = ("SampleA",),
     sample_peak_scales: dict[str, float] | None = None,
+    secondary_peak: bool = False,
 ) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
     target = _target()
@@ -1087,6 +1088,8 @@ def production_case(
         scale = scales.get(sample_name, 1.0)
         rt = np.linspace(1.0, 2.0, 101)
         intensity = (10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)) * scale
+        if secondary_peak:
+            intensity += 300.0 * scale * np.exp(-((rt - 1.8) ** 2) / 0.0005)
         trace = Trace.from_arrays(
             sample_name=sample_name,
             mz=target.mz,
@@ -1180,21 +1183,31 @@ def production_case(
         diagnostics=[],
     )
     for file_result in output.file_results:
+        result = file_result.results[target.label]
+        alternatives = ()
+        if secondary_peak:
+            alternatives = (
+                _physical_evaluation(
+                    result.acquisition_trace, config, query_rt_min=1.8
+                ),
+            )
         file_result.results[target.label] = with_method_universe(
-            file_result.results[target.label], target
+            result, target, additional_evaluations=alternatives
         )
 
     return config, target, output
 
 
-def with_method_universe(result: ExtractionResult, target: Target) -> ExtractionResult:
+def with_method_universe(
+    result: ExtractionResult, target: Target, *, additional_evaluations=()
+) -> ExtractionResult:
     """Complete the one-peak/one-event acquisition fixture before finalization."""
     evaluation = result.physical_evaluation
     evaluations = (
         (evaluation,)
         if evaluation is not None and evaluation.integration is not None
         else ()
-    )
+    ) + additional_evaluations
     policy = DdaCidNlPeakSupportPolicy(
         precursor_tolerance_da=target.mz * target.ppm_tol / 1e6,
         neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
@@ -1571,3 +1584,33 @@ def test_same_reported_peak_keeps_its_quality_reasons(tmp_path: Path) -> None:
         backfill_supported=False,
     )
     assert updated.review_reasons == projection.review_reasons
+
+
+def test_finalization_projects_retained_candidate_answers_without_resolving_again(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.peak_detection import observations
+
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+        secondary_peak=True,
+    )
+    assert all(
+        len(file.results[target.label].candidate_physical_evaluations) == 2
+        for file in output.file_results
+    )
+    request = build_targeted_application_request(
+        config, [target], injection_order={"SampleA": 1, "SampleB": 2}
+    )
+
+    def unexpected_resolution(*args, **kwargs):
+        raise AssertionError("finalization recomputed an already-owned physical answer")
+
+    monkeypatch.setattr(observations, "prepare_physical_signal", unexpected_resolution)
+    monkeypatch.setattr(observations, "evaluate_physical_peak", unexpected_resolution)
+    result = execute_targeted_production_workflow(request, output)[0]
+    assert tuple(d.value for d in result.completed_projection.decisions) == tuple(
+        file.results[target.label].reported_peak_area for file in output.file_results
+    )

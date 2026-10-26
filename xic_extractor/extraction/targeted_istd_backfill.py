@@ -230,7 +230,6 @@ def _paired_istd_observations(
                 ),
                 evaluation,
                 config=config,
-                scope=population.scope,
             )
         )
     return tuple(observations)

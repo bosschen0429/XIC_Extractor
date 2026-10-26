@@ -42,7 +42,6 @@ from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-    validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
@@ -456,6 +455,78 @@ def mint_peak_observation_ref(
     )
 
 
+def mint_physical_peak_observations(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    trace: Trace,
+    evaluations: tuple[PhysicalPeakEvaluation, ...],
+    signal_processing_profile: SignalProcessingProfile,
+    resolver_mode: str,
+    capture_stage: str = "initial_capture",
+) -> tuple[PeakObservationRef, ...]:
+    """Project retained physical-owner answers for one trace without re-solving it.
+
+    Acquisition/physical decoding owns evaluation validity. This handoff checks
+    the current sample, trace and profile once; candidate projections share their
+    full-trace provenance, but retain their own selected region and artifact.
+    Independently assembled integrations use ``mint_peak_observation_ref``.
+    """
+    if not evaluations:
+        return ()
+    retained = evaluations[0].retained_prepared_signal
+    if retained is None or retained.profile != signal_processing_profile:
+        raise PeakObservationContractError(
+            "physical observations lost retained profile"
+        )
+    if not (
+        np.array_equal(trace.rt, retained.rt)
+        and np.array_equal(trace.intensity, retained.raw)
+    ):
+        raise PeakObservationContractError("physical observations cross retained trace")
+    selection_values = np.asarray(retained.positive_signal, dtype=float)
+    provenance: PeakObservationGenerationProvenance | None = None
+    observations = []
+    for evaluation in evaluations:
+        if (
+            evaluation.retained_prepared_signal is not retained
+            and evaluation.retained_prepared_signal != retained
+        ):
+            raise PeakObservationContractError(
+                "physical observations cross trace context"
+            )
+        integration = physical_peak_observation_integration(evaluation)
+        if provenance is None:
+            _validate_peak_observation_inputs(
+                processing_owners=processing_owners,
+                sample=sample,
+                trace=trace,
+                integration=integration,
+            )
+        content, provenance = _project_peak_observation_values(
+            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            trace=trace,
+            integration=integration,
+            selection_values=selection_values,
+            selected_indices=integration.raw_scan_indices,
+            resolver_mode=resolver_mode,
+            proposal_sources=("canonical_physical_segment",),
+            shared_trace_provenance=provenance,
+        )
+        observations.append(
+            _mint_peak_observation_artifact(
+                processing_owners=processing_owners,
+                content=content,
+                generation_provenance=provenance,
+                source_trace=trace,
+                physical_evaluation=evaluation,
+                signal_processing_profile=signal_processing_profile,
+                capture_stage=capture_stage,
+            )
+        )
+    return tuple(observations)
+
+
 def _validate_peak_observation_inputs(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -603,6 +674,7 @@ def _project_peak_observation_values(
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
+    shared_trace_provenance: PeakObservationGenerationProvenance | None = None,
 ) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
     """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
@@ -625,7 +697,9 @@ def _project_peak_observation_values(
             intensity=selected_intensity,
             integration=normalized_integration,
         ),
-        PeakObservationGenerationProvenance(
+        replace(shared_trace_provenance, selected_trace_indices=selected_indices)
+        if shared_trace_provenance is not None
+        else PeakObservationGenerationProvenance(
             full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
             selection_trace_sha256=hashlib.sha256(
                 _canonical_selection_trace_bytes(trace, selection_values)
@@ -754,16 +828,23 @@ def validate_peak_observation_binding(
         )
 
 
+def _finite_signal_values(values: np.ndarray, *, field: str) -> list[float]:
+    numeric = np.asarray(values, dtype=float)
+    if not np.isfinite(numeric).all():
+        raise PeakObservationContractError(f"{field} must be finite")
+    # Canonical JSON represents both signed zeros as 0.0.
+    return cast(list[float], np.where(numeric == 0.0, 0.0, numeric).tolist())
+
+
 def _canonical_trace_bytes(trace: Trace) -> bytes:
     return _canonical_json_bytes(
         {
             "schema": "ms1_trace_generation_provenance",
             "mz": _finite_float(float(trace.mz), field="trace.mz"),
-            "rt": [_finite_float(float(value), field="trace.rt") for value in trace.rt],
-            "intensity": [
-                _finite_float(float(value), field="trace.intensity")
-                for value in trace.intensity
-            ],
+            "rt": _finite_signal_values(trace.rt, field="trace.rt"),
+            "intensity": _finite_signal_values(
+                trace.intensity, field="trace.intensity"
+            ),
             "query_rt_min": _finite_float(float(trace.rt_min), field="trace.rt_min"),
             "query_rt_max": _finite_float(float(trace.rt_max), field="trace.rt_max"),
             "query_ppm_tol": _finite_float(float(trace.ppm_tol), field="trace.ppm_tol"),
@@ -780,13 +861,10 @@ def _canonical_selection_trace_bytes(
     return _canonical_json_bytes(
         {
             "schema": "ms1_peak_selection_trace",
-            "rt": [
-                _finite_float(float(value), field="selection.rt") for value in trace.rt
-            ],
-            "intensity": [
-                _finite_float(float(value), field="selection.intensity")
-                for value in selection_intensity
-            ],
+            "rt": _finite_signal_values(trace.rt, field="selection.rt"),
+            "intensity": _finite_signal_values(
+                selection_intensity, field="selection.intensity"
+            ),
         }
     )
 
@@ -1051,7 +1129,6 @@ def physical_peak_observation_integration(
     evaluation: PhysicalPeakEvaluation,
 ) -> IntegrationResult:
     """Bind the physical owner's raw descriptor to its exact selected samples."""
-    validate_bounded_physical_peak_evaluation(evaluation)
     facts = evaluation.facts
     integration = evaluation.integration
     if evaluation.state != "available" or facts is None or integration is None:

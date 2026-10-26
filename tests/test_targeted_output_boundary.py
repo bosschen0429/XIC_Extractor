@@ -1468,6 +1468,11 @@ def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) 
     )
     completed = execute_targeted_production_workflow(request, output)
     publication = publish_targeted_outputs(request, completed, output)
+    published_extraction = publication.output.file_results[0].results[target.label]
+    published_trace = published_extraction.acquisition_trace
+    assert published_trace is not None
+    expected_raw = published_trace.intensity.copy()
+    published_trace.intensity.fill(0.0)
     publication.output.file_results[0].results.clear()
     publication.output.file_results.reverse()
     publication.output.diagnostics.append(
@@ -1487,6 +1492,14 @@ def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) 
         for row in replay.output.file_results
     } == expected_areas
     assert expected_areas["SampleA"] != expected_areas["SampleB"]
+    replayed = replay.output.file_results[0].results[target.label]
+    assert replayed.acquisition_trace is not None
+    np.testing.assert_array_equal(replayed.acquisition_trace.intensity, expected_raw)
+    assert replayed.physical_evaluation is not None
+    assert replayed.physical_evaluation.retained_prepared_signal is not None
+    np.testing.assert_array_equal(
+        replayed.physical_evaluation.retained_prepared_signal.raw, expected_raw
+    )
     assert replay.output.diagnostics == []
     assert replay.paths == publication.paths
 

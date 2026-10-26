@@ -43,8 +43,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
-    mint_peak_observation_ref,
-    physical_peak_observation_integration,
+    mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_ms1_observation_peak_hypothesis,
@@ -283,6 +282,7 @@ def build_targeted_capture_population(
 ) -> TargetedCapturePopulation:
     """Capture every sample that retained a physical evaluation for ``target``."""
 
+    profile = targeted_signal_processing_profile(config)
     label = target.definition.target.label
     ms1_only = target.definition.target.neutral_loss_da is None
     method_subject = None if ms1_only else cid_nl_method_subject_from_target(target)
@@ -334,7 +334,7 @@ def build_targeted_capture_population(
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
             peak_config=config,
-            signal_processing_profile=targeted_signal_processing_profile(config),
+            signal_processing_profile=profile,
         ),
         evidence_providers=(
             ()
@@ -423,24 +423,29 @@ def build_targeted_capture_population(
                 )
             )
             continue
-        universe = []
-        for evaluation in result.candidate_physical_evaluations:
-            if (
-                evaluation is result.physical_evaluation
-                and selected_observation is not None
-            ):
-                universe.append(selected_observation)
-            else:
-                universe.append(
-                    mint_candidate_peak_observation(
-                        processing_owners,
-                        sample,
-                        trace,
-                        evaluation,
-                        config=config,
-                        scope=scope,
-                    )
-                )
+        alternate_evaluations = tuple(
+            evaluation
+            for evaluation in result.candidate_physical_evaluations
+            if evaluation is not result.physical_evaluation
+            or selected_observation is None
+        )
+        alternate_observations = iter(
+            mint_physical_peak_observations(
+                processing_owners=processing_owners,
+                sample=sample,
+                trace=trace,
+                evaluations=alternate_evaluations,
+                signal_processing_profile=profile,
+                resolver_mode=config.resolver_mode,
+            )
+        )
+        universe = tuple(
+            selected_observation
+            if evaluation is result.physical_evaluation
+            and selected_observation is not None
+            else next(alternate_observations)
+            for evaluation in result.candidate_physical_evaluations
+        )
         entries.append(
             TargetedSampleCapture(
                 sample=sample,
@@ -449,7 +454,7 @@ def build_targeted_capture_population(
                 candidate_id=candidate_id,
                 captured=captured,
                 selected_observation=selected_observation,
-                observation_universe=tuple(universe),
+                observation_universe=universe,
             )
         )
     return TargetedCapturePopulation(
@@ -521,23 +526,15 @@ def mint_candidate_peak_observation(
     evaluation: PhysicalPeakEvaluation,
     *,
     config: ExtractionConfig,
-    scope: TargetSearchScope,
 ) -> PeakObservationRef:
-    return mint_peak_observation_ref(
+    return mint_physical_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
         trace=trace,
-        integration=physical_peak_observation_integration(evaluation),
-        selection_intensity=(
-            evaluation.retained_prepared_signal.positive_signal
-            if evaluation.retained_prepared_signal is not None
-            else None
-        ),
+        evaluations=(evaluation,),
         resolver_mode=config.resolver_mode,
-        proposal_sources=("canonical_physical_segment",),
-        physical_evaluation=evaluation,
-        signal_processing_profile=scope.method_constraints.signal_processing_profile,
-    )
+        signal_processing_profile=targeted_signal_processing_profile(config),
+    )[0]
 
 
 def _capture_binding(

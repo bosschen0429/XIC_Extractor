@@ -38,6 +38,7 @@ from xic_extractor.peak_detection.observations import (
     _project_peak_observation_values,
     _validate_peak_observation_inputs,
     mint_peak_observation_ref,
+    mint_physical_peak_observations,
     physical_peak_observation_integration,
     validate_peak_observation_trace_binding,
 )
@@ -301,13 +302,18 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture m/z differs from the retained owner query"
         )
-    if mint_physical_trace_content_id(trace.rt, trace.intensity) != (
-        expected.prepared.trace_content_id
-    ):
+    retained = expected.retained_prepared_signal
+    matches_trace = (
+        np.array_equal(trace.rt, retained.rt)
+        and np.array_equal(trace.intensity, retained.raw)
+        if retained is not None
+        else mint_physical_trace_content_id(trace.rt, trace.intensity)
+        == expected.prepared.trace_content_id
+    )
+    if not matches_trace:
         raise SampleLocalCaptureError(
             "physical capture trace_content_id differs from the retained owner trace"
         )
-    retained = expected.retained_prepared_signal
     if expected.state == "available" and (
         retained is None or retained.projection != expected.prepared
     ):
@@ -556,18 +562,15 @@ def capture_physical_backfill_observation(
     if evaluation.state != "available" or evaluation.requires_overlap_review:
         return None
     assert prepared.prepared is not None
-    return mint_peak_observation_ref(
+    return mint_physical_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
         trace=trace,
-        integration=physical_peak_observation_integration(evaluation),
-        selection_intensity=prepared.prepared.positive_signal,
+        evaluations=(evaluation,),
         resolver_mode=resolver_mode,
-        proposal_sources=("canonical_physical_segment",),
-        physical_evaluation=evaluation,
         signal_processing_profile=profile,
         capture_stage="method_backfill",
-    )
+    )[0]
 
 
 def _same_physical_peak(

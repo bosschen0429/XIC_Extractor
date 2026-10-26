@@ -87,6 +87,13 @@ identity. Canonical serialization and
 digest mechanics come from `xic_extractor.processing_identity`; CrossSample and
 the Untargeted projection still own their domain payloads and minting decisions.
 
+Retained physical evaluations are immutable owner answers. Live capture projects
+all candidates from their retained prepared signal, sharing full-trace provenance
+within that projection rather than repeating baseline, segment enumeration or
+integration. Request/scope joins consume those established answers; external
+physical-payload readers still validate their full contracts. Mutable trace arrays
+remain isolated when run/publication containers are copied.
+
 ## Evidence And State Invariants
 
 - A `TraceGroup` contains traces from one sample and records the query context.
