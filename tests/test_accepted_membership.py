@@ -29,6 +29,76 @@ def infer(owners, **kwargs):
     )
 
 
+@pytest.mark.parametrize(
+    ("seconds", "expected_sizes"),
+    [
+        ((0, 30), [2]),
+        ((0, 2, 30), [3]),
+        ((0, 2, 30, 32), [2, 2]),
+        ((0, 2, 4, 30), [1, 3]),
+        ((0, 5, 10, 15, 20, 25, 30), [7]),
+        ((0, 20, 40, 60), [4]),
+        ((0, 2, 30, 32, 60, 62), [6]),
+        ((0, 20, 40, 120), [1, 3]),
+        ((0, 11, 31, 42), [4]),
+        ((0, 10, 30, 40), [2, 2]),
+        ((0, 2, 21, 23), [4]),
+        ((0, 2, 22, 24), [2, 2]),
+    ],
+)
+def test_final_membership_rejects_separated_rt_populations(seconds, expected_sizes):
+    owners = tuple(
+        _owner(str(i), str(i), apex_rt=10 + second / 60)
+        for i, second in enumerate(seconds)
+    )
+    result = infer_feature_memberships(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(
+            injection_order={str(i): i for i in range(len(owners))}
+        ).with_coordinate_override(lambda owner: owner.owner_apex_rt),
+    )
+    assert sorted(len(group.owner_ids) for group in result.groups) == expected_sizes
+    assert sorted(key for group in result.groups for key in group.owner_ids) == sorted(
+        owner.owner_id for owner in owners
+    )
+
+
+def test_population_gap_does_not_use_raw_rt_when_a_member_lacks_coordinates():
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+    owners = tuple(
+        _owner(sample, sample, apex_rt=rt)
+        for sample, rt in (("a", 10), ("b", 10.02), ("c", 10.04), ("d", 10.5))
+    )
+    frame = SampleRtFrame().with_sample_calibration(
+        BatchRtCalibration.from_coordinate_knots(
+            tuple((sample, ((8.0, 8.0), (17.0, 17.0))) for sample in "abc")
+        )
+    )
+    result = infer_feature_memberships(
+        owners, rules=CID_NL_GROUPING_RULES, config=AlignmentConfig(), rt_frame=frame
+    )
+    assert len(result.groups) == 1
+
+
+def test_population_gap_uses_corrected_not_measured_rt():
+    owners = tuple(
+        _owner(str(i), str(i), apex_rt=rt)
+        for i, rt in enumerate((10, 10.02, 10.5, 10.52))
+    )
+    result = infer_feature_memberships(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame().with_coordinate_override(
+            lambda owner: 10 + int(owner.sample_stem) / 60
+        ),
+    )
+    assert len(result.groups) == 1
+
+
 @pytest.mark.parametrize("missing_sample", (False, True))
 @pytest.mark.parametrize("strong_peers", (False, True))
 def test_final_membership_uses_weak_common_frame_without_mixing_raw(

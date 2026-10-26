@@ -242,6 +242,7 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         frozenset(("a-early", "b-early", "c-main")),
         frozenset(("a-late", "b-late", "c-late")),
     }
+    # Three-member groups retain the cost policy rather than a hard RT split.
     # a-early's edge extends beyond its calibrated support; its apex does not.
     # Unknown edges cannot discard measured apex coordinates or import raw edges.
     assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {
@@ -313,8 +314,8 @@ def test_retained_m298_configuration_preserves_sample_occupancy(
     reverse: bool,
 ) -> None:
     # Retained m298 geometry, rounded in its already-calibrated frame.
-    # Final selection may join disjoint samples across the former local RT
-    # gate, but cannot put either sample's two measured peaks in one Feature.
+    # The high-mass owners form two concentrated populations 43.6 seconds
+    # apart; the larger within-population range is only 2.0 seconds.
     rows = (
         ("a", "a-early", 9, 13.29663, 298.139679, 182.092172, 13.08574, 13.83271),
         ("b", "b-early", 10, 13.24687, 298.139889, 182.092161, 13.00025, 13.62336),
@@ -351,7 +352,8 @@ def test_retained_m298_configuration_preserves_sample_occupancy(
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(("a-early", "b-early", "qc-low", "bridge", "r-late", "s-late")),
-        frozenset(("qc-high", "c-early", "a-late", "b-late")),
+        frozenset(("qc-high", "c-early")),
+        frozenset(("a-late", "b-late")),
     }
     by_id = {owner.owner_id: owner for owner in owners}
     assert all(
@@ -646,10 +648,10 @@ def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
         )
         for sample, apex in (
             ("a1", 10.0),
-            ("b1", 10.5),
+            ("b1", 10.4),
             ("a2", 10.04),
             ("a3", 10.08),
-            ("b2", 10.54),
+            ("b2", 10.44),
             ("a4", 10.12),
         )
     )
@@ -822,7 +824,7 @@ def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -
     )
 
 
-def test_tissue_outlier_can_remain_separate_by_configuration_cost() -> None:
+def test_tissue_rt_outlier_has_no_feasible_same_group_alternative() -> None:
     evidence = json.loads((_FIXTURES / "tissue_247_peak_shapes.json").read_text())
     owners = tuple(
         replace(
@@ -880,8 +882,8 @@ def test_tissue_outlier_can_remain_separate_by_configuration_cost() -> None:
         if decision.sample_stem == "NormalBC2302_DNA"
     )
     assert separate.state == "birth"
-    assert separate.accepted_risk.alternative_partition is not None
-    assert separate.accepted_risk.cost_gap > 0
+    assert separate.accepted_risk.alternative_partition is None
+    assert separate.accepted_risk.status == "no_feasible_alternative"
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -1403,7 +1405,9 @@ def test_single_peak_owner_keeps_ordinary_rt_gate(
 
 
 @pytest.mark.parametrize("case", sorted(_DATA["cases"]))
-def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
+def test_full85_bands_preserve_coherent_members_and_separate_rt_outlier(
+    case: str,
+) -> None:
     owners, orders = _owners(case)
     old = infer_feature_memberships(
         owners,
@@ -1437,6 +1441,15 @@ def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
             group.disposition == "assigned" and required <= set(group.owner_ids)
             for group in result.groups
         )
+    elif case == "tier1_03":
+        # The frozen common frame places this owner 61.88 seconds before the
+        # other 62 owners, whose complete range is only 20.01 seconds.
+        assert {frozenset(group.owner_ids) for group in result.groups} == {
+            frozenset(("tier1_03:54",)),
+            frozenset(
+                owner.owner_id for owner in owners if owner.owner_id != "tier1_03:54"
+            ),
+        }
     else:
         assert len(result.groups) == 1
         assert result.groups[0].disposition == "assigned"
@@ -1528,7 +1541,7 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
     )
 
 
-def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> None:
+def test_local_trend_does_not_override_full85_rt_population_separation() -> None:
     owners, orders = _owners("tier1_03")
     shifted_sample = "BenignfatBC1025_DNA"
     warp = _warp()
@@ -1551,9 +1564,15 @@ def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> No
         rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(shifted),
         rules=CID_NL_GROUPING_RULES,
     )
-    assert len(result.groups) == 1
-    assert result.groups[0].disposition == "assigned"
-    assert len(result.groups[0].owner_ids) == 63
+    by_id = {owner.owner_id: owner.sample_stem for owner in owners}
+    assert {
+        frozenset(by_id[key] for key in group.owner_ids) for group in result.groups
+    } == {
+        frozenset((shifted_sample,)),
+        frozenset(
+            owner.sample_stem for owner in owners if owner.sample_stem != shifted_sample
+        ),
+    }
 
 
 def test_equal_band_competition_selects_and_records_the_alternative() -> None:
@@ -1908,11 +1927,12 @@ def test_separated_band_bridge_respects_indirect_peak_order(
     ordered_chain: bool,
 ) -> None:
     # A and C never co-occur. A < B < C forbids their union; A < B > C
-    # does not. Distinctness itself must not become a transitive relation.
-    middle_rt = 10.4 if ordered_chain else 11.3
+    # does not. Keep A/C less than 20 seconds apart to isolate physical order
+    # from the independent common-RT population constraint.
+    middle_rt = 10.15 if ordered_chain else 10.5
     owners = tuple(
         _synthetic_owner(f"{band}{i}", f"{band}{i}", rt)
-        for band, rt in (("a", 10.0), ("b", middle_rt), ("c", 10.8))
+        for band, rt in (("a", 10.0), ("b", middle_rt), ("c", 10.3))
         for i in (1, 2)
     )
     tracks = (
@@ -1936,9 +1956,9 @@ def test_separated_band_bridge_respects_indirect_peak_order(
         PeakTrajectory(
             ("c1", "c2"),
             (
-                ("c1", 10.8),
-                ("c2", 10.8),
-                ("right_context", 10.8),
+                ("c1", 10.3),
+                ("c2", 10.3),
+                ("right_context", 10.3),
             ),
         ),
     )

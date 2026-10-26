@@ -23,6 +23,9 @@ from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 Partition = tuple[tuple[str, ...], ...]
+_RT_POPULATION_MIN_MEMBERS = 4
+_RT_POPULATION_MIN_GAP_SEC = 20.0
+_RT_POPULATION_RANGE_RATIO = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,11 @@ class MembershipComparison:
         self.rules, self.config, self.trajectories = rules, config, trajectories
         regions = {o.owner_id: rt_frame.calibrated_peak_region(o) for o in owners}
         coordinates = {o.owner_id: rt_frame.membership_coordinate(o) for o in owners}
+        self.common_rts = {
+            key: coordinate.rt_min
+            for key, coordinate in coordinates.items()
+            if coordinate is not None
+        }
         common = bool(owners) and all(c is not None for c in coordinates.values())
         self.rt_basis = (
             "diagnostic_override"
@@ -160,6 +168,7 @@ class MembershipComparison:
         }
         self.pairs: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
         self.group_costs: dict[tuple[str, ...], float] = {}
+        self.population_gaps: dict[tuple[str, ...], bool] = {}
         self.group_peer_fits: dict[tuple[str, ...], float] = {}
 
     def partition_key(self, partition: Partition) -> tuple[object, ...]:
@@ -249,6 +258,14 @@ class MembershipComparison:
         return cost, tuple(contradictions)
 
     def group_cost(self, group: tuple[str, ...]) -> float:
+        key = group if group in self.population_gaps else tuple(sorted(group))
+        if key not in self.population_gaps:
+            self.population_gaps[key] = self.has_rt_population_gap(key)
+        if self.population_gaps[key]:
+            return math.inf
+        return self._group_evidence_cost(key)
+
+    def _group_evidence_cost(self, group: tuple[str, ...]) -> float:
         # Production partitions are already canonical; reuse their cost without
         # sorting the same group again for every assignment and merge proposal.
         cached = self.group_costs.get(group)
@@ -295,6 +312,28 @@ class MembershipComparison:
                     trend = max(trend, rt_weight * 0.20 * max(0.0, residual / 90.0 - 1))
             self.group_costs[key] = 1.0 + pair_cost + trend
         return self.group_costs[key]
+
+    def has_rt_population_gap(self, group: tuple[str, ...]) -> bool:
+        """Reject two concentrated populations in a complete common-RT group.
+
+        This is not a pair veto: adding intervening observations can make a
+        group feasible. Raw coordinates never fill gaps in calibration support.
+        """
+        if len(group) < _RT_POPULATION_MIN_MEMBERS or any(
+            key not in self.common_rts for key in group
+        ):
+            return False
+        rts = sorted(self.common_rts[key] for key in group)
+        split = max(range(1, len(rts)), key=lambda i: rts[i] - rts[i - 1])
+        gap_sec = (rts[split] - rts[split - 1]) * 60
+        side_range_sec = max(rts[split - 1] - rts[0], rts[-1] - rts[split]) * 60
+        # Coordinate subtraction can put an exact threshold a few ulps below it.
+        threshold_sec = max(
+            _RT_POPULATION_MIN_GAP_SEC, _RT_POPULATION_RANGE_RATIO * side_range_sec
+        )
+        return gap_sec >= threshold_sec or math.isclose(
+            gap_sec, threshold_sec, rel_tol=0, abs_tol=1e-10
+        )
 
     def cost(self, partition: Partition) -> float:
         return math.fsum(self.group_cost(group) for group in partition)
@@ -357,18 +396,42 @@ class MembershipComparison:
                 )
             )
 
-    def merge(self, partition: Partition) -> Partition:
+    def initial_partition(self) -> Partition:
+        """Consider whole-band seeds as well as feasible pairwise growth.
+
+        Population feasibility is not hereditary: a continuous band can be
+        feasible while an intermediate union has separated populations.
+        Evidence-only growth proposes bands, but only complete feasible bands
+        enter selection. Infeasible proposals retain their feasible sub-bands;
+        no selected group is split after configuration selection.
+        """
+        singletons = canonical_partition([(key,) for key in self.owners])
+        partition = self.merge(singletons)
+        if not any(self.population_gaps.values()):
+            return partition
+        feasible_seeds = self.merge(singletons, propose_whole_bands=True)
+        alternative = self.merge(feasible_seeds)
+        return min(
+            (partition, alternative),
+            key=lambda p: (self.cost(p), self.peer_fit(p), self.partition_key(p)),
+        )
+
+    def merge(
+        self, partition: Partition, *, propose_whole_bands: bool = False
+    ) -> Partition:
         """Refresh full-band costs after every accepted union; no mutual-best gate."""
         active = set(partition)
+        feasible_bands = set(partition)
+        group_cost = (
+            self._group_evidence_cost if propose_whole_bands else self.group_cost
+        )
         moves: list[
             tuple[float, tuple[object, ...], tuple[str, ...], tuple[str, ...]]
         ] = []
 
         def propose(left: tuple[str, ...], right: tuple[str, ...]) -> None:
             union = tuple(sorted((*left, *right)))
-            delta = (
-                self.group_cost(union) - self.group_cost(left) - self.group_cost(right)
-            )
+            delta = group_cost(union) - group_cost(left) - group_cost(right)
             if delta < -1e-12:
                 heapq.heappush(
                     moves, (delta, self.partition_key((union,)), left, right)
@@ -383,10 +446,20 @@ class MembershipComparison:
             active.remove(left)
             active.remove(right)
             union = tuple(sorted((*left, *right)))
+            if propose_whole_bands and math.isfinite(self.group_cost(union)):
+                # Accepted growth is a tree: retain the last feasible frontier
+                # even if a later, larger proposal introduces a population gap.
+                members = set(union)
+                feasible_bands = {
+                    band for band in feasible_bands if members.isdisjoint(band)
+                }
+                feasible_bands.add(union)
             for other in active:
                 propose(union, other)
             active.add(union)
-        return canonical_partition(tuple(active))
+        return canonical_partition(
+            tuple(feasible_bands if propose_whole_bands else active)
+        )
 
     def alternatives(
         self, owner_id: str, partition: Partition
@@ -397,7 +470,9 @@ class MembershipComparison:
         others = [g for g in partition if g != current]
         variants = set()
         if remainder:
-            variants.add(canonical_partition([*others, remainder, (owner_id,)]))
+            separated = canonical_partition([*others, remainder, (owner_id,)])
+            if math.isfinite(self.cost(separated)):
+                variants.add(separated)
         sample = self.owners[owner_id].sample_stem
         for target in others:
             occupied = tuple(p for p in target if self.owners[p].sample_stem == sample)

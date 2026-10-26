@@ -593,9 +593,7 @@ def _accepted_final_memberships(
             rt_frame=rt_frame,
             trajectories=trajectories,
         )
-        partition = comparison.merge(
-            canonical_partition([(o.owner_id,) for o in window])
-        )
+        partition = comparison.initial_partition()
         direction_candidates = [
             canonical_partition(
                 [
