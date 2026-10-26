@@ -105,7 +105,7 @@ def plan_grouped_cid_nl_backfills(
             if all(owner_id in direct for owner_id in group.owner_ids)
         )
         for group, target_ids in plan_conservative_backfill_targets(
-            groups, sample_population=sample_population
+            groups, sample_population=sample_population, workflow="untargeted"
         ):
             if not target_ids:
                 continue
@@ -183,7 +183,7 @@ def plan_subject_cid_nl_backfills(
     return tuple(
         CidNlBackfillQuestion(sample_id, group, method_subject)
         for group, target_ids in plan_conservative_backfill_targets(
-            groups, sample_population=sample_population
+            groups, sample_population=sample_population, workflow="untargeted"
         )
         for sample_id in sorted(target_ids)
     )

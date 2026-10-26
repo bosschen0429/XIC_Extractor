@@ -334,6 +334,7 @@ def _prepare_cell_coverage(
         facts = assess_conservative_backfill_group(
             group_cells,
             sample_population=samples,
+            workflow="untargeted",
             unsearched_sample_ids=tuple(
                 sample.identity.sample_identity_id
                 for sample in ordered_samples

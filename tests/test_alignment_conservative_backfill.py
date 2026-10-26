@@ -158,6 +158,34 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
     )
 
 
+def test_large_run_untargeted_backfill_needs_two_supports_not_five(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, tuple(f"s{i}" for i in range(100)))
+    spine = _spine(
+        fixture,
+        support_apex_by_sample={"s0": 8.0, "s1": 8.0},
+        invocation="large-run",
+    )
+    targeted = assess_targeted_conservative_backfill_group(
+        spine.targeted_projections, sample_population=fixture.samples
+    )
+    untargeted = assess_untargeted_conservative_backfill_group(
+        spine.untargeted_projections, sample_population=fixture.samples
+    )
+    assert targeted.minimum_support_k == 5
+    assert not targeted.may_attempt_backfill
+    assert untargeted.minimum_support_k == 2
+    assert untargeted.may_attempt_backfill
+    plans = plan_conservative_backfill_targets(
+        (spine.group,), sample_population=fixture.samples, workflow="untargeted"
+    )
+    assert len(plans) == 1
+    assert plans[0][1] == frozenset(
+        fixture.sample(f"s{i}").identity.sample_identity_id for i in range(2, 100)
+    )
+
+
 def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     tmp_path: Path,
 ) -> None:
