@@ -176,6 +176,48 @@ def test_preflight_selects_dotnet_runtime_with_packaged_roll_forward_config(
     assert options["runtimeOptions"]["rollForward"] == "LatestMajor"
 
 
+def test_direct_assembly_loading_selects_coreclr_before_importing_clr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor import raw_reader
+
+    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
+    runtime = None
+    references = []
+
+    def set_runtime(kind, **params):
+        nonlocal runtime
+        assert kind == "coreclr"
+        assert Path(params["runtime_config"]).is_file()
+        runtime = kind
+
+    def import_module(name):
+        if name == "pythonnet":
+            return SimpleNamespace(
+                get_runtime_info=lambda: runtime, set_runtime=set_runtime
+            )
+        assert name == "clr"
+        assert runtime == "coreclr", "clr would select .NET Framework in a fresh worker"
+        return SimpleNamespace(AddReference=references.append)
+
+    raw_reader.ensure_assemblies_loaded(tmp_path, import_module)
+    raw_reader.ensure_assemblies_loaded(tmp_path, import_module)
+    assert references == [
+        str(tmp_path / name) for name in raw_reader.EXPECTED_THERMO_DLLS
+    ]
+
+
+def test_direct_assembly_loading_reports_unavailable_runtime_before_clr(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor import raw_reader
+
+    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
+    with pytest.raises(raw_reader.RawReaderError, match="Microsoft.DotNet.Runtime.10"):
+        raw_reader.ensure_assemblies_loaded(tmp_path, _broken_pythonnet_runtime)
+    assert not raw_reader._ASSEMBLIES_LOADED
+
+
 def test_preflight_names_an_xcalibur_folder_as_an_older_rawfilereader(
     tmp_path: Path,
 ) -> None:

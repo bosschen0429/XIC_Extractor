@@ -1366,6 +1366,9 @@ def ensure_assemblies_loaded(
     with _ASSEMBLY_LOAD_LOCK:
         if _ASSEMBLIES_LOADED:
             return
+        errors = dotnet_runtime_errors(import_module_func)
+        if errors:
+            raise RawReaderError(" ".join(errors))
         clr = import_module_func("clr")
         for dll_name in EXPECTED_THERMO_DLLS:
             dll_path = dll_dir / dll_name
