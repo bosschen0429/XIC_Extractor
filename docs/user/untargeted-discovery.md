@@ -8,10 +8,11 @@ align them across samples, and open reviewable outputs from the GUI.
 ## Workflow
 
 1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
-   checkout.
+   checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
+   to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
 2. Select **Untargeted Discovery**.
 3. Choose a run mode.
-4. Set RAW input, Thermo DLL directory, and output directory.
+4. Set RAW input and output directory. Reader setup supplies the shared DLL directory.
 5. Import the Word **上機資訊** to match file names and injection order. Check
    unmatched or ambiguous entries; alphabetical file order is not injection order.
 6. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
@@ -49,7 +50,7 @@ the GUI, use `full` when starting from a RAW directory.
 | Input | Role |
 | --- | --- |
 | RAW directory or RAW file | Thermo data to discover or align |
-| DLL directory | Folder containing Thermo RawFileReader DLLs |
+| DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
 | Output directory | Where candidate and Alignment artifacts are written |
 | Acquisition information | Word sequence table supplying file/sample matching and injection order |
 | Internal-standard list | Shared Targeted XLSX, CSV or TSV; Untargeted consumes only `role=istd` rows |
@@ -122,8 +123,8 @@ For maintainer-facing product contracts behind this workflow, see:
 | Symptom | Action |
 | --- | --- |
 | Run button says settings are incomplete | Fill every visible path field and verify the files/folders exist |
-| DLL load failure | Point the DLL directory to the Thermo RawFileReader install folder |
+| DLL load failure | Follow the reader setup notice; use RawFileReader 8.0.42 with .NET 8 or later, then restart the workbench |
 | Inspector is unavailable | Check the Inspector status below the output buttons; a completed run needs a published evidence source |
 | Matrix selection is disabled | The result needs its bound identity; rerun Alignment for older Matrix-only outputs |
 | Need only alignment | Use `align_only` with an existing `discovery_batch_index.csv` |
-| Results look unexpected | Verify RAW files are valid and DLL version matches your Xcalibur install |
+| Results look unexpected | Verify RAW inputs and method settings; use the supported RawFileReader version rather than matching Xcalibur |

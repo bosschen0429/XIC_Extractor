@@ -69,8 +69,8 @@ def install_thermo_reader(
 ) -> Path:
     """Download the pinned packages, verify them, and place their DLLs together.
 
-    The folder appears only after every package verified, so a failed download
-    never leaves a partial reader set behind.
+    Download and verify every package before changing installed DLLs. Only the
+    reader's files are replaced; a custom destination may hold unrelated data.
     """
     if not accept_license:
         raise ThermoReaderInstallError(
@@ -91,9 +91,9 @@ def install_thermo_reader(
                 (staging / Path(package.member).name).write_bytes(
                     archive.read(package.member)
                 )
-        if target.exists():
-            shutil.rmtree(target)
-        staging.rename(target)
+        target.mkdir(exist_ok=True)
+        for dll in staging.iterdir():
+            dll.replace(target / dll.name)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return target

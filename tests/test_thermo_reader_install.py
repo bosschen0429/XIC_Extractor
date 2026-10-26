@@ -51,22 +51,27 @@ def test_install_requires_license_acceptance_before_any_download(tmp_path: Path)
     assert list(tmp_path.iterdir()) == []
 
 
-def test_install_places_only_the_net8_assemblies_and_replaces_old_files(
+def test_install_updates_reader_assemblies_without_deleting_unrelated_files(
     tmp_path: Path, packages
 ):
     target = tmp_path / "reader"
     target.mkdir()
-    (target / "Stale.dll").write_bytes(b"old")
+    (target / "Reader.dll").write_bytes(b"old")
+    (target / "Other.dll").write_bytes(b"unrelated")
+    (target / "notes").mkdir()
+    (target / "notes" / "method.txt").write_text("keep")
 
     result = install.install_thermo_reader(
         target, accept_license=True, fetch=packages.__getitem__
     )
 
     assert result == target
-    assert {path.name: path.read_bytes() for path in target.iterdir()} == {
+    assert {path.name: path.read_bytes() for path in target.glob("*.dll")} == {
         "Reader.dll": b"reader",
         "Data.dll": b"data",
+        "Other.dll": b"unrelated",
     }
+    assert (target / "notes" / "method.txt").read_text() == "keep"
     assert list(tmp_path.iterdir()) == [target]
 
 

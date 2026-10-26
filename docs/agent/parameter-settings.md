@@ -46,13 +46,19 @@ the public template.
 | --- | --- |
 | XIC_RAW_ROOT | 85RAW tissue root |
 | XIC_RAW_VALIDATION_DIR | lane-specified validation subset |
-| THERMO_RAWFILE_READER_DLL_DIR | Thermo DLL directory |
+| THERMO_RAWFILE_READER_DLL_DIR | RawFileReader 8.0.42 DLL directory (not Xcalibur) |
 | XIC_MANUAL_2RAW_ROOT | manual-truth calibration inputs |
 | XIC_ACQUISITION_CACHE_DIR | shared Alignment RAW acquisition cache; keep it on a fast local disk |
 
 Stable accepted-input paths and hashes live in
 docs/diagnostic-ledger.md#stable-inputs. The runner validates the selected inputs;
 do not silently substitute another dataset when the configured input is missing.
+
+Reader setup is documented in [the application guide](../../README.md#run-the-html-workbench).
+Use .NET 8 or later and the installed RawFileReader 8.0.42 folder. For a checkout,
+run `.venv\Scripts\python.exe -m scripts.install_thermo_reader --accept-thermo-license`
+after license acceptance. Set the local environment variable above to the printed
+path; existing local overrides are not changed by the CLI installer.
 
 ## Validation Scale
 

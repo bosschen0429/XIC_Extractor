@@ -346,7 +346,7 @@ def test_primary_package_routes_to_html_workbench_without_qt() -> None:
     assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"]["include"]
     assert project["tool"]["setuptools"]["package-data"][
         "xic_extractor.configuration"
-    ] == ["data/*.csv", "data/*.xlsx"]
+    ] == ["data/*.csv", "data/*.json", "data/*.xlsx"]
     assert "data-files" not in project["tool"]["setuptools"]
 
 
@@ -522,6 +522,24 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
     wheels = list(artifact_root.glob("*.whl"))
     assert len(wheels) == 1
     with zipfile.ZipFile(wheels[0]) as wheel:
+        runtime_config = json.loads(
+            wheel.read(
+                "xic_extractor/configuration/data/thermo_dotnet.runtimeconfig.json"
+            )
+        )
+        assert (
+            runtime_config["runtimeOptions"]["framework"]["name"]
+            == "Microsoft.NETCore.App"
+        )
+        entry_points = next(
+            name
+            for name in wheel.namelist()
+            if name.endswith(".dist-info/entry_points.txt")
+        )
+        assert (
+            "xic-install-thermo-reader = scripts.install_thermo_reader:main"
+            in wheel.read(entry_points).decode()
+        )
         resource_members = [
             PurePosixPath(member)
             for member in wheel.namelist()
