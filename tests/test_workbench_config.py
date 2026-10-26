@@ -276,8 +276,9 @@ def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_
     assert discovery_config_io.read_discovery_config()["raw_dir"] == "test-raws"
 
 
+@pytest.mark.parametrize("launch_override", [False, True])
 def test_reader_setup_installs_and_points_both_workflows_at_rawfilereader(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, launch_override
 ):
     from xic_extractor import thermo_reader_install
 
@@ -299,11 +300,16 @@ def test_reader_setup_installs_and_points_both_workflows_at_rawfilereader(
     config_io.write_settings(
         {"dll_dir": str(tmp_path / "xcalibur")}, config_dir=tmp_path
     )
-    workspace = AnalysisWorkspace(tmp_path, {})
+    defaults = {"raw_dir": "batch", "source": "report"}
+    if launch_override:
+        defaults["dll_dir"] = str(tmp_path / "launch-reader")
+    workspace = AnalysisWorkspace(tmp_path, defaults)
     try:
         assert workspace.bootstrap()["thermo_reader"]["dll_errors"]
         with pytest.raises(ValueError, match="accept license"):
             workspace.action("thermo-reader/install", {})
+        if launch_override:
+            assert workspace.bootstrap()["settings"]["dll_dir"] == defaults["dll_dir"]
 
         result = workspace.action("thermo-reader/install", {"accept_license": True})
 
@@ -311,5 +317,10 @@ def test_reader_setup_installs_and_points_both_workflows_at_rawfilereader(
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == str(installed)
         assert bootstrap["untargeted"]["dll_dir"] == str(installed)
+        assert bootstrap["thermo_reader"]["dll_errors"] == []
+        assert bootstrap["settings"]["data_dir"] == "batch"
+        assert bootstrap["review_source"] == "report"
+        if launch_override:
+            assert "THERMO_RAWFILE_READER_DLL_DIR" in result["message"]
     finally:
         workspace.jobs.close()

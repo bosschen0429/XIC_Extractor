@@ -40,6 +40,9 @@ The default install folder is `%LOCALAPPDATA%\XIC_Extractor\RawFileReader-8.0.42
 set their DLL directory to the installed folder, or use the workbench button to
 update it automatically. The installer downloads RawFileReader, CommonCore.Data,
 and OpenMcdf, verifies the pinned package hashes, and replaces only those DLLs.
+The workbench installer replaces a DLL startup override for the current session.
+If you supplied `--dll-dir` or `THERMO_RAWFILE_READER_DLL_DIR`, update or remove
+that external setting before the next launch; the installer does not change it.
 
 From an installed package, run `xic-extractor`, `xic-workbench`, or
 `python -m xic_workbench`. The process starts a loopback server and opens the

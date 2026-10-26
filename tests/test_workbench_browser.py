@@ -91,9 +91,16 @@ def browser_errors():
 
 
 @pytest.fixture
-def workbench(browser, config_dir, browser_errors, browser_diagnostics):
+def workbench_defaults():
+    return {}
+
+
+@pytest.fixture
+def workbench(
+    browser, config_dir, browser_errors, browser_diagnostics, workbench_defaults
+):
     with ExitStack() as cleanup:
-        workspace = ReviewWorkspace(config_dir=config_dir)
+        workspace = ReviewWorkspace(config_dir=config_dir, defaults=workbench_defaults)
         cleanup.callback(workspace.close)
         server = create_server(workspace, port=0)
         cleanup.callback(server.server_close)
@@ -121,6 +128,7 @@ def workbench(browser, config_dir, browser_errors, browser_diagnostics):
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("workbench_defaults", [{"dll_dir": "missing-launch-reader"}])
 def test_reader_setup_acceptance_install_and_reload(
     workbench, config_dir, tmp_path, monkeypatch, theme
 ):

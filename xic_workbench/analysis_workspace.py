@@ -281,8 +281,14 @@ class AnalysisWorkspace:
                 accept_license=values.get("accept_license") is True
             )
             write_dll_dir(str(target), config_dir=self.config_dir)
+            message = f"RawFileReader 已安裝，DLL 資料夾已設為 {target}"
+            if self.defaults.pop("dll_dir", None):
+                message += (
+                    "。本次工作區已改用新路徑；下次啟動前請更新或移除 "
+                    "--dll-dir／THERMO_RAWFILE_READER_DLL_DIR 的舊設定。"
+                )
             return {
-                "message": f"RawFileReader 已安裝，DLL 資料夾已設為 {target}",
+                "message": message,
                 "dll_dir": str(target),
                 "thermo_reader": self.thermo_reader_status(str(target)),
             }
