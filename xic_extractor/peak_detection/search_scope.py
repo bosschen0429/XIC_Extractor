@@ -31,6 +31,9 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.observations import (
+    PeakObservationGenerationProvenance,
+)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
@@ -103,6 +106,7 @@ class CaptureCandidateBinding:
     source_physical_evaluation: PhysicalPeakEvaluation | None = None
     # The evaluated XIC center; omission means the active query_mz.
     physical_evaluation_mz: float | None = None
+    acquired_trace_provenance: PeakObservationGenerationProvenance | None = None
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")

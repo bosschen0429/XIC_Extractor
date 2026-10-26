@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
@@ -21,6 +23,10 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.observations import (
+    physical_peak_observation_integration,
+    prepare_peak_observation_provenance,
+)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.scoring_quality import (
     candidate_quality_penalty,
@@ -33,6 +39,44 @@ from xic_extractor.peak_detection.traces import Trace
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult
+
+TARGETED_ACQUISITION_TRACE_SOURCE = (
+    "xic_extractor.targeted_production_workflow:retained-acquisition"
+)
+
+
+def prepare_acquired_observation(
+    result: ExtractionResult,
+    *,
+    acquisition_source_id: str,
+    resolver_mode: str,
+) -> ExtractionResult:
+    """Finish sample-local trace provenance in the acquisition worker."""
+    trace = result.acquisition_trace
+    evaluation = result.physical_evaluation
+    if trace is None or evaluation is None or evaluation.state != "available":
+        return result
+    retained = evaluation.retained_prepared_signal
+    assert retained is not None
+    trace = replace(
+        trace,
+        source=TARGETED_ACQUISITION_TRACE_SOURCE,
+        acquisition_source_id=acquisition_source_id,
+    )
+    provenance = prepare_peak_observation_provenance(
+        trace=trace,
+        selection_values=np.asarray(retained.positive_signal, dtype=float),
+        selected_indices=physical_peak_observation_integration(
+            evaluation
+        ).raw_scan_indices,
+        resolver_mode=resolver_mode,
+        proposal_sources=("canonical_physical_segment",),
+    )
+    return replace(
+        result,
+        acquisition_trace=trace,
+        acquisition_observation_provenance=provenance,
+    )
 
 
 def build_extraction_result(

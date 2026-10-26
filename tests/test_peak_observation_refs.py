@@ -1002,7 +1002,9 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
     )
 
 
-@pytest.mark.parametrize("reuse_trace_provenance", [False, True])
+@pytest.mark.parametrize(
+    "reuse_trace_provenance", ["none", "observation", "acquisition"]
+)
 def test_retained_candidate_batch_preserves_canonical_observation_bytes(
     tmp_path,
     monkeypatch,
@@ -1055,6 +1057,17 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
         )
         for evaluation in evaluations
     )
+    acquired_provenance = (
+        observation_owner.prepare_peak_observation_provenance(
+            trace=trace,
+            selection_values=np.asarray(prepared.prepared.positive_signal),
+            selected_indices=expected[0].generation_provenance.selected_trace_indices,
+            resolver_mode="local_minimum",
+            proposal_sources=("canonical_physical_segment",),
+        )
+        if reuse_trace_provenance == "acquisition"
+        else None
+    )
     serialized_traces = 0
     original = observation_owner._canonical_trace_bytes
 
@@ -1073,9 +1086,12 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
         evaluations=evaluations,
         signal_processing_profile=profile,
         resolver_mode="local_minimum",
-        trace_observation=expected[0] if reuse_trace_provenance else None,
+        trace_observation=(
+            expected[0] if reuse_trace_provenance == "observation" else None
+        ),
+        acquired_trace_provenance=acquired_provenance,
     )
-    assert serialized_traces == (0 if reuse_trace_provenance else 1)
+    assert serialized_traces == (1 if reuse_trace_provenance == "none" else 0)
     assert len(actual) == 2
     for reference, projected in zip(expected, actual, strict=True):
         assert canonical_peak_observation_ref_bytes(

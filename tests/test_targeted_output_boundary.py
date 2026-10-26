@@ -360,12 +360,39 @@ def test_workbook_only_delivery_embeds_method_settings(
     assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
-def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
+@pytest.mark.parametrize("acquired_provenance", [False, True])
+def test_publication_returns_concrete_public_result_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, acquired_provenance: bool
+) -> None:
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
         sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
     )
+    if acquired_provenance:
+        from xic_extractor.extraction.result_assembly import (
+            prepare_acquired_observation,
+        )
+        from xic_extractor.peak_detection import observations
+
+        for file_result in output.file_results:
+            source = build_local_acquisition_source_identity(
+                config.data_dir / f"{file_result.sample_name}.raw",
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+            file_result.results[target.label] = prepare_acquired_observation(
+                file_result.results[target.label],
+                acquisition_source_id=source.acquisition_source_id,
+                resolver_mode=config.resolver_mode,
+            )
+
+        def unexpected_trace_serialization(_trace):
+            raise AssertionError("acquisition already serialized this trace")
+
+        monkeypatch.setattr(
+            observations, "_canonical_trace_bytes", unexpected_trace_serialization
+        )
     request = build_targeted_application_request(
         config,
         [target],

@@ -369,6 +369,7 @@ def capture_reacquired_physical_peak(
         query_rt_min=trace.rt_min,
         query_rt_max=trace.rt_max,
         query_ppm_tol=trace.ppm_tol,
+        acquired_trace_provenance=None,
     )
     scope = replace(
         scope,
@@ -452,6 +453,7 @@ def _project_physical_capture(
             selected_indices=selected.integration.raw_scan_indices,
             resolver_mode=scope.method_constraints.peak_config.resolver_mode,
             proposal_sources=selected.audit.proposal_sources,
+            shared_trace_provenance=binding.acquired_trace_provenance,
         )
     detection = Ms1TracePeakDetection(
         status="detected" if selected is not None else "not_detected",

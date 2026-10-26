@@ -26,6 +26,7 @@ from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
 )
+from xic_extractor.extraction.result_assembly import TARGETED_ACQUISITION_TRACE_SOURCE
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
@@ -63,8 +64,6 @@ from xic_extractor.processing_identity import (
     resolve_request_acquisition_source,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-_TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
 
 ResultsBySample = tuple[
     tuple[ResolvedCanonicalSampleIdentity, FileResult],
@@ -438,6 +437,7 @@ def build_targeted_capture_population(
                 signal_processing_profile=profile,
                 resolver_mode=config.resolver_mode,
                 trace_observation=selected_observation,
+                acquired_trace_provenance=result.acquisition_observation_provenance,
             )
         )
         universe = tuple(
@@ -493,7 +493,7 @@ def bound_acquisition_trace(
     return replace(
         trace,
         sample_name=sample.metadata.sample_name,
-        source=_TRACE_SOURCE,
+        source=TARGETED_ACQUISITION_TRACE_SOURCE,
         acquisition_source_id=source.acquisition_source_id,
     )
 
@@ -575,6 +575,7 @@ def _capture_binding(
         retained_selected_integration=None,
         selection_policy="capture_default",
         physical_evaluation=physical_evaluation,
+        acquired_trace_provenance=result.acquisition_observation_provenance,
     )
 
 

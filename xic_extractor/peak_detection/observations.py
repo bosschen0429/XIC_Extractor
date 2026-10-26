@@ -465,6 +465,7 @@ def mint_physical_peak_observations(
     resolver_mode: str,
     capture_stage: str = "initial_capture",
     trace_observation: PeakObservationRef | None = None,
+    acquired_trace_provenance: PeakObservationGenerationProvenance | None = None,
 ) -> tuple[PeakObservationRef, ...]:
     """Project retained physical-owner answers for one trace without re-solving it.
 
@@ -486,7 +487,7 @@ def mint_physical_peak_observations(
     ):
         raise PeakObservationContractError("physical observations cross retained trace")
     selection_values = np.asarray(retained.positive_signal, dtype=float)
-    provenance: PeakObservationGenerationProvenance | None = None
+    provenance = acquired_trace_provenance
     if trace_observation is not None:
         if (
             trace_observation.source_trace is not trace
@@ -715,28 +716,51 @@ def _project_peak_observation_values(
             intensity=selected_intensity,
             integration=normalized_integration,
         ),
-        replace(shared_trace_provenance, selected_trace_indices=selected_indices)
-        if shared_trace_provenance is not None
-        else PeakObservationGenerationProvenance(
-            full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
-            selection_trace_sha256=hashlib.sha256(
-                _canonical_selection_trace_bytes(trace, selection_values)
-            ).hexdigest(),
-            acquisition_source_id=trace.acquisition_source_id,
-            query_rt_min=float(trace.rt_min),
-            query_rt_max=float(trace.rt_max),
-            query_ppm_tol=float(trace.ppm_tol),
-            trace_source=trace.source,
+        replace(
+            shared_trace_provenance,
             selected_trace_indices=selected_indices,
-            resolver_mode=_required_text(resolver_mode, field="resolver_mode"),
-            proposal_sources=tuple(
-                sorted(
-                    {
-                        _required_text(value, field="proposal_source")
-                        for value in proposal_sources
-                    }
-                )
-            ),
+            resolver_mode=resolver_mode,
+            proposal_sources=proposal_sources,
+        )
+        if shared_trace_provenance is not None
+        else prepare_peak_observation_provenance(
+            trace=trace,
+            selection_values=selection_values,
+            selected_indices=selected_indices,
+            resolver_mode=resolver_mode,
+            proposal_sources=proposal_sources,
+        ),
+    )
+
+
+def prepare_peak_observation_provenance(
+    *,
+    trace: Trace,
+    selection_values: np.ndarray,
+    selected_indices: tuple[int, ...],
+    resolver_mode: str,
+    proposal_sources: tuple[str, ...],
+) -> PeakObservationGenerationProvenance:
+    """Serialize an acquired trace once, before projecting its observation set."""
+    return PeakObservationGenerationProvenance(
+        full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
+        selection_trace_sha256=hashlib.sha256(
+            _canonical_selection_trace_bytes(trace, selection_values)
+        ).hexdigest(),
+        acquisition_source_id=trace.acquisition_source_id,
+        query_rt_min=float(trace.rt_min),
+        query_rt_max=float(trace.rt_max),
+        query_ppm_tol=float(trace.ppm_tol),
+        trace_source=trace.source,
+        selected_trace_indices=selected_indices,
+        resolver_mode=_required_text(resolver_mode, field="resolver_mode"),
+        proposal_sources=tuple(
+            sorted(
+                {
+                    _required_text(value, field="proposal_source")
+                    for value in proposal_sources
+                }
+            )
         ),
     )
 

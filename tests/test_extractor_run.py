@@ -447,9 +447,11 @@ def test_serial_backend_keeps_sorted_raw_output_order(
     ]
 
 
+@pytest.mark.parametrize("bind_acquisition", [False, True])
 def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    bind_acquisition: bool,
 ) -> None:
     from xic_extractor.extraction.target_extraction import extract_raw_file_result
 
@@ -458,6 +460,24 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
+    expectation = None
+    if bind_acquisition:
+        source = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+        stat = raw_path.stat()
+        expectation = AcquisitionSourceExpectation(
+            source=source,
+            path_identity=(
+                stat.st_dev,
+                stat.st_ino,
+                stat.st_size,
+                stat.st_mtime_ns,
+                stat.st_ctime_ns,
+            ),
+        )
 
     result = extract_raw_file_result(
         7,
@@ -465,6 +485,7 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
         targets,
         raw_path,
         scoring_context_factory=None,
+        expected_acquisition_source=expectation,
     )
 
     restored = pickle.loads(pickle.dumps(result))
@@ -473,6 +494,16 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     assert restored.file_result.sample_name == "SampleA"
     assert restored.diagnostics == []
     assert restored.file_result.results["Analyte"].peak_result.peak is not None
+    provenance = restored.file_result.results[
+        "Analyte"
+    ].acquisition_observation_provenance
+    if bind_acquisition:
+        assert provenance is not None
+        assert (
+            provenance.acquisition_source_id == expectation.source.acquisition_source_id
+        )
+    else:
+        assert provenance is None
     assert not hasattr(restored, "wide_rows")
     assert not hasattr(restored, "long_rows")
     assert not hasattr(restored, "score_breakdown_rows")

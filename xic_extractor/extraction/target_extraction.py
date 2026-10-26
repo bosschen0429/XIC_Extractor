@@ -20,6 +20,7 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
+from xic_extractor.extraction.result_assembly import prepare_acquired_observation
 from xic_extractor.extraction.scoring_factory import (
     is_credible_istd_peak,
     paired_istd_fwhm,
@@ -70,6 +71,20 @@ def extract_raw_file_result(
         scoring_context_factory=scoring_context_factory,
         expected_acquisition_source=expected_acquisition_source,
     )
+    if expected_acquisition_source is not None:
+        file_result = replace(
+            file_result,
+            results={
+                label: prepare_acquired_observation(
+                    result,
+                    acquisition_source_id=(
+                        expected_acquisition_source.source.acquisition_source_id
+                    ),
+                    resolver_mode=config.resolver_mode,
+                )
+                for label, result in file_result.results.items()
+            },
+        )
     return result_models.RawFileExtractionResult(
         raw_index=raw_index,
         sample_name=file_result.sample_name,
