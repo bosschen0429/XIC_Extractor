@@ -73,6 +73,64 @@ class PeakTrajectory:
     def __post_init__(self) -> None:
         object.__setattr__(self, "_positions", dict(self.sample_apices))
 
+    def paired_istd_locations(
+        self,
+        sample_stems: Sequence[str],
+        *,
+        reference_samples: frozenset[str],
+        rt_frame: RtFrame,
+        backfill_half_window_min: float,
+        paired_istd_rts: Mapping[str, float],
+    ) -> Mapping[str, BackfillPeakLocation]:
+        """Localize missing samples from confirmed same-cohort paired offsets.
+
+        Missing paired support supplies no location. Excessive peer scatter
+        retains the paired coordinate but does not authorize recovery there.
+        """
+        paired_locations: dict[str, BackfillPeakLocation] = {}
+        paired_samples = [
+            sample
+            for sample in sample_stems
+            if sample in paired_istd_rts and sample not in self._positions
+        ]
+        paired_cohorts = {rt_frame.sample_cohorts.get(s) for s in paired_samples}
+        offsets_by_cohort: dict[str | None, list[float]] = defaultdict(list)
+        for peer, rt in self.sample_apices:
+            cohort = rt_frame.sample_cohorts.get(peer)
+            if (
+                peer in reference_samples
+                and peer in paired_istd_rts
+                and cohort in paired_cohorts
+            ):
+                offsets_by_cohort[cohort].append(rt - paired_istd_rts[peer])
+        paired_summaries = {}
+        half_window_sec = backfill_half_window_min * 60.0
+        for cohort, offsets in offsets_by_cohort.items():
+            if len(offsets) < 2:
+                continue
+            residuals_sec = [
+                abs(value - float(np.median(offsets[:i] + offsets[i + 1 :]))) * 60.0
+                for i, value in enumerate(offsets)
+            ]
+            residual_p90 = float(np.quantile(residuals_sec, 0.9))
+            paired_summaries[cohort] = (
+                float(np.median(offsets)),
+                min(max(12.0, residual_p90), half_window_sec)
+                if residual_p90 <= half_window_sec
+                else None,
+            )
+        for sample in paired_samples:
+            summary = paired_summaries.get(rt_frame.sample_cohorts.get(sample))
+            if summary is not None:
+                offset, tolerance = summary
+                paired_locations[sample] = BackfillPeakLocation(
+                    PeakLocation(
+                        max(0.0, paired_istd_rts[sample] + offset), "paired_istd"
+                    ),
+                    tolerance,
+                )
+        return paired_locations
+
     def backfill_locations(
         self,
         sample_stems: Sequence[str],
@@ -92,6 +150,17 @@ class PeakTrajectory:
         A forecast extended by MS1-only positions must also agree with a
         supported direct-reference trend; disagreement leaves it unlocated.
         """
+        paired_locations = (
+            self.paired_istd_locations(
+                sample_stems,
+                reference_samples=reference_samples,
+                rt_frame=rt_frame,
+                backfill_half_window_min=backfill_half_window_min,
+                paired_istd_rts=paired_istd_rts,
+            )
+            if paired_istd_rts is not None
+            else {}
+        )
         locations = {
             sample: self.locate(
                 sample,
@@ -99,6 +168,7 @@ class PeakTrajectory:
                 backfill_half_window_min=backfill_half_window_min,
             )
             for sample in sample_stems
+            if sample not in paired_locations
         }
         needed_cohorts = {
             rt_frame.sample_cohorts[sample]
@@ -174,38 +244,8 @@ class PeakTrajectory:
                     localized.apex_tolerance_sec, reference_tolerance
                 ):
                     result[sample] = BackfillPeakLocation(localized.location, None)
-        if paired_istd_rts is not None:
-            # Confirmed peers establish the analyte-to-ISTD offset. The missing
-            # sample contributes only its independently measured paired ISTD.
-            for sample in sample_stems:
-                if sample not in paired_istd_rts or sample in self._positions:
-                    continue
-                offsets = [
-                    rt - paired_istd_rts[peer]
-                    for peer, rt in self.sample_apices
-                    if peer in reference_samples
-                    and peer in paired_istd_rts
-                    and rt_frame.sample_cohorts.get(peer)
-                    == rt_frame.sample_cohorts.get(sample)
-                ]
-                if len(offsets) < 2:
-                    continue
-                residuals_sec = [
-                    abs(value - float(np.median(offsets[:i] + offsets[i + 1 :]))) * 60.0
-                    for i, value in enumerate(offsets)
-                ]
-                residual_p90 = float(np.quantile(residuals_sec, 0.9))
-                half_window_sec = backfill_half_window_min * 60.0
-                result[sample] = BackfillPeakLocation(
-                    PeakLocation(
-                        max(0.0, paired_istd_rts[sample] + float(np.median(offsets))),
-                        "paired_istd",
-                    ),
-                    min(max(12.0, residual_p90), half_window_sec)
-                    if residual_p90 <= half_window_sec
-                    else None,
-                )
-        return result
+        result.update(paired_locations)
+        return {sample: result[sample] for sample in sample_stems}
 
     def _empirical_tolerances(
         self,

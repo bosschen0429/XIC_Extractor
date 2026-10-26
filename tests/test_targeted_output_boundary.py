@@ -1858,6 +1858,18 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 for sample, file in context.results_by_sample
                 if sample.metadata.raw_stem == "SampleC"
             )
+        if not args[1].definition.target.is_istd:
+            from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    PeakTrajectory,
+                    "backfill_locations",
+                    lambda *_a, **_k: pytest.fail(
+                        "analyte recovery must not compute unused trajectory forecasts"
+                    ),
+                )
+                return original_execute(context, *args, **kwargs)
         return original_execute(context, *args, **kwargs)
 
     monkeypatch.setattr(

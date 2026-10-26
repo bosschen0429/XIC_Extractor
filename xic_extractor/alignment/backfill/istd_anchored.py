@@ -183,7 +183,14 @@ def resolve_istd_anchored_backfill(
                 for support in direct_supports
             ),
         )
-        locations = trajectory.backfill_locations(
+        # Analyte recovery requires its paired ISTD; trajectory-only forecasts
+        # are useful for an ISTD itself, not an alternative analyte identity.
+        locate_missing = (
+            trajectory.backfill_locations
+            if target.definition.target.is_istd
+            else trajectory.paired_istd_locations
+        )
+        locations = locate_missing(
             tuple(
                 sample_by_id[sample_id].metadata.raw_stem
                 for sample_id in sorted(missing_ids)
@@ -199,11 +206,8 @@ def resolve_istd_anchored_backfill(
             sample = sample_by_id[sample_id]
             if assessment_by_sample[sample_id].content.method_result != "HOLD":
                 continue
-            location = locations[sample.metadata.raw_stem]
-            if (
-                not target.definition.target.is_istd
-                and location.location.basis != "paired_istd"
-            ):
+            location = locations.get(sample.metadata.raw_stem)
+            if location is None:
                 continue
             universe = mint_conservative_backfill_candidate_universe(
                 processing_owners=processing_owners,
