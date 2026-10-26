@@ -228,6 +228,47 @@
       <svg class="icon"><use href="#i-alert" /></svg>
       與本機工作區的連線中斷。若已關閉 XIC Extractor，請重新啟動後再開啟此頁。
     </div>
+    <section
+      id="reader-setup"
+      class="reader-setup"
+      aria-labelledby="reader-setup-title"
+      hidden
+    >
+      <svg class="icon"><use href="#i-alert" /></svg>
+      <div class="reader-setup-body">
+        <h2 id="reader-setup-title">讀取 RAW 前還需要準備 RawFileReader</h2>
+        <div id="reader-setup-dotnet" hidden>
+          <p>
+            需要 .NET 8 以上（建議 .NET 10）。在 PowerShell 執行下列指令，完成後重新啟動
+            XIC Extractor。
+          </p>
+          <p class="reader-setup-command">
+            <code id="reader-setup-command"></code>
+            <button type="button" id="reader-setup-copy" class="ghost">複製指令</button>
+          </p>
+        </div>
+        <div id="reader-setup-dll" hidden>
+          <p>
+            需要 Thermo RawFileReader <span id="reader-setup-version"></span>。同意授權後會下載到本機使用者資料夾，並自動設定
+            DLL 資料夾。
+          </p>
+          <label class="reader-setup-accept">
+            <input type="checkbox" id="reader-setup-accept" />
+            我已閱讀並同意
+            <a id="reader-setup-license" target="_blank" rel="noopener noreferrer"
+              >Thermo RawFileReader 授權條款</a
+            >
+          </label>
+          <button type="button" id="reader-setup-install" class="primary" disabled>
+            下載並設定 RawFileReader
+          </button>
+        </div>
+        <details>
+          <summary>詳細原因</summary>
+          <ul id="reader-setup-detail"></ul>
+        </details>
+      </div>
+    </section>
     <div id="analysis-root"></div>
 
     <main id="workspace-review" class="page review-page">

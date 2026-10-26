@@ -38,6 +38,7 @@ xic-discovery-cli = "scripts.run_discovery:main"
 xic-delta-mass-discovery-cli = "scripts.run_delta_mass_discovery:main"
 xic-align-cli = "scripts.run_alignment:main"
 xic-feature-quality = "scripts.run_feature_quality:main"
+xic-install-thermo-reader = "scripts.install_thermo_reader:main"
 xic-inspector = "xic_inspector.cli:main"
 xic-workbench = "xic_workbench.cli:main"
 
@@ -50,7 +51,7 @@ exclude = ["tests*"]
 "xic_workbench" = ["assets/*.html", "assets/*.js", "assets/*.css"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
-"xic_extractor.configuration" = ["data/*.csv", "data/*.xlsx"]
+"xic_extractor.configuration" = ["data/*.csv", "data/*.json", "data/*.xlsx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

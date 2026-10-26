@@ -24,8 +24,25 @@ samples.
 
 ### Run the HTML workbench
 
-You need Windows 10 or 11, .NET 6 or later, and the Thermo RawFileReader DLLs
-(from Xcalibur or [Thermo Fisher](https://github.com/thermofishersci/RawFileReader)).
+You need Windows 10 or 11, .NET 8 or later, and Thermo RawFileReader **8.0.42**.
+The workbench shows a setup notice when either dependency is missing. Read the
+linked Thermo license, check the acceptance box, then click **下載並設定
+RawFileReader**. It downloads the reader and its dependencies from the official
+sources and sets the DLL folder for both workflows. Xcalibur is not required;
+its older DLLs are no longer supported, and its installation is not changed.
+
+If .NET is missing, run the command shown in the notice
+(`winget install Microsoft.DotNet.Runtime.10`) and restart the workbench.
+For command-line setup, run `xic-install-thermo-reader --accept-thermo-license`
+after reading the license linked by `xic-install-thermo-reader --help`.
+The default install folder is `%LOCALAPPDATA%\XIC_Extractor\RawFileReader-8.0.42`;
+`--destination` selects another folder. Existing workspace settings are retained;
+set their DLL directory to the installed folder, or use the workbench button to
+update it automatically. The installer downloads RawFileReader, CommonCore.Data,
+and OpenMcdf, verifies the pinned package hashes, and replaces only those DLLs.
+The workbench installer replaces a DLL startup override for the current session.
+If you supplied `--dll-dir` or `THERMO_RAWFILE_READER_DLL_DIR`, update or remove
+that external setting before the next launch; the installer does not change it.
 
 From an installed package, run `xic-extractor`, `xic-workbench`, or
 `python -m xic_workbench`. The process starts a loopback server and opens the

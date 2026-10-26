@@ -347,6 +347,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "istd/upload",
                 "istd/copy",
                 "open-local",
+                "thermo-reader/install",
             }:
                 result = workspace.analysis_action(path.removeprefix("/api/"), values)
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})/cancel", path):

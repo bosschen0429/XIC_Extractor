@@ -8,7 +8,8 @@ and internal-standard relationships you want to review.
 ## Workflow
 
 1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
-   checkout.
+   checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
+   to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
 2. Select **Targeted Extraction**.
 3. Select a saved method and press **載入清單**, or configure a method
    for the first time. Set the new RAW data directory; the local DLL setting is retained.
@@ -39,7 +40,7 @@ workbook sheet names and the exact editable fields.
 | Input | Role |
 | --- | --- |
 | RAW directory | Batch of Thermo `.raw` files to process |
-| DLL directory | Folder containing Thermo RawFileReader DLLs |
+| DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
 | Target table | Names, m/z, expected RT, CID-NL tag, role, and ISTD pairing |
 | Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
 | Environment and output | DLL and output location; shared worker count in execution resources |
@@ -155,5 +156,5 @@ For developer-level validation harness details, see
 | --- | --- |
 | XLSX or current-work JSON format error | Fix the file, row, and column named in the error |
 | `data_dir` does not exist | Point Settings to the folder containing `.raw` files |
-| DLL load failure | Point Settings to the folder with Thermo RawFileReader DLLs |
+| DLL load failure | Follow the reader setup notice; use RawFileReader 8.0.42 with .NET 8 or later, then restart the workbench |
 | One RAW file fails | Continue the run and inspect the `FILE_ERROR` diagnostic row |

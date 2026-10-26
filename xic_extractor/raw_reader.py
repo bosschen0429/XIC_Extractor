@@ -58,9 +58,17 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
+# RawFileReader 8 package set; OpenMcdf is its only runtime dependency.
 EXPECTED_THERMO_DLLS = (
+    "OpenMcdf.dll",
     "ThermoFisher.CommonCore.Data.dll",
     "ThermoFisher.CommonCore.RawFileReader.dll",
+)
+THERMO_READER_INSTALL_COMMAND = "xic-install-thermo-reader"
+DOTNET_INSTALL_COMMAND = "winget install Microsoft.DotNet.Runtime.10"
+# Any installed .NET 8 or later major; .NET Framework cannot host RawFileReader 8.
+_DOTNET_RUNTIME_CONFIG = Path(__file__).parent.joinpath(
+    "configuration", "data", "thermo_dotnet.runtimeconfig.json"
 )
 THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
 THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
@@ -1298,42 +1306,57 @@ def preflight_raw_reader(
     *,
     import_module_func: Callable[[str], Any] = importlib.import_module,
 ) -> list[str]:
+    return dotnet_runtime_errors(import_module_func) + thermo_dll_errors(dll_dir)
+
+
+def dotnet_runtime_errors(
+    import_module_func: Callable[[str], Any] = importlib.import_module,
+) -> list[str]:
+    """Select .NET 8 or later for RawFileReader; report why it cannot load."""
     errors: list[str] = []
     try:
         pythonnet = import_module_func("pythonnet")
-        _check_dotnet_runtime(pythonnet)
+        if pythonnet.get_runtime_info() is None:
+            pythonnet.set_runtime("coreclr", runtime_config=str(_DOTNET_RUNTIME_CONFIG))
     except ImportError:
         errors.append(
             "pythonnet is not installed; Install project dependencies with `uv sync`."
         )
     except Exception as exc:
         errors.append(
-            f".NET runtime is not available ({exc}); Install .NET 6+ runtime."
+            f".NET 8 or later is not available ({exc}); "
+            f"install the .NET 10 runtime with `{DOTNET_INSTALL_COMMAND}`."
         )
+    return errors
 
+
+def thermo_dll_errors(dll_dir: Path) -> list[str]:
+    """Report a missing or pre-8 RawFileReader DLL set in ``dll_dir``."""
+    errors: list[str] = []
+    fix = (
+        f"run `{THERMO_READER_INSTALL_COMMAND}` or open Settings and correct "
+        "the DLL directory."
+    )
     try:
         resolved = dll_dir.resolve(strict=True)
     except OSError:
         errors.append(
-            f"Xcalibur DLL directory was not found at `{dll_dir}`; "
-            "open Settings and correct DLL directory."
+            f"RawFileReader DLL directory was not found at `{dll_dir}`; {fix}"
         )
         return errors
 
-    for dll_name in EXPECTED_THERMO_DLLS:
-        dll_path = resolved / dll_name
-        if not dll_path.is_file():
-            errors.append(
-                f"Xcalibur DLL `{dll_name}` was not found in `{resolved}`; "
-                "open Settings and correct DLL directory."
-            )
+    missing = [name for name in EXPECTED_THERMO_DLLS if not (resolved / name).is_file()]
+    if missing == ["OpenMcdf.dll"]:
+        errors.append(
+            f"`{resolved}` holds an older RawFileReader (such as Xcalibur's); "
+            f"XIC Extractor needs RawFileReader 8, so {fix}"
+        )
+    else:
+        errors.extend(
+            f"RawFileReader DLL `{name}` was not found in `{resolved}`; {fix}"
+            for name in missing
+        )
     return errors
-
-
-def _check_dotnet_runtime(pythonnet: Any) -> None:
-    get_runtime_info = getattr(pythonnet, "get_runtime_info", None)
-    if callable(get_runtime_info):
-        get_runtime_info()
 
 
 def ensure_assemblies_loaded(
@@ -1343,6 +1366,9 @@ def ensure_assemblies_loaded(
     with _ASSEMBLY_LOAD_LOCK:
         if _ASSEMBLIES_LOADED:
             return
+        errors = dotnet_runtime_errors(import_module_func)
+        if errors:
+            raise RawReaderError(" ".join(errors))
         clr = import_module_func("clr")
         for dll_name in EXPECTED_THERMO_DLLS:
             dll_path = dll_dir / dll_name

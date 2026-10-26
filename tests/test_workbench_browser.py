@@ -91,9 +91,16 @@ def browser_errors():
 
 
 @pytest.fixture
-def workbench(browser, config_dir, browser_errors, browser_diagnostics):
+def workbench_defaults():
+    return {}
+
+
+@pytest.fixture
+def workbench(
+    browser, config_dir, browser_errors, browser_diagnostics, workbench_defaults
+):
     with ExitStack() as cleanup:
-        workspace = ReviewWorkspace(config_dir=config_dir)
+        workspace = ReviewWorkspace(config_dir=config_dir, defaults=workbench_defaults)
         cleanup.callback(workspace.close)
         server = create_server(workspace, port=0)
         cleanup.callback(server.server_close)
@@ -118,6 +125,59 @@ def workbench(browser, config_dir, browser_errors, browser_diagnostics):
         expect(page.locator("#t-data_dir")).to_be_visible()
         yield page
     assert not browser_errors, "Browser errors: " + "\n".join(browser_errors)
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("workbench_defaults", [{"dll_dir": "missing-launch-reader"}])
+def test_reader_setup_acceptance_install_and_reload(
+    workbench, config_dir, tmp_path, monkeypatch, theme
+):
+    from xic_extractor import raw_reader, thermo_reader_install
+
+    installed = tmp_path / "RawFileReader-8.0.42"
+
+    def install(destination=None, *, accept_license, fetch=None):
+        assert accept_license is True
+        installed.mkdir()
+        for name in raw_reader.EXPECTED_THERMO_DLLS:
+            (installed / name).write_bytes(b"test assembly")
+        return installed
+
+    monkeypatch.setattr(thermo_reader_install, "install_thermo_reader", install)
+    monkeypatch.setattr(raw_reader, "dotnet_runtime_errors", lambda: ["Missing .NET"])
+    page = workbench
+    page.reload()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#theme-toggle").click()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    notice = page.locator("#reader-setup")
+    expect(notice).to_be_visible()
+    expect(page.locator("#reader-setup-dotnet")).to_be_visible()
+    expect(page.locator("#reader-setup-command")).to_have_text(
+        raw_reader.DOTNET_INSTALL_COMMAND
+    )
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    page.locator("#reader-setup-copy").click()
+    assert (
+        page.evaluate("navigator.clipboard.readText()")
+        == raw_reader.DOTNET_INSTALL_COMMAND
+    )
+    button = page.locator("#reader-setup-install")
+    expect(button).to_be_disabled()
+    page.locator("#reader-setup-accept").check()
+    expect(button).to_be_enabled()
+    notice.screenshot(path=str(tmp_path / f"reader-setup-{theme}.png"))
+    button.click()
+    expect(page.locator("#reader-setup-dll")).to_be_hidden()
+    # Installing the DLLs must not pretend to install the missing runtime.
+    expect(page.locator("#reader-setup-dotnet")).to_be_visible()
+    assert read_settings(config_dir=config_dir)["dll_dir"] == str(installed)
+    assert page.locator("#t-dll_dir").input_value() == str(installed)
+    assert page.locator("#u-dll_dir").input_value() == str(installed)
+    monkeypatch.setattr(raw_reader, "dotnet_runtime_errors", lambda: [])
+    page.reload()
+    expect(notice).to_be_hidden()
+    assert page.locator("#t-dll_dir").input_value() == str(installed)
 
 
 def test_analysis_poll_waits_for_previous_response(workbench):
