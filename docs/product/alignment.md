@@ -336,11 +336,14 @@ membership, not bootstrap, Targeted selection, or Backfill admission.
   groups. Method-specific hard constraints remain with the method interpreter;
   product scatter admitted by that interpreter contributes cost rather than
   silently acquiring a new hard veto.
-- A proposed group with common coordinates for every member cannot span two
-  concentrated RT populations. Sort its common apices and inspect the largest
+- A proposed group with at least four members and common coordinates for every
+  member cannot span two concentrated RT populations. Sort its common apices
+  and inspect the largest
   adjacent gap: reject the group when the gap is at least 20 seconds and at
   least twice the larger of the two sides' RT ranges. A singleton side has
-  zero range. Missing member coordinates disable this constraint; raw RT never
+  zero range. Two- and three-member groups retain the cost-based choice rather
+  than a hard population veto, limiting false splits with sparse observations.
+  Missing member coordinates disable this constraint; raw RT never
   substitutes for them. The thresholds are internal, not configuration fields.
   The constraint evaluates whole groups, not arbitrary pairs. Whole-band seed
   proposals preserve continuous distributions whose smaller subsets would fail

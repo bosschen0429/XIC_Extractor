@@ -32,10 +32,13 @@ def infer(owners, **kwargs):
 @pytest.mark.parametrize(
     ("seconds", "expected_sizes"),
     [
+        ((0, 30), [2]),
+        ((0, 2, 30), [3]),
         ((0, 2, 30, 32), [2, 2]),
         ((0, 2, 4, 30), [1, 3]),
         ((0, 5, 10, 15, 20, 25, 30), [7]),
         ((0, 20, 40, 60), [4]),
+        ((0, 2, 30, 32, 60, 62), [6]),
         ((0, 20, 40, 120), [1, 3]),
         ((0, 11, 31, 42), [4]),
         ((0, 10, 30, 40), [2, 2]),
@@ -67,11 +70,11 @@ def test_population_gap_does_not_use_raw_rt_when_a_member_lacks_coordinates():
 
     owners = tuple(
         _owner(sample, sample, apex_rt=rt)
-        for sample, rt in (("a", 10), ("b", 10.02), ("c", 10.5))
+        for sample, rt in (("a", 10), ("b", 10.02), ("c", 10.04), ("d", 10.5))
     )
     frame = SampleRtFrame().with_sample_calibration(
         BatchRtCalibration.from_coordinate_knots(
-            tuple((sample, ((8.0, 8.0), (17.0, 17.0))) for sample in "ab")
+            tuple((sample, ((8.0, 8.0), (17.0, 17.0))) for sample in "abc")
         )
     )
     result = infer_feature_memberships(

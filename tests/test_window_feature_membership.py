@@ -239,11 +239,10 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         peak_trajectories=trajectories,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
-        frozenset(("a-early", "b-late", "c-main")),
-        frozenset(("a-late", "c-late")),
-        frozenset(("b-early",)),
+        frozenset(("a-early", "b-early", "c-main")),
+        frozenset(("a-late", "b-late", "c-late")),
     }
-    # The calibrated 9.3, 10.0 and 10.7 minute populations remain separate.
+    # Three-member groups retain the cost policy rather than a hard RT split.
     # a-early's edge extends beyond its calibrated support; its apex does not.
     # Unknown edges cannot discard measured apex coordinates or import raw edges.
     assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {
@@ -535,7 +534,7 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
             owner_peak_end_rt=10.25,
         ),
         replace(
-            _synthetic_owner("right", "right", 10.3),
+            _synthetic_owner("right", "right", 10.5),
             owner_peak_start_rt=right_start,
             owner_peak_end_rt=10.8,
         ),

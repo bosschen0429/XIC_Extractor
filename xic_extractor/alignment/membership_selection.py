@@ -23,6 +23,7 @@ from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 Partition = tuple[tuple[str, ...], ...]
+_RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
 
@@ -318,7 +319,9 @@ class MembershipComparison:
         This is not a pair veto: adding intervening observations can make a
         group feasible. Raw coordinates never fill gaps in calibration support.
         """
-        if len(group) < 2 or any(key not in self.common_rts for key in group):
+        if len(group) < _RT_POPULATION_MIN_MEMBERS or any(
+            key not in self.common_rts for key in group
+        ):
             return False
         rts = sorted(self.common_rts[key] for key in group)
         split = max(range(1, len(rts)), key=lambda i: rts[i] - rts[i - 1])
@@ -397,7 +400,7 @@ class MembershipComparison:
         """Consider whole-band seeds as well as feasible pairwise growth.
 
         Population feasibility is not hereditary: a continuous band can be
-        feasible while every two-member seed is separated by twenty seconds.
+        feasible while an intermediate union has separated populations.
         Evidence-only growth proposes bands, but only complete feasible bands
         enter selection. Infeasible proposals retain their feasible sub-bands;
         no selected group is split after configuration selection.
