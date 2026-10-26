@@ -1214,3 +1214,29 @@ same-process diagnostic input, not a supported public replay format. Reopen
 measurement when the input population, physical owner/binding, serialized
 identity, solver, publication contract or worker lifecycle changes. A fresh
 full RAW rerun is not needed merely to repeat these post-acquisition comparisons.
+
+Targeted MS2 acquisition (#928) reads spectra only for events whose recorded or
+isolation-inferred precursor can reach a declared CID-NL target tolerance;
+other MS2 events stay counted in the search receipt. On `c8c2bfd9`, the
+eight-RAW F: run reproduces the `c78064ae` values and full `file_results`
+pickle hashes exactly, including one `applied` mass-recalibration RAW; the
+158-RAW run reproduces the frozen replay values (`31effca6`, 2,212 rows,
+5,167 diagnostics). One RAW admits 2,935 of 37,298 MS2 events. Eight RAW
+take 55.0 s warm / 91.6 s cold before and 24.4-24.7 s warm / 56.0 s cold
+after. The 158-RAW run takes 1,207.8 s end to end (1,156.0 s acquisition,
+25.8 s preparation, 26.1 s after the last RAW). On this USB HDD, acquisition is
+now storage-bound: about 117 MB read per RAW at 13 MB/s with 9% machine CPU.
+Untargeted MS2 reads are byte-identical before and after on two RAW.
+
+Preparation on the same 158 files takes 170.7 s cold (3.67 GB from F:) and
+31.5 s warm (no disk reads). Cold cost is vendor `FileFactory` I/O, about
+10.5 MB in 339 reads per file before device selection. Warm cost is
+RawFileReader 4.0.19 `Dispose`, about 190 ms per file with several .NET
+Framework GCs, so header threads serialize; Python threads keep running during
+it. Eight spawn processes read the 158 warm headers in 11.5 s versus 25.2 s
+with eight threads (deferred in #928). RawFileReader 8.0.6 on .NET 8 disposes
+in about 2 ms and eight threads read nine headers in 0.05 s with identical
+run-time and source facts; 4.0.19 and 5.0.0.93 fail `SelectInstrument` on
+.NET 8, so reader version and runtime were not separated. Receipts are private
+scratch measurements; rerun when the vendor reader, runtime, storage medium or
+header-worker model changes.
