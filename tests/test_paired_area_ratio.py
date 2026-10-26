@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Literal
 
@@ -305,3 +306,16 @@ def test_ratio_observation_does_not_change_scientific_results(area: float) -> No
     assert projection is not None and not projection.counted_detection
     assert "paired_area_ratio_support" not in projection.support_reasons
     assert result.reported_peak_area == area
+
+
+def test_legacy_applicability_does_not_drop_targeted_ratio_reference_samples():
+    target = replace(_target(), sample_applicability="rna_containing")
+    files = [
+        _file_result("EC013_2", target_area=50_000, nl_status="OK"),
+        _file_result("U00001ZBEE", target_area=70_000, nl_status="OK"),
+    ]
+    points = paired_area_ratio_references(files, targets=[target])[("Analyte", "ISTD")]
+    assert [(point.sample_name, point.ratio) for point in points] == [
+        ("EC013_2", 0.5),
+        ("U00001ZBEE", 0.7),
+    ]

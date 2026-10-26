@@ -890,44 +890,25 @@ def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
     assert "targeted_rt_review" not in projection.review_reasons
 
 
-def test_rna_containing_target_is_excluded_in_pure_dna_sample() -> None:
+@pytest.mark.parametrize(
+    "sample_name", ["EC013_2", "U00001ZBEE", "QC1", "Tumor_DNA", "Tumor_RNA"]
+)
+@pytest.mark.parametrize(
+    "cid_nl_tag,neutral_loss_da", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
+)
+def test_targeted_configured_targets_ignore_sample_name_and_legacy_applicability(
+    sample_name, cid_nl_tag, neutral_loss_da
+) -> None:
     result = _result_with_targeted_projection_semantics(
-        target=_target(sample_applicability="rna_containing"),
-        sample_name="TumorBC2306_DNA",
+        target=replace(
+            _target(sample_applicability="rna_containing"),
+            cid_nl_tag=cid_nl_tag,
+            neutral_loss_da=neutral_loss_da,
+        ),
+        sample_name=sample_name,
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
         conflict_reasons=(),
     )
-
-    projection = result.targeted_product_projection
-    assert projection is not None
-    assert projection.product_state == "excluded"
-    assert projection.counted_detection is False
-    assert "target_sample_applicability:rna_containing" in projection.exclusion_reasons
-
-
-def test_rna_containing_target_stays_eligible_in_dnaandrna_sample() -> None:
-    result = _result_with_targeted_projection_semantics(
-        target=_target(sample_applicability="rna_containing"),
-        sample_name="TumorBC2304_DNAandRNA",
-        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
-        conflict_reasons=(),
-    )
-
-    projection = result.targeted_product_projection
-    assert projection is not None
-    assert projection.product_state == "detected_clean"
-    assert projection.counted_detection is True
-    assert projection.exclusion_reasons == ()
-
-
-def test_rna_containing_target_stays_eligible_in_rna_sample() -> None:
-    result = _result_with_targeted_projection_semantics(
-        target=_target(sample_applicability="rna_containing"),
-        sample_name="TumorBC2304_RNA",
-        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
-        conflict_reasons=(),
-    )
-
     projection = result.targeted_product_projection
     assert projection is not None
     assert projection.product_state == "detected_clean"

@@ -81,6 +81,7 @@ class Target:
     nl_ppm_max: float | None
     is_istd: bool
     istd_pair: str
+    # Legacy method metadata; Targeted never gates targets by sample name.
     sample_applicability: str = "all"
     expected_rt_min: float | None = None
     cid_nl_tag: str = ""

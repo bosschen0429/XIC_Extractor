@@ -5,9 +5,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.extraction.target_sample_applicability import (
-    target_sample_exclusion_reasons,
-)
 
 MIN_PAIRED_AREA_RATIO_REFERENCE_POINTS = 3
 PAIRED_AREA_RATIO_REFERENCE_BASIS = "leave_one_sample_out_counted_area_over_istd_area"
@@ -53,8 +50,6 @@ def paired_area_ratio_references(
         if not isinstance(results, Mapping):
             continue
         for target in projection_targets:
-            if target_sample_exclusion_reasons(target, sample_name):
-                continue
             result = results.get(target.label)
             paired_istd_result = results.get(target.istd_pair)
             if not (

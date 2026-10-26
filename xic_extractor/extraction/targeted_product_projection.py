@@ -7,9 +7,6 @@ from statistics import median, quantiles
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.extraction.target_sample_applicability import (
-    target_sample_exclusion_reasons,
-)
 from xic_extractor.output.targeted_product_model import (
     ProductState,
     ReviewState,
@@ -73,7 +70,7 @@ def project_targeted_result(
             else selection_decision.not_counted_reasons,
         )
     )
-    exclusions = target_sample_exclusion_reasons(target, sample_name)
+    exclusions: tuple[str, ...] = ()
     if selection_decision is not None:
         exclusions = _merge_reasons(
             exclusions,

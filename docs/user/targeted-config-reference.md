@@ -33,7 +33,7 @@ policy and actual resource allocation.
 | `cid_nl_tag` | `dR`, `R`, or `MeR`; chemistry and tolerances resolve from the corresponding shared built-in Discovery recipe |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
-| `sample_applicability` | Optional `all` (default) or `rna_containing` |
+| `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
 
 Additional descriptive metadata is retained. Retired scientific fields such as
 `rt_min`, `rt_max`, `ppm_tol`, `neutral_loss_da`, `nl_ppm_warn`, `nl_ppm_max`, and
