@@ -942,6 +942,11 @@ def test_pure_cid_nl_targets_csv_integration(
     )
     monkeypatch.setattr(
         application_module,
+        "prepare_batch_mass_recalibration",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        application_module,
         "complete_untargeted_alignment",
         lambda **kwargs: (
             captured.update(kwargs) or _bind_mock_publication_inputs(completed, kwargs)

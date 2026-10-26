@@ -44,7 +44,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import open_raw
+from xic_extractor.raw_reader import PreparedRawMassRecalibration, open_raw
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import (
@@ -62,6 +62,7 @@ def extract_raw_file_result(
     *,
     scoring_context_factory: Callable[..., Any] | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
+    prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
 ) -> RawFileExtractionResult:
     from xic_extractor.extraction import result_models
 
@@ -71,6 +72,7 @@ def extract_raw_file_result(
         raw_path,
         scoring_context_factory=scoring_context_factory,
         expected_acquisition_source=expected_acquisition_source,
+        prepared_mass_recalibration=prepared_mass_recalibration,
     )
     if expected_acquisition_source is not None:
         file_result = replace(
@@ -101,6 +103,7 @@ def process_file(
     *,
     scoring_context_factory: Callable[..., Any] | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
+    prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor.extraction import result_models
 
@@ -111,6 +114,7 @@ def process_file(
                 raw_path,
                 config.dll_dir,
                 mass_recalibration=config.mass_recalibration,
+                prepared_mass_recalibration=prepared_mass_recalibration,
             )
             if expected_acquisition_source is None
             else open_raw(
@@ -119,6 +123,7 @@ def process_file(
                 mass_recalibration=config.mass_recalibration,
                 expected_acquisition_source=expected_acquisition_source.source,
                 _expected_path_identity=expected_acquisition_source.path_identity,
+                prepared_mass_recalibration=prepared_mass_recalibration,
             )
         )
         with raw_context as raw:

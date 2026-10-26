@@ -207,7 +207,13 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
     target = _make_target("ISTD")
 
     def process_file(
-        config, targets, path, *, scoring_context_factory, expected_acquisition_source
+        config,
+        targets,
+        path,
+        *,
+        scoring_context_factory,
+        expected_acquisition_source,
+        prepared_mass_recalibration,
     ):
         assert targets == [target]
         assert config.dll_dir == tmp_path / "dll"
@@ -259,7 +265,9 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     target = _make_target("ISTD")
     calls = []
 
-    def run_process(config, targets, *, raw_paths, injection_order):
+    def run_process(
+        config, targets, *, raw_paths, injection_order, mass_recalibration_by_sample
+    ):
         calls.append((config.parallel_mode, targets, raw_paths))
         return RunOutput(
             file_results=[

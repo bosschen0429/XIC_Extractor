@@ -100,6 +100,88 @@ def test_recalibrated_ms1_centroid_reads_return_true_masses():
     assert observations[1] is None
 
 
+@pytest.mark.parametrize("outcome", ["applied", "not_needed", "unavailable"])
+def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
+    vendor = _Vendor()
+    first = _handle(vendor)
+    result = replace(first.mass_recalibration_result, outcome=outcome)
+    if outcome != "applied":
+        result = replace(result, a=None, b=None)
+    reopened_vendor = _Vendor()
+    reopened_vendor.trailer_labels.insert(0, "Other trailer:")
+    reopened_vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+        Values=["999", str(LM_BY_SCAN[scan])]
+    )
+    reopened = _handle(reopened_vendor)
+    reopened.use_mass_recalibration_result(result)
+    assert reopened.mass_recalibration_result == result
+    assert reopened_vendor.centroid_reads == 0
+    if outcome == "applied":
+        observations = reopened.read_ms1_mass_windows(((3, 499.999, 500.001),))
+        assert observations[0].centroid_mzs == pytest.approx((TRUE_MZ,))
+        trace = reopened.extract_xic_many(
+            (XICRequest(mz=TRUE_MZ, rt_min=9.9, rt_max=10.05, ppm_tol=5.0),)
+        )[0]
+        assert trace.intensity.tolist() == [100.0, 300.0]
+
+
+def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
+    tmp_path, monkeypatch
+):
+    from xic_extractor import raw_reader
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    inputs = []
+    opened = []
+    closed = []
+    for stem in ("applied", "unavailable"):
+        path = tmp_path / f"{stem}.raw"
+        path.write_bytes(stem.encode())
+        source = build_acquisition_source_identity(
+            path,
+            acquisition_format="thermo_raw",
+            observation_namespace="thermo_raw_file_reader:Device.MS:1",
+        )
+        inputs.append((path, source))
+
+    def open_vendor(
+        path,
+        dll_dir,
+        *,
+        mass_recalibration,
+        expected_acquisition_source,
+        _expected_path_identity,
+    ):
+        assert expected_acquisition_source == dict(inputs)[path]
+        opened.append(path.stem)
+        vendor = _Vendor()
+        if path.stem == "unavailable":
+            vendor.centroids = {scan: ([], []) for scan in vendor.centroids}
+        vendor.Dispose = lambda: closed.append(path.stem)
+        return _handle(vendor, mass_recalibration)
+
+    monkeypatch.setattr(raw_reader, "open_raw", open_vendor)
+    prepared = raw_reader.prepare_batch_mass_recalibration(
+        inputs,
+        tmp_path,
+        MassRecalibration.EASY_IC_PROBE,
+        workers=2,
+    )
+    assert sorted(opened) == sorted(closed) == ["applied", "unavailable"]
+    for path, source in inputs:
+        assert prepared[path.stem].acquisition.source == source
+        assert prepared[path.stem].result.outcome == path.stem
+    assert prepared["applied"].result.a == pytest.approx(0.7)
+    assert prepared["applied"].result.b == pytest.approx(1.9)
+    assert (
+        raw_reader.prepare_batch_mass_recalibration(
+            inputs, tmp_path, MassRecalibration.NONE
+        )
+        == {}
+    )
+    assert len(opened) == 2
+
+
 @pytest.mark.parametrize("outcome", ("applied", "none", "unavailable", "not_needed"))
 @pytest.mark.parametrize("isotope_number,charge", ((0, 1), (1, 1), (2, 1), (1, 2)))
 def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(

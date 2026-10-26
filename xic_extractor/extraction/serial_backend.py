@@ -3,13 +3,14 @@ from __future__ import annotations
 import gc
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
+from xic_extractor.raw_reader import PreparedRawMassRecalibration
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import FileResult, RunOutput
@@ -25,6 +26,8 @@ def run_serial(
     should_stop: Callable[[], bool] | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> RunOutput:
     from xic_extractor.extraction import result_models
 
@@ -38,7 +41,11 @@ def run_serial(
         if should_stop is not None and should_stop():
             break
 
-        extraction_kwargs = {}
+        extraction_kwargs: dict[str, Any] = {}
+        if mass_recalibration_by_sample:
+            extraction_kwargs["prepared_mass_recalibration"] = (
+                mass_recalibration_by_sample[raw_path.stem]
+            )
         expected_source = _expected_source(raw_path, acquisition_sources_by_sample)
         if expected_source is not None:
             extraction_kwargs["expected_acquisition_source"] = expected_source

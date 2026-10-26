@@ -2042,6 +2042,7 @@ def _install_runtime_raw(
         mass_recalibration="none",
         expected_acquisition_source,
         _expected_path_identity=None,
+        prepared_mass_recalibration=None,
     ):
         assert path == raw_path
         return open_raw(
@@ -2050,6 +2051,7 @@ def _install_runtime_raw(
             mass_recalibration=mass_recalibration,
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
+            prepared_mass_recalibration=prepared_mass_recalibration,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -2099,6 +2101,7 @@ def _install_runtime_raws(
         mass_recalibration="none",
         expected_acquisition_source,
         _expected_path_identity=None,
+        prepared_mass_recalibration=None,
     ):
         vendor_raw = _FakeThermoRaw(sources_by_path[path])
         opened.setdefault(path, []).append(vendor_raw)
@@ -2108,6 +2111,7 @@ def _install_runtime_raws(
             mass_recalibration=mass_recalibration,
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
+            prepared_mass_recalibration=prepared_mass_recalibration,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -2126,6 +2130,7 @@ def _install_runtime_raws(
         )
 
     monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open_runtime_raw)
     return opened
 
 

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xic_extractor.raw_reader import PreparedRawMassRecalibration
+
 import os
 import shutil
 from collections import Counter
@@ -254,6 +259,8 @@ def prepare_untargeted_alignment_inputs(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
 ) -> PreparedUntargetedAlignmentInputs:
     """Prepare Discovery-backed inputs without scheduling Backfill or outputs."""
     raw_paths = existing_raw_paths(
@@ -336,6 +343,7 @@ def prepare_untargeted_alignment_inputs(
                         discovery_settings=settings,
                         signal_processing_profile=signal_processing_profile,
                         fingerprint_workers=raw_workers,
+                        verified_acquisition_sources=verified_acquisition_sources,
                     )
                 )
             physical_spool_dir = Path(
@@ -408,6 +416,7 @@ def prepare_untargeted_alignment_inputs(
                     profile=signal_processing_profile,
                     raw_workers=raw_workers,
                     retained_records_sink=retain_records,
+                    verified_acquisition_sources=verified_acquisition_sources,
                 )
         if not isinstance(candidates_by_sample, DiscoveryInputSource):
             plan = prepare_eager_untargeted_plan(
@@ -457,6 +466,8 @@ def complete_untargeted_alignment(
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -474,6 +485,14 @@ def complete_untargeted_alignment(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         should_cancel=should_cancel,
+        verified_acquisition_sources=(
+            {
+                sample: prepared.acquisition
+                for sample, prepared in mass_recalibration_by_sample.items()
+            }
+            if mass_recalibration_by_sample
+            else None
+        ),
     )
     plan = prepared.plan
     with ExitStack() as pending:
@@ -493,6 +512,7 @@ def complete_untargeted_alignment(
                 retain_acquisition_cache=retain_acquisition_cache,
                 acquisition_cache_dir=acquisition_cache_dir,
                 max_partition_jobs=max_partition_jobs,
+                mass_recalibration_by_sample=mass_recalibration_by_sample,
             ),
         )
         pending.callback(completed.close)
@@ -522,6 +542,8 @@ def execute_prepared_alignment(
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
     grouping_only: bool = False,
+    mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
+    | None = None,
 ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
     """One instrumented scheduler for complete Alignment and frozen grouping."""
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
@@ -575,6 +597,7 @@ def execute_prepared_alignment(
             pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
+            mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
     return completed
 
@@ -587,6 +610,8 @@ def _load_physical_replay_inputs(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
+    verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
     retained_records_sink: Callable[
         [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
     ]
@@ -601,6 +626,7 @@ def _load_physical_replay_inputs(
             raw_paths,
             discovery_settings=settings,
             signal_processing_profile=profile,
+            verified_acquisition_sources=verified_acquisition_sources,
         )
     )
 

@@ -215,12 +215,14 @@ def _open_job_raw(
                 mass_recalibration=mass_recalibration,
                 expected_acquisition_source=source,
                 _expected_path_identity=expectation.path_identity,
+                prepared_mass_recalibration=job.prepared_mass_recalibration,
             )
         return active_open(
             job.raw_path,
             job.dll_dir,
             mass_recalibration=mass_recalibration,
             expected_acquisition_source=source,
+            prepared_mass_recalibration=job.prepared_mass_recalibration,
         )
 
     if expectation is not None and job.acquisition_cache_dir is not None:
