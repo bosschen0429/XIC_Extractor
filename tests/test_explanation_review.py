@@ -873,6 +873,16 @@ def _competition_review_report(tmp_path):
         "selected_peer_fit": 0.25,
         "alternative_peer_fit": 0.4,
         "peer_fit_gap": 0.15,
+        "rt_estimate": {
+            "rt_min": 8.0,
+            "method": "median_shift",
+            "anchor_count": 2,
+            "anchor_range_min": [7.0, 9.0],
+            "residual_spread_min": 0.02,
+            "nearest_anchor_distance_min": 1.0,
+            "outside_anchor_range_min": 0.0,
+            "fit_status": "insufficient_anchors",
+        },
     }
     return _quality_review_report(tmp_path, membership_risks={"S2": [risk]})
 
@@ -892,6 +902,7 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
     risk = rows["S2"]["membership_risks"][0]
     assert risk["cost_gap"] == 0.03
     assert risk["alternative_partition"] == [["a"], ["b", "c"]]
+    assert risk["rt_estimate"]["method"] == "median_shift"
     assert rows["S1"]["quantitative_value"] == 1000.0
     assert rows["S2"]["quantitative_value"] == 2000.0
     assert matrix.read_bytes() == original
@@ -902,8 +913,17 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     tmp_path, monkeypatch, full_audit
 ):
     import csv
-    from dataclasses import asdict
+    from dataclasses import asdict, replace
 
+    from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+    from xic_extractor.alignment.feature_membership_inference import (
+        infer_feature_memberships,
+    )
+    from xic_extractor.alignment.rt_frame import SampleRtFrame
+    from xic_extractor.alignment.sample_rt_calibration import (
+        RtCalibrationPolicy,
+        build_batch_rt_calibration,
+    )
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         project_completed_untarget_batch_writer_inputs,
     )
@@ -912,6 +932,27 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     completed, _, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
+    # Re-evaluate the real owners with a frozen, independently measured sparse
+    # reference. The unchanged partition lets this test isolate query-fact
+    # projection rather than fabricate risk payloads or new final memberships.
+    calibration = build_batch_rt_calibration(
+        {"early": {"S1": 7, "S2": 7.1, "S3": 7}, "late": {"S1": 9, "S2": 9.1, "S3": 9}},
+        sample_stems=("S1", "S2", "S3"),
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    )
+    groups = []
+    for group in completed.initial_groups:
+        inferred = infer_feature_memberships(
+            group.owners,
+            rules=CID_NL_GROUPING_RULES,
+            config=config,
+            rt_frame=SampleRtFrame().with_sample_calibration(calibration),
+        )
+        assert len(inferred.groups) == 1
+        assert set(inferred.groups[0].owner_ids) == {o.owner_id for o in group.owners}
+        groups.append(replace(group, inference_decisions=inferred.sparse_decisions))
+    completed = replace(completed, initial_groups=tuple(groups))
     risks = {
         d.owner_id: d.accepted_risk
         for group in completed.initial_groups
@@ -920,6 +961,14 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     }
     assert len(risks) == 2
     assert all(risk.selected_peer_fit is not None for risk in risks.values())
+    for group in completed.initial_groups:
+        for owner in group.owners:
+            estimate = risks[owner.owner_id].rt_estimate
+            assert estimate.method == "median_shift"
+            assert estimate.anchor_count == 2
+            assert estimate.rt_min == pytest.approx(
+                owner.owner_apex_rt - (0.1 if owner.sample_stem == "S2" else 0)
+            )
     expected = {
         member.canonical_sample_identity_id: json.loads(
             json.dumps(asdict(risks[member.subject_id]))
@@ -973,6 +1022,8 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         ("peer_fit_gap", "0.15"),
         ("alternative_partition", ["not-a-group"]),
         ("soft_contradictions", "shape_disagreement"),
+        ("rt_estimate", "median_shift"),
+        ("rt_estimate", {"method": "median_shift", "rt_min": True}),
     ),
 )
 def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):

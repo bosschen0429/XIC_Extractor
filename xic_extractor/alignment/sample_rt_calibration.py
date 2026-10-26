@@ -12,7 +12,7 @@ import math
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import median
 
 import numpy as np
@@ -68,6 +68,36 @@ class CalibrationKnot:
 
 
 @dataclass(frozen=True)
+class RtEstimateSupport:
+    """Frozen, distinct qualified observations; never reconstructed from knots."""
+
+    positions_min: tuple[float, ...]
+    median_shift_min: float
+    shift_spread_min: float
+    fit_spread_min: float | None
+
+
+@dataclass(frozen=True)
+class RtEstimate:
+    """One coordinate answer and its measured support, not a probability."""
+
+    rt_min: float
+    method: str
+    anchor_count: int | None = None
+    anchor_range_min: tuple[float, float] | None = None
+    residual_spread_min: float | None = None
+    nearest_anchor_distance_min: float | None = None
+    outside_anchor_range_min: float | None = None
+    fit_status: str | None = None
+
+    @property
+    def rt_weight(self) -> float:
+        # Weak coordinates remain usable, with half the RT influence. This is
+        # separate from measured signal quality and does not downweight mass.
+        return 0.5 if self.method in ("median_shift", "boundary_shift") else 1.0
+
+
+@dataclass(frozen=True)
 class SampleRtCalibration:
     sample_stem: str
     status: str
@@ -79,6 +109,7 @@ class SampleRtCalibration:
     anchor_count: int = 0
     # (label, observed, reference, fitted-minus-reference), all RTs in minutes.
     standard_residuals: tuple[tuple[str, float, float, float], ...] = ()
+    estimate_support: RtEstimateSupport | None = None
 
     @property
     def reliable_observed_range(self) -> tuple[float, float] | None:
@@ -89,6 +120,74 @@ class SampleRtCalibration:
     def calibrated_rt(self, observed_rt_min: float) -> float | None:
         """Common-coordinate RT; None outside this sample's anchor span."""
         return interpolate_calibrated_rt_min(observed_rt_min, self.knots)
+
+    def estimate_rt(self, observed_rt_min: float) -> RtEstimate | None:
+        """Prefer the bounded fit; use explicit constant shifts where it cannot answer.
+
+        Outside a usable curve, retain its nearest endpoint's offset. Unlike
+        splicing in the global median offset, this preserves continuity, order
+        and a unique inverse while leaving every supported coordinate unchanged.
+        Historical maps without observation facts never acquire new support.
+        """
+        calibrated = self.calibrated_rt(observed_rt_min)
+        support = self.estimate_support
+        if calibrated is not None:
+            if support is None:
+                return RtEstimate(calibrated, "retained_map")
+            method = "loess"
+        elif support is None:
+            return None
+        elif self.knots:
+            observed, reference = (
+                self.knots[0] if observed_rt_min < self.knots[0][0] else self.knots[-1]
+            )
+            calibrated = observed_rt_min + reference - observed
+            method = "boundary_shift"
+        else:
+            calibrated = observed_rt_min + support.median_shift_min
+            method = "median_shift"
+        lower, upper = (
+            (self.knots[0][0], self.knots[-1][0])
+            if self.knots
+            else (support.positions_min[0], support.positions_min[-1])
+        )
+        index = bisect_right(support.positions_min, observed_rt_min)
+        nearest = min(
+            abs(observed_rt_min - point)
+            for point in support.positions_min[max(0, index - 1) : index + 1]
+        )
+        return RtEstimate(
+            calibrated,
+            method,
+            len(support.positions_min),
+            (support.positions_min[0], support.positions_min[-1]),
+            support.shift_spread_min
+            if method == "median_shift"
+            else support.fit_spread_min,
+            nearest,
+            max(0.0, lower - observed_rt_min, observed_rt_min - upper),
+            self.status,
+        )
+
+    def estimate_observed_rt(self, common_rt_min: float) -> RtEstimate | None:
+        """Invert the same piecewise map; never choose a branch by candidate fit."""
+        observed = interpolate_calibrated_rt_min(
+            common_rt_min, tuple((reference, rt) for rt, reference in self.knots)
+        )
+        if observed is None:
+            if self.estimate_support is None:
+                return None
+            if self.knots:
+                raw, reference = (
+                    self.knots[0]
+                    if common_rt_min < self.knots[0][1]
+                    else self.knots[-1]
+                )
+                observed = common_rt_min - reference + raw
+            else:
+                observed = common_rt_min - self.estimate_support.median_shift_min
+        estimate = self.estimate_rt(observed)
+        return replace(estimate, rt_min=observed) if estimate is not None else None
 
 
 def interpolate_calibrated_rt_min(
@@ -179,6 +278,7 @@ def build_batch_rt_calibration(
     )
     sample_knots: dict[str, tuple[tuple[float, float], ...]] = {}
     anchor_counts: dict[str, int] = {}
+    estimate_support: dict[str, RtEstimateSupport | None] = {}
     for sample in samples:
         points = tuple(
             (
@@ -205,6 +305,25 @@ def build_batch_rt_calibration(
             )
         )
         anchor_counts[sample] = len({x for x, _ in points})
+        locations = _distinct_anchor_positions(points)
+        if len(locations) < 2:
+            estimate_support[sample] = None
+            continue
+        shifts = [reference - observed for observed, reference in locations]
+        shift = float(median(shifts))
+        fitted_knots = sample_knots[sample] if _is_usable(sample_knots[sample]) else ()
+        fit_residuals = [
+            abs(fitted - reference)
+            for observed, reference in locations
+            if (fitted := interpolate_calibrated_rt_min(observed, fitted_knots))
+            is not None
+        ]
+        estimate_support[sample] = RtEstimateSupport(
+            tuple(observed for observed, _ in locations),
+            shift,
+            float(median(abs(value - shift) for value in shifts)),
+            float(median(fit_residuals)) if fit_residuals else None,
+        )
     usable = {s for s, k in sample_knots.items() if _is_usable(k)}
 
     front_knots = knots[: policy.front_knot_count]
@@ -241,6 +360,7 @@ def build_batch_rt_calibration(
             prior_injection=prior,
             perturbation_status=_perturbation_status(prior, front, center, tolerance),
             anchor_count=anchor_counts[sample],
+            estimate_support=estimate_support[sample],
             standard_residuals=tuple(
                 (label, observed, reference, fitted - reference)
                 for label, observed, reference in standards.get(sample, ())
@@ -347,17 +467,23 @@ def _anchor_coordinates(
     )
 
 
+def _distinct_anchor_positions(
+    points: Sequence[tuple[float, float]],
+) -> tuple[tuple[float, float], ...]:
+    # Both strong and weak estimates give each acquired position one vote.
+    by_rt: dict[float, list[float]] = defaultdict(list)
+    for observed, reference in points:
+        by_rt[observed].append(reference)
+    return tuple(sorted((x, float(median(values))) for x, values in by_rt.items()))
+
+
 def _fit_sample_knots(
     points: Sequence[tuple[float, float]],
     fraction: float,
     *,
     standard_points: Sequence[tuple[float, float]] = (),
 ) -> tuple[tuple[float, float], ...]:
-    # Multiple ion views at one acquired position are not independent votes.
-    by_rt: dict[float, list[float]] = defaultdict(list)
-    for observed, reference in points:
-        by_rt[observed].append(reference)
-    locations = sorted((x, float(median(values))) for x, values in by_rt.items())
+    locations = _distinct_anchor_positions(points)
     if len(locations) < _MIN_LOESS_POSITIONS:
         return ()
     x, reference = np.asarray(locations, dtype=float).T

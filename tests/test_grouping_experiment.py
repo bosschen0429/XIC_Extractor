@@ -336,6 +336,83 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
         assert float(member["comparison_rt"]) == pytest.approx(expected_rt)
 
 
+@pytest.mark.parametrize("mode", ("sparse", "outside", "missing_peer"))
+def test_replay_members_report_the_selected_coordinate_basis(tmp_path, mode):
+    from xic_extractor.alignment.sample_rt_calibration import (
+        RtCalibrationPolicy,
+        build_batch_rt_calibration,
+    )
+
+    samples = ("a", "b", "c")
+    shifts = {"a": 0.0, "b": 0.5, "c": 0.5}
+    query = 30.0 if mode == "outside" else 12.0
+    positions = (10.0, 20.0) if mode == "sparse" else tuple(range(10, 18))
+    calibration = build_batch_rt_calibration(
+        {},
+        sample_stems=samples,
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+        measured_istds=tuple(
+            (f"standard{i}", sample, position + shifts[sample])
+            for i, position in enumerate(positions)
+            for sample in samples
+            if mode != "missing_peer" or sample != "c"
+        ),
+    )
+    owners = []
+    for sample in samples:
+        owner = _owner(sample, "peak", apex_rt=query + shifts[sample])
+        owners.append(
+            replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+        )
+    inputs = GroupingInputs(
+        sample_stems=samples,
+        injection_order=dict(zip(samples, (1, 2, 3), strict=True)),
+        alignment_config=AlignmentConfig(),
+        worksets=(
+            GroupingWorkset("mass-window", tuple(owners), (), None, (), calibration),
+        ),
+        candidate_ids_by_owner={},
+    )
+    snapshot, output = tmp_path / "inputs.gz", tmp_path / "replay"
+    write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
+    assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
+    with (output / "members.tsv").open(encoding="utf-8") as stream:
+        members = list(csv.DictReader(stream, delimiter="\t"))
+    with (output / "decisions.tsv").open(encoding="utf-8") as stream:
+        risks = {
+            row["owner_id"]: json.loads(row["accepted_risk_json"])
+            for row in csv.DictReader(stream, delimiter="\t")
+        }
+    assert len(members) == 3
+    expected_rts = {
+        sample: query + (shifts[sample] if mode == "missing_peer" else 0.5)
+        for sample in samples
+    }
+    # Check the numbers before the additional basis column so a regression
+    # cannot hide behind a missing explanatory field.
+    assert {row["sample_stem"]: float(row["comparison_rt"]) for row in members} == (
+        pytest.approx(expected_rts)
+    )
+    for member in members:
+        measured = query + shifts[member["sample_stem"]]
+        # All three measured standards have median reference position + 0.5.
+        # One unsupported peer instead makes this whole comparison use raw RT.
+        expected_rt = expected_rts[member["sample_stem"]]
+        assert float(member["observed_rt"]) == measured
+        assert float(member["comparison_rt"]) == pytest.approx(expected_rt)
+        assert member["comparison_rt_basis"] == (
+            "raw" if mode == "missing_peer" else "drift_corrected"
+        )
+        risk = risks[member["owner_id"]]
+        assert risk["rt_basis"] == member["comparison_rt_basis"]
+        if mode != "missing_peer":
+            assert risk["rt_estimate"]["rt_min"] == pytest.approx(expected_rt)
+            assert risk["rt_estimate"]["method"] == (
+                "median_shift" if mode == "sparse" else "boundary_shift"
+            )
+
+
 def test_rt_coordinate_override_changes_membership_without_rewriting_measurements(
     tmp_path, monkeypatch
 ):

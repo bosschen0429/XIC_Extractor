@@ -18,6 +18,7 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.sample_rt_calibration import RtEstimate
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 if TYPE_CHECKING:
@@ -64,7 +65,15 @@ class RtFrame(Protocol):
 
     def membership_coordinate(
         self, owner: SampleLocalMS1Owner
-    ) -> tuple[float, str] | None: ...
+    ) -> RtEstimate | None: ...
+
+    def estimate_rt(
+        self, sample_stem: str, observed_rt: float
+    ) -> RtEstimate | None: ...
+
+    def estimate_observed_rt(
+        self, sample_stem: str, common_rt: float
+    ) -> RtEstimate | None: ...
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
@@ -367,14 +376,31 @@ class SampleRtFrame:
             return None
         return start, apex, end
 
-    def membership_coordinate(
-        self, owner: SampleLocalMS1Owner
-    ) -> tuple[float, str] | None:
-        """Expose existing apex support without inventing calibrated peak edges."""
+    def membership_coordinate(self, owner: SampleLocalMS1Owner) -> RtEstimate | None:
+        """Final membership consumes estimates without widening strong support."""
         if self._coordinate_override is not None:
-            return self._coordinate_override(owner), "diagnostic_override"
-        apex = self.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt)
-        return None if apex is None else (apex, "drift_corrected")
+            return RtEstimate(self._coordinate_override(owner), "diagnostic_override")
+        return self.estimate_rt(owner.sample_stem, owner.owner_apex_rt)
+
+    def estimate_rt(self, sample_stem: str, observed_rt: float) -> RtEstimate | None:
+        if self._sample_calibration is not None:
+            sample = self._sample_calibration.samples.get(sample_stem)
+            return sample.estimate_rt(observed_rt) if sample is not None else None
+        calibrated = self.calibrated_rt_min(sample_stem, observed_rt)
+        return (
+            RtEstimate(calibrated, "retained_map") if calibrated is not None else None
+        )
+
+    def estimate_observed_rt(
+        self, sample_stem: str, common_rt: float
+    ) -> RtEstimate | None:
+        if self._sample_calibration is not None:
+            sample = self._sample_calibration.samples.get(sample_stem)
+            return (
+                sample.estimate_observed_rt(common_rt) if sample is not None else None
+            )
+        observed = self.observed_rt_min(sample_stem, common_rt)
+        return RtEstimate(observed, "retained_map") if observed is not None else None
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
         if self._sample_calibration is not None:

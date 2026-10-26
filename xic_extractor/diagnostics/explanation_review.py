@@ -75,6 +75,46 @@ def validate_membership_risks(risks: object) -> None:
                 and isinstance(value, (int, float))
                 and math.isfinite(value)
             )
+        estimate = risk.get("rt_estimate")
+        if estimate is not None:
+            if not isinstance(estimate, dict):
+                raise ValueError("membership risk RT estimate must be an object")
+            valid = valid and isinstance(estimate.get("method"), str)
+            for key in (
+                "rt_min",
+                "residual_spread_min",
+                "nearest_anchor_distance_min",
+                "outside_anchor_range_min",
+            ):
+                value = estimate.get(key)
+                if value is None and key != "rt_min":
+                    continue
+                valid = valid and (
+                    not isinstance(value, bool)
+                    and isinstance(value, (int, float))
+                    and math.isfinite(value)
+                )
+            count = estimate.get("anchor_count")
+            valid = valid and (count is None or (type(count) is int and count >= 0))
+            bounds = estimate.get("anchor_range_min")
+            valid = valid and (
+                bounds is None
+                or (
+                    isinstance(bounds, list)
+                    and len(bounds) == 2
+                    and all(
+                        not isinstance(v, bool)
+                        and isinstance(v, (int, float))
+                        and math.isfinite(v)
+                        for v in bounds
+                    )
+                    and bounds[0] <= bounds[1]
+                )
+            )
+            valid = valid and (
+                estimate.get("fit_status") is None
+                or isinstance(estimate["fit_status"], str)
+            )
         if not valid:
             raise ValueError("malformed membership risk fields")
 

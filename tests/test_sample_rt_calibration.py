@@ -42,14 +42,15 @@ def _calibrate(detected, priors=None, **policy):
     )
 
 
-def test_repeated_measured_patterns_do_not_add_anchor_votes() -> None:
-    detected = _batch()
+@pytest.mark.parametrize("positions", (2, len(REFERENCE_RTS)))
+def test_repeated_measured_patterns_do_not_add_anchor_votes(positions) -> None:
+    detected = dict(list(_batch().items())[:positions])
     expected = _calibrate(detected)
     for i in range(20):
         detected[f"F1_alias_{i}"] = dict(detected["F1"])
     calibration = _calibrate(detected)
     assert calibration.samples == expected.samples
-    assert len(calibration.knots) == len(REFERENCE_RTS)
+    assert len(calibration.knots) == positions
 
 
 def test_calibrated_rt_corrects_local_shift_inside_span_only() -> None:
@@ -91,6 +92,121 @@ def test_too_few_knots_leave_sample_uncalibrated() -> None:
     sample = calibration.samples["S01"]
     assert sample.status == "insufficient_anchors"
     assert sample.calibrated_rt(8.0) is None
+
+
+@pytest.mark.parametrize("positions", (0, 1, 2, 7, 8))
+def test_graded_estimate_uses_sparse_positions_without_claiming_loess(positions):
+    detected = {
+        f"F{i}": {s: 8.0 + i + (0.2 if s == "S01" else 0) for s in SAMPLES}
+        for i in range(positions)
+    }
+    sample = _calibrate(detected).samples["S01"]
+    estimate = sample.estimate_rt(8.7)
+    if positions < 2:
+        assert estimate is None
+        return
+    assert estimate.rt_min == pytest.approx(8.5)
+    assert estimate.method == ("loess" if positions >= 8 else "median_shift")
+    assert estimate.anchor_count == positions
+    assert estimate.residual_spread_min == pytest.approx(0)
+    assert sample.estimate_observed_rt(estimate.rt_min).rt_min == pytest.approx(8.7)
+    if positions < 8:
+        assert sample.calibrated_rt(8.7) is None
+
+
+def test_boundary_shift_preserves_order_and_inverse_of_supported_curve():
+    samples = ("a", "b", "c")
+    detected = {
+        f"F{i}": {"a": 10.0 + i, "b": 10.0 + 1.1 * i, "c": 10.0 + 1.1 * i}
+        for i in range(8)
+    }
+    calibration = build_batch_rt_calibration(
+        detected,
+        sample_stems=samples,
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    )
+    sample = calibration.samples["a"]
+    queries = (9.99, 10.0, 13.2, 17.0, 17.01)
+    estimates = [sample.estimate_rt(rt) for rt in queries]
+    assert [e.rt_min for e in estimates] == pytest.approx(
+        (9.99, 10, 13.52, 17.7, 17.71)
+    )
+    for rt, estimate in zip(queries, estimates, strict=True):
+        assert sample.estimate_observed_rt(estimate.rt_min).rt_min == pytest.approx(rt)
+    assert estimates[-1].method == "boundary_shift"
+    assert estimates[-1].outside_anchor_range_min == pytest.approx(0.01)
+    assert sample.estimate_observed_rt(17.5).rt_min == pytest.approx(16.818181818)
+    assert sample.calibrated_rt(17.01) is None  # Strong-support API stays bounded.
+
+
+def test_failed_strong_fit_retains_explicit_weak_estimate():
+    detected = {
+        f"F{i}": {
+            s: 8.0 + 4 * i + (2.0 if s == "S01" and i == 3 else 0.0) for s in SAMPLES
+        }
+        for i in range(8)
+    }
+    sample = _calibrate(detected).samples["S01"]
+    assert sample.calibrated_rt(10.0) is None
+    estimate = sample.estimate_rt(10.0)
+    assert estimate.method == "median_shift"
+    assert estimate.rt_min == pytest.approx(10.0)
+    assert estimate.anchor_count == 8  # Qualified positions, not final LOESS support.
+    assert estimate.fit_status == sample.status != "calibrated"
+
+
+def test_weak_estimate_snapshot_round_trip_does_not_upgrade_legacy_maps(tmp_path):
+    from xic_extractor.diagnostics.grouping_experiment_io import (
+        read_rt_calibration,
+        write_rt_calibration,
+    )
+
+    calibration = _calibrate(dict(list(_batch().items())[:2]))
+    path = tmp_path / "calibration.json"
+    write_rt_calibration(path, calibration)
+    restored = read_rt_calibration(path)
+    assert restored.samples["S01"].estimate_rt(12) == calibration.samples[
+        "S01"
+    ].estimate_rt(12)
+    assert restored.samples["S01"].estimate_rt(12).method == "median_shift"
+
+    strong = _calibrate(_batch())
+    write_rt_calibration(path, strong)
+    payload = json.loads(path.read_text())
+    payload["schema_version"] = 2
+    for sample in payload["samples"]:
+        sample.pop("estimate_support", None)
+    path.write_text(json.dumps(payload))
+    legacy = read_rt_calibration(path).samples["S01"]
+    assert legacy.calibrated_rt(20) == strong.samples["S01"].calibrated_rt(20)
+    assert legacy.estimate_rt(20).method == "retained_map"
+    assert legacy.estimate_rt(20).anchor_count is None
+    assert legacy.estimate_rt(40) is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("positions_min", [8, 8]),
+        ("positions_min", [True, 9]),
+        ("median_shift_min", "0.1"),
+        ("shift_spread_min", -1),
+    ),
+)
+def test_persisted_estimate_support_rejects_malformed_values(tmp_path, field, value):
+    from xic_extractor.diagnostics.grouping_experiment_io import (
+        read_rt_calibration,
+        write_rt_calibration,
+    )
+
+    path = tmp_path / "calibration.json"
+    write_rt_calibration(path, _calibrate(dict(list(_batch().items())[:2])))
+    payload = json.loads(path.read_text())
+    payload["samples"][0]["estimate_support"][field] = value
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="RT estimate"):
+        read_rt_calibration(path)
 
 
 @pytest.mark.parametrize("positions", (2, 7, 8))

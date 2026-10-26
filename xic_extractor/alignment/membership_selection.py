@@ -18,6 +18,7 @@ from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
+from xic_extractor.alignment.sample_rt_calibration import RtEstimate
 from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
@@ -41,6 +42,7 @@ class AcceptedMembershipRisk:
     selected_peer_fit: float | None = None
     alternative_peer_fit: float | None = None
     peer_fit_gap: float | None = None
+    rt_estimate: RtEstimate | None = None
 
 
 def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
@@ -92,7 +94,7 @@ class MembershipComparison:
             "diagnostic_override"
             if common
             and any(
-                c is not None and c[1] == "diagnostic_override"
+                c is not None and c.method == "diagnostic_override"
                 for c in coordinates.values()
             )
             else "drift_corrected"
@@ -101,13 +103,18 @@ class MembershipComparison:
         )
         self.rts = (
             {
-                key: coordinate[0]
+                key: coordinate.rt_min
                 for key, coordinate in coordinates.items()
                 if coordinate is not None
             }
             if common
             else {o.owner_id: o.owner_apex_rt for o in owners}
         )
+        self.rt_estimates = coordinates if common else dict.fromkeys(coordinates)
+        self.rt_weights = {
+            key: estimate.rt_weight if estimate is not None else 1.0
+            for key, estimate in self.rt_estimates.items()
+        }
         self.regions = {
             o.owner_id: (
                 regions[o.owner_id]
@@ -192,7 +199,8 @@ class MembershipComparison:
         if delta > cfg.max_rt_sec:
             return math.inf, ()  # outside the declared candidate universe
         weight = min(self.quality[first], self.quality[second])
-        cost = 0.70 * weight * delta / cfg.preferred_rt_sec
+        rt_weight = min(self.rt_weights[first], self.rt_weights[second])
+        cost = 0.70 * weight * rt_weight * delta / cfg.preferred_rt_sec
         cost += (
             0.15
             * absolute_ppm_error(
@@ -230,7 +238,12 @@ class MembershipComparison:
         ):
             region_gap = max(0.0, a[0] - b[2], b[0] - a[2]) * 60
             if region_gap:
-                cost += weight * 0.25 * min(region_gap / cfg.preferred_rt_sec, 1.0)
+                cost += (
+                    weight
+                    * rt_weight
+                    * 0.25
+                    * min(region_gap / cfg.preferred_rt_sec, 1.0)
+                )
                 contradictions.append("region_disagreement")
         cost += 0.20 * (int(first in self.weak) + int(second in self.weak)) / 2
         return cost, tuple(contradictions)
@@ -278,7 +291,8 @@ class MembershipComparison:
                         abs(self.rts[owner_id] - median(self.rts[p] for p in neighbors))
                         * 60
                     )
-                    trend = max(trend, 0.20 * max(0.0, residual / 90.0 - 1))
+                    rt_weight = min(self.rt_weights[p] for p in (owner_id, *neighbors))
+                    trend = max(trend, rt_weight * 0.20 * max(0.0, residual / 90.0 - 1))
             self.group_costs[key] = 1.0 + pair_cost + trend
         return self.group_costs[key]
 
@@ -463,6 +477,7 @@ class MembershipComparison:
                     or region[0] is None
                     or region[2] is None
                     or self.quality[owner_id] < 1.0
+                    or self.rt_weights[owner_id] < 1.0
                 ):
                     flags.add("low_rt_support")
                 if owner_id in self.weak:
@@ -489,5 +504,6 @@ class MembershipComparison:
                     alternative_fit - selected_fit
                     if alternative_fit is not None
                     else None,
+                    self.rt_estimates[owner_id],
                 )
         return result
