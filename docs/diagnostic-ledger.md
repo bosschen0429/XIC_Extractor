@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-26
+**Last updated:** 2026-10-27
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,37 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-10-27 One Mass-Recalibration Probe Per RAW In Alignment
+
+#931, Evidence: `diagnostic_only`; optimization class: `exact_safe`.
+Baseline `13cd49e7` and candidate `bd77a760` used the same 8RAW Discovery
+input, DLLs, four process workers, targets and fresh empty acquisition caches.
+OS file-cache state was uncontrolled. `_probe_mass_recalibration` calls fell
+from 136 to 8 (exactly one per RAW); cumulative probe time fell from 110.51 s
+to 8.01 s. Repeated-probe removal is `optimized`; a stable end-to-end speedup
+ratio remains `inconclusive`: baseline wall times were 131.72/113.45 s,
+and the final candidate was 105.75 s. Do not extrapolate to 85RAW.
+
+The five public TSV files are byte-identical. SQLite scientific records and
+links match after resolving per-attempt assessment IDs to their exact values;
+run metadata differs only in `processing_attempt_id`. The tissue inputs are
+non-applied; an additional applied RAW preserves seven full-span XICs,
+100 sampled MS1 observations and all 35,288 MS2 events exactly. These are
+regression/parity oracles, not new scientific or ProductWriter authority.
+
+Reuse the run-scoped source-bound result across ISTD extraction and partition
+reopens, using the configured worker backend for preparation. Reuse the
+already-verified source when compiling the run spec; retain the existing
+path-state check rather than hashing the same RAW twice. Targeted's normal
+single-handle-per-file route and Discovery's single-handle-per-sample route
+were inspected and do not have the partition-reopen pattern.
+
+Artifacts: `output/931-checks/{baseline,baseline-repeat,candidate-accepted}/`
+receipts and timing, `parity-baseline-repeat-candidate-accepted.json`, and
+`applied-parity.json` in the issue-929 worktree. Rerun when probe logic,
+source binding, worker transport, or applied mass correction changes; a new
+partition count alone does not invalidate the one-probe-per-RAW result.
 
 ### 2026-10-25 Average Peer Fit Resolves Flat Worst-Pair Choices
 
