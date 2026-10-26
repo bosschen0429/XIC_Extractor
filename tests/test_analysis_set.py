@@ -413,6 +413,37 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     assert result.sequence is not None and result.sequence.matched_count == 4
 
 
+def test_repeated_sequence_names_match_injections_not_nested_copies(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor import raw_reader
+
+    # A nested copy of A_1 is the same injection; it must not add a third
+    # candidate for the two repeated "A" rows.
+    clock = {"A_1": 0, "A_2": 11, "validation/A_1": 0}
+    for rel in clock:
+        (tmp_path / f"{rel}.raw").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f"{rel}.raw").write_bytes(b"")
+
+    def analysis_header(path: Path, _dll: Path):
+        rel = path.relative_to(tmp_path).with_suffix("").as_posix()
+        return header(str(path.resolve()), clock[rel]), "study_sample", path.stem
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    sequence = tmp_path / "sequence.csv"
+    sequence.write_text(
+        "Order,Raw File,Sample Name,Role\n1,A,A,QC\n2,A,A,QC\n", encoding="utf-8"
+    )
+
+    result = raw_reader.read_analysis_set(tmp_path, tmp_path, sequence_source=sequence)
+
+    assert [(row.raw_stem, row.sample_role) for row in result.sample_metadata] == [
+        ("A_1", "qc"),
+        ("A_2", "qc"),
+    ]
+    assert result.sequence is not None and result.sequence.matched_count == 2
+
+
 def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     import os
     from contextlib import nullcontext

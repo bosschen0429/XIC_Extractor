@@ -52,6 +52,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import (
     SampleMetadata,
     SampleRole,
+    SequenceMatchReport,
     infer_sample_role,
     load_and_match_sample_metadata,
 )
@@ -959,22 +960,15 @@ def read_analysis_set(
     """
     root = Path(raw_root)
     paths = tuple(raw_paths) if raw_paths is not None else discover_raw_files(root)
-    sequence = (
+    # Skipping explicit context files needs annotations before any RAW is read.
+    # Filenames cannot tell copies of one injection apart, so this match only
+    # selects files to skip; final annotations match the injection timeline.
+    overrides = _sequence_overrides(
         load_and_match_sample_metadata(sequence_source, [path.stem for path in paths])
-        if sequence_source is not None
-        else None
+        if sequence_source is not None and not include_context
+        else None,
+        sample_metadata,
     )
-    matched_stems = set(sequence.matched_raw_stems) if sequence is not None else set()
-    overrides = (
-        {
-            row.raw_stem.casefold(): row
-            for row in sequence.rows
-            if row.raw_stem in matched_stems
-        }
-        if sequence is not None
-        else {}
-    )
-    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
     headers: list[InjectionHeader] = []
     header_rows: dict[str, SampleMetadata] = {}
     unread: dict[str, SampleMetadata] = {}
@@ -1037,15 +1031,41 @@ def read_analysis_set(
             for _index, _path, future in pending:
                 future.cancel()
     timeline = build_injection_timeline(headers, PerturbationPolicy())
+    sequence = (
+        load_and_match_sample_metadata(
+            sequence_source,
+            (
+                *(injection.raw_stem for injection in timeline),
+                *(Path(path).stem for path in unopened),
+            ),
+        )
+        if sequence_source is not None
+        else None
+    )
     return select_analysis_set(
         timeline,
         header_rows,
-        tuple(overrides.values()),
+        tuple(_sequence_overrides(sequence, sample_metadata).values()),
         unreadable=unread,
         sequence=sequence,
         unopened_context=unopened,
         unreadable_errors=unread_errors,
     )
+
+
+def _sequence_overrides(
+    sequence: SequenceMatchReport | None,
+    sample_metadata: Sequence[SampleMetadata] | None,
+) -> dict[str, SampleMetadata]:
+    """Matched sequence rows, then workbench rows, keyed by RAW stem."""
+    matched = set(sequence.matched_raw_stems) if sequence is not None else set()
+    overrides = {
+        row.raw_stem.casefold(): row
+        for row in (sequence.rows if sequence is not None else ())
+        if row.raw_stem in matched
+    }
+    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
+    return overrides
 
 
 _ANALYSIS_HEADER_CACHE: dict[
