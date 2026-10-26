@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import replace
@@ -33,6 +34,7 @@ from xic_extractor.processing_run_spec import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    bind_expected_path_identity,
     stat_identity,
 )
 
@@ -71,6 +73,8 @@ def compile_discovery_processing_run_spec_with_expectations(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
     fingerprint_workers: int = 1,
+    verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
 ) -> tuple[ProcessingRunSpec, tuple[AcquisitionSourceExpectation, ...]]:
     """Compile a run spec and retain each fingerprint's exact local path state."""
 
@@ -92,6 +96,12 @@ def compile_discovery_processing_run_spec_with_expectations(
     expectations = []
 
     def fingerprint(path: Path) -> AcquisitionSourceExpectation:
+        if verified_acquisition_sources is not None:
+            expectation = verified_acquisition_sources[path.stem]
+            bind_expected_path_identity(
+                path, expectation.source, expectation.path_identity
+            )
+            return expectation
         before = stat_identity(path.stat())
         source = build_acquisition_source_identity(
             path,

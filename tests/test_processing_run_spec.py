@@ -144,6 +144,36 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
     assert len(thread_ids) == 2
 
 
+def test_run_spec_reuses_verified_sources_without_rehashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.discovery import processing_run_spec_adapter as adapter
+    from xic_extractor.raw_reader import RawReaderError
+
+    paths = _raws(tmp_path)
+    expected = adapter.compile_discovery_processing_run_spec_with_expectations(
+        paths, discovery_settings=_settings()
+    )
+    sources = {
+        path.stem: source for path, source in zip(paths, expected[1], strict=True)
+    }
+    monkeypatch.setattr(
+        adapter,
+        "build_acquisition_source_identity",
+        lambda *_args, **_kwargs: pytest.fail("rehashed a verified source"),
+    )
+    actual = adapter.compile_discovery_processing_run_spec_with_expectations(
+        paths, discovery_settings=_settings(), verified_acquisition_sources=sources
+    )
+    assert actual == expected
+
+    paths[0].write_bytes(b"changed source with different size")
+    with pytest.raises(RawReaderError, match="RAW path state"):
+        adapter.compile_discovery_processing_run_spec_with_expectations(
+            paths, discovery_settings=_settings(), verified_acquisition_sources=sources
+        )
+
+
 def test_parallel_fingerprints_reject_source_changed_during_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

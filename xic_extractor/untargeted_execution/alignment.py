@@ -259,6 +259,8 @@ def prepare_untargeted_alignment_inputs(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
 ) -> PreparedUntargetedAlignmentInputs:
     """Prepare Discovery-backed inputs without scheduling Backfill or outputs."""
     raw_paths = existing_raw_paths(
@@ -341,6 +343,7 @@ def prepare_untargeted_alignment_inputs(
                         discovery_settings=settings,
                         signal_processing_profile=signal_processing_profile,
                         fingerprint_workers=raw_workers,
+                        verified_acquisition_sources=verified_acquisition_sources,
                     )
                 )
             physical_spool_dir = Path(
@@ -413,6 +416,7 @@ def prepare_untargeted_alignment_inputs(
                     profile=signal_processing_profile,
                     raw_workers=raw_workers,
                     retained_records_sink=retain_records,
+                    verified_acquisition_sources=verified_acquisition_sources,
                 )
         if not isinstance(candidates_by_sample, DiscoveryInputSource):
             plan = prepare_eager_untargeted_plan(
@@ -481,6 +485,14 @@ def complete_untargeted_alignment(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         should_cancel=should_cancel,
+        verified_acquisition_sources=(
+            {
+                sample: prepared.acquisition
+                for sample, prepared in mass_recalibration_by_sample.items()
+            }
+            if mass_recalibration_by_sample
+            else None
+        ),
     )
     plan = prepared.plan
     with ExitStack() as pending:
@@ -598,6 +610,8 @@ def _load_physical_replay_inputs(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
+    verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
     retained_records_sink: Callable[
         [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
     ]
@@ -612,6 +626,7 @@ def _load_physical_replay_inputs(
             raw_paths,
             discovery_settings=settings,
             signal_processing_profile=profile,
+            verified_acquisition_sources=verified_acquisition_sources,
         )
     )
 

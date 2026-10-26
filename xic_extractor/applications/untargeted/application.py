@@ -242,6 +242,7 @@ def _prepare_mass_recalibration(
             request.dll_dir,
             policy,
             workers=request.execution.raw_workers,
+            backend=request.execution.raw_worker_backend,
             should_cancel=context.should_cancel,
         )
         stage.metrics["raw_file_count"] = len(results)
@@ -332,6 +333,14 @@ def snapshot_untargeted_grouping(
         raw_workers=request.execution.raw_workers,
         raw_worker_backend=request.execution.raw_worker_backend,
         should_cancel=context.should_cancel,
+        verified_acquisition_sources=(
+            {
+                sample: prepared.acquisition
+                for sample, prepared in mass_recalibration_by_sample.items()
+            }
+            if mass_recalibration_by_sample
+            else None
+        ),
     )
     try:
         with recorder.stage("alignment.grouping_snapshot") as stage:
