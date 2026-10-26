@@ -81,7 +81,10 @@ def test_blank_wins_when_finite_assignment_cost_exceeds_separation():
     assert not risks
 
 
-@pytest.mark.parametrize("seconds", [(0, 2, 4, 30, 20), (0, 0, 90, 30, 60)])
+@pytest.mark.parametrize(
+    "seconds",
+    [(0, 2, 4, 30, 20), (0, 0, 90, 30, 60), (0, 0, 90, 30, 60, 1000)],
+)
 @pytest.mark.parametrize("reverse", [False, True])
 def test_complete_backfill_configuration_can_rescue_rejected_prefix(seconds, reverse):
     owners = tuple(
@@ -107,7 +110,7 @@ def test_complete_backfill_configuration_can_rescue_rejected_prefix(seconds, rev
         proposals=proposals,
         conflicts=frozenset(),
     )
-    assert selected == frozenset({0, 1})
+    assert {proposals[index][1] for index in selected} == set(ids[3:5])
     assert all(risk.cost_gap >= 0 for risk in risks.values())
 
 

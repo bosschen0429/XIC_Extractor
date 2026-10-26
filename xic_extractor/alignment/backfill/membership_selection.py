@@ -29,6 +29,16 @@ def select_backfill_memberships(
         key: comparison.fixed_group_cost(ids, ids)
         for key, ids in original_groups.items()
     }
+    # A candidate-to-original hard conflict cannot be repaired by adding peers.
+    # Exclude it from rescue bundles, but retain its blank in the cost universe.
+    compatible_indices = tuple(
+        index
+        for index, (group, owner) in enumerate(proposals)
+        if all(
+            math.isfinite(comparison.pair(owner, peer)[0])
+            for peer in original_groups[group]
+        )
+    )
 
     def groups_for(selected: frozenset[int]) -> dict[str, tuple[str, ...]]:
         groups = dict(original_groups)
@@ -61,7 +71,7 @@ def select_backfill_memberships(
         )
 
     states: set[frozenset[int]] = {frozenset()}
-    for index in range(len(proposals)):
+    for index in compatible_indices:
         expanded = set(states)
         for selected in states:
             if any(
@@ -77,7 +87,7 @@ def select_backfill_memberships(
 
     def neighbors(current: frozenset[int]) -> set[frozenset[int]]:
         choices = {current - {index} for index in current}
-        for index in range(len(proposals)):
+        for index in compatible_indices:
             if index in current:
                 continue
             displaced = {
@@ -91,7 +101,8 @@ def select_backfill_memberships(
         # before relying on one-at-a-time improvements.
         for group in original_groups:
             bundle = frozenset(i for i in current if proposals[i][0] != group)
-            for index, (candidate_group, _) in enumerate(proposals):
+            for index in compatible_indices:
+                candidate_group, _ = proposals[index]
                 if candidate_group == group and not any(
                     (min(index, other), max(index, other)) in conflicts
                     for other in bundle
