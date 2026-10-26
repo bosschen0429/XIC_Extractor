@@ -325,7 +325,7 @@ because another one is close. This policy applies to Untargeted final/regroup
 membership, not bootstrap, Targeted selection, or Backfill admission.
 
 - A connected precursor-mass neighborhood is the comparison universe. Every
-  comparison in it uses common apices only when all members have estimated
+  cost comparison in it uses common apices only when all members have estimated
   coordinates; otherwise the whole universe uses raw coordinates. Unsupported
   peak edges remain unknown, not raw substitutes in a common-frame comparison.
   Explicit diagnostic overrides keep their own basis label and grant no
