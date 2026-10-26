@@ -70,6 +70,10 @@ class TargetedRun:
     def execute(self) -> dict[str, Any]:
         try:
             return self._execute()
+        except InterruptedError as exc:
+            if str(exc):
+                self.cancellation_reason = str(exc)
+            raise
         finally:
             self._prepared.cleanup()
 
@@ -97,22 +101,15 @@ class TargetedRun:
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"
-        try:
-            application = build_canonical_targeted_application_service(
-                extractor.acquire
-            )
-            request = build_targeted_application_request(
-                config,
-                targets,
-                progress_callback=self._progress,
-                should_stop=self._should_cancel,
-                excel_output_path=excel_path,
-            )
-            execution = application.execute_application(request)
-        except InterruptedError as exc:
-            if str(exc):
-                self.cancellation_reason = str(exc)
-            raise
+        application = build_canonical_targeted_application_service(extractor.acquire)
+        request = build_targeted_application_request(
+            config,
+            targets,
+            progress_callback=self._progress,
+            should_stop=self._should_cancel,
+            excel_output_path=excel_path,
+        )
+        execution = application.execute_application(request)
         published_paths = tuple(Path(path) for path in execution.published_paths)
         self.available_outputs = tuple(
             ("已發布 Targeted 結果", path) for path in published_paths if path.is_file()
