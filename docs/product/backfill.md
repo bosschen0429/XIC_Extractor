@@ -92,7 +92,7 @@ that group.
 | Quantity | Rule |
 | --- | --- |
 | `N` | Counts non-excluded study, QC, and pooled-QC samples. Blank, calibrator, system-suitability, solvent, and unknown roles do not vote. |
-| `K` | Untargeted: `K = 2`, independent of run size. Targeted: `K = max(2, N//20)`. |
+| `K` | `K = max(2, N//20)`. |
 | `S` | Counts distinct eligible samples with direct SUPPORT for that exact group. Each sample counts once. |
 
 - If `S < K`, the conservative revisit does not start for that group.

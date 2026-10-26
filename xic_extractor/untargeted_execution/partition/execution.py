@@ -369,7 +369,7 @@ def _prepare_runtime_work(
         method_subject_id
         for method_subject_id, subject_jobs in eligible_by_subject.items()
         if sum(direct_assessment_by_key[job.work_unit_key] for job in subject_jobs)
-        >= minimum_direct_support_count(len(subject_jobs), workflow="untargeted")
+        >= minimum_direct_support_count(len(subject_jobs))
     }
 
     states: list[_RuntimeJobState] = []

@@ -173,10 +173,8 @@ class ConservativeBackfillCellDecision:
         raise TypeError("ConservativeBackfillCellDecision is final")
 
 
-def minimum_direct_support_count(
-    sample_count_n: int, *, workflow: Literal["targeted", "untargeted"] = "targeted"
-) -> int:
-    """Untargeted needs two direct supports; Targeted keeps its population rule."""
+def minimum_direct_support_count(sample_count_n: int) -> int:
+    """Return K = max(2, floor(0.05 × N)) for an eligible run population."""
 
     if (
         isinstance(sample_count_n, bool)
@@ -186,7 +184,7 @@ def minimum_direct_support_count(
         raise ConservativeBackfillContractError(
             "sample_count_n must be a non-negative integer"
         )
-    return 2 if workflow == "untargeted" else max(2, sample_count_n // 20)
+    return max(2, sample_count_n // 20)
 
 
 def mint_conservative_backfill_candidate_universe(
@@ -376,7 +374,6 @@ def plan_conservative_backfill_targets(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
-    workflow: Literal["targeted", "untargeted"] = "targeted",
 ) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
     """Plan missing-sample work from frozen direct-SUPPORT membership.
 
@@ -391,7 +388,7 @@ def plan_conservative_backfill_targets(
         for sample in sample_population
         if _sample_is_activation_eligible(sample)
     )
-    minimum_support = minimum_direct_support_count(len(eligible_ids), workflow=workflow)
+    minimum_support = minimum_direct_support_count(len(eligible_ids))
     planned = []
     for group in groups:
         if group.disposition == "rejected":
@@ -412,7 +409,6 @@ def assess_conservative_backfill_group(
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
     unsearched_sample_ids: tuple[str, ...] = (),
-    workflow: Literal["targeted", "untargeted"] = "targeted",
 ) -> ConservativeBackfillGroupFacts:
     """Derive no-write S/K facts without creating a group or cell."""
 
@@ -450,7 +446,7 @@ def assess_conservative_backfill_group(
     cell_sample_ids = tuple(cell.content.canonical_sample_identity_id for cell in cells)
     sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
     sample_count = len(eligible_ids)
-    minimum_support = minimum_direct_support_count(sample_count, workflow=workflow)
+    minimum_support = minimum_direct_support_count(sample_count)
     support_count = len(eligible_support_ids)
     frozen = set(cell_sample_ids).union(unsearched_sample_ids) == set(sample_ids)
     return ConservativeBackfillGroupFacts(
@@ -514,7 +510,6 @@ def assess_untargeted_conservative_backfill_group(
     return assess_conservative_backfill_group(
         tuple(item.cell for item in projections),
         sample_population=sample_population,
-        workflow="untargeted",
     )
 
 
