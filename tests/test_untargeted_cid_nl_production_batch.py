@@ -1049,6 +1049,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
 
     retained_contexts = []
+    completed_contexts = []
     bootstrap_contexts = []
     retained_initial_edges = []
     consumed_contexts = []
@@ -1059,6 +1060,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     build_initial_context = production.build_initial_cid_nl_cross_sample_groups
     regroup_initial_context = production.regroup_cid_nl_cross_sample_groups
     compose_predecessor_cells = cid_nl_completion_owner.compose_cid_nl_predecessor_cells
+    admit_backfills = cid_nl_completion_owner.admit_cid_nl_group_backfills
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
@@ -1077,6 +1079,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         cells = compose_predecessor_cells(**kwargs)
         retained_cell_batches.append(cells)
         return cells
+
+    def retain_completed_context(**kwargs):
+        result = admit_backfills(**kwargs)
+        completed_contexts.append(result[0])
+        return result
 
     def retain_scientific_captures(**kwargs):
         consumed_contexts.append(kwargs["grouping_result"])
@@ -1097,6 +1104,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         cid_nl_completion_owner,
         "compose_cid_nl_predecessor_cells",
         retain_predecessor_cells,
+    )
+    monkeypatch.setattr(
+        cid_nl_completion_owner,
+        "admit_cid_nl_group_backfills",
+        retain_completed_context,
     )
     monkeypatch.setattr(
         workflow_owner, "finalize_scientific_alignment", retain_scientific_captures
@@ -1466,11 +1478,22 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     assert len(retained_contexts) == len(completed.application_result.children)
     assert len(retained_contexts) == len(consumed_contexts)
-    # Frozen grouping crosses the spool before Backfill. Its complete scientific
-    # content must survive; Python object identity is not a persisted contract.
+    # This fixture keeps the frozen partition; Backfill can add risk decisions.
+    # The completed content, including those decisions, must survive finalization
+    # and the spool. Python object identity is not a persisted contract.
+    assert len(completed_contexts) == len(retained_contexts)
+    if family_precursor_delta:
+        assert any(context.backfill_membership_risks for context in completed_contexts)
+    assert all(
+        retained.partition_transition == final.partition_transition
+        and retained.processing_owners == final.processing_owners
+        for retained, final in zip(retained_contexts, completed_contexts, strict=True)
+    )
     assert all(
         retained == consumed
-        for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
+        for retained, consumed in zip(
+            completed_contexts, consumed_contexts, strict=True
+        )
     )
     # Bootstrap captures cross a disk handoff; preserve content, not addresses.
     for retained, consumed in zip(retained_captures, consumed_captures, strict=True):
@@ -1479,7 +1502,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert list(retained.trace.rt) == list(consumed.trace.rt)
         assert list(retained.trace.intensity) == list(consumed.trace.intensity)
     for context, child in zip(
-        retained_contexts, completed.application_result.children, strict=True
+        completed_contexts, completed.application_result.children, strict=True
     ):
         assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
