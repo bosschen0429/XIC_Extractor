@@ -31,7 +31,7 @@ from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
     ProcessingRequestIdentity,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     build_processing_request_identity,
 )
 from xic_extractor.raw_reader import (
@@ -108,14 +108,14 @@ def build_targeted_processing_request_identity(
     ) = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> ProcessingRequestIdentity:
-    """Bind resolved Targeted extraction inputs to exact acquisition content."""
+    """Bind resolved Targeted inputs to local acquisition file revisions."""
 
     sources_by_stem = {}
     for raw_path in raw_paths:
         stem = raw_path.stem
         if stem in sources_by_stem:
             raise IdentityContractError(f"ambiguous acquisition source stem: {stem!r}")
-        sources_by_stem[stem] = build_acquisition_source_identity(
+        sources_by_stem[stem] = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

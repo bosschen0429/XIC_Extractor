@@ -47,7 +47,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import build_local_acquisition_source_identity
 
 
 @pytest.fixture(autouse=True)
@@ -1351,7 +1351,7 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     stale_config, stale_target, stale_output = production_case(stale_root)
     stale_raw = stale_config.data_dir / "SampleA.raw"
     stale_raw.write_bytes(b"stale acquisition")
-    stale_source = build_acquisition_source_identity(
+    stale_source = build_local_acquisition_source_identity(
         stale_raw,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1593,7 +1593,7 @@ def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> No
     assert not config.output_csv.exists()
 
 
-def test_service_fingerprints_each_raw_only_once(
+def test_service_publishes_without_full_raw_fingerprinting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1623,10 +1623,8 @@ def test_service_fingerprints_each_raw_only_once(
         request
     )
 
-    assert fingerprinted == [
-        config.data_dir / "SampleA.raw",
-        config.data_dir / "SampleB.raw",
-    ]
+    assert fingerprinted == []
+    assert config.output_csv.with_suffix(".xlsx").is_file()
 
 
 def test_cancellation_after_typed_completion_never_invokes_publisher(
@@ -1658,7 +1656,7 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
     assert execution.published_paths == ()
 
 
-def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalization(
+def test_cancellation_during_input_preparation_skips_acquisition_and_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

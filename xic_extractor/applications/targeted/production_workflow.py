@@ -932,7 +932,7 @@ def _run_output_sha256(output: RunOutput) -> str:
 def snapshot_targeted_production_inputs(
     request: TargetedApplicationRequest,
 ) -> TargetedProductionInputSnapshot:
-    """Fingerprint every mutable scientific input for a production phase."""
+    """Snapshot local RAW revisions and scientific inputs for a production phase."""
 
     raw_paths = resolve_targeted_raw_paths(request.config)
     if not raw_paths:
@@ -955,7 +955,7 @@ def snapshot_targeted_production_inputs(
         should_cancel=request.should_stop,
     )
     if _raw_file_states(raw_paths) != raw_file_states:
-        raise RuntimeError("Targeted production inputs changed during fingerprinting")
+        raise RuntimeError("Targeted production inputs changed during preparation")
     return TargetedProductionInputSnapshot(
         config=deepcopy(request.config),
         raw_paths=tuple(raw_paths),

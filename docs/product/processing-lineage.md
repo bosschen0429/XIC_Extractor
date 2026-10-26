@@ -93,9 +93,16 @@ The `processing_identity` owner defines typed IDs
 as SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
 numbers), with a type/version prefix. Its current content boundary is:
 
-- an acquisition source binds the full-file SHA-256, byte size, acquisition
-  format, and adapter-readable observation namespace; path and file stat values
-  are used only to locate the file and detect mutation during hashing;
+- normal Targeted acquisition binds the local filesystem revision (device,
+  file identity, byte size, modification and creation/change timestamps),
+  acquisition format, and adapter-readable observation namespace. Preparation
+  does not scan RAW content. The adapter checks the revision before and after
+  opening the vendor handle, and the workflow rejects input changes before
+  finalization. This identifies a local file revision, not portable byte
+  equality: copies are distinct sources and no full-content digest is claimed;
+- persisted Discovery sources and explicit content fingerprinting bind the
+  full-file SHA-256, byte size, acquisition format, and observation namespace.
+  Their existing identities and persisted formats are unchanged;
 - target keys, exact definitions, and ordered snapshots come from the
   [target-list owner](../../xic_extractor/configuration/target_identity.py);
   changing a definition or order creates a new snapshot, not a mutation of the

@@ -557,17 +557,27 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     assert raw.disposed
 
 
+@pytest.mark.parametrize("local_revision", [False, True])
 def test_open_raw_uses_owner_verified_path_state_without_rehashing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    local_revision: bool,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_acquisition_source_identity,
+        build_local_acquisition_source_identity,
+    )
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
-    source = build_acquisition_source_identity(
+    source_builder = (
+        build_local_acquisition_source_identity
+        if local_revision
+        else build_acquisition_source_identity
+    )
+    source = source_builder(
         raw_path,
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
@@ -594,7 +604,7 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
         raw_path,
         tmp_path,
         expected_acquisition_source=source,
-        _expected_path_identity=path_identity,
+        _expected_path_identity=None if local_revision else path_identity,
         _import_module=_working_imports(),
         _thermo=_fake_thermo(_FakeRaw()),
     ):
@@ -602,18 +612,29 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
 
 
 @pytest.mark.parametrize("replacement_phase", ["before_open", "during_open"])
+@pytest.mark.parametrize("local_revision", [False, True])
 def test_open_raw_rejects_stale_owner_verified_path_state(
-    tmp_path: Path, replacement_phase: str
+    tmp_path: Path,
+    replacement_phase: str,
+    local_revision: bool,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_acquisition_source_identity,
+        build_local_acquisition_source_identity,
+    )
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     replacement_path = tmp_path / "replacement.raw"
     raw_path.write_bytes(b"sample-a")
     replacement_path.write_bytes(b"sample-b")
-    source = build_acquisition_source_identity(
+    source_builder = (
+        build_local_acquisition_source_identity
+        if local_revision
+        else build_acquisition_source_identity
+    )
+    source = source_builder(
         raw_path,
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
@@ -638,7 +659,7 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
             return raw
 
         thermo.raw_file_reader_adapter.FileFactory = replace_during_open
-        message = "RAW source path changed while the vendor handle was opening"
+        message = "RAW source .*changed while the vendor handle was opening"
 
     with pytest.raises(
         raw_reader.RawReaderError,
@@ -648,7 +669,7 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
             raw_path,
             tmp_path,
             expected_acquisition_source=source,
-            _expected_path_identity=path_identity,
+            _expected_path_identity=None if local_revision else path_identity,
             _import_module=_working_imports(),
             _thermo=thermo,
         )

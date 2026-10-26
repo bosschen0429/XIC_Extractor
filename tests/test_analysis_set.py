@@ -17,6 +17,36 @@ from xic_extractor.sample_metadata import SampleMetadata
 BASE = datetime(2026, 1, 1, 12)
 
 
+def test_batch_header_reads_overlap_without_changing_acquisition_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from threading import Barrier
+
+    from xic_extractor import raw_reader
+
+    paths = [tmp_path / "A.raw", tmp_path / "B.raw"]
+    for path in paths:
+        path.touch()
+    rendezvous = Barrier(2, timeout=2)
+
+    def read_header(path, _dll):
+        # Both independent file reads must start before either finishes.
+        rendezvous.wait()
+        return (
+            header(str(path.resolve()), 11 if path.stem == "A" else 0),
+            "study_sample",
+            path.stem,
+        )
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", read_header)
+    result = raw_reader.read_analysis_set(tmp_path, tmp_path, raw_paths=paths)
+    assert [(entry.raw_stem, entry.injection_order) for entry in result.analyzed] == [
+        ("B", 1),
+        ("A", 2),
+    ]
+
+
 def header(path: str, minute: float, *, source: str | None = None) -> InjectionHeader:
     return InjectionHeader(
         raw_path=path,
@@ -384,6 +414,7 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
 
 
 def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
+    import os
     from contextlib import nullcontext
     from types import SimpleNamespace
 
@@ -399,7 +430,7 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
             SimpleNamespace(
                 sample_header=SimpleNamespace(
                     sample_type="Unknown",
-                    sample_name="free text",
+                    sample_name=f"header {path.read_text()}",
                     comment="",
                     instrument_method="",
                 )
@@ -417,6 +448,15 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     assert first == second
     assert first.analyzed[0].role_source == "raw_header"
     assert opens == [raw]
+
+    old_stat = raw.stat()
+    replacement = tmp_path / "replacement.tmp"
+    replacement.write_bytes(b"y")
+    os.utime(replacement, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+    replacement.replace(raw)
+    replaced = raw_reader.read_analysis_set(tmp_path, tmp_path)
+    assert replaced.analyzed[0].metadata.sample_name == "header y"
+    assert opens == [raw, raw]
 
 
 def test_discovery_cli_excludes_metadata_flagged_nested_samples(

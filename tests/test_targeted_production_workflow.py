@@ -68,7 +68,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
 )
 
 
@@ -953,7 +953,7 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
         ),
         target,
     )
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         config.data_dir / "SampleA.raw",
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1080,7 +1080,7 @@ def production_case(
     for sample_name in sample_names:
         raw_path = config.data_dir / f"{sample_name}.raw"
         raw_path.write_bytes(sample_name.encode())
-        source = build_acquisition_source_identity(
+        source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

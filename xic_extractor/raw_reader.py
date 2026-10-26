@@ -3,9 +3,11 @@ import math
 import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
+from threading import Lock
 from types import SimpleNamespace
 from typing import Any, final
 
@@ -62,6 +64,7 @@ _RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
 _CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 _ASSEMBLIES_LOADED = False
+_ASSEMBLY_LOAD_LOCK = Lock()
 
 
 class RawReaderError(Exception):
@@ -948,6 +951,7 @@ def read_analysis_set(
     unread: dict[str, SampleMetadata] = {}
     unread_errors: dict[str, str] = {}
     unopened: dict[str, SampleMetadata] = {}
+    header_paths: list[tuple[int, Path]] = []
     for index, path in enumerate(paths):
         if should_cancel is not None and should_cancel():
             raise InterruptedError("RAW 樣本準備已停止。")
@@ -967,26 +971,42 @@ def read_analysis_set(
                 annotation, batch_id=annotation.batch_id or root.name
             )
             continue
-        if progress is not None:
-            progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
+        header_paths.append((index, path))
+    # Each task owns and closes its vendor handle. Results retain path association;
+    # acquisition clocks, not thread completion order, determine injection order.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        pending = [
+            (index, path, pool.submit(_analysis_header, path, dll_dir))
+            for index, path in header_paths
+        ]
         try:
-            header, role, header_name = _analysis_header(path, dll_dir)
-        except (RawReaderError, ValueError) as exc:
-            unread_errors[str(path.resolve())] = str(exc)
-            unread[str(path.resolve())] = SampleMetadata(
-                sample_name=path.stem,
-                raw_stem=path.stem,
-                sample_role=infer_sample_role(None, sample_name=path.stem),
-                batch_id=root.name,
-            )
-            continue
-        headers.append(header)
-        header_rows[header.raw_path] = SampleMetadata(
-            sample_name=header_name,
-            raw_stem=path.stem,
-            sample_role=role,
-            batch_id=root.name,
-        )
+            for index, path, future in pending:
+                if should_cancel is not None and should_cancel():
+                    raise InterruptedError("RAW 樣本準備已停止。")
+                if progress is not None:
+                    progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
+                try:
+                    header, role, header_name = future.result()
+                except (RawReaderError, ValueError) as exc:
+                    unread_errors[str(path.resolve())] = str(exc)
+                    unread[str(path.resolve())] = SampleMetadata(
+                        sample_name=path.stem,
+                        raw_stem=path.stem,
+                        sample_role=infer_sample_role(None, sample_name=path.stem),
+                        batch_id=root.name,
+                    )
+                    continue
+                headers.append(header)
+                header_rows[header.raw_path] = SampleMetadata(
+                    sample_name=header_name,
+                    raw_stem=path.stem,
+                    sample_role=role,
+                    batch_id=root.name,
+                )
+        finally:
+            # Cancellation waits only for open handles, never all queued files.
+            for _index, _path, future in pending:
+                future.cancel()
     timeline = build_injection_timeline(headers, PerturbationPolicy())
     return select_analysis_set(
         timeline,
@@ -1000,7 +1020,8 @@ def read_analysis_set(
 
 
 _ANALYSIS_HEADER_CACHE: dict[
-    tuple[str, int, int, str], tuple[InjectionHeader, SampleRole, str]
+    tuple[str, tuple[int, int, int, int, int], str],
+    tuple[InjectionHeader, SampleRole, str],
 ] = {}
 
 
@@ -1009,7 +1030,7 @@ def _analysis_header(
 ) -> tuple[InjectionHeader, SampleRole, str]:
     """Header facts are immutable for an unchanged file; reuse across resolutions."""
     stat = path.stat()
-    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, str(dll_dir))
+    key = (str(path.resolve()), stat_identity(stat), str(dll_dir))
     cached = _ANALYSIS_HEADER_CACHE.get(key)
     if cached is not None:
         return cached
@@ -1105,6 +1126,8 @@ def _verify_expected_acquisition_source(
         raise RawReaderError(
             "expected_acquisition_source must be an AcquisitionSourceIdentity"
         )
+    if expected.local_file_revision is not None:
+        return bind_expected_path_identity(path, expected, expected.local_file_revision)
     if (
         expected.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
         or expected.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
@@ -1268,18 +1291,19 @@ def ensure_assemblies_loaded(
     dll_dir: Path, import_module_func: Callable[[str], Any]
 ) -> None:
     global _ASSEMBLIES_LOADED
-    if _ASSEMBLIES_LOADED:
-        return
-    clr = import_module_func("clr")
-    for dll_name in EXPECTED_THERMO_DLLS:
-        dll_path = dll_dir / dll_name
-        try:
-            clr.AddReference(str(dll_path))
-        except Exception as exc:
-            raise RawReaderError(
-                f"Failed to load Thermo DLL `{dll_path}`: {exc}"
-            ) from exc
-    _ASSEMBLIES_LOADED = True
+    with _ASSEMBLY_LOAD_LOCK:
+        if _ASSEMBLIES_LOADED:
+            return
+        clr = import_module_func("clr")
+        for dll_name in EXPECTED_THERMO_DLLS:
+            dll_path = dll_dir / dll_name
+            try:
+                clr.AddReference(str(dll_path))
+            except Exception as exc:
+                raise RawReaderError(
+                    f"Failed to load Thermo DLL `{dll_path}`: {exc}"
+                ) from exc
+        _ASSEMBLIES_LOADED = True
 
 
 def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:

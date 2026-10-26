@@ -202,13 +202,14 @@ class FileContentFingerprint:
 
 @dataclass(frozen=True, slots=True)
 class AcquisitionSourceIdentity:
-    """Content-bound identity for one acquisition source."""
+    """One source bound either to exact content or a local filesystem revision."""
 
     acquisition_source_id: str
-    content_sha256: str
+    content_sha256: str | None
     byte_size: int
     acquisition_format: str
     observation_namespace: str
+    local_file_revision: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
         source_id = _validate_typed_id(
@@ -216,7 +217,6 @@ class AcquisitionSourceIdentity:
             prefix=_ACQUISITION_SOURCE_PREFIX,
             field="acquisition_source_id",
         )
-        content_sha256 = _validate_digest(self.content_sha256, field="content_sha256")
         if (
             isinstance(self.byte_size, bool)
             or not isinstance(self.byte_size, int)
@@ -229,25 +229,42 @@ class AcquisitionSourceIdentity:
         observation_namespace = _require_nonempty_text(
             self.observation_namespace, field="observation_namespace"
         )
-        expected_id = _typed_digest(
-            _ACQUISITION_SOURCE_PREFIX,
-            {
+        if self.local_file_revision is None:
+            basis = {
                 "schema": "acquisition_source_identity",
-                "content_sha256": content_sha256,
+                "content_sha256": _validate_digest(
+                    self.content_sha256, field="content_sha256"
+                ),
                 "byte_size": self.byte_size,
                 "acquisition_format": acquisition_format,
                 "observation_namespace": observation_namespace,
-            },
-        )
+            }
+        else:
+            revision = self.local_file_revision
+            if (
+                self.content_sha256 is not None
+                or not isinstance(revision, tuple)
+                or len(revision) != 5
+                or any(
+                    isinstance(value, bool) or not isinstance(value, int)
+                    for value in revision
+                )
+                or revision[2] != self.byte_size
+            ):
+                raise IdentityContractError("invalid local acquisition file revision")
+            basis = _local_acquisition_source_basis(
+                revision, acquisition_format, observation_namespace
+            )
+        expected_id = _typed_digest(_ACQUISITION_SOURCE_PREFIX, basis)
         if source_id != expected_id:
             raise IdentityContractError(
-                "acquisition_source_id rebind mismatches immutable content"
+                "acquisition_source_id rebind mismatches source identity"
             )
 
 
 @dataclass(frozen=True, slots=True)
 class AcquisitionSourceExpectation:
-    """Content identity plus the exact local path state observed with its request."""
+    """Source identity plus the exact local path state observed with its request."""
 
     source: AcquisitionSourceIdentity
     path_identity: tuple[int, int, int, int, int]
@@ -686,6 +703,54 @@ def _validate_request_target_snapshot(
         )
 
 
+def _local_acquisition_source_basis(
+    revision: tuple[int, int, int, int, int],
+    acquisition_format: str,
+    observation_namespace: str,
+) -> dict[str, object]:
+    return {
+        "schema": "local_acquisition_file_revision",
+        "local_file_revision": revision,
+        "acquisition_format": acquisition_format,
+        "observation_namespace": observation_namespace,
+    }
+
+
+def build_local_acquisition_source_identity(
+    path: str | Path,
+    *,
+    acquisition_format: str,
+    observation_namespace: str,
+    should_cancel: Callable[[], bool] | None = None,
+) -> AcquisitionSourceIdentity:
+    """Bind a local file revision, without reading bytes or claiming byte equality."""
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Acquisition source preparation was cancelled")
+    state = Path(path).stat()
+    if not stat.S_ISREG(state.st_mode):
+        raise IdentityContractError("acquisition source must be a regular file")
+    revision = (
+        state.st_dev,
+        state.st_ino,
+        state.st_size,
+        state.st_mtime_ns,
+        state.st_ctime_ns,
+    )
+    return AcquisitionSourceIdentity(
+        acquisition_source_id=_typed_digest(
+            _ACQUISITION_SOURCE_PREFIX,
+            _local_acquisition_source_basis(
+                revision, acquisition_format, observation_namespace
+            ),
+        ),
+        content_sha256=None,
+        byte_size=state.st_size,
+        acquisition_format=acquisition_format,
+        observation_namespace=observation_namespace,
+        local_file_revision=revision,
+    )
+
+
 def build_acquisition_source_identity(
     path: str | Path,
     *,
@@ -1053,6 +1118,7 @@ __all__ = [
     "ProcessingOwnerReferences",
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
+    "build_local_acquisition_source_identity",
     "build_processing_request_identity",
     "canonical_identity_basis_bytes",
     "mint_typed_identity",
