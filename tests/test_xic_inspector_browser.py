@@ -632,10 +632,16 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     assert matrix.read_bytes() == before
 
 
-def test_accepted_competition_is_visible_only_on_its_sample(review_page, tmp_path):
+@pytest.mark.parametrize(
+    "phase,flag",
+    [("initial", "accepted_competition"), ("backfill", "backfill_competition")],
+)
+def test_accepted_competition_is_visible_only_on_its_sample(
+    review_page, tmp_path, phase, flag
+):
     from tests.test_explanation_review import _competition_review_report
 
-    report, matrix = _competition_review_report(tmp_path)
+    report, matrix = _competition_review_report(tmp_path, phase=phase, flag=flag)
     before = matrix.read_bytes()
     payload = prepare_report(
         report, SelectionRequest(strategy="query", group_ids=("G1",))
@@ -647,6 +653,12 @@ def test_accepted_competition_is_visible_only_on_its_sample(review_page, tmp_pat
         "payload => XicInspector.mount(document.getElementById('risk-view'), payload)",
         payload,
     )
+    root = page.locator("#risk-view")
+    _control(root, "search").fill(flag)
+    expect(_control(root, "record-list").locator(".record-button")).to_have_count(1)
+    _control(root, "search").fill("not_a_membership_flag")
+    expect(_control(root, "record-list").locator(".record-button")).to_have_count(0)
+    _control(root, "search").fill(flag)
     strong = page.locator('[data-sample-row="S1"]')
     competing = page.locator('[data-sample-row="S2"]')
     expect(strong).not_to_contain_text("已配對，有其他合理候選")

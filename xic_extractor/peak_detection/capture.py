@@ -549,7 +549,7 @@ def capture_physical_backfill_observation(
             if location_reliable
             else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
         ),
-        search_rt_window=search_rt_window if location_reliable else None,
+        search_rt_window=search_rt_window,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)

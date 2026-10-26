@@ -375,7 +375,10 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                     "label": "配對風險",
                     "value": (
                         f"{selected}，有其他合理候選"
-                        if "accepted_competition" in risk.get("risk_flags", [])
+                        if {
+                            "accepted_competition",
+                            "backfill_competition",
+                        }.intersection(risk.get("risk_flags", []))
                         else f"{selected}，含矛盾或低支援證據"
                         if risk.get("risk_flags")
                         else "已評估，未標記風險"

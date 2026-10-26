@@ -158,6 +158,43 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("support_count", (2, 3, 4))
+def test_large_run_backfill_preserves_population_threshold(
+    tmp_path: Path, support_count: int
+) -> None:
+    fixture = _study_fixture(tmp_path, tuple(f"s{i}" for i in range(85)))
+    spine = _spine(
+        fixture,
+        support_apex_by_sample={f"s{i}": 8.0 for i in range(support_count)},
+        invocation="large-run",
+    )
+    for facts in (
+        assess_targeted_conservative_backfill_group(
+            spine.targeted_projections, sample_population=fixture.samples
+        ),
+        assess_untargeted_conservative_backfill_group(
+            spine.untargeted_projections, sample_population=fixture.samples
+        ),
+    ):
+        assert facts.minimum_support_k == 4
+        assert facts.may_attempt_backfill is (support_count >= 4)
+    plans = plan_conservative_backfill_targets(
+        (spine.group,), sample_population=fixture.samples
+    )
+    if support_count < 4:
+        assert plans == ()
+    else:
+        assert plans == (
+            (
+                spine.group,
+                frozenset(
+                    fixture.sample(f"s{i}").identity.sample_identity_id
+                    for i in range(support_count, 85)
+                ),
+            ),
+        )
+
+
 def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     tmp_path: Path,
 ) -> None:

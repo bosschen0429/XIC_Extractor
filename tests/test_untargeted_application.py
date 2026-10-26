@@ -88,7 +88,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     closed: list[bool] = []
 
     class MockCompleted:
-        application_result = object()
+        application_result = SimpleNamespace(children=())
         processing_request_id = "request-test"
         processing_attempt_id = "attempt-test"
 
@@ -262,7 +262,8 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     batch_index = _write_batch(tmp_path, ("S1",))
     closed: list[bool] = []
     completed = SimpleNamespace(
-        close=lambda: closed.append(True), application_result=object()
+        close=lambda: closed.append(True),
+        application_result=SimpleNamespace(children=()),
     )
     cancellation_checks = iter((False, True))
     monkeypatch.setattr(
@@ -305,7 +306,8 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     batch_index = _write_batch(tmp_path, ("S1",))
     closed: list[bool] = []
     completed = SimpleNamespace(
-        close=lambda: closed.append(True), application_result=object()
+        close=lambda: closed.append(True),
+        application_result=SimpleNamespace(children=()),
     )
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
@@ -475,7 +477,8 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     output_dir = tmp_path / "out"
     closed: list[bool] = []
     completed = SimpleNamespace(
-        close=lambda: closed.append(True), application_result=object()
+        close=lambda: closed.append(True),
+        application_result=SimpleNamespace(children=()),
     )
     monkeypatch.setattr(
         application_module,
@@ -913,7 +916,8 @@ def test_pure_cid_nl_targets_csv_integration(
 
     closed = []
     completed = SimpleNamespace(
-        application_result=object(), close=lambda: closed.append(True)
+        application_result=SimpleNamespace(children=()),
+        close=lambda: closed.append(True),
     )
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),

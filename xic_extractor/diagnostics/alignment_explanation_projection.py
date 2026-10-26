@@ -731,6 +731,13 @@ def prepare_alignment_explanation(
                             member.canonical_sample_identity_id,
                         ].append(risk)
 
+            for (
+                group_id,
+                sample_id,
+                backfill_risk,
+            ) in core.grouping_result.backfill_membership_risks:
+                risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
+
             for observation in (
                 child.scientific_core.cell_observations if full_audit else ()
             ):

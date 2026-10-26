@@ -13,6 +13,7 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
+    _multi_tag_settings,
     _peak_config,
     _settings,
 )
@@ -87,7 +88,7 @@ from xic_extractor.untargeted_execution.partition.request import (
 @pytest.mark.parametrize("conflicting", [False, True])
 @pytest.mark.parametrize("with_order", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
+def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     tmp_path,
     conflicting,
     with_order,
@@ -234,7 +235,12 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
             for peak in assessment.candidate_peaks
         },
     )
-    accepted = {"compatible"} if conflicting else {"narrow", "other", "compatible"}
+    accepted = {"narrow", "other", "compatible"}
+    if conflicting:
+        assert any(
+            "shape_disagreement" in risk.soft_contradictions
+            for _, _, risk in grouping.backfill_membership_risks
+        )
     assert {owner.sample_stem for owner in successor.owners} == (
         {"reference1", "reference2"} | accepted
     )
@@ -1447,7 +1453,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
+    assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -1456,10 +1462,8 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         for decision in writer.production_decisions.cells.values()
         if decision.sample_stem == "Missing"
     )
-    assert all(
-        not decision.write_matrix_value and decision.matrix_value is None
-        for decision in missing_decisions
-    )
+    assert sum(decision.write_matrix_value for decision in missing_decisions) == 1
+    assert sum(decision.matrix_value is not None for decision in missing_decisions) == 1
 
 
 @pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
@@ -1619,14 +1623,95 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         if decision.sample_stem == "Missing"
     )
     assert len(missing_decisions) == 2
-    assert all(
-        not decision.write_matrix_value and decision.matrix_value is None
-        for decision in missing_decisions
-    )
+    assert sum(decision.write_matrix_value for decision in missing_decisions) == 1
+    assert sum(decision.matrix_value is not None for decision in missing_decisions) == 1
     assert all(
         row.detected_count == 2 for row in writer.production_decisions.rows.values()
     )
-    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
+    assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
+    assert len(child.scientific_core.grouping_result.backfill_membership_risks) == 1
+    if mz_separation_ppm == 0 and not reverse:
+        _assert_backfill_risk_publication(tmp_path, completed, writer, candidates)
+
+
+def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
+    import csv
+    import json
+
+    from xic_extractor.diagnostics.alignment_explanation import (
+        read_explanation_metadata,
+    )
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
+        write_cid_nl_explanation,
+    )
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
+    )
+    from xic_inspector.api import SelectionRequest, prepare_report
+
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    matrix = tmp_path / "matrix.tsv"
+    review = tmp_path / "review.tsv"
+    for path, write in (
+        (matrix, write_alignment_matrix_tsv),
+        (review, write_alignment_review_tsv),
+    ):
+        write(
+            path,
+            writer.matrix,
+            alignment_config=config,
+            production_decisions=writer.production_decisions,
+        )
+    original = matrix.read_bytes()
+    report = write_cid_nl_explanation(
+        tmp_path / "backfill.sqlite",
+        full_audit=False,
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    cells = read_explanation_metadata(report).records["cell_decisions"].values()
+    accepted = [
+        cell
+        for cell in cells
+        if any(risk["phase"] == "backfill" for risk in cell["membership_risks"])
+    ]
+    assert len(accepted) == 1
+    risk = next(
+        risk for risk in accepted[0]["membership_risks"] if risk["phase"] == "backfill"
+    )
+    assert "backfill_competition" in risk["risk_flags"]
+    assert risk["alternative_partition"] and risk["cost_gap"] >= 0
+    with review.open(encoding="utf-8-sig", newline="") as stream:
+        published = [
+            risk
+            for row in csv.DictReader(stream, delimiter="\t")
+            for risk in json.loads(row["membership_risks_json"])
+            if risk["phase"] == "backfill"
+        ]
+    assert len(published) == 1
+    assert (
+        published[0]["canonical_sample_identity_id"]
+        == accepted[0]["canonical_sample_identity_id"]
+    )
+    payload = prepare_report(
+        report,
+        SelectionRequest(
+            strategy="query", group_ids=(accepted[0]["group_hypothesis_id"],)
+        ),
+    ).payload
+    samples = [sample for item in payload["items"] for sample in item["samples"]]
+    observed = [
+        r
+        for sample in samples
+        for r in sample["membership_risks"]
+        if r["phase"] == "backfill"
+    ]
+    assert observed == [risk]
+    assert matrix.read_bytes() == original
 
 
 @pytest.mark.parametrize(
@@ -1637,20 +1722,25 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     ],
     ids=["one-ms1-peak", "two-ms1-peaks"],
 )
+@pytest.mark.parametrize("composition", [None, "union", "intersection"])
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
-    tmp_path, monkeypatch, missing_peaks, expected_state
+    tmp_path, monkeypatch, missing_peaks, expected_state, composition
 ):
     physical_records = {}
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
+        replace(_multi_tag_settings(), tag_combine_mode=composition)
+        if composition
+        else replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
         raw = _FakeRaw(centers[path.stem])
+        if composition == "intersection" and path.stem != "Missing":
+            raw = _FakeRaw((7.98, 8.02), neutral_loss_das=(116.0474, 132.0423))
         raw.rt = np.linspace(7.4, 8.7, 521)
         raw.intensity = sum(
             (
@@ -1663,6 +1753,8 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
             for scan in raw.scans
         )
+        if composition and path.stem == "Missing":
+            raw.scans = ()
         raws[path] = raw
         candidates[path.stem] = (
             _current_candidates(
@@ -1755,6 +1847,8 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.write_matrix_value
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
+        integration = attempt.assessment.candidate_peaks[0].content.integration
+        assert decision.matrix_value == pytest.approx(integration.area_ms1_morphology)
         from tools.diagnostics.output_population_census import main as population_main
         from xic_extractor.output.alignment.pipeline_outputs import (
             output_paths,
@@ -1795,9 +1889,18 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     # The finalized row carries the group's own tag, fragment and anchor.
     (cluster,) = writer.matrix.clusters
     assert cluster.has_anchor
-    assert cluster.neutral_loss_tag == "cid_nl:116.0474"
-    assert cluster.family_product_mz == pytest.approx(383.9526, abs=1e-3)
-    assert cluster.family_observed_neutral_loss_da == pytest.approx(116.0474, abs=1e-3)
+    assert cluster.neutral_loss_tag == (
+        batch.subject_batch.subjects[0].method_subject_id
+        if composition
+        else "cid_nl:116.0474"
+    )
+    expected_loss = (
+        (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
+    )
+    assert cluster.family_product_mz == pytest.approx(500.0 - expected_loss, abs=1e-3)
+    assert cluster.family_observed_neutral_loss_da == pytest.approx(
+        expected_loss, abs=1e-3
+    )
 
 
 def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
