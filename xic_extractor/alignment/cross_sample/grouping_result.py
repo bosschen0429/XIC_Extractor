@@ -8,6 +8,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
 )
+from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
@@ -31,6 +32,8 @@ class CrossSampleGroupingResult:
     processing_owners: ProcessingOwnerReferences
     partition_transition: CrossSamplePartitionTransition
     rt_frame: SampleRtFrame = field(compare=False)
+
+    backfill_membership_risks: tuple[tuple[str, str, AcceptedMembershipRisk], ...] = ()
 
     @property
     def processing_request_id(self) -> str:

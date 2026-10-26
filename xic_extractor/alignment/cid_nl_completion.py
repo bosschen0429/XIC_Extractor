@@ -240,7 +240,7 @@ def _complete_cell_observations(
         backfilled_groups,
         successor_ids,
         backfilled_hypotheses,
-        contested_peaks,
+        rejected_cells,
     ) = admit_cid_nl_group_backfills(
         result=grouping_result,
         groups=grouping_scope.groups,
@@ -248,6 +248,7 @@ def _complete_cell_observations(
         alignment_config=alignment_config,
         member_observations=member_observations,
         physical_peak_views=evidence.physical_peak_views,
+        peak_trajectories=grouping_scope.peak_trajectories,
     )
     backfilled_positions = frozenset(
         (group_id, sample_id)
@@ -267,7 +268,7 @@ def _complete_cell_observations(
             if pair[1].content.method_result != "SUPPORT"
         },
         retained_hypotheses_by_assessment=retained_hypotheses,
-        contested_backfill_peaks=contested_peaks,
+        rejected_backfill_cells=rejected_cells,
     )
     backfill_cells = (
         compose_cid_nl_predecessor_cells(

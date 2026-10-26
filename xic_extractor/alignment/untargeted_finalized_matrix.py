@@ -272,6 +272,13 @@ def iter_completed_untarget_batch_writer_inputs(
                         risk := (membership_risks_by_owner or {}).get(member.subject_id)
                     )
                     is not None
+                )
+                + tuple(
+                    (sample_id, risk)
+                    for risk_group, sample_id, risk in (
+                        child.scientific_core.grouping_result.backfill_membership_risks
+                    )
+                    if risk_group == group_id
                 ),
             )
             projected_cells = tuple(

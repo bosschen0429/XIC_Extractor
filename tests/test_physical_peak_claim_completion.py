@@ -66,6 +66,7 @@ def _view(
     narrow_context=False,
     mz=500.0,
     off_apex_difference=False,
+    unreliable=False,
 ):
     sample = fixture.sample(stem)
     rt = np.linspace(7.0, 9.2, 221)[crop:]
@@ -86,8 +87,19 @@ def _view(
         raw[np.argmin(abs(rt - center - 0.3))] += 100.0
     prepared = prepare_physical_signal(rt, raw)
     query_rt = center + ((0.6 if crop else -0.5) if narrow_context else 0.0)
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    )
+
     evaluation = evaluate_physical_peak(
-        prepared, selection_subject_id=stem, query_rt_min=query_rt
+        prepared,
+        selection_subject_id=stem,
+        query_rt_min=query_rt,
+        search_rt_window=(center - 0.2, center + 0.2) if unreliable else None,
+        selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        if unreliable
+        else PHYSICAL_PEAK_POINT_POLICY,
     )
     assert evaluation.facts is not None
     peak = mint_peak_observation_ref(
@@ -158,7 +170,7 @@ def _view(
         "off-apex-difference",
     ],
 )
-def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
+def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     tmp_path,
     support,
     direct,
@@ -166,6 +178,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
     broad_context,
     fresh_context,
     off_apex_difference,
+    unreliable=False,
 ):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("A", "B", "C", "D", "S")
@@ -230,7 +243,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             "S",
             center=8.06,
             crop=0
-            if off_apex_difference
+            if off_apex_difference or unreliable
             else index
             if broad_context
             else 45 + 15 * index,
@@ -239,6 +252,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
             narrow_context=fresh_context,
             mz=500.001 if fresh_context and index else 500.0,
             off_apex_difference=off_apex_difference and index == 1,
+            unreliable=unreliable,
         )
         assert assessment.content.method_result == ("SUPPORT" if support else "HOLD")
         backfills[
@@ -252,12 +266,11 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
     if direct:
         comparison_peaks.append(pairs["S"][1].candidate_peaks[0])
     assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == (
-        1 if off_apex_difference else 2
+        1 if off_apex_difference or unreliable else 2
     )
-    assert (
-        len({peak.content.peak_observation_content_id for peak in comparison_peaks})
-        == 2
-    )
+    assert len(
+        {peak.content.peak_observation_content_id for peak in comparison_peaks}
+    ) == (1 if unreliable else 2)
     if fresh_context:
         integrations = [peak.content.integration for peak in comparison_peaks]
         lower = max(i.rt_left_min for i in integrations)
@@ -342,21 +355,42 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         },
         physical_peak_views=comparison_views,
     )
-    assert result.partition_transition.admitted_members == ()
-    assert {g.group_hypothesis_id for g in successors} == {
-        g.group_hypothesis_id for g in groups
-    }
-    assert not retained
-    assert len(contested) == (1 if direct else 2)
+    assert len(result.partition_transition.admitted_members) == int(
+        support and not direct
+    )
+    assert bool(retained) == (support and not direct)
+    assert len(contested) == 1
+    if not direct:
+        assert len(result.backfill_membership_risks) == 1
+        risk = result.backfill_membership_risks[0][2]
+        assert risk.phase == "backfill"
+        assert "backfill_competition" in risk.risk_flags
+        assert risk.cost_gap >= 0
+        if unreliable:
+            assert "backfill_low_localization_confidence" in risk.risk_flags
     cells = compose_cid_nl_predecessor_cells(
         processing_owners=fixture.owners,
-        groups=groups,
+        groups=successors,
         sample_assessments=tuple(pairs.values()),
         alignment_config=config,
         rt_frame=frame,
         sample_universe=frozenset(pairs),
-        backfill_assessments_by_group=backfills,
-        contested_backfill_peaks=contested,
+        backfill_assessments_by_group={
+            (
+                next(
+                    s.group_hypothesis_id
+                    for s in successors
+                    if set(g.owner_ids) <= set(s.owner_ids)
+                ),
+                sample_id,
+                subject,
+            ): pair
+            for (group_id, sample_id, subject), pair in backfills.items()
+            for g in groups
+            if g.group_hypothesis_id == group_id
+        },
+        retained_hypotheses_by_assessment=retained,
+        rejected_backfill_cells=contested,
     )
     sample_cells = [
         cell
@@ -370,9 +404,22 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_no_backfill_winner(
         for cell in sample_cells
         if cell.peak_observation is not None
     ]
-    assert len(numeric_sources) == int(direct)
+    assert len(numeric_sources) == 1
     if direct:
         assert numeric_sources == list(pairs["S"][1].candidate_peaks)
+
+
+def test_low_localization_still_selects_one_shared_acquired_peak(tmp_path):
+    test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
+        tmp_path,
+        support=False,
+        direct=False,
+        reverse=False,
+        broad_context=False,
+        fresh_context=False,
+        off_apex_difference=False,
+        unreliable=True,
+    )
 
 
 @pytest.mark.parametrize("second_apex, expected", [(5.2, "same"), (7.0, "distinct")])

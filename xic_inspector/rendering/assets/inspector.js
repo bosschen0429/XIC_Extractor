@@ -480,9 +480,9 @@
     const risks=row.membership_risks;
     if(Array.isArray(risks)){
       if(!risks.length)notices.push({kind:'membership',label:'配對風險未記錄',short:'風險未記錄'});
-      else if(risks.some(r=>r.risk_flags?.includes('accepted_competition')))notices.push({kind:'membership',label:risks.some(r=>r.risk_flags?.includes('accepted_competition')&&r.selected_owner_ids?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
+      else if(risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))))notices.push({kind:'membership',label:risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))&&r.selected_owner_ids?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
       if(risks?.some(r=>r.risk_flags?.includes('accepted_contradiction')))notices.push({kind:'membership',label:'已接受含矛盾證據的配對',short:'含矛盾證據'});
-      if(risks?.some(r=>r.risk_flags?.includes('low_rt_support')))notices.push({kind:'membership',label:'RT 支援較弱',short:'弱 RT 支援'});
+      if(risks?.some(r=>(r.risk_flags?.includes('low_rt_support')||r.risk_flags?.includes('backfill_low_localization_confidence'))))notices.push({kind:'membership',label:'RT 支援較弱',short:'弱 RT 支援'});
       if(risks?.some(r=>r.risk_flags?.includes('weak_identity')))notices.push({kind:'membership',label:'身分證據較弱',short:'弱身分證據'});
       if(risks?.some(r=>r.risk_flags?.includes('direction_disagreement')))notices.push({kind:'membership',label:'前後方向配置不一致',short:'方向分歧'});
     }
@@ -642,7 +642,7 @@
   function filteredItems(){
     const q=$('search').value.trim().toLowerCase(), limits=['mz-min','mz-max','rt-min','rt-max'].map(id=>$(id).value===''?null:Number($(id).value));
     return items.filter(item=>{
-      const text=[itemName(item),itemTitle(item),item.reason_label,item.method_label,mz(item.precursor_mz),rt(item.rt_apex_min),...itemRows(item).flatMap(r=>[sampleName(r.sample_id),r.status_label,r.decision_label])].join(' ').toLowerCase();
+      const text=[itemName(item),itemTitle(item),item.reason_label,item.method_label,mz(item.precursor_mz),rt(item.rt_apex_min),...itemRows(item).flatMap(r=>[sampleName(r.sample_id),r.status_label,r.decision_label,...(r.membership_risks||[]).flatMap(risk=>[risk.phase,...(risk.risk_flags||[])])])].join(' ').toLowerCase();
       if(q&&!text.includes(q))return false;if(limits.every(v=>v===null))return true;
       const rows=witnesses(item).length?witnesses(item):[item];
       return rows.some(r=>(limits[0]===null||finite(r.precursor_mz)&&r.precursor_mz>=limits[0])&&(limits[1]===null||finite(r.precursor_mz)&&r.precursor_mz<=limits[1])&&(limits[2]===null||finite(r.rt_apex_min)&&r.rt_apex_min>=limits[2])&&(limits[3]===null||finite(r.rt_apex_min)&&r.rt_apex_min<=limits[3]));

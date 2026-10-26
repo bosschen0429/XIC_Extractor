@@ -7,6 +7,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
 
+from xic_extractor.alignment.backfill.membership_selection import (
+    select_backfill_memberships,
+)
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
@@ -26,20 +29,19 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
-    supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
 )
-from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
     owner_from_ms1_observation_hypothesis,
 )
+from xic_extractor.alignment.membership_selection import MembershipComparison
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
@@ -50,6 +52,7 @@ from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -62,6 +65,9 @@ from xic_extractor.peak_detection.physical_peak_equivalence import (
     PhysicalPeakView,
     compare_physical_peak_views,
     physical_peak_view_from_observation,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -298,7 +304,7 @@ def group_cid_nl_owners(
         rt_frame=rt_frame,
         known_identity_bindings=known_identity_bindings,
         operation_counts_sink=operation_counts_sink,
-        peak_trajectories=peak_trajectories,
+        peak_trajectories=peak_trajectories or PeakTrajectories(),
         rules=CID_NL_GROUPING_RULES,
     )
     return reject_shoulder_groups(groups, config=config)
@@ -315,6 +321,7 @@ def admit_cid_nl_group_backfills(
     alignment_config: AlignmentConfig,
     member_observations: Mapping[str, PeakObservationRef],
     physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -322,18 +329,9 @@ def admit_cid_nl_group_backfills(
     dict[tuple[str, str], tuple[PeakHypothesis, ...]],
     frozenset[tuple[str, str]],
 ]:
-    """Extend only the requested group with uniquely claimed supported evidence.
-
-    Initial owners never move. A candidate claimed by several groups, an
-    occupied sample, or an unsupported match remains unassigned evidence.
-    """
+    """Choose bounded acquired candidates while preserving all original owners."""
     by_id = {group.group_hypothesis_id: group for group in groups}
     proposals = []
-    claim_backfills = {
-        key: pair
-        for key, pair in backfills.items()
-        if pair[1].content.method_result != "SUPPORT"
-    }
     retained: dict[tuple[str, str], tuple[PeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
@@ -345,7 +343,10 @@ def admit_cid_nl_group_backfills(
             raise CrossSampleGroupingContractError(
                 "backfill crossed its sample or subject"
             )
-        if assessment.content.method_result != "SUPPORT":
+        if (
+            assessment.content.method_result != "SUPPORT"
+            and not is_ms1_only_cid_nl_backfill_assessment(assessment)
+        ):
             continue
         hypotheses = compose_peak_hypotheses_from_assessment_universe(
             processing_owners=result.processing_owners,
@@ -355,8 +356,17 @@ def admit_cid_nl_group_backfills(
         if len(hypotheses) != 1:
             continue
         hypothesis = hypotheses[0]
-        owner = owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+        owner = (
+            owner_from_cid_nl_assessment_support(
+                sample=sample, assessment=assessment, hypothesis=hypothesis
+            )
+            if assessment.content.method_result == "SUPPORT"
+            else owner_from_cid_nl_assessment_observation(
+                processing_owners=result.processing_owners,
+                sample=sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
+            )
         )
         physical_key = (
             sample_id,
@@ -367,55 +377,101 @@ def admit_cid_nl_group_backfills(
             for member in group.member_subjects
         ):
             continue
-        if not supports_existing_feature(
-            owner,
-            group.owners,
-            config=alignment_config,
-            rt_frame=result.rt_frame,
-            rules=CID_NL_GROUPING_RULES,
-        ):
-            continue
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
-        claim_backfills[key] = (sample, assessment)
-    contested_peaks = contested_backfill_peaks(
+    if not proposals:
+        return (
+            result,
+            tuple(sorted(groups, key=lambda group: group.group_hypothesis_id)),
+            {g.group_hypothesis_id: g.group_hypothesis_id for g in groups},
+            retained,
+            frozenset((group, sample) for group, sample, _ in backfills),
+        )
+    comparison_views = dict(physical_peak_views or {})
+    for _, _, _, hypothesis, _ in proposals:
+        observation = hypothesis.peak_observation_refs[0]
+        observation_id = observation.content.peak_observation_content_id
+        if observation_id not in comparison_views:
+            comparison_views[observation_id] = physical_peak_view_from_observation(
+                observation
+            )
+    occupied = contested_backfill_peaks(
         groups=groups,
-        backfills=claim_backfills,
+        backfills=backfills,
         member_observations=member_observations,
-        physical_peak_views=physical_peak_views,
+        physical_peak_views=comparison_views,
+        direct_only=True,
     )
-    cell_claims: dict[tuple[str, str], int] = defaultdict(int)
-    for group_id, physical_key, *_ in proposals:
-        cell_claims[(group_id, physical_key[0])] += 1
-    eligible = []
-    candidates_by_group: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
-    for proposal in proposals:
-        group_id, physical_key, owner, *_ = proposal
-        if (
-            physical_key in contested_peaks
-            or cell_claims[(group_id, physical_key[0])] != 1
-        ):
-            continue
-        eligible.append(proposal)
-        candidates_by_group[group_id].append(owner)
-    # Each proposal already agrees with the original members, but shape
-    # compatibility is not transitive. Check simultaneous additions only after
-    # claim resolution; an inadmissible proposal cannot veto a valid recovery.
-    # Neither endpoint of a conflict wins by sample/owner ordering. Independent
-    # compatible additions remain eligible rather than rejecting the whole batch.
-    conflicted: set[str] = set()
-    for candidates in candidates_by_group.values():
-        for index, owner in enumerate(candidates):
-            for other in candidates[:index]:
-                if conflict := peak_correspondence_conflict(
-                    (owner,),
-                    (other,),
-                    alignment_config,
-                    rt_frame=result.rt_frame,
-                ):
-                    conflicted.update(conflict)
+    eligible = [p for p in proposals if p[1] not in occupied]
+    if not eligible:
+        return (
+            result,
+            tuple(sorted(groups, key=lambda group: group.group_hypothesis_id)),
+            {g.group_hypothesis_id: g.group_hypothesis_id for g in groups},
+            retained,
+            frozenset((group, sample) for group, sample, _ in backfills),
+        )
+    views = [comparison_views[p[1][1]] for p in eligible]
+    conflicts = frozenset(
+        (j, i)
+        for i, proposal in enumerate(eligible)
+        for j, other in enumerate(eligible[:i])
+        if proposal[1][0] == other[1][0]
+        and (
+            proposal[0] == other[0]
+            or proposal[1] == other[1]
+            or compare_physical_peak_views(views[i], views[j]) == "same"
+        )
+    )
+    comparison = MembershipComparison(
+        tuple(
+            {
+                owner.owner_id: owner
+                for owner in (
+                    *(owner for group in groups for owner in group.owners),
+                    *(p[2] for p in eligible),
+                )
+            }.values()
+        ),
+        rules=CID_NL_GROUPING_RULES,
+        config=alignment_config,
+        rt_frame=result.rt_frame,
+        trajectories=peak_trajectories or PeakTrajectories(),
+    )
+    low_localization = {
+        i
+        for i, proposal in enumerate(eligible)
+        if (evaluation := proposal[3].peak_observation_refs[0].physical_evaluation)
+        is not None
+        and evaluation.question.selection_policy_version
+        == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+    }
+    for owner_id in {eligible[index][2].owner_id for index in low_localization}:
+        comparison.rt_weights[owner_id] *= 0.25
+    selected, risks = select_backfill_memberships(
+        comparison=comparison,
+        original_groups={g.group_hypothesis_id: g.owner_ids for g in groups},
+        proposals=tuple((p[0], p[2].owner_id) for p in eligible),
+        conflicts=conflicts,
+    )
+    for index in selected & low_localization:
+        risks[index] = replace(
+            risks[index],
+            risk_flags=tuple(
+                sorted(
+                    (*risks[index].risk_flags, "backfill_low_localization_confidence")
+                )
+            ),
+        )
+    selected_cells = {(eligible[i][0], eligible[i][1][0]) for i in selected}
+    rejected_cells = frozenset(
+        (group, sample)
+        for group, sample, _ in backfills
+        if (group, sample) not in selected_cells
+    )
     additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
-    for group_id, physical_key, owner, hypothesis, assessment in eligible:
-        if owner.owner_id in conflicted:
+    for index in sorted(selected):
+        group_id, physical_key, owner, hypothesis, assessment = eligible[index]
+        if assessment.content.method_result != "SUPPORT":
             continue
         additions[group_id].append(owner)
         retained[
@@ -462,13 +518,20 @@ def admit_cid_nl_group_backfills(
             )
         completed.append(successor)
         successor_ids[group.group_hypothesis_id] = successor.group_hypothesis_id
+    result = replace(
+        result,
+        backfill_membership_risks=tuple(
+            (successor_ids[eligible[i][0]], eligible[i][1][0], risks[i])
+            for i in sorted(selected)
+        ),
+    )
     if not admitted:
         return (
             result,
             tuple(sorted(groups, key=lambda group: group.group_hypothesis_id)),
             successor_ids,
             retained,
-            contested_peaks,
+            rejected_cells,
         )
     identities = tuple(
         sorted(
@@ -501,7 +564,7 @@ def admit_cid_nl_group_backfills(
         tuple(sorted(completed, key=lambda group: group.group_hypothesis_id)),
         successor_ids,
         retained,
-        contested_peaks,
+        rejected_cells,
     )
 
 
@@ -579,13 +642,15 @@ def contested_backfill_peaks(
     ],
     member_observations: Mapping[str, PeakObservationRef],
     physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
+    direct_only: bool = False,
 ) -> frozenset[tuple[str, str]]:
     """Resolve physical claims once, before SUPPORT admission or cell creation.
 
-    Direct members of Matrix rows retain occupancy. Competing Backfills have
-    no order-dependent winner, regardless of their method result. An archive
-    member writes no value and cannot occupy a peak. The caller supplies retained
-    observations, not reconstructed peak-shape summaries or rounded coordinates.
+    Direct members of Matrix rows retain occupancy. ``direct_only`` excludes
+    competition between Backfills: the bounded assignment owner resolves those
+    claims instead of rejecting every claimant. An archive member writes no
+    value and cannot occupy a peak. The caller supplies retained observations,
+    not reconstructed peak-shape summaries or rounded coordinates.
     """
 
     def view_for(peak: PeakObservationRef) -> PhysicalPeakView:
@@ -629,7 +694,9 @@ def contested_backfill_peaks(
                 for _, member_view in members_by_sample[sample_id]
             ):
                 contested.add(key)
-            for other_group, other_id, other_view in entries[:index]:
+            for other_group, other_id, other_view in (
+                () if direct_only else entries[:index]
+            ):
                 if other_group != group_id and (
                     observation_id == other_id
                     or compare_physical_peak_views(view, other_view) == "same"

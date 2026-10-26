@@ -119,7 +119,12 @@ reference samples are held out one at a time using that same trajectory
 estimator. With at least two residuals, the apex tolerance is the larger of
 12 seconds and their 90th percentile, capped by the acquisition half-window.
 A residual p90 above that bound, or insufficient residuals, makes localization
-unreliable and leaves the cell empty rather than accepting any nearby peak.
+unreliable. Untargeted still evaluates qualified physical candidates already
+inside the acquired bounded window; the forecast does not select among multiple
+segments. A unique qualified candidate can enter the fixed-group comparison
+with one-quarter of its otherwise applicable RT weight and a
+`backfill_low_localization_confidence` risk. This does not expand acquisition,
+change its integral, or relax method-specific quantitation eligibility.
 An observed trajectory position uses a 12-second bound (or the smaller
 acquisition half-window). The context fallback never expands this apex bound.
 A reliable query with no apex inside that bound can still nominate a physical
@@ -137,9 +142,10 @@ A configured acquisition window narrower than 12 seconds remains valid when
 the measured residual p90 fits inside it; the 12-second floor cannot itself
 make localization unreliable. Residuals are prepared once per row/cohort, not
 once per missing sample.
-The retained physical evaluation distinguishes `sample_localization_unreliable`
-from `no_peak_in_sample_local_window`; its nearest candidate RT remains
-inspectable even when no numeric observation is accepted.
+The retained physical question records unreliable localization separately from
+its physical answer. No peak, ambiguous segments, and insufficient acquired
+support remain explicit unavailable answers; low confidence alone is not a
+physical failure.
 
 Completed-empty evidence binds both the original group center and actual query
 RT. It validates the acquired query, not containment of the group center in a
@@ -214,18 +220,26 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    - insufficient group support;
    - an ineligible sample;
    - a member of a Matrix row already holds the peak;
-   - the Backfill of another group also found the peak.
+   - another feasible Backfill assignment wins, or blank has lower cost.
 5. A member of an archive row writes no value and does not hold the peak.
-6. If the windows of two rows resolve the same peak, the cell stays unresolved
-   in both rows. The peak does not supply one value twice.
+6. If the windows of two rows resolve the same peak, compare fixed-group
+   assignments and blank using the shared membership cost. Retain at most 64
+   candidate configurations at each bounded extension, choose the lowest cost
+   (mean peer fit resolves cost ties), and retain a feasible alternative and
+   its cost gap. Original members never move. The peak supplies at most one
+   value; equivalent choices remain visible rather than making every row blank.
+   Newly added cross-sample shape contradictions contribute soft cost and risk,
+   while mass, identity, measurement and physical uniqueness remain constraints.
 7. Direct observations and Backfill observations use the shared
    [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
    Different bounds, content IDs or context-dependent apices do not establish
    different peaks. A Matrix row's Direct member keeps its existing value;
    another row cannot Backfill the same measured peak. Competing Backfills have
-   no arbitrary winner and remain unresolved, whether they carry SUPPORT or
-   MS1-only HOLD. Claim resolution runs once after method/membership eligibility,
-   before new members or numeric cells are created. A SUPPORT proposal that
+   one selected feasible assignment, whether they carry SUPPORT or MS1-only
+   HOLD. Accepted choices use `AcceptedMembershipRisk` with `phase=backfill`,
+   including `backfill_competition` for contested claims. Final row/sample,
+   review TSV and compact explanation/Inspector retain these same facts.
+   Claim resolution runs once before new members or numeric cells are created. A SUPPORT proposal that
    cannot join its requested feature does not veto an otherwise valid recovery.
    Each view uses its actual extraction m/z interval, not a second preferred-ppm
    occupancy rule. Same apex plus overlapping windows is not sufficient to

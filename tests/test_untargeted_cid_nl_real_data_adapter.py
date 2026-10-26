@@ -2789,7 +2789,7 @@ def test_physical_backfill_context_is_not_search_permission(
     )
     gate_result = gated.capture_evidence[0].physical_evaluation
     assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
-    if not reliable or tolerance == 12.0:
+    if reliable and tolerance == 12.0:
         assert gate_result.state == "unavailable"
         assert gate_result.facts is None
         assert not gated.assessment.candidate_peaks

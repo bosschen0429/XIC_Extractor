@@ -245,7 +245,7 @@ def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -
     assert result.segment_universe.segments
 
 
-def test_unreliable_location_preserves_nearest_peak_without_minting_a_value() -> None:
+def test_unreliable_location_evaluates_unique_acquired_peak() -> None:
     rt = np.linspace(0.0, 2.0, 401)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
     result = evaluate_physical_peak(
@@ -254,9 +254,9 @@ def test_unreliable_location_preserves_nearest_peak_without_minting_a_value() ->
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     )
-    assert result.state == "unavailable"
-    assert result.reason == "sample_localization_unreliable"
-    assert result.facts is None
+    assert result.state == "available"
+    assert result.facts is not None
+    assert result.facts.apex_rt_min == pytest.approx(0.4)
     payload = serialize_physical_peak_evaluation(
         rt,
         raw,

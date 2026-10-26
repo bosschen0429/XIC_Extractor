@@ -574,6 +574,7 @@ def _validated_search_window(
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         PHYSICAL_PEAK_BACKFILL_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     }:
         raise ValueError("search window requires a window selection policy")
     if not isinstance(window, tuple) or len(window) != 2:
@@ -598,15 +599,13 @@ def _admissible_physical_segments(
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version in {
-        PHYSICAL_PEAK_NO_SELECTION_POLICY,
-        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
-    }:
+    if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
         return ()
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         PHYSICAL_PEAK_BACKFILL_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
@@ -825,7 +824,8 @@ def _physical_segment_support_failure(
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
     minimum_contrast = (
         BACKFILL_MIN_CONTRAST_SIGMA
-        if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+        if selection_policy_version
+        in {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
         else DISCOVERY_MIN_CONTRAST_SIGMA
     )
     if prominence < minimum_contrast * noise_sigma:
@@ -833,7 +833,8 @@ def _physical_segment_support_failure(
             return "insufficient_reference_peak_contrast"
         return (
             "insufficient_backfill_peak_contrast"
-            if selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+            if selection_policy_version
+            in {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
             else "insufficient_local_peak_contrast"
         )
     return ""
@@ -854,12 +855,7 @@ def answer_physical_peak_question(
     reason = universe.reason
     selected: PhysicalSegment | None = None
     background_qualified = False
-    if (
-        question.selection_policy_version == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
-        and state != "failed"
-    ):
-        state, reason = "unavailable", "sample_localization_unreliable"
-    elif state == "available":
+    if state == "available":
         if not question.admissible_segment_ids:
             state = "unavailable"
             reason = (

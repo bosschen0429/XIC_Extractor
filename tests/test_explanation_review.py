@@ -856,10 +856,12 @@ def test_old_review_cell_encoding_keeps_quality_not_recorded():
     assert decoded["review-cell:r:0"]["membership_risks"] == []
 
 
-def _competition_review_report(tmp_path):
+def _competition_review_report(
+    tmp_path, *, phase="initial", flag="accepted_competition"
+):
     risk = {
         "status": "evaluated_alternative",
-        "phase": "initial",
+        "phase": phase,
         "selected_owner_ids": ["a", "b"],
         "alternative_partition": [["a"], ["b", "c"]],
         "equivalent_alternatives": [],
@@ -869,7 +871,7 @@ def _competition_review_report(tmp_path):
         "rt_basis": "raw",
         "evidence_basis": "bounded_assignment",
         "soft_contradictions": [],
-        "risk_flags": ["accepted_competition"],
+        "risk_flags": [flag],
         "selected_peer_fit": 0.25,
         "alternative_peer_fit": 0.4,
         "peer_fit_gap": 0.15,

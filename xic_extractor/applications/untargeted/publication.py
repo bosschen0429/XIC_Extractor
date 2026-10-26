@@ -86,6 +86,13 @@ def publish_untargeted_outputs(
         }
         write_explanation = (
             any(risk.risk_flags for risk in membership_risks.values())
+            or any(
+                risk.risk_flags
+                for child in completed.application_result.children
+                for _, _, risk in (
+                    child.scientific_core.grouping_result.backfill_membership_risks
+                )
+            )
             or policy.emit_cid_nl_explanation
             or policy.explanation_full_audit
             or bool(policy.explanation_curve_mz_ranges)
