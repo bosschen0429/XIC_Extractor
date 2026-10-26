@@ -10,7 +10,10 @@ from typing import cast
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
+from xic_extractor.alignment.cid_nl_grouping import (
+    CID_NL_GROUPING_RULES,
+    cid_nl_backfill_comparison_rules,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
@@ -432,7 +435,14 @@ def admit_cid_nl_group_backfills(
                 )
             }.values()
         ),
-        rules=CID_NL_GROUPING_RULES,
+        rules=cid_nl_backfill_comparison_rules(
+            frozenset(
+                owner.owner_id
+                for _, _, owner, _, assessment in eligible
+                if assessment.content.method_result != "SUPPORT"
+                and assessment.content.method_subject.composition is not None
+            )
+        ),
         config=alignment_config,
         rt_frame=result.rt_frame,
         trajectories=peak_trajectories or PeakTrajectories(),

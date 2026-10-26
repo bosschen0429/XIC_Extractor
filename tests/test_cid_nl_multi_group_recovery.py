@@ -13,6 +13,7 @@ from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
+    _multi_tag_settings,
     _peak_config,
     _settings,
 )
@@ -1721,20 +1722,25 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     ],
     ids=["one-ms1-peak", "two-ms1-peaks"],
 )
+@pytest.mark.parametrize("composition", [None, "union", "intersection"])
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
-    tmp_path, monkeypatch, missing_peaks, expected_state
+    tmp_path, monkeypatch, missing_peaks, expected_state, composition
 ):
     physical_records = {}
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
+        replace(_multi_tag_settings(), tag_combine_mode=composition)
+        if composition
+        else replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
         raw = _FakeRaw(centers[path.stem])
+        if composition == "intersection" and path.stem != "Missing":
+            raw = _FakeRaw((7.98, 8.02), neutral_loss_das=(116.0474, 132.0423))
         raw.rt = np.linspace(7.4, 8.7, 521)
         raw.intensity = sum(
             (
@@ -1747,6 +1753,8 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
             for scan in raw.scans
         )
+        if composition and path.stem == "Missing":
+            raw.scans = ()
         raws[path] = raw
         candidates[path.stem] = (
             _current_candidates(
@@ -1839,6 +1847,8 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.write_matrix_value
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
+        integration = attempt.assessment.candidate_peaks[0].content.integration
+        assert decision.matrix_value == pytest.approx(integration.area_ms1_morphology)
         from tools.diagnostics.output_population_census import main as population_main
         from xic_extractor.output.alignment.pipeline_outputs import (
             output_paths,
@@ -1879,9 +1889,18 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     # The finalized row carries the group's own tag, fragment and anchor.
     (cluster,) = writer.matrix.clusters
     assert cluster.has_anchor
-    assert cluster.neutral_loss_tag == "cid_nl:116.0474"
-    assert cluster.family_product_mz == pytest.approx(383.9526, abs=1e-3)
-    assert cluster.family_observed_neutral_loss_da == pytest.approx(116.0474, abs=1e-3)
+    assert cluster.neutral_loss_tag == (
+        batch.subject_batch.subjects[0].method_subject_id
+        if composition
+        else "cid_nl:116.0474"
+    )
+    expected_loss = (
+        (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
+    )
+    assert cluster.family_product_mz == pytest.approx(500.0 - expected_loss, abs=1e-3)
+    assert cluster.family_observed_neutral_loss_da == pytest.approx(
+        expected_loss, abs=1e-3
+    )
 
 
 def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(

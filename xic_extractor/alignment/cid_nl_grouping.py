@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -367,3 +367,31 @@ CID_NL_GROUPING_RULES = GroupingRules(
     mass_fraction=cid_nl_mass_fraction,
     pair_mass_fraction=cid_nl_pair_mass_fraction,
 )
+
+
+def cid_nl_backfill_comparison_rules(
+    composite_observation_ids: frozenset[str],
+) -> GroupingRules:
+    """Compare authorized composite MS1-only observations without inventing CID-NL.
+
+    These candidates are already bound to a fixed group by the Backfill owner.
+    A composite subject has no scalar neutral loss to project as an identity
+    event. Its absence is not a new identity conflict, and acceptance grants no
+    direct SUPPORT. Initial grouping keeps the ordinary CID-NL rules.
+    """
+    if not composite_observation_ids:
+        return CID_NL_GROUPING_RULES
+
+    def pair_evidence(
+        left: SampleLocalMS1Owner,
+        right: SampleLocalMS1Owner,
+        config: AlignmentConfig,
+    ) -> MethodPairEvidence:
+        if (
+            left.owner_id in composite_observation_ids
+            or right.owner_id in composite_observation_ids
+        ):
+            return MethodPairEvidence(None, None, "weak", "none")
+        return _pair_evidence(left, right, config)
+
+    return replace(CID_NL_GROUPING_RULES, pair_evidence=pair_evidence)
