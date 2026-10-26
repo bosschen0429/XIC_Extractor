@@ -55,6 +55,10 @@ class MS2ProductEvidence:
     precursor_inference_tolerance_da: float | None = None
     ms1_precursor_observation: Ms1PrecursorObservation | None = None
 
+    def __deepcopy__(self, memo: dict[int, object]) -> MS2ProductEvidence:
+        # Product facts and precursor metadata contain only frozen scalar/tuple data.
+        return self
+
     def assess_precursor_loss(
         self, neutral_loss_da: float, tolerance_ppm: float
     ) -> PrecursorLossAssessment:
@@ -101,6 +105,10 @@ class CandidateMS2Evidence:
     outside_ms1_peak_group_trigger_scan_count: int | None = None
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     best_product_evidence: MS2ProductEvidence | None = None
+
+    def __deepcopy__(self, memo: dict[int, object]) -> CandidateMS2Evidence:
+        # Trace summaries and product facts have no mutable signal arrays.
+        return self
 
     def to_token(self) -> str:
         if self.nl_status == "WARN" and self.best_loss_ppm is not None:
