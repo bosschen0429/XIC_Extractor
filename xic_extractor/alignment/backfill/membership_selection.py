@@ -25,7 +25,10 @@ def select_backfill_memberships(
     and cell exclusivity from the acquisition-evidence adapter. Original owners
     never move; no new candidate or measurement is created here.
     """
-    bases = {key: comparison.group_cost(ids) for key, ids in original_groups.items()}
+    bases = {
+        key: comparison.fixed_group_cost(ids, ids)
+        for key, ids in original_groups.items()
+    }
 
     def groups_for(selected: frozenset[int]) -> dict[str, tuple[str, ...]]:
         groups = dict(original_groups)
@@ -42,7 +45,7 @@ def select_backfill_memberships(
             len(proposals)
             - len(selected)
             + math.fsum(
-                comparison.group_cost(ids) - bases[group]
+                comparison.fixed_group_cost(ids, original_groups[group]) - bases[group]
                 for group, ids in groups.items()
                 if ids != original_groups[group]
             )
@@ -71,6 +74,39 @@ def select_backfill_memberships(
                 expanded.add(candidate)
         states = set(sorted(expanded, key=key)[:64])
     selected = min(states, key=key)
+
+    def neighbors(current: frozenset[int]) -> set[frozenset[int]]:
+        choices = {current - {index} for index in current}
+        for index in range(len(proposals)):
+            if index in current:
+                continue
+            displaced = {
+                other
+                for other in current
+                if (min(index, other), max(index, other)) in conflicts
+            }
+            choices.add((current - displaced) | {index})
+        # Feasibility is not hereditary: a complete group can be feasible even
+        # when each partial extension has an RT gap. Try its compatible bundle
+        # before relying on one-at-a-time improvements.
+        for group in original_groups:
+            bundle = frozenset(i for i in current if proposals[i][0] != group)
+            for index, (candidate_group, _) in enumerate(proposals):
+                if candidate_group == group and not any(
+                    (min(index, other), max(index, other)) in conflicts
+                    for other in bundle
+                ):
+                    bundle |= {index}
+            choices.add(bundle)
+        return {choice for choice in choices if math.isfinite(cost(choice))}
+
+    while True:
+        nearby = neighbors(selected)
+        improved = min((selected, *nearby), key=key)
+        if improved == selected:
+            states.update(nearby)
+            break
+        selected = improved
     selected_cost = cost(selected)
     groups = groups_for(selected)
     risks = {}
@@ -102,6 +138,8 @@ def select_backfill_memberships(
             )
         )
         flags = {"accepted_contradiction"} if contradictions else set()
+        if not math.isfinite(comparison.group_cost(original_groups[group])):
+            flags.update(("fixed_original_conflict", "accepted_contradiction"))
         if any(index in pair for pair in conflicts):
             flags.add("backfill_competition")
         if alternative_cost - selected_cost <= 0.05:

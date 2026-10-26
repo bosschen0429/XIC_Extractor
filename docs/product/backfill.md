@@ -225,9 +225,14 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 6. If the windows of two rows resolve the same peak, compare fixed-group
    assignments and blank using the shared membership cost. Retain at most 64
    candidate configurations at each bounded extension, choose the lowest cost
-   (mean peer fit resolves cost ties), and retain a feasible alternative and
-   its cost gap. Original members never move. The peak supplies at most one
-   value; equivalent choices remain visible rather than making every row blank.
+   (mean peer fit resolves cost ties), then retry complete compatible group
+   bundles and local add/remove/reassignment choices until none improves it.
+   Partial RT gaps cannot permanently discard a feasible complete extension.
+   Retain a feasible alternative and its cost gap. Original members never move.
+   Conflicts between fixed original members do not create an infinite subtraction
+   baseline; all pairs involving new candidates still obey hard constraints.
+   An accepted extension of such a group carries `fixed_original_conflict`.
+   The peak supplies at most one value; equivalent choices remain visible rather than making every row blank.
    Newly added cross-sample shape contradictions contribute soft cost and risk,
    while mass, identity, measurement and physical uniqueness remain constraints.
 7. Direct observations and Backfill observations use the shared

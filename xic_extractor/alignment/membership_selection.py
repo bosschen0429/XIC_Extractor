@@ -281,37 +281,74 @@ class MembershipComparison:
                 pair_cost = max(pair_cost, self.pair(first, second)[0])
                 if not math.isfinite(pair_cost):
                     break
-            trend = 0.0
-            # A neighbor median stays inside the group's RT range. A range of
-            # at most 90 seconds therefore cannot incur the trend penalty.
-            if (
-                len(key) > 2
-                and math.isfinite(pair_cost)
-                and (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
-                > 90.0
-            ):
-                for owner_id in key:
-                    owner = self.owners[owner_id]
-                    if owner.sample_stem not in self.orders:
-                        continue
-                    neighbors = sorted(
-                        (p for p in key if p != owner_id),
-                        key=lambda p: (
-                            abs(
-                                self.orders.get(self.owners[p].sample_stem, 0)
-                                - self.orders[owner.sample_stem]
-                            ),
-                            self.measured_keys[p],
-                        ),
-                    )[:6]
-                    residual = (
-                        abs(self.rts[owner_id] - median(self.rts[p] for p in neighbors))
-                        * 60
-                    )
-                    rt_weight = min(self.rt_weights[p] for p in (owner_id, *neighbors))
-                    trend = max(trend, rt_weight * 0.20 * max(0.0, residual / 90.0 - 1))
-            self.group_costs[key] = 1.0 + pair_cost + trend
+            self.group_costs[key] = (
+                1.0 + pair_cost + self._group_trend_cost(key)
+                if math.isfinite(pair_cost)
+                else math.inf
+            )
         return self.group_costs[key]
+
+    def fixed_group_cost(
+        self, group: tuple[str, ...], original: tuple[str, ...]
+    ) -> float:
+        """Score an extension without reopening constraints between fixed members.
+
+        Original members cannot move in Backfill. Their pre-existing hard
+        conflict is not a new candidate's failure, nor an infinite baseline to
+        subtract. Every pair involving a new owner still has to be feasible.
+        The complete extension still obeys the RT-population constraint.
+        """
+        cost = (
+            self._group_evidence_cost(group)
+            if group == original
+            else self.group_cost(group)
+        )
+        if math.isfinite(cost):
+            return cost
+        if group != original and self.has_rt_population_gap(group):
+            return math.inf
+        if len({self.owners[p].sample_stem for p in group}) != len(group):
+            return math.inf
+        fixed = frozenset(original)
+        pair_cost = 0.0
+        for first, second in combinations(group, 2):
+            value = self.pair(first, second)[0]
+            if not math.isfinite(value) and first in fixed and second in fixed:
+                continue
+            pair_cost = max(pair_cost, value)
+        return 1.0 + pair_cost + self._group_trend_cost(group)
+
+    def _group_trend_cost(self, key: tuple[str, ...]) -> float:
+        trend = 0.0
+
+        # A neighbor median stays inside the group's RT range. A range of
+        # at most 90 seconds therefore cannot incur the trend penalty.
+        if (
+            len(key) > 2
+            and (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
+            > 90.0
+        ):
+            for owner_id in key:
+                owner = self.owners[owner_id]
+                if owner.sample_stem not in self.orders:
+                    continue
+                neighbors = sorted(
+                    (p for p in key if p != owner_id),
+                    key=lambda p: (
+                        abs(
+                            self.orders.get(self.owners[p].sample_stem, 0)
+                            - self.orders[owner.sample_stem]
+                        ),
+                        self.measured_keys[p],
+                    ),
+                )[:6]
+                residual = (
+                    abs(self.rts[owner_id] - median(self.rts[p] for p in neighbors))
+                    * 60
+                )
+                rt_weight = min(self.rt_weights[p] for p in (owner_id, *neighbors))
+                trend = max(trend, rt_weight * 0.20 * max(0.0, residual / 90.0 - 1))
+        return trend
 
     def has_rt_population_gap(self, group: tuple[str, ...]) -> bool:
         """Reject two concentrated populations in a complete common-RT group.
