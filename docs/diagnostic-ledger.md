@@ -1240,3 +1240,24 @@ run-time and source facts; 4.0.19 and 5.0.0.93 fail `SelectInstrument` on
 .NET 8, so reader version and runtime were not separated. Receipts are private
 scratch measurements; rerun when the vendor reader, runtime, storage medium or
 header-worker model changes.
+
+## RawFileReader 8 numerical compatibility (#929)
+
+Evidence: `diagnostic_only`. On the same eight-RAW USB-HDD workload,
+RawFileReader 8.0.42 with .NET 8 and .NET 10 preserves all 112 Targeted result
+rows, 255 diagnostics, and the full acquired file-result hash. The installed
+reader path also reproduces those values through the current CLI. Untargeted
+Discovery's 25 data outputs are byte-identical on the eight-RAW tissue subset.
+These are regression comparisons, not an independent scientific oracle.
+
+Vendor text formatting changes decimal midpoint rounding and signed zero.
+The two-RAW scan comparison preserves numeric spectra, XIC, RT mapping and
+recalibration results; a few `Monoisotopic M/Z` trailer values differ by
+0.0001 Da. This expected difference is accepted without a conversion layer.
+
+The paired warm-cache reader comparison on `98fb0b73` changes only DLLs and
+runtime: eight-RAW Targeted time is 22.35-23.62 s with 4.0.19 versus
+15.43-15.89 s with 8.0.42/.NET 8; preparation is 1.67-1.72 s versus
+0.55-0.56 s. Disposition: `optimized` within this measured scope. This does
+not establish a cold-storage upper bound or a 158-RAW speedup. The detailed
+comparison and deployment acceptance are owned by #929 and its delivery PR.
