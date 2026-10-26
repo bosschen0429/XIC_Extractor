@@ -2,7 +2,7 @@ import importlib
 import math
 import os
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -37,7 +37,12 @@ from xic_extractor.injection_timeline import (
     ScheduledInjection,
     build_injection_timeline,
 )
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import (
+    Ms2PrecursorMetadata,
+    Ms2PrecursorScope,
+    Ms2Scan,
+    Ms2ScanEvent,
+)
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -453,13 +458,29 @@ class RawFileHandle:
         """Read declared scans within the same native RT-to-scan window."""
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=scan_numbers)
 
+    def read_ms2_window(
+        self, rt_min: float, rt_max: float, *, precursor_scope: Ms2PrecursorScope
+    ) -> tuple[tuple[Ms2ScanEvent, ...], int]:
+        """Read spectra only for MS2 events the scope admits; count the others."""
+        reader = self._iter_ms2_scans(
+            rt_min, rt_max, scan_numbers=None, precursor_scope=precursor_scope
+        )
+        events: list[Ms2ScanEvent] = []
+        while True:
+            try:
+                events.append(next(reader))
+            except StopIteration as done:
+                return tuple(events), done.value
+
     def _iter_ms2_scans(
         self,
         rt_min: float | None,
         rt_max: float | None,
         *,
         scan_numbers: frozenset[int] | None,
-    ) -> Iterator[Ms2ScanEvent]:
+        precursor_scope: Ms2PrecursorScope | None = None,
+    ) -> Generator[Ms2ScanEvent, None, int]:
+        """Yield MS2 events; return how many the precursor scope left unread."""
         one_sided_crop = (rt_min is None) != (rt_max is None)
         for name, value in (("rt_min", rt_min), ("rt_max", rt_max)):
             if value is not None and (
@@ -478,7 +499,7 @@ class RawFileHandle:
             )
             rt_max = acquisition_end if rt_max is None else min(rt_max, acquisition_end)
         if rt_min > rt_max:
-            return
+            return 0
         start_scan = self._raw_file.ScanNumberFromRetentionTime(rt_min)
         end_scan = self._raw_file.ScanNumberFromRetentionTime(rt_max)
         selected = (
@@ -488,6 +509,7 @@ class RawFileHandle:
                 number for number in scan_numbers if start_scan <= number <= end_scan
             )
         )
+        unread = 0
         for scan_number in selected:
             try:
                 scan_rt = float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
@@ -511,22 +533,31 @@ class RawFileHandle:
                         }
                     }
                 precursor_mz = _extract_precursor_mz(filter_obj)
-                scan_data = self._raw_file.GetSimplifiedScan(scan_number)
-                masses = np.asarray(getattr(scan_data, "Masses", []), dtype=float)
-                intensities = np.asarray(
-                    getattr(scan_data, "Intensities", []), dtype=float
-                )
-                base_peak = float(np.max(intensities)) if len(intensities) else 0.0
                 precursor_metadata = _read_precursor_metadata(
                     self._raw_file,
                     filter_obj,
                     scan_number,
                     self._precursor_trailer_indices,
                 )
+                fragment_scale = None
                 if self.mass_recalibration_result.outcome == "applied":
-                    masses, precursor_mz, precursor_metadata = self._recalibrate_ms2(
-                        scan_number, masses, precursor_mz, precursor_metadata
+                    fragment_scale = self._mass_scale(scan_number)
+                    precursor_mz, precursor_metadata = self._recalibrate_ms2_precursor(
+                        scan_number, precursor_mz, precursor_metadata
                     )
+                if precursor_scope is not None and not precursor_scope(
+                    precursor_mz, precursor_metadata
+                ):
+                    unread += 1
+                    continue
+                scan_data = self._raw_file.GetSimplifiedScan(scan_number)
+                masses = np.asarray(getattr(scan_data, "Masses", []), dtype=float)
+                intensities = np.asarray(
+                    getattr(scan_data, "Intensities", []), dtype=float
+                )
+                base_peak = float(np.max(intensities)) if len(intensities) else 0.0
+                if fragment_scale is not None:
+                    masses = masses / fragment_scale
                 yield Ms2ScanEvent(
                     scan=Ms2Scan(
                         scan_number=scan_number,
@@ -546,6 +577,7 @@ class RawFileHandle:
                     parse_error=str(exc),
                     scan_number=scan_number,
                 )
+        return unread
 
     def _mass_scale(self, scan_number: int) -> float:
         """Measured m/z divided by true m/z for one scan under the policy."""
@@ -614,22 +646,20 @@ class RawFileHandle:
             values.append(float(intensities[low:high].sum()))
         return XICTrace.from_arrays(rts, values) if rts else XICTrace.empty()
 
-    def _recalibrate_ms2(
+    def _recalibrate_ms2_precursor(
         self,
         scan_number: int,
-        masses: np.ndarray,
         precursor_mz: float,
         metadata: Ms2PrecursorMetadata,
-    ) -> tuple[np.ndarray, float, Ms2PrecursorMetadata]:
-        """Fragments use this scan; precursor readings use their parent MS1.
+    ) -> tuple[float, Ms2PrecursorMetadata]:
+        """Precursor readings use their parent MS1; fragments use their own scan.
 
         A filter precursor matching the recorded mono, a charge-resolved M+n,
         or a parent centroid is measured; inclusion-list setpoints stay unchanged.
         """
-        recalibrated_masses = masses / self._mass_scale(scan_number)
         monoisotopic = metadata.monoisotopic_mz
         if monoisotopic is None:
-            return recalibrated_masses, precursor_mz, metadata
+            return precursor_mz, metadata
         if metadata.master_scan_number is None:
             raise RawReaderError(
                 f"MS2 scan {scan_number} records a precursor without its parent MS1"
@@ -664,7 +694,6 @@ class RawFileHandle:
         if measured_precursor:
             precursor_mz = precursor_mz / parent_scale
         return (
-            recalibrated_masses,
             precursor_mz,
             replace(metadata, monoisotopic_mz=monoisotopic / parent_scale),
         )

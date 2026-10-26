@@ -1,6 +1,7 @@
 """Pure precursor references and isolation bounds shared by CID-NL consumers."""
 
 import math
+from bisect import bisect_left
 from dataclasses import dataclass
 from typing import Literal
 
@@ -224,6 +225,51 @@ def _isolated_vendor_isotope(
     expected_mz = precursor_mz + isotope_number * _CARBON_ISOTOPE_SPACING_DA
     tolerance = DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm / 1e6
     return abs(selected_mz - expected_mz) <= expected_mz * tolerance
+
+
+@dataclass(frozen=True, slots=True)
+class PrecursorMassScope:
+    """Admit MS2 events whose recorded or inferred precursor can reach a mass window.
+
+    The reachable span covers the selected and monoisotopic precursors and the
+    isolation-bounded inference range, so admitting an event never depends on
+    its fragments.
+    """
+
+    windows: tuple[tuple[float, float], ...]
+    maximum_inference_radius_da: float
+
+    @classmethod
+    def around(
+        cls,
+        masses: tuple[tuple[float, float], ...],
+        *,
+        maximum_inference_radius_da: float,
+    ) -> "PrecursorMassScope":
+        """Merge ``(mz, tolerance_da)`` windows into sorted, disjoint bounds."""
+        merged: list[tuple[float, float]] = []
+        for low, high in sorted((mz - tol, mz + tol) for mz, tol in masses):
+            if merged and low <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], high))
+            else:
+                merged.append((low, high))
+        return cls(tuple(merged), maximum_inference_radius_da)
+
+    def __call__(
+        self, selected_mz: float, metadata: Ms2PrecursorMetadata | None
+    ) -> bool:
+        lower, upper = precursor_inference_bounds(
+            selected_mz, metadata, self.maximum_inference_radius_da
+        )
+        reachable = [lower, upper, selected_mz]
+        if metadata is not None and metadata.monoisotopic_mz is not None:
+            reachable.append(metadata.monoisotopic_mz)
+        span_low, span_high = min(reachable), max(reachable)
+        index = bisect_left(self.windows, (span_low, span_low))
+        return any(
+            low <= span_high and span_low <= high
+            for low, high in self.windows[max(0, index - 1) : index + 1]
+        )
 
 
 def precursor_inference_bounds(

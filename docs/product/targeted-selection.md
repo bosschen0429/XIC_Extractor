@@ -137,6 +137,10 @@ including exact-precursor membership, support-to-candidate mapping and the
 selected method index. Acquisition supplies retained arrays and an acquired
 MS2 window, then consumes the completed result instead of separately assembling
 those coupled facts. The owner evaluates and ranks in memory; it does not read RAW.
+The window carries spectra only for MS2 events whose recorded or
+isolation-inferred precursor can reach a declared CID-NL target's precursor
+tolerance (`targeted_ms2_precursor_scope`); every other MS2 event in the
+acquisition range still counts toward the search receipt's scanned events.
 
 Sample applicability
 controls inclusion, not permission to replace the selected candidate. A

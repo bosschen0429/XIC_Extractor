@@ -70,9 +70,12 @@ from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import TraceGroup
+from xic_extractor.precursor_evidence import PrecursorMassScope
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult
+
+_PRECURSOR_SCOPE_ROUNDOFF_DA = 1e-6
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +230,7 @@ def assess_targeted_candidate_population(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=len(method_window.events),
+            scanned_event_count=method_window.scanned_event_count,
             reason_code=None,
         )
         relations = evaluate_cid_nl_method_relations(
@@ -483,6 +486,31 @@ def _with_final_selected_result_evidence(
             )
         )
     return tuple(updated)
+
+
+def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | None:
+    """Admit only MS2 events that can carry evidence for a declared CID-NL target.
+
+    Method products and triggers keep a seed or recorded precursor only within
+    the target's precursor tolerance; the margin absorbs float roundoff alone.
+    """
+    nl_targets = [target for target in targets if target.neutral_loss_da is not None]
+    if not nl_targets:
+        return None
+    return PrecursorMassScope.around(
+        tuple(
+            (
+                target.mz,
+                max(target.mz * target.ppm_tol / 1_000_000, 1e-9)
+                + _PRECURSOR_SCOPE_ROUNDOFF_DA,
+            )
+            for target in nl_targets
+        ),
+        maximum_inference_radius_da=max(
+            discovery_settings_for_tag(target.cid_nl_tag).ms2_precursor_tol_da
+            for target in nl_targets
+        ),
+    )
 
 
 def prepare_targeted_method_seeds(

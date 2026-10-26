@@ -30,6 +30,7 @@ from xic_extractor.extraction.targeted_peak_selection import (
     assess_targeted_candidate_population,
     discovery_settings_for_tag,
     prepare_targeted_method_seeds,
+    targeted_ms2_precursor_scope,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.ms2_scan_models import Ms2Window
@@ -124,11 +125,16 @@ def process_file(
             if not targets:
                 return result_models.FileResult(sample_name=sample_name, results={}), []
             start, end = raw.acquisition_rt_bounds()
+            precursor_scope = targeted_ms2_precursor_scope(targets)
             sample_window = (
                 acquire_ms2_window(
-                    raw, sample_key=sample_name, rt_min=start, rt_max=end
+                    raw,
+                    sample_key=sample_name,
+                    rt_min=start,
+                    rt_max=end,
+                    precursor_scope=precursor_scope,
                 )
-                if any(target.neutral_loss_da is not None for target in targets)
+                if precursor_scope is not None
                 else Ms2Window(
                     sample_key=sample_name, rt_min=start, rt_max=end, events=()
                 )
@@ -264,6 +270,7 @@ def extract_one_target(
                 sample_key=sample_name,
                 rt_min=context_rt_min,
                 rt_max=context_rt_max,
+                precursor_scope=targeted_ms2_precursor_scope([target]),
             )
             if target.neutral_loss_da is not None
             else Ms2Window(

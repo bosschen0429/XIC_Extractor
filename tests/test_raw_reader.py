@@ -1067,6 +1067,51 @@ def test_iter_ms2_scan_subset_matches_full_window_for_selected_scans() -> None:
     )
 
 
+def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
+    from xic_extractor.precursor_evidence import PrecursorMassScope
+    from xic_extractor.raw_reader import RawFileHandle
+
+    class _TrackingRaw(_FakeRaw):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.scan_calls = []
+
+        def ScanNumberFromRetentionTime(self, rt: float) -> int:
+            return 1 if rt <= 8.0 else 3
+
+        def GetSimplifiedScan(self, scan_number):
+            self.scan_calls.append(scan_number)
+            return super().GetSimplifiedScan(scan_number)
+
+    raw = _TrackingRaw(
+        filters={
+            1: _FakeFilter(is_ms2=True, precursor_mz=258.1),
+            2: _FakeFilter(is_ms2=True, precursor_mz=400.2),
+            3: _FakeFilter(is_ms2=False, precursor_mz=258.1),
+        },
+        scans={
+            1: _FakeScan([142.05], [50.0]),
+            2: _FakeScan([284.15], [60.0]),
+        },
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+    full = tuple(handle.iter_ms2_scans(rt_min=8.0, rt_max=8.2))
+    raw.scan_calls.clear()
+
+    events, unread = handle.read_ms2_window(
+        8.0,
+        8.2,
+        precursor_scope=PrecursorMassScope.around(
+            ((258.1, 0.005),), maximum_inference_radius_da=0.8
+        ),
+    )
+
+    assert [event.scan_number for event in full] == [1, 2]
+    assert events == full[:1]
+    assert unread == 1
+    assert raw.scan_calls == [1]
+
+
 def _write_expected_dlls(path: Path) -> None:
     from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
