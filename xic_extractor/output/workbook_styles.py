@@ -11,7 +11,7 @@ import re
 from unicodedata import east_asian_width
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.styles import Alignment, Border, Font, NamedStyle, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from xic_extractor.output.workbook_values import (
@@ -108,13 +108,23 @@ def _write_header(ws, row: int, headers, numeric=frozenset()) -> None:
 def _style_body(
     cell, *, color: str = INK, numeric: bool = False, wrap: bool = False
 ) -> None:
-    cell.font = _font(color)
-    cell.border = Border(bottom=_RULE)
-    cell.alignment = Alignment(
-        horizontal="right" if numeric else "left",
-        vertical="top" if wrap else "center",
-        wrap_text=wrap,
-    )
+    """Style a new body cell before its column format or link is applied."""
+    workbook = cell.parent.parent
+    name = f"xic_body_{color}_{int(numeric)}_{int(wrap)}"
+    if name not in workbook.style_names:
+        workbook.add_named_style(
+            NamedStyle(
+                name=name,
+                font=_font(color),
+                border=Border(bottom=_RULE),
+                alignment=Alignment(
+                    horizontal="right" if numeric else "left",
+                    vertical="top" if wrap else "center",
+                    wrap_text=wrap,
+                ),
+            )
+        )
+    cell.style = name
 
 
 def _link(cell, location: str, *, color: str = INK, bold: bool = False) -> None:
