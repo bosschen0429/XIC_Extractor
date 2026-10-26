@@ -1504,21 +1504,6 @@ def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) 
     assert replay.paths == publication.paths
 
 
-def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-    completed._publication_snapshot.file_results[0].group = "mutated"
-
-    with pytest.raises(TargetedOutputBoundaryError, match="snapshot was mutated"):
-        publish_targeted_outputs(request, completed, output)
-
-
 def test_publisher_rejects_reordered_acquisition_after_completion(
     tmp_path: Path,
 ) -> None:

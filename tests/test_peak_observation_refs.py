@@ -538,7 +538,7 @@ def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
         sample_name="Sample B",
     )
 
-    with pytest.raises(PeakObservationContractError, match="processing owner closure"):
+    with pytest.raises(PeakObservationContractError, match="processing owner.*closure"):
         mint_peak_observation_ref(
             processing_owners=identity.owners,
             sample=other.sample,
@@ -1002,8 +1002,11 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
     )
 
 
+@pytest.mark.parametrize("reuse_trace_provenance", [False, True])
 def test_retained_candidate_batch_preserves_canonical_observation_bytes(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
+    reuse_trace_provenance,
 ):
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
@@ -1070,8 +1073,9 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
         evaluations=evaluations,
         signal_processing_profile=profile,
         resolver_mode="local_minimum",
+        trace_observation=expected[0] if reuse_trace_provenance else None,
     )
-    assert serialized_traces == 1
+    assert serialized_traces == (0 if reuse_trace_provenance else 1)
     assert len(actual) == 2
     for reference, projected in zip(expected, actual, strict=True):
         assert canonical_peak_observation_ref_bytes(

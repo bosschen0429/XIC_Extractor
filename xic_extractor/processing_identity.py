@@ -9,7 +9,7 @@ import re
 import stat
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
@@ -612,6 +612,9 @@ class ProcessingOwnerReferences:
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
     target_snapshot: TargetListSnapshot | None = None
     evidence_artifacts: tuple[EvidenceArtifactRef, ...] = ()
+    _sources_by_sample_key: dict[
+        str, tuple[ResolvedCanonicalSampleIdentity, AcquisitionSourceIdentity]
+    ] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, ProcessingRequestIdentity):
@@ -690,6 +693,22 @@ class ProcessingOwnerReferences:
             raise IdentityContractError(str(exc)) from exc
         if canonical_artifacts != self.evidence_artifacts:
             raise IdentityContractError("evidence_artifacts must be canonical-sorted")
+        sources_by_id = {
+            source.acquisition_source_id: source
+            for source in self.request.acquisition_sources
+        }
+        sources_by_key = {
+            binding.adapter_input_key: sources_by_id[binding.acquisition_source_id]
+            for binding in self.request.acquisition_bindings
+        }
+        object.__setattr__(
+            self,
+            "_sources_by_sample_key",
+            {
+                sample.lookup_token: (sample, sources_by_key[sample.lookup_token])
+                for sample in self.sample_resolutions
+            },
+        )
 
 
 def _validate_request_target_snapshot(
@@ -1081,31 +1100,13 @@ def resolve_request_acquisition_source(
         raise IdentityContractError(
             "sample must be an owner-resolved canonical sample identity"
         )
-    if sample not in processing_owners.sample_resolutions:
+    bound = processing_owners._sources_by_sample_key.get(sample.lookup_token)
+    if bound is None or (bound[0] is not sample and bound[0] != sample):
         raise IdentityContractError(
             "sample references a different sample outside the processing owner "
             "acquisition closure"
         )
-    matching_bindings = tuple(
-        binding
-        for binding in processing_owners.request.acquisition_bindings
-        if binding.adapter_input_key == sample.lookup_token
-    )
-    if len(matching_bindings) != 1:
-        raise IdentityContractError(
-            "sample must resolve to exactly one request acquisition binding"
-        )
-    acquisition_source_id = matching_bindings[0].acquisition_source_id
-    matching_sources = tuple(
-        source
-        for source in processing_owners.request.acquisition_sources
-        if source.acquisition_source_id == acquisition_source_id
-    )
-    if len(matching_sources) != 1:
-        raise IdentityContractError(
-            "request acquisition binding must resolve to exactly one source identity"
-        )
-    return matching_sources[0]
+    return bound[1]
 
 
 __all__ = [

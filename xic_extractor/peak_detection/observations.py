@@ -464,6 +464,7 @@ def mint_physical_peak_observations(
     signal_processing_profile: SignalProcessingProfile,
     resolver_mode: str,
     capture_stage: str = "initial_capture",
+    trace_observation: PeakObservationRef | None = None,
 ) -> tuple[PeakObservationRef, ...]:
     """Project retained physical-owner answers for one trace without re-solving it.
 
@@ -486,7 +487,25 @@ def mint_physical_peak_observations(
         raise PeakObservationContractError("physical observations cross retained trace")
     selection_values = np.asarray(retained.positive_signal, dtype=float)
     provenance: PeakObservationGenerationProvenance | None = None
-    observations = []
+    if trace_observation is not None:
+        if (
+            trace_observation.source_trace is not trace
+            or trace_observation.signal_processing_profile != signal_processing_profile
+        ):
+            raise PeakObservationContractError(
+                "shared observation crosses trace/profile"
+            )
+        validate_peak_observation_binding(
+            trace_observation,
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+        provenance = replace(
+            trace_observation.generation_provenance,
+            resolver_mode=resolver_mode,
+            proposal_sources=("canonical_physical_segment",),
+        )
+    observations: list[PeakObservationRef] = []
     for evaluation in evaluations:
         if (
             evaluation.retained_prepared_signal is not retained
@@ -496,7 +515,7 @@ def mint_physical_peak_observations(
                 "physical observations cross trace context"
             )
         integration = physical_peak_observation_integration(evaluation)
-        if provenance is None:
+        if not observations:
             _validate_peak_observation_inputs(
                 processing_owners=processing_owners,
                 sample=sample,
@@ -534,7 +553,7 @@ def _validate_peak_observation_inputs(
     trace: Trace,
     integration: IntegrationResult,
 ) -> None:
-    _validate_processing_owner_sample(processing_owners, sample)
+    acquisition_source = _request_acquisition_source(processing_owners, sample)
     if not isinstance(trace, Trace):
         raise PeakObservationContractError("trace must be an owner-produced Trace")
     if trace.sample_name not in {
@@ -543,7 +562,6 @@ def _validate_peak_observation_inputs(
         sample.lookup_token,
     }:
         raise PeakObservationContractError("Trace references a different sample")
-    acquisition_source = _request_acquisition_source(processing_owners, sample)
     if trace.acquisition_source_id != acquisition_source.acquisition_source_id:
         raise PeakObservationContractError(
             "Trace acquisition source mismatches the request binding"
@@ -795,7 +813,6 @@ def validate_peak_observation_binding(
         raise PeakObservationContractError(
             "reference must be an owner-minted PeakObservationRef"
         )
-    _validate_processing_owner_sample(processing_owners, sample)
     acquisition_source = _request_acquisition_source(processing_owners, sample)
     artifact = reference.artifact
     if (
@@ -1352,24 +1369,6 @@ def _nearest_trace_index(trace: Trace, value: float) -> int:
         range(trace.scan_count),
         key=lambda index: abs(float(trace.rt[index]) - value),
     )
-
-
-def _validate_processing_owner_sample(
-    processing_owners: object,
-    sample: object,
-) -> None:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise PeakObservationContractError(
-            "processing_owners must be a validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise PeakObservationContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    if sample not in processing_owners.sample_resolutions:
-        raise PeakObservationContractError(
-            "sample references a different sample outside the processing owner closure"
-        )
 
 
 def _request_acquisition_source(

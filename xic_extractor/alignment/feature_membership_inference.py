@@ -40,6 +40,7 @@ from xic_extractor.mass_accuracy import (
     mz_window,
     within_ppm,
 )
+from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShapeComparisons
 
 FeatureMembershipDisposition = Literal[
     "assigned",
@@ -1236,6 +1237,7 @@ def _join_window_bands(
     members: dict[str, list[SampleLocalMS1Owner]],
     arcs: Sequence[_WindowEdge],
     *,
+    shape_comparisons: LocalPeakShapeComparisons,
     config: AlignmentConfig,
     rules: GroupingRules,
     rt_frame: RtFrame,
@@ -1339,7 +1341,11 @@ def _join_window_bands(
         ):
             continue
         if conflict := peak_correspondence_conflict(
-            left_members, right_members, config, rt_frame=rt_frame
+            left_members,
+            right_members,
+            config,
+            rt_frame=rt_frame,
+            shape_comparisons=shape_comparisons,
         ):
             first_id, second_id = conflict
             shape_conflicts[first_id].add(second_id)
@@ -1451,6 +1457,12 @@ def _window_inference(
                 windows.append([])
             windows[-1].append(owner)
         for window in windows:
+            shape_comparisons = LocalPeakShapeComparisons(
+                owner.peak_shape
+                for owner in window
+                if owner.peak_shape is not None
+                and rt_frame.calibrated_peak_region(owner) is None
+            )
             counts["index_queries"] += len(window)
             counts["candidate_features_considered"] += len(window)
             members = {owner.owner_id: [owner] for owner in window}
@@ -1468,6 +1480,7 @@ def _window_inference(
 
             arcs = _window_candidate_edges(
                 window,
+                shape_comparisons=shape_comparisons,
                 config=config,
                 orders=orders,
                 corrected_rt=corrected_rt,
@@ -1496,6 +1509,7 @@ def _window_inference(
                     and (arc.left_id, arc.right_id) not in ambiguous_arcs
                     and (arc.right_id, arc.left_id) not in ambiguous_arcs
                 ],
+                shape_comparisons=shape_comparisons,
                 config=config,
                 rules=rules,
                 rt_frame=rt_frame,
@@ -1554,6 +1568,7 @@ def _window_candidate_edges(
     *,
     rt_frame: RtFrame,
     rules: GroupingRules,
+    shape_comparisons: LocalPeakShapeComparisons,
     config: AlignmentConfig,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
@@ -1631,6 +1646,7 @@ def _window_candidate_edges(
                 (right,),
                 config,
                 rt_frame=rt_frame,
+                shape_comparisons=shape_comparisons,
             ):
                 shape_conflicts[left.owner_id].add(right.owner_id)
                 shape_conflicts[right.owner_id].add(left.owner_id)

@@ -437,6 +437,7 @@ def build_targeted_capture_population(
                 evaluations=alternate_evaluations,
                 signal_processing_profile=profile,
                 resolver_mode=config.resolver_mode,
+                trace_observation=selected_observation,
             )
         )
         universe = tuple(

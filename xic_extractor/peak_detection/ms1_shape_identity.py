@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -175,6 +176,118 @@ def compare_local_peak_shapes(
         np.asarray(left.intensity, dtype=float),
         np.asarray(right.intensity, dtype=float),
     )
+    return _local_shape_comparison_result(left, right, similarity, count)
+
+
+@dataclass(frozen=True)
+class _ShapeComparisonBlock:
+    similarities: np.ndarray
+    shared_counts: np.ndarray
+    exact_pairs: np.ndarray
+
+
+def _joint_shape_correlations(
+    shapes: Sequence[LocalPeakShape],
+) -> _ShapeComparisonBlock:
+    values = np.asarray([shape.intensity for shape in shapes], dtype=float)
+    observed = np.isfinite(values)
+    size = len(shapes)
+    correlations = np.full((size, size), np.nan)
+    counts = np.zeros((size, size), dtype=int)
+    exact_pairs = np.zeros((size, size), dtype=bool)
+    # Small tiles bound temporary point arrays. Center each joint subset
+    # explicitly, avoiding cancellation in E[x*x] - E[x]**2 for flat subsets.
+    for start in range(0, size, 32):
+        left_slice = slice(start, start + 32)
+        for stop in range(start, size, 32):
+            right_slice = slice(stop, stop + 32)
+            joint = observed[left_slice, None, :] & observed[None, right_slice, :]
+            count = joint.sum(axis=2)
+            left = np.where(joint, values[left_slice, None, :], 0.0)
+            right = np.where(joint, values[None, right_slice, :], 0.0)
+            roundoff = (
+                8
+                * np.finfo(float).eps
+                * values.shape[1]
+                * np.maximum(
+                    np.max(np.abs(left), axis=2), np.max(np.abs(right), axis=2)
+                )
+            )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                left -= np.where(joint, (left.sum(axis=2) / count)[:, :, None], 0.0)
+                right -= np.where(joint, (right.sum(axis=2) / count)[:, :, None], 0.0)
+                left_square = np.sum(left * left, axis=2)
+                right_square = np.sum(right * right, axis=2)
+                left_std = np.sqrt(left_square / count)
+                right_std = np.sqrt(right_square / count)
+                similarity = (
+                    np.sum(left * right, axis=2)
+                    / np.sqrt(left_square)
+                    / np.sqrt(right_square)
+                )
+                usable = (count >= 5) & (left_std > 1e-12) & (right_std > 1e-12)
+            similarity = np.where(usable, np.clip(similarity, -1, 1), np.nan)
+            # Preserve the exact standalone decision at its flat-signal boundary.
+            exact = (left_std <= 1e-12 + roundoff) | (right_std <= 1e-12 + roundoff)
+            correlations[left_slice, right_slice] = similarity
+            correlations[right_slice, left_slice] = similarity.T
+            counts[left_slice, right_slice] = count
+            counts[right_slice, left_slice] = count.T
+            exact_pairs[left_slice, right_slice] = exact
+            exact_pairs[right_slice, left_slice] = exact.T
+    return _ShapeComparisonBlock(correlations, counts, exact_pairs)
+
+
+class LocalPeakShapeComparisons:
+    """Batch Pearson comparisons on each pair's jointly observed grid points.
+
+    Covariance, support counts and variance are matrix operations prepared once.
+    Blocks cap memory at 256 rows; cross-block and numerically flat pairs keep
+    the standalone calculation. No completed comparison survives the batch.
+    """
+
+    def __init__(self, shapes: Iterable[LocalPeakShape]) -> None:
+        self._blocks: dict[LocalPeakShape, tuple[_ShapeComparisonBlock, int]] = {}
+        groups: dict[tuple[float, int], list[LocalPeakShape]] = defaultdict(list)
+        for shape in dict.fromkeys(shapes):
+            groups[(shape.half_window_min, len(shape.intensity))].append(shape)
+        for group in groups.values():
+            for start in range(0, len(group), 256):
+                shapes_in_block = group[start : start + 256]
+                block = _joint_shape_correlations(shapes_in_block)
+                for row, shape in enumerate(shapes_in_block):
+                    self._blocks[shape] = (block, row)
+
+    def compare(
+        self, left: LocalPeakShape, right: LocalPeakShape
+    ) -> ShapeSimilarityResult:
+        first = self._blocks.get(left)
+        second = self._blocks.get(right)
+        if (
+            first is None
+            or second is None
+            or first[0] is not second[0]
+            or min(left.source_point_count, right.source_point_count) < 5
+            or first[0].exact_pairs[first[1], second[1]]
+        ):
+            return compare_local_peak_shapes(left, right)
+        block, left_index = first
+        right_index = second[1]
+        value = float(block.similarities[left_index, right_index])
+        return _local_shape_comparison_result(
+            left,
+            right,
+            value if math.isfinite(value) else None,
+            int(block.shared_counts[left_index, right_index]),
+        )
+
+
+def _local_shape_comparison_result(
+    left: LocalPeakShape,
+    right: LocalPeakShape,
+    similarity: float | None,
+    count: int,
+) -> ShapeSimilarityResult:
     if 0 < count < (len(left.intensity) + 1) // 2:
         return ShapeSimilarityResult(
             "inconclusive",

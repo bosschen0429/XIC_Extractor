@@ -87,6 +87,55 @@ def test_shape_comparison_requires_acquired_points_and_shared_context() -> None:
     assert result.similarity is None
 
 
+def test_batch_shape_comparisons_preserve_partial_flat_and_sparse_evidence(monkeypatch):
+    from xic_extractor.peak_detection.ms1_shape_identity import (
+        LocalPeakShape,
+        LocalPeakShapeComparisons,
+    )
+
+    rng = np.random.default_rng(42)
+    shapes = [
+        LocalPeakShape(0.35, tuple(rng.uniform(0, 1, 25)), 40, 10, (0.1, 0.2))
+        for _ in range(10)
+    ]
+    shapes += [
+        replace(shape, intensity=(None,) * 4 + shape.intensity[4:]) for shape in shapes
+    ]
+    shapes += [
+        replace(shapes[0], intensity=(0.5,) * 25),
+        replace(shapes[0], source_point_count=3, half_height_point_count=2),
+        replace(shapes[0], half_height_point_count=None),
+        replace(shapes[0], half_window_min=0.5),
+        replace(shapes[0], intensity=(0.5,) * 20 + (0.1, 0.2, 0.3, 0.4, 0.5)),
+        replace(shapes[0], intensity=(0.5,) * 20 + (None,) * 5),
+    ]
+    expected = [
+        compare_local_peak_shapes(left, right) for left in shapes for right in shapes
+    ]
+    calls = 0
+    original = np.corrcoef
+
+    def correlation(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(np, "corrcoef", correlation)
+    batch = LocalPeakShapeComparisons(shapes)
+    actual = [batch.compare(left, right) for left in shapes for right in shapes]
+    assert calls < len(expected) // 2
+    for before, after in zip(expected, actual, strict=True):
+        assert (after.status, after.reason, after.compared_point_count) == (
+            before.status,
+            before.reason,
+            before.compared_point_count,
+        )
+        if before.similarity is None:
+            assert after.similarity is None
+        else:
+            assert after.similarity == pytest.approx(before.similarity, abs=1e-14)
+
+
 def test_competing_peak_summary_reports_strongest_outside_candidate_window() -> None:
     rt = np.linspace(8.7, 9.8, 111)
     candidate = np.exp(-0.5 * ((rt - 9.12) / 0.04) ** 2)

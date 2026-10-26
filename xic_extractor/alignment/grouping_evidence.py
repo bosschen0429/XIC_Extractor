@@ -11,7 +11,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
-from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
+from xic_extractor.peak_detection.ms1_shape_identity import (
+    LocalPeakShapeComparisons,
+    compare_local_peak_shapes,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
@@ -40,6 +43,7 @@ def peak_correspondence_conflict(
     *,
     trajectories: PeakTrajectories | None = None,
     rt_frame: RtFrame | None = None,
+    shape_comparisons: LocalPeakShapeComparisons | None = None,
 ) -> tuple[str, str] | None:
     """Whether two member sets measure separate peaks in one common RT frame.
 
@@ -63,7 +67,9 @@ def peak_correspondence_conflict(
         left_regions = _observed_regions(left)
         right_regions = _observed_regions(right)
     elif not left_regions:
-        return _median_shape_conflict(left, right, config, trajectories)
+        return _median_shape_conflict(
+            left, right, config, trajectories, shape_comparisons
+        )
     left_region = _consensus_region(left_regions.values())
     right_region = _consensus_region(right_regions.values())
     if not _regions_disjoint(left_region, right_region):
@@ -121,8 +127,14 @@ def _median_shape_conflict(
     right: Sequence[SampleLocalMS1Owner],
     config: AlignmentConfig,
     trajectories: PeakTrajectories | None,
+    shape_comparisons: LocalPeakShapeComparisons | None,
 ) -> tuple[str, str] | None:
     pairs = []
+    compare = (
+        compare_local_peak_shapes
+        if shape_comparisons is None
+        else shape_comparisons.compare
+    )
     for first in left:
         for second in right:
             if (
@@ -137,14 +149,20 @@ def _median_shape_conflict(
                 )
             ):
                 continue
-            similarity = compare_local_peak_shapes(
-                first.peak_shape, second.peak_shape
-            ).similarity
+            similarity = compare(first.peak_shape, second.peak_shape).similarity
             if similarity is not None:
                 pairs.append((similarity, first.owner_id, second.owner_id))
-    if not pairs or median(item[0] for item in pairs) >= (
-        config.min_peak_shape_similarity
+    if not pairs:
+        return None
+    similarity = median(item[0] for item in pairs)
+    if (
+        shape_comparisons is not None
+        and similarity <= config.min_peak_shape_similarity + 1e-12
     ):
+        # Batched reductions can differ by roundoff. Preserve the exact boundary
+        # and the original conflicting-pair tie order for every potential veto.
+        return _median_shape_conflict(left, right, config, trajectories, None)
+    if similarity >= config.min_peak_shape_similarity:
         return None
     _, first_id, second_id = min(pairs)
     return first_id, second_id

@@ -43,6 +43,42 @@ _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_tex
 _WARP_DATA = json.loads((_FIXTURES / "window_feature_warp_knots.json").read_text())
 
 
+def test_batched_shape_evidence_preserves_the_exact_acceptance_threshold():
+    from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
+    from xic_extractor.peak_detection.ms1_shape_identity import (
+        LocalPeakShape,
+        LocalPeakShapeComparisons,
+        compare_local_peak_shapes,
+    )
+
+    rng = np.random.default_rng(123)
+    base = rng.uniform(0, 0.8, 175)
+    shapes = [
+        LocalPeakShape(
+            0.35, tuple(base + rng.uniform(0, 0.2, 175)), 100, 10, (0.1, 0.1)
+        )
+        for _ in range(8)
+    ]
+    owners = [
+        replace(_synthetic_owner(str(i), str(i), 10), peak_shape=shape)
+        for i, shape in enumerate(shapes)
+    ]
+    batch = LocalPeakShapeComparisons(shapes)
+    for i, left in enumerate(owners):
+        for j, right in enumerate(owners[i + 1 :], start=i + 1):
+            threshold = compare_local_peak_shapes(shapes[i], shapes[j]).similarity
+            assert threshold is not None
+            assert (
+                peak_correspondence_conflict(
+                    (left,),
+                    (right,),
+                    replace(AlignmentConfig(), min_peak_shape_similarity=threshold),
+                    shape_comparisons=batch,
+                )
+                is None
+            )
+
+
 def _owners(case: str) -> tuple[tuple[SampleLocalMS1Owner, ...], dict[str, int]]:
     columns = _DATA["columns"]
     rows = [dict(zip(columns, values, strict=True)) for values in _DATA["cases"][case]]
