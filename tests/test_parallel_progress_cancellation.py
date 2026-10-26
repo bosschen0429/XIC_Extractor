@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from threading import Event
+
+import pytest
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RawFileExtractionResult
@@ -24,16 +27,14 @@ def test_raw_job_runner_reports_progress_and_cancels_pending_futures(
     submitted: list[str] = []
     pending_future = Future()
     progress_calls: list[tuple[int, int, str]] = []
+    shutdown_calls = []
 
     class FakeExecutor:
         def __init__(self, *, max_workers, mp_context) -> None:
             self.max_workers = max_workers
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
+        def shutdown(self, *, wait, cancel_futures=False):
+            shutdown_calls.append((wait, cancel_futures))
 
         def submit(self, worker, job):
             submitted.append(job.raw_path.name)
@@ -60,6 +61,41 @@ def test_raw_job_runner_reports_progress_and_cancels_pending_futures(
     assert progress_calls == [(1, 3, "A.raw")]
     assert submitted == ["A.raw", "B.raw"]
     assert pending_future.cancelled()
+    assert shutdown_calls == [(True, True)]
+
+
+def test_completed_raw_jobs_do_not_wait_for_idle_worker_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.extraction import jobs as execution
+
+    closed = Event()
+    shutdown_calls = []
+
+    def acquired(job):
+        closed.set()
+        return _raw_result(job.raw_index, job.raw_path.stem)
+
+    class Executor(ThreadPoolExecutor):
+        def __init__(self, *, max_workers, mp_context):
+            super().__init__(max_workers=max_workers)
+
+        def shutdown(self, *, wait=True, cancel_futures=False):
+            assert closed.is_set()
+            shutdown_calls.append((wait, cancel_futures))
+            super().shutdown(wait=wait, cancel_futures=cancel_futures)
+
+    monkeypatch.setattr(execution, "extract_raw_file_job", acquired)
+    result = execution.run_raw_file_jobs(
+        [execution.RawFileJob(1, tmp_path / "A.raw", _config(tmp_path), ())],
+        max_workers=1,
+        executor_factory=Executor,
+        progress_callback=lambda *_: (
+            closed.is_set() or pytest.fail("RAW is still open")
+        ),
+    )
+    assert result == [_raw_result(1, "A")]
+    assert shutdown_calls == [(False, False)]
 
 
 def test_raw_process_collector_does_not_schedule_when_already_cancelled(
