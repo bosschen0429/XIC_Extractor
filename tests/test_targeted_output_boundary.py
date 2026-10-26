@@ -1816,6 +1816,16 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     initial_counts = []
 
     def execute_reverse_identity(context, *args, **kwargs):
+        from xic_extractor.peak_detection import observations
+
+        def unexpected_trace_serialization(_trace):
+            raise AssertionError(
+                "paired ISTD trace was already prepared during acquisition"
+            )
+
+        monkeypatch.setattr(
+            observations, "_canonical_trace_bytes", unexpected_trace_serialization
+        )
         context = replace(
             context,
             results_by_sample=tuple(

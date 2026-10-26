@@ -43,6 +43,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
+    PeakObservationGenerationProvenance,
     PeakObservationRef,
     mint_physical_peak_observations,
 )
@@ -527,6 +528,7 @@ def mint_candidate_peak_observation(
     evaluation: PhysicalPeakEvaluation,
     *,
     config: ExtractionConfig,
+    acquired_trace_provenance: PeakObservationGenerationProvenance | None,
 ) -> PeakObservationRef:
     return mint_physical_peak_observations(
         processing_owners=processing_owners,
@@ -535,6 +537,7 @@ def mint_candidate_peak_observation(
         evaluations=(evaluation,),
         resolver_mode=config.resolver_mode,
         signal_processing_profile=targeted_signal_processing_profile(config),
+        acquired_trace_provenance=acquired_trace_provenance,
     )[0]
 
 
