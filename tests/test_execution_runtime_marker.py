@@ -125,7 +125,7 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
 
     assert accepted == receipt
     payload = json.loads(marker.path.read_bytes())
-    assert payload["schema_version"] == "execution_runtime_status_marker.v3"
+    assert payload["schema_version"] == "execution_runtime_status_marker"
     assert marker.read().state is RuntimeMarkerState.FINALIZED
     assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
@@ -208,10 +208,10 @@ def test_marker_reader_rejects_obsolete_outer_schema(tmp_path: Path) -> None:
     )
     marker.record_launch(_runtime(attempt))
     payload = json.loads(marker.path.read_bytes())
-    payload["schema_version"] = "unsupported_runtime_marker"
+    payload["schema_version"] = "execution_runtime_recovery_marker"
     marker.path.write_bytes(_canonical_json_bytes(payload))
 
-    with pytest.raises(RuntimeFinalizationContractError, match="schema_version"):
+    with pytest.raises(RuntimeFinalizationContractError, match="rerun"):
         marker.read()
 
 
@@ -396,7 +396,7 @@ def test_marker_rejects_unsupported_schema_or_wrong_attempt_content(
     marker_path.write_text('{"schema_version": "wrong"}', encoding="utf-8")
     marker = OwnerPathRuntimeMarker(marker_path, "runtime-attempt-artifacts:a")
 
-    with pytest.raises(RuntimeFinalizationContractError, match="schema_version"):
+    with pytest.raises(RuntimeFinalizationContractError, match="rerun"):
         marker.read()
 
     marker_path.unlink()

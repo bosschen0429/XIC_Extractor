@@ -552,9 +552,9 @@ def test_preserved_index_refuses_an_unsealed_store(tmp_path):
 def test_preserved_results_reject_obsolete_private_format(tmp_path):
     store = StreamedResultStore(tmp_path, ())
     store.append("partition", Payload((1,)))
-    # A previous-format private index has no format-version attribute.
-    del store._format_version
+    # An obsolete private index persisted a numeric format attribute.
+    store._format_version = 2
     index = store.preserve_results()
 
-    with pytest.raises(ValueError, match="unsupported preserved partition format"):
+    with pytest.raises(ValueError, match="rerun the analysis"):
         open_preserved_results(index)

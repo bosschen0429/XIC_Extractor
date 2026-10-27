@@ -169,7 +169,6 @@ class StreamedResultStore:
             {"children", "excluded_candidates"}
         ),
     ):
-        self._format_version = 2
         self._directory = Path(directory).resolve()
         self._directory.mkdir(parents=True, exist_ok=True)
         self._shared_objects = shared_objects
@@ -527,7 +526,19 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
         store = _OwnerUnpickler(stream, ()).load()
     if type(store) is not StreamedResultStore:
         raise TypeError("preserved index does not hold a partition store")
-    if getattr(store, "_format_version", None) != 2:
+    if set(vars(store)) != {
+        "_directory",
+        "_shared_objects",
+        "_individually_addressable_fields",
+        "_partitions",
+        "_field_lengths",
+        "_field_records",
+        "_field_caches",
+        "_keys",
+        "_reserved_keys",
+        "_reservations",
+        "_sealed",
+    }:
         raise ValueError("unsupported preserved partition format; rerun the analysis")
     if not store._sealed:
         raise ValueError("preserved index is not sealed")

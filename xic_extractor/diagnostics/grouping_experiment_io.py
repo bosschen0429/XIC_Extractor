@@ -9,7 +9,7 @@ import math
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -328,14 +328,53 @@ def read_rt_calibration(path: Path) -> BatchRtCalibration:
     return _read_rt_calibration_payload(value)
 
 
+def _require_calibration_fields(value: object, expected: set[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError(
+            "RT calibration fields do not match the schema; rerun the analysis"
+        )
+    return value
+
+
 def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
-    if value.get("schema") != "sample_rt_calibration":
-        raise ValueError("Expected a sample_rt_calibration JSON artifact")
-    version = value.get("schema_version", 1)
-    if version not in (1, 2, 3):
-        raise ValueError(f"Unsupported RT calibration version: {version}")
+    _require_calibration_fields(
+        value,
+        {
+            "schema",
+            "policy",
+            "knots",
+            "samples",
+            "front_shift_center_min",
+            "front_shift_mad_min",
+            "perturbation_tolerance_min",
+        },
+    )
+    if value["schema"] != "sample_rt_calibration":
+        raise ValueError(
+            "Expected a sample_rt_calibration JSON artifact; rerun the analysis"
+        )
+    _require_calibration_fields(
+        value["policy"], {field.name for field in fields(RtCalibrationPolicy)}
+    )
+    for knot in value["knots"]:
+        _require_calibration_fields(
+            knot, {field.name for field in fields(CalibrationKnot)}
+        )
     samples = {}
     for row in value["samples"]:
+        _require_calibration_fields(
+            row,
+            {
+                "sample_stem",
+                "status",
+                "knots_observed_reference_min",
+                "front_shift_min",
+                "perturbation_status",
+                "anchor_count",
+                "standard_residuals",
+                "estimate_support",
+            },
+        )
         knots = tuple(
             (float(x), float(y)) for x, y in row["knots_observed_reference_min"]
         )
@@ -355,23 +394,14 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             sample_stem=stem,
             status=row["status"],
             knots=knots,
-            front_shift_min=row.get("front_shift_min"),
+            front_shift_min=row["front_shift_min"],
             prior_injection=None,
-            perturbation_status=row.get("perturbation_status", "unmeasured"),
-            anchor_count=row.get("anchor_count", 0),
-            standard_residuals=tuple(
-                tuple(item) for item in row.get("standard_residuals", ())
-            ),
-            estimate_support=_read_estimate_support(row.get("estimate_support"))
-            if version >= 3
-            else None,
+            perturbation_status=row["perturbation_status"],
+            anchor_count=row["anchor_count"],
+            standard_residuals=tuple(tuple(item) for item in row["standard_residuals"]),
+            estimate_support=_read_estimate_support(row["estimate_support"]),
         )
     policy = dict(value["policy"])
-    if version == 1:
-        # Historical snapshots retain their exact frozen coordinates. Retired
-        # fitting parameters are not applied to, or refitted from, those maps.
-        policy.pop("anchor_min_sample_fraction", None)
-        policy.pop("knot_merge_tolerance_min", None)
     return BatchRtCalibration(
         policy=RtCalibrationPolicy(**policy),
         knots=tuple(
@@ -379,18 +409,19 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             for row in value["knots"]
         ),
         samples=samples,
-        front_shift_center_min=value.get("front_shift_center_min"),
-        front_shift_mad_min=value.get("front_shift_mad_min"),
-        perturbation_tolerance_min=value.get("perturbation_tolerance_min"),
+        front_shift_center_min=value["front_shift_center_min"],
+        front_shift_mad_min=value["front_shift_mad_min"],
+        perturbation_tolerance_min=value["perturbation_tolerance_min"],
     )
 
 
 def _read_estimate_support(value: object) -> RtEstimateSupport | None:
-    """Decode new observation facts; old frozen knots cannot supply them."""
+    """Decode persisted RT estimate measurements."""
     if value is None:
         return None
-    if not isinstance(value, dict):
-        raise ValueError("RT estimate support must be an object")
+    value = _require_calibration_fields(
+        value, {field.name for field in fields(RtEstimateSupport)}
+    )
     positions = value.get("positions_min")
     if (
         not isinstance(positions, list)
@@ -430,7 +461,6 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
 def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
     return {
         "schema": "sample_rt_calibration",
-        "schema_version": 3,
         "policy": asdict(calibration.policy),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [

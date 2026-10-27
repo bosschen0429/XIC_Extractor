@@ -300,7 +300,7 @@ def _same_attempt_scope(
 def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
     return json.dumps(
         {
-            "schema_version": "execution_runtime_status_marker.v3",
+            "schema_version": "execution_runtime_status_marker",
             "state": snapshot.state.value,
             "processing_request_id": snapshot.processing_request_id,
             "processing_attempt_id": snapshot.processing_attempt_id,
@@ -322,7 +322,7 @@ def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
 def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     if not isinstance(payload, dict):
         raise RuntimeFinalizationContractError("runtime marker must be an object")
-    if payload.get("schema_version") != "execution_runtime_status_marker.v3":
+    if payload.get("schema_version") != "execution_runtime_status_marker":
         raise RuntimeFinalizationContractError(
             "runtime marker schema_version is unsupported; "
             "rerun in a new output directory"
@@ -338,7 +338,8 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     }
     if set(payload) != expected_keys:
         raise RuntimeFinalizationContractError(
-            "runtime marker fields do not match the status schema"
+            "runtime marker fields do not match the status schema; "
+            "rerun in a new output directory"
         )
     try:
         state = RuntimeMarkerState(payload["state"])
