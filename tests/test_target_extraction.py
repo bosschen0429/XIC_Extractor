@@ -366,9 +366,7 @@ def _strategy_config(tmp_path):
     values, parsed, _ = resolve_settings(
         {"data_dir": str(tmp_path), "dll_dir": str(tmp_path)}
     )
-    return build_extraction_config(
-        parsed, values, tmp_path / "settings.csv", tmp_path, "test"
-    )
+    return build_extraction_config(parsed, values, tmp_path / "settings.csv", tmp_path)
 
 
 @pytest.mark.parametrize("expected_rt", [2.0, 8.0])
