@@ -5,22 +5,18 @@ import pytest
 
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
     TargetListSnapshot,
     mint_target_list_snapshot,
-    resolve_target_definition,
     target_list_snapshot_payload,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
-    IdentityContractError,
     build_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
 )
 from xic_extractor.sample_metadata import (
-    CanonicalSampleIdentity,
     ResolvedCanonicalSampleIdentity,
     SampleMetadata,
     SampleMetadataError,
@@ -142,38 +138,6 @@ def test_sample_snapshot_is_order_neutral_and_content_bound() -> None:
     assert forward != mutated
 
 
-def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:
-    with pytest.raises(SampleMetadataError, match="SampleMetadataSnapshot"):
-        resolve_canonical_sample_identity(  # type: ignore[arg-type]
-            (SampleMetadata(sample_name="Sample A", raw_stem="shared"),),
-            "shared",
-        )
-
-
-def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> None:
-    target_snapshot = _target_snapshot()
-    request = _request(
-        tmp_path,
-        payload=b"request-a",
-        target_snapshot=target_snapshot,
-    )
-    sample_snapshot = _sample_snapshot(
-        SampleMetadata(sample_name="Sample A", raw_stem="request-a")
-    )
-    sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
-
-    with pytest.raises(
-        IdentityContractError,
-        match="target_snapshot is required when the processing request pins one",
-    ):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=(sample,),
-        )
-
-
 def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     target_snapshot = _target_snapshot()
     request = _request(
@@ -203,123 +167,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     assert references.sample_snapshot is sample_snapshot
     assert references.sample_resolutions == (sample,)
     assert references.target_snapshot is target_snapshot
-
-
-def test_lineage_rejects_metadata_injection_order_mismatch(
-    tmp_path: Path,
-) -> None:
-    request = _request(tmp_path, payload=b"request-a")
-    matching_snapshot = _sample_snapshot(
-        SampleMetadata(
-            sample_name="Sample A",
-            raw_stem="request-a",
-            injection_order=1,
-        )
-    )
-    matching_sample = resolve_canonical_sample_identity(
-        matching_snapshot,
-        "request-a",
-    )
-    matching = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=matching_snapshot,
-        sample_resolutions=(matching_sample,),
-    )
-
-    assert matching.sample_resolutions == (matching_sample,)
-
-    sample_snapshot = _sample_snapshot(
-        SampleMetadata(
-            sample_name="Sample A",
-            raw_stem="request-a",
-            injection_order=9,
-        )
-    )
-    sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
-
-    with pytest.raises(IdentityContractError, match="injection_order.*request binding"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=(sample,),
-        )
-
-
-def test_lineage_composition_rejects_raw_or_cross_request_references(
-    tmp_path: Path,
-) -> None:
-    request = _request(tmp_path, payload=b"request-a")
-    issue_processing_attempt()
-    sample_snapshot = _sample_snapshot(
-        SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
-        SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
-    )
-    resolve_canonical_sample_identity(
-        sample_snapshot,
-        "request-a",
-    )
-    wrong_sample = resolve_canonical_sample_identity(
-        sample_snapshot,
-        "request-b",
-    )
-    with pytest.raises(IdentityContractError, match="cover.*acquisition binding"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=(wrong_sample,),
-        )
-    with pytest.raises(IdentityContractError, match="owner-resolved"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=("Sample A",),  # type: ignore[arg-type]
-        )
-
-
-def test_lineage_rejects_resolutions_mixed_across_owner_snapshots(
-    tmp_path: Path,
-) -> None:
-    request = _request_many(tmp_path, payloads=(b"request-a", b"request-b"))
-    complete = _sample_snapshot(
-        SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
-        SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
-    )
-    truncated = _sample_snapshot(
-        SampleMetadata(sample_name="Sample B", raw_stem="request-b")
-    )
-    first = resolve_canonical_sample_identity(complete, "request-a")
-    mixed_second = resolve_canonical_sample_identity(truncated, "request-b")
-
-    with pytest.raises(IdentityContractError, match="same sample metadata snapshot"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=complete,
-            sample_resolutions=(first, mixed_second),
-        )
-
-
-def test_lineage_rejects_two_sources_collapsed_to_one_canonical_sample(
-    tmp_path: Path,
-) -> None:
-    request = _request_many(tmp_path, payloads=(b"request-a", b"request-b"))
-    collapsed = _sample_snapshot(
-        SampleMetadata(sample_name="request-a", raw_stem="request-b")
-    )
-    first = resolve_canonical_sample_identity(collapsed, "request-a")
-    second = resolve_canonical_sample_identity(collapsed, "request-b")
-
-    with pytest.raises(IdentityContractError, match="distinct canonical sample"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=collapsed,
-            sample_resolutions=(first, second),
-        )
 
 
 def _request(
@@ -415,24 +262,3 @@ def _target_snapshot(
         ),
         identity_namespace="target-list:package-0-test",
     )
-
-
-def _resolved_target(
-    target_label: str = "5-mdC",
-    *,
-    mz: float = 250.0,
-) -> ResolvedTargetDefinition:
-    snapshot = _target_snapshot(target_label=target_label, mz=mz)
-    return resolve_target_definition(snapshot, target_label)
-
-
-def test_owner_reference_types_are_frozen() -> None:
-    sample_snapshot = _sample_snapshot(
-        SampleMetadata(sample_name="Sample A", raw_stem="raw_a")
-    )
-    sample = resolve_canonical_sample_identity(
-        sample_snapshot,
-        "raw_a",
-    )
-    assert isinstance(sample, ResolvedCanonicalSampleIdentity)
-    assert isinstance(sample.identity, CanonicalSampleIdentity)

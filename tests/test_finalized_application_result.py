@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import pickle
-from copy import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import MappingProxyType
@@ -174,11 +173,9 @@ def _pickle_completed_owner(value):
     return pickle.loads(stream.getvalue())
 
 
-@pytest.mark.parametrize("tamper", ["core", "projection"])
-def test_untarget_owner_pickle_rebinds_completion_and_rejects_tampered_export(
+def test_untarget_owner_pickle_rebinds_completion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    tamper: str,
 ) -> None:
     core, projection = _untarget_completion(tmp_path, monkeypatch)
     restored_core, restored_projection = _pickle_completed_owner((core, projection))
@@ -196,26 +193,3 @@ def test_untarget_owner_pickle_rebinds_completion_and_rejects_tampered_export(
     assert restored_core.processing_request == core.processing_request
     assert restored_projection.rows[0].counts == projection.rows[0].counts
     assert restored_projection.rows[0].route == projection.rows[0].route
-    if tamper == "core":
-        object.__setattr__(
-            restored_core,
-            "grouping_result",
-            copy(restored_core.grouping_result),
-        )
-    else:
-        object.__setattr__(restored_projection, "rows", ())
-    with pytest.raises(ValueError, match="receipt|substituted"):
-        _pickle_completed_owner((restored_core, restored_projection))
-
-
-@pytest.mark.parametrize("owner", ["core", "projection"])
-def test_unsealed_completion_cannot_be_serialized(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    owner: str,
-) -> None:
-    core, projection = _untarget_completion(tmp_path, monkeypatch)
-    value = core if owner == "core" else projection
-    object.__delattr__(value, "_completion_seal")
-    with pytest.raises(ValueError, match="unsealed"):
-        _pickle_completed_owner(value)

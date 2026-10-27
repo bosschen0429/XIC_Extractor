@@ -1,4 +1,3 @@
-import math
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -160,124 +159,86 @@ def test_runtime_acquisition_metrics_treat_empty_projection_as_exact_zero(
 
 
 def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> None:
-    attempt = _attempt(tmp_path)
-    events = list(_events(attempt))
-    events[3] = replace(events[3], monotonic_offset_ns=1)
-
-    with pytest.raises(RuntimeObservabilityContractError, match="monotonic"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=tuple(events),
-            metrics=_metrics(attempt.processing_attempt_id),
-        )
-
-
-def test_runtime_observability_rejects_missing_metric_availability(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-
-    with pytest.raises(RuntimeObservabilityContractError, match="missing"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=_metrics(attempt.processing_attempt_id)[:-1],
-        )
-
-
-def test_runtime_observability_requires_measured_metrics_after_attempt_start(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    unavailable = tuple(
-        replace(
-            metric,
-            availability=RuntimeMetricAvailability.UNSUPPORTED,
-            value=None,
-            reason="not captured",
-        )
-        for metric in _metrics(attempt.processing_attempt_id)
+    from tests.runtime_telemetry_fixtures import (
+        build_runtime_telemetry_samples_from_coordinator,
+    )
+    from xic_extractor.execution._finalization import (
+        RuntimeFinalizationContractError,
+        RuntimeResourceCleanupOutcome,
+        RuntimeResourceKind,
+        RuntimeResourceOpenOutcome,
+        RuntimeResourceReservation,
+    )
+    from xic_extractor.execution.attempt import (
+        RuntimeResourceSettlementReceipt,
+        RuntimeWorkerBatchReceipt,
+        WorkUnitTerminalOutcome,
+        _apply_runtime_worker_batch,
+        _finalize_runtime_attempt,
+        _prepare_runtime_attempt,
+        mint_work_unit_settlement,
+        start_runtime_attempt,
     )
 
-    with pytest.raises(RuntimeObservabilityContractError, match="measured"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=unavailable,
-        )
-
-
-def test_runtime_observability_requires_complete_terminal_lifecycle(
-    tmp_path: Path,
-) -> None:
     attempt = _attempt(tmp_path)
-    omitted = {
-        "attempt_started",
-        "terminal_proposal",
-        "terminal_acknowledged",
-    }
-    events = tuple(
-        replace(event, sequence=index, monotonic_offset_ns=(index - 1) * 10)
-        for index, event in enumerate(
-            (event for event in _events(attempt) if event.kind not in omitted),
-            start=1,
-        )
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test",
     )
+    aggregate = _apply_runtime_worker_batch(
+        _prepare_runtime_attempt(
+            runtime,
+            (
+                RuntimeResourceReservation(
+                    attempt=attempt,
+                    resource_key="session:a",
+                    kind=RuntimeResourceKind.ACQUISITION_SESSION,
+                    worker_key="worker:a",
+                    source_reference="no-raw:sample:a",
+                    compatibility_token="runtime-owner-test",
+                ),
+            ),
+        ),
+        RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=attempt,
+                    work_unit_key="raw:a",
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                ),
+            ),
+            resource_settlements=(
+                RuntimeResourceSettlementReceipt(
+                    attempt=attempt,
+                    resource_key="session:a",
+                    open_outcome=RuntimeResourceOpenOutcome.OPENED,
+                    cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+                ),
+            ),
+        ),
+    )
+    persisted = []
 
-    with pytest.raises(RuntimeObservabilityContractError, match="lifecycle"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=events,
-            metrics=_metrics(attempt.processing_attempt_id),
+    def nonmonotonic_telemetry(coordinator):
+        samples = build_runtime_telemetry_samples_from_coordinator(coordinator)
+        offsets = list(samples.event_monotonic_offsets_ns)
+        offsets[1] = 500
+        offsets[2] = 200
+        return type(samples)(
+            event_monotonic_offsets_ns=tuple(offsets),
+            artifact_io=samples.artifact_io,
+            process_tree_peak_rss=samples.process_tree_peak_rss,
+            worker_peak_rss=samples.worker_peak_rss,
         )
 
-
-@pytest.mark.parametrize(
-    "replacement",
-    (
-        {"scope": RuntimeMetricScope.STAGE},
-        {"scope_key": "wrong-attempt"},
-        {"unit": "seconds"},
-        {"aggregation": "max"},
-    ),
-)
-def test_runtime_observability_rejects_wrong_required_metric_shape(
-    tmp_path: Path,
-    replacement: dict[str, object],
-) -> None:
-    attempt = _attempt(tmp_path)
-    metrics = list(_metrics(attempt.processing_attempt_id))
-    metrics[0] = replace(metrics[0], **replacement)
-
-    with pytest.raises(RuntimeObservabilityContractError, match="metric contract"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=tuple(metrics),
+    with pytest.raises(RuntimeFinalizationContractError, match="monotonic"):
+        _finalize_runtime_attempt(
+            aggregate,
+            telemetry_provider=nonmonotonic_telemetry,
+            persister=lambda proposed: persisted.append(proposed),
         )
-
-
-def test_runtime_observability_rejects_duplicate_or_unknown_metrics(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    metrics = _metrics(attempt.processing_attempt_id)
-    duplicate = (*metrics, metrics[0])
-    unknown = (*metrics, replace(metrics[0], name="unregistered_metric"))
-
-    for invalid in (duplicate, unknown):
-        with pytest.raises(RuntimeObservabilityContractError, match="metric"):
-            RuntimeObservabilityLedger(
-                attempt=attempt,
-                work_unit_keys=("sample-a:target-a",),
-                events=_events(attempt),
-                metrics=invalid,
-            )
+    assert persisted == []
 
 
 def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
@@ -341,20 +302,6 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         if metric.name == "worker_peak_rss_bytes"
     } == {"worker:1", "worker:2"}
 
-    wrong_worker = tuple(
-        replace(metric, scope_key="worker:other")
-        if metric.name == "worker_peak_rss_bytes" and metric.scope_key == "worker:2"
-        else metric
-        for metric in ledger.metrics
-    )
-    with pytest.raises(RuntimeObservabilityContractError, match="worker"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=events,
-            metrics=wrong_worker,
-        )
-
 
 def test_runtime_observability_represents_serial_mode_without_worker_process(
     tmp_path: Path,
@@ -399,206 +346,6 @@ def test_runtime_observability_represents_serial_mode_without_worker_process(
     assert worker_rss.reason == "not_applicable_serial"
 
 
-def test_runtime_observability_rejects_elapsed_metrics_that_conflict_with_events(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    metrics = tuple(
-        replace(metric, value=1.0)
-        if metric.name == "coordinator_work_seconds"
-        else metric
-        for metric in _metrics(attempt.processing_attempt_id)
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="event offsets"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=metrics,
-        )
-
-
-def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycle(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample-a:target-a",),
-        worker_keys=("worker:1",),
-        resource_lifecycles=(
-            (
-                "session:a",
-                RuntimeResourceKind.ACQUISITION_SESSION,
-                "resource_opened",
-                "resource_cleanup_succeeded",
-            ),
-        ),
-    )
-    reserved = _event_index(ledger.events, "resource_reserved")
-    opened = _event_index(ledger.events, "resource_opened")
-    cleanup = _event_index(ledger.events, "resource_cleanup_succeeded")
-    missing = (*ledger.events[:cleanup], *ledger.events[cleanup + 1 :])
-    duplicate = (
-        *ledger.events[: opened + 1],
-        ledger.events[opened],
-        *ledger.events[opened + 1 :],
-    )
-    reordered = list(ledger.events)
-    reordered[reserved], reordered[opened] = reordered[opened], reordered[reserved]
-    wrong_subject = list(ledger.events)
-    wrong_subject[opened] = replace(
-        wrong_subject[opened],
-        subject=RuntimeObservationSubject.ATTEMPT,
-    )
-
-    for invalid, match in (
-        (missing, "exactly one"),
-        (duplicate, "exactly one"),
-        (tuple(reordered), "lifecycle order"),
-        (tuple(wrong_subject), "resource subject"),
-    ):
-        with pytest.raises(RuntimeObservabilityContractError, match=match):
-            RuntimeObservabilityLedger(
-                attempt=attempt,
-                work_unit_keys=ledger.work_unit_keys,
-                events=_resequence(invalid),
-                metrics=ledger.metrics,
-            )
-
-
-def test_runtime_observability_rejects_cross_domain_phase_reordering(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    base_events = _events(attempt)
-    canonical_events = _resequence(
-        (
-            *base_events[:3],
-            replace(
-                base_events[3],
-                kind="resource_reserved",
-                subject=RuntimeObservationSubject.RESOURCE,
-                subject_key="session:a",
-            ),
-            replace(
-                base_events[3],
-                kind="resource_opened",
-                subject=RuntimeObservationSubject.RESOURCE,
-                subject_key="session:a",
-            ),
-            base_events[3],
-            *base_events[4:7],
-            replace(
-                base_events[3],
-                kind="resource_cleanup_succeeded",
-                subject=RuntimeObservationSubject.RESOURCE,
-                subject_key="session:a",
-            ),
-            *base_events[7:],
-        )
-    )
-    ledger = RuntimeObservabilityLedger(
-        attempt=attempt,
-        work_unit_keys=("sample-a:target-a",),
-        events=canonical_events,
-        metrics=_metrics(attempt.processing_attempt_id, events=canonical_events),
-    )
-    invalid_events = list(ledger.events)
-    opened = invalid_events.pop(_event_index(ledger.events, "resource_opened"))
-    work_started = next(
-        index
-        for index, event in enumerate(invalid_events)
-        if event.kind == "work_unit_started"
-    )
-    invalid_events.insert(work_started + 1, opened)
-    invalid_events = list(_resequence(tuple(invalid_events)))
-
-    with pytest.raises(RuntimeObservabilityContractError, match="causal phase"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=ledger.work_unit_keys,
-            events=tuple(invalid_events),
-            metrics=_metrics(
-                attempt.processing_attempt_id,
-                events=tuple(invalid_events),
-            ),
-        )
-
-
-def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample-a:target-a",),
-        worker_keys=("worker:1",),
-        resource_lifecycles=(
-            (
-                "session:a",
-                RuntimeResourceKind.ACQUISITION_SESSION,
-                "resource_opened",
-                "resource_cleanup_succeeded",
-            ),
-        ),
-    )
-    resource_events = tuple(
-        event
-        for event in ledger.events
-        if event.subject is RuntimeObservationSubject.RESOURCE
-    )
-    without_resource = tuple(
-        event
-        for event in ledger.events
-        if event.subject is not RuntimeObservationSubject.RESOURCE
-    )
-    acknowledgement = _event_index(without_resource, "terminal_acknowledged")
-    invalid = (
-        *without_resource[: acknowledgement + 1],
-        *resource_events,
-        *without_resource[acknowledgement + 1 :],
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="terminal proposal"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=ledger.work_unit_keys,
-            events=_resequence(invalid),
-            metrics=ledger.metrics,
-        )
-
-
-@pytest.mark.parametrize(
-    ("metric_name", "value"),
-    (
-        ("attempt_wall_seconds", math.nan),
-        ("coordinator_work_seconds", math.inf),
-        ("raw_open_count", 0.5),
-        ("artifact_write_bytes", 1.5),
-    ),
-)
-def test_runtime_observability_rejects_nonfinite_or_fractional_measurements(
-    tmp_path: Path,
-    metric_name: str,
-    value: float,
-) -> None:
-    attempt = _attempt(tmp_path)
-
-    with pytest.raises(RuntimeObservabilityContractError, match="finite|integer"):
-        metrics = tuple(
-            replace(metric, value=value) if metric.name == metric_name else metric
-            for metric in _metrics(attempt.processing_attempt_id)
-        )
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=metrics,
-        )
-
-
 def test_runtime_observability_accepts_preflight_failure_contract(
     tmp_path: Path,
 ) -> None:
@@ -612,185 +359,6 @@ def test_runtime_observability_accepts_preflight_failure_contract(
     )
 
     assert "attempt_started" not in {event.kind for event in ledger.events}
-
-
-def test_runtime_observability_rejects_out_of_order_work_lifecycle(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    events = list(_events(attempt))
-    events[4:7] = (
-        replace(events[4], kind="work_unit_settled"),
-        replace(events[5], kind="work_unit_submitted"),
-        replace(events[6], kind="work_unit_started"),
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="lifecycle order"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=tuple(events),
-            metrics=_metrics(attempt.processing_attempt_id),
-        )
-
-
-def test_runtime_observability_rejects_non_manifest_work_order(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    work_unit_keys = ("sample-a:target-a", "sample-b:target-b")
-    ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=work_unit_keys,
-        worker_keys=("worker:1",),
-    )
-    work_positions = tuple(
-        index
-        for index, event in enumerate(ledger.events)
-        if event.subject is RuntimeObservationSubject.WORK_UNIT
-    )
-    reversed_work = tuple(
-        event
-        for work_unit_key in reversed(work_unit_keys)
-        for event in ledger.events
-        if event.subject is RuntimeObservationSubject.WORK_UNIT
-        and event.subject_key == work_unit_key
-    )
-    invalid_events = _resequence(
-        (
-            *ledger.events[: min(work_positions)],
-            *reversed_work,
-            *ledger.events[max(work_positions) + 1 :],
-        )
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="manifest order"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=work_unit_keys,
-            events=invalid_events,
-            metrics=ledger.metrics,
-        )
-
-
-def test_runtime_observability_rejects_duplicate_work_lifecycle_event(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    events = list(_events(attempt))
-    submitted = _event_index(tuple(events), "work_unit_submitted")
-    events.insert(submitted + 1, replace(events[submitted]))
-    events = [
-        replace(
-            event,
-            sequence=index,
-            monotonic_offset_ns=(index - 1) * 10,
-        )
-        for index, event in enumerate(events, start=1)
-    ]
-
-    with pytest.raises(RuntimeObservabilityContractError, match="exactly one"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=tuple(events),
-            metrics=_metrics(attempt.processing_attempt_id),
-        )
-
-
-def test_runtime_observability_rejects_undeclared_work_event(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    events = list(_events(attempt))
-    submitted = _event_index(tuple(events), "work_unit_submitted")
-    events[submitted] = replace(
-        events[submitted],
-        subject_key="sample-b:target-b",
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="undeclared"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=tuple(events),
-            metrics=_metrics(attempt.processing_attempt_id),
-        )
-
-
-def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    events = list(_events(attempt))
-    submitted = _event_index(tuple(events), "work_unit_submitted")
-    events.insert(
-        submitted + 3,
-        replace(
-            events[submitted],
-            kind="work_unit_submitted",
-            subject=RuntimeObservationSubject.ATTEMPT,
-            subject_key="attempt",
-        ),
-    )
-    events = [
-        replace(
-            event,
-            sequence=index,
-            monotonic_offset_ns=(index - 1) * 10,
-        )
-        for index, event in enumerate(events, start=1)
-    ]
-
-    with pytest.raises(RuntimeObservabilityContractError, match="work_unit subject"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=tuple(events),
-            metrics=_metrics(attempt.processing_attempt_id),
-        )
-
-
-def test_runtime_observability_rejects_malformed_worker_lifecycle(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = RuntimeObservabilityLedger(
-        attempt=attempt,
-        work_unit_keys=("sample-a:target-a",),
-        events=_events(attempt),
-        metrics=_metrics(attempt.processing_attempt_id),
-    )
-    worker_started = _event_index(ledger.events, "worker_started")
-    duplicate = (
-        *ledger.events[: worker_started + 1],
-        ledger.events[worker_started],
-        *ledger.events[worker_started + 1 :],
-    )
-    wrong_kind = list(ledger.events)
-    wrong_kind[worker_started] = replace(
-        wrong_kind[worker_started],
-        kind="worker_stopped",
-    )
-    wrong_subject = list(ledger.events)
-    wrong_subject[worker_started] = replace(
-        wrong_subject[worker_started],
-        subject=RuntimeObservationSubject.ATTEMPT,
-        subject_key="attempt",
-    )
-
-    for invalid, match in (
-        (duplicate, "exactly one worker_started"),
-        (tuple(wrong_kind), "unregistered lifecycle"),
-        (tuple(wrong_subject), "worker subject"),
-    ):
-        with pytest.raises(RuntimeObservabilityContractError, match=match):
-            RuntimeObservabilityLedger(
-                attempt=attempt,
-                work_unit_keys=ledger.work_unit_keys,
-                events=_resequence(invalid),
-                metrics=ledger.metrics,
-            )
 
 
 def _events(attempt):

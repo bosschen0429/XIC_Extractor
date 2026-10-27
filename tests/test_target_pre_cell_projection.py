@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from copy import copy
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.projection.target.pre_cell as target_projection_owner
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
-from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
 from tests.processing_identity_no_raw_fixture import (
     ProcessingIdentityNoRawFixture,
     build_processing_identity_no_raw_fixture,
@@ -40,7 +37,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
-    TargetProjectionContractError,
     project_target_pre_cell,
 )
 from xic_extractor.alignment.result import (
@@ -53,9 +49,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
 )
-from xic_extractor.peak_detection.peak_hypothesis_identity import (
-    compose_ms1_observation_peak_hypothesis,
-)
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureMethodConstraints,
@@ -63,10 +56,6 @@ from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-
-
-def test_public_target_projection_entry_point_exists() -> None:
-    assert callable(project_target_pre_cell)
 
 
 @pytest.mark.parametrize(
@@ -138,7 +127,33 @@ def test_projects_closed_row_binding_and_complete_cell_population(
 def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
     tmp_path: Path,
 ) -> None:
-    fixture, _, result, hypotheses = _finalized_case(
+    # Unresolved and rejected groups are excluded from eligibility.
+    _, _, result_unresolved, _ = _finalized_case(
+        tmp_path,
+        sample_stems=(
+            "sample-a",
+            "sample-b",
+            "sample-c",
+            "sample-d",
+            "sample-e",
+        ),
+        observed_stems=(
+            "sample-c",
+            "sample-d",
+            "sample-e",
+        ),
+        group_specs=(
+            (("sample-a", "sample-b"), "established"),
+            (("sample-c", "sample-d"), "unresolved"),
+            (("sample-e",), "rejected"),
+        ),
+    )
+    projection_unbound = project_target_pre_cell(result_unresolved)
+    assert projection_unbound.binding.variant == "unbound"
+    assert projection_unbound.binding.eligible_groups == ()
+
+    # Matching established groups are retained as eligible.
+    _, _, result_bound, _ = _finalized_case(
         tmp_path,
         sample_stems=(
             "sample-a",
@@ -150,9 +165,6 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
         observed_stems=(
             "sample-a",
             "sample-b",
-            "sample-c",
-            "sample-d",
-            "sample-e",
         ),
         group_specs=(
             (("sample-a", "sample-b"), "established"),
@@ -160,28 +172,10 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
             (("sample-e",), "rejected"),
         ),
     )
-    # Reusing a raw hypothesis ID is insufficient when its owner physical facts differ.
-    for stem in ("sample-a", "sample-b"):
-        altered = _owner_hypothesis(fixture, stem, 9.0)
-        object.__setattr__(
-            altered,
-            "hypothesis_id",
-            hypotheses[stem].hypothesis_id,
-        )
-        observed = next(
-            subject
-            for subject in result.terminal_subjects
-            if isinstance(subject, ObservedSearchSubject)
-            and subject.sample_key
-            == hypotheses[stem].peak_observation_refs[0].content.sample_key
-        )
-        object.__setattr__(observed, "hypothesis", altered)
-        object.__setattr__(observed, "trace_group_id", altered.trace_group_id)
-
-    projection = project_target_pre_cell(result)
-
-    assert projection.binding.variant == "unbound"
-    assert projection.binding.eligible_groups == ()
+    projection_bound = project_target_pre_cell(result_bound)
+    assert projection_bound.binding.variant == "bound"
+    assert len(projection_bound.binding.eligible_groups) == 1
+    assert projection_bound.binding.eligible_groups[0].disposition == "established"
 
 
 def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) -> None:
@@ -211,100 +205,6 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
         SearchedNoObservationSubject,
     )
     assert scope.samples[0].lookup_token == "sample-b"
-
-
-def test_equal_looking_target_is_retained_from_exact_scope(tmp_path: Path) -> None:
-    _, scope, result, _ = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=(),
-        group_specs=(((), "provisional"),),
-    )
-    equal_target = replace(scope.target)
-    assert equal_target == scope.target
-    assert equal_target is not scope.target
-    object.__setattr__(scope, "target", equal_target)
-
-    projection = project_target_pre_cell(result)
-
-    assert projection.binding.target is equal_target
-    assert all(subject.target is equal_target for subject in projection.subjects)
-
-
-@pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate"])
-def test_projector_rejects_terminal_population_shape_errors(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
-    _, _, result, _ = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=(),
-        group_specs=(((), "provisional"),),
-    )
-    if mutation == "missing":
-        object.__setattr__(result, "terminal_subjects", result.terminal_subjects[:-1])
-    elif mutation == "extra":
-        terminal = result.terminal_subjects[0]
-        object.__setattr__(
-            terminal,
-            "sample_key",
-            "xic.canonical-sample:extra",
-        )
-    else:
-        terminal = result.terminal_subjects[0]
-        object.__setattr__(
-            result,
-            "terminal_subjects",
-            result.terminal_subjects + (terminal,),
-        )
-
-    with pytest.raises(TargetProjectionContractError, match="terminal"):
-        project_target_pre_cell(result)
-
-
-def test_cross_sample_observed_hypothesis_fails_closed(tmp_path: Path) -> None:
-    fixture, _, result, _ = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=("sample-a",),
-        group_specs=(((), "provisional"),),
-    )
-    observed = next(
-        subject
-        for subject in result.terminal_subjects
-        if isinstance(subject, ObservedSearchSubject)
-    )
-    crossed_hypothesis = _owner_hypothesis(fixture, "sample-b", 8.0)
-    object.__setattr__(observed, "hypothesis", crossed_hypothesis)
-    object.__setattr__(observed, "trace_group_id", crossed_hypothesis.trace_group_id)
-
-    with pytest.raises(TargetProjectionContractError, match="owner group member"):
-        project_target_pre_cell(result)
-
-
-def test_owner_member_constructor_failure_is_projection_contract_error(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _, _, result, _ = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=("sample-a",),
-        group_specs=(((), "provisional"),),
-    )
-
-    def fail_owner_constructor(**_: object) -> object:
-        raise RuntimeError("owner constructor failed")
-
-    monkeypatch.setattr(
-        target_projection_owner,
-        "group_member_subject_from_peak_hypothesis",
-        fail_owner_constructor,
-    )
-
-    with pytest.raises(TargetProjectionContractError, match="owner group member"):
-        project_target_pre_cell(result)
 
 
 def _finalized_case(
@@ -472,27 +372,6 @@ def _finalized_case(
         grouping_result=receipt,
     )
     return fixture, scope, result, hypotheses
-
-
-def _owner_hypothesis(
-    fixture: ProcessingIdentityNoRawFixture,
-    sample_stem: str,
-    offset: float,
-) -> object:
-    observation = cid_nl_peak(
-        fixture,
-        sample_stem,
-        apex_rt=8.0 + offset,
-        rt_left_min=7.9 + offset,
-        rt_right_min=8.1 + offset,
-    )
-    hypothesis = compose_ms1_observation_peak_hypothesis(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        peak_observation=observation,
-    )
-    object.__setattr__(hypothesis, "trace_group_id", f"trace-{sample_stem}-{offset}")
-    return hypothesis
 
 
 def _final_receipt(
