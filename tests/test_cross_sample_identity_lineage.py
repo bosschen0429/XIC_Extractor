@@ -52,20 +52,6 @@ def _mint_group_in_process(processing_request_id, members):
     return group.group_hypothesis_id, group.basis_bytes
 
 
-def test_equal_digest_with_unequal_basis_bytes_fails_closed(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleContractError,
-        CrossSampleIdentityBasisRegistry,
-    )
-
-    _, (member,) = _subjects(tmp_path, "sample-a")
-    registry = CrossSampleIdentityBasisRegistry()
-    registry.register(member.member_subject_id, member.basis_bytes)
-
-    with pytest.raises(CrossSampleContractError, match="collision"):
-        registry.register(member.member_subject_id, member.basis_bytes + b" ")
-
-
 def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,

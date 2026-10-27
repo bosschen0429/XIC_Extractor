@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -142,22 +142,6 @@ def group_member_subject_from_peak_hypothesis(
     )
 
 
-@dataclass(slots=True)
-class CrossSampleIdentityBasisRegistry:
-    _basis_by_id: dict[str, bytes] = field(default_factory=dict)
-
-    def register(self, identity_id: str, basis_bytes: bytes) -> None:
-        _required_text(identity_id, field="identity_id")
-        if not isinstance(basis_bytes, bytes) or not basis_bytes:
-            raise CrossSampleContractError("identity basis bytes must be non-empty")
-        prior = self._basis_by_id.get(identity_id)
-        if prior is not None and prior != basis_bytes:
-            raise CrossSampleContractError(
-                "identity digest collision: equal ID has unequal basis bytes"
-            )
-        self._basis_by_id[identity_id] = basis_bytes
-
-
 def _canonical_members(
     member_subjects: Sequence[CrossSampleGroupMemberSubject],
     *,
@@ -165,7 +149,6 @@ def _canonical_members(
 ) -> tuple[CrossSampleGroupMemberSubject, ...]:
     if not member_subjects:
         raise CrossSampleContractError("cross-sample group requires a member")
-    registry = CrossSampleIdentityBasisRegistry()
     samples: set[str] = set()
     physical: set[str] = set()
     members: list[CrossSampleGroupMemberSubject] = []
@@ -180,7 +163,6 @@ def _canonical_members(
             )
         if physical.intersection(member.physical_observation_ids):
             raise CrossSampleContractError("group duplicates a physical observation")
-        registry.register(member.member_subject_id, member.basis_bytes)
         samples.add(member.sample_key)
         physical.update(member.physical_observation_ids)
         members.append(member)
@@ -233,7 +215,6 @@ __all__ = (
     "CrossSampleGroupDisposition",
     "CrossSampleGroupIdentity",
     "CrossSampleGroupMemberSubject",
-    "CrossSampleIdentityBasisRegistry",
     "CrossSampleInitialEdgeContext",
     "CrossSampleNeighborhoodStatus",
     "_CROSS_SAMPLE_GROUP_PREFIX",
