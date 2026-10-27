@@ -6,7 +6,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
     _record_runtime_resource_cleanups,
     _record_runtime_resource_opens,
-    _register_runtime_artifacts,
     _reserve_runtime_resources,
 )
 from xic_extractor.execution._lifecycle import (
@@ -36,7 +35,6 @@ def build_runtime_observability_ledger(
     adapter_chromatogram_call_count: int = 0,
     trace_point_count: int = 0,
     resource_lifecycles: tuple[tuple[str, RuntimeResourceKind, str, str], ...] = (),
-    artifact_dispositions: tuple[tuple[str, str], ...] = (),
 ) -> RuntimeObservabilityLedger:
     event_shapes: list[tuple[str, RuntimeObservationSubject, str]] = [
         ("attempt_queued", RuntimeObservationSubject.ATTEMPT, "attempt"),
@@ -90,14 +88,6 @@ def build_runtime_observability_ledger(
             )
         )
     event_shapes.extend(
-        (
-            "artifact_registered",
-            RuntimeObservationSubject.ARTIFACT,
-            artifact_id,
-        )
-        for artifact_id, _disposition_kind in artifact_dispositions
-    )
-    event_shapes.extend(
         (cleanup_kind, RuntimeObservationSubject.RESOURCE, resource_key)
         for (
             resource_key,
@@ -111,14 +101,6 @@ def build_runtime_observability_ledger(
             ("terminal_proposal", RuntimeObservationSubject.ATTEMPT, "attempt"),
             ("terminal_acknowledged", RuntimeObservationSubject.ATTEMPT, "attempt"),
         )
-    )
-    event_shapes.extend(
-        (
-            disposition_kind,
-            RuntimeObservationSubject.ARTIFACT,
-            artifact_id,
-        )
-        for artifact_id, disposition_kind in artifact_dispositions
     )
     event_shapes.append(
         ("terminal_outcome", RuntimeObservationSubject.ATTEMPT, "attempt")
@@ -257,10 +239,6 @@ def settle_runtime_resource(
 ) -> Any:
     opened = _record_runtime_resource_opens(state, ((resource_key, open_outcome),))
     return _record_runtime_resource_cleanups(opened, ((resource_key, cleanup_outcome),))
-
-
-def register_runtime_artifact(state: Any, *, work_unit_key: str, artifact: Any) -> Any:
-    return _register_runtime_artifacts(state, ((work_unit_key, artifact),))
 
 
 def settle_work_unit(runtime: Any, **kwargs: Any) -> Any:

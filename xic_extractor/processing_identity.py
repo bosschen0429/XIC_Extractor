@@ -544,25 +544,6 @@ def canonical_evidence_artifact_closure(
     )
 
 
-def canonical_current_attempt_artifact_closure(
-    *,
-    producer_attempt: ProcessingAttemptIdentity,
-    artifacts: tuple[EvidenceArtifactRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate artifacts produced only by the current attempt."""
-
-    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
-        raise IdentityContractError(
-            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
-        )
-    return _validate_artifact_closure(
-        processing_request_id=producer_attempt.processing_request_id,
-        processing_attempt_id=producer_attempt.processing_attempt_id,
-        dependency_processing_attempt_ids=(),
-        artifacts=artifacts,
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class ProcessingOwnerReferences:
     """Validated composition of lineage and owner-minted identity references."""
@@ -1073,7 +1054,6 @@ __all__ = [
     "build_processing_request_identity",
     "canonical_identity_basis_bytes",
     "mint_typed_identity",
-    "canonical_current_attempt_artifact_closure",
     "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",
     "fingerprint_file_content",

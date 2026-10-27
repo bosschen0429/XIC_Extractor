@@ -117,7 +117,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
     ),
     "xic_extractor/execution/_finalization.py": frozenset(
         {
-            "RuntimeArtifactDisposition",
             "RuntimeFinalizationContractError",
             "RuntimeLifecycleEventKind",
             "RuntimeLifecycleFailureKind",
@@ -143,7 +142,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
             "RuntimeExecutionPhaseError",
@@ -183,7 +181,6 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationIngress",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
@@ -210,7 +207,6 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
             "RuntimeExecutionPhaseError",

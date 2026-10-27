@@ -12,14 +12,10 @@ from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
     record_runtime_resource_cleanup,
     record_runtime_resource_open,
-    register_runtime_artifact,
     settle_work_unit,
 )
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.runtime_telemetry_fixtures import (
-    mint_test_process_result_ref as mint_targeted_process_result_ref,
 )
 from tests.test_acquisition_contract import _NoRawBatchAdapter, _source
 from xic_extractor.acquisition_contract import (
@@ -51,7 +47,6 @@ from xic_extractor.execution._observability import (
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionMetrics,
     RuntimeAcquisitionReceipt,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
@@ -264,7 +259,6 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
             RuntimeResourceCleanupOutcome.SUCCEEDED,
         ),
     )
-    assert state.artifacts == ()
     assert "worker_started" not in tuple(
         event.kind for event in receipt.observability_ledger.events
     )
@@ -561,11 +555,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         work_unit_keys=("raw:a",),
         owner_completeness_attestation="runtime-owner-test",
     )
-    result_ref = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"runtime-owner-result",
-    )
     aggregate = _prepare_runtime_attempt(runtime, (_reservation(attempt),))
     aggregate = _apply_runtime_worker_batch(
         aggregate,
@@ -583,12 +572,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
                     resource_key="session:a",
                     open_outcome=RuntimeResourceOpenOutcome.OPENED,
                     cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-                ),
-            ),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key="raw:a",
-                    artifact=result_ref.artifact,
                 ),
             ),
         ),
@@ -618,9 +601,8 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         "manifest_closed",
         "attempt_started",
     )
-    assert event_kinds[-3:] == (
+    assert event_kinds[-2:] == (
         "terminal_acknowledged",
-        "artifact_offered_to_owner",
         "terminal_outcome",
     )
     coordinator_event_kinds = tuple(
@@ -629,7 +611,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
     assert (
         coordinator_event_kinds.index("resource_reserved")
         < coordinator_event_kinds.index("resource_opened")
-        < coordinator_event_kinds.index("artifact_registered")
         < coordinator_event_kinds.index("resource_cleanup_succeeded")
         < coordinator_event_kinds.index("terminal_proposal")
     )
@@ -639,7 +620,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         < event_kinds.index("work_unit_submitted")
         < event_kinds.index("work_unit_started")
         < event_kinds.index("work_unit_settled")
-        < event_kinds.index("artifact_registered")
         < event_kinds.index("resource_cleanup_succeeded")
         < event_kinds.index("terminal_proposal")
     )
@@ -677,11 +657,6 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
         work_unit_keys=("raw:a",),
         owner_completeness_attestation="runtime-owner-test",
     )
-    result_ref = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"runtime-owner-result",
-    )
     aggregate = _apply_runtime_worker_batch(
         _prepare_runtime_attempt(runtime, (_reservation(attempt),)),
         RuntimeWorkerBatchReceipt(
@@ -699,9 +674,6 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
                     open_outcome=RuntimeResourceOpenOutcome.OPENED,
                     cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
                 ),
-            ),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt("raw:a", result_ref.artifact),
             ),
         ),
     )
@@ -978,8 +950,6 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
         "unaccepted_cancellation",
         "cancellation_before_foreign_attempt",
         "foreign_attempt_before_cancellation",
-        "foreign_artifact",
-        "undeclared_artifact",
     ),
 )
 def test_owner_worker_batch_matches_sequential_state_and_bytes(
@@ -998,25 +968,13 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
             else None
         ),
     )
-    artifacts = tuple(
-        mint_targeted_process_result_ref(
-            processing_attempt=attempt,
-            work_unit_key=key,
-            owner_result_payload=key.encode(),
-        ).artifact
-        for key in keys
-    )
     settlements = [
         mint_work_unit_settlement(
             attempt=attempt,
             work_unit_key=key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
         )
-        for key, artifact in zip(keys, artifacts, strict=True)
-    ]
-    registrations = [
-        RuntimeArtifactRegistrationReceipt(work_unit_key=key, artifact=artifact)
-        for key, artifact in zip(keys, artifacts, strict=True)
+        for key in keys
     ]
     failure_detail = WorkUnitFailureDetail(
         category=WorkUnitFailureCategory.EXECUTION_ERROR,
@@ -1046,12 +1004,9 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
             seeds.append(
                 RuntimeWorkerBatchReceipt(
                     settlements=(settlements[0], failed),
-                    artifact_registrations=(registrations[0],),
                 )
             )
         settlements.extend((failed, replace(failed, work_unit_key=keys[1]), failed))
-        conflict = replace(registrations[0], work_unit_key=keys[1])
-        registrations.extend((conflict, registrations[0], conflict))
     elif scenario == "undeclared":
         settlements.extend(
             (
@@ -1074,23 +1029,9 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
                 settlements[1] = replace(cancelled, work_unit_key=keys[1])
             else:
                 settlements[1] = foreign_settlement
-    elif scenario == "foreign_artifact":
-        foreign = _attempt(tmp_path, stem="foreign-artifact")
-        registrations[0] = RuntimeArtifactRegistrationReceipt(
-            work_unit_key=keys[0],
-            artifact=mint_targeted_process_result_ref(
-                processing_attempt=foreign,
-                work_unit_key=keys[0],
-                owner_result_payload=b"foreign-result",
-            ).artifact,
-        )
-    elif scenario == "undeclared_artifact":
-        registrations[0] = replace(registrations[0], work_unit_key="undeclared")
-
     # Stable sorting must retain the first submitted fact within each work key.
     batch = RuntimeWorkerBatchReceipt(
         settlements=tuple(sorted(settlements, key=lambda item: item.work_unit_key)),
-        artifact_registrations=tuple(reversed(registrations)),
         resource_settlements=(
             RuntimeResourceSettlementReceipt(
                 attempt=attempt,
@@ -1110,8 +1051,6 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
         "unaccepted_cancellation",
         "cancellation_before_foreign_attempt",
         "foreign_attempt_before_cancellation",
-        "foreign_artifact",
-        "undeclared_artifact",
     }:
         with pytest.raises(
             (AttemptLifecycleContractError, RuntimeFinalizationContractError)
@@ -1188,18 +1127,6 @@ def _sequential_worker_batch_state(
                 outcome=settlement.outcome,
                 failure_detail=settlement.failure_detail,
             ),
-        )
-    for registration in sorted(
-        batch.artifact_registrations,
-        key=lambda item: (
-            manifest_order.get(item.work_unit_key, len(manifest_order)),
-            item.artifact.evidence_artifact_id,
-        ),
-    ):
-        state = register_runtime_artifact(
-            state,
-            work_unit_key=registration.work_unit_key,
-            artifact=registration.artifact,
         )
     for receipt in resources:
         state = record_runtime_resource_cleanup(

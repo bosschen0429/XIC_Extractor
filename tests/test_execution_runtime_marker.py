@@ -10,7 +10,6 @@ import pytest
 
 import xic_extractor.execution.recovery as runtime_marker_module
 from tests.runtime_observability_fixtures import (
-    register_runtime_artifact,
     reserve_runtime_resource,
     settle_runtime_resource,
     settle_work_unit,
@@ -18,12 +17,8 @@ from tests.runtime_observability_fixtures import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.runtime_telemetry_fixtures import (
-    mint_test_process_result_ref as mint_targeted_process_result_ref,
-)
 from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -80,7 +75,6 @@ def test_launch_marker_persists_unfinished_attempt_scope(
     assert marker.record_launch(runtime) == launch
     assert persisted == launch
     assert persisted.terminal_outcome is None
-    assert persisted.artifact_dispositions == ()
 
 
 def test_finalization_atomically_replaces_launch_with_terminal_status(
@@ -88,11 +82,6 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
 ) -> None:
     attempt = _attempt(tmp_path)
     runtime = _runtime(attempt)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="sample:a",
-        owner_result_payload=b"no-raw-result",
-    )
     runtime = settle_work_unit(
         runtime,
         work_unit_key="sample:a",
@@ -115,11 +104,6 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="sample:a",
-        artifact=reference.artifact,
-    )
     coordinator = propose_attempt_terminal(state)
     ledger = _ledger(coordinator)
     proposed = mint_supervisor_finalization(
@@ -141,18 +125,12 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
 
     assert accepted == receipt
     payload = json.loads(marker.path.read_bytes())
-    assert payload["schema_version"] == "execution_runtime_status_marker.v2"
+    assert payload["schema_version"] == "execution_runtime_status_marker.v3"
     assert marker.read().state is RuntimeMarkerState.FINALIZED
     assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
         marker.record_launch(_runtime(attempt))
     assert persisted.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert persisted.artifact_dispositions == (
-        (
-            reference.artifact.evidence_artifact_id,
-            RuntimeArtifactDisposition.OFFERED_TO_OWNER,
-        ),
-    )
     assert set(payload) == {
         "schema_version",
         "state",
@@ -161,7 +139,6 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
         "artifact_namespace",
         "manifest_work_unit_keys",
         "terminal_outcome",
-        "artifact_dispositions",
     }
 
 
@@ -436,11 +413,6 @@ def _terminal_records(
     outcome: WorkUnitTerminalOutcome,
 ):
     runtime = _runtime(attempt)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="sample:a",
-        owner_result_payload=b"no-raw-result",
-    )
     runtime = settle_work_unit(
         runtime,
         work_unit_key="sample:a",
@@ -473,12 +445,6 @@ def _terminal_records(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    if outcome is WorkUnitTerminalOutcome.SUCCEEDED:
-        state = register_runtime_artifact(
-            state,
-            work_unit_key="sample:a",
-            artifact=reference.artifact,
-        )
     coordinator = propose_attempt_terminal(state)
     return RuntimeFinalizationReceipt(
         coordinator=coordinator,

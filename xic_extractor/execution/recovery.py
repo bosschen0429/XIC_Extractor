@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from xic_extractor.execution._finalization import (
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
 )
 from xic_extractor.execution._lifecycle import AttemptRuntime, AttemptTerminalOutcome
@@ -50,7 +49,6 @@ class RuntimeMarkerSnapshot:
     artifact_namespace: str
     manifest_work_unit_keys: tuple[str, ...]
     terminal_outcome: AttemptTerminalOutcome | None = None
-    artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +160,6 @@ class OwnerPathRuntimeMarker:
                 artifact_namespace=launch.artifact_namespace,
                 manifest_work_unit_keys=launch.manifest_work_unit_keys,
                 terminal_outcome=accepted.terminal_outcome,
-                artifact_dispositions=accepted.artifact_dispositions,
             )
             if launch.state is RuntimeMarkerState.FINALIZED:
                 if launch != finalized:
@@ -303,7 +300,7 @@ def _same_attempt_scope(
 def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
     return json.dumps(
         {
-            "schema_version": "execution_runtime_status_marker.v2",
+            "schema_version": "execution_runtime_status_marker.v3",
             "state": snapshot.state.value,
             "processing_request_id": snapshot.processing_request_id,
             "processing_attempt_id": snapshot.processing_attempt_id,
@@ -314,10 +311,6 @@ def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
                 if snapshot.terminal_outcome is None
                 else snapshot.terminal_outcome.value
             ),
-            "artifact_dispositions": [
-                [artifact_id, disposition.value]
-                for artifact_id, disposition in snapshot.artifact_dispositions
-            ],
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -329,7 +322,7 @@ def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
 def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     if not isinstance(payload, dict):
         raise RuntimeFinalizationContractError("runtime marker must be an object")
-    if payload.get("schema_version") != "execution_runtime_status_marker.v2":
+    if payload.get("schema_version") != "execution_runtime_status_marker.v3":
         raise RuntimeFinalizationContractError(
             "runtime marker schema_version is unsupported; "
             "rerun in a new output directory"
@@ -342,7 +335,6 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         "artifact_namespace",
         "manifest_work_unit_keys",
         "terminal_outcome",
-        "artifact_dispositions",
     }
     if set(payload) != expected_keys:
         raise RuntimeFinalizationContractError(
@@ -355,16 +347,9 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
             if payload["terminal_outcome"] is None
             else AttemptTerminalOutcome(payload["terminal_outcome"])
         )
-        dispositions = tuple(
-            (
-                _required_text(artifact_id, field="artifact_id"),
-                RuntimeArtifactDisposition(disposition),
-            )
-            for artifact_id, disposition in payload["artifact_dispositions"]
-        )
     except (TypeError, ValueError) as exc:
         raise RuntimeFinalizationContractError(
-            "runtime marker contains invalid enum or disposition values"
+            "runtime marker contains invalid enum values"
         ) from exc
     work_unit_keys = payload["manifest_work_unit_keys"]
     if not isinstance(work_unit_keys, list) or any(
@@ -373,9 +358,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker work keys must be non-empty text"
         )
-    if state is RuntimeMarkerState.LAUNCHED and (
-        terminal_outcome is not None or dispositions
-    ):
+    if state is RuntimeMarkerState.LAUNCHED and terminal_outcome is not None:
         raise RuntimeFinalizationContractError(
             "launch marker cannot contain finalization fields"
         )
@@ -405,7 +388,6 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         ),
         manifest_work_unit_keys=tuple(work_unit_keys),
         terminal_outcome=terminal_outcome,
-        artifact_dispositions=dispositions,
     )
 
 

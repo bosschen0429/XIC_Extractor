@@ -21,7 +21,6 @@ def test_reexport_identity() -> None:
         "RuntimeAcquisitionMetrics",
         "RuntimeAcquisitionReceipt",
         "RuntimeArtifactIoSample",
-        "RuntimeArtifactRegistrationReceipt",
         "RuntimeCancellationRequest",
         "RuntimeExecutionPhase",
         "RuntimeExecutionPhaseError",

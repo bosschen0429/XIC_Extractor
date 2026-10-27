@@ -22,7 +22,6 @@ from tests.runtime_telemetry_fixtures import (
 )
 from xic_extractor.evidence_artifacts import (
     mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
 )
 from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
@@ -34,11 +33,9 @@ from xic_extractor.execution._lifecycle import (
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
     RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
@@ -436,70 +433,26 @@ class MockAdapter:
             sealed=sealed,
         )
 
-    def create_partition_artifacts(
-        self,
-        partition: WorkPartition[dict[str, int]],
-        composition_output: PartitionCompositionOutput[dict[str, Any]],
-    ) -> tuple[
-        tuple[RuntimeArtifactRegistrationReceipt, ...],
-        tuple[WorkUnitSettlement, ...],
-    ]:
-        artifacts = []
-        settlements = []
-        for key in partition.work_unit_keys:
-            payload_bytes = json.dumps(
-                {
-                    "work_unit_key": key,
-                    "partition_bytes": composition_output.sealed.size_bytes,
-                }
-            ).encode("utf-8")
-            artifact = mint_evidence_artifact_ref(
-                producer_processing_request_id=self._owners.request.processing_request_id,
-                producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
-                semantic_contract=_TEST_CONTRACT,
-                payload_bytes=payload_bytes,
-                upstream_artifacts=(),
+    def settle_partition(self, partition, composition_output):
+        return tuple(
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
             )
-            artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
-            settlements.append(
-                mint_work_unit_settlement(
-                    attempt=self._owners.attempt,
-                    work_unit_key=key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                )
-            )
-        return tuple(artifacts), tuple(settlements)
+            for key in partition.work_unit_keys
+        )
 
-    def create_global_closure_artifacts(
-        self,
-        application_result: dict[str, Any],
-    ) -> tuple[
-        tuple[RuntimeArtifactRegistrationReceipt, ...],
-        tuple[WorkUnitSettlement, ...],
-    ]:
+    def settle_global_closure(self, application_result):
         if self._global_closure_work_unit_key is None:
-            return (), ()
-        key = self._global_closure_work_unit_key
-        payload_bytes = json.dumps(
-            {
-                "work_unit_key": key,
-                "total_children": application_result.get("total_children", 0),
-            }
-        ).encode("utf-8")
-        artifact = mint_evidence_artifact_ref(
-            producer_processing_request_id=self._owners.request.processing_request_id,
-            producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
-            semantic_contract=_TEST_CONTRACT,
-            payload_bytes=payload_bytes,
-            upstream_artifacts=(),
+            return ()
+        return (
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=self._global_closure_work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            ),
         )
-        art_receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
-        wu_settlement = mint_work_unit_settlement(
-            attempt=self._owners.attempt,
-            work_unit_key=key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        )
-        return (art_receipt,), (wu_settlement,)
 
     def finalize_application(
         self,
@@ -1125,7 +1078,6 @@ def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
                 ),
             ),
             resource_settlements=(),
-            artifact_registrations=(),
             acquisitions=(),
         )
 
@@ -1212,14 +1164,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cutoff")
     marker.record_launch(runtime)
 
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=fixture.owners.request.processing_request_id,
-        producer_processing_attempt_id=attempt.processing_attempt_id,
-        semantic_contract=_TEST_CONTRACT,
-        payload_bytes=b"dummy",
-        upstream_artifacts=(),
-    )
-
     def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
         return RuntimeWorkerBatchReceipt(
             settlements=(
@@ -1230,9 +1174,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
                 ),
             ),
             resource_settlements=(),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt("wu:1", artifact),
-            ),
             acquisitions=(),
         )
 
@@ -1825,7 +1766,6 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
     owns the index and the path, and the same content
     written elsewhere must land byte-identical."""
 
-    import json
     import subprocess
     import sys
 
@@ -1900,7 +1840,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         num_partitions=4,
         on_acquisition=lambda i: events.append(("acquire", i)),
     )
-    original_artifacts = adapter.create_partition_artifacts
+    original_artifacts = adapter.settle_partition
     original_finalize = adapter.finalize_application
 
     def artifacts(partition, output):
@@ -1912,7 +1852,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         events.append("finalize")
         return original_finalize(store, outputs)
 
-    adapter.create_partition_artifacts = artifacts
+    adapter.settle_partition = artifacts
     adapter.finalize_application = finalize
 
     def prepare(store, check_cancel):

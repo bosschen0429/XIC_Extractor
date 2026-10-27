@@ -67,10 +67,6 @@ def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
                 ("other", "resource_not_opened", "resource_cleanup_succeeded"),
             )
         ),
-        artifact_dispositions=(
-            ("shared", "artifact_offered_to_owner"),
-            ("other", "artifact_quarantined_diagnostic"),
-        ),
     )
 
     def scanned_positions(events, subject):
@@ -108,8 +104,6 @@ def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
         "work_unit_started",
         "worker_started",
         "resource_opened",
-        "artifact_registered",
-        "artifact_offered_to_owner",
     ):
         index = next(i for i, event in enumerate(ledger.events) if event.kind == kind)
         variants.append((*ledger.events[:index], *ledger.events[index + 1 :]))
@@ -533,50 +527,6 @@ def test_runtime_observability_rejects_cross_domain_phase_reordering(
         )
 
 
-def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycle(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample-a:target-a",),
-        worker_keys=("worker:1",),
-        artifact_dispositions=(("artifact:a", "artifact_offered_to_owner"),),
-    )
-    registered = _event_index(ledger.events, "artifact_registered")
-    disposed = _event_index(ledger.events, "artifact_offered_to_owner")
-    missing = (*ledger.events[:disposed], *ledger.events[disposed + 1 :])
-    duplicate = (
-        *ledger.events[: disposed + 1],
-        ledger.events[disposed],
-        *ledger.events[disposed + 1 :],
-    )
-    reordered = list(ledger.events)
-    reordered[registered], reordered[disposed] = (
-        reordered[disposed],
-        reordered[registered],
-    )
-    wrong_subject = list(ledger.events)
-    wrong_subject[registered] = replace(
-        wrong_subject[registered],
-        subject=RuntimeObservationSubject.ATTEMPT,
-    )
-
-    for invalid, match in (
-        (missing, "exactly one"),
-        (duplicate, "exactly one"),
-        (tuple(reordered), "lifecycle order"),
-        (tuple(wrong_subject), "artifact subject"),
-    ):
-        with pytest.raises(RuntimeObservabilityContractError, match=match):
-            RuntimeObservabilityLedger(
-                attempt=attempt,
-                work_unit_keys=ledger.work_unit_keys,
-                events=_resequence(invalid),
-                metrics=ledger.metrics,
-            )
-
-
 def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
     tmp_path: Path,
 ) -> None:
@@ -616,30 +566,6 @@ def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=_resequence(invalid),
-            metrics=ledger.metrics,
-        )
-
-
-def test_runtime_observability_rejects_artifact_disposition_before_acknowledgement(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample-a:target-a",),
-        worker_keys=("worker:1",),
-        artifact_dispositions=(("artifact:a", "artifact_offered_to_owner"),),
-    )
-    events = list(ledger.events)
-    disposition = events.pop(_event_index(tuple(events), "artifact_offered_to_owner"))
-    acknowledgement = _event_index(tuple(events), "terminal_acknowledged")
-    events.insert(acknowledgement, disposition)
-
-    with pytest.raises(RuntimeObservabilityContractError, match="acknowledgement"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=ledger.work_unit_keys,
-            events=_resequence(tuple(events)),
             metrics=ledger.metrics,
         )
 

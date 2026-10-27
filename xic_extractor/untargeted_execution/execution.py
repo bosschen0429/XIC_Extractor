@@ -28,7 +28,6 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
     execute_runtime_attempt,
@@ -743,15 +742,12 @@ class UntargetedPartitionPipelineAdapter:
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
-    def create_partition_artifacts(
+    def settle_partition(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
         composition_output: PartitionCompositionOutput[PersistedUntargetedPartition],
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]:
-        return (), tuple(
+    ) -> Sequence[WorkUnitSettlement]:
+        return tuple(
             mint_work_unit_settlement(
                 attempt=self._owners.attempt,
                 work_unit_key=key,
@@ -796,15 +792,12 @@ class UntargetedPartitionPipelineAdapter:
     def global_closure_work_unit_key(self) -> str:
         return self._global_closure_work_unit_key
 
-    def create_global_closure_artifacts(
+    def settle_global_closure(
         self,
         application_result: FinalizedUntargetBatchApplicationResult
         | PreparedGroupingExperiment,
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]:
-        return (), (
+    ) -> Sequence[WorkUnitSettlement]:
+        return (
             mint_work_unit_settlement(
                 attempt=self._owners.attempt,
                 work_unit_key=self._global_closure_work_unit_key,

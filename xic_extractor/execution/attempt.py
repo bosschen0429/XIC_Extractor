@@ -16,7 +16,6 @@ from dataclasses import dataclass, replace
 from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     CoordinatorTerminalRecord,
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeResourceCleanupOutcome,
@@ -26,7 +25,6 @@ from xic_extractor.execution._finalization import (
     SupervisorFinalizationEventKind,
     _record_runtime_resource_cleanups,
     _record_runtime_resource_opens,
-    _register_runtime_artifacts,
     _reserve_runtime_resources,
     begin_attempt_finalization,
     mint_supervisor_finalization,
@@ -60,7 +58,6 @@ from xic_extractor.execution._receipts import (
     RuntimeAcquisitionMetrics,
     RuntimeAcquisitionReceipt,
     RuntimeArtifactIoSample,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
@@ -304,20 +301,6 @@ def _apply_runtime_worker_batch(
             state,
             runtime=_settle_work_units(state.runtime, ordered_settlements()),
         )
-
-    state = _register_runtime_artifacts(
-        state,
-        (
-            (registration.work_unit_key, registration.artifact)
-            for registration in sorted(
-                batch.artifact_registrations,
-                key=lambda item: (
-                    manifest_order.get(item.work_unit_key, len(manifest_order)),
-                    item.artifact.evidence_artifact_id,
-                ),
-            )
-        ),
-    )
 
     state = _record_runtime_resource_cleanups(
         state,
@@ -920,10 +903,6 @@ def _runtime_observation_shapes(
             )
         )
     append_lifecycle_phase(
-        frozenset({RuntimeLifecycleEventKind.ARTIFACT_REGISTERED}),
-        RuntimeObservationSubject.ARTIFACT,
-    )
-    append_lifecycle_phase(
         frozenset(
             {
                 RuntimeLifecycleEventKind.RESOURCE_CLEANUP_SUCCEEDED,
@@ -944,20 +923,6 @@ def _runtime_observation_shapes(
             "attempt",
         )
     )
-    for artifact in state.artifacts:
-        kind = (
-            SupervisorFinalizationEventKind.ARTIFACT_OFFERED_TO_OWNER
-            if artifact.proposed_disposition
-            is RuntimeArtifactDisposition.OFFERED_TO_OWNER
-            else SupervisorFinalizationEventKind.ARTIFACT_QUARANTINED_DIAGNOSTIC
-        )
-        shapes.append(
-            (
-                kind.value,
-                RuntimeObservationSubject.ARTIFACT,
-                artifact.artifact.evidence_artifact_id,
-            )
-        )
     shapes.append(
         (
             SupervisorFinalizationEventKind.TERMINAL_OUTCOME.value,
@@ -1121,7 +1086,6 @@ __all__ = [
     "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
-    "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
     "RuntimeCancellationIngress",
     "RuntimeCancellationRequest",

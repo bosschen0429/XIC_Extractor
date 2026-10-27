@@ -12,7 +12,6 @@ from xic_extractor.acquisition_contract import (
     TraceAcquisitionBatch,
     TraceAcquisitionCapability,
 )
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
     RuntimeFinalizationContractError,
@@ -103,21 +102,6 @@ class RuntimeResourceSettlementReceipt:
         if not isinstance(self.cleanup_outcome, RuntimeResourceCleanupOutcome):
             raise RuntimeFinalizationContractError(
                 "cleanup_outcome must be a RuntimeResourceCleanupOutcome"
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeArtifactRegistrationReceipt:
-    """One owner-minted artifact bound to its manifest work unit."""
-
-    work_unit_key: str
-    artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        _required_text(self.work_unit_key, field="work_unit_key")
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise RuntimeFinalizationContractError(
-                "artifact registration requires an owner-minted EvidenceArtifactRef"
             )
 
 
@@ -303,7 +287,6 @@ class RuntimeWorkerBatchReceipt:
 
     settlements: tuple[WorkUnitSettlement, ...]
     resource_settlements: tuple[RuntimeResourceSettlementReceipt, ...] = ()
-    artifact_registrations: tuple[RuntimeArtifactRegistrationReceipt, ...] = ()
     acquisitions: tuple[RuntimeAcquisitionReceipt, ...] = ()
 
     def __post_init__(self) -> None:
@@ -316,11 +299,6 @@ class RuntimeWorkerBatchReceipt:
             self.resource_settlements,
             RuntimeResourceSettlementReceipt,
             field="resource_settlements",
-        )
-        _require_tuple_of(
-            self.artifact_registrations,
-            RuntimeArtifactRegistrationReceipt,
-            field="artifact_registrations",
         )
         _require_tuple_of(
             self.acquisitions,
@@ -555,7 +533,6 @@ __all__ = (
     "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
-    "RuntimeArtifactRegistrationReceipt",
     "RuntimeCancellationRequest",
     "RuntimeExecutionPhase",
     "RuntimeExecutionPhaseError",
