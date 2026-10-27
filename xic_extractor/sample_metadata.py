@@ -49,8 +49,6 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
     }
 )
 _CANONICAL_SAMPLE_ID_PREFIX = "xic.sample:"
-_SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
     "order": frozenset(
         {"id", "no", "index", "order", "injection order", "序號", "編號", "項次"}
@@ -136,37 +134,14 @@ class SequenceMatchReport:
 class SampleMetadataSnapshot:
     """Owner-minted immutable snapshot for one sample identity namespace."""
 
-    snapshot_id: str
-    content_sha256: str
     identity_namespace: str
     rows: tuple[SampleMetadata, ...]
 
     def __post_init__(self) -> None:
-        namespace = _owner_normalized_text(
-            self.identity_namespace,
-            field="identity_namespace",
-        )
-        content_sha256 = _validate_sha256(
-            self.content_sha256,
-            field="content_sha256",
-        )
-        rows = _validated_snapshot_rows(self.rows)
-        if rows != self.rows:
+        _owner_normalized_text(self.identity_namespace, field="identity_namespace")
+        if _validated_snapshot_rows(self.rows) != self.rows:
             raise SampleMetadataError(
                 "sample metadata snapshot rows must be canonical-sorted"
-            )
-        expected_content_sha256 = _sample_metadata_snapshot_content_sha256(
-            rows,
-            identity_namespace=namespace,
-        )
-        if content_sha256 != expected_content_sha256:
-            raise SampleMetadataError(
-                "sample metadata snapshot content digest mismatches owner rows"
-            )
-        expected_id = _sample_metadata_snapshot_id(content_sha256)
-        if self.snapshot_id != expected_id:
-            raise SampleMetadataError(
-                "sample metadata snapshot ID mismatches owner content"
             )
 
 
@@ -972,13 +947,7 @@ def mint_sample_metadata_snapshot(
         field="identity_namespace",
     )
     canonical_rows = _validated_snapshot_rows(tuple(rows))
-    content_sha256 = _sample_metadata_snapshot_content_sha256(
-        canonical_rows,
-        identity_namespace=namespace,
-    )
     return SampleMetadataSnapshot(
-        snapshot_id=_sample_metadata_snapshot_id(content_sha256),
-        content_sha256=content_sha256,
         identity_namespace=namespace,
         rows=canonical_rows,
     )
@@ -1289,39 +1258,6 @@ def _validated_snapshot_rows(
     return canonical_parsed
 
 
-def _sample_metadata_snapshot_content_sha256(
-    rows: tuple[SampleMetadata, ...],
-    *,
-    identity_namespace: str,
-) -> str:
-    return _canonical_json_sha256(
-        {
-            "schema": "sample_metadata_snapshot",
-            "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-            "identity_namespace": identity_namespace,
-            "rows": [
-                {
-                    "sample_name": row.sample_name,
-                    "raw_stem": row.raw_stem,
-                    "injection_order": row.injection_order,
-                    "sample_role": row.sample_role,
-                    "batch_id": row.batch_id,
-                    "prep_batch_id": row.prep_batch_id,
-                    "matrix_type": row.matrix_type,
-                    "group": row.group,
-                    "excluded": row.excluded,
-                    "exclusion_reason": row.exclusion_reason,
-                }
-                for row in rows
-            ],
-        }
-    )
-
-
-def _sample_metadata_snapshot_id(content_sha256: str) -> str:
-    return f"{_SAMPLE_METADATA_SNAPSHOT_PREFIX}{content_sha256}"
-
-
 def _canonical_json_sha256(value: Mapping[str, object]) -> str:
     try:
         payload = json.dumps(
@@ -1336,9 +1272,3 @@ def _canonical_json_sha256(value: Mapping[str, object]) -> str:
             "sample identity content must be canonical JSON"
         ) from exc
     return hashlib.sha256(payload).hexdigest()
-
-
-def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise SampleMetadataError(f"{field} must be a lower-case SHA-256 digest")
-    return value

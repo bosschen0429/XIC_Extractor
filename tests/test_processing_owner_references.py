@@ -63,10 +63,6 @@ def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None
         identity_namespace=snapshot.identity_namespace,
     )
 
-    assert snapshot.snapshot_id == (
-        "xic.sample-metadata-snapshot:"
-        "51cb5f4fc98a99b9e67b439667f81b1166ee6fd1db65ffb75616e2877be371fe"
-    )
     assert identity.sample_identity_id == (
         "xic.sample:e322e40f4137abbc784c2d9a004e703ff63aeb29fa16bec19038cf9905d8d7f6"
     )
@@ -111,9 +107,7 @@ def test_sample_identity_ignores_projection_metadata_but_not_sample_rename() -> 
             identity_namespace="study:package-0-test",
         )
     )
-    assert _sample_snapshot(projection_changed).snapshot_id != (
-        _sample_snapshot(original).snapshot_id
-    )
+    assert _sample_snapshot(projection_changed) != (_sample_snapshot(original))
 
 
 def test_sample_resolution_fails_closed_for_missing_ambiguous_or_stale_alias() -> None:
@@ -165,7 +159,7 @@ def test_sample_snapshot_is_order_neutral_and_content_bound() -> None:
     mutated = _sample_snapshot(first, replace(second, raw_stem="raw_b_changed"))
 
     assert forward == reverse
-    assert forward.snapshot_id != mutated.snapshot_id
+    assert forward != mutated
 
 
 def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:

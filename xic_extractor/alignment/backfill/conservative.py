@@ -920,8 +920,7 @@ def _canonical_samples(
         raise ConservativeBackfillContractError(
             "sample_population must be unique and canonical-sorted"
         )
-    snapshots = {sample.snapshot.snapshot_id for sample in samples}
-    if len(snapshots) != 1:
+    if any(sample.snapshot != samples[0].snapshot for sample in samples[1:]):
         raise ConservativeBackfillContractError(
             "sample_population must come from one owner snapshot"
         )

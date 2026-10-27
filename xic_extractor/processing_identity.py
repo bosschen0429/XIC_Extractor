@@ -596,7 +596,7 @@ class ProcessingOwnerReferences:
                 "sample_resolutions must contain owner-resolved sample identities"
             )
         if any(
-            resolution.snapshot.snapshot_id != self.sample_snapshot.snapshot_id
+            resolution.snapshot != self.sample_snapshot
             for resolution in self.sample_resolutions
         ):
             raise IdentityContractError(
