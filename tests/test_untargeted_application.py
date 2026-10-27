@@ -114,7 +114,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     captured_write: dict[str, object] = {}
     reference_provenance = {
         "workbook_sha256": "a" * 64,
-        "content_sha256": "b" * 64,
+        "target_snapshot": '{"definitions": []}',
     }
     reference = SimpleNamespace(
         provenance=reference_provenance,
@@ -249,8 +249,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
-    assert metadata.get("known_istd_reference_content_sha256") == (
-        reference.provenance["content_sha256"] if with_reference else None
+    assert metadata.get("known_istd_reference_target_snapshot") == (
+        reference.provenance["target_snapshot"] if with_reference else None
     )
     assert closed == [True]
 
@@ -883,7 +883,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     reference_path = tmp_path / "reference.xlsx"
     _known_reference_workbook(reference_path)
     provenance = read_known_istd_reference(reference_path).provenance
-    assert "content_sha256" in provenance
+    assert "definitions" in json.loads(provenance["target_snapshot"])
     report = write_cid_nl_explanation(
         tmp_path / "reference.sqlite",
         **arguments,

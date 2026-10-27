@@ -29,8 +29,6 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
 
     assert metadata["schema_version"] == "alignment-results"
-    assert metadata["targeted_istd_anchor_identity"] == ""
-    assert metadata["targeted_istd_target_snapshot_id"] == ""
     assert (
         metadata["cross_sample_peak_group_policy"]
         == "cross_sample_peak_group_hypothesis"
@@ -70,39 +68,6 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
     assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
-
-
-def test_alignment_metadata_keeps_targeted_istd_fields_in_current_shape() -> None:
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
-        output_level="validation",
-        peak_config=_peak_config(),
-        targeted_istd_anchor_identity="anchor-id",
-        targeted_istd_target_snapshot_id="snapshot-id",
-    )
-
-    assert metadata["schema_version"] == "alignment-results"
-    assert metadata["targeted_istd_anchor_identity"] == "anchor-id"
-    assert metadata["targeted_istd_target_snapshot_id"] == "snapshot-id"
-
-
-def test_alignment_metadata_rejects_partial_targeted_istd_binding() -> None:
-    with pytest.raises(
-        ValueError,
-        match="anchor identity and target snapshot id must be provided together",
-    ):
-        alignment_metadata(
-            discovery_batch_index=Path("batch.csv"),
-            raw_dir=Path("raw"),
-            dll_dir=Path("dll"),
-            owner_backfill_xic_backend="raw",
-            output_level="validation",
-            peak_config=_peak_config(),
-            targeted_istd_anchor_identity="anchor-id",
-        )
 
 
 def test_alignment_metadata_records_owner_build_xic_backend() -> None:

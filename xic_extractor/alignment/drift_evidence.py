@@ -19,6 +19,7 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
+    target_list_snapshot_payload,
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 
@@ -59,34 +60,19 @@ class KnownIstdReference:
         default=None, init=False, repr=False, compare=False
     )
 
-    @cached_property
-    def content_sha256(self) -> str:
-        """Identify declared targets and measured coordinates, not source bytes."""
-        payload = {
-            "schema_version": "known_istd_reference_content",
-            "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
-            "observed_labels": self.anchor.observed_labels,
-            "coordinates": tuple(
-                (label, sample, float(rt), float(delta))
-                for label, sample, rt, delta in self.coordinates
-            ),
-        }
-        return hashlib.sha256(
-            json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            ).encode("utf-8")
-        ).hexdigest()
-
     @property
     def provenance(self) -> dict[str, str]:
         return {
             "workbook_path": self.workbook_path,
             "workbook_sha256": self.workbook_sha256,
-            "content_sha256": self.content_sha256,
-            "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
+            "target_snapshot": json.dumps(
+                target_list_snapshot_payload(self.anchor.target_snapshot),
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ),
+            "coordinates": json.dumps(self.coordinates, allow_nan=False),
+            "observed_labels": json.dumps(self.anchor.observed_labels),
             "policy": "measured_istd_shared_rt_fit_same_target_fallback",
         }
 

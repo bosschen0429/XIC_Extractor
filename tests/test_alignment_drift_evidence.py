@@ -199,9 +199,7 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
     assert changed.coordinates == reference.coordinates
     assert changed.workbook_sha256 != reference.workbook_sha256
     assert changed.anchor.target_snapshot == reference.anchor.target_snapshot
-    assert (
-        changed.provenance["content_sha256"] == reference.provenance["content_sha256"]
-    )
+    assert changed.provenance["coordinates"] == reference.provenance["coordinates"]
 
 
 def test_known_reference_content_identity_tracks_declared_and_measured_content():
@@ -236,17 +234,14 @@ def test_known_reference_content_identity_tracks_declared_and_measured_content()
     )
 
     assert (
-        reference.provenance["content_sha256"]
-        == equivalent.provenance["content_sha256"]
+        reference.anchor == equivalent.anchor
+        and reference.coordinates == equivalent.coordinates
     )
     assert reference.workbook_sha256 == changed_rt.workbook_sha256
+    assert reference.provenance["coordinates"] != changed_rt.provenance["coordinates"]
     assert (
-        reference.provenance["content_sha256"]
-        != changed_rt.provenance["content_sha256"]
-    )
-    assert (
-        reference.provenance["content_sha256"]
-        != changed_target.provenance["content_sha256"]
+        reference.provenance["target_snapshot"]
+        != changed_target.provenance["target_snapshot"]
     )
 
 

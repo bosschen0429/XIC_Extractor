@@ -78,25 +78,11 @@ def test_readiness_fails_closed_when_full_cohort_contract_is_not_canonical() -> 
     )
 
 
-def test_readiness_accepts_targeted_istd_alignment_metadata() -> None:
-    metadata = _current_full_cohort_metadata(targeted_istd=True)
-
-    index = readiness.build_transfer_readiness(
-        promotion_summary=_promotion_summary(promote_count=11),
-        activation_acceptance_rows=[_activation_acceptance_row()],
-        full_cohort_metadata=metadata,
-        full_cohort_counts=_full_cohort_counts(),
-    )
-
-    assert index.readiness_row["full_cohort_metadata_contract_status"] == "pass"
-    assert index.readiness_row["full_cohort_artifact_status"] == "pass"
-
-
 def test_readiness_accepts_current_unanchored_alignment_metadata() -> None:
     index = readiness.build_transfer_readiness(
         promotion_summary=_promotion_summary(promote_count=11),
         activation_acceptance_rows=[_activation_acceptance_row()],
-        full_cohort_metadata=_current_full_cohort_metadata(targeted_istd=False),
+        full_cohort_metadata=_current_full_cohort_metadata(),
         full_cohort_counts=_full_cohort_counts(),
     )
 
@@ -105,7 +91,7 @@ def test_readiness_accepts_current_unanchored_alignment_metadata() -> None:
 
 def test_readiness_rejects_historical_targeted_istd_metadata() -> None:
     metadata = {
-        **_current_full_cohort_metadata(targeted_istd=True),
+        **_current_full_cohort_metadata(),
         "schema_version": "unsupported_alignment_results",
     }
 
@@ -123,8 +109,6 @@ def test_readiness_rejects_legacy_matrix_policy_under() -> None:
     metadata = {
         **_full_cohort_metadata(),
         "matrix_value_policy": "gaussian15_positive_asls_residual_primary",
-        "targeted_istd_anchor_identity": "anchor-id",
-        "targeted_istd_target_snapshot_id": "snapshot-id",
     }
 
     index = readiness.build_transfer_readiness(
@@ -135,24 +119,6 @@ def test_readiness_rejects_legacy_matrix_policy_under() -> None:
     )
 
     assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
-
-
-def test_readiness_rejects_incomplete_targeted_istd_alignment_metadata() -> None:
-    metadata = _current_full_cohort_metadata(targeted_istd=True)
-    metadata.pop("targeted_istd_target_snapshot_id")
-
-    index = readiness.build_transfer_readiness(
-        promotion_summary=_promotion_summary(promote_count=11),
-        activation_acceptance_rows=[_activation_acceptance_row()],
-        full_cohort_metadata=metadata,
-        full_cohort_counts=_full_cohort_counts(),
-    )
-
-    assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
-    assert (
-        "full_cohort_metadata_contract_not_canonical"
-        in (index.readiness_row["hard_fail_reasons"])
-    )
 
 
 def test_readiness_fails_closed_when_full_cohort_acceptance_gate_fails() -> None:
@@ -294,14 +260,12 @@ def test_cli_builds_readiness_from_artifact_paths(tmp_path: Path) -> None:
         full_cohort_dir / "alignment_matrix.tsv",
         [{"Mz": "100", "RT": "5", "S1": "1", "S2": ""}],
     )
-    _write_tsv(
-        full_cohort_dir / "alignment_review.tsv", [{"feature_family_id": "FAM001"}]
-    )
+    _write_tsv(full_cohort_dir / "alignment_review.tsv", [{"feature_id": "FAM001"}])
     _write_tsv(
         full_cohort_dir / "alignment_cells.tsv",
         [
-            {"feature_family_id": "FAM001", "sample_stem": "S1"},
-            {"feature_family_id": "FAM001", "sample_stem": "S2"},
+            {"feature_id": "FAM001", "sample_stem": "S1"},
+            {"feature_id": "FAM001", "sample_stem": "S2"},
         ],
     )
     _write_tsv(full_cohort_dir / "skipped_evidence_ledger.tsv", [{"reason": "none"}])
@@ -384,14 +348,12 @@ def test_cli_accepts_manual_same_peak_review_summary(tmp_path: Path) -> None:
         full_cohort_dir / "alignment_matrix.tsv",
         [{"Mz": "100", "RT": "5", "S1": "1", "S2": ""}],
     )
-    _write_tsv(
-        full_cohort_dir / "alignment_review.tsv", [{"feature_family_id": "FAM001"}]
-    )
+    _write_tsv(full_cohort_dir / "alignment_review.tsv", [{"feature_id": "FAM001"}])
     _write_tsv(
         full_cohort_dir / "alignment_cells.tsv",
         [
-            {"feature_family_id": "FAM001", "sample_stem": "S1"},
-            {"feature_family_id": "FAM001", "sample_stem": "S2"},
+            {"feature_id": "FAM001", "sample_stem": "S1"},
+            {"feature_id": "FAM001", "sample_stem": "S2"},
         ],
     )
     full_cohort_acceptance_gate_summary = (
@@ -489,10 +451,10 @@ def _activation_acceptance_row(count: str = "11") -> dict[str, str]:
 
 
 def _full_cohort_metadata() -> dict[str, str]:
-    return _current_full_cohort_metadata(targeted_istd=False)
+    return _current_full_cohort_metadata()
 
 
-def _current_full_cohort_metadata(*, targeted_istd: bool) -> dict[str, str]:
+def _current_full_cohort_metadata() -> dict[str, str]:
     return alignment_metadata(
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
@@ -502,8 +464,6 @@ def _current_full_cohort_metadata(*, targeted_istd: bool) -> dict[str, str]:
         peak_config=_peak_config(),
         backfill_scope="production-equivalent",
         audit_evidence_mode="none",
-        targeted_istd_anchor_identity="anchor-id" if targeted_istd else "",
-        targeted_istd_target_snapshot_id=("snapshot-id" if targeted_istd else ""),
     )
 
 

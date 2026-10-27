@@ -162,16 +162,9 @@ class CidNlCellGroupContext:
         return self.method_subject.method_subject_id
 
     @property
-    def target_key_id(self) -> str | None:
-        """Targeted compatibility projection; not group identity."""
-
-        return self.method_subject.target_key_id
-
-    @property
-    def target_definition_id(self) -> str | None:
-        """Targeted compatibility projection; not group identity."""
-
-        return self.method_subject.target_definition_id
+    def target_label(self) -> str | None:
+        target = self.method_subject.target
+        return None if target is None else target.lookup_label
 
     @property
     def support_assessment_artifact_content_ids(self) -> tuple[str, ...]:

@@ -336,7 +336,7 @@ def _build_publication_output(
     for result in finalized_results:
         target = result.completed_projection.row_binding.target.definition
         target_label = target.target.label
-        target_id = target.target_definition_id
+        target_id = target_label
         if target_label in target_ids_by_label:
             raise TargetedOutputBoundaryError(
                 "finalized Targeted result population contains duplicate Targets"
@@ -1080,7 +1080,7 @@ def _execute_target(
                 capture_inputs,
             )
         )
-    work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
+    work_unit_key = f"targeted-workflow:{target.lookup_label}"
     # RAW acquisition has already completed; this attempt acknowledges its
     # retained artifact handoff before scientific composition begins.
     runtime = start_runtime_attempt(
@@ -1185,7 +1185,7 @@ def _mint_no_observation_capture_artifact(
             "schema_version": "targeted_no_observation_capture",
             "processing_request_id": owners.request.processing_request_id,
             "processing_attempt_id": owners.attempt.processing_attempt_id,
-            "target_definition_id": target.definition.target_definition_id,
+            "target_label": target.lookup_label,
             "captures": [
                 {
                     "candidate_id": item.candidate_id,

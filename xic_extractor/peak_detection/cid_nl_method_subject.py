@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -39,10 +38,6 @@ CidNlMethodSubjectKind: TypeAlias = Literal[
 ]
 
 _SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
-_TARGET_SNAPSHOT_ID_PREFIX = "xic.target-list-snapshot:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CidNlMethodSubjectContractError(ValueError):
@@ -90,9 +85,7 @@ class CidNlMethodSubject:
     precursor_mz: float
     precursor_tolerance_ppm: float
     neutral_loss_da: float | None
-    target_snapshot_id: str | None = None
-    target_key_id: str | None = None
-    target_definition_id: str | None = None
+    target: ResolvedTargetDefinition | None = None
     composition: CidNlComposition | None = None
 
     def __post_init__(self) -> None:
@@ -121,34 +114,14 @@ class CidNlMethodSubject:
             raise CidNlMethodSubjectContractError(
                 "subject_kind must be targeted_definition or untargeted_precursor"
             )
-        target_ids = (
-            self.target_snapshot_id,
-            self.target_key_id,
-            self.target_definition_id,
-        )
         if self.subject_kind == "targeted_definition":
-            if any(value is None for value in target_ids):
+            if not isinstance(self.target, ResolvedTargetDefinition):
                 raise CidNlMethodSubjectContractError(
-                    "targeted method subject requires the complete target identity"
+                    "targeted method subject requires its resolved Target"
                 )
-            _validate_typed_id(
-                self.target_snapshot_id,
-                prefix=_TARGET_SNAPSHOT_ID_PREFIX,
-                field="target_snapshot_id",
-            )
-            _validate_typed_id(
-                self.target_key_id,
-                prefix=_TARGET_KEY_ID_PREFIX,
-                field="target_key_id",
-            )
-            _validate_typed_id(
-                self.target_definition_id,
-                prefix=_TARGET_DEFINITION_ID_PREFIX,
-                field="target_definition_id",
-            )
-        elif any(value is not None for value in target_ids):
+        elif self.target is not None:
             raise CidNlMethodSubjectContractError(
-                "Untargeted method subject cannot carry configured Target identity"
+                "Untargeted method subject cannot carry a configured Target"
             )
 
         object.__setattr__(self, "precursor_mz", precursor_mz)
@@ -163,9 +136,7 @@ class CidNlMethodSubject:
             precursor_mz=precursor_mz,
             precursor_tolerance_ppm=precursor_tolerance_ppm,
             neutral_loss_da=neutral_loss_da,
-            target_snapshot_id=self.target_snapshot_id,
-            target_key_id=self.target_key_id,
-            target_definition_id=self.target_definition_id,
+            target=self.target,
             composition=self.composition,
         )
         if self.method_subject_id != expected_id:
@@ -254,9 +225,7 @@ def cid_nl_method_subject_from_target(
         precursor_mz=target_value.mz,
         precursor_tolerance_ppm=target_value.ppm_tol,
         neutral_loss_da=neutral_loss_da,
-        target_snapshot_id=target.snapshot.snapshot_id,
-        target_key_id=target.definition.target_key.target_key_id,
-        target_definition_id=target.definition.target_definition_id,
+        target=target,
     )
 
 
@@ -893,7 +862,7 @@ def validate_cid_nl_method_subject_binding(
                 "targeted method subject mismatches its target definition"
             )
         snapshot = processing_owners.target_snapshot
-        if snapshot is None or snapshot.snapshot_id != target.snapshot.snapshot_id:
+        if snapshot is None or snapshot != target.snapshot:
             raise CidNlMethodSubjectContractError(
                 "targeted method subject is outside the processing request"
             )
@@ -960,9 +929,7 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         "precursor_mz",
         "precursor_tolerance_ppm",
         "neutral_loss_da",
-        "target_snapshot_id",
-        "target_key_id",
-        "target_definition_id",
+        "target",
         "composition",
     }
     if set(payload) != expected_fields:
@@ -983,14 +950,9 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         raise CidNlMethodSubjectContractError(
             "Untargeted request method_subject_id must be text"
         )
-    target_ids = (
-        payload["target_snapshot_id"],
-        payload["target_key_id"],
-        payload["target_definition_id"],
-    )
-    if any(value is not None for value in target_ids):
+    if payload["target"] is not None:
         raise CidNlMethodSubjectContractError(
-            "Untargeted request method subject cannot carry Target identity"
+            "Untargeted request method subject cannot carry a configured Target"
         )
     try:
         composition = None
@@ -1062,9 +1024,7 @@ def _validate_untargeted_subject_batch(
                 precursor_mz=subject.precursor_mz,
                 precursor_tolerance_ppm=subject.precursor_tolerance_ppm,
                 neutral_loss_da=subject.neutral_loss_da,
-                target_snapshot_id=subject.target_snapshot_id,
-                target_key_id=subject.target_key_id,
-                target_definition_id=subject.target_definition_id,
+                target=subject.target,
                 composition=subject.composition,
             )
         except (TypeError, ValueError) as exc:
@@ -1135,9 +1095,7 @@ def _mint_subject(
     precursor_mz: float,
     precursor_tolerance_ppm: float,
     neutral_loss_da: float | None,
-    target_snapshot_id: str | None = None,
-    target_key_id: str | None = None,
-    target_definition_id: str | None = None,
+    target: ResolvedTargetDefinition | None = None,
     composition: CidNlComposition | None = None,
 ) -> CidNlMethodSubject:
     precursor = _positive_finite_float(precursor_mz, field="precursor_mz")
@@ -1156,18 +1114,14 @@ def _mint_subject(
             precursor_mz=precursor,
             precursor_tolerance_ppm=tolerance,
             neutral_loss_da=neutral_loss,
-            target_snapshot_id=target_snapshot_id,
-            target_key_id=target_key_id,
-            target_definition_id=target_definition_id,
+            target=target,
             composition=composition,
         ),
         subject_kind=subject_kind,
         precursor_mz=precursor,
         precursor_tolerance_ppm=tolerance,
         neutral_loss_da=neutral_loss,
-        target_snapshot_id=target_snapshot_id,
-        target_key_id=target_key_id,
-        target_definition_id=target_definition_id,
+        target=target,
         composition=composition,
     )
 
@@ -1178,9 +1132,7 @@ def _method_subject_id(
     precursor_mz: float,
     precursor_tolerance_ppm: float,
     neutral_loss_da: float | None,
-    target_snapshot_id: str | None,
-    target_key_id: str | None,
-    target_definition_id: str | None,
+    target: ResolvedTargetDefinition | None,
     composition: CidNlComposition | None = None,
 ) -> str:
     payload = {
@@ -1192,9 +1144,7 @@ def _method_subject_id(
         "precursor_mz": precursor_mz,
         "precursor_tolerance_ppm": precursor_tolerance_ppm,
         "neutral_loss_da": neutral_loss_da,
-        "target_snapshot_id": target_snapshot_id,
-        "target_key_id": target_key_id,
-        "target_definition_id": target_definition_id,
+        "target": asdict(target) if target is not None else None,
         "composition": asdict(composition) if composition is not None else None,
     }
     encoded = json.dumps(
@@ -1214,19 +1164,6 @@ def _positive_finite_float(value: object, *, field: str) -> float:
     if not math.isfinite(parsed) or parsed <= 0.0:
         raise CidNlMethodSubjectContractError(f"{field} must be finite and positive")
     return parsed
-
-
-def _validate_typed_id(
-    value: object,
-    *,
-    prefix: str,
-    field: str,
-) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise CidNlMethodSubjectContractError(f"{field} must use the {prefix!r} prefix")
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise CidNlMethodSubjectContractError(f"{field} must contain a SHA-256 digest")
-    return value
 
 
 __all__ = [

@@ -64,8 +64,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
         "group_hypothesis_id": content.group_hypothesis_id,
         "group_owner_ids": list(content.group_owner_ids),
         "group_method_subject_id": content.group_method_subject_id,
-        "group_target_key_id": content.group_target_key_id,
-        "group_target_definition_id": content.group_target_definition_id,
+        "group_target_label": content.group_target_label,
         "group_support_assessment_artifact_content_ids": list(
             content.group_support_assessment_artifact_content_ids
         ),

@@ -431,10 +431,8 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert all(
-        cell.content.group_target_key_id
-        == fixture.target.definition.target_key.target_key_id
-        and cell.content.group_target_definition_id
-        == fixture.target.definition.target_definition_id
+        cell.content.group_target_label
+        == fixture.target.definition.target_key.target_label
         for cell in spine.cells
     )
 

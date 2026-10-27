@@ -506,7 +506,7 @@ def targeted_capture_candidate_id(
     return ":".join(
         (
             "targeted-capture",
-            target.definition.target_definition_id,
+            target.lookup_label,
             sample.identity.sample_identity_id,
         )
     )

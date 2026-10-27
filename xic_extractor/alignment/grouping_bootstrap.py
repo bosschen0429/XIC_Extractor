@@ -250,7 +250,7 @@ def bootstrap_cid_nl_initial_population(
                     )
                 )
     searched_no_observation = not owners and all(
-        assessment.content.target_snapshot_id is not None
+        assessment.content.method_subject.target is not None
         and assessment.content.technical_state == "evaluated"
         and assessment.content.evaluation_receipt.acquisition_supported
         and assessment.content.evaluation_receipt.search_completed

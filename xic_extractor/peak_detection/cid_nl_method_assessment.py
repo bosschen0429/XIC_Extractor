@@ -383,24 +383,6 @@ class CidNlMethodAssessmentContent:
                 "reason_codes must be non-empty, unique, and canonical-sorted"
             )
 
-    @property
-    def target_snapshot_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_snapshot_id
-
-    @property
-    def target_key_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_key_id
-
-    @property
-    def target_definition_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_definition_id
-
 
 @dataclass(frozen=True, slots=True)
 class CidNlMethodAssessmentRef:

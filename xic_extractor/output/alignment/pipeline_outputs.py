@@ -174,8 +174,6 @@ def alignment_metadata(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
     owner_backfill_peak_fact_provenance_row_count: int = 0,
-    targeted_istd_anchor_identity: str = "",
-    targeted_istd_target_snapshot_id: str = "",
 ) -> dict[str, str]:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
@@ -187,17 +185,8 @@ def alignment_metadata(
         raise ValueError(
             "owner_backfill_peak_fact_provenance_row_count must be non-negative"
         )
-    has_targeted_istd_anchor = bool(targeted_istd_anchor_identity)
-    has_targeted_istd_snapshot = bool(targeted_istd_target_snapshot_id)
-    if has_targeted_istd_anchor != has_targeted_istd_snapshot:
-        raise ValueError(
-            "targeted ISTD anchor identity and target snapshot id must be "
-            "provided together"
-        )
     metadata = {
         "schema_version": "alignment-results",
-        "targeted_istd_anchor_identity": targeted_istd_anchor_identity,
-        "targeted_istd_target_snapshot_id": targeted_istd_target_snapshot_id,
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),

@@ -100,7 +100,7 @@ def resolve_istd_anchored_backfill(
     # The fixed Target is the identity: its confirmed peers form one group
     # however far RT drifts over the run. Two bound owners in one sample remain
     # an unresolved conflict rather than a choice between recovery windows.
-    target_identity = target.definition.target_definition_id
+    target_identity = target.lookup_label
     groups = (
         construct_cross_sample_peak_group_hypotheses(
             owners,

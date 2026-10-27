@@ -476,7 +476,7 @@ def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
     )
     assert {manifest.work_unit_keys[0] for manifest in manifests} == {
         "targeted-workflow:"
-        + result.completed_projection.row_binding.target.definition.target_definition_id
+        + result.completed_projection.row_binding.target.lookup_label
         for result in finalized
     }
 

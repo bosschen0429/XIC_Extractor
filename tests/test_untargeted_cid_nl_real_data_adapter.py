@@ -684,7 +684,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
 
     assessment = result.assessment_input.assessment
     assert assessment.content.method_subject.subject_kind == "untargeted_precursor"
-    assert assessment.content.target_definition_id is None
+    assert assessment.content.method_subject.target is None
     assert assessment.content.method_result == "SUPPORT"
     assert tuple(
         sorted(

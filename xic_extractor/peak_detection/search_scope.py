@@ -880,7 +880,7 @@ def target_ms1_subject_id(target: ResolvedTargetDefinition) -> str:
         raise SearchScopeContractError("MS1 Target subject must be owner-resolved")
     if target.definition.target.neutral_loss_da is not None:
         raise SearchScopeContractError("MS1 Target subject requires neutral loss off")
-    return f"target-ms1:{target.definition.target_definition_id}"
+    return f"target-ms1:{target.lookup_label}"
 
 
 def _target_capture_subject_id(target: ResolvedTargetDefinition) -> str:

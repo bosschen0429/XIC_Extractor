@@ -645,10 +645,6 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
     assert (
         fixture.target.definition.target.mz == fixture.other_target.definition.target.mz
     )
-    assert universe.target_key == (
-        facts.group_context.target_key_id,
-        facts.group_context.target_definition_id,
-    )
     with pytest.raises(
         ConservativeBackfillContractError,
         match="exact sample and target",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_observation.observations import (
@@ -386,8 +386,8 @@ def _decision_basis(
         evidence_identity: dict[str, object]
         subject_kind = "target"
         subject_identity: dict[str, object] = {
-            "target_definition_id": subject.target.definition.target_definition_id,
-            "target_key_id": subject.target.definition.target_key.target_key_id,
+            "target": asdict(subject.target.definition.target),
+            "target_label": subject.target.definition.target_key.target_label,
             "row_binding_variant": subject.row_binding.variant,
             "eligible_group_ids": tuple(
                 group.group_hypothesis_id
@@ -478,7 +478,7 @@ def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
     if type(subject) is TargetCellSubject:
         return (
             "target",
-            subject.target.definition.target_definition_id,
+            subject.target.lookup_label,
             subject.canonical_sample.identity.sample_identity_id,
         )
     if type(subject) is GroupCellSubject:

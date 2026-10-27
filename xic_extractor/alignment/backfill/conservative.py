@@ -121,15 +121,6 @@ class ConservativeBackfillCandidateUniverse:
         return _group_method_subject_id(self.group_facts[0])
 
     @property
-    def target_key(self) -> tuple[str, str] | None:
-        """Targeted compatibility projection; mapping authority uses subject ID."""
-
-        subject = self.group_facts[0].group_context.method_subject
-        if subject.target_key_id is None or subject.target_definition_id is None:
-            return None
-        return (subject.target_key_id, subject.target_definition_id)
-
-    @property
     def candidate_peaks(self) -> tuple[PeakObservationRef, ...]:
         return self.candidate_assessment.candidate_peaks
 
@@ -146,12 +137,6 @@ class ConservativeBackfillEvidence:
     @property
     def method_subject_id(self) -> str:
         return self.candidate_universe.method_subject_id
-
-    @property
-    def target_key(self) -> tuple[str, str] | None:
-        """Targeted compatibility projection; mapping authority uses subject ID."""
-
-        return self.candidate_universe.target_key
 
 
 @final

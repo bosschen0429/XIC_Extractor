@@ -58,8 +58,7 @@ class CellObservationContent:
     group_hypothesis_id: str
     group_owner_ids: tuple[str, ...]
     group_method_subject_id: str
-    group_target_key_id: str | None
-    group_target_definition_id: str | None
+    group_target_label: str | None
     group_support_assessment_artifact_content_ids: tuple[str, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
@@ -265,8 +264,7 @@ def mint_cell_observation_ref(
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
-        group_target_key_id=group_context.target_key_id,
-        group_target_definition_id=group_context.target_definition_id,
+        group_target_label=group_context.target_label,
         group_support_assessment_artifact_content_ids=(
             group_context.support_assessment_artifact_content_ids
         ),
