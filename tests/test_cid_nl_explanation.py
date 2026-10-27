@@ -565,7 +565,7 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     assert not failed.with_name(failed.name + ".tmp").exists()
 
 
-def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
+def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "normalized.sqlite"
@@ -606,12 +606,27 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
         detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
         assert detail["records"] == {"facts": [{"value": 1}]}
 
-    # Materialize the logical view only for this legacy-reader fixture.
     with sqlite3.connect(report) as connection:
-        connection.execute("CREATE TABLE legacy_links AS SELECT * FROM links")
-        connection.execute("DROP VIEW links")
-        connection.execute("ALTER TABLE legacy_links RENAME TO links")
-    assert set(read_explanation_metadata(report).links) == expected
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT DISTINCT typeof(record_rowid) FROM record_links"
+        ).fetchall() == [("integer",)]
+        connection.execute("PRAGMA foreign_keys=ON")
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+            connection.execute("DELETE FROM records")
+
+
+def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+
+    report = tmp_path / "missing-candidate.sqlite"
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        with ExplanationReportWriter(report) as writer:
+            writer.add_record("facts", "one", {"value": 1}, (("missing", "S1"),))
+            writer.finalize(_summary_fixture({}))
+    assert not report.exists()
+    assert not report.with_name(report.name + ".tmp").exists()
 
 
 def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):

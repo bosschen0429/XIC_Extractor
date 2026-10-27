@@ -95,7 +95,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         "'method_assessments','exclusions')"
     )
     for kind, rid, payload in db.execute(
-        "SELECT * FROM records WHERE kind IN " + kinds
+        "SELECT kind, record_id, payload FROM records WHERE kind IN " + kinds
     ):
         records.setdefault(kind, {})[rid] = _object(payload)
     links = defaultdict(set)

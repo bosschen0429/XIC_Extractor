@@ -969,7 +969,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, identity, json.dumps(payload)),
                 )
                 _insert_link(connection, ("C1", "S1", kind, identity))

@@ -39,12 +39,14 @@ def _insert_link(
     set_id = connection.execute(
         "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
     ).fetchone()[0]
+    connection.execute("INSERT INTO link_sets VALUES (?)", (set_id,))
     connection.execute(
         "INSERT OR IGNORE INTO link_members VALUES (?, ?, ?)",
         (set_id, candidate_id, sample_id),
     )
     connection.execute(
-        "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO record_links "
+        "SELECT ?, id FROM records WHERE kind=? AND record_id=?",
         (set_id, kind, record_id),
     )
 
@@ -53,10 +55,15 @@ def _delete_links(
     connection: sqlite3.Connection, *, kind: str, record_id: str | None = None
 ) -> None:
     if record_id is None:
-        connection.execute("DELETE FROM record_links WHERE kind=?", (kind,))
+        connection.execute(
+            "DELETE FROM record_links WHERE record_rowid IN "
+            "(SELECT id FROM records WHERE kind=?)",
+            (kind,),
+        )
     else:
         connection.execute(
-            "DELETE FROM record_links WHERE kind=? AND record_id=?",
+            "DELETE FROM record_links WHERE record_rowid IN "
+            "(SELECT id FROM records WHERE kind=? AND record_id=?)",
             (kind, record_id),
         )
 
@@ -320,7 +327,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
         _insert_link(
@@ -587,7 +594,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         for index in range(2, row_count + 1):
             rid = f"row-{index:02d}"
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "rows",
                     rid,
@@ -656,7 +663,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
         _insert_link(connection, ("C2", "S2", "final_groups", "G1"))
         for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "terminal_subjects",
                     cid,
@@ -726,7 +733,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
         ):
             _insert_link(connection, ("C2", "S2", kind, rid))
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
@@ -890,7 +897,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                 "kind": kind,
             }
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 ("capture_evidence", pid, json.dumps(capture)),
             )
             _insert_link(
@@ -964,7 +971,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "capture_evidence",
                 2,
@@ -981,7 +988,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "method_assessments",
                 "recovery-method",
@@ -1057,7 +1064,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             (json.dumps(decision),),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_observations",
                 "cell-observation-01",
@@ -1123,7 +1130,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
             _insert_link(connection, ("C1", "S1", kind, ref))
@@ -1221,7 +1228,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
                 _insert_link(
@@ -1245,7 +1252,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 ),
             )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "initial_edges",
                 "edge-c1-c2",
@@ -1389,7 +1396,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(payload)),
             )
             _insert_link(
@@ -1437,7 +1444,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         )
         for ref, left_id, right_id, disposition, evidence, links in edges:
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "initial_edges",
                     ref,
@@ -1535,7 +1542,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
                 _insert_link(
@@ -1543,7 +1550,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                     (candidate_id, "S1", kind, ref),
                 )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "initial_edges",
                 "edge-shared-multirow",
@@ -1757,7 +1764,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
@@ -1809,7 +1816,7 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-extra",
@@ -1853,7 +1860,7 @@ def test_structured_external_evidence_refs_remain_technical_without_fake_links(
     }
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "method_assessments",
                 "assessment-01",
@@ -1894,7 +1901,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
@@ -1924,7 +1931,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("method-s2", "S2", "another_recorded_reason"),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "method_assessments",
                     ref,
@@ -1952,7 +1959,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("edge-s2-only", (("C2", "S2"),)),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "initial_edges",
                     ref,
@@ -2024,7 +2031,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                 ),
             )
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "exclusions",
                     f"exclusion-{candidate_id.lower()}",
@@ -2093,7 +2100,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     area = 28578.925063705414
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "method_subjects",
                 "format-01",
@@ -2198,7 +2205,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
         )
         _insert_link(
@@ -2211,7 +2218,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
             )
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "cell_decisions",
                     "cd-02",

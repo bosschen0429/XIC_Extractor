@@ -208,10 +208,12 @@ class ExplanationReportWriter:
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self._record_hashes: dict[tuple[str, str | int], bytes] = {}
-        self._buffered_records: list[tuple[str, str | int, str | bytes]] = []
+        self._record_rowids: dict[tuple[str, str | int], int] = {}
+        self._buffered_records: list[tuple[int, str, str | int, str | bytes]] = []
         self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
         self._buffered_link_members: list[tuple[int, str, str]] = []
-        self._buffered_record_links: list[tuple[int, str, str | int]] = []
+        self._buffered_record_links: list[tuple[int, int]] = []
+        self._buffered_link_sets: list[tuple[int]] = []
         self._buffered_curve_payloads: list[tuple[int, str, str, str, str, bytes]] = []
         self._curve_rowids: dict[tuple[str, str, str, bytes], int] = {}
 
@@ -222,6 +224,7 @@ class ExplanationReportWriter:
             pass
         try:
             self.connection = sqlite3.connect(self.temporary)
+            self.connection.execute("PRAGMA foreign_keys = ON;")
             self.connection.execute(
                 "PRAGMA page_size = 4096;"
                 if self.review_only
@@ -235,19 +238,26 @@ class ExplanationReportWriter:
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
                 "payload TEXT NOT NULL, PRIMARY KEY(candidate_id, sample_id));"
-                "CREATE TABLE records (kind TEXT, record_id TEXT, "
-                "payload TEXT NOT NULL, "
-                "PRIMARY KEY(kind, record_id));"
+                "CREATE TABLE records (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, "
+                "record_id TEXT NOT NULL, payload TEXT NOT NULL, "
+                "UNIQUE(kind, record_id));"
+                "CREATE TABLE link_sets (id INTEGER PRIMARY KEY);"
                 "CREATE TABLE link_members (set_id INTEGER, candidate_id TEXT, "
-                "sample_id TEXT, PRIMARY KEY(set_id, candidate_id, sample_id)) "
+                "sample_id TEXT, PRIMARY KEY(set_id, candidate_id, sample_id), "
+                "FOREIGN KEY(set_id) REFERENCES link_sets(id), "
+                "FOREIGN KEY(candidate_id, sample_id) "
+                "REFERENCES candidates(candidate_id, sample_id) "
+                "DEFERRABLE INITIALLY DEFERRED) "
                 "WITHOUT ROWID;"
                 "CREATE INDEX idx_link_members_candidate "
                 "ON link_members(candidate_id, sample_id, set_id);"
-                "CREATE TABLE record_links (set_id INTEGER, kind TEXT, "
-                "record_id TEXT, PRIMARY KEY(set_id, kind, record_id)) WITHOUT ROWID;"
+                "CREATE TABLE record_links (set_id INTEGER REFERENCES link_sets(id), "
+                "record_rowid INTEGER REFERENCES records(id), "
+                "PRIMARY KEY(set_id, record_rowid)) WITHOUT ROWID;"
                 "CREATE VIEW links AS SELECT DISTINCT m.candidate_id, m.sample_id, "
                 "r.kind, r.record_id FROM link_members m "
-                "JOIN record_links r USING(set_id);"
+                "JOIN record_links l USING(set_id) "
+                "JOIN records r ON r.id=l.record_rowid;"
                 "CREATE TABLE curve_payloads (payload_id INTEGER PRIMARY KEY, "
                 "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
                 "codec TEXT NOT NULL, payload BLOB NOT NULL);"
@@ -309,8 +319,10 @@ class ExplanationReportWriter:
         is_new = existing_hash is None
         if is_new:
             self._record_hashes[key] = content_hash
+            self._record_rowids[key] = len(self._record_rowids) + 1
             self._buffered_records.append(
                 (
+                    self._record_rowids[key],
                     kind,
                     identity,
                     zlib.compress(encoded.encode("utf-8"), 1)
@@ -359,10 +371,13 @@ class ExplanationReportWriter:
         if set_id is None:
             set_id = len(self._related_sets)
             self._related_sets[members] = set_id
+            self._buffered_link_sets.append((set_id,))
             self._buffered_link_members.extend(
                 (set_id, cid, sid) for cid, sid in members
             )
-        self._buffered_record_links.append((set_id, kind, identity))
+        self._buffered_record_links.append(
+            (set_id, self._record_rowids[kind, identity])
+        )
         if len(self._buffered_record_links) + len(self._buffered_link_members) >= 50000:
             self._flush_links()
 
@@ -408,32 +423,31 @@ class ExplanationReportWriter:
                 self._buffered_curve_payloads,
             )
             self._buffered_curve_payloads.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def _flush_records(self) -> None:
         if self._buffered_records:
             self._connection().executemany(
-                "INSERT INTO records VALUES (?, ?, ?)", self._buffered_records
+                "INSERT INTO records VALUES (?, ?, ?, ?)", self._buffered_records
             )
             self._buffered_records.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def _flush_links(self) -> None:
         if self._buffered_record_links:
+            self._flush_records()
+            self._connection().executemany(
+                "INSERT INTO link_sets VALUES (?)", self._buffered_link_sets
+            )
             self._connection().executemany(
                 "INSERT INTO link_members VALUES (?, ?, ?)",
                 self._buffered_link_members,
             )
             self._connection().executemany(
-                "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO record_links VALUES (?, ?)",
                 self._buffered_record_links,
             )
+            self._buffered_link_sets.clear()
             self._buffered_link_members.clear()
             self._buffered_record_links.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def candidate_examples(self) -> list[dict[str, Any]]:
         if self._candidates:
@@ -511,8 +525,10 @@ class ExplanationReportWriter:
             self.connection = None
         self._candidates.clear()
         self._record_hashes.clear()
+        self._record_rowids.clear()
         self._buffered_records.clear()
         self._related_sets.clear()
+        self._buffered_link_sets.clear()
         self._buffered_link_members.clear()
         self._buffered_record_links.clear()
         self._buffered_curve_payloads.clear()
@@ -569,7 +585,10 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     expected = {
         "metadata": ("key", "payload"),
         "candidates": ("candidate_id", "sample_id", "payload"),
-        "records": ("kind", "record_id", "payload"),
+        "records": ("id", "kind", "record_id", "payload"),
+        "link_sets": ("id",),
+        "link_members": ("set_id", "candidate_id", "sample_id"),
+        "record_links": ("set_id", "record_rowid"),
         "links": ("candidate_id", "sample_id", "kind", "record_id"),
         "curve_payloads": (
             "payload_id",
