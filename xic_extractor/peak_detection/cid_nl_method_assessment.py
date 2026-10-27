@@ -78,7 +78,6 @@ CidNlTechnicalState: TypeAlias = Literal[
 ]
 CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
@@ -267,7 +266,7 @@ class CidNlMethodAssessmentContent:
     detector_invocation_id: str
     candidate_peaks: tuple[PeakObservationContent, ...]
     evaluation_receipt: CidNlEvaluationReceipt
-    evidence_artifact_content_ids: tuple[str, ...]
+    evidence_observations: tuple[CidNlEvidenceObservation, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     reason_codes: tuple[str, ...]
@@ -322,15 +321,6 @@ class CidNlMethodAssessmentContent:
         ):
             raise CidNlMethodAssessmentContractError(
                 "a physical query center requires an Untargeted method subject"
-            )
-        for values, field in (
-            (self.evidence_artifact_content_ids, "evidence_artifact_content_ids"),
-        ):
-            _canonical_digest_ids(
-                values,
-                prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-                field=field,
-                allow_empty=True,
             )
         if self.technical_state not in _TECHNICAL_STATES:
             raise CidNlMethodAssessmentContractError(
@@ -512,11 +502,7 @@ def mint_cid_nl_method_assessment_ref(
         detector_invocation_id=detector_invocation_id,
         candidate_peaks=tuple(peak.content for peak in candidates),
         evaluation_receipt=evaluation_receipt,
-        evidence_artifact_content_ids=tuple(
-            sorted(
-                ref.artifact.content_identity.artifact_content_id for ref in evidence
-            )
-        ),
+        evidence_observations=tuple(ref.observation for ref in evidence),
         technical_state=technical_state,
         method_result=method_result,
         reason_codes=reason_codes,
@@ -606,6 +592,9 @@ def canonical_cid_nl_method_assessment_bytes(
     }
     content_payload["candidate_peak_content_ids"] = tuple(
         peak.peak_observation_content_id for peak in content.candidate_peaks
+    )
+    content_payload["evidence_observations"] = tuple(
+        asdict(observation) for observation in content.evidence_observations
     )
     content_payload["method_subject"] = asdict(content.method_subject)
     content_payload["evaluation_receipt"] = asdict(content.evaluation_receipt)
@@ -1216,25 +1205,6 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
 def _require_unique_refs(values: tuple[str, ...], *, field: str) -> None:
     if len(set(values)) != len(values):
         raise CidNlMethodAssessmentContractError(f"duplicate {field} refs")
-
-
-def _canonical_digest_ids(
-    value: object,
-    *,
-    prefix: str,
-    field: str,
-    allow_empty: bool,
-) -> tuple[str, ...]:
-    if not isinstance(value, tuple) or (not value and not allow_empty):
-        raise CidNlMethodAssessmentContractError(f"{field} must be a tuple")
-    ids = tuple(
-        _validate_typed_digest_id(item, prefix=prefix, field=field) for item in value
-    )
-    if ids != tuple(sorted(set(ids))):
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must be unique and canonical-sorted"
-        )
-    return ids
 
 
 def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
