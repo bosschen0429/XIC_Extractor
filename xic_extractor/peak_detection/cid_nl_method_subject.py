@@ -8,7 +8,6 @@ only when the subject was adapted from an owner-resolved target definition.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from collections.abc import Iterable, Mapping
@@ -36,8 +35,6 @@ CidNlMethodSubjectKind: TypeAlias = Literal[
     "targeted_definition",
     "untargeted_precursor",
 ]
-
-_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
 
 
 class CidNlMethodSubjectContractError(ValueError):
@@ -80,7 +77,6 @@ class CidNlComposition:
 class CidNlMethodSubject:
     """Smallest shared subject for Targeted and Untargeted CID-NL assessment."""
 
-    method_subject_id: str
     subject_kind: CidNlMethodSubjectKind
     precursor_mz: float
     precursor_tolerance_ppm: float
@@ -131,18 +127,22 @@ class CidNlMethodSubject:
             precursor_tolerance_ppm,
         )
         object.__setattr__(self, "neutral_loss_da", neutral_loss_da)
-        expected_id = _method_subject_id(
-            subject_kind=self.subject_kind,
-            precursor_mz=precursor_mz,
-            precursor_tolerance_ppm=precursor_tolerance_ppm,
-            neutral_loss_da=neutral_loss_da,
-            target=self.target,
-            composition=self.composition,
-        )
-        if self.method_subject_id != expected_id:
-            raise CidNlMethodSubjectContractError(
-                "method_subject_id mismatches the canonical CID-NL subject"
+
+    @property
+    def method_subject_id(self) -> str:
+        """Natural key: the Target label, or the precursor and its losses."""
+
+        if self.target is not None:
+            return f"target|{self.target.lookup_label}"
+        if self.composition is not None:
+            losses = f"{self.composition.combine_mode}:" + ",".join(
+                f"{name}={loss!r}" for name, loss in self.composition.tags
             )
+        else:
+            losses = repr(self.neutral_loss_da)
+        return (
+            f"precursor|{self.precursor_mz!r}|{self.precursor_tolerance_ppm!r}|{losses}"
+        )
 
     def request_payload(self) -> dict[str, object]:
         """Return the exact value an Untargeted processing request must pin."""
@@ -924,7 +924,6 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         )
     expected_fields = {
         "schema_version",
-        "method_subject_id",
         "subject_kind",
         "precursor_mz",
         "precursor_tolerance_ppm",
@@ -944,11 +943,6 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
     if subject_kind != "untargeted_precursor":
         raise CidNlMethodSubjectContractError(
             "Untargeted request requires an untargeted_precursor method subject"
-        )
-    method_subject_id = payload["method_subject_id"]
-    if not isinstance(method_subject_id, str):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request method_subject_id must be text"
         )
     if payload["target"] is not None:
         raise CidNlMethodSubjectContractError(
@@ -975,7 +969,6 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
                     "composite subject cannot carry scalar loss"
                 )
         return CidNlMethodSubject(
-            method_subject_id=method_subject_id,
             subject_kind="untargeted_precursor",
             precursor_mz=_positive_finite_float(
                 payload["precursor_mz"], field="precursor_mz"
@@ -1019,7 +1012,6 @@ def _validate_untargeted_subject_batch(
             )
         try:
             CidNlMethodSubject(
-                method_subject_id=subject.method_subject_id,
                 subject_kind=subject.subject_kind,
                 precursor_mz=subject.precursor_mz,
                 precursor_tolerance_ppm=subject.precursor_tolerance_ppm,
@@ -1109,14 +1101,6 @@ def _mint_subject(
         else _positive_finite_float(neutral_loss_da, field="neutral_loss_da")
     )
     return CidNlMethodSubject(
-        method_subject_id=_method_subject_id(
-            subject_kind=subject_kind,
-            precursor_mz=precursor,
-            precursor_tolerance_ppm=tolerance,
-            neutral_loss_da=neutral_loss,
-            target=target,
-            composition=composition,
-        ),
         subject_kind=subject_kind,
         precursor_mz=precursor,
         precursor_tolerance_ppm=tolerance,
@@ -1124,37 +1108,6 @@ def _mint_subject(
         target=target,
         composition=composition,
     )
-
-
-def _method_subject_id(
-    *,
-    subject_kind: CidNlMethodSubjectKind,
-    precursor_mz: float,
-    precursor_tolerance_ppm: float,
-    neutral_loss_da: float | None,
-    target: ResolvedTargetDefinition | None,
-    composition: CidNlComposition | None = None,
-) -> str:
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "provider_id": CID_NL_PROVIDER_ID,
-        "method_id": CID_NL_METHOD_ID,
-        "method_version": CID_NL_METHOD_VERSION,
-        "subject_kind": subject_kind,
-        "precursor_mz": precursor_mz,
-        "precursor_tolerance_ppm": precursor_tolerance_ppm,
-        "neutral_loss_da": neutral_loss_da,
-        "target": asdict(target) if target is not None else None,
-        "composition": asdict(composition) if composition is not None else None,
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return _SUBJECT_ID_PREFIX + hashlib.sha256(encoded).hexdigest()
 
 
 def _positive_finite_float(value: object, *, field: str) -> float:
