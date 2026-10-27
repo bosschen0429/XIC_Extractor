@@ -2,8 +2,10 @@
 
 This module owns only workflow-neutral content and reference value objects.
 Producer modules own semantic role/schema selection and call the public mint
-helpers through narrow owner APIs.  Storage, runtime lifecycle, delivery, and
-publication authority deliberately remain outside this contract.
+helpers through narrow owner APIs. Mint helpers validate inputs; immutable
+references carry their results without repeating payload validation.
+Storage, runtime lifecycle, delivery, and publication authority deliberately
+remain outside this contract.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +44,6 @@ _ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract:"
 _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
 _PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request:"
 _PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt:"
-_ARTIFACT_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,46 +106,6 @@ class ArtifactContentIdentity:
     byte_size: int
     media_type: str
     serialization_format: str
-    _mint_token: InitVar[object] = field(default=None, kw_only=True)
-
-    def __post_init__(self, _mint_token: object = None) -> None:
-        if _mint_token is _ARTIFACT_MINT_TOKEN:
-            return
-        artifact_content_id = _validate_typed_digest_id(
-            self.artifact_content_id,
-            prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-            field="artifact_content_id",
-        )
-        content_sha256 = _validate_sha256(
-            self.content_sha256,
-            field="content_sha256",
-        )
-        if (
-            isinstance(self.byte_size, bool)
-            or not isinstance(self.byte_size, int)
-            or self.byte_size < 0
-        ):
-            raise EvidenceArtifactContractError(
-                "byte_size must be a non-negative integer"
-            )
-        media_type = _required_text(self.media_type, field="media_type")
-        serialization_format = _required_text(
-            self.serialization_format,
-            field="serialization_format",
-        )
-        expected_id = _typed_digest(
-            _ARTIFACT_CONTENT_ID_PREFIX,
-            _content_identity_basis(
-                content_sha256=content_sha256,
-                byte_size=self.byte_size,
-                media_type=media_type,
-                serialization_format=serialization_format,
-            ),
-        )
-        if artifact_content_id != expected_id:
-            raise EvidenceArtifactContractError(
-                "artifact_content_id mismatches exact payload content"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,90 +118,6 @@ class EvidenceArtifactRef:
     semantic_contract: ArtifactSemanticContractRef
     content_identity: ArtifactContentIdentity
     upstream_artifact_ids: tuple[str, ...] = ()
-    _mint_token: InitVar[object] = field(default=None, kw_only=True)
-
-    def __post_init__(self, _mint_token: object = None) -> None:
-        if _mint_token is _ARTIFACT_MINT_TOKEN:
-            return
-        evidence_artifact_id = _validate_typed_digest_id(
-            self.evidence_artifact_id,
-            prefix=_EVIDENCE_ARTIFACT_ID_PREFIX,
-            field="evidence_artifact_id",
-        )
-        request_id = _validate_typed_digest_id(
-            self.producer_processing_request_id,
-            prefix=_PROCESSING_REQUEST_ID_PREFIX,
-            field="producer_processing_request_id",
-        )
-        attempt_id = _validate_typed_digest_id(
-            self.producer_processing_attempt_id,
-            prefix=_PROCESSING_ATTEMPT_ID_PREFIX,
-            field="producer_processing_attempt_id",
-        )
-        if not isinstance(self.semantic_contract, ArtifactSemanticContractRef):
-            raise EvidenceArtifactContractError(
-                "semantic_contract must be producer-owned"
-            )
-        if not isinstance(self.content_identity, ArtifactContentIdentity):
-            raise EvidenceArtifactContractError(
-                "content_identity must be exact-byte content"
-            )
-        if (
-            self.semantic_contract.media_type != self.content_identity.media_type
-            or self.semantic_contract.serialization_format
-            != self.content_identity.serialization_format
-        ):
-            raise EvidenceArtifactContractError(
-                "artifact content format mismatches producer semantic contract"
-            )
-        upstream_ids = _canonical_upstream_ids(self.upstream_artifact_ids)
-        if upstream_ids != self.upstream_artifact_ids:
-            raise EvidenceArtifactContractError(
-                "upstream_artifact_ids must be unique and canonical-sorted"
-            )
-        expected_id = _typed_digest(
-            _EVIDENCE_ARTIFACT_ID_PREFIX,
-            _evidence_artifact_basis(
-                producer_processing_request_id=request_id,
-                producer_processing_attempt_id=attempt_id,
-                semantic_contract=self.semantic_contract,
-                content_identity=self.content_identity,
-                upstream_artifact_ids=upstream_ids,
-            ),
-        )
-        if evidence_artifact_id != expected_id:
-            raise EvidenceArtifactContractError(
-                "evidence_artifact_id mismatches immutable artifact content"
-            )
-        if evidence_artifact_id in upstream_ids:
-            raise EvidenceArtifactContractError(
-                "an evidence artifact cannot depend on itself"
-            )
-
-
-def verify_evidence_artifact_payload(
-    reference: EvidenceArtifactRef,
-    payload_bytes: bytes,
-) -> None:
-    """Fail closed when supplied bytes do not match an immutable reference."""
-
-    if not isinstance(reference, EvidenceArtifactRef):
-        raise EvidenceArtifactContractError(
-            "reference must be an owner-minted EvidenceArtifactRef"
-        )
-    if not isinstance(payload_bytes, bytes):
-        raise EvidenceArtifactContractError("payload_bytes must be exact bytes")
-    # The immutable reference already binds its format and derived content ID.
-    # Verifying new bytes needs only their length and digest, not another value
-    # object plus repeated canonical JSON serialization of the same identity.
-    expected = reference.content_identity
-    if (
-        len(payload_bytes) != expected.byte_size
-        or hashlib.sha256(payload_bytes).hexdigest() != expected.content_sha256
-    ):
-        raise EvidenceArtifactContractError(
-            "artifact payload content does not match its immutable reference"
-        )
 
 
 def mint_artifact_semantic_contract_ref(
@@ -349,7 +226,6 @@ def mint_evidence_artifact_ref(
         semantic_contract=semantic_contract,
         content_identity=content_identity,
         upstream_artifact_ids=upstream_ids,
-        _mint_token=_ARTIFACT_MINT_TOKEN,
     )
 
 
@@ -379,7 +255,6 @@ def _build_artifact_content_identity(
         byte_size=len(payload_bytes),
         media_type=normalized_media_type,
         serialization_format=normalized_serialization_format,
-        _mint_token=_ARTIFACT_MINT_TOKEN,
     )
 
 
@@ -441,28 +316,6 @@ def _evidence_artifact_basis(
     }
 
 
-def _canonical_upstream_ids(values: Sequence[str]) -> tuple[str, ...]:
-    if isinstance(values, (str, bytes)):
-        raise EvidenceArtifactContractError(
-            "upstream_artifact_ids must be a sequence of typed IDs"
-        )
-    try:
-        items = tuple(values)
-    except TypeError as exc:
-        raise EvidenceArtifactContractError(
-            "upstream_artifact_ids must be a sequence of typed IDs"
-        ) from exc
-    for item in items:
-        _validate_typed_digest_id(
-            item,
-            prefix=_EVIDENCE_ARTIFACT_ID_PREFIX,
-            field="upstream_artifact_id",
-        )
-    if len(set(items)) != len(items):
-        raise EvidenceArtifactContractError("upstream_artifact_ids must be unique")
-    return tuple(sorted(items))
-
-
 def _typed_digest(prefix: str, basis: Mapping[str, object]) -> str:
     digest = hashlib.sha256(_canonical_json(basis).encode("utf-8")).hexdigest()
     return f"{prefix}{digest}"
@@ -518,5 +371,4 @@ __all__ = [
     "EvidenceArtifactRef",
     "mint_artifact_semantic_contract_ref",
     "mint_evidence_artifact_ref",
-    "verify_evidence_artifact_payload",
 ]

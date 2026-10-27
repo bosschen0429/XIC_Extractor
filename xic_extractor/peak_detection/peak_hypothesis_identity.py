@@ -11,11 +11,9 @@ import hashlib
 import json
 
 from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactContractError,
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     CidNlChromatographicSupportRef,
@@ -403,18 +401,6 @@ def _validate_observation_hypothesis_artifact(
         raise PeakHypothesisContractError(
             "MS1 hypothesis artifact references a different processing owner"
         )
-    try:
-        verify_evidence_artifact_payload(
-            artifact,
-            canonical_ms1_observation_peak_hypothesis_bytes(
-                hypothesis_id=hypothesis.hypothesis_id,
-                peak_observation=peak_observation,
-            ),
-        )
-    except EvidenceArtifactContractError as exc:
-        raise PeakHypothesisContractError(
-            "MS1 hypothesis artifact mismatches immutable owner content"
-        ) from exc
 
 
 def _observation_hypothesis_id(peak_observation: PeakObservationRef) -> str:
@@ -570,19 +556,6 @@ def _validate_hypothesis_artifact(
         raise PeakHypothesisContractError(
             "hypothesis artifact references a different processing owner"
         )
-    try:
-        verify_evidence_artifact_payload(
-            artifact,
-            canonical_owner_backed_peak_hypothesis_bytes(
-                hypothesis_id=hypothesis.hypothesis_id,
-                peak_observation=peak_observation,
-                chromatographic_support=chromatographic_support,
-            ),
-        )
-    except EvidenceArtifactContractError as exc:
-        raise PeakHypothesisContractError(
-            "hypothesis artifact mismatches immutable owner-backed content"
-        ) from exc
 
 
 def _hypothesis_id(

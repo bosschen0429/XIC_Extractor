@@ -1193,13 +1193,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                             replace(missing, backfill_attempts=(recovery,)),
                             group_context=recovery_context,
                         )
-                    with pytest.raises(ValueError):
-                        replace(
-                            missing.result_ref,
-                            backfill_assessment_artifact_ids=(
-                                recovery.assessment.artifact.evidence_artifact_id,
-                            ),
-                        )
             else:
                 if recovery_is_support:
                     if source is not None:

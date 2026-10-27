@@ -12,13 +12,10 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.discovery.cid_nl_evidence_projection import (
     UntargetedCidNlProjectionError,
-    canonical_untargeted_cid_nl_projection_bytes,
     mint_untargeted_cid_nl_projection_ref,
 )
 from xic_extractor.discovery.models import DiscoverySeed
-from xic_extractor.evidence_artifacts import verify_evidence_artifact_payload
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    canonical_cid_nl_evidence_bytes,
     mint_cid_nl_evidence_ref,
 )
 from xic_extractor.processing_identity import (
@@ -158,12 +155,6 @@ def test_canonical_evidence_feeds_untargeted_projection_without_source_reopen(
         evidence.artifact.evidence_artifact_id,
     )
     assert tuple(sorted(tmp_path.iterdir())) == initial_paths
-    verify_evidence_artifact_payload(
-        evidence.artifact, canonical_cid_nl_evidence_bytes(evidence.observation)
-    )
-    verify_evidence_artifact_payload(
-        projection.artifact, canonical_untargeted_cid_nl_projection_bytes(projection)
-    )
 
 
 def test_signed_zero_cid_nl_evidence_has_one_canonical_identity(tmp_path: Path) -> None:

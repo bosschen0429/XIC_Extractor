@@ -3891,12 +3891,12 @@ def _assert_conservative_completion_projection(
 ) -> None:
     import json
     from copy import copy
+    from dataclasses import asdict
 
     from xic_extractor.alignment.cell_observation.observations import (
         canonical_cell_observation_bytes,
     )
     from xic_extractor.untargeted_execution.partition.models import (
-        canonical_sample_result_bytes,
         project_completed_backfill,
     )
 
@@ -3927,7 +3927,7 @@ def _assert_conservative_completion_projection(
         if item.job.sample is position.sample
     )
     context = proof.decision.group_facts.group_context
-    original_result_bytes = canonical_sample_result_bytes(result.result_ref)
+    original_result = asdict(result.result_ref)
     with pytest.raises(ValueError, match="not a backfill"):
         project_completed_backfill(
             replace(result, backfill_attempts=()), group_context=context
@@ -3967,7 +3967,7 @@ def _assert_conservative_completion_projection(
                     ),
                     group_context=context,
                 )
-    assert canonical_sample_result_bytes(result.result_ref) == original_result_bytes
+    assert asdict(result.result_ref) == original_result
 
 
 @pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))

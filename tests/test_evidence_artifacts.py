@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -9,7 +9,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactContractError,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -47,10 +46,6 @@ def test_artifact_binds_exact_bytes_and_processing_attempt(
     assert first.semantic_contract.validation_status == "diagnostic_only"
     assert first.content_identity == retry.content_identity
     assert first.evidence_artifact_id != retry.evidence_artifact_id
-    verify_evidence_artifact_payload(first, payload_bytes)
-    with pytest.raises(EvidenceArtifactContractError, match="does not match"):
-        verify_evidence_artifact_payload(first, payload_bytes + b"mutation")
-
     references = compose_processing_owner_references(
         request=request,
         attempt=first_attempt,
@@ -78,24 +73,6 @@ def test_artifact_role_and_schema_substitution_fail_closed(tmp_path: Path) -> No
             artifact.semantic_contract,
             schema_version="caller_selected_schema",
         )
-    for original, mutation, message in (
-        (
-            artifact,
-            {"evidence_artifact_id": "xic.evidence-artifact:" + "0" * 64},
-            "immutable artifact content",
-        ),
-        (
-            artifact.content_identity,
-            {"byte_size": artifact.content_identity.byte_size + 1},
-            "exact payload content",
-        ),
-    ):
-        with pytest.raises(EvidenceArtifactContractError, match=message):
-            replace(original, **mutation)
-        values = {item.name: getattr(original, item.name) for item in fields(original)}
-        with pytest.raises(EvidenceArtifactContractError, match=message):
-            type(original)(**(values | mutation))
-        type(original)(**values).__post_init__()
 
 
 def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(

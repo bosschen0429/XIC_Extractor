@@ -58,7 +58,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
 from xic_extractor.execution.attempt import (
@@ -354,28 +353,6 @@ def build_sample_jobs(
     return tuple(jobs)
 
 
-def canonical_sample_result_bytes(
-    reference: UntargetedSampleResultRef,
-) -> bytes:
-    return _sample_result_bytes(
-        work_unit_key=reference.work_unit_key,
-        canonical_sample_identity_id=reference.canonical_sample_identity_id,
-        method_subject_id=reference.method_subject_id,
-        discovery_receipt_id=reference.discovery_receipt_id,
-        assessment_artifact_id=reference.assessment_artifact_id,
-        discovery_projection_artifact_ids=(reference.discovery_projection_artifact_ids),
-        source_candidate_ids=reference.source_candidate_ids,
-        strict_scan_count=reference.strict_scan_count,
-        backfill_assessment_artifact_id=(reference.backfill_assessment_artifact_id),
-        backfill_candidate_count=reference.backfill_candidate_count,
-        acquisition_sha256=reference.acquisition_sha256,
-        backfill_assessment_artifact_ids=reference.backfill_assessment_artifact_ids,
-        backfill_query_bounds=reference.backfill_query_bounds,
-        backfill_query_predictions=reference.backfill_query_predictions,
-        backfill_group_hypothesis_ids=reference.backfill_group_hypothesis_ids,
-    )
-
-
 def _sample_result_bytes(**values: object) -> bytes:
     return (
         json.dumps(
@@ -417,15 +394,6 @@ class UntargetedSampleResultRef:
             raise UntargetedPartitionError(
                 "sample result artifact has the wrong semantic owner"
             )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_sample_result_bytes(self),
-            )
-        except ValueError as exc:
-            raise UntargetedPartitionError(
-                "sample result mismatches its immutable artifact"
-            ) from exc
 
 
 @dataclass(frozen=True, slots=True)
