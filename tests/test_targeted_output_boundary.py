@@ -1885,7 +1885,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         assert ref["Counted Detection"] == "TRUE"
 
 
-def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
+def test_paired_selection_uses_local_peak_in_workbook_and_inspector(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1939,27 +1939,27 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
             self.name = name
 
         def acquisition_rt_bounds(self):
-            return 0.5, 2.5
+            return 0.5, 3.5
 
         def extract_xic(self, mz, rt_min, rt_max, _ppm):
-            rt = np.linspace(rt_min, rt_max, 2001)
+            rt = np.linspace(rt_min, rt_max, 3001)
             center = 1.0 if mz == 255.0 else 1.5
             signal = 10 + 2000 * np.exp(-(((rt - center) / 0.025) ** 2))
             if self.name == "Spike" and mz == 250.0:
                 signal = np.zeros_like(rt)
                 signal[np.argmin(abs(rt - 1.5))] = 2000
-                signal += 1000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
+                signal += 1000 * np.exp(-(((rt - 3.1) / 0.025) ** 2))
             if self.name == "Far" and mz == 250.0:
-                # A second, recorded-NL-supported peak wins selection over
-                # the unfragmented peak at the expected paired position.
-                signal += 4000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
+                # A stronger remote NL-supported peak cannot displace the
+                # unfragmented physical peak at the expected paired position.
+                signal += 4000 * np.exp(-(((rt - 3.1) / 0.025) ** 2))
             return rt, signal
 
         def iter_ms2_scans(self, rt_min, rt_max):
             for index, mz in enumerate((255.0, 250.0), 1):
                 if mz == 250.0 and self.name in {"Near", "Spike"}:
                     continue
-                rt = 1.0 if mz == 255.0 else 2.1
+                rt = 1.0 if mz == 255.0 else 3.1
                 if rt_min <= rt <= rt_max:
                     yield Ms2ScanEvent(
                         scan=Ms2Scan(
@@ -1994,17 +1994,10 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         for f in execution.active_output.file_results
     }
     near, far = results["Near"], results["Far"]
-    assert far.reported_rt is None
-    assert far.reported_peak_area is None
-    assert far.reported_peak_start is None
-    assert far.reported_peak_end is None
-    assert not far.targeted_product_projection.counted_detection
-    assert any(
-        record.sample_name == "Far"
-        and record.issue == "OFF_ISTD_POSITION"
-        and "2.100" in record.reason
-        for record in execution.active_output.diagnostics
-    )
+    assert far.reported_rt == pytest.approx(1.5, abs=0.005)
+    assert far.reported_peak_area > 0
+    assert far.targeted_product_projection.counted_detection
+    assert "paired_istd_identity" in far.targeted_product_projection.support_reasons
     assert near.reported_rt == pytest.approx(1.5, abs=0.005)
     assert near.targeted_product_projection.counted_detection
     assert "paired_istd_identity" in near.targeted_product_projection.support_reasons
@@ -2017,9 +2010,9 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         if (r := dict(zip(headers, cells, strict=True)))["Target"] == "Analyte"
     }
     workbook.close()
-    assert rows["Far"]["Counted Detection"] == "FALSE"
-    assert rows["Far"]["Area"] == "ND"
-    assert rows["Far"]["RT"] == "ND"
+    assert rows["Far"]["Counted Detection"] == "TRUE"
+    assert rows["Far"]["Area"] > 0
+    assert rows["Far"]["RT"] == pytest.approx(1.5, abs=0.005)
     assert rows["Far"]["Review"] is None
     assert rows["Far"]["Review Reason"] is None
     assert rows["Near"]["Review"] is None
@@ -2027,12 +2020,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Spike"]["Area"] == "ND"
     assert rows["Spike"]["Review"] is None
     assert rows["Spike"]["Review Reason"] is None
-    assert any(
-        record.sample_name == "Spike"
-        and record.issue == "PAIRED_POSITION_SUPPORT_REJECTED"
-        and "insufficient_original_xic_support" in record.reason
-        for record in execution.active_output.diagnostics
-    )
     from xic_extractor.output.review_queue_model import review_queue_rows
 
     queue = review_queue_rows(

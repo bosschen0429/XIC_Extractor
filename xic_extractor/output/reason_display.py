@@ -34,6 +34,7 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "paired_istd_multiple_candidates": "配對範圍內有多個合格峰，無法唯一確認身分",
     "paired_istd_position_mismatch": "峰偏離配對 ISTD 位置",
     "targeted_rt_conflict": "峰位置與 RT 參考或範圍衝突",
     "targeted_rt_review": "RT 位置需檢查",

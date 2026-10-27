@@ -3,10 +3,12 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from statistics import median, quantiles
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.targeted_strategy import (
+    TARGETED_PAIRED_RT_TOLERANCE_MIN,
+)
 from xic_extractor.output.targeted_product_model import (
     ProductState,
     ReviewState,
@@ -198,8 +200,6 @@ _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coher
 # Backfill acceptance qualified the recovered peak's shape; the first capture's
 # coherence facts may describe the peak it replaced.
 _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
-# The Backfill apex floor: closer RT agreement is not resolvable (12 s).
-_PAIRED_OFFSET_FLOOR_MIN = 0.2
 
 
 @dataclass(frozen=True)
@@ -219,13 +219,10 @@ def paired_istd_positions(
 ) -> PairedIstdPositions:
     """Judge analyte peaks against the paired isotope ISTD position.
 
-    An isotope-labelled ISTD co-elutes with its analyte, so once the ISTD is
-    counted in a sample (directly or by accepted Backfill) it fixes where the
-    analyte must be. A coherent MS1 peak there takes its chemical identity from
-    the ISTD whether or not its own neutral loss was observed. A peak elsewhere
-    is another signal, even with neutral-loss support. Confirmed pairs refine
-    the batch offset and tolerance only when consistent with the configured offset;
-    otherwise that offset and the 12 s floor apply. Off-position peaks are ND.
+    A counted isotope ISTD fixes the method-relative search position. Qualified,
+    unambiguous MS1 peaks within the method tolerance may inherit pair identity.
+    The same window constrains selection; batch-selected peaks must not move its
+    center or expand its tolerance. Off-position peaks are not reported.
     The number of other confirmed samples never gates identity: the current sample still
     needs a valid ISTD, qualified peak and no blockers.
     """
@@ -234,22 +231,6 @@ def paired_istd_positions(
         for sample, result in istd.items()
         if _counted(result) and (rt := _finite(result.reported_rt)) is not None
     }
-    offsets = [
-        rt - counted_istd[sample]
-        for sample, result in analyte.items()
-        if sample in counted_istd
-        and _counted(result)
-        and (rt := _finite(result.reported_rt)) is not None
-        # A contradictory counted peak cannot calibrate away its own mismatch.
-        and abs(rt - counted_istd[sample] - expected_offset_min)
-        <= _PAIRED_OFFSET_FLOOR_MIN
-    ]
-    calibrated = len(offsets) >= 2
-    center = median(offsets) if calibrated else expected_offset_min
-    tolerance = _PAIRED_OFFSET_FLOOR_MIN
-    if calibrated:
-        residuals = [abs(offset - center) for offset in offsets]
-        tolerance = max(tolerance, quantiles(residuals, n=10, method="inclusive")[-1])
     identified = set()
     off_position = {}
     for sample, result in analyte.items():
@@ -257,8 +238,8 @@ def paired_istd_positions(
         rt = _finite(result.reported_rt)
         if projection is None or sample not in counted_istd or rt is None:
             continue
-        deviation = rt - counted_istd[sample] - center
-        if abs(deviation) > tolerance:
+        deviation = rt - counted_istd[sample] - expected_offset_min
+        if abs(deviation) > TARGETED_PAIRED_RT_TOLERANCE_MIN:
             off_position[sample] = deviation
         elif (
             not projection.counted_detection

@@ -8,13 +8,76 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction import targeted_peak_selection
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
+from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    enumerate_physical_segment_universe,
+    prepare_physical_signal,
+)
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
+
+
+@pytest.mark.parametrize("local_peaks", [(), (8.5,), (7.505,), (8.5, 9.2)])
+def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
+    tmp_path, local_peaks
+):
+    config = _config(tmp_path)
+    target = replace(_target(), cid_nl_tag="dR")
+    rt = np.arange(5.0, 11.0, 0.005)
+    intensity = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
+    for apex in local_peaks:
+        intensity += 2000.0 * np.exp(-0.5 * ((rt - apex) / 0.04) ** 2)
+    prepared = prepare_physical_signal(rt, intensity)
+    assessment = targeted_peak_selection.assess_targeted_candidate_population(
+        target=target,
+        config=config,
+        trace_group=targeted_extraction_trace_group(
+            sample_name="sample",
+            target=target,
+            config=config,
+            rt=rt,
+            intensity=intensity,
+            rt_min=5.0,
+            rt_max=11.0,
+            expected_rt_min=8.5,
+        ),
+        prepared_result=prepared,
+        universe=enumerate_physical_segment_universe(prepared),
+        selection_window=(5.0, 11.0),
+        preferred_rt=8.5,
+        strict_preferred_rt=False,
+        method_window=Ms2Window("sample", 5.0, 11.0, ()),
+    )
+    ranked = assessment.rank_candidates(
+        scoring_context_builder=None,
+        istd_confidence_note=None,
+        paired_istd_anchor_rt=8.5,
+    )
+    assert len(ranked.candidates) == len(local_peaks)
+    assert all(abs(c.selection_apex_rt - 8.5) <= 1.0 for c in ranked.candidates)
+    result = assessment.complete_result(ranked, scoring_context_builder=None)
+    if not local_peaks:
+        assert result.reported_peak_area is None
+    elif len(local_peaks) == 1:
+        assert result.reported_rt == pytest.approx(local_peaks[0])
+        if local_peaks[0] == 7.505:
+            # The pair window admits an apex; it must not clip the peak's area.
+            assert result.peak.peak_start < 7.5
+        assert (
+            "paired_istd_multiple_candidates"
+            not in result.targeted_product_projection.conflict_reasons
+        )
+    else:
+        assert result.targeted_product_projection.counted_detection is False
+        assert (
+            "paired_istd_multiple_candidates"
+            in result.targeted_product_projection.conflict_reasons
+        )
 
 
 def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> None:

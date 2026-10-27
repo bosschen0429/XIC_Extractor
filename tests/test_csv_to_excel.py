@@ -68,7 +68,16 @@ def test_data_sheet_keeps_each_filtered_row_self_identifying() -> None:
     wb.close()
 
 
-def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
+@pytest.mark.parametrize(
+    ("conflict", "review_reason"),
+    [
+        ("targeted_rt_conflict", "證據衝突，身分未定"),
+        ("paired_istd_multiple_candidates", "配對範圍內有多個合格峰，身分未定"),
+    ],
+)
+def test_data_sheet_preserves_reason_without_dumping_projection_codes(
+    conflict, review_reason
+) -> None:
     row = _long_row(
         "SampleA",
         "Analyte",
@@ -81,8 +90,8 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
     row.update(
         {
             "Reason": "A measured peak needs review.",
-            "Projection Reason": "conflict: targeted_rt_conflict",
-            "Projection Conflict Reasons": "targeted_rt_conflict",
+            "Projection Reason": f"conflict: {conflict}",
+            "Projection Conflict Reasons": conflict,
         }
     )
     wb = Workbook()
@@ -92,7 +101,7 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
     assert record["Area"] == 123
     assert record["Counted Detection"] == "FALSE"
     assert record["Review"] == "Review"
-    assert record["Review Reason"].replace("\n", "") == "證據衝突，身分未定"
+    assert record["Review Reason"].replace("\n", "") == review_reason
     assert not any(header.startswith("Projection ") for header in record)
     assert "Legacy Authority Status" not in record
     wb.close()

@@ -701,6 +701,12 @@ def _projection_with_reported_peak_quality(
         review_reasons = tuple(
             dict.fromkeys((*review_reasons, "physical_shoulder_overlap"))
         )
+    if backfill_supported:
+        # Accepted Backfill uniquely mapped a peak using confirmed peers and
+        # the current pair; acquisition's unresolved alternatives are resolved.
+        conflict_reasons = tuple(
+            r for r in conflict_reasons if r != "paired_istd_multiple_candidates"
+        )
     return replace(
         projection, review_reasons=review_reasons, conflict_reasons=conflict_reasons
     )

@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REFERENCE
+from xic_extractor.configuration.targeted_strategy import (
+    TARGETED_PAIRED_RT_TOLERANCE_MIN,
+    TARGETED_PRECURSOR_REFERENCE,
+)
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
@@ -109,8 +112,27 @@ class TargetedCandidateAssessment:
         istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
     ) -> PeakDetectionResult:
+        candidates = self.candidates
+        if (
+            not self.target.is_istd
+            and self.target.istd_pair
+            and paired_istd_anchor_rt is not None
+            and self.preferred_rt is not None
+        ):
+            local = tuple(
+                candidate
+                for candidate in candidates.candidates
+                if abs(candidate.selection_apex_rt - self.preferred_rt)
+                <= TARGETED_PAIRED_RT_TOLERANCE_MIN
+            )
+            candidates = replace(
+                candidates,
+                candidates=local,
+                status="OK" if local else "PEAK_NOT_FOUND",
+                n_prominent_peaks=len(local),
+            )
         return select_peak_and_area(
-            self.candidates,
+            candidates,
             self.config,
             preferred_rt=self.preferred_rt,
             strict_preferred_rt=self.strict_preferred_rt,
@@ -145,6 +167,35 @@ class TargetedCandidateAssessment:
             candidate_evaluations=self.candidate_evaluations,
         )
         candidate = selected_candidate(selection.peak_result)
+        if (
+            not self.target.is_istd
+            and peak_result.paired_istd_anchor_rt is not None
+            and len(peak_result.candidates) > 1
+            and selection.selection_decision is not None
+        ):
+            supported = tuple(
+                item
+                for item in peak_result.candidates
+                if (evidence := self.candidate_ms2_evidence.get(item)) is not None
+                and evidence.nl_match
+            )
+            if supported != (candidate,):
+                decision = selection.selection_decision
+                selection = replace(
+                    selection,
+                    selection_decision=replace(
+                        decision,
+                        decision_class="review",
+                        conflict_reasons=(
+                            *decision.conflict_reasons,
+                            "paired_istd_multiple_candidates",
+                        ),
+                        ambiguity_reasons=(
+                            *decision.ambiguity_reasons,
+                            "paired_istd_multiple_candidates",
+                        ),
+                    ),
+                )
         return build_extraction_result(
             peak_result=selection.peak_result,
             nl_result=None,

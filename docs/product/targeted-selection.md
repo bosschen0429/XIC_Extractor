@@ -173,14 +173,22 @@ composes it once every Target of the batch has rendered. All of these must hold:
    recovered peak, whose first capture may describe another peak). It has no
    conflict or exclusion, and its only not-counted reasons are missing direct
    NL/MS2.
-3. Its apex RT minus the ISTD's agrees with the paired position. When at least
-   two confirmed pairs agree with the configured expected-RT offset within
-   12 s, their median offset and the larger of 12 s and the p90 residual refine
-   that position and tolerance. Contradictory counted peaks cannot calibrate
-   away their own mismatch. Otherwise the counted ISTD plus the configured
-   analyte-minus-ISTD expected-RT offset is the reference, with a 12 s tolerance.
-   Batch confirmation count is not an identity gate: both cases use the same
-   current-sample ISTD, peak-quality and blocker requirements above.
+3. Its apex RT is within ±1 minute of the counted ISTD plus the configured
+   analyte-minus-ISTD expected-RT offset. The Targeted strategy receipt records
+   this tolerance. Selected batch peaks do not shift or expand this window.
+   Batch confirmation count is not an identity gate; the current-sample ISTD,
+   peak-quality and blocker requirements above still apply.
+
+When a credible paired ISTD is available during acquisition, selection first
+restricts the already-qualified physical candidates to this same window, then
+ranks their evidence. A remote NL-supported peak cannot displace a local peak.
+No qualified local candidate means no selected value, not relaxed physical
+qualification. Multiple local candidates without a unique candidate-level NL
+match are retained as `paired_istd_multiple_candidates` ambiguity, not counted
+through the pair. Full physical and method evidence populations remain retained.
+Subsequent accepted Backfill can resolve this acquisition ambiguity by uniquely
+mapping a qualified peak using confirmed peers and the current pair; unrelated
+conflicts and sample-level review reasons remain intact.
 
 The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
@@ -191,7 +199,8 @@ peak outside that tolerance is another signal, not this analyte, even if its own
 neutral loss had made it counted. Its RT, area and bounds are published as ND
 (`analyte_peak_off_paired_istd_position`) and counted detection is false. The
 measured peak remains an `OFF_ISTD_POSITION` diagnostic event and its candidate
-evidence remains available for inspection; another peak is not silently selected.
+evidence remains available for inspection. This final check does not reselect a
+peak when the ISTD became counted only through subsequent Backfill.
 `paired_istd_positions` returns both identity and rejection from one position
 assessment. Being inside the window is not sufficient by itself: the peak-quality
 and blocker requirements still apply. An uncounted or missing ISTD cannot impose

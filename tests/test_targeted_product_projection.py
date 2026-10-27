@@ -221,7 +221,7 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
         ("near", 0.15, _istd()),
         ("backfilled_istd", 0.11, _istd(cid_nl=False, backfill=True)),
         ("uncounted_istd", 0.10, _istd(cid_nl=False)),
-        ("off_offset", 0.50, _istd()),
+        ("off_offset", 1.05, _istd()),
     ):
         analyte[sample] = _Result(9.0 + offset, _analyte(cid_nl=False))
         istd[sample] = _Result(9.0, pair)
@@ -235,15 +235,35 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
 
     positions = paired_istd_positions(analyte, istd)
     assert positions.identified == {"near", "backfilled_istd", "relocated"}
-    # A peak 0.4 min from the paired position is another signal, not this
-    # analyte; without a counted ISTD there is no position to judge.
+    # Confirmed batch peaks cannot shift the method-relative one-minute window.
     assert positions.off_position.keys() == {"off_offset"}
-    assert positions.off_position["off_offset"] == pytest.approx(0.40)
+    assert positions.off_position["off_offset"] == pytest.approx(1.05)
     # Sparse batch confirmation does not veto the current sample's valid pair.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
     lone_positions = paired_istd_positions(lone, istd)
     assert lone_positions.identified == {"near"}
-    assert lone_positions.off_position == {"off_offset": pytest.approx(0.5)}
+    assert lone_positions.off_position == {"off_offset": pytest.approx(1.05)}
+
+
+@pytest.mark.parametrize("offset", [-1.0, -0.79, 0.79, 1.0])
+def test_pair_window_accepts_qualified_unambiguous_peak_not_just_rt(offset):
+    analyte = {
+        "qualified": _Result(9.0 + offset, _analyte(cid_nl=False)),
+        "missing": _Result(None, _analyte(cid_nl=False)),
+        "incoherent": _Result(9.0 + offset, _analyte(cid_nl=False, support=())),
+        "ambiguous": _Result(
+            9.0 + offset,
+            replace(
+                _analyte(cid_nl=False),
+                conflict_reasons=("paired_istd_multiple_candidates",),
+            ),
+        ),
+    }
+    positions = paired_istd_positions(
+        analyte, {sample: _Result(9.0, _istd()) for sample in analyte}
+    )
+    assert positions.identified == {"qualified"}
+    assert positions.off_position == {}
 
 
 @pytest.mark.parametrize("confirmed_count", [0, 1])

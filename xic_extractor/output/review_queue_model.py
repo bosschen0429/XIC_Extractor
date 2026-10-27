@@ -277,6 +277,10 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
             return "不適用此樣本"
         return "已依規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
+        if "paired_istd_multiple_candidates" in row.get(
+            "Projection Conflict Reasons", ""
+        ):
+            return "配對範圍內有多個合格峰，身分未定"
         return "證據衝突，身分未定"
     if row.get("Role", "").upper() == "ISTD" and "missing_positive_ms1_peak" in row.get(
         "Projection Not Counted Reasons", ""
