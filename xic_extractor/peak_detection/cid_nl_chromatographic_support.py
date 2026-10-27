@@ -71,10 +71,8 @@ def _content_from_supports(
     evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
 ) -> CidNlChromatographicSupportContent:
     first = supports[0].content
-    loss_by_id = {
-        ref.artifact.content_identity.artifact_content_id: (
-            ref.observation.configured_neutral_loss_da
-        )
+    loss_by_observation = {
+        ref.observation: (ref.observation.configured_neutral_loss_da)
         for ref in evidence_refs
     }
     members = tuple(
@@ -82,8 +80,8 @@ def _content_from_supports(
             (
                 DdaCidNlScanSupportMember(
                     support=support.content,
-                    configured_neutral_loss_da=loss_by_id.get(
-                        support.content.cid_nl_evidence_content_id
+                    configured_neutral_loss_da=loss_by_observation.get(
+                        support.content.evidence
                     ),
                 )
                 for support in supports
@@ -125,18 +123,18 @@ def _validated_scan_supports(
             "scan_support_refs must contain owner-backed DDA peak support"
         )
     supports = scan_support_refs
-    loss_by_id = {}
+    loss_by_observation = {}
     if evidence_refs:
         for evidence in evidence_refs:
             validate_cid_nl_evidence_binding(
                 evidence, processing_owners=processing_owners, sample=sample
             )
-            loss_by_id[evidence.artifact.content_identity.artifact_content_id] = (
+            loss_by_observation[evidence.observation] = (
                 evidence.observation.configured_neutral_loss_da
             )
-        if len(loss_by_id) != len(evidence_refs) or set(loss_by_id) != {
-            support.content.cid_nl_evidence_content_id for support in supports
-        }:
+        if len(loss_by_observation) != len(evidence_refs) or set(
+            loss_by_observation
+        ) != {support.content.evidence for support in supports}:
             raise CidNlChromatographicSupportContractError(
                 "measured loss evidence must exactly close scan supports"
             )
@@ -162,7 +160,7 @@ def _validated_scan_supports(
     scan_numbers = tuple(
         (
             support.content.dda_scan_number,
-            loss_by_id.get(support.content.cid_nl_evidence_content_id),
+            loss_by_observation.get(support.content.evidence),
         )
         for support in supports
     )
@@ -199,7 +197,7 @@ def _validated_scan_supports(
             supports,
             key=lambda support: (
                 support.content.dda_scan_number,
-                loss_by_id.get(support.content.cid_nl_evidence_content_id) or 0.0,
+                loss_by_observation.get(support.content.evidence) or 0.0,
             ),
         )
     )

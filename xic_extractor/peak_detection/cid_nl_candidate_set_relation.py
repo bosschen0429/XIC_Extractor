@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from dataclasses import asdict, dataclass
 
 from xic_extractor.evidence_artifacts import (
@@ -20,6 +19,7 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceContractError,
+    CidNlEvidenceObservation,
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
@@ -42,8 +42,6 @@ MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "supports_one_or_more_of"
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -63,7 +61,7 @@ class DdaCidNlCandidateSetRelationContent:
     """Immutable set-level relation; it carries no individual vote."""
 
     sample_key: str
-    cid_nl_evidence_content_id: str
+    evidence: CidNlEvidenceObservation
     candidate_peaks: tuple[PeakObservationContent, ...]
     matched_candidates: tuple[PeakObservationContent, ...]
     acquisition_mode: str
@@ -73,11 +71,6 @@ class DdaCidNlCandidateSetRelationContent:
     relationship: str = RELATIONSHIP
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.cid_nl_evidence_content_id,
-            prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-            field="cid_nl_evidence_content_id",
-        )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise DdaCidNlCandidateSetRelationContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -146,9 +139,7 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
     )
     content = DdaCidNlCandidateSetRelationContent(
         sample_key=sample.identity.sample_key,
-        cid_nl_evidence_content_id=(
-            canonical_evidence.artifact.content_identity.artifact_content_id
-        ),
+        evidence=canonical_evidence.observation,
         candidate_peaks=tuple(peak.content for peak in candidates),
         matched_candidates=tuple(peak.content for peak in matched),
         acquisition_mode=canonical_evidence.observation.acquisition_mode,
@@ -208,7 +199,7 @@ def canonical_dda_cid_nl_candidate_set_relation_bytes(
         "validation_status": VALIDATION_STATUS,
         "content": {
             "sample_key": content.sample_key,
-            "cid_nl_evidence_content_id": content.cid_nl_evidence_content_id,
+            "evidence": asdict(content.evidence),
             "candidate_peak_content_ids": tuple(
                 peak.peak_observation_content_id for peak in content.candidate_peaks
             ),
@@ -384,18 +375,6 @@ def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
 
 def _candidate_sort_key(peak: PeakObservationRef) -> str:
     return peak.content.peak_observation_content_id
-
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise DdaCidNlCandidateSetRelationContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise DdaCidNlCandidateSetRelationContractError(
-            f"{field} must contain a SHA-256 digest"
-        )
-    return value
 
 
 __all__ = [

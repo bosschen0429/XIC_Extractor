@@ -92,9 +92,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
 
     assert support.content.sample_key == (fixture.sample.identity.sample_key)
     assert support.content.dda_scan_number == 42
-    assert support.content.cid_nl_evidence_content_id == (
-        evidence.artifact.content_identity.artifact_content_id
-    )
+    assert support.content.evidence == evidence.observation
     assert support.content.peak_observation == peak.content
     assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
     assert support.artifact.upstream_artifact_ids == tuple(

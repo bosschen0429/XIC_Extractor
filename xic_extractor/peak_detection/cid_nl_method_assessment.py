@@ -27,6 +27,7 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
+    CidNlEvidenceObservation,
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
@@ -808,7 +809,7 @@ def _validate_upstream_bindings(
             if physical_backfill
             else "candidate peak apex",
         )
-    evidence_by_content_id = {}
+    evidence_by_observation = {}
     for evidence in evidence_refs:
         try:
             validate_cid_nl_evidence_binding(
@@ -842,9 +843,7 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(
                 "CID-NL evidence references a different method-subject neutral loss"
             )
-        evidence_by_content_id[
-            evidence.artifact.content_identity.artifact_content_id
-        ] = evidence
+        evidence_by_observation[evidence.observation] = evidence
     acquisition_scan_keys = tuple(
         (
             evidence.observation.acquisition_source_id,
@@ -861,11 +860,9 @@ def _validate_upstream_bindings(
         )
     candidate_contents = tuple(peak.content for peak in candidate_peaks)
     support_policy = evaluation_receipt.support_policy
-    individual_evidence_ids: set[str] = set()
+    individual_observations: set[CidNlEvidenceObservation] = set()
     for support in individual_support_refs:
-        canonical_evidence = evidence_by_content_id.get(
-            support.content.cid_nl_evidence_content_id
-        )
+        canonical_evidence = evidence_by_observation.get(support.content.evidence)
         if canonical_evidence is None:
             raise CidNlMethodAssessmentContractError(
                 "individual support evidence is missing from the assessment"
@@ -896,14 +893,14 @@ def _validate_upstream_bindings(
                 "boundary or positive-width overlapping support requires a set-level "
                 "relation"
             )
-        individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
-    set_relation_evidence_ids: set[str] = set()
+        individual_observations.add(support.content.evidence)
+    set_relation_observations: set[CidNlEvidenceObservation] = set()
     for relation in set_relation_refs:
         if relation.content.candidate_peaks != candidate_contents:
             raise CidNlMethodAssessmentContractError(
                 "set relation references a different candidate universe"
             )
-        if relation.content.cid_nl_evidence_content_id not in evidence_by_content_id:
+        if relation.content.evidence not in evidence_by_observation:
             raise CidNlMethodAssessmentContractError(
                 "set relation evidence is missing from the assessment"
             )
@@ -919,14 +916,13 @@ def _validate_upstream_bindings(
             )
         except DdaCidNlCandidateSetRelationContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
-        set_relation_evidence_ids.add(relation.content.cid_nl_evidence_content_id)
-    if individual_evidence_ids & set_relation_evidence_ids:
+        set_relation_observations.add(relation.content.evidence)
+    if individual_observations & set_relation_observations:
         raise CidNlMethodAssessmentContractError(
             "one CID-NL evidence ref cannot carry both individual and set relations"
         )
-    settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
-    for evidence_content_id, evidence in evidence_by_content_id.items():
-        observation = evidence.observation
+    settled_observations = individual_observations | set_relation_observations
+    for observation, evidence in evidence_by_observation.items():
         if not support_policy.accepts_precursor(
             observation.assess_precursor_loss(support_policy.neutral_loss_tolerance_ppm)
         ):
@@ -937,7 +933,7 @@ def _validate_upstream_bindings(
                 candidate_peaks=candidate_peaks,
                 support_policy=support_policy,
             )
-            and evidence_content_id not in settled_evidence_ids
+            and observation not in settled_observations
         ):
             raise CidNlMethodAssessmentContractError(
                 "qualifying CID-NL evidence matching the candidate universe "
@@ -1043,7 +1039,7 @@ def _method_result(
     if technical_state != "evaluated":
         assert evaluation_receipt.reason_code is not None
         return None, (evaluation_receipt.reason_code,)
-    if _supported_peak_ids(method_subject, evidence_refs, individual_support_refs):
+    if _supported_peak_ids(method_subject, individual_support_refs):
         return "SUPPORT", ("unique_support_within_declared_candidate_universe",)
     if method_subject.composition is not None and individual_support_refs:
         return "HOLD", ("incomplete_composite_requirement",)
@@ -1107,27 +1103,19 @@ def supported_cid_nl_peak_ids(assessment: CidNlMethodAssessmentRef) -> frozenset
         return frozenset()
     return _supported_peak_ids(
         assessment.content.method_subject,
-        assessment.evidence_refs,
         assessment.individual_support_refs,
     )
 
 
 def _supported_peak_ids(
     subject: CidNlMethodSubject,
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
 ) -> frozenset[str]:
-    loss_by_evidence = {
-        ref.artifact.content_identity.artifact_content_id: (
-            ref.observation.configured_neutral_loss_da
-        )
-        for ref in evidence_refs
-    }
     losses_by_peak: dict[str, set[float]] = {}
     for support in individual_support_refs:
         losses_by_peak.setdefault(
             support.content.peak_observation.peak_observation_content_id, set()
-        ).add(loss_by_evidence[support.content.cid_nl_evidence_content_id])
+        ).add(support.content.evidence.configured_neutral_loss_da)
     required = set(subject.configured_losses)
     return frozenset(
         peak_id

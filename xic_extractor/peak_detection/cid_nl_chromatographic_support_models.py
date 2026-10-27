@@ -161,7 +161,7 @@ def canonical_cid_nl_chromatographic_support_bytes(
         "scan_supports": tuple(
             {
                 "dda_scan_number": member.support.dda_scan_number,
-                "cid_nl_evidence_content_id": member.support.cid_nl_evidence_content_id,
+                "evidence": asdict(member.support.evidence),
                 "configured_neutral_loss_da": member.configured_neutral_loss_da,
             }
             for member in content.scan_supports

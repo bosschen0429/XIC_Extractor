@@ -149,8 +149,7 @@ def validate_dda_cid_nl_peak_support_binding(
     )
     if reference.content != expected_content:
         if (
-            reference.content.cid_nl_evidence_content_id
-            != expected_content.cid_nl_evidence_content_id
+            reference.content.evidence != expected_content.evidence
             or reference.content.dda_scan_number != expected_content.dda_scan_number
         ):
             raise DdaCidNlPeakSupportContractError(
@@ -197,9 +196,7 @@ def _support_content(
     assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
         sample_key=sample.identity.sample_key,
-        cid_nl_evidence_content_id=(
-            canonical_evidence.artifact.content_identity.artifact_content_id
-        ),
+        evidence=observation,
         peak_observation=peak_content,
         candidate_peaks=tuple(
             sorted(

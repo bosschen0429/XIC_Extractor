@@ -159,9 +159,9 @@ def build_cid_nl_reference_spine(
                 evidence_refs=tuple(
                     ref
                     for ref in assessment.evidence_refs
-                    if ref.artifact.content_identity.artifact_content_id
+                    if ref.observation
                     in {
-                        support.content.cid_nl_evidence_content_id
+                        support.content.evidence
                         for support in assessment.individual_support_refs
                         if support.content.peak_observation == peak.content
                     }

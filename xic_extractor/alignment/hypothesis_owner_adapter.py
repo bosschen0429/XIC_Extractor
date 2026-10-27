@@ -106,10 +106,9 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
                 evidence_refs=tuple(
                     ref
                     for ref in assessment.evidence_refs
-                    if ref.artifact.content_identity.artifact_content_id
+                    if ref.observation
                     in {
-                        support.content.cid_nl_evidence_content_id
-                        for support in refs_by_peak_id[peak_id]
+                        support.content.evidence for support in refs_by_peak_id[peak_id]
                     }
                 )
                 if assessment.content.method_subject.composition
@@ -502,13 +501,12 @@ def _assessment_hypothesis_components(
         raise HypothesisOwnerAdapterError(
             "hypothesis support does not close the assessment relations"
         )
-    evidence_by_content_id = {
-        evidence.artifact.content_identity.artifact_content_id: evidence
-        for evidence in assessment.evidence_refs
+    evidence_by_observation = {
+        evidence.observation: evidence for evidence in assessment.evidence_refs
     }
     support_evidence: list[CidNlEvidenceRef] = []
     for member in support.content.scan_supports:
-        evidence = evidence_by_content_id.get(member.support.cid_nl_evidence_content_id)
+        evidence = evidence_by_observation.get(member.support.evidence)
         if evidence is None:
             raise HypothesisOwnerAdapterError(
                 "hypothesis support evidence is missing from the assessment"

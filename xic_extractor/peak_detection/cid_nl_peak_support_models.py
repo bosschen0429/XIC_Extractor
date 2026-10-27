@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from dataclasses import asdict, dataclass, field, fields
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
@@ -13,7 +12,10 @@ from xic_extractor.evidence_artifacts import (
     mint_artifact_semantic_contract_ref,
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
-from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    ACQUISITION_MODE,
+    CidNlEvidenceObservation,
+)
 from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
@@ -26,8 +28,6 @@ MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -90,7 +90,7 @@ class DdaCidNlPeakSupportContent:
     """Immutable method relation between one DDA event and one MS1 peak."""
 
     sample_key: str
-    cid_nl_evidence_content_id: str
+    evidence: CidNlEvidenceObservation
     peak_observation: PeakObservationContent
     candidate_peaks: tuple[PeakObservationContent, ...]
     acquisition_mode: str
@@ -110,11 +110,6 @@ class DdaCidNlPeakSupportContent:
     neutral_loss_window_da: float = field(init=False)
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.cid_nl_evidence_content_id,
-            prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-            field="cid_nl_evidence_content_id",
-        )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise DdaCidNlPeakSupportContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -231,8 +226,8 @@ def _support_bytes(content: DdaCidNlPeakSupportContent) -> bytes:
         "content": {
             **{
                 item.name: (
-                    asdict(content.policy)
-                    if item.name == "policy"
+                    asdict(getattr(content, item.name))
+                    if item.name in {"policy", "evidence"}
                     else getattr(content, item.name)
                 )
                 for item in fields(content)
@@ -268,16 +263,6 @@ def _finite_float(value: object, *, field: str) -> float:
     if not math.isfinite(normalized):
         raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")
     return 0.0 if normalized == 0.0 else normalized
-
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise DdaCidNlPeakSupportContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise DdaCidNlPeakSupportContractError(f"{field} must contain a SHA-256 digest")
-    return value
 
 
 __all__ = [
