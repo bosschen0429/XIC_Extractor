@@ -131,17 +131,13 @@ class CrossSamplePartitionTransition:
     def __post_init__(self) -> None:
         if self.status == "assessable":
             expected = Counter(
-                member.member_subject_id
+                member
                 for group in self.predecessors
                 for member in group.member_subjects
             )
-            expected.update(
-                member.member_subject_id for member in self.admitted_members
-            )
+            expected.update(self.admitted_members)
             actual = Counter(
-                member.member_subject_id
-                for group in self.successors
-                for member in group.member_subjects
+                member for group in self.successors for member in group.member_subjects
             )
             if actual != expected:
                 raise CrossSampleContractError(

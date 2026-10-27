@@ -59,7 +59,6 @@ class CrossSampleGroupMemberSubject:
     subject_kind: Literal["peak_hypothesis"]
     subject_id: str
     physical_observation_ids: tuple[str, ...]
-    basis_bytes: bytes
 
 
 def _request_id(
@@ -138,7 +137,6 @@ def group_member_subject_from_peak_hypothesis(
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
         physical_observation_ids=physical_ids,
-        basis_bytes=basis,
     )
 
 

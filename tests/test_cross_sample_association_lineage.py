@@ -434,7 +434,6 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
             physical_observation_ids=member.physical_observation_ids,
-            basis_bytes=basis,
         )
     return fixture
 

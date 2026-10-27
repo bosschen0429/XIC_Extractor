@@ -121,10 +121,7 @@ def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
         hypothesis=hypothesis_b,
     )
 
-    assert (wrapped_a.member_subject_id, wrapped_a.basis_bytes) == (
-        wrapped_b.member_subject_id,
-        wrapped_b.basis_bytes,
-    )
+    assert wrapped_a == wrapped_b
 
 
 def test_group_mint_rejects_crossed_processing_request(tmp_path) -> None:

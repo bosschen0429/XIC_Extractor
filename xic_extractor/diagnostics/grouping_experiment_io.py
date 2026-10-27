@@ -261,7 +261,6 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     member = value["cross_sample_member_subject"]
     if member is None:
         raise ValueError("Grouping snapshot requires formal member subjects")
-    member["basis_bytes"] = member["basis_bytes"].decode("utf-8")
     return value
 
 
@@ -299,7 +298,6 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value.pop("region_audit", None)
     member = value["cross_sample_member_subject"]
     member["physical_observation_ids"] = tuple(member["physical_observation_ids"])
-    member["basis_bytes"] = member["basis_bytes"].encode("utf-8")
     value["cross_sample_member_subject"] = CrossSampleGroupMemberSubject(**member)
     if value["cid_nl_composite_assessment"] is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")

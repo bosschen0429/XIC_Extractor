@@ -94,18 +94,18 @@ def _compile_associations(
         _associate_predecessor(predecessor=group, final_population=final_population)
         for group in coverage.group_identities
     )
-    predecessor_by_id = {
-        item.predecessor.group_hypothesis_id: item for item in predecessor_associations
+    predecessor_associations_by_group = {
+        item.predecessor: item for item in predecessor_associations
     }
-    if len(predecessor_by_id) != len(predecessor_associations):
+    if len(predecessor_associations_by_group) != len(predecessor_associations):
         raise CrossSampleAssociationContractError(
             "compiled predecessor associations are incomplete or duplicate"
         )
     position_associations = tuple(
         _associate_position(
             position=position,
-            predecessor_association=predecessor_by_id.get(
-                position.group_identity.group_hypothesis_id
+            predecessor_association=predecessor_associations_by_group.get(
+                position.group_identity
             ),
         )
         for position in coverage.positions
@@ -124,18 +124,14 @@ def _associate_predecessor(
     predecessor: CrossSampleGroupIdentity,
     final_population: tuple[CrossSampleGroupIdentity, ...],
 ) -> CrossSamplePredecessorAssociation:
-    predecessor_members = {
-        member.member_subject_id for member in predecessor.member_subjects
-    }
+    predecessor_members = set(predecessor.member_subjects)
     successors = tuple(
         sorted(
             (
                 group
                 for group in final_population
-                if group.group_hypothesis_id == predecessor.group_hypothesis_id
-                or predecessor_members.intersection(
-                    member.member_subject_id for member in group.member_subjects
-                )
+                if group == predecessor
+                or predecessor_members.intersection(group.member_subjects)
             ),
             key=lambda group: group.group_hypothesis_id,
         )

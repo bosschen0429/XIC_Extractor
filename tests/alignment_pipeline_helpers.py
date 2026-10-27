@@ -387,7 +387,6 @@ def _owner(
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
             physical_observation_ids=(physical_id,),
-            basis_bytes=member_basis,
         ),
         is_provisional=is_provisional,
     )
