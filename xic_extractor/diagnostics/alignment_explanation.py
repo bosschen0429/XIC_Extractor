@@ -78,7 +78,6 @@ _PROVENANCE_KEYS = frozenset(
         "acquisition_source_id",
         "processing_request_id",
         "processing_attempt_id",
-        "observation_artifact_id",
         "selected_trace_indices",
         "resolver_mode",
         "proposal_sources",

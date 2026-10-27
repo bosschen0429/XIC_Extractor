@@ -177,10 +177,7 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_dda_cid_nl_candidate_set_relation_bytes(content),
-        upstream_artifacts=(
-            canonical_evidence.artifact,
-            *(peak.artifact for peak in candidates),
-        ),
+        upstream_artifacts=(canonical_evidence.artifact,),
     )
     return DdaCidNlCandidateSetRelationRef(
         content=content,
@@ -380,21 +377,15 @@ def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
         )
     candidates = tuple(sorted(value, key=_candidate_sort_key))
     content_ids = tuple(peak.content.peak_observation_content_id for peak in candidates)
-    artifact_ids = tuple(peak.artifact.evidence_artifact_id for peak in candidates)
-    if len(set(content_ids)) != len(content_ids) or len(set(artifact_ids)) != len(
-        artifact_ids
-    ):
+    if len(set(content_ids)) != len(content_ids):
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must be unique"
         )
     return candidates
 
 
-def _candidate_sort_key(peak: PeakObservationRef) -> tuple[str, str]:
-    return (
-        peak.content.peak_observation_content_id,
-        peak.artifact.evidence_artifact_id,
-    )
+def _candidate_sort_key(peak: PeakObservationRef) -> str:
+    return peak.content.peak_observation_content_id
 
 
 def _canonical_peak_ids(value: object, *, field: str) -> tuple[str, ...]:

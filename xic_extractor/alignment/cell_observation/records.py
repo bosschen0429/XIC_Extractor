@@ -281,7 +281,6 @@ def mint_cell_observation_ref(
     upstreams = _cell_upstream_artifacts(
         group_context=group_context,
         method_assessment=method_assessment,
-        peak_observation=peak_observation,
         outside_group_context=outside_group_context,
     )
     artifact = mint_evidence_artifact_ref(
@@ -339,15 +338,12 @@ def _cell_upstream_artifacts(
     *,
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessmentRef,
-    peak_observation: PeakObservationRef | None,
     outside_group_context: CidNlCellGroupContext | None = None,
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = [method_assessment.artifact]
     if outside_group_context is not None:
         artifacts.extend(outside_group_context.support_artifacts)
     artifacts.extend(group_context.support_artifacts)
-    if peak_observation is not None:
-        artifacts.append(peak_observation.artifact)
     artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
     return tuple(
         artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)

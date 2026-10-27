@@ -34,7 +34,6 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     PeakObservationGenerationProvenance,
     PeakObservationRef,
-    _mint_peak_observation_artifact,
     _project_peak_observation_values,
     _validate_peak_observation_inputs,
     mint_peak_observation_ref,
@@ -634,8 +633,7 @@ def mint_captured_peak_observation(
             raise PeakObservationContractError(
                 "capture observation references a different sample"
             )
-        return _mint_peak_observation_artifact(
-            processing_owners=processing_owners,
+        return PeakObservationRef(
             content=content,
             generation_provenance=provenance,
             source_trace=capture.trace,

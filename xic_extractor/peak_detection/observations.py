@@ -2,7 +2,7 @@
 
 ``peak_detection`` owns the measured trace region and integration facts.  The
 reference keeps physical content equality separate from the exact generation
-context and producer attempt.  It grants no hypothesis, selection, or product
+context.  It grants no hypothesis, selection, or product
 authority.
 """
 
@@ -20,11 +20,6 @@ import numpy as np
 
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-)
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
 )
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
@@ -86,14 +81,6 @@ _INTEGRATION_TEXT_FIELDS = frozenset(
         "ms1_morphology_area_source",
         "ms1_morphology_trace_method",
     }
-)
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.observations",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
 )
 
 
@@ -360,7 +347,6 @@ class PeakObservationRef:
 
     content: PeakObservationContent
     generation_provenance: PeakObservationGenerationProvenance
-    artifact: EvidenceArtifactRef
     source_trace: Trace = field(compare=False)
     physical_evaluation: PhysicalPeakEvaluation | None = field(
         default=None, compare=False
@@ -426,8 +412,7 @@ def mint_peak_observation_ref(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
     )
-    return _mint_peak_observation_artifact(
-        processing_owners=processing_owners,
+    return PeakObservationRef(
         content=content,
         generation_provenance=generation_provenance,
         source_trace=trace,
@@ -514,8 +499,7 @@ def mint_physical_peak_observations(
             shared_trace_provenance=provenance,
         )
         observations.append(
-            _mint_peak_observation_artifact(
-                processing_owners=processing_owners,
+            PeakObservationRef(
                 content=content,
                 generation_provenance=provenance,
                 source_trace=trace,
@@ -551,37 +535,6 @@ def _validate_peak_observation_inputs(
         raise PeakObservationContractError(
             "integration must be an IntegrationResult value"
         )
-
-
-def _mint_peak_observation_artifact(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    content: PeakObservationContent,
-    generation_provenance: PeakObservationGenerationProvenance,
-    source_trace: Trace,
-    physical_evaluation: PhysicalPeakEvaluation | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    capture_stage: str = "initial_capture",
-) -> PeakObservationRef:
-    payload_bytes = canonical_peak_observation_ref_bytes(
-        content,
-        generation_provenance,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=payload_bytes,
-    )
-    return PeakObservationRef(
-        content=content,
-        generation_provenance=generation_provenance,
-        artifact=artifact,
-        source_trace=source_trace,
-        physical_evaluation=physical_evaluation,
-        signal_processing_profile=signal_processing_profile,
-        capture_stage=capture_stage,
-    )
 
 
 def validate_peak_observation_trace_binding(
@@ -771,60 +724,19 @@ def _owner_minted_peak_observation_content(
     return content
 
 
-def canonical_peak_observation_ref_bytes(
-    content: PeakObservationContent,
-    generation_provenance: PeakObservationGenerationProvenance,
-) -> bytes:
-    """Return canonical bytes for the exact content/provenance envelope."""
-
-    if not isinstance(content, PeakObservationContent):
-        raise PeakObservationContractError(
-            "content must be owner-normalized peak observation content"
-        )
-    if not isinstance(
-        generation_provenance,
-        PeakObservationGenerationProvenance,
-    ):
-        raise PeakObservationContractError(
-            "generation_provenance must be owner-normalized"
-        )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": _content_payload(content),
-        "generation_provenance": asdict(generation_provenance),
-    }
-    return _canonical_json_bytes(payload)
-
-
 def validate_peak_observation_binding(
     reference: PeakObservationRef,
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> None:
-    """Reject processing-request, attempt, or canonical-sample substitution."""
+    """Check the sample and RAW source against the acquisition request."""
 
     if not isinstance(reference, PeakObservationRef):
         raise PeakObservationContractError(
             "reference must be an owner-minted PeakObservationRef"
         )
     acquisition_source = _request_acquisition_source(processing_owners, sample)
-    artifact = reference.artifact
-    if (
-        artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise PeakObservationContractError(
-            "peak observation references a different processing request"
-        )
-    if (
-        artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise PeakObservationContractError(
-            "peak observation references a different processing attempt"
-        )
     if reference.content.sample_key != sample.identity.sample_key:
         raise PeakObservationContractError(
             "peak observation references a different sample"
@@ -1424,7 +1336,6 @@ __all__ = [
     "PeakObservationGenerationProvenance",
     "PeakObservationRef",
     "SCHEMA_VERSION",
-    "canonical_peak_observation_ref_bytes",
     "mint_peak_observation_ref",
     "same_selected_peak",
     "validate_peak_observation_binding",

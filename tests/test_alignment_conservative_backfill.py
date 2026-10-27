@@ -148,7 +148,9 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
         (spine.group, frozenset({fixture.sample("s3").identity.sample_key})),
     )
 
-    rejected = replace(spine.group, disposition="rejected")
+    rejected = replace(
+        spine.group, membership=replace(spine.group.membership, disposition="rejected")
+    )
 
     assert (
         plan_conservative_backfill_targets(
@@ -744,37 +746,6 @@ def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
     assert decision.disposition == "hold"
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("like_to_like_rt_mz_mismatch",)
-
-
-def test_cross_attempt_recovery_evidence_fails_closed_without_retry_inference(
-    tmp_path: Path,
-) -> None:
-    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="attempt-owner",
-        ).cells,
-        sample_population=fixture.samples,
-    )
-    retry = fixture.retry()
-    retry_universe = _recovery_universe(
-        retry,
-        (facts,),
-        "missing",
-        (_peak(retry, "missing", apex_rt=8.0),),
-    )
-
-    decision = map_conservative_backfill_candidates(
-        (facts,),
-        sample=fixture.sample("missing"),
-        candidate_universes=(retry_universe,),
-    )[0]
-
-    assert decision.disposition == "hold"
-    assert decision.matched_candidate is None
-    assert decision.reason_codes == ("processing_attempt_mismatch",)
 
 
 def test_group_support_closure_accepts_predecessor_but_rejects_sibling_attempt(

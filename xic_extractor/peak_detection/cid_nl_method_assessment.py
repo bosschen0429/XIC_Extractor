@@ -543,7 +543,6 @@ def mint_cid_nl_method_assessment_ref(
         reason_codes=reason_codes,
     )
     upstreams = _assessment_upstream_artifacts(
-        candidate_peaks=candidates,
         evidence_refs=evidence,
         individual_support_refs=individual,
         set_relation_refs=set_relations,
@@ -1151,13 +1150,11 @@ def _supported_peak_ids(
 
 def _assessment_upstream_artifacts(
     *,
-    candidate_peaks: tuple[PeakObservationRef, ...],
     evidence_refs: tuple[CidNlEvidenceRef, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = (
-        *(peak.artifact for peak in candidate_peaks),
         *(ref.artifact for ref in evidence_refs),
         *(ref.artifact for ref in individual_support_refs),
         *(ref.artifact for ref in set_relation_refs),
@@ -1186,19 +1183,12 @@ def _canonical_candidates(
     refs = tuple(
         sorted(
             value,
-            key=lambda item: (
-                item.content.peak_observation_content_id,
-                item.artifact.evidence_artifact_id,
-            ),
+            key=lambda item: item.content.peak_observation_content_id,
         )
     )
     _require_unique_refs(
         tuple(item.content.peak_observation_content_id for item in refs),
         field="candidate peak content",
-    )
-    _require_unique_refs(
-        tuple(item.artifact.evidence_artifact_id for item in refs),
-        field="candidate peak artifact",
     )
     return refs
 

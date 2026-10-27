@@ -135,11 +135,6 @@ def _emit_curve_payload(
                 "proposal_sources",
             )
         )
-        actual.update(
-            observation_artifact_id=ref.artifact.evidence_artifact_id,
-            processing_request_id=ref.artifact.producer_processing_request_id,
-            processing_attempt_id=ref.artifact.producer_processing_attempt_id,
-        )
     elif trace is not None:
         actual["acquisition_source_id"] = trace.acquisition_source_id
     obs_id = content.peak_observation_content_id if content is not None else None

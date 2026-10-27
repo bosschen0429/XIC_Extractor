@@ -946,9 +946,6 @@ def adapt_current_discovery_sample_subject(
         _observer=_observer,
         _preacquired_traces=_preacquired_traces,
     )
-    if _observer is not None:
-        for observation in observations:
-            _observer.record_artifact(observation.artifact)
     evidence_refs: list[CidNlEvidenceRef] = []
     projections: list[UntargetedCidNlProjectionRef] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
@@ -1035,7 +1032,6 @@ def adapt_current_discovery_sample_subject(
     lineage = canonical_current_attempt_artifact_closure(
         producer_attempt=processing_owners.attempt,
         artifacts=(
-            *(observation.artifact for observation in candidate_universe),
             *(evidence.artifact for evidence in evidence_refs),
             *(projection.artifact for projection in projections),
             *(support.artifact for support in individual_refs),
@@ -1274,9 +1270,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         if physical_evaluations[0].reason != "incomplete_peak_context":
             break
     observations = (observation,) if observation is not None else ()
-    if _observer is not None:
-        for observation in observations:
-            _observer.record_artifact(observation.artifact)
     backfill_evidence: tuple[CidNlEvidenceRef, ...] = ()
     backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
     backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
@@ -1385,7 +1378,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     lineage = canonical_current_attempt_artifact_closure(
         producer_attempt=processing_owners.attempt,
         artifacts=(
-            *(observation.artifact for observation in observations),
             *(ref.artifact for ref in backfill_evidence),
             *(ref.artifact for ref in backfill_support),
             *(ref.artifact for ref in backfill_sets),

@@ -100,12 +100,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
     )
     assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
     assert support.artifact.upstream_artifact_ids == tuple(
-        sorted(
-            (
-                evidence.artifact.evidence_artifact_id,
-                peak.artifact.evidence_artifact_id,
-            )
-        )
+        sorted((evidence.artifact.evidence_artifact_id,))
     )
     assert canonical_dda_cid_nl_peak_support_bytes(support)
 
@@ -114,7 +109,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
         attempt=fixture.attempt,
         sample_snapshot=fixture.sample.snapshot,
         sample_resolutions=(fixture.sample,),
-        evidence_artifacts=(support.artifact, peak.artifact, evidence.artifact),
+        evidence_artifacts=(support.artifact, evidence.artifact),
     )
     assert support.artifact in closed.evidence_artifacts
 

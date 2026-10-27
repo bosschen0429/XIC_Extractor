@@ -100,10 +100,7 @@ def resolve_dda_cid_nl_peak_support_ref(
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=_support_bytes(content),
-        upstream_artifacts=(
-            canonical_evidence.artifact,
-            *(candidate.artifact for candidate in candidate_peaks),
-        ),
+        upstream_artifacts=(canonical_evidence.artifact,),
     )
     return DdaCidNlPeakSupportRef(content=content, artifact=artifact)
 
@@ -163,14 +160,7 @@ def validate_dda_cid_nl_peak_support_binding(
             "DDA CID-NL peak support references a different peak observation or "
             "candidate universe"
         )
-    expected_upstream_ids = tuple(
-        sorted(
-            (
-                canonical_evidence.artifact.evidence_artifact_id,
-                *(peak.artifact.evidence_artifact_id for peak in candidate_peaks),
-            )
-        )
-    )
+    expected_upstream_ids = (canonical_evidence.artifact.evidence_artifact_id,)
     if reference.artifact.upstream_artifact_ids != expected_upstream_ids:
         raise DdaCidNlPeakSupportContractError(
             "DDA CID-NL peak support upstream references were substituted"
@@ -286,13 +276,10 @@ def _validate_candidate_peaks(
             "candidate_peaks must contain owner-backed PeakObservationRef values"
         )
     typed_peaks = candidate_peaks
-    artifact_ids = tuple(peak.artifact.evidence_artifact_id for peak in typed_peaks)
     content_ids = tuple(
         peak.content.peak_observation_content_id for peak in typed_peaks
     )
-    if len(set(artifact_ids)) != len(artifact_ids) or len(set(content_ids)) != len(
-        content_ids
-    ):
+    if len(set(content_ids)) != len(content_ids):
         raise DdaCidNlPeakSupportContractError(
             "candidate physical MS1 peak observations are ambiguous"
         )

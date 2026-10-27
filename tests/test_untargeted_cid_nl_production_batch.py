@@ -430,9 +430,6 @@ def _expected_retained_curve(
             "proposal_sources",
         ):
             provenance[name] = getattr(generation, name)
-        provenance["observation_artifact_id"] = (
-            observation.artifact.evidence_artifact_id
-        )
     integration = (
         observation.content.integration
         if observation is not None

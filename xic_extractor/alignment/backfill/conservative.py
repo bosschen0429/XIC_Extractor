@@ -244,7 +244,6 @@ def mint_conservative_backfill_candidate_universe(
         upstream_artifacts=_backfill_universe_upstream_artifacts(
             facts,
             candidate_assessment,
-            localization_sources,
         ),
     )
     return ConservativeBackfillCandidateUniverse(
@@ -332,16 +331,12 @@ def _backfill_universe_bytes(
                 "peak_observation_content_id": (
                     peak.content.peak_observation_content_id
                 ),
-                "peak_observation_artifact_id": peak.artifact.evidence_artifact_id,
             }
             for peak in peaks
         ],
     }
     if localization is not None:
         payload["localization"] = asdict(localization)
-        payload["localization_source_artifact_ids"] = [
-            peak.artifact.evidence_artifact_id for peak in localization_sources
-        ]
     return (
         json.dumps(
             payload,
@@ -705,7 +700,6 @@ def map_conservative_backfill_candidates(
                     if (
                         mismatch := _candidate_group_mismatch_reason(
                             group_facts[index],
-                            target_cells[index],
                             candidate,
                         )
                     )
@@ -858,12 +852,10 @@ def _processing_owner_sample_population(
 def _backfill_universe_upstream_artifacts(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
-    localization_sources: tuple[PeakObservationRef, ...] = (),
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = (
         *(cell.artifact for fact in facts for cell in fact.source_cells),
         candidate_assessment.artifact,
-        *(peak.artifact for peak in localization_sources),
     )
     by_id = {artifact.evidence_artifact_id: artifact for artifact in artifacts}
     return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
@@ -980,20 +972,10 @@ def _finite_group_center_rt(
 
 def _candidate_group_mismatch_reason(
     facts: ConservativeBackfillGroupFacts,
-    target_cell: CellObservationRef,
     candidate: ConservativeBackfillEvidence,
 ) -> str | None:
     if candidate.method_subject_id != _group_method_subject_id(facts):
         return "like_to_like_rt_mz_mismatch"
-    candidate_artifact = candidate.peak_observation.artifact
-    assessment_artifact = target_cell.method_assessment.artifact
-    if (
-        candidate_artifact.producer_processing_request_id
-        != assessment_artifact.producer_processing_request_id
-        or candidate_artifact.producer_processing_attempt_id
-        != assessment_artifact.producer_processing_attempt_id
-    ):
-        return "processing_attempt_mismatch"
     group = facts.group_context.group
     group_rt = _group_center_rt(facts)
     group_mz = group.group_center_mz

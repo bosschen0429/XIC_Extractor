@@ -230,22 +230,6 @@ def _validate_reference_content_pair(
         raise PeakHypothesisContractError(
             "chromatographic support references a different physical MS1 peak"
         )
-    request_ids = {
-        peak_observation.artifact.producer_processing_request_id,
-        chromatographic_support.artifact.producer_processing_request_id,
-    }
-    if len(request_ids) != 1:
-        raise PeakHypothesisContractError(
-            "owner-backed references use different processing requests"
-        )
-    attempt_ids = {
-        peak_observation.artifact.producer_processing_attempt_id,
-        chromatographic_support.artifact.producer_processing_attempt_id,
-    }
-    if len(attempt_ids) != 1:
-        raise PeakHypothesisContractError(
-            "owner-backed references use different processing attempts"
-        )
 
 
 def _hypothesis_id(

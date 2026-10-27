@@ -111,7 +111,6 @@ def group_member_subject_from_peak_hypothesis(
         or len(set(physical_ids)) != len(physical_ids)
         or any(
             observation.content.sample_key != sample_id
-            or observation.artifact.producer_processing_request_id != request_id
             for observation in hypothesis.peak_observation_refs
         )
     ):
