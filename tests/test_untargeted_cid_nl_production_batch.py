@@ -1410,14 +1410,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "alignment" / ".cid_nl_runtime.json",
         "untargeted-cid-nl-alignment",
     ).read_optional()
-    assert marker is not None and marker.observability_ledger_bytes is not None
-    persisted_ledger = json.loads(marker.observability_ledger_bytes)
-    assert persisted_ledger["schema_version"] == (
-        "execution_runtime_observability_ledger"
-    )
-    assert all(
-        event["monotonic_offset_ns"] is None for event in persisted_ledger["events"]
-    )
+    assert marker is not None
+    assert marker.processing_attempt_id == completed.processing_attempt_id
+    assert marker.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    runtime_ledger = completed.runtime_receipt.observability_ledger
+    assert all(event.monotonic_offset_ns is None for event in runtime_ledger.events)
     unavailable_metric_names = {
         "artifact_read_count",
         "artifact_read_bytes",
@@ -1429,26 +1426,24 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     }
     unavailable_metrics = tuple(
         metric
-        for metric in persisted_ledger["metrics"]
-        if metric["name"] in unavailable_metric_names
+        for metric in runtime_ledger.metrics
+        if metric.name in unavailable_metric_names
     )
-    assert {metric["name"] for metric in unavailable_metrics} == (
-        unavailable_metric_names
-    )
+    assert {metric.name for metric in unavailable_metrics} == unavailable_metric_names
     assert all(
-        metric["availability"] == "unsupported"
-        and metric["value"] is None
-        and metric["reason"] == "not_collected_by_alignment_foreground_runner"
+        metric.availability is RuntimeMetricAvailability.UNSUPPORTED
+        and metric.value is None
+        and metric.reason == "not_collected_by_alignment_foreground_runner"
         for metric in unavailable_metrics
     )
     rss = [
         metric
-        for metric in persisted_ledger["metrics"]
-        if metric["name"] == "process_tree_peak_rss_bytes"
+        for metric in runtime_ledger.metrics
+        if metric.name == "process_tree_peak_rss_bytes"
     ]
     assert len(rss) == 1
-    assert rss[0]["availability"] == "measured"
-    assert rss[0]["value"] == 123456
+    assert rss[0].availability is RuntimeMetricAvailability.MEASURED
+    assert rss[0].value == 123456
     _assert_jobs_match_direct_construction(captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result

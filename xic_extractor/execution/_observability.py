@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import final
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
@@ -15,9 +13,6 @@ from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 class RuntimeObservabilityContractError(ValueError):
     """Raised when an attempt ledger or metric set is incomplete or ambiguous."""
-
-
-_RUNTIME_OBSERVABILITY_MINT_TOKEN = object()
 
 
 class RuntimeObservationSubject(str, Enum):
@@ -268,23 +263,14 @@ class RuntimeMetricRecord:
             _required_text(self.reason, "reason")
 
 
-@final
 @dataclass(frozen=True, slots=True)
 class RuntimeObservabilityLedger:
     attempt: ProcessingAttemptIdentity
     work_unit_keys: tuple[str, ...]
     events: tuple[RuntimeObservationEvent, ...]
     metrics: tuple[RuntimeMetricRecord, ...]
-    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeObservabilityLedger is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OBSERVABILITY_MINT_TOKEN:
-            raise RuntimeObservabilityContractError(
-                "RuntimeObservabilityLedger must be minted by the runtime owner"
-            )
+    def __post_init__(self) -> None:
         attempt = _require_attempt(self.attempt)
         if not isinstance(self.work_unit_keys, tuple) or any(
             not isinstance(key, str) or not key.strip() for key in self.work_unit_keys
@@ -355,75 +341,6 @@ class RuntimeObservabilityLedger:
             self.metrics,
             preflight_failed=preflight_failed,
         )
-
-
-def _mint_runtime_observability_ledger(
-    *,
-    attempt: ProcessingAttemptIdentity,
-    work_unit_keys: tuple[str, ...],
-    events: tuple[RuntimeObservationEvent, ...],
-    metrics: tuple[RuntimeMetricRecord, ...],
-) -> RuntimeObservabilityLedger:
-    """Mint one validated ledger for the runtime owner or owner-model tests."""
-
-    return RuntimeObservabilityLedger(
-        attempt=attempt,
-        work_unit_keys=work_unit_keys,
-        events=events,
-        metrics=metrics,
-        _mint_token=_RUNTIME_OBSERVABILITY_MINT_TOKEN,
-    )
-
-
-def canonical_runtime_observability_ledger_bytes(
-    ledger: RuntimeObservabilityLedger,
-) -> bytes:
-    """Serialize one validated complete ledger for durable terminal binding."""
-
-    if not isinstance(ledger, RuntimeObservabilityLedger):
-        raise RuntimeObservabilityContractError(
-            "ledger must be a RuntimeObservabilityLedger"
-        )
-    payload = {
-        "events": [
-            {
-                "kind": event.kind,
-                "monotonic_offset_ns": event.monotonic_offset_ns,
-                "sequence": event.sequence,
-                "subject": event.subject.value,
-                "subject_key": event.subject_key,
-            }
-            for event in ledger.events
-        ],
-        "metrics": [
-            {
-                "aggregation": metric.aggregation,
-                "availability": metric.availability.value,
-                "measurement_source": metric.measurement_source,
-                "name": metric.name,
-                "reason": metric.reason,
-                "scope": metric.scope.value,
-                "scope_key": metric.scope_key,
-                "unit": metric.unit,
-                "value": metric.value,
-            }
-            for metric in sorted(
-                ledger.metrics,
-                key=lambda item: (item.name, item.scope.value, item.scope_key),
-            )
-        ],
-        "processing_attempt_id": ledger.attempt.processing_attempt_id,
-        "processing_request_id": ledger.attempt.processing_request_id,
-        "schema_version": "execution_runtime_observability_ledger",
-        "work_unit_keys": list(ledger.work_unit_keys),
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def validate_runtime_acquisition_metrics(
@@ -1093,6 +1010,5 @@ __all__ = (
     "RuntimeMetricScope",
     "RuntimeObservabilityContractError",
     "RuntimeObservationSubject",
-    "canonical_runtime_observability_ledger_bytes",
     "validate_runtime_acquisition_metrics",
 )

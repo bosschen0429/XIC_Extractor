@@ -21,7 +21,6 @@ from xic_extractor.execution._observability import (
     RuntimeObservabilityLedger,
     RuntimeObservationEvent,
     RuntimeObservationSubject,
-    _mint_runtime_observability_ledger,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
@@ -231,7 +230,7 @@ def build_runtime_observability_ledger(
                     reason=None if worker_rss_supported else "not_applicable_serial",
                 )
             )
-    return _mint_runtime_observability_ledger(
+    return RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
         events=events,

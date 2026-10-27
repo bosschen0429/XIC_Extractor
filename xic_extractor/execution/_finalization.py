@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import Counter
 from collections.abc import (
     Collection,
@@ -20,7 +18,6 @@ from xic_extractor.execution._lifecycle import (
     AttemptLifecycleEventKind,
     AttemptRuntime,
     AttemptTerminalOutcome,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution._observability import (
@@ -30,11 +27,8 @@ from xic_extractor.execution._observability import (
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 from xic_extractor.validation_primitives import (
-    canonical_json_bytes,
-    require_lower_sha256,
     require_owner_normalized_text,
     require_tuple_of,
-    sha256_hexdigest,
 )
 
 
@@ -273,7 +267,6 @@ class CoordinatorTerminalRecord:
 
     state: AttemptFinalizationState
     proposed_outcome: AttemptTerminalOutcome
-    coordinator_event_digest: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, AttemptFinalizationState):
@@ -297,10 +290,6 @@ class CoordinatorTerminalRecord:
             raise RuntimeFinalizationContractError(
                 "coordinator outcome must match the terminal event"
             )
-        if self.coordinator_event_digest != _coordinator_event_digest(self.state):
-            raise RuntimeFinalizationContractError(
-                "coordinator_event_digest does not bind the event ledger"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,10 +304,9 @@ class SupervisorFinalizationEvent:
 
 @dataclass(frozen=True, slots=True)
 class SupervisorFinalizationRecord:
-    """Content-bound acknowledgement candidate for owner-supplied persistence."""
+    """Terminal acknowledgement facts for owner-supplied persistence."""
 
     attempt: ProcessingAttemptIdentity
-    coordinator_record_sha256: str
     terminal_outcome: AttemptTerminalOutcome
     artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...]
     events: tuple[SupervisorFinalizationEvent, ...]
@@ -326,7 +314,6 @@ class SupervisorFinalizationRecord:
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
-        _require_sha256(self.coordinator_record_sha256)
         if not isinstance(self.terminal_outcome, AttemptTerminalOutcome):
             raise RuntimeFinalizationContractError(
                 "terminal_outcome must be an AttemptTerminalOutcome"
@@ -351,33 +338,6 @@ class SupervisorFinalizationRecord:
             )
 
 
-def _coordinator_event_digest(state: AttemptFinalizationState) -> str:
-    payload = {
-        "attempt_events": [
-            {
-                "sequence": item.sequence,
-                "kind": item.kind.value,
-                "proposed_outcome": (
-                    item.proposed_outcome.value if item.proposed_outcome else None
-                ),
-            }
-            for item in state.runtime.history.events
-        ],
-        "lifecycle_events": [
-            {
-                "sequence": item.sequence,
-                "kind": item.kind.value,
-                "subject_key": item.subject_key,
-                "proposed_outcome": (
-                    item.proposed_outcome.value if item.proposed_outcome else None
-                ),
-            }
-            for item in state.events
-        ],
-    }
-    return sha256_hexdigest(canonical_json_bytes(payload))
-
-
 def _require_attempt(value: object) -> ProcessingAttemptIdentity:
     if not isinstance(value, ProcessingAttemptIdentity):
         raise RuntimeFinalizationContractError(
@@ -391,16 +351,6 @@ def _required_text(value: object, *, field: str) -> str:
         value,
         field=field,
         error_factory=RuntimeFinalizationContractError,
-    )
-
-
-def _require_sha256(value: object) -> str:
-    return require_lower_sha256(
-        value,
-        field="coordinator_record_sha256",
-        error_factory=lambda _: RuntimeFinalizationContractError(
-            "coordinator_record_sha256 must be a lower-case SHA-256 digest"
-        ),
     )
 
 
@@ -687,7 +637,6 @@ def propose_attempt_terminal(
         return CoordinatorTerminalRecord(
             state=state,
             proposed_outcome=AttemptTerminalOutcome.FAILED,
-            coordinator_event_digest=_coordinator_event_digest(state),
         )
     _require_mutable_state(state)
     if not state.runtime.all_manifest_work_settled:
@@ -747,7 +696,6 @@ def propose_attempt_terminal(
     return CoordinatorTerminalRecord(
         state=proposed,
         proposed_outcome=outcome,
-        coordinator_event_digest=_coordinator_event_digest(proposed),
     )
 
 
@@ -756,7 +704,7 @@ def mint_supervisor_finalization(
     *,
     observability_ledger: RuntimeObservabilityLedger,
 ) -> SupervisorFinalizationRecord:
-    """Mint the exact atomic acknowledgement batch for a coordinator record."""
+    """Close the acknowledgement batch for a coordinator's terminal proposal."""
 
     if not isinstance(coordinator, CoordinatorTerminalRecord):
         raise RuntimeFinalizationContractError(
@@ -815,9 +763,6 @@ def mint_supervisor_finalization(
     )
     return SupervisorFinalizationRecord(
         attempt=attempt,
-        coordinator_record_sha256=hashlib.sha256(
-            canonical_coordinator_terminal_record_bytes(coordinator)
-        ).hexdigest(),
         terminal_outcome=coordinator.proposed_outcome,
         artifact_dispositions=dispositions,
         events=tuple(events),
@@ -919,107 +864,6 @@ def _validate_observability_against_coordinator(
             "observability ledger raw_open_count conflicts with finalized "
             "runtime resources"
         )
-
-
-def canonical_coordinator_terminal_record_bytes(
-    coordinator: CoordinatorTerminalRecord,
-) -> bytes:
-    """Return deterministic recovery-record bytes without product payloads."""
-
-    state = coordinator.state
-    integrity_failure = state.runtime.integrity_failure
-    payload = {
-        "schema_version": "execution_runtime_coordinator_terminal",
-        "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
-        "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
-        "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
-        "work_settlements": [
-            _work_unit_settlement_payload(item) for item in state.runtime.settlements
-        ],
-        "settlement_integrity_failure": (
-            None
-            if integrity_failure is None
-            else {
-                "work_unit_key": integrity_failure.work_unit_key,
-                "kind": integrity_failure.kind.value,
-                "submitted_settlement": _work_unit_settlement_payload(
-                    integrity_failure.submitted_settlement
-                ),
-                "accepted_settlement": (
-                    None
-                    if integrity_failure.accepted_settlement is None
-                    else _work_unit_settlement_payload(
-                        integrity_failure.accepted_settlement
-                    )
-                ),
-            }
-        ),
-        "resources": [
-            {
-                "resource_kind": item.reservation.kind.value,
-                "resource_key": item.reservation.resource_key,
-                "worker_key": item.reservation.worker_key,
-                "source_reference": item.reservation.source_reference,
-                "compatibility_token": item.reservation.compatibility_token,
-                "owner_conditional": item.reservation.owner_conditional,
-                "open_outcome": item.open_outcome.value if item.open_outcome else None,
-                "cleanup_outcome": (
-                    item.cleanup_outcome.value if item.cleanup_outcome else None
-                ),
-            }
-            for item in state.resources
-        ],
-        "artifacts": [
-            {
-                "work_unit_key": item.work_unit_key,
-                "evidence_artifact_id": item.artifact.evidence_artifact_id,
-                "proposed_disposition": item.proposed_disposition.value,
-            }
-            for item in state.artifacts
-        ],
-        "failures": [
-            {
-                "kind": item.kind.value,
-                "subject_key": item.subject_key,
-                "message": item.message,
-            }
-            for item in state.failures
-        ],
-        "proposed_outcome": coordinator.proposed_outcome.value,
-        "coordinator_event_digest": coordinator.coordinator_event_digest,
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-
-
-def _work_unit_settlement_payload(
-    settlement: WorkUnitSettlement,
-) -> dict[str, object]:
-    failure_detail = settlement.failure_detail
-    return {
-        "failure_detail": (
-            None
-            if failure_detail is None
-            else {
-                "category": failure_detail.category.value,
-                "message": failure_detail.message,
-                "source_reference": failure_detail.source_reference,
-                "stage": failure_detail.stage,
-            }
-        ),
-        "work_unit_key": settlement.work_unit_key,
-        "outcome": settlement.outcome.value,
-        "owner_result_artifact_id": (
-            None
-            if settlement.owner_result_ref is None
-            else settlement.owner_result_ref.evidence_artifact_id
-        ),
-    }
 
 
 def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome:
@@ -1144,5 +988,4 @@ __all__ = (
     "RuntimeResourceOpenOutcome",
     "RuntimeResourceReservation",
     "SupervisorFinalizationEventKind",
-    "canonical_coordinator_terminal_record_bytes",
 )

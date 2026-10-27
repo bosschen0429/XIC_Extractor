@@ -381,7 +381,7 @@ stable because they identify existing data or public interfaces.
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |
 | `revisit` | one context-directed Backfill attempt, represented by the retained `ObservationRevisit*` receipt types | a repair of a previously observed peak |
-| `recovery` | resuming or closing a run after a runtime failure (`recover_after_coordinator_loss`, `recovery_marker`) | Backfill; candidate search; oracle recall |
+| `recovery` | resuming or closing a run after a runtime failure | Backfill; candidate search; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
 | `recall` | the fraction of oracle reference compounds a run finds | — |
 

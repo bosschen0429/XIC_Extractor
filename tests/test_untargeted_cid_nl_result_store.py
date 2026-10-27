@@ -1,7 +1,6 @@
 """Partition storage preserves authority and releases serialized result graphs."""
 
 import gc
-import hashlib
 import pickle
 import shutil
 import subprocess
@@ -62,7 +61,6 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
     assert entry.size_bytes > 0
     stored_bytes = next(tmp_path.iterdir()).read_bytes()
     assert entry.size_bytes == len(stored_bytes)
-    assert entry.sha256 == hashlib.sha256(stored_bytes).hexdigest()
     restored = store.read(entry.index)
     assert restored is not payload
     assert restored.children[0]["owner"] is owner
@@ -150,7 +148,9 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
         ),
         children=children(),
     )
-    assert stream_entry.sha256 == tuple_entry.sha256
+    assert next((tmp_path / "stream").glob("*.pickle")).read_bytes() == (
+        next((tmp_path / "tuple").glob("*.pickle")).read_bytes()
+    )
     assert stream_entry.size_bytes == tuple_entry.size_bytes
     stream_store.seal()
     assert stream_store.read(0) == payload
@@ -550,3 +550,14 @@ def test_preserved_index_refuses_an_unsealed_store(tmp_path):
     forged.write_bytes(owner_pickle_dumps(store, ()))
     with pytest.raises(ValueError, match="sealed"):
         open_preserved_results(forged)
+
+
+def test_preserved_results_reject_obsolete_private_format(tmp_path):
+    store = StreamedResultStore(tmp_path, ())
+    store.append("partition", Payload((1,)))
+    # A previous-format private index has no format-version attribute.
+    del store._format_version
+    index = store.preserve_results()
+
+    with pytest.raises(ValueError, match="unsupported preserved partition format"):
+        open_preserved_results(index)

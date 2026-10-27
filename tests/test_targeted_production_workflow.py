@@ -1,4 +1,3 @@
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -24,7 +23,6 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2Product
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
-    canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import (
@@ -549,10 +547,6 @@ def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
         event.monotonic_offset_ns is None
         for event in receipt.observability_ledger.events
     )
-    canonical = json.loads(
-        canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
-    )
-    assert canonical["schema_version"] == "execution_runtime_observability_ledger"
     metrics = {metric.name: metric for metric in receipt.observability_ledger.metrics}
     for name in (
         "artifact_read_count",

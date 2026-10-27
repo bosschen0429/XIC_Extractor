@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import gc
-import json
 import weakref
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import cast
 
@@ -37,7 +36,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
-    canonical_coordinator_terminal_record_bytes,
 )
 from xic_extractor.execution._lifecycle import (
     AttemptLifecycleContractError,
@@ -50,7 +48,6 @@ from xic_extractor.execution._lifecycle import (
 from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     _index_event_offsets,
-    canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionMetrics,
@@ -61,7 +58,6 @@ from xic_extractor.execution.attempt import (
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
     RuntimeFinalizationReceipt,
-    RuntimeRawOpenMetrics,
     RuntimeResourceSettlementReceipt,
     RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
@@ -69,7 +65,6 @@ from xic_extractor.execution.attempt import (
     _derive_runtime_observability_ledger,
     _event_offset,
     _finalize_runtime_attempt,
-    _mint_runtime_attempt_aggregate,
     _prepare_runtime_attempt,
     compact_runtime_acquisition_receipt,
     derive_runtime_acquisition_metrics,
@@ -154,16 +149,6 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
     foreign = mint_raw_acquisition_session_capability(source)
     with pytest.raises(RuntimeFinalizationContractError, match="capability"):
         derive_runtime_raw_open_metrics(foreign, (receipt,))
-
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="minted by the runtime owner",
-    ):
-        RuntimeRawOpenMetrics(
-            raw_open_count=999,
-            unavailable_reason="",
-            _mint_token=object(),
-        )
 
 
 def test_owner_start_accepts_exact_typed_cancellation_request(
@@ -442,7 +427,7 @@ def test_runtime_phase_error_preserves_marker_durability_but_not_acceptance(
     assert error.attempt == attempt
     assert error.__cause__ is sentinel
     assert marker.read().state.value == "finalized"
-    assert marker.recover_after_coordinator_loss(attempt).finalization_acknowledged
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
@@ -654,50 +639,9 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         < event_kinds.index("terminal_proposal")
     )
 
-    coordinator_payload = json.loads(
-        canonical_coordinator_terminal_record_bytes(receipt.coordinator)
-    )
-    observability_payload = json.loads(
-        canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
-    )
-    assert coordinator_payload["schema_version"] == (
-        "execution_runtime_coordinator_terminal"
-    )
-    assert observability_payload["schema_version"] == (
-        "execution_runtime_observability_ledger"
-    )
     assert {
         metric.measurement_source for metric in receipt.observability_ledger.metrics
     } == {"execution_runtime_owner"}
-
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="RuntimeAttemptAggregate must be minted by the runtime owner",
-    ):
-        RuntimeAttemptAggregate(
-            state=aggregate.state,
-            acquisitions=aggregate.acquisitions,
-            _mint_token=object(),
-        )
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="RuntimeFinalizationReceipt must be minted by the runtime owner",
-    ):
-        RuntimeFinalizationReceipt(
-            coordinator=receipt.coordinator,
-            supervisor=receipt.supervisor,
-            _mint_token=object(),
-        )
-    assert not hasattr(aggregate, "_mint_token")
-    assert not hasattr(receipt, "_mint_token")
-    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
-        replace(aggregate)
-    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
-        replace(receipt)
-    with pytest.raises(TypeError, match="RuntimeAttemptAggregate is final"):
-        type("ForgedAggregate", (RuntimeAttemptAggregate,), {})
-    with pytest.raises(TypeError, match="RuntimeFinalizationReceipt is final"):
-        type("ForgedReceipt", (RuntimeFinalizationReceipt,), {})
 
     foreign_attempt = _attempt(tmp_path, stem="foreign-aggregate")
     foreign_aggregate = _prepare_runtime_attempt(
@@ -851,9 +795,7 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
     ):
         assert metrics[name].availability is RuntimeMetricAvailability.UNSUPPORTED
         assert metrics[name].reason == "not_started_preflight_failure"
-    recovered = marker.recover_after_coordinator_loss(attempt)
-    assert recovered.finalization_acknowledged is True
-    assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 @pytest.mark.parametrize(
@@ -1182,7 +1124,7 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
         aggregate = _apply_runtime_worker_batch(aggregate, batch)
         assert aggregate.state == expected_state
     expected = _finalize_runtime_attempt(
-        _mint_runtime_attempt_aggregate(state=expected_state),
+        RuntimeAttemptAggregate(state=expected_state),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         persister=lambda proposed: proposed,
     )
@@ -1191,12 +1133,10 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         persister=lambda proposed: proposed,
     )
-    assert canonical_coordinator_terminal_record_bytes(actual.coordinator) == (
-        canonical_coordinator_terminal_record_bytes(expected.coordinator)
+    assert asdict(actual.coordinator) == (asdict(expected.coordinator))
+    assert asdict(actual.observability_ledger) == (
+        asdict(expected.observability_ledger)
     )
-    assert canonical_runtime_observability_ledger_bytes(
-        actual.observability_ledger
-    ) == (canonical_runtime_observability_ledger_bytes(expected.observability_ledger))
     assert actual.supervisor == expected.supervisor
 
 
@@ -1331,7 +1271,7 @@ def _attempt(
 def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arrays(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.xic_models import XICRequest, XICTrace
+    from xic_extractor.xic_models import XICRequest
 
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
@@ -1355,11 +1295,6 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
     assert derive_runtime_acquisition_metrics((compact.acquisition, acquired)) == (
         derive_runtime_acquisition_metrics((acquired, acquired))
     )
-    with pytest.raises(
-        RuntimeFinalizationContractError, match="minted by the runtime owner"
-    ):
-        RuntimeAcquisitionReceipt("raw:a", compact.acquisition)
-
     attempt = _attempt(tmp_path)
     runtime = start_runtime_attempt(
         attempt=attempt,
@@ -1408,22 +1343,13 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         persister=lambda receipt: receipt,
     )
-    assert canonical_runtime_observability_ledger_bytes(
-        actual.observability_ledger
-    ) == (canonical_runtime_observability_ledger_bytes(expected.observability_ledger))
-    changed = replace(
-        acquired,
-        traces=(
-            replace(
-                acquired.traces[0],
-                trace=XICTrace.from_arrays([1.0, 2.0], [0.0, 99.0]),
-            ),
-        ),
+    assert asdict(actual.observability_ledger) == (
+        asdict(expected.observability_ledger)
     )
-    conflicting = compact_runtime_acquisition_receipt(
-        RuntimeAcquisitionReceipt("raw:a", changed)
+    conflicting = replace(
+        compact,
+        acquisition=replace(compact.acquisition, trace_point_count=999),
     )
-    assert conflicting.acquisition == compact.acquisition
     with pytest.raises(
         RuntimeFinalizationContractError, match="conflicting acquisition"
     ):

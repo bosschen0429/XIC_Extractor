@@ -19,7 +19,6 @@ from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
 from xic_extractor.execution.attempt import (
-    RuntimeAcquisitionMetrics,
     derive_runtime_acquisition_metrics,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
@@ -186,14 +185,6 @@ def test_runtime_owner_aggregates_only_typed_acquisition_receipts(
     with pytest.raises(ValueError, match="TraceAcquisitionBatch receipts"):
         derive_runtime_acquisition_metrics(  # type: ignore[arg-type]
             ({"logical_xic_request_count": 999},)
-        )
-    with pytest.raises(ValueError, match="minted by the runtime owner"):
-        RuntimeAcquisitionMetrics(
-            logical_xic_request_count=999,
-            xic_batch_count=999,
-            adapter_chromatogram_call_count=999,
-            trace_point_count=999,
-            _mint_token=object(),
         )
 
 

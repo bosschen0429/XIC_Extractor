@@ -1,5 +1,5 @@
 import math
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,8 +19,6 @@ from xic_extractor.execution._observability import (
     RuntimeObservabilityLedger,
     RuntimeObservationEvent,
     RuntimeObservationSubject,
-    _mint_runtime_observability_ledger,
-    canonical_runtime_observability_ledger_bytes,
     validate_runtime_acquisition_metrics,
 )
 from xic_extractor.processing_identity import (
@@ -35,7 +33,7 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=_events(attempt),
@@ -95,7 +93,7 @@ def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
 
     def observed(events):
         try:
-            value = _mint_runtime_observability_ledger(
+            value = RuntimeObservabilityLedger(
                 attempt=ledger.attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(events),
@@ -103,7 +101,7 @@ def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
             )
         except RuntimeObservabilityContractError as exc:
             return type(exc), str(exc)
-        return canonical_runtime_observability_ledger_bytes(value)
+        return asdict(value)
 
     variants = [ledger.events]
     for kind in (
@@ -167,46 +165,13 @@ def test_runtime_acquisition_metrics_treat_empty_projection_as_exact_zero(
         validate_runtime_acquisition_metrics(nonzero_ledger, ())
 
 
-def test_runtime_observability_ledger_rejects_forged_mint_capability(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    ledger = _mint_runtime_observability_ledger(
-        attempt=attempt,
-        work_unit_keys=("sample-a:target-a",),
-        events=_events(attempt),
-        metrics=_metrics(attempt.processing_attempt_id),
-    )
-
-    with pytest.raises(RuntimeObservabilityContractError, match="minted by"):
-        RuntimeObservabilityLedger(
-            attempt=attempt,
-            work_unit_keys=("sample-a:target-a",),
-            events=_events(attempt),
-            metrics=_metrics(attempt.processing_attempt_id),
-            _mint_token=object(),
-        )
-    assert not hasattr(ledger, "_mint_token")
-    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
-        replace(ledger)
-    with pytest.raises(TypeError, match="RuntimeObservabilityLedger is final"):
-        type("ForgedLedger", (RuntimeObservabilityLedger,), {})
-    with pytest.raises(
-        RuntimeObservabilityContractError,
-        match="ledger must be a RuntimeObservabilityLedger",
-    ):
-        canonical_runtime_observability_ledger_bytes(  # type: ignore[arg-type]
-            {"logical_xic_request_count": 0}
-        )
-
-
 def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
     events[3] = replace(events[3], monotonic_offset_ns=1)
 
     with pytest.raises(RuntimeObservabilityContractError, match="monotonic"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -220,7 +185,7 @@ def test_runtime_observability_rejects_missing_metric_availability(
     attempt = _attempt(tmp_path)
 
     with pytest.raises(RuntimeObservabilityContractError, match="missing"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -243,7 +208,7 @@ def test_runtime_observability_requires_measured_metrics_after_attempt_start(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="measured"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -269,7 +234,7 @@ def test_runtime_observability_requires_complete_terminal_lifecycle(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="lifecycle"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=events,
@@ -295,7 +260,7 @@ def test_runtime_observability_rejects_wrong_required_metric_shape(
     metrics[0] = replace(metrics[0], **replacement)
 
     with pytest.raises(RuntimeObservabilityContractError, match="metric contract"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -313,7 +278,7 @@ def test_runtime_observability_rejects_duplicate_or_unknown_metrics(
 
     for invalid in (duplicate, unknown):
         with pytest.raises(RuntimeObservabilityContractError, match="metric"):
-            _mint_runtime_observability_ledger(
+            RuntimeObservabilityLedger(
                 attempt=attempt,
                 work_unit_keys=("sample-a:target-a",),
                 events=_events(attempt),
@@ -369,7 +334,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         )
     )
 
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=events,
@@ -389,7 +354,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         for metric in ledger.metrics
     )
     with pytest.raises(RuntimeObservabilityContractError, match="worker"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=events,
@@ -426,7 +391,7 @@ def test_runtime_observability_represents_serial_mode_without_worker_process(
         for metric in _metrics(attempt.processing_attempt_id, events=events)
     )
 
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=events,
@@ -452,7 +417,7 @@ def test_runtime_observability_rejects_elapsed_metrics_that_conflict_with_events
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="event offsets"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -501,7 +466,7 @@ def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycl
         (tuple(wrong_subject), "resource subject"),
     ):
         with pytest.raises(RuntimeObservabilityContractError, match=match):
-            _mint_runtime_observability_ledger(
+            RuntimeObservabilityLedger(
                 attempt=attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(invalid),
@@ -540,7 +505,7 @@ def test_runtime_observability_rejects_cross_domain_phase_reordering(
             *base_events[7:],
         )
     )
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=canonical_events,
@@ -557,7 +522,7 @@ def test_runtime_observability_rejects_cross_domain_phase_reordering(
     invalid_events = list(_resequence(tuple(invalid_events)))
 
     with pytest.raises(RuntimeObservabilityContractError, match="causal phase"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=tuple(invalid_events),
@@ -604,7 +569,7 @@ def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycl
         (tuple(wrong_subject), "artifact subject"),
     ):
         with pytest.raises(RuntimeObservabilityContractError, match=match):
-            _mint_runtime_observability_ledger(
+            RuntimeObservabilityLedger(
                 attempt=attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(invalid),
@@ -647,7 +612,7 @@ def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="terminal proposal"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=_resequence(invalid),
@@ -671,7 +636,7 @@ def test_runtime_observability_rejects_artifact_disposition_before_acknowledgeme
     events.insert(acknowledgement, disposition)
 
     with pytest.raises(RuntimeObservabilityContractError, match="acknowledgement"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=_resequence(tuple(events)),
@@ -700,7 +665,7 @@ def test_runtime_observability_rejects_nonfinite_or_fractional_measurements(
             replace(metric, value=value) if metric.name == metric_name else metric
             for metric in _metrics(attempt.processing_attempt_id)
         )
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -713,7 +678,7 @@ def test_runtime_observability_accepts_preflight_failure_contract(
 ) -> None:
     attempt = _attempt(tmp_path)
 
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=(),
         events=_preflight_events(attempt),
@@ -735,7 +700,7 @@ def test_runtime_observability_rejects_out_of_order_work_lifecycle(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="lifecycle order"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -774,7 +739,7 @@ def test_runtime_observability_rejects_non_manifest_work_order(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="manifest order"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=work_unit_keys,
             events=invalid_events,
@@ -799,7 +764,7 @@ def test_runtime_observability_rejects_duplicate_work_lifecycle_event(
     ]
 
     with pytest.raises(RuntimeObservabilityContractError, match="exactly one"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -819,7 +784,7 @@ def test_runtime_observability_rejects_undeclared_work_event(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="undeclared"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -852,7 +817,7 @@ def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
     ]
 
     with pytest.raises(RuntimeObservabilityContractError, match="work_unit subject"):
-        _mint_runtime_observability_ledger(
+        RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -864,7 +829,7 @@ def test_runtime_observability_rejects_malformed_worker_lifecycle(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    ledger = _mint_runtime_observability_ledger(
+    ledger = RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=_events(attempt),
@@ -894,7 +859,7 @@ def test_runtime_observability_rejects_malformed_worker_lifecycle(
         (tuple(wrong_subject), "worker subject"),
     ):
         with pytest.raises(RuntimeObservabilityContractError, match=match):
-            _mint_runtime_observability_ledger(
+            RuntimeObservabilityLedger(
                 attempt=attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(invalid),

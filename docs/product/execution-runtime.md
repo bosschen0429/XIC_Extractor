@@ -8,7 +8,7 @@ It does not decide what the evidence means or what the product publishes.
 
 | Surface | Current support and limit |
 | --- | --- |
-| `AttemptRuntime`, required-work manifest, resource settlement, finalization receipt, and recovery marker | Executable owner contracts in [execution](../../xic_extractor/execution/attempt.py), consumed by Targeted and Untargeted application paths. A receipt covers its declared work, not automatically the entire product run. |
+| `AttemptRuntime`, required-work manifest, resource settlement, finalization result, and status marker | Executable owner contracts in [execution](../../xic_extractor/execution/attempt.py), consumed by Targeted and Untargeted application paths. A result covers its declared work, not automatically the entire product run. |
 | Observability ledger | The owner derives ordered lifecycle facts and mechanical counts from accepted receipts; callers supply measured timing, RSS, and runtime-mediated I/O. This is not a general public `RuntimeEvent` API or an external telemetry backend. |
 | Failed-attempt marker rollover | `OwnerPathRuntimeMarker.allow_failed_attempt_retry` can retain the old finalized failed/cancelled marker when a new attempt starts at the same location. |
 | Dependency reuse and resume | `ValidatedDependencyToken` and cross-attempt work reuse are not implemented. Their reserved contract is separated under [Retry and resume](#retry-and-resume). |
@@ -284,8 +284,9 @@ carry same-request/same-attempt owner-minted artifact references, not opaque
 strings or failure payloads.
 
 A settled work unit may report both initial and recovery acquisitions. The
-runtime retains distinct acquisition capabilities and deduplicates an exact
-receipt replay; conflicting content for the same capability remains an error.
+runtime retains distinct acquisition capabilities and deduplicates replayed
+counts for the same capability. Conflicting counts for one capability remain an
+error. Runtime telemetry does not rehash or compare scientific trace arrays.
 Batch adapters publish the acquisitions held by each phase directly, so a
 later recovery cannot hide the initial acquisition from accounting.
 
@@ -358,78 +359,37 @@ precedence over cancellation. The in-memory terminal decision is a frozen
 proposal; it becomes the terminal outcome only through the durable
 acknowledgement below.
 
-## Coordinator And Host-Loss Boundary
+## Coordinator And Durable Status Boundary
 
-The runtime keeps its reducer and detailed event ledger in memory. It uses
-one small durable supervisor marker to close the terminal handoff without
-claiming a durable queue:
+The runtime keeps the detailed reducer state, lifecycle events, and observability
+ledger in memory. The coordinator proposes a terminal outcome only after work,
+resource cleanup, and artifact dispositions close. The supervisor validates that
+outcome and the observability facts, then produces a typed finalization result.
+No token or content digest authenticates internal Python construction.
 
-1. before launch, the lineage owner or entry-point supervisor atomically records
-   the owner-created attempt identity, attempt-scoped temporary-artifact
-   namespace, and coordinator launch;
-2. after work, cleanup, and artifact-disposition proposal closure, the
-   coordinator produces one immutable canonical `CoordinatorTerminalRecord`
-   `execution_runtime_coordinator_terminal` byte sequence containing the
-   proposed outcome, manifest and per-unit outcomes, typed per-unit failure
-   details, typed resource kinds plus open/cleanup outcomes, artifact registry and proposed
-   dispositions, failures, coordinator metrics ending at terminal proposal,
-   and the coordinator event-ledger digest through that proposal;
-3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
-   runtime-owner-derived observability-ledger bytes inside the
-   self-contained `execution_runtime_recovery_marker` payload, then
-   atomically replaces the launch marker with one immutable
-   `SupervisorFinalizationRecord` containing the coordinator-record digest and
-   an atomic event batch continuing the coordinator sequence:
-   `terminal_acknowledged`, one committed disposition event for every
-   current-attempt artifact, and `terminal_outcome`. It also contains the
-   finalization offset and `attempt_wall_seconds`. Existence of this finalization
-   record is the durable acknowledgement that commits the attempt outcome and
-   corresponding logical artifact dispositions; no disposition event is
-   emitted before this atomic finalization exists.
+When an entry point uses `OwnerPathRuntimeMarker`, it writes a compact
+`execution_runtime_status_marker.v2` JSON status before launch and atomically
+replaces it after finalization. The marker records request and attempt identities,
+artifact namespace, manifest work keys, terminal outcome, and artifact dispositions.
+It does not serialize the coordinator or observability ledger, and it is not a
+proof of scientific output or a ProductWriter artifact.
 
-Coordinator-record write/integrity failure or supervisor-finalization failure
-cannot commit success. The coordinator and finalization records are recovery
-metadata, not delivery evidence or ProductWriter artifacts. Neither record
-contains or digests facts that occur only after that record is finalized.
-Public Targeted and Alignment application results revalidate the exact
-coordinator/finalization pair; matching attempt identity alone is insufficient.
+An exclusive sibling lock serializes read/validate/replace. Concurrent writers
+wait and revalidate; an unresolved stale lock fails rather than being auto-deleted.
+The write fsyncs a temporary file before replacement. A failed persister cannot
+be reported as accepted finalization, even if it failed after its durable write.
+The caller owns the path, namespace, retention, and publication policy.
+
+A launched marker identifies an unfinished attempt. There is no production
+coordinator-loss recovery API or in-place resume. A finalized marker retains the
+terminal status, not a reconstructable resource registry or telemetry history.
+Identical final status is idempotent; conflicting finalization and a different
+active or successful attempt at the same path are rejected. Unsupported marker
+formats require rerunning in a new output directory.
 
 `raw_open_count` counts only opened `acquisition_session` reservations. Opened
 `process_worker` reservations still emit complete resource lifecycle facts but
 cannot inflate acquisition-session telemetry.
-
-If the coordinator exits before durable terminal acknowledgement:
-
-- the supervisor reports `coordinator_loss`, and the lineage owner records the
-  old attempt as failed from the durable launch marker;
-- the old attempt can never become `succeeded`, resume in place, or lend its
-  current-attempt artifacts to delivery;
-- the whole attempt namespace is logically quarantined, while physical
-  reclamation remains an owner-supplied idempotent action;
-- no per-resource cleanup result is fabricated from the lost in-memory
-  registry; cleanup is conservatively unknown at attempt scope; and
-- retry requires a new `ProcessingAttempt` identity and fresh runtime.
-
-If the coordinator exits after acknowledgement, the durable acknowledgement is
-authoritative: the lineage owner verifies the supervisor finalization and its
-referenced coordinator record rather than downgrading the attempt to
-`coordinator_loss`. Replaying the same coordinator-record digest, outcome, and
-finalization facts is idempotent; a conflicting finalization for the same
-attempt fails closed.
-
-The launch/terminal marker is recovery evidence, not a second attempt identity
-or a durable runtime queue. A production integration that needs per-resource
-crash recovery before terminal proposal must first add and validate a durable
-registry or equivalent supervision contract. Until then, abrupt
-coordinator-loss handling remains a tested `diagnostic_only` boundary.
-
-The marker embeds the exact coordinator and validated observability-ledger
-bytes with separate content digests. An exclusive sibling lock serializes
-read/validate/replace: a concurrent writer waits and revalidates; an unresolved
-stale lock fails closed for owner recovery instead of being auto-deleted.
-The owner supplies the path, namespace, retention, and publication policy.
-This is not a storage engine, durable queue, current-delivery pointer, or
-product seal.
 
 
 ## Cancellation, Worker Loss, Partial Work, And Failure
@@ -521,8 +481,8 @@ Retry never reopens a terminal attempt. The lineage owner:
 
 For a caller that enables `OwnerPathRuntimeMarker.allow_failed_attempt_retry`,
 launching a new attempt in the same output directory first archives the prior
-finalized failed/cancelled marker under its attempt digest. The exact terminal
-receipt remains available; replacing the current marker does not promote old
+finalized failed/cancelled marker under its existing attempt key. The compact
+terminal status remains available; replacing the current marker does not promote old
 artifacts or change the predecessor's outcome. Active and successful attempts
 are not replaced. Without this option, a different attempt at the same marker
 path continues to be rejected.
@@ -593,8 +553,8 @@ Every coordinator event carries the attempt identity, monotonic sequence,
 monotonic offset from the runtime origin established by `attempt_queued`, event
 kind, and work-unit/resource reference where applicable. The coordinator ledger
 ends at `terminal_proposal`. The supervisor finalization continues from the last
-coordinator sequence and durably adds acknowledgement, committed artifact
-dispositions, and outcome; it is not part of the coordinator-record digest. The
+coordinator sequence and adds acknowledgement, committed artifact
+dispositions, and outcome. The optional durable marker stores the terminal status. The
 queued-to-terminal manifest-preflight path omits `attempt_started`; events
 listed below as started exist only after successful preflight. The minimum
 event set covers:
@@ -713,8 +673,8 @@ Only an opened `PROCESS_WORKER` reservation creates `worker_started` and require
 worker RSS. Unopened, inactive conditional, and failed-open reservations do not
 invent a worker. Monotonic offsets, RSS, and runtime-mediated I/O remain external
 samples; provenance for owner-derived facts is fixed to
-`execution_runtime_owner:v1`. Persistence consumes the accepted receipt's
-owner-minted ledger and canonical bytes/digest, never a caller-built mapping.
+`execution_runtime_owner:v1`. The ledger remains an in-memory typed result;
+marker persistence stores only the completed attempt status and dispositions.
 
 
 ## Verification and limits
@@ -727,7 +687,7 @@ Executable contract coverage lives with the owner:
   [finalization tests](../../tests/test_execution_runtime_finalization.py):
   work/resource/artifact closure, callback failure, and exact receipt acceptance.
 - [Marker tests](../../tests/test_execution_runtime_marker.py):
-  launch/finalization persistence, competing writes, and coordinator-loss recovery.
+  launch/finalization status, failed-attempt retry, and competing writes.
 - [Observability tests](../../tests/test_execution_runtime_observability.py):
   event ordering, metric availability, provenance, and receipt binding.
 

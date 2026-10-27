@@ -813,7 +813,6 @@ class UntargetedPartitionPipelineAdapter:
                     json.dumps(
                         {
                             "work_unit_key": key,
-                            "partition_sha256": sealed.sha256,
                             "partition_bytes": sealed.size_bytes,
                         },
                         sort_keys=True,

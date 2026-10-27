@@ -372,13 +372,13 @@ def test_runtime_compaction_is_a_public_fact_projection_not_a_private_entry(
     assert census.validate_runtime_boundary_authority(tmp_path, (adapter,)) == []
     source.write_text(
         "from xic_extractor.execution.attempt import "
-        "_runtime_acquisition_digest as digest\n"
+        "_apply_runtime_worker_batch as digest\n"
         "def summarize(receipt):\n    return digest(receipt)\n",
         encoding="utf-8",
     )
     problems = census.validate_runtime_boundary_authority(tmp_path, (adapter,))
     assert any(
-        "_runtime_acquisition_digest is owner-internal" in item for item in problems
+        "_apply_runtime_worker_batch is owner-internal" in item for item in problems
     )
 
 

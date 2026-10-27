@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,7 +30,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
     begin_attempt_finalization,
-    canonical_coordinator_terminal_record_bytes,
     mint_supervisor_finalization,
     propose_attempt_terminal,
 )
@@ -100,9 +98,6 @@ def test_success_closes_resource_artifact_and_atomic_acknowledgement(
             coordinator.state.events[-1].sequence + 1,
             coordinator.state.events[-1].sequence + 4,
         )
-    )
-    assert canonical_coordinator_terminal_record_bytes(coordinator) == (
-        canonical_coordinator_terminal_record_bytes(coordinator)
     )
 
 
@@ -234,15 +229,15 @@ def test_condition_not_activated_keeps_success_without_opening_resource(
     )
 
     coordinator = propose_attempt_terminal(state)
-    payload = json.loads(canonical_coordinator_terminal_record_bytes(coordinator))
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert coordinator.state.artifacts[0].proposed_disposition is (
         RuntimeArtifactDisposition.OFFERED_TO_OWNER
     )
-    assert payload["schema_version"] == "execution_runtime_coordinator_terminal"
-    assert payload["resources"][0]["owner_conditional"] is True
-    assert payload["resources"][0]["open_outcome"] == "condition_not_activated"
+    assert coordinator.state.resources[0].reservation.owner_conditional is True
+    assert coordinator.state.resources[0].open_outcome is (
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+    )
 
 
 def test_required_resource_cannot_claim_condition_not_activated(
@@ -483,45 +478,19 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
 
     failed_coordinator = close(failed_submission)
     alternate_coordinator = close(alternate_submission)
-    failed_bytes = canonical_coordinator_terminal_record_bytes(failed_coordinator)
-    alternate_bytes = canonical_coordinator_terminal_record_bytes(alternate_coordinator)
-    failure_payload = json.loads(failed_bytes)["settlement_integrity_failure"]
-
-    assert failed_bytes != alternate_bytes
-    assert failure_payload == {
-        "accepted_settlement": {
-            "failure_detail": None,
-            "outcome": "succeeded",
-            "owner_result_artifact_id": accepted_artifact.evidence_artifact_id,
-            "work_unit_key": "raw:a",
-        },
-        "kind": "conflicting_settlement",
-        "submitted_settlement": {
-            "failure_detail": {
-                "category": "execution_error",
-                "message": "conflicting settlement",
-                "source_reference": "raw:a",
-                "stage": "runtime-finalization-test",
-            },
-            "outcome": "failed",
-            "owner_result_artifact_id": None,
-            "work_unit_key": "raw:a",
-        },
-        "work_unit_key": "raw:a",
-    }
-    assert json.loads(failed_bytes)["schema_version"] == (
-        "execution_runtime_coordinator_terminal"
-    )
+    failure = failed_coordinator.state.runtime.integrity_failure
+    alternate_failure = alternate_coordinator.state.runtime.integrity_failure
+    assert failure is not None and alternate_failure is not None
+    assert failure != alternate_failure
+    assert failure.work_unit_key == "raw:a"
+    assert failure.accepted_settlement.owner_result_ref == accepted_artifact
+    assert failure.submitted_settlement.outcome is WorkUnitTerminalOutcome.FAILED
     assert (
-        mint_supervisor_finalization(
-            failed_coordinator,
-            observability_ledger=_ledger(attempt, failed_coordinator),
-        ).coordinator_record_sha256
-        != mint_supervisor_finalization(
-            alternate_coordinator,
-            observability_ledger=_ledger(attempt, alternate_coordinator),
-        ).coordinator_record_sha256
+        failure.submitted_settlement.failure_detail.message == "conflicting settlement"
     )
+    assert alternate_failure.submitted_settlement.owner_result_ref == alternate_artifact
+    assert failed_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
+    assert alternate_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_supervisor_receipt_binds_validated_runtime_observability(
