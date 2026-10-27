@@ -107,13 +107,20 @@ internal-defense changes:
    and mathematical/domain constraints at the producer. Repair a fixed internal
    bypass at its owner or caller; uncertainty alone does not justify another
    defense.
-3. Before adding an ID, digest, proof/receipt wrapper, or mint capability, name
-   the current consumer and observable behavior that needs it. Prefer domain
-   values or existing tuple keys for in-memory data; minting a hash only to
-   verify it again supplies no consumer benefit. Capabilities protect concrete
-   construction or write authority, not a private-owner naming convention.
-   Preserve existing public/persisted IDs and capability contracts until an
-   approved migration changes them.
+3. Identity and ordering:
+   - Allocate an identifier only when a reference must cross a boundary that
+     the object itself cannot cross (a file, table, or human-facing output),
+     and no existing natural key is sufficient. Name the consumer, boundary,
+     missing natural key, and scope. Reuse objects within a process and pass
+     actual data across worker handoffs.
+   - Use raw measured domain facts for deterministic ordering and tie-breaking,
+     not aggregate centers, scores, hashes, or execution order. If distinct
+     competing facts still share the complete key, report the ambiguity
+     instead of inventing an identity.
+   - Check file fingerprints at file handoff boundaries; keep an explicitly
+     required row-binding checksum at its named writer/reader boundary.
+     An existing identifier or a test asserting its presence is not, by itself,
+     a reason to retain it.
 4. Update consumers and retire superseded surfaces in the same responsibility
    change. The [testing contract](agent/testing.md) owns which oracles survive.
 5. For one rule or representation changed in this diff, identify the affected
