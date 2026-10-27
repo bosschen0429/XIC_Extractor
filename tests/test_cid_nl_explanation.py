@@ -687,5 +687,10 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
                 connection.execute("DROP TABLE records")
             else:
                 connection.execute("UPDATE metadata SET payload='null'")
-    with pytest.raises(ExplanationError, match="malformed|unsupported|failed reading"):
+    message = (
+        "重新執行 Alignment"
+        if corruption == "schema_identity"
+        else "malformed|failed reading"
+    )
+    with pytest.raises(ExplanationError, match=message):
         reader(report)
