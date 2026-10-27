@@ -29,7 +29,7 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    supported_cid_nl_peak_ids,
+    supported_cid_nl_peaks,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -136,16 +136,16 @@ def build_cid_nl_reference_spine(
     for sample, assessment in ordered:
         if assessment.content.method_result != "SUPPORT":
             continue
-        selected_peak_ids = supported_cid_nl_peak_ids(assessment)
-        if len(selected_peak_ids) != 1:
+        selected_peaks = supported_cid_nl_peaks(assessment)
+        if len(selected_peaks) != 1:
             raise CidNlEvidenceSpineError(
                 "reference-spine SUPPORT must identify exactly one physical peak"
             )
-        selected_peak_id = next(iter(selected_peak_ids))
+        selected_peak = next(iter(selected_peaks))
         peak = next(
             candidate
             for candidate in assessment.candidate_peaks
-            if candidate.content.peak_observation_content_id == selected_peak_id
+            if candidate.content == selected_peak
         )
         try:
             chromatographic_support = compose_cid_nl_chromatographic_support_ref(

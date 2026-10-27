@@ -1039,7 +1039,7 @@ def _method_result(
     if technical_state != "evaluated":
         assert evaluation_receipt.reason_code is not None
         return None, (evaluation_receipt.reason_code,)
-    if _supported_peak_ids(method_subject, individual_support_refs):
+    if _supported_peaks(method_subject, individual_support_refs):
         return "SUPPORT", ("unique_support_within_declared_candidate_universe",)
     if method_subject.composition is not None and individual_support_refs:
         return "HOLD", ("incomplete_composite_requirement",)
@@ -1097,29 +1097,31 @@ def is_unsearched_cid_nl_discovery_assessment(
     )
 
 
-def supported_cid_nl_peak_ids(assessment: CidNlMethodAssessmentRef) -> frozenset[str]:
+def supported_cid_nl_peaks(
+    assessment: CidNlMethodAssessmentRef,
+) -> frozenset[PeakObservationContent]:
     """Physical peaks that satisfy the complete owner-bound requirement."""
     if assessment.content.technical_state != "evaluated":
         return frozenset()
-    return _supported_peak_ids(
+    return _supported_peaks(
         assessment.content.method_subject,
         assessment.individual_support_refs,
     )
 
 
-def _supported_peak_ids(
+def _supported_peaks(
     subject: CidNlMethodSubject,
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-) -> frozenset[str]:
-    losses_by_peak: dict[str, set[float]] = {}
+) -> frozenset[PeakObservationContent]:
+    losses_by_peak: dict[PeakObservationContent, set[float]] = {}
     for support in individual_support_refs:
-        losses_by_peak.setdefault(
-            support.content.peak_observation.peak_observation_content_id, set()
-        ).add(support.content.evidence.configured_neutral_loss_da)
+        losses_by_peak.setdefault(support.content.peak_observation, set()).add(
+            support.content.evidence.configured_neutral_loss_da
+        )
     required = set(subject.configured_losses)
     return frozenset(
-        peak_id
-        for peak_id, losses in losses_by_peak.items()
+        peak
+        for peak, losses in losses_by_peak.items()
         if subject.composition is None
         or subject.composition.combine_mode == "union"
         or required.issubset(losses)
