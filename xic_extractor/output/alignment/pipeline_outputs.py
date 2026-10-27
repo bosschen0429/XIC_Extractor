@@ -48,12 +48,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.output.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-    AlignmentArtifactFingerprintReceipt,
-    _mint_alignment_artifact_fingerprint_batch,
-    _mint_alignment_artifact_fingerprint_receipt,
-)
 from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
@@ -82,7 +76,6 @@ class AlignmentRunOutputs:
     backfill_seed_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
-    artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
     # No live workflow result is published. The run closes its partition
@@ -267,8 +260,7 @@ def write_completed_untargeted_outputs_atomic(
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
     before_write: Callable[[], None] | None = None,
-    capture_artifact_fingerprints: bool = False,
-) -> tuple[int, AlignmentArtifactFingerprintBatch | None]:
+) -> int:
     """Publish completed matrix facts through the selected atomic output path."""
     stream_outputs = supports_streamed_untargeted_outputs(outputs)
     writer_inputs = None
@@ -296,10 +288,9 @@ def write_completed_untargeted_outputs_atomic(
                 metadata=metadata,
                 alignment_config=alignment_config,
                 timing_recorder=timing_recorder,
-                capture_artifact_fingerprints=capture_artifact_fingerprints,
             )
         assert writer_inputs is not None
-        artifact_fingerprint_batch = write_outputs_atomic(
+        write_outputs_atomic(
             outputs,
             writer_inputs.matrix,
             metadata=metadata,
@@ -307,9 +298,8 @@ def write_completed_untargeted_outputs_atomic(
             backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
             production_decisions=writer_inputs.production_decisions,
             timing_recorder=timing_recorder,
-            capture_artifact_fingerprints=capture_artifact_fingerprints,
         )
-        return len(writer_inputs.matrix.clusters), artifact_fingerprint_batch
+        return len(writer_inputs.matrix.clusters)
 
 
 def write_outputs_atomic(
@@ -323,8 +313,7 @@ def write_outputs_atomic(
     ),
     production_decisions: ProductionDecisionSet,
     timing_recorder: TimingRecorder | None = None,
-    capture_artifact_fingerprints: bool = False,
-) -> AlignmentArtifactFingerprintBatch | None:
+) -> None:
     if not isinstance(
         backfill_peak_fact_provenance,
         BackfillPeakFactProvenanceBatch,
@@ -427,10 +416,9 @@ def write_outputs_atomic(
                 lambda path: _write_metadata_json(path, metadata),
             ),
         )
-    return _write_artifacts_atomic(
+    _write_artifacts_atomic(
         output_paths_and_writers,
         recorder=recorder,
-        capture_artifact_fingerprints=capture_artifact_fingerprints,
     )
 
 
@@ -453,8 +441,7 @@ def write_streamed_untargeted_outputs_atomic(
     metadata: dict[str, str],
     alignment_config: AlignmentConfig,
     timing_recorder: TimingRecorder,
-    capture_artifact_fingerprints: bool = False,
-) -> tuple[int, AlignmentArtifactFingerprintBatch | None]:
+) -> int:
     """Render finalized rows once, then use the existing publication transaction."""
 
     if not supports_streamed_untargeted_outputs(outputs):
@@ -499,26 +486,24 @@ def write_streamed_untargeted_outputs_atomic(
                 ),
             )
 
-    fingerprints = _write_artifacts_atomic(
+    _write_artifacts_atomic(
         [(path, None) for path in paths],
         recorder=(
             timing_recorder
             if timing_recorder.instrument_writers
             else TimingRecorder.disabled("writer")
         ),
-        capture_artifact_fingerprints=capture_artifact_fingerprints,
         render_all=render_all,
     )
-    return row_count, fingerprints
+    return row_count
 
 
 def _write_artifacts_atomic(
     output_paths_and_writers: Sequence[tuple[Path, Callable[[Path], Path] | None]],
     *,
     recorder: TimingRecorder,
-    capture_artifact_fingerprints: bool,
     render_all: Callable[[Mapping[Path, Path]], None] | None = None,
-) -> AlignmentArtifactFingerprintBatch | None:
+) -> None:
     temp_paths = [
         _temp_path(final_path) for final_path, _writer in output_paths_and_writers
     ]
@@ -629,8 +614,7 @@ def _write_artifacts_atomic(
                 source="alignment.pipeline_outputs",
             )
             replaced_paths.append(final_path)
-        fingerprint_receipts: list[AlignmentArtifactFingerprintReceipt] = []
-        if recorder.instrument_writers or capture_artifact_fingerprints:
+        if recorder.instrument_writers:
             for final_path, _writer in output_paths_and_writers:
                 artifact = _writer_artifact_name(final_path)
 
@@ -645,27 +629,9 @@ def _write_artifacts_atomic(
                         observation=observe_fingerprint,
                     )
                     stage.metrics["bytes"] = fingerprint.byte_size
-                if capture_artifact_fingerprints:
-                    fingerprint_receipts.append(
-                        _mint_alignment_artifact_fingerprint_receipt(
-                            artifact_path=final_path,
-                            fingerprint=fingerprint,
-                        )
-                    )
-        fingerprint_batch = (
-            _mint_alignment_artifact_fingerprint_batch(
-                artifact_paths=tuple(
-                    final_path for final_path, _writer in output_paths_and_writers
-                ),
-                receipts=fingerprint_receipts,
-            )
-            if capture_artifact_fingerprints
-            else None
-        )
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
-        return fingerprint_batch
     except Exception:
         for final_path in replaced_paths:
             final_path.unlink(missing_ok=True)

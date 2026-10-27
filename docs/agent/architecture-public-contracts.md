@@ -30,7 +30,7 @@ schema versions, and command flags. Do not copy those inventories here.
 - The Untargeted application invokes retained CID-NL execution; Alignment has
   no extraction imports. Alignment owns the pure finalized Matrix projection;
   `output/alignment/` owns artifact selection, formatting, streaming or
-  materialization, atomic writing and fingerprint receipts. The Untargeted
+  materialization and atomic writing. The Untargeted
   execution adapter never writes. Formal Alignment completion binds the candidate
   views, Matrix m/z lookup, config and completed ISTD provenance before handoff;
   publication does not reconstruct them from independent caller inputs. Low-level

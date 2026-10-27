@@ -352,7 +352,6 @@ The owned output collision guard reserves this artifact and its temporary/backup
 names before acquisition. Matrix publication still uses its existing atomic
 writer. Explanation publication follows successful Matrix writing; if explanation
 IO fails, the command fails and the Matrix may remain, without a complete report.
-This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 
 Explanation summaries publish `initial_edge_coverage`
 with the versioned sparse-pair policy (`absence_means_not_evaluated`), so an empty retained edge set is not missing audit
