@@ -180,7 +180,7 @@ def _emit_curve_payload(
         else (evaluation.integration if evaluation is not None else None)
     )
     envelope = {
-        "schema_version": "curve_payload.v2",
+        "schema_version": "curve_payload",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
@@ -926,8 +926,11 @@ def prepare_alignment_explanation(
                     )
                 },
             }
-            if known_istd_reference_provenance is not None:
-                summary["known_istd_reference"] = dict(known_istd_reference_provenance)
+            summary["known_istd_reference"] = (
+                dict(known_istd_reference_provenance)
+                if known_istd_reference_provenance is not None
+                else None
+            )
             return sink.finalize(summary)
 
         yield PreparedAlignmentExplanation(consume_child, finalize)

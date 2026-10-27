@@ -56,6 +56,40 @@ from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
 
 
+def _summary_fixture(values, *, review_only=False):
+    """Complete persisted metadata for small diagnostic writer fixtures."""
+    summary = {
+        "processing_request_id": "fixture",
+        "scientific_input_schema_version": "fixture",
+        "processing_algorithm_version": "fixture",
+        "processing_contract_version": "fixture",
+        "processing_attempt_id": "fixture",
+        "samples": [],
+        "acquisition_sources": [],
+        "candidate_count": 0,
+        "matrix_row_count": 0,
+        "candidate_examples": [],
+        "writer_row_count": 0,
+        "matrix_path": "",
+        "matrix_sha256": "",
+        "alignment_config": {},
+        "reason_counts": {},
+        "record_counts": {},
+        "retention": "review" if review_only else "full_audit",
+        "selection_evidence_capability": "recorded_decisions",
+        "curve_retention": "none",
+        "curve_mz_ranges": [],
+        "initial_edge_coverage": {},
+        "audit_availability": {},
+        "known_istd_reference": None,
+        **values,
+    }
+    summary["samples"] = [
+        {"sample_stem": sample["sample_key"], **sample} for sample in summary["samples"]
+    ]
+    return summary
+
+
 def test_missing_report_is_unavailable(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import (
         ExplanationUnavailableError,
@@ -164,7 +198,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     summary = read_cid_nl_explanation(report)
     assert summary["diagnostic_only"] is True
     assert summary["initial_edge_coverage"] == {
-        "policy": "feature-group-membership-v1",
+        "policy": "feature-group-membership",
         "unlisted_pairs": "not_evaluated",
         "rt_pruning": True,
         "retained_pair_record_count": len(completed.initial_edges),
@@ -317,7 +351,11 @@ def test_partial_write_never_publishes_complete_report(tmp_path):
 
     with pytest.raises(OSError, match="interrupted write"):
         write_explanation_report(
-            report, summary={}, candidates=interrupted(), records={}, links=()
+            report,
+            summary=_summary_fixture({}),
+            candidates=interrupted(),
+            records={},
+            links=(),
         )
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
@@ -514,7 +552,7 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize({})
+        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
     detail = read_cid_nl_explanation(report, candidate_id="a")
     assert detail["records"] == {"facts": [{"value": 1}]}
     assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
@@ -558,7 +596,7 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
             {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
         )
-        writer.finalize({})
+        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
 
     expected = {
         (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
@@ -608,7 +646,7 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 
     report = write_explanation_report(
         tmp_path / "bounded.sqlite",
-        summary={},
+        summary=_summary_fixture({}),
         candidates=rows(),
         records=Records(),
         links=(("199", "s", "facts", "199"),),
@@ -624,7 +662,7 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
-        summary={"candidate_count": 2},
+        summary=_summary_fixture({"candidate_count": 2}),
         candidates=(
             ("a", "s1", {"candidate_id": "a"}),
             ("b", "s2", {"candidate_id": "b"}),
@@ -670,7 +708,7 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
         report.write_bytes(b"not sqlite")
     else:
         write_explanation_report(
-            report, summary={}, candidates=(), records={}, links=()
+            report, summary=_summary_fixture({}), candidates=(), records={}, links=()
         )
         with sqlite3.connect(report) as connection:
             if corruption == "schema_identity":

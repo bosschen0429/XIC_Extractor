@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_inspector.api import (
     InspectorCancelled,
@@ -127,7 +128,7 @@ def _create_mock_db(
         )
         # Add a curve payload for C1
         curve_envelope = {
-            "schema_version": "curve_payload.v2",
+            "schema_version": "curve_payload",
             "kind": "initial_capture",
             "sample_id": "S1",
             "candidate_id": "C1",
@@ -168,13 +169,16 @@ def _create_mock_db(
             payload=curve_envelope,
         )
         writer.finalize(
-            {
-                "processing_request_id": request_id,
-                "processing_attempt_id": attempt_id,
-                "matrix_path": str(matrix_path),
-                "matrix_sha256": matrix_hash,
-                "samples": samples,
-            }
+            _summary_fixture(
+                {
+                    "processing_request_id": request_id,
+                    "processing_attempt_id": attempt_id,
+                    "matrix_path": str(matrix_path),
+                    "matrix_sha256": matrix_hash,
+                    "samples": samples,
+                },
+                review_only=writer.review_only,
+            )
         )
 
     return db_path, matrix_path, matrix_hash
@@ -1156,10 +1160,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 "rt_pruning": False,
             }
             if sparse_coverage
-            else {
-                "policy": "legacy-unspecified",
-                "unlisted_pairs": "unrecorded",
-            }
+            else {}
         )
         if sparse_coverage:
             summary = json.loads(
@@ -2317,14 +2318,17 @@ def _create_nearest_mz_db(directory, rows):
                 {"S1": 0, "S2": 1},
             )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")
-                ],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [
+                        {"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")
+                    ],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 
@@ -2625,10 +2629,13 @@ def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None
         ).fetchone()[0]
         summary = json.loads(payload)
         summary["schema_version"] = old_schema
+        summary["query_index_version"] = 2
+        for sample in summary["samples"]:
+            sample["canonical_sample_identity_id"] = sample.pop("sample_key")
         connection.execute(
             "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )
-    with pytest.raises(InspectorError, match="重新執行.*Alignment") as error:
+    with pytest.raises(InspectorError, match="rerun Alignment") as error:
         generate_report(path, SelectionRequest(), tmp_path / "review.html")
     assert error.value.code == 4
     assert not (tmp_path / "review.html").exists()

@@ -27,7 +27,7 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
-SCHEMA_VERSION = "alignment_explanation.v2"
+SCHEMA_VERSION = "alignment_explanation"
 
 VALID_CURVE_KINDS = frozenset(
     {
@@ -103,10 +103,12 @@ def _validate_curve_payload(
         raise ExplanationError("curve payload must be an object")
     extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS
     if extra:
-        raise ExplanationError(f"undeclared curve payload keys: {sorted(extra)}")
+        raise ExplanationError(
+            f"undeclared curve payload keys: {sorted(extra)}; rerun Alignment"
+        )
     if set(payload) != ALLOWED_CURVE_PAYLOAD_KEYS:
-        raise ExplanationError("curve payload missing required fields")
-    if payload["schema_version"] != "curve_payload.v2":
+        raise ExplanationError("curve payload missing required fields; rerun Alignment")
+    if payload["schema_version"] != "curve_payload":
         raise ExplanationError(
             "不支援此曲線資料格式；請重新執行 Alignment 產生新輸出。"
         )
@@ -583,7 +585,9 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
             row[1] for row in connection.execute(f"PRAGMA table_info({table})")
         )
         if actual != columns:
-            raise ExplanationError(f"malformed explanation schema: {table}")
+            raise ExplanationError(
+                f"malformed explanation schema: {table}; rerun Alignment"
+            )
     row = connection.execute(
         "SELECT payload FROM metadata WHERE key='summary'"
     ).fetchone()
@@ -594,8 +598,45 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
         )
-    if "query_index_version" in summary:
-        raise ExplanationError("obsolete explanation fields; rerun Alignment")
+    if set(summary) != {
+        "schema_version",
+        "plot_evidence_capability",
+        "diagnostic_only",
+        "completion",
+        "processing_request_id",
+        "scientific_input_schema_version",
+        "processing_algorithm_version",
+        "processing_contract_version",
+        "processing_attempt_id",
+        "samples",
+        "acquisition_sources",
+        "candidate_count",
+        "matrix_row_count",
+        "candidate_examples",
+        "writer_row_count",
+        "matrix_path",
+        "matrix_sha256",
+        "alignment_config",
+        "reason_counts",
+        "record_counts",
+        "retention",
+        "selection_evidence_capability",
+        "curve_retention",
+        "curve_mz_ranges",
+        "initial_edge_coverage",
+        "audit_availability",
+        "known_istd_reference",
+    }:
+        raise ExplanationError(
+            "explanation summary fields do not match the schema; rerun Alignment"
+        )
+    if any(
+        not isinstance(sample, dict) or set(sample) != {"sample_key", "sample_stem"}
+        for sample in summary["samples"]
+    ):
+        raise ExplanationError(
+            "explanation sample fields do not match the schema; rerun Alignment"
+        )
     if (
         summary.get("diagnostic_only") is not True
         or summary.get("completion") != "post_matrix_publication"

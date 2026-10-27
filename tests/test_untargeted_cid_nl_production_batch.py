@@ -28,6 +28,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
@@ -436,7 +437,7 @@ def _expected_retained_curve(
         else evaluation.integration
     )
     value = {
-        "schema_version": "curve_payload.v2",
+        "schema_version": "curve_payload",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
@@ -1898,15 +1899,18 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 },
             )
         sink.finalize(
-            {
-                "processing_request_id": (
-                    job.processing_owners.request.processing_request_id
-                ),
-                "processing_attempt_id": (
-                    job.processing_owners.attempt.processing_attempt_id
-                ),
-                "matrix_path": str(matrix_path),
-            }
+            _summary_fixture(
+                {
+                    "processing_request_id": (
+                        job.processing_owners.request.processing_request_id
+                    ),
+                    "processing_attempt_id": (
+                        job.processing_owners.attempt.processing_attempt_id
+                    ),
+                    "matrix_path": str(matrix_path),
+                },
+                review_only=sink.review_only,
+            )
         )
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]

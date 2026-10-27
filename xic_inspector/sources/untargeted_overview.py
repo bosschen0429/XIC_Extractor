@@ -23,7 +23,7 @@ def review_overview(path, summary):
             if destination == "matrix":
                 coverage.update(numeric)
     matrix = [r for r in rows.values() if r["destination"] == "matrix"]
-    calibration = summary.get("known_istd_reference", {}).get("calibration", {})
+    calibration = (summary["known_istd_reference"] or {}).get("calibration", {})
     return {
         "kind": "untargeted",
         "matrix_count": len(matrix),

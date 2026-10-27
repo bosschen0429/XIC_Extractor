@@ -26,7 +26,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-FEATURE_QUALITY_SCHEMA = "xic_feature_quality.v2"
+FEATURE_QUALITY_SCHEMA = "xic_feature_quality"
 QUALITY_COLUMNS = (
     "source_matrix_row_index",
     "feature_id",

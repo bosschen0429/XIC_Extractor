@@ -1,4 +1,4 @@
-"""Versioned, offline curve handoff and its Inspector source adapter.
+"""Offline curve handoff and its Inspector source adapter.
 
 The producer owns acquisition and Gaussian15 preparation. This module only
 validates, stores, and projects already computed curves for review.
@@ -452,7 +452,7 @@ class CurveBundleSource:
             "schema_version": self.bundle.schema_version,
             "plot_evidence_capability": "retained_curves",
             "processing_request_id": "curve-bundle",
-            "processing_attempt_id": "v1",
+            "processing_attempt_id": str(path.resolve()),
             "samples": [
                 {"sample_key": sid, "sample_stem": label}
                 for sid, label in sorted(labels.items())
@@ -463,7 +463,9 @@ class CurveBundleSource:
         items = []
         for transition in self.bundle.transitions:
             scoped = tuple(t for t in transition.traces if t.sample_id in sample_ids)
-            _, ref = build_canonical_ref("group", "curve-bundle", "v1", transition.key)
+            _, ref = build_canonical_ref(
+                "group", "curve-bundle", transition.key, transition.key
+            )
             witnesses = tuple(
                 Witness(
                     sample_key=trace.sample_id,
@@ -479,7 +481,7 @@ class CurveBundleSource:
                 CanonicalItem(
                     kind="group",
                     request_id="curve-bundle",
-                    attempt_id="v1",
+                    attempt_id=transition.key,
                     identifier=transition.key,
                     serialized_ref=ref,
                     sample_ids=tuple(sorted({t.sample_id for t in scoped})),

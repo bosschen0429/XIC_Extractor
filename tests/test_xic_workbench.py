@@ -15,6 +15,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_xic_inspector_api import _create_mock_db
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
@@ -117,12 +118,17 @@ def _review_batch(tmp_path, sample_count=2):
             },
         )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [{"sample_key": s, "sample_stem": s} for s in sample_ids],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [
+                        {"sample_key": s, "sample_stem": s} for s in sample_ids
+                    ],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 
@@ -181,12 +187,15 @@ def _nearest_review_batch(tmp_path):
                 {"S1": 0},
             )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [{"sample_key": "S1", "sample_stem": "S1"}],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [{"sample_key": "S1", "sample_stem": "S1"}],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationReportWriter,
@@ -27,9 +28,9 @@ def test_cid_nl_evidence_locator_immutability() -> None:
         matrix_sha256="abcd" * 16,
         processing_request_id="req-01",
         processing_attempt_id="att-01",
-        schema_version="alignment_explanation.v2",
+        schema_version="alignment_explanation",
     )
-    assert locator.schema_version == "alignment_explanation.v2"
+    assert locator.schema_version == "alignment_explanation"
     assert locator.processing_request_id == "req-01"
     with pytest.raises(AttributeError):
         locator.schema_version = "unknown"  # type: ignore
@@ -41,7 +42,7 @@ def test_curve_payload_write_and_read() -> None:
         with ExplanationReportWriter(db_path) as writer:
             writer.add_candidate("C1", "S1", {"candidate_id": "C1", "sample_key": "S1"})
             curve_envelope = {
-                "schema_version": "curve_payload.v2",
+                "schema_version": "curve_payload",
                 "kind": "initial_capture",
                 "sample_id": "S1",
                 "candidate_id": "C1",
@@ -79,15 +80,18 @@ def test_curve_payload_write_and_read() -> None:
                 payload=curve_envelope,
             )
             final_path = writer.finalize(
-                {
-                    "processing_request_id": "req-1",
-                    "processing_attempt_id": "att-1",
-                    "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
-                }
+                _summary_fixture(
+                    {
+                        "processing_request_id": "req-1",
+                        "processing_attempt_id": "att-1",
+                        "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
+                    },
+                    review_only=writer.review_only,
+                )
             )
 
         summary = read_cid_nl_explanation(final_path)
-        assert summary["schema_version"] == "alignment_explanation.v2"
+        assert summary["schema_version"] == "alignment_explanation"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
         curves = read_cid_nl_curves(final_path, record_ids=["C1"])
@@ -116,7 +120,7 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
                     kind="initial_capture",
                     record_id="C1",
                     payload={
-                        "schema_version": "curve_payload.v2",
+                        "schema_version": "curve_payload",
                         "kind": "initial_capture",
                         "sample_id": "S1",
                         "extra_fake_field": 123,
@@ -171,7 +175,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
 
 def _bound_curve_payload():
     return {
-        "schema_version": "curve_payload.v2",
+        "schema_version": "curve_payload",
         "kind": "initial_capture",
         "sample_id": "S1",
         "candidate_id": "C1",
@@ -209,7 +213,9 @@ def test_curve_rowid_preserves_exact_payload_across_reopen(
             record_id="obs-1",
             payload=payload,
         )
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
 
     assert payload_id == expected_payload_id
     with sqlite3.connect(report) as connection:
@@ -241,7 +247,9 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
         changed["curves"]["raw"][1] = 8.0
         distinct = writer.add_curve_payload(**binding, payload=changed)
         assert distinct == 2
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
     with sqlite3.connect(report) as connection:
         assert (
             connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 2
@@ -275,7 +283,9 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
             record_id="obs-1",
             payload=payload,
         )
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
     if corruption == "sample":
         payload["sample_id"] = "S2"
     elif corruption == "record":
@@ -326,5 +336,7 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
                 record_id="obs-1",
                 payload=invented,
             )
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
     assert read_cid_nl_curves(report) == [{**payload, "payload_id": 1}]

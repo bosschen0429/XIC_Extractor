@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run
+from tests.test_cid_nl_explanation import _owner_run, _summary_fixture
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
@@ -59,7 +59,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
 
     # Re-read new DB
     summary = read_cid_nl_explanation(report_path)
-    assert summary["schema_version"] == "alignment_explanation.v2"
+    assert summary["schema_version"] == "alignment_explanation"
     assert summary["plot_evidence_capability"] == "retained_curves"
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
 
@@ -110,13 +110,16 @@ def test_missing_bound_matrix_rejects_generation(
 
     with ExplanationReportWriter(fake_db) as writer:
         writer.finalize(
-            {
-                "processing_request_id": "req-1",
-                "processing_attempt_id": "att-1",
-                "matrix_path": str(matrix_file),
-                "matrix_sha256": "0" * 64,
-                "samples": [],
-            }
+            _summary_fixture(
+                {
+                    "processing_request_id": "req-1",
+                    "processing_attempt_id": "att-1",
+                    "matrix_path": str(matrix_file),
+                    "matrix_sha256": "0" * 64,
+                    "samples": [],
+                },
+                review_only=writer.review_only,
+            )
         )
     out_html = tmp_path / "out.html"
     with pytest.raises(InspectorError) as exc:

@@ -21,8 +21,8 @@ from xic_extractor.alignment.edge_scoring import (
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import RtFrame
 
-INITIAL_GROUPING_POLICY: Literal["feature-group-membership-v1"] = (
-    "feature-group-membership-v1"
+INITIAL_GROUPING_POLICY: Literal["feature-group-membership"] = (
+    "feature-group-membership"
 )
 UNLISTED_PAIR_DISPOSITION: Literal["not_evaluated"] = "not_evaluated"
 

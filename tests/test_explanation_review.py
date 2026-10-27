@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run
+from tests.test_cid_nl_explanation import _owner_run, _summary_fixture
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationReportWriter,
@@ -151,12 +151,15 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             [("C1", "S1"), ("C4", "S2")],
         )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [{"sample_key": sid} for sid in ("S1", "S2")],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [{"sample_key": sid} for sid in ("S1", "S2")],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     request = SelectionRequest(**{"strategy": "query", **criteria})
     baseline = tmp_path / "baseline.html"
@@ -762,15 +765,18 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
         )
         writer.add_row_cells("row-1", "G1", cells, {"S1": 0, "S2": 1})
         writer.finalize(
-            {
-                "processing_request_id": "quality-request",
-                "processing_attempt_id": "quality-attempt",
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")
-                ],
-            }
+            _summary_fixture(
+                {
+                    "processing_request_id": "quality-request",
+                    "processing_attempt_id": "quality-attempt",
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [
+                        {"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")
+                    ],
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 

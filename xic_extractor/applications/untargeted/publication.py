@@ -146,9 +146,9 @@ def publish_untargeted_outputs(
                 matrix_sha256=matrix_sha256,
                 processing_request_id=completed.processing_request_id,
                 processing_attempt_id=completed.processing_attempt_id,
-                schema_version="alignment_explanation.v2"
+                schema_version="alignment_explanation"
                 if policy.explanation_full_audit
-                else "alignment_explanation_review.v2",
+                else "alignment_explanation_review",
             )
 
         return replace(

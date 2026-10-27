@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Mapping
 
 from scripts.run_alignment import _parse_args, _resolve_preset
+from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_processing_run_spec import _compile_paths, _raws
 from xic_extractor.diagnostics.alignment_explanation import (
     GENERIC_REPORT_FILENAME,
@@ -226,13 +227,18 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
     assert write_alignment_explanation is write_cid_nl_explanation
 
     with ExplanationReportWriter(db_path) as writer:
-        writer.finalize({"method": "discovery"})
+        writer.finalize(
+            _summary_fixture(
+                {"processing_algorithm_version": "discovery"},
+                review_only=writer.review_only,
+            )
+        )
 
     rows_generic = read_alignment_explanation(db_path)
     rows_cid_nl = read_cid_nl_explanation(db_path)
     assert rows_generic == rows_cid_nl
     assert rows_generic["diagnostic_only"] is True
-    assert rows_generic["method"] == "discovery"
+    assert rows_generic["processing_algorithm_version"] == "discovery"
 
 
 def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):

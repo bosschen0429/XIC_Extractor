@@ -12,7 +12,7 @@ from xic_extractor.output.alignment.output_rows import format_value
 from xic_extractor.tabular_io import escape_excel_formula
 
 MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"
-_MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding.v2"
+_MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding"
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",
