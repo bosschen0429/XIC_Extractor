@@ -250,8 +250,7 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
         ("raw:b", WorkUnitTerminalOutcome.CANCELLED),
     )
     assert all(
-        settlement.owner_result_ref is None
-        and settlement.failure_detail is not None
+        settlement.failure_detail is not None
         and settlement.failure_detail.category is WorkUnitFailureCategory.CANCELLATION
         and settlement.failure_detail.stage == "runtime-owner-pre-dispatch"
         for settlement in state.runtime.settlements
@@ -576,7 +575,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
                     attempt=attempt,
                     work_unit_key="raw:a",
                     outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=result_ref.artifact,
                 ),
             ),
             resource_settlements=(
@@ -692,7 +690,6 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
                     attempt=attempt,
                     work_unit_key="raw:a",
                     outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=result_ref.artifact,
                 ),
             ),
             resource_settlements=(
@@ -1014,7 +1011,6 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
             attempt=attempt,
             work_unit_key=key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
         )
         for key, artifact in zip(keys, artifacts, strict=True)
     ]
@@ -1190,7 +1186,6 @@ def _sequential_worker_batch_state(
                 state.runtime,
                 work_unit_key=settlement.work_unit_key,
                 outcome=settlement.outcome,
-                owner_result_ref=settlement.owner_result_ref,
                 failure_detail=settlement.failure_detail,
             ),
         )

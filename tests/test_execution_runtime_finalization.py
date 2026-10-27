@@ -428,9 +428,6 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    with pytest.raises(RuntimeFinalizationContractError, match="must be registered"):
-        propose_attempt_terminal(state)
-
     state = register_runtime_artifact(
         state,
         work_unit_key="raw:a",
@@ -456,16 +453,11 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         outcome=WorkUnitTerminalOutcome.FAILED,
         failure_detail=_failure_detail("raw:a", message="conflicting settlement"),
     )
-    alternate_artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"alternate-owner-result",
-    ).artifact
     alternate_submission = settle_work_unit(
         runtime,
         work_unit_key="raw:a",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=alternate_artifact,
+        outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=_failure_detail("raw:a", message="alternate failure"),
     )
 
     def close(conflicted: AttemptRuntime):
@@ -483,12 +475,15 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
     assert failure is not None and alternate_failure is not None
     assert failure != alternate_failure
     assert failure.work_unit_key == "raw:a"
-    assert failure.accepted_settlement.owner_result_ref == accepted_artifact
+    assert failure.accepted_settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
     assert failure.submitted_settlement.outcome is WorkUnitTerminalOutcome.FAILED
     assert (
         failure.submitted_settlement.failure_detail.message == "conflicting settlement"
     )
-    assert alternate_failure.submitted_settlement.owner_result_ref == alternate_artifact
+    assert (
+        alternate_failure.submitted_settlement.failure_detail.message
+        == "alternate failure"
+    )
     assert failed_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
     assert alternate_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
 
@@ -663,35 +658,18 @@ def test_undeclared_artifact_is_rejected_by_registration(
     )
 
 
-def test_successful_settlement_requires_artifact_registered_for_same_work_unit(
+def test_successful_settlement_does_not_require_a_synthetic_result_artifact(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"shared-owner-result",
-    ).artifact
     runtime = settle_work_unit(
-        _runtime(attempt, work_unit_keys=("raw:a", "raw:b")),
+        _runtime(attempt, work_unit_keys=("raw:a",)),
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=artifact,
     )
-    runtime = settle_work_unit(
-        runtime,
-        work_unit_key="raw:b",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=artifact,
-    )
-    state = register_runtime_artifact(
-        begin_attempt_finalization(runtime),
-        work_unit_key="raw:a",
-        artifact=artifact,
-    )
-
-    with pytest.raises(RuntimeFinalizationContractError, match="same work unit"):
-        propose_attempt_terminal(state)
+    coordinator = propose_attempt_terminal(begin_attempt_finalization(runtime))
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert coordinator.state.artifacts == ()
 
 
 def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
@@ -729,7 +707,6 @@ def _successful_runtime(
         _runtime(attempt),
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=reference.artifact,
     )
     return runtime, reference.artifact
 

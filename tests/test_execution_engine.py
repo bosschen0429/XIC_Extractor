@@ -466,7 +466,6 @@ class MockAdapter:
                     attempt=self._owners.attempt,
                     work_unit_key=key,
                     outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=artifact,
                 )
             )
         return tuple(artifacts), tuple(settlements)
@@ -499,7 +498,6 @@ class MockAdapter:
             attempt=self._owners.attempt,
             work_unit_key=key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
         )
         return (art_receipt,), (wu_settlement,)
 
@@ -1229,7 +1227,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
                     attempt=attempt,
                     work_unit_key="wu:1",
                     outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=artifact,
                 ),
             ),
             resource_settlements=(),

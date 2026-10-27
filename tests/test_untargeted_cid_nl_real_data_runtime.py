@@ -1170,11 +1170,10 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         assert not initial.content.evaluation_receipt.search_completed
     assert by_stem["Missing"].backfill_attempt is not None
     assert by_stem["Missing"].backfill_input is not None
-    assert by_stem["Missing"].result_ref.backfill_candidate_count == 1
+    assert len(by_stem["Missing"].backfill_attempt.assessment.candidate_peaks) == 1
     assert by_stem["NoPeak"].backfill_attempt is not None
     assert by_stem["NoPeak"].backfill_input is None
-    assert by_stem["NoPeak"].result_ref.backfill_assessment_artifact_id is not None
-    assert by_stem["NoPeak"].result_ref.backfill_candidate_count == 0
+    assert len(by_stem["NoPeak"].backfill_attempt.assessment.candidate_peaks) == 0
     assert by_stem["Blank"].backfill_attempt is None
     assert raw_paths[4] not in opened
     assert {
@@ -2173,12 +2172,13 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
             assert left.content.technical_state == right.content.technical_state
             assert left.candidate_peaks == right.candidate_peaks
         assert (
-            actual.result_ref.source_candidate_ids
-            == expected.result_ref.source_candidate_ids
+            actual.adapter_result.source_candidate_ids
+            == expected.adapter_result.source_candidate_ids
         )
-        assert (
-            actual.result_ref.backfill_query_bounds
-            == expected.result_ref.backfill_query_bounds
+        assert tuple(
+            a.assessment.content.evaluation_receipt for a in actual.backfill_attempts
+        ) == tuple(
+            a.assessment.content.evaluation_receipt for a in expected.backfill_attempts
         )
     expected_keys = {
         f"part-1:{job.sample.identity.sample_key}:{phase}"

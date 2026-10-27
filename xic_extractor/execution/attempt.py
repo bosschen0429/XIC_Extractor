@@ -13,7 +13,6 @@ import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     CoordinatorTerminalRecord,
@@ -195,7 +194,6 @@ def mint_work_unit_settlement(
     attempt: ProcessingAttemptIdentity,
     work_unit_key: str,
     outcome: WorkUnitTerminalOutcome,
-    owner_result_ref: EvidenceArtifactRef | None = None,
     failure_detail: WorkUnitFailureDetail | None = None,
 ) -> WorkUnitSettlement:
     """Mint one typed work settlement through the runtime authority facade."""
@@ -204,7 +202,6 @@ def mint_work_unit_settlement(
         attempt=attempt,
         work_unit_key=work_unit_key,
         outcome=outcome,
-        owner_result_ref=owner_result_ref,
         failure_detail=failure_detail,
     )
 

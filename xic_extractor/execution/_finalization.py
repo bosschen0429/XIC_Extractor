@@ -18,7 +18,6 @@ from xic_extractor.execution._lifecycle import (
     AttemptLifecycleEventKind,
     AttemptRuntime,
     AttemptTerminalOutcome,
-    WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
@@ -651,26 +650,6 @@ def propose_attempt_terminal(
     if incomplete_resources:
         raise RuntimeFinalizationContractError(
             f"terminal proposal requires resource cleanup: {incomplete_resources!r}"
-        )
-    registered_artifacts = {
-        (record.work_unit_key, record.artifact.evidence_artifact_id)
-        for record in state.artifacts
-    }
-    missing_artifacts = tuple(
-        (settlement.work_unit_key, settlement.owner_result_ref.evidence_artifact_id)
-        for settlement in state.runtime.settlements
-        if settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
-        and settlement.owner_result_ref is not None
-        and (
-            settlement.work_unit_key,
-            settlement.owner_result_ref.evidence_artifact_id,
-        )
-        not in registered_artifacts
-    )
-    if missing_artifacts:
-        raise RuntimeFinalizationContractError(
-            "successful result artifacts must be registered to the same work unit: "
-            f"{missing_artifacts!r}"
         )
     outcome = _proposed_outcome(state)
     disposition = (

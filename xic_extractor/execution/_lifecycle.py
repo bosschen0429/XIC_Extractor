@@ -4,7 +4,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -142,7 +141,6 @@ class WorkUnitSettlement:
     attempt: ProcessingAttemptIdentity
     work_unit_key: str
     outcome: WorkUnitTerminalOutcome
-    owner_result_ref: EvidenceArtifactRef | None = None
     failure_detail: WorkUnitFailureDetail | None = None
 
     def __post_init__(self) -> None:
@@ -159,28 +157,11 @@ class WorkUnitSettlement:
                 "outcome must be a WorkUnitTerminalOutcome"
             )
         if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
-            if not isinstance(self.owner_result_ref, EvidenceArtifactRef):
-                raise AttemptLifecycleContractError(
-                    "succeeded settlement requires an owner-minted EvidenceArtifactRef"
-                )
-            if (
-                self.owner_result_ref.producer_processing_request_id
-                != self.attempt.processing_request_id
-                or self.owner_result_ref.producer_processing_attempt_id
-                != self.attempt.processing_attempt_id
-            ):
-                raise AttemptLifecycleContractError(
-                    "owner_result_ref must bind the settlement request and attempt"
-                )
             if self.failure_detail is not None:
                 raise AttemptLifecycleContractError(
                     "succeeded settlement cannot carry failure_detail"
                 )
             return
-        if self.owner_result_ref is not None:
-            raise AttemptLifecycleContractError(
-                "only succeeded settlement may carry owner_result_ref"
-            )
         if not isinstance(self.failure_detail, WorkUnitFailureDetail):
             raise AttemptLifecycleContractError(
                 "failed or cancelled settlement requires WorkUnitFailureDetail"
@@ -624,7 +605,6 @@ def mint_work_unit_settlement(
     attempt: ProcessingAttemptIdentity,
     work_unit_key: str,
     outcome: WorkUnitTerminalOutcome,
-    owner_result_ref: EvidenceArtifactRef | None = None,
     failure_detail: WorkUnitFailureDetail | None = None,
 ) -> WorkUnitSettlement:
     """Mint one typed work settlement through the runtime owner."""
@@ -633,7 +613,6 @@ def mint_work_unit_settlement(
         attempt=attempt,
         work_unit_key=work_unit_key,
         outcome=outcome,
-        owner_result_ref=owner_result_ref,
         failure_detail=failure_detail,
     )
 
@@ -655,7 +634,6 @@ def _settle_work_units(
             attempt=runtime.manifest.attempt,
             work_unit_key=settlement.work_unit_key,
             outcome=settlement.outcome,
-            owner_result_ref=settlement.owner_result_ref,
             failure_detail=settlement.failure_detail,
         )
         if (

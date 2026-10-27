@@ -65,12 +65,8 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
     UntargetedPreparedGrouping,
     UntargetedSampleResult,
-    UntargetedSampleResultRef,
-    _canonical_acquisition_content,
-    _mint_sample_result_ref,
     _request_subject_candidates,
     _request_uses_subject_batch,
-    _SampleResultContext,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
     _backfill_support_context,
@@ -765,7 +761,6 @@ def _prepare_runtime_work(
                 worker_pool.shutdown()
         apply_stop()
 
-        result_context = _SampleResultContext(tuple(state.job for state in states))
         for completed, state in enumerate(states, 1):
             observe_cancellation()
             apply_stop()
@@ -774,7 +769,6 @@ def _prepare_runtime_work(
                 include_acquisition_receipt=(
                     partition_key is None and not _request_uses_subject_batch(state.job)
                 ),
-                result_context=result_context,
                 cancellation_observed=cancellation_observed,
             )
             settlements.extend(batch.settlements)
@@ -901,7 +895,6 @@ def _finalize_job_state(
     *,
     cancellation_observed: bool,
     include_acquisition_receipt: bool = True,
-    result_context: _SampleResultContext | None = None,
 ) -> tuple[
     RuntimeWorkerBatchReceipt,
     UntargetedSampleResult | None,
@@ -918,8 +911,6 @@ def _finalize_job_state(
         if state.error is None:
             state.error = exc
 
-    result_ref: UntargetedSampleResultRef | None = None
-    registered_artifacts = observed_artifacts
     if adapter_result is not None:
         try:
             # Backfill may reuse exact measured evidence from the initial result.
@@ -943,30 +934,11 @@ def _finalize_job_state(
                 raise UntargetedPartitionError(
                     "worker observer does not close the exact adapter/backfill result"
                 )
-            result_ref = _mint_sample_result_ref(
-                job=job,
-                result=adapter_result,
-                backfill_input=state.backfill_input,
-                backfill_attempt=None,
-                backfill_attempts=state.backfill_attempts,
-                acquisition=acquisition,
-                acquisition_content=(
-                    result_context.acquisition_content
-                    if result_context is not None
-                    else _canonical_acquisition_content
-                ),
-            )
-            registered_artifacts = canonical_current_attempt_artifact_closure(
-                producer_attempt=job.processing_owners.attempt,
-                artifacts=(*observed_artifacts, result_ref.artifact),
-            )
         except Exception as exc:
             if state.error is None:
                 state.error = exc
 
-    success = (
-        state.error is None and adapter_result is not None and result_ref is not None
-    )
+    success = state.error is None and adapter_result is not None
     if not success and state.error is None:
         state.error = UntargetedPartitionError(
             "adapter returned no terminal scientific result"
@@ -987,9 +959,6 @@ def _finalize_job_state(
         attempt=job.processing_owners.attempt,
         work_unit_key=job.work_unit_key,
         outcome=outcome,
-        owner_result_ref=(
-            result_ref.artifact if success and result_ref is not None else None
-        ),
         failure_detail=failure_detail,
     )
     resource_receipts = (
@@ -1020,7 +989,7 @@ def _finalize_job_state(
                 work_unit_key=job.work_unit_key,
                 artifact=artifact,
             )
-            for artifact in registered_artifacts
+            for artifact in observed_artifacts
         ),
         acquisitions=(
             (
@@ -1037,11 +1006,10 @@ def _finalize_job_state(
         UntargetedSampleResult(
             job=job,
             adapter_result=adapter_result,
-            result_ref=result_ref,
             backfill_input=state.backfill_input,
             backfill_attempts=state.backfill_attempts,
         )
-        if success and adapter_result is not None and result_ref is not None
+        if success and adapter_result is not None
         else None
     )
     return (

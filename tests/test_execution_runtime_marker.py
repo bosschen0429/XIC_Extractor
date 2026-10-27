@@ -97,7 +97,6 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
         runtime,
         work_unit_key="sample:a",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=reference.artifact,
     )
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
@@ -446,9 +445,6 @@ def _terminal_records(
         runtime,
         work_unit_key="sample:a",
         outcome=outcome,
-        owner_result_ref=(
-            reference.artifact if outcome is WorkUnitTerminalOutcome.SUCCEEDED else None
-        ),
         failure_detail=(
             None
             if outcome is WorkUnitTerminalOutcome.SUCCEEDED

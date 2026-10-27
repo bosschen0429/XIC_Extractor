@@ -2248,7 +2248,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         (
             result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
-            result.result_ref,
+            tuple(ref.content for ref in result.effective_assessments),
         )
         for result in serial.sample_results
     )
@@ -2256,7 +2256,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         (
             result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
-            result.result_ref,
+            tuple(ref.content for ref in result.effective_assessments),
         )
         for result in process.sample_results
     )

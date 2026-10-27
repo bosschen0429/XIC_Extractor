@@ -1,4 +1,3 @@
-from copy import deepcopy
 from dataclasses import replace
 
 import numpy as np
@@ -811,16 +810,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="multi-group-recovery",
     )
-    canonical_calls = []
-    canonical_bytes = partition_models._canonical_acquisition_bytes
-
-    def count_canonical(acquisition):
-        canonical_calls.append(id(acquisition))
-        return canonical_bytes(acquisition)
-
-    monkeypatch.setattr(
-        partition_models, "_canonical_acquisition_bytes", count_canonical
-    )
     result = execute_attempt(
         runtime,
         jobs,
@@ -834,23 +823,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         for s in result.finalization.coordinator.state.runtime.settlements
         if s.failure_detail is not None
     )
-    assert len(canonical_calls) == len(set(canonical_calls))
-    for sample_result in result.sample_results:
-        acquisition = (
-            sample_result.backfill_attempts[0].acquisition
-            if sample_result.backfill_attempts
-            else sample_result.adapter_result.acquisition
-        )
-        assert sample_result.result_ref == (
-            partition_models.mint_sample_result_ref(
-                job=sample_result.job,
-                result=sample_result.adapter_result,
-                backfill_input=sample_result.backfill_input,
-                backfill_attempt=None,
-                backfill_attempts=sample_result.backfill_attempts,
-                acquisition=acquisition,
-            )
-        )
     missing = next(
         item
         for item in result.sample_results
@@ -863,13 +835,6 @@ def test_runtime_recovers_every_authorized_rt_group(
     assert sorted(
         len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
     ) == sorted(int(center in recovery_peaks) for center in authorized_centers)
-    assert missing.result_ref.backfill_candidate_count == sum(
-        center in recovery_peaks for center in authorized_centers
-    )
-    assert missing.result_ref.backfill_assessment_artifact_ids == tuple(
-        attempt.assessment.artifact.evidence_artifact_id
-        for attempt in missing.backfill_attempts
-    )
     for center, attempt in zip(
         authorized_centers, missing.backfill_attempts, strict=True
     ):
@@ -889,11 +854,9 @@ def test_runtime_recovers_every_authorized_rt_group(
         with pytest.raises(ValueError, match="multiple backfill attempts"):
             _ = missing.backfill_attempt
     if batched:
-        canonical_calls.clear()
         completed = complete_dense_partition(
             batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
         )
-        assert len(canonical_calls) == len(set(canonical_calls))
         assert len(completed.initial_groups) == 2
         projection_context = partition_models._SampleResultContext(jobs)
 
@@ -1162,26 +1125,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                         replace(missing, job=replace(missing.job)),
                         group_context=recovery_context,
                     )
-                changed_acquisition = deepcopy(recovery.acquisition)
-                changed_trace = changed_acquisition.traces[0].trace
-                changed_trace.intensity.flags.writeable = True
-                changed_trace.intensity[0] += 1.0
-                changed_recoveries = tuple(
-                    replace(attempt, acquisition=changed_acquisition)
-                    for attempt in missing.backfill_attempts
-                )
-                with pytest.raises(ValueError, match="sealed runtime result"):
-                    project_completed_backfill(
-                        replace(missing, backfill_attempts=changed_recoveries),
-                        group_context=recovery_context,
-                    )
                 assert completion.backfill_assessment is recovery.assessment
-                if len(missing.backfill_attempts) > 1:
-                    with pytest.raises(ValueError, match="sealed runtime result"):
-                        project_completed_backfill(
-                            replace(missing, backfill_attempts=(recovery,)),
-                            group_context=recovery_context,
-                        )
             else:
                 if recovery_is_support:
                     if source is not None:
@@ -1411,7 +1355,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert len(missing.backfill_attempts) == 2, (
-        missing.result_ref.backfill_candidate_count,
+        tuple(len(a.assessment.candidate_peaks) for a in missing.backfill_attempts),
         len(completed.initial_groups),
         tuple(group.group_center_rt for group in completed.initial_groups),
     )

@@ -3852,7 +3852,6 @@ def _assert_conservative_completion_projection(
 ) -> None:
     import json
     from copy import copy
-    from dataclasses import asdict
 
     from xic_extractor.alignment.cell_observation.observations import (
         canonical_cell_observation_bytes,
@@ -3888,7 +3887,7 @@ def _assert_conservative_completion_projection(
         if item.job.sample is position.sample
     )
     context = proof.decision.group_facts.group_context
-    original_result = asdict(result.result_ref)
+    original_result = result.effective_assessments
     with pytest.raises(ValueError, match="not a backfill"):
         project_completed_backfill(
             replace(result, backfill_attempts=()), group_context=context
@@ -3913,9 +3912,6 @@ def _assert_conservative_completion_projection(
         for traces in ((), recovery.acquisition.traces * 2):
             wrong_acquisition = copy(recovery.acquisition)
             object.__setattr__(wrong_acquisition, "traces", traces)
-            # The exact-coordinate check rejects both shapes before the outer
-            # seal comparison is reached. That seal is covered directly in
-            # test_cid_nl_multi_group_recovery.
             with pytest.raises(
                 ValueError, match="backfill crossed its exact request coordinates"
             ):
@@ -3928,7 +3924,7 @@ def _assert_conservative_completion_projection(
                     ),
                     group_context=context,
                 )
-    assert asdict(result.result_ref) == original_result
+    assert result.effective_assessments == original_result
 
 
 @pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))
