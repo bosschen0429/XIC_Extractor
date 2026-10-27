@@ -29,13 +29,7 @@ from xic_workbench.acquisition import (
 )
 
 
-@pytest.mark.parametrize("old_revision", (None, 1))
-def test_index_existing_review_preserves_source_and_rejects_broken_index(
-    tmp_path, monkeypatch, old_revision
-):
-    from tools.diagnostics.explain_cid_nl_run import main
-    from xic_inspector.api import InspectorError
-
+def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
@@ -48,50 +42,17 @@ def test_index_existing_review_preserves_source_and_rejects_broken_index(
         alignment_config=config,
     )
     with sqlite3.connect(source) as db:
-        tables = [
-            row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name LIKE 'query_%'"
-            )
-        ]
-        for table in tables:
-            if old_revision is None or table == "query_review":
-                db.execute(f'DROP TABLE "{table}"')
         summary = json.loads(
             db.execute("SELECT payload FROM metadata WHERE key='summary'").fetchone()[0]
         )
-        summary.pop("query_index_version")
-        if old_revision is not None:
-            summary["query_index_version"] = old_revision
+        summary["query_index_version"] = 2
         db.execute(
             "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )
     before = source.read_bytes()
-    target = tmp_path / "indexed.sqlite"
-    assert main(["--report", str(source), "--index-query-to", str(target)]) == 0
+    with pytest.raises(ExplanationError, match="rerun"):
+        read_explanation_metadata(source)
     assert source.read_bytes() == before
-    assert (
-        read_explanation_metadata(source).candidates
-        == read_explanation_metadata(target).candidates
-    )
-    assert (
-        read_explanation_metadata(source).records
-        == read_explanation_metadata(target).records
-    )
-    assert (
-        read_explanation_metadata(source).links
-        == read_explanation_metadata(target).links
-    )
-    assert main(["--report", str(source), "--index-query-to", str(target)]) == 2
-    with sqlite3.connect(target) as db:
-        db.execute("DROP TABLE query_witnesses")
-    with pytest.raises(InspectorError, match="Invalid query index"):
-        generate_report(
-            target,
-            SelectionRequest(strategy="query", mz_min=400),
-            tmp_path / "broken.html",
-        )
 
 
 @pytest.mark.parametrize(
@@ -319,11 +280,11 @@ def test_default_review_keeps_values_and_query_without_curves(
             (item.serialized_ref, item.sample_ids, item.witnesses)
             for item in expected_items
         ]
-    # The prior compact schema is already used by retained reports.
+    # Missing required columns cannot be supplied by compatibility reading.
     with sqlite3.connect(report) as db:
         db.execute("ALTER TABLE row_cells DROP COLUMN sample_mask")
-    old_schema_items = CidNlSource(report, query_only=True).load_items(scope)
-    assert old_schema_items == query_items
+    with pytest.raises(ExplanationError, match="rerun"):
+        CidNlSource(report, query_only=True)
 
 
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(

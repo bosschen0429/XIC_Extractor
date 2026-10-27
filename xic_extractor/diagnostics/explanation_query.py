@@ -224,11 +224,6 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                 "INSERT INTO query_peers VALUES (?,?,?,?)",
                 ((item, peer, priority, edge_ref) for peer in peers),
             )
-    summary["query_index_version"] = 2
-    db.execute(
-        "UPDATE metadata SET payload=? WHERE key='summary'",
-        (json.dumps(summary, allow_nan=False),),
-    )
     db.execute("ANALYZE")
 
 

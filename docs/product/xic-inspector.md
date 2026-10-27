@@ -291,15 +291,8 @@ reasons, omitting curve payloads and duplicated artifact chains. Compact review
 cell references are display positions, not scientific decision IDs; full audit
 retains the latter. The bound Matrix file must remain available.
 
-An older compact review can gain or upgrade the selection index without losing retained facts
-or curves. This writes a new file and requires no RAW access:
-
-```powershell
-.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
-```
-
-Older reports without the current index remain readable through population
-selection. Query-only indexes remain usable for query selection until upgraded.
+Reports with obsolete fields or an incomplete query index are rejected. Rerun
+Alignment to produce a current report; readers do not upgrade old files.
 
 For a curve not retained in the report, acquire only the requested candidate's
 or group's observed windows into a portable bundle:

@@ -488,7 +488,12 @@ class ExplanationReportWriter:
             from xic_extractor.diagnostics.explanation_query import build_query_index
 
             build_query_index(
-                self._connection(), _read_completed_summary(self._connection())
+                self._connection(),
+                _object(
+                    self._connection()
+                    .execute("SELECT payload FROM metadata WHERE key='summary'")
+                    .fetchone()[0]
+                ),
             )
         self._connection().commit()
         self._connection().close()
@@ -589,8 +594,8 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
         )
-    if summary.get("query_index_version") not in (None, 1, 2):
-        raise ExplanationError("unsupported explanation query index version")
+    if "query_index_version" in summary:
+        raise ExplanationError("obsolete explanation fields; rerun Alignment")
     if (
         summary.get("diagnostic_only") is not True
         or summary.get("completion") != "post_matrix_publication"
@@ -599,14 +604,25 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     ):
         raise ExplanationError("malformed explanation: invalid completion summary")
     if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
-        columns = tuple(
-            row[1] for row in connection.execute("PRAGMA table_info(row_cells)")
-        )
-        if columns not in (
-            ("row_key_id", "group_id", "payload"),
-            ("row_key_id", "group_id", "payload", "sample_mask"),
-        ):
-            raise ExplanationError("malformed explanation schema: row_cells")
+        query_tables = {
+            "row_cells": ("row_key_id", "group_id", "payload", "sample_mask"),
+            "query_samples": ("id", "sample_id"),
+            "query_candidates": ("id", "candidate_id", "sample", "mz", "sample_stem"),
+            "query_items": ("id", "kind", "identifier", "group_id", "sort_key"),
+            "query_members": ("item", "candidate"),
+            "query_scope": ("sample", "item"),
+            "query_witnesses": ("item", "ordinal", "candidate", "rt", "observation_id"),
+            "query_peers": ("item", "peer", "priority", "edge_ref"),
+            "query_review": ("item", "sample_facts"),
+        }
+        for table, columns in query_tables.items():
+            actual = tuple(
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            )
+            if actual != columns:
+                raise ExplanationError(
+                    f"malformed explanation schema: {table}; rerun Alignment"
+                )
     return summary
 
 
@@ -690,34 +706,18 @@ def read_review_row_samples(
     """Read row membership without unpacking scalar values or evidence reasons."""
     sample_ids = [s["sample_key"] for s in summary["samples"]]
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        columns = {row[1] for row in db.execute("PRAGMA table_info(row_cells)")}
-        if "sample_mask" in columns:
-            cohorts: dict[bytes, frozenset[str]] = {}
-            rows = {}
-            for row_id, mask in db.execute(
-                "SELECT row_key_id, sample_mask FROM row_cells"
-            ):
-                if mask not in cohorts:
-                    bits = int.from_bytes(mask, "little")
-                    cohorts[mask] = frozenset(
-                        sid
-                        for ordinal, sid in enumerate(sample_ids)
-                        if bits & (1 << ordinal)
-                    )
-                rows[row_id] = cohorts[mask]
-            return rows
-        # Existing compact reports remain queryable without rewriting them.
-        return {
-            row_id: frozenset(
-                cell["sample_key"]
-                for cell in unpack_cells(
-                    payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
-                ).values()
-            )
-            for row_id, group_id, payload in db.execute(
-                "SELECT row_key_id, group_id, payload FROM row_cells"
-            )
-        }
+        cohorts: dict[bytes, frozenset[str]] = {}
+        rows = {}
+        for row_id, mask in db.execute("SELECT row_key_id, sample_mask FROM row_cells"):
+            if mask not in cohorts:
+                bits = int.from_bytes(mask, "little")
+                cohorts[mask] = frozenset(
+                    sid
+                    for ordinal, sid in enumerate(sample_ids)
+                    if bits & (1 << ordinal)
+                )
+            rows[row_id] = cohorts[mask]
+        return rows
 
 
 def read_explanation_metadata(

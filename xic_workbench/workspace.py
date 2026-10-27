@@ -12,6 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -119,7 +120,7 @@ class ReviewWorkspace:
                     sample_ids=sample_ids,
                     limit=25,
                     review_scope="matrix"
-                    if summary.get("query_index_version") == 2
+                    if summary.get("schema_version") == REVIEW_SCHEMA_VERSION
                     else "all",
                 ),
             )
