@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.validation_primitives import (
+    require_attempt_uuid,
     require_lower_sha256,
     require_owner_normalized_text,
 )
@@ -43,7 +44,6 @@ _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract:"
 _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
 _PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request:"
-_PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,10 +174,8 @@ def mint_evidence_artifact_ref(
         prefix=_PROCESSING_REQUEST_ID_PREFIX,
         field="producer_processing_request_id",
     )
-    attempt_id = _validate_typed_digest_id(
-        producer_processing_attempt_id,
-        prefix=_PROCESSING_ATTEMPT_ID_PREFIX,
-        field="producer_processing_attempt_id",
+    attempt_id = require_attempt_uuid(
+        producer_processing_attempt_id, error_factory=EvidenceArtifactContractError
     )
     if not isinstance(semantic_contract, ArtifactSemanticContractRef):
         raise EvidenceArtifactContractError("semantic_contract must be producer-owned")

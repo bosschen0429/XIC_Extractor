@@ -170,10 +170,7 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
         lambda: UUID("00112233-4455-6677-8899-aabbccddeeff"),
     )
     attempt = issue_processing_attempt(request)
-    assert attempt.processing_attempt_id == (
-        "xic.processing-attempt:"
-        "bf45e9a3c70e068fcd9503a6246c9c699e5232c1b8fda88d3d98bf84ad3cd4aa"
-    )
+    assert attempt.processing_attempt_id == "00112233-4455-6677-8899-aabbccddeeff"
 
 
 def test_acquisition_source_identity_is_content_bound_not_path_bound(
@@ -900,7 +897,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
     assert {field.name for field in fields(first_attempt)} == {
         "processing_attempt_id",
         "processing_request_id",
-        "attempt_token",
         "retry_of",
     }
 

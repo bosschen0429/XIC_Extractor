@@ -28,7 +28,10 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     validate_typed_identity_id,
 )
-from xic_extractor.validation_primitives import require_owner_normalized_text
+from xic_extractor.validation_primitives import (
+    require_attempt_uuid,
+    require_owner_normalized_text,
+)
 
 _MARKER_LOCK_TIMEOUT_SECONDS = 2.0
 _MARKER_LOCK_POLL_SECONDS = 0.01
@@ -111,9 +114,7 @@ class OwnerPathRuntimeMarker:
         new launch write fails, the old marker remains retryable and its archive
         is accepted on the next try only when the receipt is identical.
         """
-        attempt_key = snapshot.processing_attempt_id.removeprefix(
-            "xic.processing-attempt:"
-        )
+        attempt_key = snapshot.processing_attempt_id
         archive = OwnerPathRuntimeMarker(
             self.path.with_name(f"{self.path.stem}.{attempt_key}{self.path.suffix}"),
             self.artifact_namespace,
@@ -388,10 +389,8 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
             prefix=PROCESSING_REQUEST_ID_PREFIX,
             field="processing_request_id",
         )
-        attempt_id = validate_typed_identity_id(
-            payload["processing_attempt_id"],
-            prefix="xic.processing-attempt:",
-            field="processing_attempt_id",
+        attempt_id = require_attempt_uuid(
+            payload["processing_attempt_id"], error_factory=IdentityContractError
         )
     except IdentityContractError as exc:
         raise RuntimeFinalizationContractError(

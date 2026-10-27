@@ -30,6 +30,7 @@ from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadataSnapshot,
 )
+from xic_extractor.validation_primitives import require_attempt_uuid
 
 
 class IdentityContractError(ValueError):
@@ -42,10 +43,8 @@ class FingerprintCancelledError(IdentityContractError):
 
 _ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source:"
 _PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
-_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt:"
 PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _canonical_json(value: Any) -> str:
@@ -459,27 +458,12 @@ class ProcessingRequestIdentity:
             )
 
 
-def _attempt_basis(
-    *,
-    processing_request_id: str,
-    attempt_token: str,
-    retry_of_attempt_id: str | None,
-) -> dict[str, object]:
-    return {
-        "schema": "processing_attempt_identity",
-        "processing_request_id": processing_request_id,
-        "attempt_token": attempt_token,
-        "retry_of_attempt_id": retry_of_attempt_id,
-    }
-
-
 @dataclass(frozen=True, slots=True)
 class ProcessingAttemptIdentity:
     """Unique execution identity referencing one processing request."""
 
     processing_attempt_id: str
     processing_request_id: str
-    attempt_token: str
     retry_of: ProcessingAttemptIdentity | None = None
 
     @property
@@ -491,23 +475,14 @@ class ProcessingAttemptIdentity:
         return self.retry_of.processing_attempt_id
 
     def __post_init__(self) -> None:
-        attempt_id = _validate_typed_id(
-            self.processing_attempt_id,
-            prefix=_PROCESSING_ATTEMPT_PREFIX,
-            field="processing_attempt_id",
+        attempt_id = require_attempt_uuid(
+            self.processing_attempt_id, error_factory=IdentityContractError
         )
         request_id = _validate_typed_id(
             self.processing_request_id,
             prefix=_PROCESSING_REQUEST_PREFIX,
             field="processing_request_id",
         )
-        if (
-            not isinstance(self.attempt_token, str)
-            or _TOKEN_RE.fullmatch(self.attempt_token) is None
-        ):
-            raise IdentityContractError(
-                "attempt_token must be a lower-case 32-character hex token"
-            )
         retry_of = self.retry_of
         if retry_of is not None:
             if not isinstance(retry_of, ProcessingAttemptIdentity):
@@ -520,20 +495,6 @@ class ProcessingAttemptIdentity:
                 )
             if retry_of.processing_attempt_id == attempt_id:
                 raise IdentityContractError("an attempt cannot retry itself")
-        expected_id = _typed_digest(
-            _PROCESSING_ATTEMPT_PREFIX,
-            _attempt_basis(
-                processing_request_id=request_id,
-                attempt_token=self.attempt_token,
-                retry_of_attempt_id=(
-                    retry_of.processing_attempt_id if retry_of is not None else None
-                ),
-            ),
-        )
-        if attempt_id != expected_id:
-            raise IdentityContractError(
-                "processing_attempt_id rebind mismatches immutable attempt"
-            )
 
 
 def retry_predecessor_attempt_ids(
@@ -1036,19 +997,9 @@ def issue_processing_attempt(
             raise IdentityContractError(
                 "retry predecessor references a different processing request"
             )
-    attempt_token = uuid.uuid4().hex
-    attempt_id = _typed_digest(
-        _PROCESSING_ATTEMPT_PREFIX,
-        _attempt_basis(
-            processing_request_id=request.processing_request_id,
-            attempt_token=attempt_token,
-            retry_of_attempt_id=retry_of.processing_attempt_id if retry_of else None,
-        ),
-    )
     return ProcessingAttemptIdentity(
-        processing_attempt_id=attempt_id,
+        processing_attempt_id=str(uuid.uuid4()),
         processing_request_id=request.processing_request_id,
-        attempt_token=attempt_token,
         retry_of=retry_of,
     )
 

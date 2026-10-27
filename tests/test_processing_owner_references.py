@@ -45,7 +45,7 @@ _TEST_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     media_type="application/octet-stream",
     serialization_format="review_fixture_bytes",
 )
-_TEST_ARTIFACT_ATTEMPT_ID = "xic.processing-attempt:" + "d" * 64
+_TEST_ARTIFACT_ATTEMPT_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
