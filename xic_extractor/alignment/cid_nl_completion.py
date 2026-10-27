@@ -53,6 +53,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    index_physical_peaks,
+)
 from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -85,7 +89,9 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
-    physical_peak_views: Mapping[str, PhysicalPeakView] = field(default_factory=dict)
+    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,11 +236,11 @@ def _complete_cell_observations(
     retained_hypotheses = {
         key: tuple(values) for key, values in retained_cell_hypotheses.items()
     }
-    member_observations = {
-        peak.content.peak_observation_content_id: peak
+    member_observations = index_physical_peaks(
+        peak
         for candidate in grouping.retained_candidates
         for peak in candidate.peak_hypothesis.peak_observation_refs
-    }
+    )
     (
         grouping_result,
         backfilled_groups,

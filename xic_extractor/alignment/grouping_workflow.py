@@ -59,7 +59,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    PeakObservationRef,
+)
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
@@ -308,8 +311,9 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
-    member_observations: Mapping[str, PeakObservationRef],
-    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
+    member_observations: Mapping[PeakObservationContent, PeakObservationRef],
+    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView]
+    | None = None,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
@@ -362,7 +366,7 @@ def admit_cid_nl_group_backfills(
         )
         physical_key = (
             sample_id,
-            hypothesis.peak_observation_refs[0].content.peak_observation_content_id,
+            hypothesis.peak_observation_refs[0].content.physical_identity,
         )
         if any(member.sample_key == sample_id for member in group.member_subjects):
             continue
@@ -378,7 +382,7 @@ def admit_cid_nl_group_backfills(
     comparison_views = dict(physical_peak_views or {})
     for _, _, _, hypothesis, _ in proposals:
         observation = hypothesis.peak_observation_refs[0]
-        observation_id = observation.content.peak_observation_content_id
+        observation_id = observation.content.physical_identity
         if observation_id not in comparison_views:
             comparison_views[observation_id] = physical_peak_view_from_observation(
                 observation
@@ -630,10 +634,11 @@ def contested_backfill_peaks(
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
-    member_observations: Mapping[str, PeakObservationRef],
-    physical_peak_views: Mapping[str, PhysicalPeakView] | None = None,
+    member_observations: Mapping[PeakObservationContent, PeakObservationRef],
+    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView]
+    | None = None,
     direct_only: bool = False,
-) -> frozenset[tuple[str, str]]:
+) -> frozenset[tuple[str, PeakObservationContent]]:
     """Resolve physical claims once, before SUPPORT admission or cell creation.
 
     Direct members of Matrix rows retain occupancy. ``direct_only`` excludes
@@ -645,33 +650,35 @@ def contested_backfill_peaks(
 
     def view_for(peak: PeakObservationRef) -> PhysicalPeakView:
         if physical_peak_views is not None:
-            view = physical_peak_views.get(peak.content.peak_observation_content_id)
+            view = physical_peak_views.get(peak.content.physical_identity)
             if view is not None:
                 return view
         return physical_peak_view_from_observation(peak)
 
-    members_by_sample: dict[str, list[tuple[str, PhysicalPeakView]]] = defaultdict(list)
+    members_by_sample: dict[
+        str, list[tuple[PeakObservationContent, PhysicalPeakView]]
+    ] = defaultdict(list)
     occupied = set()
     for group in groups:
         if group.disposition != "established":
             continue
         for member in group.member_subjects:
             sample_id = member.sample_key
-            for observation_id in member.physical_observation_ids:
+            for observation_id in member.physical_peaks:
                 occupied.add((sample_id, observation_id))
                 observation = member_observations[observation_id]
                 members_by_sample[sample_id].append(
                     (observation_id, view_for(observation))
                 )
-    backfills_by_sample: dict[str, list[tuple[str, str, PhysicalPeakView]]] = (
-        defaultdict(list)
-    )
+    backfills_by_sample: dict[
+        str, list[tuple[str, PeakObservationContent, PhysicalPeakView]]
+    ] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
             backfills_by_sample[sample_id].append(
                 (
                     group_id,
-                    peak.content.peak_observation_content_id,
+                    peak.content.physical_identity,
                     view_for(peak),
                 )
             )

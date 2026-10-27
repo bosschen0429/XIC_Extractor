@@ -10,7 +10,11 @@ from xic_extractor.acquisition_contract import (
     TraceAcquisitionBatch,
     TraceCoordinate,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    PeakObservationRef,
+    index_physical_peaks,
+)
 from xic_extractor.peak_detection.physical_peak_equivalence import (
     PhysicalPeakView,
     physical_peak_view_from_observation,
@@ -55,15 +59,13 @@ def comparison_views_from_acquisitions(
     entries: Iterable[
         tuple[tuple[PeakObservationRef, ...], TraceAcquisitionBatch | None]
     ],
-) -> dict[str, PhysicalPeakView]:
+) -> dict[PeakObservationContent, PhysicalPeakView]:
     """Reuse phase-batched context at formal claim completion, not quantitation."""
-    peaks: dict[str, PeakObservationRef] = {}
+    observed: list[PeakObservationRef] = []
     contexts: dict[tuple[str, float, float], dict[TraceCoordinate, AcquiredTrace]] = {}
     seen_batches: set[int] = set()
     for observations, batch in entries:
-        peaks.update(
-            (peak.content.peak_observation_content_id, peak) for peak in observations
-        )
+        observed.extend(observations)
         if batch is None or id(batch) in seen_batches:
             continue
         seen_batches.add(id(batch))
@@ -76,7 +78,7 @@ def comparison_views_from_acquisitions(
             )
             contexts.setdefault(key, {})[coordinate] = acquired
     views = {}
-    for observation_id, peak in peaks.items():
+    for observation_id, peak in index_physical_peaks(observed).items():
         view = physical_peak_view_from_observation(peak)
         views[observation_id] = physical_view_with_context(
             view,

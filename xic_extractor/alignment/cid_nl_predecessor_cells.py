@@ -27,6 +27,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -112,14 +113,16 @@ def compose_cid_nl_predecessor_cells(
     }
     missing_owner_ids = retained_hypothesis_ids - retained_support_ids
     if missing_owner_ids:
-        missing_member_observations_by_sample: dict[str, set[str]] = {}
+        missing_member_observations_by_sample: dict[
+            str, set[PeakObservationContent]
+        ] = {}
         for group in groups:
             for member in group.member_subjects:
                 if member.subject_id in missing_owner_ids:
                     missing_member_observations_by_sample.setdefault(
                         member.sample_key,
                         set(),
-                    ).update(member.physical_observation_ids)
+                    ).update(member.physical_peaks)
         for sample, assessment in sample_assessments:
             sample_id = sample.identity.sample_key
             missing_observation_ids = missing_member_observations_by_sample.get(
@@ -127,7 +130,7 @@ def compose_cid_nl_predecessor_cells(
                 set(),
             )
             if not missing_observation_ids.intersection(
-                candidate.content.peak_observation_content_id
+                candidate.content.physical_identity
                 for candidate in assessment.candidate_peaks
             ):
                 continue

@@ -129,11 +129,7 @@ def _create_mock_db(
         writer.add_record(
             "terminal_subjects",
             "terminal-01",
-            {
-                "observations": [
-                    {"peak_observation_content_id": "obs-01", "rt_apex_min": 1.0}
-                ]
-            },
+            {"observations": [{"physical_peak_key": "obs-01", "rt_apex_min": 1.0}]},
             [("C1", "S1")],
         )
         # Add a curve payload for C1
@@ -142,7 +138,7 @@ def _create_mock_db(
             "kind": "initial_capture",
             "sample_id": "S1",
             "candidate_id": "C1",
-            "peak_observation_content_id": "obs-01",
+            "physical_peak_key": "obs-01",
             "trace_coordinate": {
                 "mz": 500.0,
                 "rt_min": 0.8,
@@ -676,7 +672,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
                         {
                             "observations": [
                                 {
-                                    "peak_observation_content_id": "obs-01"
+                                    "physical_peak_key": "obs-01"
                                     if cid == "C1"
                                     else "obs-02",
                                     "rt_apex_min": rt,
@@ -880,7 +876,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
             payload = {
                 **original,
                 "kind": kind,
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
             }
             connection.execute(
                 "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
@@ -897,7 +893,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                 "payload_id": pid,
                 "sample_id": "S1",
                 "candidate_id": "C1",
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
                 "record_id": record_id,
                 "kind": kind,
             }
@@ -985,7 +981,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                         "payload_id": 2,
                         "sample_id": "S1",
                         "candidate_id": "C1",
-                        "peak_observation_content_id": "obs-01",
+                        "physical_peak_key": "obs-01",
                         "record_id": "obs-01",
                         "kind": capture_kind,
                     }
@@ -1000,7 +996,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                 json.dumps(
                     {
                         "sample_key": "S1",
-                        "candidate_peak_content_ids": ["obs-01"],
+                        "candidate_physical_peak_keys": ["obs-01"],
                         "detector_invocation_id": invocation,
                         "method_result": "SUPPORT",
                     }
@@ -1045,7 +1041,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "sample_key": "S1",
                 "subject_kind": "peak_hypothesis",
                 "subject_id": "hypothesis-01",
-                "physical_observation_ids": ["obs-01"],
+                "physical_peak_keys": ["obs-01"],
             }
         ]
         connection.execute(
@@ -1082,7 +1078,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                                 "content": {
                                     "sample_key": "S1",
                                     "group_hypothesis_id": "G1",
-                                    "peak_observation_content_id": "obs-01",
+                                    "physical_peak_key": "obs-01",
                                     "method_result": "SUPPORT",
                                 }
                             }
@@ -1117,7 +1113,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                     "payload_id": 2,
                     "sample_id": "S1",
                     "candidate_id": "C1",
-                    "peak_observation_content_id": "obs-01",
+                    "physical_peak_key": "obs-01",
                     "record_id": "obs-01",
                     "kind": "backfill_observation",
                 },
@@ -1127,7 +1123,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "recovery-method",
                 {
                     "sample_key": "S1",
-                    "candidate_peak_content_ids": ["obs-01"],
+                    "candidate_physical_peak_keys": ["obs-01"],
                     "detector_invocation_id": "untargeted-cid-nl-backfill",
                     "method_result": "SUPPORT",
                 },
@@ -1224,7 +1220,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     {
                         "observations": [
                             {
-                                "peak_observation_content_id": observation_id,
+                                "physical_peak_key": observation_id,
                                 "rt_apex_min": 1.0,
                             }
                         ]
@@ -1242,7 +1238,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             curve = {
                 **original,
                 "candidate_id": candidate_id,
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
             }
             connection.execute(
                 "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",

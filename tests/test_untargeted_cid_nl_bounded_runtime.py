@@ -1210,7 +1210,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     actual = bounded.application_result
     expected = eager.application_result
     assert actual.candidate_ids == expected.candidate_ids
-    assert actual.physical_observation_ids == expected.physical_observation_ids
+    assert actual.physical_peak_keys == expected.physical_peak_keys
     assert tuple(actual.excluded_candidates) == expected.excluded_candidates
     owners = plan.context.processing_owners
     assert actual.processing_request is owners.request
@@ -1457,8 +1457,8 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert completed.application_result.candidate_ids == (
         baseline.application_result.candidate_ids
     )
-    assert completed.application_result.physical_observation_ids == (
-        baseline.application_result.physical_observation_ids
+    assert completed.application_result.physical_peak_keys == (
+        baseline.application_result.physical_peak_keys
     )
     completed_samples = tuple(
         sample.metadata for sample in completed.application_result.canonical_samples
@@ -1596,8 +1596,8 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert overlapped.application_result.candidate_ids == (
         serial.application_result.candidate_ids
     )
-    assert overlapped.application_result.physical_observation_ids == (
-        serial.application_result.physical_observation_ids
+    assert overlapped.application_result.physical_peak_keys == (
+        serial.application_result.physical_peak_keys
     )
 
 

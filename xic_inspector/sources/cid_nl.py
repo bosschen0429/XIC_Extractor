@@ -308,7 +308,7 @@ class CidNlSource:
         members_by_sample: dict[str, set[str]] = {}
         for member in group.get("member_subjects", []):
             members_by_sample.setdefault(member.get("sample_key"), set()).update(
-                member.get("physical_observation_ids", [])
+                member.get("physical_peak_keys", [])
             )
         witnesses: list[Witness] = []
         for cid, sid in scoped:
@@ -327,7 +327,7 @@ class CidNlSource:
                     row_key_id=identifier if kind == "row" else None,
                     precursor_mz=candidate.get("precursor_mz"),
                     rt_apex_min=observation.get("rt_apex_min"),
-                    observation_id=observation.get("peak_observation_content_id"),
+                    observation_id=observation.get("physical_peak_key"),
                     sample_stem=candidate.get("sample_stem"),
                 )
                 for observation in observations
@@ -631,7 +631,7 @@ class CidNlSource:
             observation_id
             for member in group.get("member_subjects", [])
             if member.get("sample_key") == sample_id
-            for observation_id in member.get("physical_observation_ids", [])
+            for observation_id in member.get("physical_peak_keys", [])
             if isinstance(observation_id, str)
         )
         for (record_kind, _), fact in facts.items():
@@ -644,9 +644,9 @@ class CidNlSource:
                 if (
                     content.get("sample_key") == sample_id
                     and content.get("group_hypothesis_id") == group_id
-                    and isinstance(content.get("peak_observation_content_id"), str)
+                    and isinstance(content.get("physical_peak_key"), str)
                 ):
-                    observation_refs.add(content["peak_observation_content_id"])
+                    observation_refs.add(content["physical_peak_key"])
         return sorted(observation_refs)
 
     @staticmethod
@@ -687,14 +687,14 @@ class CidNlSource:
                 continue
             if (
                 record_kind == "capture_evidence"
-                and fact.get("peak_observation_content_id") in observation_set
+                and fact.get("physical_peak_key") in observation_set
             ):
                 captures.append((ref, fact))
             elif (
                 record_kind == "method_assessments"
                 and fact.get("method_result") == "SUPPORT"
             ):
-                peak_ids = fact.get("candidate_peak_content_ids", [])
+                peak_ids = fact.get("candidate_physical_peak_keys", [])
                 if isinstance(peak_ids, list) and observation_set.intersection(
                     peak_ids
                 ):
@@ -816,7 +816,7 @@ class CidNlSource:
                     )
                 )
             present = {
-                (curve.get("sample_id"), curve.get("peak_observation_content_id"))
+                (curve.get("sample_id"), curve.get("physical_peak_key"))
                 for curve in raw_curves
             }
             promised = {
@@ -997,7 +997,7 @@ class CidNlSource:
             for curve in raw_curves
             if (curve.get("sample_id"), curve.get("payload_id")) in capture_keys
             or (
-                (curve.get("peak_observation_content_id"), curve.get("sample_id"))
+                (curve.get("physical_peak_key"), curve.get("sample_id"))
                 in observation_keys
                 if observation_keys
                 else (curve.get("candidate_id"), curve.get("sample_id")) in keys
@@ -1017,8 +1017,7 @@ class CidNlSource:
                         or any(
                             witness.candidate_id == cid
                             and witness.sample_key == sid
-                            and witness.observation_id
-                            == curve.get("peak_observation_content_id")
+                            and witness.observation_id == curve.get("physical_peak_key")
                             for witness in item.witnesses
                             if witness.observation_id
                         )
@@ -1198,10 +1197,8 @@ class CidNlSource:
         result = {
             "sample_id": payload.get("sample_id"),
             "candidate_id": payload.get("candidate_id"),
-            "evidence_ref": payload.get(
-                "payload_id", payload.get("peak_observation_content_id")
-            ),
-            "observation_id": payload.get("peak_observation_content_id"),
+            "evidence_ref": payload.get("payload_id", payload.get("physical_peak_key")),
+            "observation_id": payload.get("physical_peak_key"),
             "kind": payload.get("kind"),
             "stage_label": presentation.curve_stage_label(payload.get("kind")),
             "raw_rts": rts,

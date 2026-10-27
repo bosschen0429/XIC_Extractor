@@ -419,8 +419,7 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
         for early in candidate_peaks
         for late in candidate_peaks
         if early.content.integration.rt_apex_min < late.content.integration.rt_apex_min
-        and early.content.peak_observation_content_id
-        > late.content.peak_observation_content_id
+        and early.content.physical_peak_key > late.content.physical_peak_key
     )
     early_peak, late_peak = opposite_order_pair
     early_rt = early_peak.content.integration.rt_apex_min
@@ -446,7 +445,7 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
     owner_ordered_peaks = tuple(
         sorted(
             opposite_order_pair,
-            key=lambda peak: peak.content.peak_observation_content_id,
+            key=lambda peak: peak.content.physical_peak_key,
         )
     )
     assert owner_ordered_peaks == (late_peak, early_peak)

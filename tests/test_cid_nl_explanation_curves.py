@@ -48,7 +48,7 @@ def test_curve_payload_write_and_read() -> None:
                 "kind": "initial_capture",
                 "sample_id": "S1",
                 "candidate_id": "C1",
-                "peak_observation_content_id": "obs-01",
+                "physical_peak_key": "obs-01",
                 "trace_coordinate": {
                     "mz": 450.1234,
                     "rt_min": 1.0,
@@ -147,9 +147,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
             if hypothesis is not None:
                 expected[(terminal.candidate_id, terminal.sample_key)] = [
                     {
-                        "peak_observation_content_id": (
-                            ref.content.peak_observation_content_id
-                        ),
+                        "physical_peak_key": (ref.content.physical_peak_key),
                         "rt_apex_min": ref.content.integration.rt_apex_min,
                     }
                     for ref in hypothesis.peak_observation_refs
@@ -198,7 +196,7 @@ def _bound_curve_payload():
         "kind": "initial_capture",
         "sample_id": "S1",
         "candidate_id": "C1",
-        "peak_observation_content_id": "obs-1",
+        "physical_peak_key": "obs-1",
         "trace_coordinate": {"mz": 500.0, "rt_min": 1.0, "rt_max": 2.0, "ppm_tol": 7.0},
         "curves": {
             "rt": [1.0, 1.5, 2.0],
@@ -308,7 +306,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
     if corruption == "sample":
         payload["sample_id"] = "S2"
     elif corruption == "record":
-        payload["peak_observation_content_id"] = "other-observation"
+        payload["physical_peak_key"] = "other-observation"
     elif corruption == "nested_field":
         payload["curves"]["invented_smoothed"] = [0.0, 1.0, 0.0]
     elif corruption == "length":
@@ -330,7 +328,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
 
 def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path):
     payload = _bound_curve_payload()
-    payload["peak_observation_content_id"] = None
+    payload["physical_peak_key"] = None
     payload["integration"] = None
     payload["curves"] = {
         "rt": [],
@@ -347,7 +345,7 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
             record_id=payload["candidate_id"],
             payload=payload,
         )
-        invented = {**payload, "peak_observation_content_id": "obs-1"}
+        invented = {**payload, "physical_peak_key": "obs-1"}
         with pytest.raises(ExplanationError, match="empty acquisition"):
             writer.add_curve_payload(
                 sample_id="S1",

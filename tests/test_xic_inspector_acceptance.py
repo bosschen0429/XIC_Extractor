@@ -48,7 +48,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         alignment_config=config,
     )
     expected_observations = {
-        ref.content.peak_observation_content_id: asdict(ref.content.integration)
+        ref.content.physical_peak_key: asdict(ref.content.integration)
         for child in completed.application_result.children
         for terminal in child.scientific_core.terminal_subjects
         if getattr(terminal, "hypothesis", None) is not None
@@ -80,13 +80,13 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     curves = json.loads(reread.stdout)
     assert len(curves) >= 1
     for retained in curves:
-        observation_id = retained["peak_observation_content_id"]
+        observation_id = retained["physical_peak_key"]
         if observation_id in expected_observations:
             assert retained["integration"] == json.loads(
                 json.dumps(expected_observations[observation_id])
             )
     assert expected_observations.keys() <= {
-        retained["peak_observation_content_id"] for retained in curves
+        retained["physical_peak_key"] for retained in curves
     }
     s1_sample = next(s for s in summary["samples"] if s["sample_stem"] == "S1")
     curve = next(c for c in curves if c["sample_id"] == s1_sample["sample_key"])

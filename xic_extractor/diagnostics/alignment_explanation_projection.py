@@ -55,7 +55,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
         "group_target_label": content.group_target_label,
         "technical_state": content.technical_state,
         "method_result": content.method_result,
-        "peak_observation_content_id": content.peak_observation_content_id,
+        "physical_peak_key": content.physical_peak_key,
         "peak_hypothesis_id": content.peak_hypothesis_id,
         "reason_codes": list(content.reason_codes),
         "outside_group": (
@@ -155,7 +155,7 @@ def _emit_curve_payload(
         )
     elif trace is not None:
         actual["acquisition_source_id"] = trace.acquisition_source_id
-    obs_id = content.peak_observation_content_id if content is not None else None
+    obs_id = content.physical_peak_key if content is not None else None
     record_id = obs_id or candidate_id or actual.get("method_subject_id")
     if record_id is None:
         raise ValueError("retained curve lacks an actual owner binding")
@@ -181,7 +181,7 @@ def _emit_curve_payload(
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "peak_observation_content_id": obs_id,
+        "physical_peak_key": obs_id,
         "trace_coordinate": {name: float(value) for name, value in coordinate.items()},
         "curves": {
             "rt": [float(x) for x in rt],
@@ -209,7 +209,7 @@ def _emit_curve_payload(
             "payload_id": payload_id,
             "sample_id": sample_id,
             "candidate_id": candidate_id,
-            "peak_observation_content_id": obs_id,
+            "physical_peak_key": obs_id,
             "record_id": record_id,
             "kind": kind,
         },
@@ -303,6 +303,15 @@ def prepare_alignment_explanation(
         physical_candidates: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(
             set
         )
+        located_peaks: dict[str, Any] = {}
+
+        def locate(content: Any) -> str:
+            """Written locator of one physical peak; never shared by two peaks."""
+            key: str = content.physical_peak_key
+            identity = content.physical_identity
+            if located_peaks.setdefault(key, identity) != identity:
+                raise ValueError(f"distinct physical peaks share one locator: {key}")
+            return key
 
         emitted_assessments: set[CidNlMethodAssessmentContent] = set()
 
@@ -512,7 +521,7 @@ def prepare_alignment_explanation(
                 for relation in assessment.individual_support_refs:
                     physical_candidates[
                         content.sample_key,
-                        relation.content.peak_observation.peak_observation_content_id,
+                        locate(relation.content.peak_observation),
                     ].update(related)
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
@@ -539,9 +548,8 @@ def prepare_alignment_explanation(
                         "method_result",
                         "reason_codes",
                     ),
-                    "candidate_peak_content_ids": tuple(
-                        peak.content.peak_observation_content_id
-                        for peak in assessment.candidate_peaks
+                    "candidate_physical_peak_keys": tuple(
+                        locate(peak.content) for peak in assessment.candidate_peaks
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
                     **(
@@ -604,8 +612,8 @@ def prepare_alignment_explanation(
                 )
                 # Exact physical bindings survive successor hypothesis identities;
                 # provider scope prevents a shared peak crossing method subjects.
-                for pid in member.physical_observation_ids:
-                    keys = keys | physical_candidates[sid, pid]
+                for peak in member.physical_peaks:
+                    keys = keys | physical_candidates[sid, locate(peak)]
                 keys = {key for key in keys if memberships[key[0]] in methods}
                 member_candidates[member.subject_id].update(keys)
                 related.update(keys)
@@ -619,13 +627,12 @@ def prepare_alignment_explanation(
                     "disposition",
                 ),
                 "member_subjects": [
-                    _fields(
-                        member,
-                        "sample_key",
-                        "subject_kind",
-                        "subject_id",
-                        "physical_observation_ids",
-                    )
+                    {
+                        **_fields(member, "sample_key", "subject_kind", "subject_id"),
+                        "physical_peak_keys": [
+                            locate(peak) for peak in member.physical_peaks
+                        ],
+                    }
                     for member in group.member_subjects
                 ],
             }
@@ -661,17 +668,14 @@ def prepare_alignment_explanation(
                 hypothesis = getattr(terminal, "hypothesis", None)
                 if hypothesis is not None:
                     physical_ids = tuple(
-                        ref.content.peak_observation_content_id
-                        for ref in hypothesis.peak_observation_refs
+                        locate(ref.content) for ref in hypothesis.peak_observation_refs
                     )
                     payload.update(
                         hypothesis_id=hypothesis.hypothesis_id,
-                        physical_observation_ids=physical_ids,
+                        physical_peak_keys=physical_ids,
                         observations=[
                             {
-                                "peak_observation_content_id": (
-                                    ref.content.peak_observation_content_id
-                                ),
+                                "physical_peak_key": locate(ref.content),
                                 "rt_apex_min": ref.content.integration.rt_apex_min,
                             }
                             for ref in hypothesis.peak_observation_refs
@@ -679,8 +683,7 @@ def prepare_alignment_explanation(
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
                     for ref in hypothesis.peak_observation_refs:
-                        physical_id = ref.content.peak_observation_content_id
-                        physical_candidates[key[1], physical_id].add(key)
+                        physical_candidates[key[1], locate(ref.content)].add(key)
                         if not capture_evidence:
                             _emit_curve_payload(
                                 sink,

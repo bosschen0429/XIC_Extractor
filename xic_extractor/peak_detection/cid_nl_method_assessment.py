@@ -1027,14 +1027,9 @@ def _canonical_candidates(
         raise CidNlMethodAssessmentContractError(
             "candidate_peaks must contain owner-backed observations"
         )
-    refs = tuple(
-        sorted(
-            value,
-            key=lambda item: item.content.peak_observation_content_id,
-        )
-    )
+    refs = tuple(sorted(value, key=lambda item: item.content.measured_order_key))
     _require_unique_refs(
-        tuple(item.content.peak_observation_content_id for item in refs),
+        tuple(item.content.physical_peak_key for item in refs),
         field="candidate peak content",
     )
     return refs

@@ -86,7 +86,7 @@ def compact_explanation(
                 (sid, oid): stage
                 for sid, oid, stage in connection.execute(
                     "SELECT json_extract(payload,'$.sample_id'), "
-                    "json_extract(payload,'$.peak_observation_content_id'), "
+                    "json_extract(payload,'$.physical_peak_key'), "
                     "json_extract(payload,'$.kind') "
                     "FROM records WHERE kind='capture_evidence'"
                 )
@@ -118,15 +118,13 @@ def compact_explanation(
                 sid = decision["sample_key"]
                 observation_ids = sorted(
                     {
-                        content["peak_observation_content_id"]
+                        content["physical_peak_key"]
                         for content in contents
-                        if content.get("peak_observation_content_id")
+                        if content.get("physical_peak_key")
                     }
                 )
                 stages = {
-                    capture_stages.get(
-                        (sid, content.get("peak_observation_content_id"))
-                    )
+                    capture_stages.get((sid, content.get("physical_peak_key")))
                     for content in contents
                     if content.get("method_result") == "SUPPORT"
                 }

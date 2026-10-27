@@ -244,14 +244,13 @@ def compatible_composite_owners(
             or member.sample_key != assessment.content.sample_key
         ):
             return False
-        if len(member.physical_observation_ids) != 1:
+        if len(member.physical_peaks) != 1:
             return False
         peak = next(
             (
                 item
                 for item in assessment.candidate_peaks
-                if item.content.peak_observation_content_id
-                == member.physical_observation_ids[0]
+                if item.content.physical_identity == member.physical_peaks[0]
             ),
             None,
         )

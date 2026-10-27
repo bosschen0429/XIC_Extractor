@@ -60,7 +60,7 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
         for sample in metadata.summary["samples"]
     }
     observation_apex = {
-        observation["peak_observation_content_id"]: observation["rt_apex_min"]
+        observation["physical_peak_key"]: observation["rt_apex_min"]
         for subject in metadata.records.get("terminal_subjects", {}).values()
         for observation in subject.get("observations") or ()
     }

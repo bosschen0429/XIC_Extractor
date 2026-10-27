@@ -59,7 +59,7 @@ _TECHNICAL_LABELS = {
     "candidate_id": "候選 ID",
     "row_key_id": "結果列 ID",
     "group_hypothesis_id": "分組 ID",
-    "peak_observation_content_id": "觀察 ID",
+    "physical_peak_key": "觀察 ID",
     "processing_request_id": "處理 request ID",
     "processing_attempt_id": "處理 attempt ID",
     "acquisition_source_id": "擷取來源 ID",
@@ -608,6 +608,8 @@ def _is_technical_key(key: str) -> bool:
         key == "id"
         or key.endswith("_id")
         or key.endswith("_ids")
+        or key.endswith("_key")
+        or key.endswith("_keys")
         or key.endswith("_ref")
         or key.endswith("_refs")
         or key.endswith("_sha256")
@@ -688,7 +690,7 @@ def readable_curve(
     facts = {
         "sample_id": curve.get("sample_id"),
         "candidate_id": curve.get("candidate_id"),
-        "peak_observation_content_id": curve.get("observation_id"),
+        "physical_peak_key": curve.get("observation_id"),
         "provenance": curve.get("provenance") or {},
     }
     sample = _sample_name(item, sample_ids[0]) if sample_ids else "這個樣本"

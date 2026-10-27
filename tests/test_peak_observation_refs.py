@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +22,6 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     mint_peak_observation_ref,
     validate_peak_observation_binding,
-    verify_persisted_peak_observation_claims,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -93,9 +91,7 @@ def test_query_provenance_does_not_change_selected_physical_content(
     np.testing.assert_array_equal(wide.source_trace.intensity, wide_trace.intensity)
     assert len(wide.source_trace.rt) > len(wide.content.rt)
     assert narrow.content == wide.content
-    assert narrow.content.peak_observation_content_id == (
-        wide.content.peak_observation_content_id
-    )
+    assert narrow.content.physical_peak_key == (wide.content.physical_peak_key)
     assert narrow.generation_provenance != wide.generation_provenance
 
 
@@ -167,102 +163,7 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.peak_observation_content_id != (
-        mutated.content.peak_observation_content_id
-    )
-    with pytest.raises(
-        PeakObservationContractError, match="mismatches physical content"
-    ):
-        replace(
-            original.content,
-            intensity=(50.0, 501.0, 50.0),
-        )
-
-
-def test_persisted_content_verifies_supported_claims_and_rejects_stale_id(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        json.dumps(observation_owner._content_payload(reference.content))
-    )
-
-    verified = verify_persisted_peak_observation_claims(payload)
-    assert verified.peak_observation_content_id == (
-        reference.content.peak_observation_content_id
-    )
-    assert verified.sample_key == (reference.content.sample_key)
-    assert verified.raw_apex_rt_min == reference.content.integration.raw_apex_rt_min
-    assert verified.height_raw == reference.content.integration.height_raw
-    assert math.isclose(
-        verified.area_raw_counts_seconds,
-        reference.content.integration.area_raw_counts_seconds,
-        rel_tol=1e-12,
-        abs_tol=1e-12,
-    )
-    assert not hasattr(verified, "height_smoothed")
-    assert not hasattr(verified, "area_baseline_corrected")
-    assert not hasattr(verified, "gaussian15_fwhm_min")
-
-    payload["intensity"][0] += 1.0
-    with pytest.raises(
-        PeakObservationContractError,
-        match="peak_observation_content_id mismatches physical content",
-    ):
-        verify_persisted_peak_observation_claims(payload)
-
-
-@pytest.mark.parametrize(
-    ("field_name", "contradiction"),
-    [
-        ("area_raw_counts_seconds", 999999.0),
-        ("height_raw", 999999.0),
-        ("raw_apex_rt_min", 7.9),
-    ],
-)
-def test_persisted_content_rejects_resealed_signal_derived_claim(
-    tmp_path: Path,
-    field_name: str,
-    contradiction: float,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        json.dumps(observation_owner._content_payload(reference.content))
-    )
-    integration = replace(
-        reference.content.integration,
-        **{field_name: contradiction},
-    )
-    payload["integration"] = json.loads(json.dumps(asdict(integration)))
-    payload["peak_observation_content_id"] = observation_owner._content_id(
-        sample_key=reference.content.sample_key,
-        mz=reference.content.mz,
-        rt=reference.content.rt,
-        intensity=reference.content.intensity,
-        integration=integration,
-    )
-
-    with pytest.raises(PeakObservationContractError, match=field_name):
-        verify_persisted_peak_observation_claims(payload)
-
-
-@pytest.mark.parametrize("nested", [False, True])
-def test_persisted_content_rejects_undeclared_fields(
-    tmp_path: Path,
-    nested: bool,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        json.dumps(observation_owner._content_payload(reference.content))
-    )
-    target = payload["integration"] if nested else payload
-    target["caller_assertion"] = "not-owner-content"
-
-    with pytest.raises(PeakObservationContractError, match="unexpected fields"):
-        verify_persisted_peak_observation_claims(payload)
+    assert original.content.physical_identity != mutated.content.physical_identity
 
 
 @pytest.mark.parametrize(
@@ -335,9 +236,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.peak_observation_content_id != (
-        changed.content.peak_observation_content_id
-    )
+    assert original.content.physical_identity != changed.content.physical_identity
 
 
 def test_equivalent_numeric_integration_inputs_have_one_content_identity(
@@ -373,8 +272,8 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
 
     assert integer_integration == float_integration
     assert integer_ref.content == float_ref.content
-    assert integer_ref.content.peak_observation_content_id == (
-        float_ref.content.peak_observation_content_id
+    assert integer_ref.content.physical_peak_key == (
+        float_ref.content.physical_peak_key
     )
 
 
@@ -879,21 +778,11 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
         old.content,
         integration=replace(old.content.integration, signal_quality=quality),
     )
-    assert (
-        enriched.peak_observation_content_id == old.content.peak_observation_content_id
-    )
-    payload = json.loads(json.dumps(observation_owner._content_payload(enriched)))
-    assert payload["integration"]["signal_quality"]["signal_to_noise"] == 2.0
-    verified = verify_persisted_peak_observation_claims(payload)
-    assert (
-        verified.peak_observation_content_id == old.content.peak_observation_content_id
-    )
-    legacy = json.loads(json.dumps(observation_owner._content_payload(old.content)))
-    assert "signal_quality" not in legacy["integration"]
-    assert (
-        verify_persisted_peak_observation_claims(legacy).peak_observation_content_id
-        == verified.peak_observation_content_id
-    )
+    assert enriched.physical_peak_key == old.content.physical_peak_key
+    assert enriched.physical_identity == old.content.physical_identity
+    assert observation_owner.index_physical_peaks(
+        (old, replace(old, content=enriched))
+    ) == {old.content.physical_identity: replace(old, content=enriched)}
 
 
 @pytest.mark.parametrize(

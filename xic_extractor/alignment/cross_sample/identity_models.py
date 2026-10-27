@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     ProcessingOwnerReferences,
@@ -56,7 +57,7 @@ class CrossSampleGroupMemberSubject:
     sample_key: str
     subject_kind: Literal["peak_hypothesis"]
     subject_id: str
-    physical_observation_ids: tuple[str, ...]
+    physical_peaks: tuple[PeakObservationContent, ...]
 
 
 def _request_id(
@@ -100,8 +101,11 @@ def group_member_subject_from_peak_hypothesis(
     sample_id = sample.identity.sample_key
     physical_ids = tuple(
         sorted(
-            observation.content.peak_observation_content_id
-            for observation in hypothesis.peak_observation_refs
+            (
+                observation.content.physical_identity
+                for observation in hypothesis.peak_observation_refs
+            ),
+            key=lambda content: content.measured_order_key,
         )
     )
     if (
@@ -118,7 +122,7 @@ def group_member_subject_from_peak_hypothesis(
         sample_key=sample_id,
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
-        physical_observation_ids=physical_ids,
+        physical_peaks=physical_ids,
     )
 
 
@@ -130,7 +134,7 @@ def _canonical_members(
     if not member_subjects:
         raise CrossSampleContractError("cross-sample group requires a member")
     samples: set[str] = set()
-    physical: set[str] = set()
+    physical: set[PeakObservationContent] = set()
     members: list[CrossSampleGroupMemberSubject] = []
     for member in member_subjects:
         if not isinstance(member, CrossSampleGroupMemberSubject):
@@ -141,10 +145,10 @@ def _canonical_members(
             raise CrossSampleContractError(
                 "group has two identity-bearing members for one canonical sample"
             )
-        if physical.intersection(member.physical_observation_ids):
+        if physical.intersection(member.physical_peaks):
             raise CrossSampleContractError("group duplicates a physical observation")
         samples.add(member.sample_key)
-        physical.update(member.physical_observation_ids)
+        physical.update(member.physical_peaks)
         members.append(member)
     return tuple(sorted(members, key=lambda item: item.sample_key))
 
@@ -180,7 +184,9 @@ def mint_cross_sample_group_identity(
                 {
                     "sample_key": item.sample_key,
                     "subject_id": item.subject_id,
-                    "physical_observation_ids": item.physical_observation_ids,
+                    "physical_peak_keys": [
+                        content.physical_peak_key for content in item.physical_peaks
+                    ],
                 }
                 for item in members
             ],

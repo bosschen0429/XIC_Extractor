@@ -24,8 +24,7 @@ def recorded_observations(candidate, linked_records, records, member_ids):
         for kind, rid in linked_records
         if kind == "terminal_subjects"
         for observation in records[kind][rid].get("observations", [])
-        if not member_ids
-        or observation.get("peak_observation_content_id") in member_ids
+        if not member_ids or observation.get("physical_peak_key") in member_ids
     ]
     return observations or [{"rt_apex_min": candidate.get("rt_apex_min")}]
 
@@ -148,7 +147,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
         ):
             members[member.get("sample_key")].update(
-                member.get("physical_observation_ids", [])
+                member.get("physical_peak_keys", [])
             )
         ordinal = 0
         observed = set()
@@ -157,7 +156,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             for observation in recorded_observations(
                 candidates[key], links[key], records, members[key[1]]
             ):
-                if observation.get("peak_observation_content_id"):
+                if observation.get("physical_peak_key"):
                     observed.add(key[1])
                 db.execute(
                     "INSERT INTO query_witnesses VALUES (?,?,?,?,?)",
@@ -166,7 +165,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                         ordinal,
                         candidate_ids[key],
                         observation.get("rt_apex_min"),
-                        observation.get("peak_observation_content_id"),
+                        observation.get("physical_peak_key"),
                     ),
                 )
                 ordinal += 1

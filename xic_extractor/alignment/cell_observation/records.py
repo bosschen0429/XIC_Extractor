@@ -53,7 +53,7 @@ class CellObservationContent:
     group_target_label: str | None
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
-    peak_observation_content_id: str | None
+    physical_peak_key: str | None
     peak_hypothesis_id: str | None
     reason_codes: tuple[str, ...]
     outside_group: OutsideGroupCellRelation | None = None
@@ -114,10 +114,7 @@ def _direct_member_integration(
                 "direct hypothesis does not mint the exact final member"
             )
         if method_evidence is not None:
-            supported_observation_ids = method_evidence.supported_observation_ids
-            if not set(member.physical_observation_ids).issubset(
-                supported_observation_ids
-            ):
+            if not set(member.physical_peaks).issubset(method_evidence.supported_peaks):
                 raise CellObservationContractError(
                     "direct member hypothesis is outside the exact SUPPORT subset"
                 )
@@ -239,10 +236,10 @@ def mint_cell_observation_ref(
         group_target_label=group_context.target_label,
         technical_state=method_assessment.content.technical_state,
         method_result=method_result,
-        peak_observation_content_id=(
+        physical_peak_key=(
             None
             if peak_observation is None
-            else peak_observation.content.peak_observation_content_id
+            else peak_observation.content.physical_peak_key
         ),
         peak_hypothesis_id=(
             None if peak_hypothesis is None else peak_hypothesis.hypothesis_id

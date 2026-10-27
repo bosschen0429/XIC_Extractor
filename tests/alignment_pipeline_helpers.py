@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -27,13 +28,12 @@ from xic_extractor.peak_detection.elution_context import (
     project_elution_context,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
     build_acquisition_source_identity,
-    canonical_identity_basis_bytes,
-    typed_identity_digest,
 )
 
 
@@ -346,14 +346,15 @@ def _owner(
         evidence_score=evidence_score,
         seed_event_count=seed_event_count,
     )
-    physical_id = typed_identity_digest(
-        "xic.peak-observation-content:",
-        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
+    physical_peak = PeakObservationContent(
+        sample_key=f"test-sample:{sample_stem}",
+        mz=precursor_mz,
+        rt=(apex_rt - 0.05, apex_rt, apex_rt + 0.05),
+        # The suffix separates distinct owners that share one apex in a sample.
+        intensity=(1.0 + sum(map(ord, suffix)) / 1000.0, 100.0, 1.0),
+        integration=replace(_integration(apex_rt), raw_scan_indices=(0, 1, 2)),
     )
-    hypothesis_id = typed_identity_digest(
-        "xic.peak-hypothesis:",
-        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
-    )
+    hypothesis_id = f"{sample_stem}|hypothesis|{suffix}"
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
         sample_stem=sample_stem,
@@ -374,7 +375,7 @@ def _owner(
             sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
-            physical_observation_ids=(physical_id,),
+            physical_peaks=(physical_peak,),
         ),
         is_provisional=is_provisional,
     )

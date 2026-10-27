@@ -107,11 +107,11 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
 
     assert len(hypotheses) == 2
     assert {
-        hypothesis.peak_observation_refs[0].content.peak_observation_content_id
+        hypothesis.peak_observation_refs[0].content.physical_peak_key
         for hypothesis in hypotheses
     } == {
-        left.content.peak_observation_content_id,
-        right.content.peak_observation_content_id,
+        left.content.physical_peak_key,
+        right.content.physical_peak_key,
     }
     for hypothesis in hypotheses:
         owner = owner_from_cid_nl_assessment_support(

@@ -22,6 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
@@ -205,13 +206,13 @@ class FinalizedUntargetBatchApplicationResult:
         )
 
     @property
-    def physical_observation_ids(self) -> tuple[str, ...]:
+    def physical_peak_keys(self) -> tuple[str, ...]:
         return tuple(
-            physical_id
+            content.physical_peak_key
             for child in self.children
             for group in child.scientific_core.final_population
             for member in group.member_subjects
-            for physical_id in member.physical_observation_ids
+            for content in member.physical_peaks
         )
 
     @property
@@ -322,7 +323,7 @@ def _require_batch_population(
     }
     actual_subjects: Counter[str] = Counter()
     seen_groups: set[str] = set()
-    seen_physical: set[str] = set()
+    seen_physical: set[PeakObservationContent] = set()
     sample_ids = set(_sample_ids(request.scope.samples))
     for child in request.children:
         core = child.scientific_core
@@ -358,7 +359,7 @@ def _require_batch_population(
             seen_groups.add(group_id)
         for group in core.final_population:
             for member in group.member_subjects:
-                physical_ids = set(member.physical_observation_ids)
+                physical_ids = set(member.physical_peaks)
                 if seen_physical.intersection(physical_ids):
                     raise ApplicationResultContractError(
                         "Untarget batch children share a physical observation"

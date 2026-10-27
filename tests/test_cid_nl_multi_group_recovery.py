@@ -226,7 +226,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         backfills=backfills,
         alignment_config=config,
         member_observations={
-            peak.content.peak_observation_content_id: peak
+            peak.content.physical_identity: peak
             for assessment in assessments.values()
             for peak in assessment.candidate_peaks
         },
@@ -912,7 +912,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         ):
             initial_groups = tuple(completed.initial_groups)
             member_observations = {
-                source.peak_observation.content.peak_observation_content_id: (
+                source.peak_observation.content.physical_peak_key: (
                     source.peak_observation
                 )
                 for cell in scientific.cell_observations
@@ -1126,18 +1126,16 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.physical_peak_key
                     )
                 elif source is not None:
                     assert source.method_assessment is recovery.assessment
-                    allocated.append(
-                        source.peak_observation.content.peak_observation_content_id
-                    )
+                    allocated.append(source.peak_observation.content.physical_peak_key)
                 else:
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.physical_peak_key
                     )
         assert len(set(allocated)) == len(allocated)
         expected_assessments = {
@@ -1355,7 +1353,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         for attempt in missing.backfill_attempts
     )
     physical_ids = tuple(
-        attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
+        attempt.assessment.candidate_peaks[0].content.physical_peak_key
         for attempt in missing.backfill_attempts
     )
     assert len(set(physical_ids)) == (1 if mz_separation_ppm == 0.0 else 2)
@@ -1516,8 +1514,8 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     )
     assert len(
         {
-            first.content.peak_observation_content_id,
-            second.content.peak_observation_content_id,
+            first.content.physical_peak_key,
+            second.content.physical_peak_key,
         }
     ) == (1 if mz_separation_ppm == 0.0 else 2)
 

@@ -19,7 +19,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    PeakObservationRef,
+)
 
 
 def resolve_cid_nl_recovered_evidence(
@@ -36,14 +39,14 @@ def resolve_cid_nl_recovered_evidence(
     return "unavailable"
 
 
-def cid_nl_supported_observation_ids(
+def cid_nl_supported_peaks(
     assessment: CidNlMethodAssessmentRef,
-) -> frozenset[str]:
+) -> frozenset[PeakObservationContent]:
     """The exact SUPPORT subset, never the whole candidate universe."""
     if assessment.content.method_result != "SUPPORT":
         raise CellObservationContractError("direct member assessment must be SUPPORT")
     return frozenset(
-        relation.content.peak_observation.peak_observation_content_id
+        relation.content.peak_observation.physical_identity
         for relation in assessment.individual_support_refs
     )
 
@@ -108,8 +111,8 @@ class CidNlCellEvidence:
     assessment: CidNlMethodAssessmentRef
 
     @property
-    def supported_observation_ids(self) -> frozenset[str]:
-        return cid_nl_supported_observation_ids(self.assessment)
+    def supported_peaks(self) -> frozenset[PeakObservationContent]:
+        return cid_nl_supported_peaks(self.assessment)
 
     @property
     def backfill_block_reason(self) -> str | None:

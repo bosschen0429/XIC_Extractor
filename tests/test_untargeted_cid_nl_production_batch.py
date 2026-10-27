@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
-import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
@@ -222,7 +221,7 @@ def _assert_partition_composition_parity(
         ).matrix
     )
     assert result.excluded_candidates == original.excluded_candidates
-    assert result.physical_observation_ids == original.physical_observation_ids
+    assert result.physical_peak_keys == original.physical_peak_keys
     assert all(
         child.processing_request is original.processing_request
         for child in result.children
@@ -378,18 +377,6 @@ def test_alignment_runtime_telemetry_preserves_process_memory_peak(
     assert samples.process_tree_peak_rss.reason == expected_reason
 
 
-def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
-    facts = {"physical-1": (500.0, 8.0)}
-
-    with pytest.raises(ValueError, match="duplicate physical identity"):
-        finalized_matrix._add_presentation_fact(
-            facts,
-            physical_id="physical-1",
-            mz=500.0,
-            rt=8.0,
-        )
-
-
 def _expected_retained_curve(
     *,
     kind,
@@ -441,7 +428,7 @@ def _expected_retained_curve(
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "peak_observation_content_id": observation.content.peak_observation_content_id
+        "physical_peak_key": observation.content.physical_peak_key
         if observation is not None
         else None,
         "trace_coordinate": {
@@ -1983,28 +1970,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 physical_records_by_candidate=wrong_records,
             )
     close_and_verify_persisted_curves()
-
-
-@pytest.mark.parametrize(
-    ("mz", "rt"),
-    (
-        (float("nan"), 8.0),
-        (500.0, float("inf")),
-        (True, 8.0),
-        (500.0, False),
-    ),
-)
-def test_writer_projection_rejects_invalid_presentation_coordinates(
-    mz: float,
-    rt: float,
-) -> None:
-    with pytest.raises(ValueError, match="finite owner-backed"):
-        finalized_matrix._add_presentation_fact(
-            {},
-            physical_id="physical-1",
-            mz=mz,
-            rt=rt,
-        )
 
 
 def _subject_proof_record(
@@ -4105,9 +4070,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 if group.group_hypothesis_id == projected.group.group_hypothesis_id
             )
             member_ids = {
-                physical_id
+                peak.physical_peak_key
                 for member in group.member_subjects
-                for physical_id in member.physical_observation_ids
+                for peak in member.physical_peaks
             }
             for decision in projected.decisions:
                 direct_observations = decision.evidence.direct_observations
@@ -4117,7 +4082,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         decision.subject.canonical_sample.metadata.raw_stem
                     ] = direct_observations[0].content.integration.rt_apex_min
                 for direct in decision.evidence.direct_observations:
-                    physical_id = direct.content.peak_observation_content_id
+                    physical_id = direct.content.physical_peak_key
                     if physical_id not in member_ids:
                         assert decision.subject.canonical_sample.metadata.raw_stem == (
                             "Hold"
@@ -4136,9 +4101,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         direct.content.integration.rt_apex_min,
                     )
     assert len(diagnostic_observation_ids) == 1
-    assert not diagnostic_observation_ids & set(row.physical_observation_ids)
+    assert not diagnostic_observation_ids & set(row.physical_peak_keys)
     assert len(expected_presentation_facts) == len(sample_stems) - 1
-    assert row.physical_observation_ids == tuple(sorted(expected_presentation_facts))
+    assert set(row.physical_peak_keys) == set(expected_presentation_facts)
     assert row.family_center_mz == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)

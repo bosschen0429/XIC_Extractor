@@ -151,7 +151,7 @@ def _candidate_universe_payload(
 
 
 def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
-    member = SimpleNamespace(physical_observation_ids=(physical_id,))
+    member = SimpleNamespace(physical_peaks=(physical_id,))
     group = SimpleNamespace(
         group_hypothesis_id=f"group:{row_id}",
         member_subjects=(member,),
@@ -457,11 +457,11 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
     elif case == "duplicate_physical":
         children[1].scientific_core.final_population[0].member_subjects[
             0
-        ].physical_observation_ids = (
+        ].physical_peaks = (
             children[0]
             .scientific_core.final_population[0]
             .member_subjects[0]
-            .physical_observation_ids
+            .physical_peaks
         )
     loads = []
 

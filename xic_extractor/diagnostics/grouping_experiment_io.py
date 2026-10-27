@@ -41,6 +41,7 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 from xic_extractor.tabular_io import write_delimited_rows
@@ -288,16 +289,20 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     )
     integration = value["selected_integration"]
     if integration is not None:
-        integration["raw_scan_indices"] = tuple(integration["raw_scan_indices"])
-        integration["boundary_sources"] = tuple(integration["boundary_sources"])
-        integration["signal_quality"] = signal_quality_from_payload(
-            integration.get("signal_quality")
-        )
-        value["selected_integration"] = IntegrationResult(**integration)
+        value["selected_integration"] = _read_integration(integration)
     # Retained snapshots may include the retired, non-semantic audit envelope.
     value.pop("region_audit", None)
     member = value["cross_sample_member_subject"]
-    member["physical_observation_ids"] = tuple(member["physical_observation_ids"])
+    member["physical_peaks"] = tuple(
+        PeakObservationContent(
+            sample_key=peak["sample_key"],
+            mz=peak["mz"],
+            rt=tuple(peak["rt"]),
+            intensity=tuple(peak["intensity"]),
+            integration=_read_integration(peak["integration"]),
+        )
+        for peak in member["physical_peaks"]
+    )
     value["cross_sample_member_subject"] = CrossSampleGroupMemberSubject(**member)
     if value["cid_nl_composite_assessment"] is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
@@ -320,6 +325,17 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     ):
         raise ValueError("Grouping observations require finite measured values")
     return owner
+
+
+def _read_integration(value: dict[str, Any]) -> IntegrationResult:
+    return IntegrationResult(
+        **{
+            **value,
+            "raw_scan_indices": tuple(value["raw_scan_indices"]),
+            "boundary_sources": tuple(value["boundary_sources"]),
+            "signal_quality": signal_quality_from_payload(value.get("signal_quality")),
+        }
+    )
 
 
 def read_rt_calibration(path: Path) -> BatchRtCalibration:

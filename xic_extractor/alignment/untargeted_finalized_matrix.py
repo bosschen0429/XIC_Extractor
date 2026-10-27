@@ -32,6 +32,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
 )
+from xic_extractor.peak_detection.observations import PeakObservationContent
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cell_decision.owner import (
@@ -55,7 +56,7 @@ class FinalizedUntargetMatrixRow:
     destination: Literal["matrix", "archive"]
     family_center_mz: float
     family_center_rt: float
-    physical_observation_ids: tuple[str, ...]
+    physical_peak_keys: tuple[str, ...]
     family_product_mz: float | None = None
     family_observed_neutral_loss_da: float | None = None
     neutral_loss_tag: str = ""
@@ -79,11 +80,11 @@ class FinalizedUntargetMatrixRow:
 
     @property
     def event_cluster_ids(self) -> tuple[str, ...]:
-        return self.physical_observation_ids
+        return self.physical_peak_keys
 
     @property
     def event_member_count(self) -> int:
-        return len(self.physical_observation_ids)
+        return len(self.physical_peak_keys)
 
     @property
     def evidence(self) -> str:
@@ -187,7 +188,7 @@ def iter_completed_untarget_batch_writer_inputs(
     application = completed
 
     seen_group_ids: set[str] = set()
-    seen_physical_ids: set[str] = set()
+    seen_physical_peaks: set[PeakObservationContent] = set()
 
     for child in application.children:
         direct_candidate_ids = _direct_candidate_ids(child.scientific_core)
@@ -228,18 +229,23 @@ def iter_completed_untarget_batch_writer_inputs(
             typed_observations = tuple(
                 item for item in observations if type(item) is FinalGroupCellObservation
             )
-            mz_values, rt_values, physical_ids = _presentation_facts(typed_observations)
-            duplicate_ids = seen_physical_ids.intersection(physical_ids)
-            if duplicate_ids:
+            mz_values, rt_values, physical_peaks = _presentation_facts(
+                typed_observations
+            )
+            duplicate_peaks = seen_physical_peaks.intersection(physical_peaks)
+            if duplicate_peaks:
                 raise ValueError(
                     "writer projection reused physical observations across rows: "
-                    + ", ".join(sorted(duplicate_ids))
+                    + ", ".join(
+                        sorted(peak.physical_peak_key for peak in duplicate_peaks)
+                    )
                 )
-            seen_physical_ids.update(physical_ids)
+            seen_physical_peaks.update(physical_peaks)
+            physical_ids = tuple(peak.physical_peak_key for peak in physical_peaks)
             center_mz = sum(mz_values) / len(mz_values)
             center_mz_basis = PRESENTATION_FORMULA_VERSION
             readings = _apex_readings(
-                physical_ids, candidate_by_physical_id, ms1_apex_mz_by_candidate
+                physical_peaks, candidate_by_physical_id, ms1_apex_mz_by_candidate
             )
             if readings:
                 center_mz = sum(readings) / len(readings)
@@ -261,7 +267,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
                 center_mz_basis=center_mz_basis,
-                physical_observation_ids=physical_ids,
+                physical_peak_keys=physical_ids,
                 family_product_mz=family_product_mz,
                 family_observed_neutral_loss_da=family_observed_neutral_loss_da,
                 neutral_loss_tag=neutral_loss_tag,
@@ -358,58 +364,37 @@ def _group_facts(
 
 def _presentation_facts(
     observations: tuple[FinalGroupCellObservation, ...],
-) -> tuple[tuple[float, ...], tuple[float, ...], tuple[str, ...]]:
-    facts: dict[str, tuple[float, float]] = {}
+) -> tuple[tuple[float, ...], tuple[float, ...], tuple[PeakObservationContent, ...]]:
+    facts: dict[PeakObservationContent, tuple[float, float]] = {}
     for observation in observations:
-        member_physical_ids = {
-            physical_id
+        member_peaks = {
+            peak
             for member in observation.group.member_subjects
             if member.sample_key == observation.sample_key
-            for physical_id in member.physical_observation_ids
+            for peak in member.physical_peaks
         }
         for direct in observation.direct_observations:
-            if direct.content.peak_observation_content_id not in member_physical_ids:
+            peak = direct.content.physical_identity
+            if peak not in member_peaks:
                 continue
-            _add_presentation_fact(
-                facts,
-                physical_id=direct.content.peak_observation_content_id,
-                mz=direct.content.mz,
-                rt=direct.content.integration.rt_apex_min,
-            )
+            if peak in facts:
+                raise ValueError(
+                    "Matrix presentation facts contain duplicate physical identity"
+                )
+            mz, rt = direct.content.mz, direct.content.integration.rt_apex_min
+            if not math.isfinite(mz) or not math.isfinite(rt):
+                raise ValueError(
+                    "Matrix row lacks finite owner-backed Mz/RT observations"
+                )
+            facts[peak] = (float(mz), float(rt))
     if not facts:
         raise ValueError("Matrix row lacks owner-backed Mz/RT observations")
-    ordered = tuple(sorted(facts.items()))
+    ordered = tuple(sorted(facts.items(), key=lambda item: item[0].measured_order_key))
     return (
-        tuple(values[0] for _physical_id, values in ordered),
-        tuple(values[1] for _physical_id, values in ordered),
-        tuple(physical_id for physical_id, _values in ordered),
+        tuple(values[0] for _peak, values in ordered),
+        tuple(values[1] for _peak, values in ordered),
+        tuple(peak for peak, _values in ordered),
     )
-
-
-def _add_presentation_fact(
-    facts: dict[str, tuple[float, float]],
-    *,
-    physical_id: str,
-    mz: float | None,
-    rt: float | None,
-) -> None:
-    if not isinstance(physical_id, str) or not physical_id.strip():
-        raise ValueError("Matrix presentation fact requires physical identity")
-    if physical_id in facts:
-        raise ValueError(
-            "Matrix presentation facts contain duplicate physical identity"
-        )
-    if (
-        isinstance(mz, bool)
-        or not isinstance(mz, (int, float))
-        or isinstance(rt, bool)
-        or not isinstance(rt, (int, float))
-        or not math.isfinite(mz)
-        or not math.isfinite(rt)
-    ):
-        raise ValueError("Matrix row lacks finite owner-backed Mz/RT observations")
-    value = (float(mz), float(rt))
-    facts[physical_id] = value
 
 
 def _aligned_cell(
@@ -536,13 +521,13 @@ def _direct_candidate_ids(
 
 def _direct_candidate_ids_by_physical_id(
     scientific_core: FinalizedScientificAlignment,
-) -> dict[str, str]:
-    candidate_ids: dict[str, str] = {}
+) -> dict[PeakObservationContent, str]:
+    candidate_ids: dict[PeakObservationContent, str] = {}
     for subject in scientific_core.terminal_subjects:
         if type(subject) is not ObservedSearchSubject:
             continue
         for ref in subject.hypothesis.peak_observation_refs:
-            physical_id = ref.content.peak_observation_content_id
+            physical_id = ref.content.physical_identity
             candidate_ids[physical_id] = min(
                 candidate_ids.get(physical_id, subject.candidate_id),
                 subject.candidate_id,
@@ -551,8 +536,8 @@ def _direct_candidate_ids_by_physical_id(
 
 
 def _apex_readings(
-    physical_ids: tuple[str, ...],
-    candidate_by_physical_id: Mapping[str, str],
+    physical_ids: tuple[PeakObservationContent, ...],
+    candidate_by_physical_id: Mapping[PeakObservationContent, str],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None,
 ) -> tuple[float, ...]:
     if not ms1_apex_mz_by_candidate:

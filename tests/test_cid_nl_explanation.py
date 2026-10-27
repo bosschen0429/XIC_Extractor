@@ -241,7 +241,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         assert retained["method_result"] == "HOLD"
     else:
         terminal = records["terminal_subjects"][0]
-        assert terminal["physical_observation_ids"]
+        assert terminal["physical_peak_keys"]
         assert terminal["trace_group_id"] not in {
             g["group_hypothesis_id"] for g in records["initial_groups"]
         }
@@ -261,16 +261,16 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
                             "sample_key": (member.sample_key),
                             "subject_kind": member.subject_kind,
                             "subject_id": member.subject_id,
-                            "physical_observation_ids": (
-                                member.physical_observation_ids
-                            ),
+                            "physical_peak_keys": [
+                                peak.physical_peak_key for peak in member.physical_peaks
+                            ],
                         }
                         for member in source_group.member_subjects
                     ]
                 )
             )
             assert all(
-                member["physical_observation_ids"]
+                member["physical_peak_keys"]
                 for member in retained_group["member_subjects"]
             )
         if scenario == "review_only":

@@ -101,11 +101,11 @@ def export_explanation_curves(
                     if group["group_hypothesis_id"] == group_id
                     for member in group["member_subjects"]
                     if member["sample_key"] == sid
-                    for oid in member["physical_observation_ids"]
+                    for oid in member["physical_peak_keys"]
                 }
             for terminal in terminals:
                 for observation in terminal.get("observations", []):
-                    oid = observation["peak_observation_content_id"]
+                    oid = observation["physical_peak_key"]
                     if allowed is not None and oid not in allowed:
                         continue
                     selected[sid, oid] = {

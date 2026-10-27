@@ -169,7 +169,7 @@ def _support_content(
         candidate_peaks=tuple(
             sorted(
                 (peak.content for peak in candidate_peaks),
-                key=lambda content: content.peak_observation_content_id,
+                key=lambda content: content.measured_order_key,
             )
         ),
         acquisition_mode=observation.acquisition_mode,
@@ -244,10 +244,8 @@ def _validate_candidate_peaks(
             "candidate_peaks must contain owner-backed PeakObservationRef values"
         )
     typed_peaks = candidate_peaks
-    content_ids = tuple(
-        peak.content.peak_observation_content_id for peak in typed_peaks
-    )
-    if len(set(content_ids)) != len(content_ids):
+    keys = tuple(peak.content.physical_peak_key for peak in typed_peaks)
+    if len(set(keys)) != len(keys):
         raise DdaCidNlPeakSupportContractError(
             "candidate physical MS1 peak observations are ambiguous"
         )

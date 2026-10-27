@@ -187,7 +187,7 @@ def selection_sample_facts(
     observed.update(
         member["sample_key"]
         for member in group.get("member_subjects", [])
-        if member.get("physical_observation_ids")
+        if member.get("physical_peak_keys")
     )
     for sid in observed & flags.keys():
         flags[sid] |= OBSERVED
@@ -299,8 +299,8 @@ def review_cell(decision: Any) -> dict[str, Any]:
             continue
         content = observation.content
         quality = content.integration.signal_quality
-        qualities[content.peak_observation_content_id] = {
-            "observation_id": content.peak_observation_content_id,
+        qualities[content.physical_peak_key] = {
+            "observation_id": content.physical_peak_key,
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
         }
     return {
@@ -316,9 +316,9 @@ def review_cell(decision: Any) -> dict[str, Any]:
         "signal_quality": [qualities[key] for key in sorted(qualities)],
         "observation_ids": sorted(
             {
-                cell.content.peak_observation_content_id
+                cell.content.physical_peak_key
                 for cell in cells
-                if cell.content.peak_observation_content_id is not None
+                if cell.content.physical_peak_key is not None
             }
         ),
     }
@@ -336,7 +336,7 @@ def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             "technical_state",
             "method_result",
             "reason_codes",
-            "candidate_peak_content_ids",
+            "candidate_physical_peak_keys",
             "method_subject_id",
         )
         return {name: payload[name] for name in names if name in payload}

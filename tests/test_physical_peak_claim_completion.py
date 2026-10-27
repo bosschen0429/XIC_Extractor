@@ -265,9 +265,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == (
         1 if off_apex_difference or unreliable else 2
     )
-    assert len(
-        {peak.content.peak_observation_content_id for peak in comparison_peaks}
-    ) == (1 if unreliable else 2)
+    assert len({peak.content.physical_identity for peak in comparison_peaks}) == (
+        1 if unreliable else 2
+    )
     if fresh_context:
         integrations = [peak.content.integration for peak in comparison_peaks]
         lower = max(i.rt_left_min for i in integrations)
@@ -346,7 +346,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills=backfills,
         alignment_config=config,
         member_observations={
-            peak.content.peak_observation_content_id: peak
+            peak.content.physical_identity: peak
             for _, assessment in pairs.values()
             for peak in assessment.candidate_peaks
         },

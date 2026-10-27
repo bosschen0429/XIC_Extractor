@@ -905,7 +905,7 @@ def adapt_current_discovery_sample_subject(
     candidate_universe = tuple(
         sorted(
             observations,
-            key=lambda item: item.content.peak_observation_content_id,
+            key=lambda item: item.content.measured_order_key,
         )
     )
     verified_seeds = read_parent_ms1_observations(

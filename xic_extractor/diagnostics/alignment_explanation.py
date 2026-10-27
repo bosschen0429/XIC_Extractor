@@ -45,7 +45,7 @@ ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
         "kind",
         "sample_id",
         "candidate_id",
-        "peak_observation_content_id",
+        "physical_peak_key",
         "trace_coordinate",
         "curves",
         "integration",
@@ -126,7 +126,7 @@ def _validate_curve_payload(
     ):
         raise ExplanationError("undeclared or missing profile fields; rerun Alignment")
     if record_id not in (
-        payload["peak_observation_content_id"],
+        payload["physical_peak_key"],
         payload["candidate_id"],
         provenance.get("method_subject_id"),
     ):
@@ -142,7 +142,7 @@ def _validate_curve_payload(
         raise ExplanationError("curve RT must be an array")
     if not rt and (
         provenance.get("physical_state") != "unavailable"
-        or payload["peak_observation_content_id"] is not None
+        or payload["physical_peak_key"] is not None
         or payload["integration"] is not None
         or any(
             curves[name] is not None for name in ("baseline", "smoothed", "positive")

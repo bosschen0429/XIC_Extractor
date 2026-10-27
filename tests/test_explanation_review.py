@@ -102,12 +102,10 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                     "rt_apex_min": rt,
                 },
             )
-            observations = [
-                {"peak_observation_content_id": cid + "-obs", "rt_apex_min": rt}
-            ]
+            observations = [{"physical_peak_key": cid + "-obs", "rt_apex_min": rt}]
             if cid == "C5":
                 observations.append(
-                    {"peak_observation_content_id": "unrelated", "rt_apex_min": 99}
+                    {"physical_peak_key": "unrelated", "rt_apex_min": 99}
                 )
             writer.add_record(
                 "terminal_subjects", cid, {"observations": observations}, [(cid, sid)]
@@ -123,7 +121,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 group["member_subjects"] = [
                     {
                         "sample_key": "S1",
-                        "physical_observation_ids": ["C5-obs"],
+                        "physical_peak_keys": ["C5-obs"],
                     }
                 ]
             writer.add_record("final_groups", gid, group, keys)
@@ -717,7 +715,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
         )
         observation = NS(
             content=NS(
-                peak_observation_content_id=f"obs-{sid}",
+                physical_peak_key=f"obs-{sid}",
                 integration=NS(signal_quality=quality),
             ),
             capture_stage="initial_capture",
@@ -727,7 +725,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
             content=NS(
                 method_result="SUPPORT",
                 reason_codes=(),
-                peak_observation_content_id=f"obs-{sid}",
+                physical_peak_key=f"obs-{sid}",
             ),
         )
         decision = NS(

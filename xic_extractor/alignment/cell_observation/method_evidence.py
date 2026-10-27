@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import Literal, Protocol, TypeAlias
 
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    PeakObservationRef,
+)
 
 FinalCellEvidenceState: TypeAlias = Literal[
     "direct_observation",
@@ -24,7 +27,7 @@ FinalCellEvidenceState: TypeAlias = Literal[
 
 class CellMethodEvidence(Protocol):
     @property
-    def supported_observation_ids(self) -> frozenset[str]: ...
+    def supported_peaks(self) -> frozenset[PeakObservationContent]: ...
 
     @property
     def backfill_block_reason(self) -> str | None: ...

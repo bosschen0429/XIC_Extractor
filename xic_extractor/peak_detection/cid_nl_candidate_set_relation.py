@@ -295,16 +295,18 @@ def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
             "candidate_peaks must contain owner-backed observations"
         )
     candidates = tuple(sorted(value, key=_candidate_sort_key))
-    content_ids = tuple(peak.content.peak_observation_content_id for peak in candidates)
-    if len(set(content_ids)) != len(content_ids):
+    keys = tuple(peak.content.physical_peak_key for peak in candidates)
+    if len(set(keys)) != len(keys):
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must be unique"
         )
     return candidates
 
 
-def _candidate_sort_key(peak: PeakObservationRef) -> str:
-    return peak.content.peak_observation_content_id
+def _candidate_sort_key(
+    peak: PeakObservationRef,
+) -> tuple[float, float, tuple[float, ...], tuple[float, ...]]:
+    return peak.content.measured_order_key
 
 
 __all__ = [
