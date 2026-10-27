@@ -93,10 +93,8 @@ def compact_explanation(
                 if oid is not None
             }
             rows = connection.execute(
-                "SELECT d.payload, COALESCE(json_extract(d.payload, '$.observation'), "
-                "o.payload) FROM records d LEFT JOIN records o "
-                "ON o.kind='cell_observations' "
-                "AND o.record_id=json_extract(d.payload,'$.cell_observation_id') "
+                "SELECT d.payload, json_extract(d.payload, '$.observation') "
+                "FROM records d "
                 "WHERE d.kind='cell_decisions' "
                 "ORDER BY json_extract(d.payload,'$.row_key_id'), d.record_id"
             )
@@ -106,9 +104,7 @@ def compact_explanation(
             cell_count = 0
             for decision_payload, observation_payload in rows:
                 decision = _object(decision_payload)
-                observation = (
-                    _object(observation_payload) if observation_payload else {}
-                )
+                observation = _object(observation_payload)
                 row_id = decision["row_key_id"]
                 if current_row is not None and row_id != current_row:
                     writer.add_row_cells(current_row, current_group, cells, samples)
