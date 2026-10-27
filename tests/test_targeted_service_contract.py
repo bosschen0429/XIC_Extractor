@@ -258,17 +258,17 @@ def test_failed_raw_acquisition_preserves_reason_and_never_publishes(
         calls.append("acquire")
         return acquisition
 
-    def forbid_runtime(*_args, **_kwargs):
-        calls.append("runtime")
-        raise AssertionError("failed acquisition reached runtime success recording")
+    def forbid_completion(*_args, **_kwargs):
+        calls.append("completion")
+        raise AssertionError("failed acquisition reached scientific completion")
 
     def forbid_publication(*_args, **_kwargs):
         calls.append("publish")
         raise AssertionError("failed acquisition reached publication")
 
     monkeypatch.setattr(
-        "xic_extractor.applications.targeted.production_workflow.start_runtime_attempt",
-        forbid_runtime,
+        "xic_extractor.applications.targeted.production_workflow.complete_analysis",
+        forbid_completion,
     )
     monkeypatch.setattr(
         "xic_extractor.applications.targeted.output_boundary.publish_targeted_outputs",

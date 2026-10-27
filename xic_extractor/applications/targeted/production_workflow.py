@@ -9,11 +9,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.completion import (
-    AlignmentWorkflowContractError,
-    CaptureWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
-    WorkflowStage,
     WorkflowStageFailure,
     complete_analysis,
     resolve_workflow_processing_owners,
@@ -36,28 +33,6 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
     resolve_target_definition,
-)
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
-from xic_extractor.execution._lifecycle import (
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution._observability import RuntimeMetricAvailability
-from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
-    RuntimeProcessTreePeakRssSample,
-    RuntimeTelemetrySamples,
-    RuntimeWorkerBatchReceipt,
-    RuntimeWorkerPeakRssSample,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-    runtime_started_worker_keys,
-    start_runtime_attempt,
 )
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
@@ -103,7 +78,6 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
-    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
 )
@@ -114,14 +88,6 @@ from xic_extractor.sample_metadata import (
 )
 
 _IDENTITY_NAMESPACE = "targeted-production"
-_NO_OBSERVATION_ARTIFACT_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.applications.targeted.production_workflow",
-    semantic_role="retained_no_observation_capture_population",
-    schema_version="targeted_no_observation_capture",
-    validation_status="production_input",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1055,35 +1021,6 @@ def _execute_target(
         )
     )
     capture_inputs = population.capture_inputs
-    workflow_artifact: EvidenceArtifactRef
-    if assessment_tuple:
-        workflow_artifact = assessment_tuple[0][1].artifact
-    else:
-        captured_artifact = next(
-            (
-                item.owner_observation.artifact
-                for item in capture_inputs
-                if item.owner_observation is not None
-            ),
-            None,
-        )
-        workflow_artifact = (
-            captured_artifact
-            if captured_artifact is not None
-            else _mint_no_observation_capture_artifact(
-                context.owners,
-                target,
-                capture_inputs,
-            )
-        )
-    work_unit_key = f"targeted-workflow:{target.lookup_label}"
-    # RAW acquisition has already completed; this attempt acknowledges its
-    # retained artifact handoff before scientific composition begins.
-    runtime = start_runtime_attempt(
-        attempt=context.owners.attempt,
-        work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-retained-acquisition-handoff",
-    )
     return _complete_retained_target(
         TargetWorkflowRequest(
             scope=population.scope,
@@ -1099,59 +1036,15 @@ def _execute_target(
             completed_capture_handoff=population.captures,
             targeted_backfill_decisions=backfill.decisions,
         ),
-        runtime=runtime,
-        workflow_artifact=workflow_artifact,
-        work_unit_key=work_unit_key,
     )
 
 
 def _complete_retained_target(
     request: TargetWorkflowRequest,
     adapter: TargetWorkflowAdapter,
-    *,
-    runtime: AttemptRuntime,
-    workflow_artifact: EvidenceArtifactRef,
-    work_unit_key: str,
 ) -> FinalizedTargetProductionResult:
-    """Acknowledge retained acquisition, then complete its exact owner evidence."""
+    """Complete retained acquisition directly into its scientific result."""
     owners = resolve_workflow_processing_owners(request, adapter)
-    if (
-        runtime.manifest.attempt is not request.processing_attempt
-        or runtime.history.attempt is not request.processing_attempt
-    ):
-        raise AlignmentWorkflowContractError(
-            "workflow runtime crossed the exact processing attempt"
-        )
-    receipt = execute_runtime_attempt(
-        runtime,
-        (),
-        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=request.processing_attempt,
-                    work_unit_key=work_unit_key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=workflow_artifact,
-                ),
-            ),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key=work_unit_key,
-                    artifact=workflow_artifact,
-                ),
-            ),
-        ),
-        telemetry_provider=_runtime_telemetry,
-        persister=lambda receipt: receipt,
-    )
-    outcome = receipt.supervisor.terminal_outcome
-    if outcome is not AttemptTerminalOutcome.SUCCEEDED:
-        stage = (
-            WorkflowStage.RUNTIME if outcome is AttemptTerminalOutcome.FAILED else None
-        )
-        raise RuntimeError(
-            f"Targeted workflow failed before publication: stage={stage}; reason=None"
-        )
     try:
         result = complete_analysis(request, adapter, processing_owners=owners)
     except WorkflowStageFailure as failure:
@@ -1162,68 +1055,6 @@ def _complete_retained_target(
     if type(result) is not FinalizedTargetProductionResult:
         raise RuntimeError("Targeted completion returned a crossed result")
     return result
-
-
-def _mint_no_observation_capture_artifact(
-    owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition,
-    captures: tuple[CaptureWorkflowArguments, ...],
-) -> EvidenceArtifactRef:
-    if not captures or any(
-        item.owner_observation is not None or item.owner_hypothesis is not None
-        for item in captures
-    ):
-        raise RuntimeError(
-            "no-observation artifact requires a non-empty unselected capture population"
-        )
-    payload = canonical_identity_basis_bytes(
-        {
-            "schema_version": "targeted_no_observation_capture",
-            "processing_request_id": owners.request.processing_request_id,
-            "processing_attempt_id": owners.attempt.processing_attempt_id,
-            "target_label": target.lookup_label,
-            "captures": [
-                {
-                    "candidate_id": item.candidate_id,
-                    "sample_name": item.trace.sample_name,
-                    "acquisition_source_id": item.trace.acquisition_source_id,
-                    "scan_count": item.trace.scan_count,
-                }
-                for item in captures
-            ],
-        }
-    )
-    return mint_evidence_artifact_ref(
-        producer_processing_request_id=owners.request.processing_request_id,
-        producer_processing_attempt_id=owners.attempt.processing_attempt_id,
-        semantic_contract=_NO_OBSERVATION_ARTIFACT_CONTRACT,
-        payload_bytes=payload,
-    )
-
-
-def _runtime_telemetry(
-    coordinator: object,
-) -> RuntimeTelemetrySamples:
-    terminal = cast(Any, coordinator)
-    worker_keys = runtime_started_worker_keys(terminal)
-    reason = "not_collected_by_targeted_foreground_runner"
-    return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=None,
-        artifact_io=None,
-        process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=RuntimeMetricAvailability.UNSUPPORTED,
-            reason=reason,
-        ),
-        worker_peak_rss=tuple(
-            RuntimeWorkerPeakRssSample(
-                worker_key=worker_key,
-                availability=RuntimeMetricAvailability.UNSUPPORTED,
-                reason=reason,
-            )
-            for worker_key in worker_keys
-        ),
-        unavailable_reason=reason,
-    )
 
 
 __all__ = ["execute_targeted_production_workflow"]

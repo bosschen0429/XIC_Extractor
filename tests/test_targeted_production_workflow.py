@@ -20,10 +20,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.execution._observability import (
-    RuntimeMetricAvailability,
-)
 from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import (
     targeted_capture_population,
@@ -423,141 +419,6 @@ def test_retained_peak_outside_target_rt_is_not_a_target_capture(
 
     assert len(finalized) == 1
     assert len(finalized[0].canonical_samples) == 2
-
-
-def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    second_target = replace(target, label="Analyte2")
-    for file_result in output.file_results:
-        original = file_result.results[target.label]
-        file_result.results[second_target.label] = replace(
-            original,
-            target_label=second_target.label,
-        )
-
-    original_start = production_workflow.start_runtime_attempt
-    started = []
-
-    def record_start(**kwargs):
-        runtime = original_start(**kwargs)
-        started.append((kwargs["attempt"], runtime))
-        return runtime
-
-    monkeypatch.setattr(
-        production_workflow,
-        "start_runtime_attempt",
-        record_start,
-    )
-    finalized = execute_targeted_production_workflow(
-        build_targeted_application_request(
-            config,
-            [target, second_target],
-            injection_order={"SampleA": 1},
-        ),
-        output,
-    )
-
-    assert len(finalized) == 2
-    assert len(started) == 2
-    attempts = tuple(attempt for attempt, _runtime in started)
-    assert len({attempt.processing_attempt_id for attempt in attempts}) == 2
-    assert len({attempt.processing_request_id for attempt in attempts}) == 1
-    manifests = tuple(runtime.manifest for _attempt, runtime in started)
-    assert all(not runtime.manifest_preflight_failed for _attempt, runtime in started)
-    assert all(len(manifest.work_unit_keys) == 1 for manifest in manifests)
-    assert all(
-        manifest.attempt is attempt
-        for attempt, manifest in zip(attempts, manifests, strict=True)
-    )
-    assert {manifest.work_unit_keys[0] for manifest in manifests} == {
-        "targeted-workflow:"
-        + result.completed_projection.row_binding.target.lookup_label
-        for result in finalized
-    }
-
-
-def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None:
-    monkeypatch.setattr(
-        production_workflow,
-        "runtime_started_worker_keys",
-        lambda _coordinator: ("worker-a", "worker-b"),
-    )
-
-    samples = production_workflow._runtime_telemetry(object())
-    reason = "not_collected_by_targeted_foreground_runner"
-
-    assert samples.event_monotonic_offsets_ns is None
-    assert samples.artifact_io is None
-    assert samples.unavailable_reason == reason
-    assert (
-        samples.process_tree_peak_rss.availability
-        is RuntimeMetricAvailability.UNSUPPORTED
-    )
-    assert samples.process_tree_peak_rss.value is None
-    assert samples.process_tree_peak_rss.reason == reason
-    assert tuple(sample.worker_key for sample in samples.worker_peak_rss) == (
-        "worker-a",
-        "worker-b",
-    )
-    assert all(
-        sample.availability is RuntimeMetricAvailability.UNSUPPORTED
-        and sample.value is None
-        and sample.reason == reason
-        for sample in samples.worker_peak_rss
-    )
-
-
-def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    original_execute = production_workflow.execute_runtime_attempt
-    terminals = []
-
-    def capture_terminal(*args, **kwargs):
-        terminal = original_execute(*args, **kwargs)
-        terminals.append(terminal)
-        return terminal
-
-    monkeypatch.setattr(
-        production_workflow,
-        "execute_runtime_attempt",
-        capture_terminal,
-    )
-    finalized = execute_targeted_production_workflow(
-        build_targeted_application_request(
-            config,
-            [target],
-            injection_order={"SampleA": 1},
-        ),
-        output,
-    )
-
-    assert len(finalized) == 1
-    assert len(terminals) == 1
-    receipt = terminals[0]
-    assert receipt.supervisor.terminal_outcome.value == "succeeded"
-    assert all(
-        event.monotonic_offset_ns is None
-        for event in receipt.observability_ledger.events
-    )
-    metrics = {metric.name: metric for metric in receipt.observability_ledger.metrics}
-    for name in (
-        "artifact_read_count",
-        "artifact_read_bytes",
-        "artifact_write_count",
-        "artifact_write_bytes",
-        "coordinator_work_seconds",
-        "attempt_wall_seconds",
-        "stage_or_unit_elapsed_seconds",
-    ):
-        assert metrics[name].availability is RuntimeMetricAvailability.UNSUPPORTED
-        assert metrics[name].value is None
-        assert metrics[name].reason == "not_collected_by_targeted_foreground_runner"
 
 
 def test_diagnostic_nl_evidence_finalizes_without_strict_support(
@@ -1343,10 +1204,6 @@ def _retained_completion_boundary(monkeypatch):
     object.__setattr__(
         adapter, "capture_inputs", (SimpleNamespace(candidate_id="c", trace=object()),)
     )
-    runtime = SimpleNamespace(
-        manifest=SimpleNamespace(attempt=attempt),
-        history=SimpleNamespace(attempt=attempt),
-    )
     monkeypatch.setattr(
         production_workflow, "resolve_workflow_processing_owners", lambda *_: object()
     )
@@ -1355,65 +1212,16 @@ def _retained_completion_boundary(monkeypatch):
         return production_workflow._complete_retained_target(
             request,
             adapter,
-            runtime=runtime,
-            workflow_artifact=object(),
-            work_unit_key="retained",
         )
 
-    return run, runtime
-
-
-@pytest.mark.parametrize("outcome", ["cancelled", "failed"])
-def test_retained_runtime_terminal_never_enters_science(monkeypatch, outcome):
-    from types import SimpleNamespace
-
-    run, _ = _retained_completion_boundary(monkeypatch)
-    monkeypatch.setattr(
-        production_workflow,
-        "execute_runtime_attempt",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            supervisor=SimpleNamespace(terminal_outcome=AttemptTerminalOutcome(outcome))
-        ),
-    )
-    monkeypatch.setattr(
-        production_workflow,
-        "complete_analysis",
-        lambda *_args, **_kwargs: pytest.fail("runtime terminal entered science"),
-    )
-    stage = "None" if outcome == "cancelled" else "WorkflowStage.RUNTIME"
-    with pytest.raises(RuntimeError, match=f"stage={stage}; reason=None"):
-        run()
-
-
-def test_retained_runtime_owner_exception_propagates(monkeypatch):
-    run, _ = _retained_completion_boundary(monkeypatch)
-
-    class RuntimeOwnerError(RuntimeError):
-        pass
-
-    def fail_runtime(*args, **kwargs):
-        raise RuntimeOwnerError("owner phase failed")
-
-    monkeypatch.setattr(production_workflow, "execute_runtime_attempt", fail_runtime)
-    with pytest.raises(RuntimeOwnerError, match="owner phase failed"):
-        run()
+    return run
 
 
 def test_retained_capture_failure_keeps_stage_type_and_message(monkeypatch):
-    from types import SimpleNamespace
 
     import xic_extractor.alignment.completion as completion_owner
 
-    run, _ = _retained_completion_boundary(monkeypatch)
-    monkeypatch.setattr(
-        production_workflow,
-        "execute_runtime_attempt",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            supervisor=SimpleNamespace(
-                terminal_outcome=AttemptTerminalOutcome.SUCCEEDED
-            )
-        ),
-    )
+    run = _retained_completion_boundary(monkeypatch)
 
     class CaptureFailure(RuntimeError):
         pass
@@ -1430,25 +1238,6 @@ def test_retained_capture_failure_keeps_stage_type_and_message(monkeypatch):
         run()
     assert failure.value.__cause__ is error
     assert type(failure.value.__cause__) is CaptureFailure
-
-
-def test_retained_target_rejects_a_crossed_runtime_before_execution(monkeypatch):
-    from types import SimpleNamespace
-
-    from xic_extractor.alignment.completion import AlignmentWorkflowContractError
-
-    run, runtime = _retained_completion_boundary(monkeypatch)
-    runtime.manifest = SimpleNamespace(attempt=object())
-    monkeypatch.setattr(
-        production_workflow,
-        "execute_runtime_attempt",
-        lambda *_args, **_kwargs: pytest.fail("crossed attempt executed"),
-    )
-    with pytest.raises(
-        AlignmentWorkflowContractError,
-        match="runtime crossed the exact processing attempt",
-    ):
-        run()
 
 
 def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
@@ -1470,11 +1259,6 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
             config, [target], injection_order={"SampleA": 1, "SampleB": 2}
         ),
         output,
-    )
-    monkeypatch.setattr(
-        production_workflow,
-        "execute_runtime_attempt",
-        lambda *_args, **_kwargs: pytest.fail("pure completion entered runtime"),
     )
     request, adapter = acquired_inputs[0]
     # Completed selection/integration facts are snapshots, not a claim that
