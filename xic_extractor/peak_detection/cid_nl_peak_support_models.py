@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
 from xic_extractor.evidence_artifacts import (
@@ -14,6 +14,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
 )
@@ -26,7 +27,6 @@ SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
@@ -91,8 +91,8 @@ class DdaCidNlPeakSupportContent:
 
     sample_key: str
     cid_nl_evidence_content_id: str
-    peak_observation_content_id: str
-    candidate_peak_content_ids: tuple[str, ...]
+    peak_observation: PeakObservationContent
+    candidate_peaks: tuple[PeakObservationContent, ...]
     acquisition_mode: str
     dda_scan_number: int
     scan_rt_min: float
@@ -115,33 +115,6 @@ class DdaCidNlPeakSupportContent:
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,
             field="cid_nl_evidence_content_id",
         )
-        _validate_typed_digest_id(
-            self.peak_observation_content_id,
-            prefix=_PEAK_CONTENT_ID_PREFIX,
-            field="peak_observation_content_id",
-        )
-        if not isinstance(self.candidate_peak_content_ids, tuple):
-            raise DdaCidNlPeakSupportContractError(
-                "candidate_peak_content_ids must be a tuple"
-            )
-        candidate_content_ids = tuple(
-            _validate_typed_digest_id(
-                value,
-                prefix=_PEAK_CONTENT_ID_PREFIX,
-                field="candidate_peak_content_id",
-            )
-            for value in self.candidate_peak_content_ids
-        )
-        if not candidate_content_ids or candidate_content_ids != tuple(
-            sorted(set(candidate_content_ids))
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "candidate_peak_content_ids must be non-empty, unique, and sorted"
-            )
-        if self.peak_observation_content_id not in candidate_content_ids:
-            raise DdaCidNlPeakSupportContractError(
-                "selected peak observation is missing from the candidate universe"
-            )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise DdaCidNlPeakSupportContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -255,7 +228,23 @@ def _support_bytes(content: DdaCidNlPeakSupportContent) -> bytes:
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
-        "content": asdict(content),
+        "content": {
+            **{
+                item.name: (
+                    asdict(content.policy)
+                    if item.name == "policy"
+                    else getattr(content, item.name)
+                )
+                for item in fields(content)
+                if item.name not in {"peak_observation", "candidate_peaks"}
+            },
+            "peak_observation_content_id": (
+                content.peak_observation.peak_observation_content_id
+            ),
+            "candidate_peak_content_ids": tuple(
+                peak.peak_observation_content_id for peak in content.candidate_peaks
+            ),
+        },
     }
     try:
         serialized = json.dumps(

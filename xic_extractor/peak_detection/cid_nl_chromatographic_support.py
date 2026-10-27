@@ -99,8 +99,10 @@ def _content_from_supports(
     )
     return CidNlChromatographicSupportContent(
         sample_key=sample.identity.sample_key,
-        peak_observation_content_id=first.peak_observation_content_id,
-        candidate_peak_content_ids=first.candidate_peak_content_ids,
+        peak_observation_content_id=first.peak_observation.peak_observation_content_id,
+        candidate_peak_content_ids=tuple(
+            peak.peak_observation_content_id for peak in first.candidate_peaks
+        ),
         acquisition_mode=first.acquisition_mode,
         policy=first.policy,
         scan_supports=members,
@@ -177,11 +179,17 @@ def _validated_scan_supports(
         raise CidNlChromatographicSupportContractError(
             "duplicate DDA scan support cannot multiply one event"
         )
-    if len({support.content.peak_observation_content_id for support in supports}) != 1:
+    if any(
+        support.content.peak_observation != supports[0].content.peak_observation
+        for support in supports[1:]
+    ):
         raise CidNlChromatographicSupportContractError(
             "DDA scan support references more than one physical MS1 peak"
         )
-    if len({support.content.candidate_peak_content_ids for support in supports}) != 1:
+    if any(
+        support.content.candidate_peaks != supports[0].content.candidate_peaks
+        for support in supports[1:]
+    ):
         raise CidNlChromatographicSupportContractError(
             "DDA scan support references a different candidate universe"
         )

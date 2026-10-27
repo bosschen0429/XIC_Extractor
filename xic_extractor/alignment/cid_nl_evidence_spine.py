@@ -154,7 +154,7 @@ def build_cid_nl_reference_spine(
                 scan_support_refs=tuple(
                     ref
                     for ref in assessment.individual_support_refs
-                    if ref.content.peak_observation_content_id == selected_peak_id
+                    if ref.content.peak_observation == peak.content
                 ),
                 evidence_refs=tuple(
                     ref
@@ -163,8 +163,7 @@ def build_cid_nl_reference_spine(
                     in {
                         support.content.cid_nl_evidence_content_id
                         for support in assessment.individual_support_refs
-                        if support.content.peak_observation_content_id
-                        == selected_peak_id
+                        if support.content.peak_observation == peak.content
                     }
                 )
                 if assessment.content.method_subject.composition

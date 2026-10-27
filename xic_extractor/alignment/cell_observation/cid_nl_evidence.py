@@ -43,7 +43,7 @@ def cid_nl_supported_observation_ids(
     if assessment.content.method_result != "SUPPORT":
         raise CellObservationContractError("direct member assessment must be SUPPORT")
     return frozenset(
-        relation.content.peak_observation_content_id
+        relation.content.peak_observation.peak_observation_content_id
         for relation in assessment.individual_support_refs
     )
 

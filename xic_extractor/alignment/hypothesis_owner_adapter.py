@@ -84,7 +84,7 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
     refs_by_peak_id: dict[str, list[DdaCidNlPeakSupportRef]] = {}
     for relation in assessment.individual_support_refs:
         refs_by_peak_id.setdefault(
-            relation.content.peak_observation_content_id,
+            relation.content.peak_observation.peak_observation_content_id,
             [],
         ).append(relation)
     hypotheses: list[PeakHypothesis] = []
@@ -487,8 +487,7 @@ def _assessment_hypothesis_components(
     selected_relations = tuple(
         relation
         for relation in assessment.individual_support_refs
-        if relation.content.peak_observation_content_id
-        == observation.content.peak_observation_content_id
+        if relation.content.peak_observation == observation.content
     )
     if not selected_relations:
         raise HypothesisOwnerAdapterError(

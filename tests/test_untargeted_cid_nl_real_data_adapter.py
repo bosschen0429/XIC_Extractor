@@ -2313,7 +2313,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     assert assessment.content.method_result == "SUPPORT"
     assert assessment.set_relation_refs == ()
     assert {
-        support.content.peak_observation_content_id
+        support.content.peak_observation.peak_observation_content_id
         for support in assessment.individual_support_refs
     } == {
         left.content.peak_observation_content_id,

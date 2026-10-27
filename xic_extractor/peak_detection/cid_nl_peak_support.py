@@ -200,9 +200,12 @@ def _support_content(
         cid_nl_evidence_content_id=(
             canonical_evidence.artifact.content_identity.artifact_content_id
         ),
-        peak_observation_content_id=peak_content.peak_observation_content_id,
-        candidate_peak_content_ids=tuple(
-            sorted(peak.content.peak_observation_content_id for peak in candidate_peaks)
+        peak_observation=peak_content,
+        candidate_peaks=tuple(
+            sorted(
+                (peak.content for peak in candidate_peaks),
+                key=lambda content: content.peak_observation_content_id,
+            )
         ),
         acquisition_mode=observation.acquisition_mode,
         dda_scan_number=observation.scan_number,

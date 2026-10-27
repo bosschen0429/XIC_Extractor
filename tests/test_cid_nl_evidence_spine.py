@@ -663,9 +663,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
         )
         assert assessment.content.method_result == expected_result
         if expected_result == "SUPPORT":
-            assert individual_refs[0].content.peak_observation_content_id == (
-                left.content.peak_observation_content_id
-            )
+            assert individual_refs[0].content.peak_observation == left.content
             with pytest.raises(
                 DdaCidNlCandidateSetRelationContractError, match="individual support"
             ):

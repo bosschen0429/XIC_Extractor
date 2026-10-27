@@ -95,9 +95,7 @@ def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
     assert support.content.cid_nl_evidence_content_id == (
         evidence.artifact.content_identity.artifact_content_id
     )
-    assert support.content.peak_observation_content_id == (
-        peak.content.peak_observation_content_id
-    )
+    assert support.content.peak_observation == peak.content
     assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
     assert support.artifact.upstream_artifact_ids == tuple(
         sorted((evidence.artifact.evidence_artifact_id,))
@@ -304,12 +302,8 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
         policy=_policy(),
     )
 
-    assert first.content.peak_observation_content_id == (
-        changed.content.peak_observation_content_id
-    )
-    assert first.content.candidate_peak_content_ids != (
-        changed.content.candidate_peak_content_ids
-    )
+    assert first.content.peak_observation == (changed.content.peak_observation)
+    assert first.content.candidate_peaks != (changed.content.candidate_peaks)
     assert first.artifact.content_identity != changed.artifact.content_identity
 
 

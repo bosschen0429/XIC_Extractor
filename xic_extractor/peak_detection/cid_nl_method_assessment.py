@@ -865,6 +865,7 @@ def _validate_upstream_bindings(
     candidate_ids = tuple(
         peak.content.peak_observation_content_id for peak in candidate_peaks
     )
+    candidate_contents = tuple(peak.content for peak in candidate_peaks)
     support_policy = evaluation_receipt.support_policy
     individual_evidence_ids: set[str] = set()
     for support in individual_support_refs:
@@ -875,7 +876,7 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(
                 "individual support evidence is missing from the assessment"
             )
-        if support.content.candidate_peak_content_ids != candidate_ids:
+        if support.content.candidate_peaks != candidate_contents:
             raise CidNlMethodAssessmentContractError(
                 "individual support references a different candidate universe"
             )
@@ -1011,13 +1012,8 @@ def _is_strict_unique_support(
     support: DdaCidNlPeakSupportRef,
     candidate_peaks: tuple[PeakObservationRef, ...],
 ) -> bool:
-    selected = next(
-        peak
-        for peak in candidate_peaks
-        if peak.content.peak_observation_content_id
-        == support.content.peak_observation_content_id
-    )
-    selected_interval = selected.content.integration
+    selected = support.content.peak_observation
+    selected_interval = selected.integration
     if not (
         selected_interval.rt_left_min
         < support.content.scan_rt_min
@@ -1025,7 +1021,7 @@ def _is_strict_unique_support(
     ):
         return False
     for candidate in candidate_peaks:
-        if candidate is selected:
+        if candidate.content == selected:
             continue
         if abs(support.content.precursor_mz - candidate.content.mz) > (
             support.content.policy.precursor_tolerance_da
@@ -1136,7 +1132,7 @@ def _supported_peak_ids(
     losses_by_peak: dict[str, set[float]] = {}
     for support in individual_support_refs:
         losses_by_peak.setdefault(
-            support.content.peak_observation_content_id, set()
+            support.content.peak_observation.peak_observation_content_id, set()
         ).add(loss_by_evidence[support.content.cid_nl_evidence_content_id])
     required = set(subject.configured_losses)
     return frozenset(
