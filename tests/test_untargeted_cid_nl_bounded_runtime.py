@@ -2578,10 +2578,9 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         == child_scope.capture_bindings
     )
     assert child_after.scientific_core.cell_observations == child_observations
-    assert (
-        child_after.completed_projection.decisions[0].basis_bytes
-        == child_decision.basis_bytes
-    )
+    restored_decision = child_after.completed_projection.decisions[0]
+    assert restored_decision.payload == child_decision.payload
+    assert restored_decision.selected_integration == child_decision.selected_integration
     assert child_after.completed_projection.decisions[0].value == child_decision.value
 
 

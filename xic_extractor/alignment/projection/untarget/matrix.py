@@ -180,7 +180,7 @@ def project_untarget_matrix(
 ) -> UntargetMatrixProjection:
     """Project sample order, routes and counts from the finalized groups."""
 
-    from xic_extractor.alignment.cell_decision.owner import _mint_decision
+    from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
 
     observations = finalized_alignment.cell_observations
     if set(decisions) != {item.key for item in observations}:
@@ -203,7 +203,7 @@ def project_untarget_matrix(
             observation = by_position[group.group_hypothesis_id, sample_id]
             payload, integration = decisions[observation.key]
             projected.append(
-                _mint_decision(
+                ProductionCellDecision(
                     subject=GroupCellSubject(
                         group,
                         sample,

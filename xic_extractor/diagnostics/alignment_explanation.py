@@ -319,10 +319,13 @@ class ExplanationReportWriter:
     def add_record(
         self,
         kind: str,
-        identity: str | int,
+        identity: str | int | None,
         payload: Mapping[str, Any],
         related: Iterable[tuple[str, str]],
     ) -> bool:
+        # Records without a natural locator use their actual database primary key.
+        if identity is None:
+            identity = len(self._record_rowids) + 1
         encoded = _json(payload)
         key = (kind, identity)
         stored_payload = (

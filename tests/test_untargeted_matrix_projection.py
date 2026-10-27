@@ -390,9 +390,6 @@ def test_disposition_projects_row_route_and_complete_counts(
         alignment, dict(reversed(tuple(answers.items())))
     )
     assert projection == reordered
-    assert tuple(d.decision_id for d in projection.decisions) == tuple(
-        d.decision_id for d in reordered.decisions
-    )
 
 
 def test_projection_is_deterministic_for_reversed_capture_order(tmp_path, monkeypatch):

@@ -351,7 +351,7 @@ def prepare_alignment_explanation(
                 report_progress(stage, completed_count, total)
 
         def add(
-            kind: str, identity: str, payload: dict[str, Any], related: Any
+            kind: str, identity: str | None, payload: dict[str, Any], related: Any
         ) -> None:
             if sink.add_record(
                 kind,
@@ -806,11 +806,9 @@ def prepare_alignment_explanation(
                 for decision, cell in zip(row.decisions, cells, strict=True):
                     add(
                         "cell_decisions",
-                        decision.decision_id,
+                        None,
                         {
-                            **_fields(
-                                decision, "decision_id", "variant", "value", "source"
-                            ),
+                            **_fields(decision, "variant", "value", "source"),
                             "signal_quality": review_cell(decision)["signal_quality"],
                             "membership_risks": cell["membership_risks"],
                             "row_key_id": row.group.group_hypothesis_id,

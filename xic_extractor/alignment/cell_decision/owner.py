@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_observation.observations import (
@@ -27,9 +27,6 @@ from xic_extractor.alignment.result import (
     SearchedNoObservationSubject,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.processing_identity import (
-    mint_typed_identity,
-)
 
 
 class CellDecisionContractError(ValueError):
@@ -49,8 +46,6 @@ CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
 )
 
-_DECISION_PREFIX = "xic.production-cell-decision:"
-_DECISION_SCHEMA_VERSION = "production_cell_decision"
 _NO_WRITE_STATES = frozenset(
     {
         "not_searched",
@@ -96,12 +91,9 @@ CellDecisionPayload: TypeAlias = NumericCellDecision | NoWriteCellDecision
 class ProductionCellDecision:
     """One owner-sealed decision bound to one exact subject and evidence closure."""
 
-    decision_id: str
     subject: CellSubject
     evidence: CellEvidence
     payload: CellDecisionPayload
-    # The factory derives the basis and ID from these exact inputs.
-    basis_bytes: bytes
     # Retain the chosen observation even when its area is not quantifiable.
     selected_integration: IntegrationResult | None
 
@@ -230,7 +222,7 @@ def _decide_sealed_subject(
         raise CellDecisionContractError(
             "cell decision requires an exact TargetCellSubject or GroupCellSubject"
         )
-    return _mint_decision(
+    return ProductionCellDecision(
         subject=subject,
         evidence=evidence,
         payload=payload,
@@ -356,116 +348,6 @@ def _bind_complete_subject_population(
             f"{label} population is missing, extra, or substituted"
         )
     return requested
-
-
-def _mint_decision(
-    *,
-    subject: CellSubject,
-    evidence: CellEvidence,
-    payload: CellDecisionPayload,
-    selected_integration: IntegrationResult | None,
-) -> ProductionCellDecision:
-    identity, basis = mint_typed_identity(
-        _DECISION_PREFIX,
-        _decision_basis(subject=subject, evidence=evidence, payload=payload),
-    )
-    return ProductionCellDecision(
-        decision_id=identity,
-        subject=subject,
-        evidence=evidence,
-        payload=payload,
-        basis_bytes=basis,
-        selected_integration=selected_integration,
-    )
-
-
-def _decision_basis(
-    *,
-    subject: CellSubject,
-    evidence: CellEvidence,
-    payload: CellDecisionPayload,
-) -> dict[str, object]:
-    if type(subject) is TargetCellSubject:
-        evidence_identity: dict[str, object]
-        subject_kind = "target"
-        subject_identity: dict[str, object] = {
-            "target": asdict(subject.target.definition.target),
-            "target_label": subject.target.definition.target_key.target_label,
-            "row_binding_variant": subject.row_binding.variant,
-            "eligible_group_ids": tuple(
-                group.group_hypothesis_id
-                for group in subject.row_binding.eligible_groups
-            ),
-        }
-        if type(evidence) is ObservedSearchSubject:
-            evidence_identity = {
-                "variant": evidence.variant,
-                "candidate_id": evidence.candidate_id,
-                "trace_group_id": evidence.trace_group_id,
-                "hypothesis_id": evidence.hypothesis.hypothesis_id,
-                "integration": _integration_identity(evidence.hypothesis.integration),
-            }
-        elif type(evidence) is SearchedNoObservationSubject:
-            evidence_identity = {
-                "variant": evidence.variant,
-                "candidate_id": evidence.candidate_id,
-                "trace_group_id": evidence.trace_group_id,
-                "detection_status": evidence.detection_status,
-            }
-        else:
-            raise CellDecisionContractError(
-                "Target decision basis requires its exact terminal subject"
-            )
-        request_id = subject.processing_request.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_key
-    elif type(subject) is GroupCellSubject:
-        if type(evidence) is not FinalGroupCellObservation:
-            raise CellDecisionContractError(
-                "Group decision basis requires its exact final cell observation"
-            )
-        subject_kind = "group"
-        subject_identity = {
-            "group_hypothesis_id": subject.group_hypothesis_id,
-        }
-        evidence_identity = {
-            "evidence_states": evidence.evidence_states,
-            "position_keys": evidence.position_keys,
-            "source_cell_artifact_ids": evidence.source_cell_artifact_ids,
-            "integrations": tuple(
-                _integration_identity(item) for item in evidence.integrations
-            ),
-        }
-        request_id = subject.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_key
-    else:
-        raise CellDecisionContractError(
-            "decision basis requires an exact owner subject"
-        )
-    payload_identity: dict[str, object] = {"variant": payload.variant}
-    if type(payload) is NumericCellDecision:
-        payload_identity.update(value=payload.value, source=payload.source)
-    return {
-        "schema_version": _DECISION_SCHEMA_VERSION,
-        "subject_kind": subject_kind,
-        "processing_request_id": request_id,
-        "sample_key": sample_id,
-        "subject": subject_identity,
-        "evidence": evidence_identity,
-        "payload": payload_identity,
-    }
-
-
-def _integration_identity(integration: IntegrationResult) -> dict[str, object]:
-    if type(integration) is not IntegrationResult:
-        raise CellDecisionContractError(
-            "decision basis requires an exact IntegrationResult"
-        )
-    # Advisory measurement quality does not mint a different quantitative decision.
-    return {
-        item.name: getattr(integration, item.name)
-        for item in fields(integration)
-        if item.name != "signal_quality"
-    }
 
 
 def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
