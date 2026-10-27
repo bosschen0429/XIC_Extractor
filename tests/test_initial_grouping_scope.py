@@ -38,7 +38,7 @@ def _group(
 ) -> CrossSamplePeakGroupHypothesis:
     return CrossSamplePeakGroupHypothesis(
         membership=CrossSampleGroupIdentity(group_id, "", (), "established"),
-        public_family_id="display-family",
+        feature_id="display-family",
         owner_ids=owner_ids or (f"owner:{group_id}",),
         event_member_count=1,
         group_center_mz=center_mz,

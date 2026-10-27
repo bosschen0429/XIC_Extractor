@@ -52,7 +52,6 @@ class FinalizedUntargetMatrixRow:
 
     feature_id: str
     group_hypothesis_id: str
-    public_family_id: str
     destination: Literal["matrix", "archive"]
     family_center_mz: float
     family_center_rt: float
@@ -250,9 +249,8 @@ def iter_completed_untarget_batch_writer_inputs(
                 has_anchor,
             ) = _group_facts(typed_observations)
             row = FinalizedUntargetMatrixRow(
-                feature_id=group_id,
+                feature_id=f"F{len(seen_group_ids):06d}",
                 group_hypothesis_id=group_id,
-                public_family_id=f"F{len(seen_group_ids):06d}",
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
@@ -288,7 +286,7 @@ def iter_completed_untarget_batch_writer_inputs(
             )
             writer_cell_decisions = tuple(
                 _writer_cell_decision(
-                    row_id=group_id,
+                    row_id=row.feature_id,
                     cell=cell,
                     owner_decision=owner_decision,
                 )
@@ -316,7 +314,7 @@ def iter_completed_untarget_batch_writer_inputs(
                         (decision.feature_id, decision.sample_stem): decision
                         for decision in writer_cell_decisions
                     },
-                    rows={group_id: row_decision},
+                    rows={row.feature_id: row_decision},
                 ),
             )
         if consume_child is not None:
@@ -458,7 +456,7 @@ def _aligned_cell(
         backfill_request_rt_max=request_rt[1],
         backfill_request_ppm=None,
         group_hypothesis_id=row.group_hypothesis_id,
-        public_family_id=row.public_family_id,
+        feature_id=row.feature_id,
         group_construction_role=row.group_construction_role,
         group_delivery_role=row.group_delivery_role,
         group_membership_source=row.group_membership_source,

@@ -3179,10 +3179,13 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert writer_inputs.matrix.sample_order == ("S1",)
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
-    assert tuple(row.public_family_id for row in writer_inputs.matrix.clusters) == (
+    assert tuple(row.feature_id for row in writer_inputs.matrix.clusters) == (
         "F000001",
         "F000002",
     )
+    feature_by_group = {
+        row.group_hypothesis_id: row.feature_id for row in writer_inputs.matrix.clusters
+    }
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
         candidate_by_hypothesis = {
@@ -3198,7 +3201,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
                 hypothesis = decision.evidence.direct_hypotheses[0]
                 expected_source_ids[
                     (
-                        projected.group.group_hypothesis_id,
+                        feature_by_group[projected.group.group_hypothesis_id],
                         decision.subject.canonical_sample.metadata.raw_stem,
                     )
                 ] = candidate_by_hypothesis[
@@ -4082,7 +4085,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
     assert cells_by_sample["Hold"].source_candidate_id is None
     row = writer_inputs.matrix.clusters[0]
-    assert row.public_family_id == "F000001"
+    assert row.feature_id == "F000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()

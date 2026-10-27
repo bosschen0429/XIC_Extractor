@@ -55,9 +55,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     def group_hypothesis_id(self) -> str: ...
 
     @property
-    def public_family_id(self) -> str: ...
-
-    @property
     def group_construction_role(self) -> str: ...
 
     @property
@@ -109,12 +106,8 @@ def delivery_group_hypothesis_id(feature: object) -> str:
     )
 
 
-def delivery_public_family_id(feature: object) -> str:
-    return (
-        _string_attr(feature, "public_family_id")
-        or _string_attr(feature, "feature_id")
-        or _string_attr(feature, "cluster_id")
-    )
+def delivery_feature_id(feature: object) -> str:
+    return _string_attr(feature, "feature_id") or _string_attr(feature, "cluster_id")
 
 
 def delivery_group_construction_role(feature: object) -> str:

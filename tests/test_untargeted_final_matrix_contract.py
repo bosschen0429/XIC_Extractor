@@ -104,7 +104,6 @@ def _feature(
     evidence: str,
     has_anchor: bool = True,
     group_hypothesis_id: str = "",
-    public_family_id: str = "",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         feature_id=feature_id,
@@ -119,7 +118,6 @@ def _feature(
         evidence=evidence,
         review_only=False,
         group_hypothesis_id=group_hypothesis_id,
-        public_family_id=public_family_id or feature_id,
     )
 
 

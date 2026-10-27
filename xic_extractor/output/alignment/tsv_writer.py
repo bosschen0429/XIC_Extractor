@@ -24,8 +24,8 @@ from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
     GROUP_REVIEW_PROJECTION_COLUMNS,
+    delivery_feature_id,
     delivery_group_projection,
-    delivery_public_family_id,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
@@ -335,7 +335,7 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             else None
         )
         yield {
-            "feature_id": delivery_public_family_id(cluster),
+            "feature_id": delivery_feature_id(cluster),
             "group_construction_role": cell.group_construction_role,
             "group_delivery_role": cell.group_delivery_role,
             "group_membership_source": cell.group_membership_source,
@@ -409,7 +409,7 @@ def _backfill_cell_evidence_rows(
                 continue
             yield (
                 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-                delivery_public_family_id(cluster),
+                delivery_feature_id(cluster),
                 cell.sample_stem,
                 cell.status,
                 cell_decision.production_status,
@@ -455,7 +455,7 @@ def write_alignment_backfill_seed_audit_tsv(
         cluster = clusters_by_id[cell.cluster_id]
         rows.append(
             {
-                "feature_id": delivery_public_family_id(cluster),
+                "feature_id": delivery_feature_id(cluster),
                 "group_construction_role": cell.group_construction_role,
                 "group_delivery_role": cell.group_delivery_role,
                 "group_membership_source": cell.group_membership_source,
@@ -502,7 +502,7 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
         cells = grouped_cells.get(cluster_id, ())
         cells_by_sample = {cell.sample_stem: cell for cell in cells}
         row: dict[str, object] = {
-            "feature_id": delivery_public_family_id(cluster),
+            "feature_id": delivery_feature_id(cluster),
             "neutral_loss_tag": cluster.neutral_loss_tag,
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
@@ -541,9 +541,9 @@ def _review_rows(
         present_count = detected_count + backfilled_count
         rows.append(
             {
-                "feature_id": delivery_public_family_id(cluster),
+                "feature_id": delivery_feature_id(cluster),
                 **delivery_group_projection(cluster),
-                **matrix_projection.get(delivery_public_family_id(cluster), {}),
+                **matrix_projection.get(delivery_feature_id(cluster), {}),
                 "neutral_loss_tag": cluster.neutral_loss_tag,
                 "family_center_mz": _family_center_mz(cluster),
                 "family_center_rt": _family_center_rt(cluster),

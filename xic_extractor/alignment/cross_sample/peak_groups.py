@@ -4,7 +4,7 @@ This module groups SampleLocalMS1Owner instances using shared physical rules
 and explicitly supplied method evidence. The output
 ``CrossSamplePeakGroupHypothesis`` is the primary cross-sample identity unit.
 
-``public_family_id`` is a *display label* preserved for output compatibility.
+``feature_id`` is the shared output label.
 It is NOT an identity anchor; use ``group_hypothesis_id`` for identity
 decisions within the pipeline.
 """
@@ -62,13 +62,12 @@ class CrossSamplePeakGroupHypothesis:
 
     Identity semantics:
     - ``group_hypothesis_id``: primary identity key for pipeline decisions.
-    - ``public_family_id``: display label for output compatibility.
+    - ``feature_id``: shared output label.
       It is intentionally independent of ``group_hypothesis_id``.
-    - ``feature_id`` property: legacy output alias for ``public_family_id``.
     """
 
     membership: CrossSampleGroupIdentity
-    public_family_id: str
+    feature_id: str
     owner_ids: tuple[str, ...]
     event_member_count: int
     source: str = "owner_aligned_feature_shadow"
@@ -108,7 +107,7 @@ class CrossSamplePeakGroupHypothesis:
 
     @property
     def cluster_id(self) -> str:
-        return self.public_family_id
+        return self.feature_id
 
     @property
     def family_center_mz(self) -> float:
@@ -206,7 +205,7 @@ def construct_cross_sample_peak_group_hypotheses(
         hypothesis = _hypothesis_from_owner_group(
             group,
             group_identity=group_identity,
-            public_family_id=f"F{index:06d}",
+            feature_id=f"F{index:06d}",
             evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
             identity_conflict=not (
                 accept_competition and not bootstrap and basis.disposition == "assigned"
@@ -232,7 +231,7 @@ def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
     group_identity: CrossSampleGroupIdentity,
-    public_family_id: str,
+    feature_id: str,
     evidence: str,
     identity_conflict: bool = False,
     review_only: bool = False,
@@ -264,7 +263,7 @@ def _hypothesis_from_owner_group(
     )
     return CrossSamplePeakGroupHypothesis(
         membership=group_identity,
-        public_family_id=public_family_id,
+        feature_id=feature_id,
         owner_ids=tuple(owner.owner_id for owner in group),
         event_member_count=sum(len(owner.all_events) for owner in group),
         source="cross_sample_peak_group_successor_constructor",

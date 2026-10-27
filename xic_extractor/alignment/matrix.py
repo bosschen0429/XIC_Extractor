@@ -53,7 +53,7 @@ class AlignedCell:
     backfill_request_rt_max: float | None = None
     backfill_request_ppm: float | None = None
     group_hypothesis_id: str = ""
-    public_family_id: str = ""
+    feature_id: str = ""
     group_construction_role: str = ""
     group_delivery_role: str = ""
     group_membership_source: str = ""

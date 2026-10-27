@@ -485,7 +485,7 @@ def admit_cid_nl_group_backfills(
                 _hypothesis_from_owner_group(
                     combined,
                     group_identity=identity,
-                    public_family_id=group.public_family_id,
+                    feature_id=group.feature_id,
                     evidence=group.evidence,
                     identity_conflict=group.identity_conflict,
                     review_only=group.review_only,

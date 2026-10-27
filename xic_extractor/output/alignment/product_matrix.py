@@ -116,7 +116,7 @@ def _matrix_review_projection(
     mz = _family_center_mz(cluster)
     rt, _ = _center_rt(cluster, product_cells)
     return {
-        "feature_id": str(getattr(cluster, "public_family_id", "")) or row_id(cluster),
+        "feature_id": str(getattr(cluster, "feature_id", "")) or row_id(cluster),
         "matrix_row_index": matrix_row_index,
         "matrix_mz": mz,
         "matrix_rt": rt,
