@@ -171,12 +171,7 @@ def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
             partition_transition=SimpleNamespace(lineage=()),
         ),
     )
-    row = SimpleNamespace(
-        row_key=SimpleNamespace(
-            untarget_row_key_id=row_id,
-            group=group,
-        )
-    )
+    row = SimpleNamespace(group=group)
     projection = SimpleNamespace(rows=(row,))
     return _uninitialized(
         FinalizedUntargetApplicationResult,

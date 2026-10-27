@@ -3197,7 +3197,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
                 hypothesis = decision.evidence.direct_hypotheses[0]
                 expected_source_ids[
                     (
-                        projected.row_key.untarget_row_key_id,
+                        projected.group.group_hypothesis_id,
                         decision.subject.canonical_sample.metadata.raw_stem,
                     )
                 ] = candidate_by_hypothesis[
@@ -4094,7 +4094,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             group = next(
                 group
                 for group in child.scientific_core.final_population
-                if group.group_hypothesis_id == projected.row_key.group_hypothesis_id
+                if group.group_hypothesis_id == projected.group.group_hypothesis_id
             )
             member_ids = {
                 physical_id

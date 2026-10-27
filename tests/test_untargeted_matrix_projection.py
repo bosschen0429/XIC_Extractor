@@ -329,7 +329,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
     projection = project_untarget_matrix(alignment, answers)
     assert projection.finalized_alignment is alignment
     assert projection.lineage is alignment.lineage
-    assert [row.row_key.group for row in projection.rows] == sorted(
+    assert [row.group for row in projection.rows] == sorted(
         alignment.final_population, key=lambda group: group.group_hypothesis_id
     )
     observations = {
@@ -350,7 +350,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
                 subject.canonical_sample.identity.sample_key,
             ]
             assert decision.evidence is evidence
-            assert subject.row_key is row.row_key
+            assert subject.group is row.group
             payload, integration = answers[evidence.cell_observation_id]
             assert decision.payload is payload
             assert decision.selected_integration is integration

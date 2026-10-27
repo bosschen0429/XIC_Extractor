@@ -181,7 +181,6 @@ def iter_completed_untarget_batch_writer_inputs(
     sample_set = frozenset(sample_stems)
     application = completed
 
-    seen_row_ids: set[str] = set()
     seen_group_ids: set[str] = set()
     seen_physical_ids: set[str] = set()
 
@@ -193,11 +192,9 @@ def iter_completed_untarget_batch_writer_inputs(
             else {}
         )
         for projected in child.completed_projection.rows:
-            row_id = projected.row_key.untarget_row_key_id
-            group_id = projected.row_key.group_hypothesis_id
-            if row_id in seen_row_ids or group_id in seen_group_ids:
+            group_id = projected.group.group_hypothesis_id
+            if group_id in seen_group_ids:
                 raise ValueError("writer projection received duplicate finalized rows")
-            seen_row_ids.add(row_id)
             seen_group_ids.add(group_id)
 
             closed_decisions = tuple(projected.decisions)
@@ -253,9 +250,9 @@ def iter_completed_untarget_batch_writer_inputs(
                 has_anchor,
             ) = _group_facts(typed_observations)
             row = FinalizedUntargetMatrixRow(
-                feature_id=row_id,
+                feature_id=group_id,
                 group_hypothesis_id=group_id,
-                public_family_id=f"F{len(seen_row_ids):06d}",
+                public_family_id=f"F{len(seen_group_ids):06d}",
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
@@ -291,7 +288,7 @@ def iter_completed_untarget_batch_writer_inputs(
             )
             writer_cell_decisions = tuple(
                 _writer_cell_decision(
-                    row_id=row_id,
+                    row_id=group_id,
                     cell=cell,
                     owner_decision=owner_decision,
                 )
@@ -319,7 +316,7 @@ def iter_completed_untarget_batch_writer_inputs(
                         (decision.feature_id, decision.sample_stem): decision
                         for decision in writer_cell_decisions
                     },
-                    rows={row_id: row_decision},
+                    rows={group_id: row_decision},
                 ),
             )
         if consume_child is not None:

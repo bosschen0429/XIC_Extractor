@@ -321,7 +321,6 @@ def _require_batch_population(
         if candidate not in excluded_ids
     }
     actual_subjects: Counter[str] = Counter()
-    seen_rows: set[str] = set()
     seen_groups: set[str] = set()
     seen_physical: set[str] = set()
     sample_ids = set(_sample_ids(request.scope.samples))
@@ -351,13 +350,11 @@ def _require_batch_population(
                 "Untarget batch children must share one sample universe"
             )
         for row in child.completed_projection.rows:
-            row_id = row.row_key.untarget_row_key_id
-            group_id = row.row_key.group.group_hypothesis_id
-            if row_id in seen_rows or group_id in seen_groups:
+            group_id = row.group.group_hypothesis_id
+            if group_id in seen_groups:
                 raise ApplicationResultContractError(
                     "Untarget batch row identity conflicts across children"
                 )
-            seen_rows.add(row_id)
             seen_groups.add(group_id)
         for group in core.final_population:
             for member in group.member_subjects:

@@ -421,8 +421,6 @@ def _decision_basis(
             )
         subject_kind = "group"
         subject_identity = {
-            "group_cell_subject_id": subject.subject_id,
-            "untarget_row_key_id": subject.row_key.untarget_row_key_id,
             "group_hypothesis_id": subject.group_hypothesis_id,
             "member_subject_id": (
                 None

@@ -9,13 +9,12 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
+    CrossSampleGroupIdentity,
     CrossSampleLineageEdge,
 )
 from xic_extractor.alignment.projection.untarget.identity import (
     GroupCellSubject,
     UntargetProjectionContractError,
-    UntargetRowKey,
-    _mint_untarget_row_key,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -106,7 +105,7 @@ class UntargetRowRoute:
 class UntargetMatrixRow:
     """One exact Untarget row closed over every canonical-sample decision."""
 
-    row_key: UntargetRowKey
+    group: CrossSampleGroupIdentity
     decisions: tuple[ProductionCellDecision, ...]
     counts: UntargetRowDecisionCounts
     route: UntargetRowRoute
@@ -176,7 +175,7 @@ def project_untarget_matrix(
     finalized_alignment: FinalizedScientificAlignment,
     decisions: Mapping[str, tuple[CellDecisionPayload, IntegrationResult | None]],
 ) -> UntargetMatrixProjection:
-    """Assign output identities, sample order, routes and counts exactly once."""
+    """Project sample order, routes and counts from the finalized groups."""
 
     from xic_extractor.alignment.cell_decision.owner import _mint_decision
 
@@ -188,27 +187,22 @@ def project_untarget_matrix(
     by_position = {
         (item.group_hypothesis_id, item.sample_key): item for item in observations
     }
-    row_keys = tuple(
-        _mint_untarget_row_key(group)
-        for group in sorted(
-            finalized_alignment.final_population,
-            key=lambda group: group.group_hypothesis_id,
-        )
+    groups = sorted(
+        finalized_alignment.final_population,
+        key=lambda group: group.group_hypothesis_id,
     )
     rows = []
-    for row_key in row_keys:
-        members = {
-            member.sample_key: member for member in row_key.group.member_subjects
-        }
+    for group in groups:
+        members = {member.sample_key: member for member in group.member_subjects}
         projected = []
         for sample in finalized_alignment.canonical_samples:
             sample_id = sample.identity.sample_key
-            observation = by_position[row_key.group_hypothesis_id, sample_id]
+            observation = by_position[group.group_hypothesis_id, sample_id]
             payload, integration = decisions[observation.cell_observation_id]
             projected.append(
                 _mint_decision(
                     subject=GroupCellSubject(
-                        row_key,
+                        group,
                         sample,
                         members.get(sample_id),
                     ),
@@ -217,7 +211,7 @@ def project_untarget_matrix(
                     selected_integration=integration,
                 )
             )
-        rows.append(_mint_matrix_row(row_key, decisions=tuple(projected)))
+        rows.append(_mint_matrix_row(group, decisions=tuple(projected)))
     return UntargetMatrixProjection(
         finalized_alignment=finalized_alignment,
         rows=tuple(rows),
@@ -259,17 +253,17 @@ def _untarget_completion_state(
 
 
 def _mint_matrix_row(
-    row_key: UntargetRowKey,
+    group: CrossSampleGroupIdentity,
     *,
     decisions: tuple[ProductionCellDecision, ...],
 ) -> UntargetMatrixRow:
     return UntargetMatrixRow(
-        row_key=row_key,
+        group=group,
         decisions=decisions,
         counts=_counts_for_decisions(decisions),
         route=UntargetRowRoute(
-            destination=_route_for_disposition(row_key.group.disposition),
-            reason=row_key.group.disposition,
+            destination=_route_for_disposition(group.disposition),
+            reason=group.disposition,
         ),
     )
 

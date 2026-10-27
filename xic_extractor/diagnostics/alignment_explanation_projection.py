@@ -775,7 +775,7 @@ def prepare_alignment_explanation(
                     related,
                 )
             for row in child.completed_projection.rows:
-                group_id = row.row_key.group_hypothesis_id
+                group_id = row.group.group_hypothesis_id
                 related = group_candidates[group_id]
                 cells = [
                     {
@@ -792,9 +792,9 @@ def prepare_alignment_explanation(
                 ]
                 add(
                     "rows",
-                    row.row_key.untarget_row_key_id,
+                    row.group.group_hypothesis_id,
                     {
-                        "row_key_id": row.row_key.untarget_row_key_id,
+                        "row_key_id": row.group.group_hypothesis_id,
                         "group_hypothesis_id": group_id,
                         "route": {
                             "destination": row.route.destination,
@@ -813,7 +813,7 @@ def prepare_alignment_explanation(
                 )
                 if not full_audit:
                     sink.add_row_cells(
-                        row.row_key.untarget_row_key_id,
+                        row.group.group_hypothesis_id,
                         group_id,
                         cells,
                         sample_ordinals,
@@ -829,7 +829,7 @@ def prepare_alignment_explanation(
                             ),
                             "signal_quality": review_cell(decision)["signal_quality"],
                             "membership_risks": cell["membership_risks"],
-                            "row_key_id": row.row_key.untarget_row_key_id,
+                            "row_key_id": row.group.group_hypothesis_id,
                             "group_hypothesis_id": group_id,
                             "sample_key": (
                                 decision.subject.canonical_sample.identity.sample_key
