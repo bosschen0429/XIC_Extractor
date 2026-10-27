@@ -25,6 +25,8 @@ from xic_extractor.diagnostics.explanation_review import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.signal_quality import SignalQuality
 
+RecordKey = str | tuple[str, str]
+
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
 SCHEMA_VERSION = "alignment_explanation"
@@ -708,7 +710,7 @@ class ExplanationMetadata:
 
     summary: dict[str, Any]
     candidates: dict[tuple[str, str], dict[str, Any]]
-    records: dict[str, dict[str, dict[str, Any]]]
+    records: dict[str, dict[RecordKey, dict[str, Any]]]
     links: tuple[tuple[str, str, str, str], ...]
 
 
@@ -716,9 +718,9 @@ def _read_review_cells(
     connection: sqlite3.Connection,
     summary: Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> dict[tuple[str, str], dict[str, Any]]:
     sample_ids = [sample["sample_key"] for sample in summary["samples"]]
-    result: dict[str, dict[str, Any]] = {}
+    result: dict[tuple[str, str], dict[str, Any]] = {}
     query = (
         "SELECT r.record_id, r.payload, c.payload FROM row_cells c "
         "JOIN records r ON r.id=c.row_record_id"
@@ -749,7 +751,7 @@ def _read_review_cells(
 def open_review_cells(
     path: Path,
     summary: Mapping[str, Any],
-) -> Iterator[Callable[[str], dict[str, dict[str, Any]]]]:
+) -> Iterator[Callable[[str], dict[tuple[str, str], dict[str, Any]]]]:
     """Keep a read-only row lookup open during bounded population selection."""
     with closing(
         sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
@@ -838,7 +840,7 @@ def read_explanation_metadata(
                 "SELECT candidate_id, sample_id, payload FROM candidates"
             )
         }
-        records: dict[str, dict[str, dict[str, Any]]] = {}
+        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
         for kind, rid, payload in connection.execute(
             "SELECT kind, record_id, payload FROM records" + record_filter
         ):
@@ -850,7 +852,10 @@ def read_explanation_metadata(
             )
         )
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION and not compact_selection:
-            records["cell_decisions"] = _read_review_cells(connection, summary)
+            records["cell_decisions"] = {
+                key: value
+                for key, value in _read_review_cells(connection, summary).items()
+            }
         return ExplanationMetadata(summary, candidates, records, links)
     except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
         raise ExplanationError(f"malformed explanation: {exc}") from exc
@@ -886,7 +891,7 @@ def read_explanation_selection(
                     (cid, sid),
                 )
             )
-        records: dict[str, dict[str, dict[str, Any]]] = {}
+        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
         requested = {(kind, rid) for _, _, kind, rid in links}
         # Scalar-only rows have no candidate witness links. They are still
         # eligible for sample/attention review and must hydrate by row identity.
@@ -908,7 +913,10 @@ def read_explanation_selection(
             ).fetchone()
             if row is not None:
                 records.setdefault("final_groups", {})[gid] = _object(row[0])
-        records["cell_decisions"] = _read_review_cells(connection, summary, row_ids)
+        records["cell_decisions"] = {
+            key: value
+            for key, value in _read_review_cells(connection, summary, row_ids).items()
+        }
         return ExplanationMetadata(summary, candidates, records, tuple(sorted(links)))
 
 

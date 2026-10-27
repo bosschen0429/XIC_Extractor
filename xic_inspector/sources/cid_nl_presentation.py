@@ -8,9 +8,12 @@ source, reading payloads or validating scientific evidence.
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from xic_inspector.selection.canonical import CanonicalItem
+
+if TYPE_CHECKING:
+    from xic_extractor.diagnostics.alignment_explanation import RecordKey
 
 _RECORD_TITLES = {
     "rows": "結果列與輸出去向",
@@ -151,7 +154,7 @@ def _decision_reason(cells: list[dict[str, Any]]) -> str:
 def readable_record(
     item: CanonicalItem,
     record: dict[str, Any],
-    available_refs: set[str],
+    available_refs: set[RecordKey],
     *,
     scope: tuple[list[str], list[str]],
 ) -> dict[str, Any]:
@@ -545,7 +548,7 @@ def _format_measurement(value: Any) -> Any:
 
 
 def _record_links(
-    facts: dict[str, Any], current_ref: str, available_refs: set[str]
+    facts: dict[str, Any], current_ref: RecordKey, available_refs: set[RecordKey]
 ) -> list[dict[str, str]]:
     links = []
     for key, label in (
@@ -628,7 +631,7 @@ def dedupe_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def readable_curve(
     item: CanonicalItem,
     curve: dict[str, Any],
-    available_refs: set[str],
+    available_refs: set[RecordKey],
 ) -> dict[str, Any]:
     ref = curve["evidence_ref"]
     sample_ids = [curve["sample_id"]] if curve.get("sample_id") else []
@@ -867,7 +870,7 @@ def build_sample(
     sid: str,
     *,
     fallback_sample_label: str,
-    decision_refs: list[str],
+    decision_refs: list[RecordKey],
     projected_curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Present one already-scoped sample and its exact decision references."""

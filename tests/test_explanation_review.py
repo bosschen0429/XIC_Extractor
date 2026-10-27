@@ -1050,3 +1050,43 @@ def test_production_publication_automatically_includes_recorded_risk(
     assert len(cells) == 2
     assert all(cell["membership_risks"] for cell in cells)
     assert all(cell["value"] > 0 for cell in cells)
+
+
+def test_compact_cells_preserve_group_sample_location_across_payload_order():
+    from xic_extractor.diagnostics.explanation_review import pack_cells, unpack_cells
+
+    cells = [
+        {"sample_key": "S1", "variant": "quantified", "value": 11.0},
+        {"sample_key": "S2", "variant": "quantified", "value": 22.0},
+    ]
+    sample_ordinals = {"S1": 0, "S2": 1}
+    outputs = [
+        unpack_cells(
+            pack_cells(ordered, sample_ordinals),
+            row_id="F000001",
+            group_id="F000001",
+            sample_ids=("S1", "S2"),
+        )
+        for ordered in (cells, cells[::-1])
+    ]
+    assert outputs[0] == outputs[1]
+    assert {key: cell["value"] for key, cell in outputs[0].items()} == {
+        ("F000001", "S1"): 11.0,
+        ("F000001", "S2"): 22.0,
+    }
+
+
+def test_compact_cells_reject_duplicate_group_sample_location():
+    from xic_extractor.diagnostics.explanation_review import pack_cells, unpack_cells
+
+    cells = [
+        {"sample_key": "S1", "variant": "quantified", "value": 11.0},
+        {"sample_key": "S1", "variant": "quantified", "value": 22.0},
+    ]
+    with pytest.raises(ValueError, match="duplicate review cell.*rerun Alignment"):
+        unpack_cells(
+            pack_cells(cells, {"S1": 0}),
+            row_id="F000001",
+            group_id="F000001",
+            sample_ids=("S1",),
+        )

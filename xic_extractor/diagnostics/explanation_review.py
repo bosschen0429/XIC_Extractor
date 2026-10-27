@@ -222,13 +222,13 @@ def unpack_cells(
     row_id: str,
     group_id: str,
     sample_ids: Sequence[str],
-) -> dict[str, dict[str, Any]]:
-    """Diagnostic row positions identify display facts, not scientific decisions."""
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Locate each cell by its group and canonical sample."""
     values = json.loads(zlib.decompress(payload))
     if not isinstance(values, list):
         raise ValueError("review cells must be an array; rerun Alignment")
     result = {}
-    for position, cell in enumerate(values):
+    for cell in values:
         if not isinstance(cell, list) or len(cell) != 10:
             raise ValueError(
                 "review cell fields do not match the schema; rerun Alignment"
@@ -252,9 +252,12 @@ def unpack_cells(
             or not 0 <= sample < len(sample_ids)
         ):
             raise ValueError("review cell has an invalid sample ordinal")
-        identity = f"review-cell:{row_id}:{position}"
-        result[identity] = {
-            "review_cell_id": identity,
+        key = (group_id, sample_ids[sample])
+        if key in result:
+            raise ValueError(
+                "duplicate review cell for group and sample; rerun Alignment"
+            )
+        result[key] = {
             "row_key_id": row_id,
             "group_hypothesis_id": group_id,
             "sample_key": sample_ids[sample],

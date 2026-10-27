@@ -17,6 +17,7 @@ from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationMetadata,
+    RecordKey,
     open_review_cells,
     read_cid_nl_curves,
     read_cid_nl_explanation,
@@ -76,16 +77,20 @@ class CidNlSource:
         self._row_samples = (
             read_review_row_samples(path, self.summary) if self._query_only else {}
         )
-        self._selection_cells: Callable[[str], dict[str, dict[str, Any]]] | None = None
+        self._selection_cells: (
+            Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
+        ) = None
         self.request_id = self.summary.get("processing_request_id", "")
         self.attempt_id = self.summary.get("processing_attempt_id", "")
         self.records = metadata.records
         self.candidates = metadata.candidates
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
-        self.record_links: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        self.record_links: dict[tuple[str, RecordKey], set[tuple[str, str]]] = {}
         self.initial_edge_refs_by_member: dict[str, set[str]] = {}
         self.sample_labels: dict[str, str] = {}
-        self.row_cell_decisions: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self.row_cell_decisions: dict[
+            tuple[str, str], dict[RecordKey, dict[str, Any]]
+        ] = {}
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
         self.calibration_by_sample_stem: dict[str, tuple[tuple[float, float], ...]] = {}
 
@@ -104,7 +109,7 @@ class CidNlSource:
                 member_id = edge.get(field)
                 if isinstance(member_id, str):
                     self.initial_edge_refs_by_member.setdefault(member_id, set()).add(
-                        edge_ref
+                        cast(str, edge_ref)
                     )
         for rid, fact in self.records.get("cell_decisions", {}).items():
             group_id = fact.get("group_hypothesis_id")
@@ -184,7 +189,9 @@ class CidNlSource:
                     if peer_ref != item_ref
                 }
                 for peer_ref in peer_refs:
-                    peer_edges[item_ref].setdefault(peer_ref, set()).add(edge_ref)
+                    peer_edges[item_ref].setdefault(peer_ref, set()).add(
+                        cast(str, edge_ref)
+                    )
         for item in items:
             peers = peer_edges[item.serialized_ref]
             ranked = sorted(
@@ -292,7 +299,7 @@ class CidNlSource:
         decision = evidence.get("decision")
         return 0 if decision in {"blocked_edge", "split_edge", "split"} else 1
 
-    def _linked(self, kind: str, rid: str) -> set[tuple[str, str]]:
+    def _linked(self, kind: str, rid: RecordKey) -> set[tuple[str, str]]:
         return set(self.record_links.get((kind, rid), ()))
 
     def _witnesses(self, kind, identifier, gid, scoped) -> list[Witness]:
@@ -432,9 +439,10 @@ class CidNlSource:
         self, kind, identifier, gid, keys, scope, payload
     ) -> CanonicalItem:
         scoped = sorted(key for key in keys if key[1] in scope)
-        facts: dict[tuple[str, str], dict[str, Any]] = {}
-        fact_samples: dict[tuple[str, str], set[str]] = {}
+        facts: dict[tuple[str, RecordKey], dict[str, Any]] = {}
+        fact_samples: dict[tuple[str, RecordKey], set[str]] = {}
         cell_bound_samples: set[str] = set()
+        rid: RecordKey
         witnesses = self._witnesses(kind, identifier, gid, scoped)
         for cid, sid in scoped:
             linked = self.links.get((cid, sid), set())
@@ -1020,7 +1028,7 @@ class CidNlSource:
             projected_curves.append(projected)
         return projected_curves
 
-    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[str]:
+    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[RecordKey]:
         item_keys = {
             (witness.candidate_id, witness.sample_key) for witness in item.witnesses
         }
