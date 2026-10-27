@@ -16,7 +16,6 @@ import pytest
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
-    mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import pipeline as _pipeline
@@ -194,7 +193,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
 
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda source, _capability, _mass_recalibration: (
+        lambda source, _mass_recalibration: (
             lambda path, dll_dir: _with_source(opener(path, dll_dir), source)
         ),
     )
@@ -570,7 +569,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     parallel_handles = _handles()
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, raw_session_capability, _mass_recalibration: (
+        lambda acquisition_source, _mass_recalibration: (
             lambda path, dll_dir: _with_source(
                 parallel_handles[path], acquisition_source
             )
@@ -837,7 +836,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
         def submit(self, worker, job):
             future = Future()
             raw_open_receipt = _mint_raw_acquisition_session_receipt(
-                job.raw_session_capability
+                job.acquisition_source
             )
             future.set_result(
                 DiscoverySampleProcessError(
@@ -1026,7 +1025,7 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
-    capability = mint_raw_acquisition_session_capability(source)
+    capability = source
     error = DiscoverySampleProcessError(
         sample_index=0,
         sample_stem="sample",
@@ -1057,9 +1056,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
-    receipt = _mint_raw_acquisition_session_receipt(
-        mint_raw_acquisition_session_capability(source)
-    )
+    receipt = _mint_raw_acquisition_session_receipt(source)
     raw = _FakeRawHandle(events=[])
     raw.raw_open_receipt = receipt
     spec = _compiled_run_spec((raw_path,), _settings())
@@ -1553,14 +1550,13 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     raw_path = tmp_path / "Sample.raw"
     raw_path.write_bytes(b"owner-bound-raw")
     raw = _FakeRawHandle(events=[])
-    calls: list[tuple[Path, Path, object, object]] = []
+    calls: list[tuple[Path, Path, object]] = []
 
     def _open(
         path: Path,
         dll_dir: Path,
         *,
         expected_acquisition_source: object = None,
-        _raw_session_capability: object = None,
         mass_recalibration: object = None,
     ) -> _FakeRawHandle:
         calls.append(
@@ -1568,12 +1564,11 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
                 path,
                 dll_dir,
                 expected_acquisition_source,
-                _raw_session_capability,
             )
         )
         raw.acquisition_source = expected_acquisition_source
         raw.raw_open_receipt = _mint_raw_acquisition_session_receipt(
-            _raw_session_capability
+            expected_acquisition_source
         )
         return raw
 
@@ -1589,7 +1584,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     )
 
     assert len(calls) == 1
-    path, dll_dir, source, capability = calls[0]
+    path, dll_dir, source = calls[0]
     assert path == raw_path
     assert dll_dir == tmp_path / "dll"
     assert source == build_acquisition_source_identity(
@@ -1597,7 +1592,6 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
-    assert capability.acquisition_source == source
     raw_open_rows = [
         row
         for row in recorder.measurement_observations
@@ -1833,7 +1827,6 @@ def _bound_process_job(raw_path: Path, tmp_path: Path, **overrides: Any) -> Any:
         "settings": settings,
         "dll_dir": tmp_path / "dll",
         "acquisition_source": source,
-        "raw_session_capability": mint_raw_acquisition_session_capability(source),
         "run_spec": spec,
         "acquisition_input": spec.acquisition_inputs[0],
     }

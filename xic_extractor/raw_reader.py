@@ -15,7 +15,6 @@ from typing import Any
 import numpy as np
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     _mint_raw_acquisition_session_receipt,
 )
@@ -794,14 +793,9 @@ def open_raw(
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
     _expected_path_identity: tuple[int, int, int, int, int] | None = None,
-    _raw_session_capability: RawAcquisitionSessionCapability | None = None,
     _import_module: Callable[[str], Any] = importlib.import_module,
     _thermo: _ThermoApi | None = None,
 ) -> RawFileHandle:
-    _validate_raw_session_capability(
-        _raw_session_capability,
-        expected_acquisition_source=expected_acquisition_source,
-    )
     mass_recalibration = resolve_mass_recalibration(mass_recalibration)
     if prepared_mass_recalibration is not None:
         if prepared_mass_recalibration.result.policy is not mass_recalibration:
@@ -868,8 +862,8 @@ def open_raw(
         return RawFileHandle(raw_file, thermo, mass_recalibration)
     raw_open_receipt = (
         None
-        if _raw_session_capability is None
-        else _mint_raw_acquisition_session_receipt(_raw_session_capability)
+        if expected_acquisition_source is None
+        else _mint_raw_acquisition_session_receipt(expected_acquisition_source)
     )
     handle = _SourceBoundRawFileHandle(
         raw_file,
@@ -1169,25 +1163,6 @@ def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, 
             )
         )
     return tuple(entries)
-
-
-def _validate_raw_session_capability(
-    capability: RawAcquisitionSessionCapability | None,
-    *,
-    expected_acquisition_source: AcquisitionSourceIdentity | None,
-) -> None:
-    if capability is None:
-        return
-    if not isinstance(capability, RawAcquisitionSessionCapability):
-        raise RawReaderError("_raw_session_capability must be a RAW session capability")
-    if not isinstance(expected_acquisition_source, AcquisitionSourceIdentity):
-        raise RawReaderError(
-            "RAW session capability requires expected_acquisition_source"
-        )
-    if capability.acquisition_source != expected_acquisition_source:
-        raise RawReaderError(
-            "RAW session capability is bound to a different acquisition source"
-        )
 
 
 def _dispose_after_failed_open(raw_file: Any | None) -> Exception | None:

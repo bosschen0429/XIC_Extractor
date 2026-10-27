@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
-    mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -278,16 +276,11 @@ def _discover_sample(
 ) -> _DiscoverySampleResult:
     acquisition_source = acquisition_input.acquisition_source
     if raw_opener is None:
-        raw_session_capability = mint_raw_acquisition_session_capability(
-            acquisition_source
-        )
         opener = _owner_bound_raw_opener(
             acquisition_source,
-            raw_session_capability,
             settings.mass_recalibration,
         )
     else:
-        raw_session_capability = None
         opener = raw_opener
     return _discover_completed_sample_with_runtime_projection(
         raw_path,
@@ -295,7 +288,6 @@ def _discover_sample(
         dll_dir=dll_dir,
         raw_opener=opener,
         timing_recorder=timing_recorder,
-        raw_session_capability=raw_session_capability,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
@@ -308,7 +300,6 @@ def _discover_completed_sample_with_runtime_projection(
     dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
-    raw_session_capability: RawAcquisitionSessionCapability | None,
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
@@ -329,7 +320,7 @@ def _discover_completed_sample_with_runtime_projection(
         acquisition_projected = True
         record_raw_open_metrics(
             timing_recorder,
-            raw_session_capability,
+            acquisition_input.acquisition_source,
             result.raw_open_receipt,
             raw_path.stem,
         )
@@ -355,7 +346,7 @@ def _discover_completed_sample_with_runtime_projection(
         if not acquisition_projected:
             record_raw_open_metrics(
                 timing_recorder,
-                raw_session_capability,
+                acquisition_input.acquisition_source,
                 observed_receipt,
                 raw_path.stem,
             )
@@ -537,7 +528,6 @@ def _owner_bound_raw_open_receipt(
 
 def _owner_bound_raw_opener(
     acquisition_source: AcquisitionSourceIdentity,
-    raw_session_capability: RawAcquisitionSessionCapability,
     mass_recalibration: MassRecalibration,
 ) -> RawOpener:
     """Bind the production batch reader to the content identity it will receipt."""
@@ -555,7 +545,6 @@ def _owner_bound_raw_opener(
                 dll_dir,
                 mass_recalibration=mass_recalibration,
                 expected_acquisition_source=acquisition_source,
-                _raw_session_capability=raw_session_capability,
             ),
         )
 
@@ -576,7 +565,6 @@ def discover_sample_for_process_job(
         dll_dir=job.dll_dir,
         raw_opener=_owner_bound_raw_opener(
             job.acquisition_source,
-            job.raw_session_capability,
             job.settings.mass_recalibration,
         ),
         timing_recorder=timing_recorder,

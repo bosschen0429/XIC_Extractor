@@ -1,5 +1,4 @@
 import json
-import pickle
 from dataclasses import replace
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from xic_extractor.acquisition_contract import (
     acquire_trace_batch,
     acquired_trace_content_id,
     deserialize_acquired_trace,
-    mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
@@ -44,19 +42,6 @@ class _NoRawBatchAdapter:
     def scan_window_for_request(self, request):
         self.scan_calls += 1
         return (100, 120)
-
-
-def test_raw_session_capability_is_unique_and_pickleable(
-    tmp_path: Path,
-) -> None:
-    source = _source(tmp_path)
-
-    first = mint_raw_acquisition_session_capability(source)
-    second = mint_raw_acquisition_session_capability(source)
-
-    assert first != second
-    assert first.acquisition_source == source
-    assert pickle.loads(pickle.dumps(first)) == first
 
 
 def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(

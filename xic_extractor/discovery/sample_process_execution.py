@@ -15,9 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
-    mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.discovery import output_publication
@@ -58,7 +56,6 @@ class DiscoverySampleProcessJob:
     settings: DiscoverySettings
     dll_dir: Path
     acquisition_source: AcquisitionSourceIdentity
-    raw_session_capability: RawAcquisitionSessionCapability
     run_spec: ProcessingRunSpec
     acquisition_input: ProcessingAcquisitionInput
     instrument_diagnostics: bool = False
@@ -192,9 +189,6 @@ def run_discovery_batch_process(
                 settings=settings,
                 dll_dir=dll_dir,
                 acquisition_source=acquisition_source,
-                raw_session_capability=mint_raw_acquisition_session_capability(
-                    acquisition_source
-                ),
                 instrument_diagnostics=timing_recorder.enabled,
                 run_spec=run_spec,
                 acquisition_input=acquisition_input,
@@ -277,7 +271,7 @@ def run_discovery_batch_process(
             )
         record_raw_open_metrics(
             timing_recorder,
-            expected_job.raw_session_capability,
+            expected_job.acquisition_source,
             observed.raw_open_receipt,
             observed.sample_stem,
         )

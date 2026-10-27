@@ -8,7 +8,6 @@ from enum import Enum
 from typing import Any
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     TraceAcquisitionBatch,
 )
@@ -26,6 +25,7 @@ from xic_extractor.execution._observability import (
     RuntimeObservabilityLedger,
 )
 from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
     ProcessingAttemptIdentity,
 )
 
@@ -239,10 +239,10 @@ class RuntimeRawOpenMetrics:
 
 
 def derive_runtime_raw_open_metrics(
-    capability: RawAcquisitionSessionCapability | None,
+    acquisition_source: AcquisitionSourceIdentity | None,
     receipts: Sequence[RawAcquisitionSessionReceipt],
 ) -> RuntimeRawOpenMetrics:
-    """Accept only the receipt bound to this exact planned RAW-open session."""
+    """Accept only the receipt bound to the existing job/sample source."""
 
     if isinstance(receipts, (str, bytes)):
         raise RuntimeFinalizationContractError(
@@ -265,27 +265,27 @@ def derive_runtime_raw_open_metrics(
         raise RuntimeFinalizationContractError(
             "duplicate RAW-open receipts for one session are forbidden"
         )
-    if capability is None:
+    if acquisition_source is None:
         if receipt_batch:
             raise RuntimeFinalizationContractError(
-                "RAW-open receipt has no matching parent capability"
+                "RAW-open receipt has no matching job source"
             )
         return RuntimeRawOpenMetrics(
             raw_open_count=None,
-            unavailable_reason="RAW opener carries no owner session capability",
+            unavailable_reason="RAW opener has no bound acquisition source",
         )
-    if not isinstance(capability, RawAcquisitionSessionCapability):
+    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
         raise RuntimeFinalizationContractError(
-            "capability must be a RAW session capability"
+            "acquisition_source must be an AcquisitionSourceIdentity"
         )
     if not receipt_batch:
         return RuntimeRawOpenMetrics(
             raw_open_count=None,
             unavailable_reason="process result carries no owner RAW-open receipt",
         )
-    if receipt_batch[0].capability != capability:
+    if receipt_batch[0].acquisition_source != acquisition_source:
         raise RuntimeFinalizationContractError(
-            "RAW-open receipt is bound to a different session capability"
+            "RAW-open receipt is bound to a different acquisition source"
         )
     return RuntimeRawOpenMetrics(
         raw_open_count=1,

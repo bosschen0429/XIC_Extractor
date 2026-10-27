@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -33,78 +32,17 @@ class AcquisitionContractError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class RawAcquisitionSessionCapability:
-    """Unique identifier for one planned physical RAW-open session."""
+class RawAcquisitionSessionReceipt:
+    """A successful vendor open, carried by its existing job/sample result."""
 
-    capability_id: str
-    session_nonce: str
     acquisition_source: AcquisitionSourceIdentity
 
 
-@dataclass(frozen=True, slots=True)
-class RawAcquisitionSessionReceipt:
-    """Record that one source-bound vendor handle opened."""
-
-    receipt_id: str
-    capability: RawAcquisitionSessionCapability
-
-
-def mint_raw_acquisition_session_capability(
-    acquisition_source: AcquisitionSourceIdentity,
-) -> RawAcquisitionSessionCapability:
-    """Mint one unique, pickleable capability for a planned RAW open."""
-
-    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
-        raise AcquisitionContractError(
-            "acquisition_source must be an owner-minted identity"
-        )
-    session_nonce = secrets.token_hex(16)
-    return RawAcquisitionSessionCapability(
-        capability_id=_raw_session_capability_id(
-            acquisition_source,
-            session_nonce=session_nonce,
-        ),
-        session_nonce=session_nonce,
-        acquisition_source=acquisition_source,
-    )
-
-
 def _mint_raw_acquisition_session_receipt(
-    capability: RawAcquisitionSessionCapability,
-) -> RawAcquisitionSessionReceipt:
-    """Private RAW-reader seam; mint only after the vendor handle has opened."""
-
-    if not isinstance(capability, RawAcquisitionSessionCapability):
-        raise AcquisitionContractError("capability must be a RAW session capability")
-    return RawAcquisitionSessionReceipt(
-        receipt_id=_typed_id(
-            "xic.raw-acquisition-session-receipt:",
-            {
-                "schema": "raw_acquisition_session_receipt",
-                "capability_id": capability.capability_id,
-                "acquisition_source_id": (
-                    capability.acquisition_source.acquisition_source_id
-                ),
-                "raw_open_count": 1,
-            },
-        ),
-        capability=capability,
-    )
-
-
-def _raw_session_capability_id(
     acquisition_source: AcquisitionSourceIdentity,
-    *,
-    session_nonce: str,
-) -> str:
-    return _typed_id(
-        "xic.raw-acquisition-session-capability:",
-        {
-            "schema": "raw_acquisition_session_capability",
-            "acquisition_source_id": acquisition_source.acquisition_source_id,
-            "session_nonce": session_nonce,
-        },
-    )
+) -> RawAcquisitionSessionReceipt:
+    """RAW-reader seam, called only after the vendor handle has opened."""
+    return RawAcquisitionSessionReceipt(acquisition_source=acquisition_source)
 
 
 class TraceCoordinateKind(str, Enum):
@@ -715,7 +653,6 @@ __all__ = [
     "AcquiredTrace",
     "AcquisitionContractError",
     "BatchXICAdapter",
-    "RawAcquisitionSessionCapability",
     "RawAcquisitionSessionReceipt",
     "TraceAcquisitionBatch",
     "TraceAcquisitionCapability",
@@ -724,7 +661,6 @@ __all__ = [
     "acquired_trace_content_id",
     "acquire_trace_batch",
     "deserialize_acquired_trace",
-    "mint_raw_acquisition_session_capability",
     "mint_trace_acquisition_capability",
     "serialize_acquired_trace",
 ]

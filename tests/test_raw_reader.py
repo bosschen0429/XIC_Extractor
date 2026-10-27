@@ -390,9 +390,6 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
 
 
 def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) -> None:
-    from xic_extractor.acquisition_contract import (
-        mint_raw_acquisition_session_capability,
-    )
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import open_raw
 
@@ -404,19 +401,17 @@ def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) 
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    capability = mint_raw_acquisition_session_capability(source)
 
     handle = open_raw(
         raw_path,
         tmp_path,
         expected_acquisition_source=source,
-        _raw_session_capability=capability,
         _import_module=_working_imports(),
         _thermo=_fake_thermo(_FakeRaw()),
     )
 
     assert handle.raw_open_receipt is not None
-    assert handle.raw_open_receipt.capability == capability
+    assert handle.raw_open_receipt.acquisition_source == source
 
 
 def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
@@ -424,9 +419,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.acquisition_contract import (
-        mint_raw_acquisition_session_capability,
-    )
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
     class _SelectFailRaw(_FakeRaw):
@@ -441,7 +433,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    capability = mint_raw_acquisition_session_capability(source)
     mint_calls: list[object] = []
     original_mint = raw_reader._mint_raw_acquisition_session_receipt
 
@@ -460,7 +451,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
             raw_path,
             tmp_path,
             expected_acquisition_source=source,
-            _raw_session_capability=capability,
             _import_module=_working_imports(),
             _thermo=_fake_thermo(_SelectFailRaw()),
         )

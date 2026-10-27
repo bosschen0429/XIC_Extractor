@@ -26,7 +26,6 @@ from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
     _mint_raw_acquisition_session_receipt,
     acquire_trace_batch,
-    mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.execution._finalization import (
@@ -133,7 +132,7 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    capability = mint_raw_acquisition_session_capability(source)
+    capability = source
     receipt = _mint_raw_acquisition_session_receipt(capability)
 
     measured = derive_runtime_raw_open_metrics(capability, (receipt,))
@@ -146,8 +145,16 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
     with pytest.raises(RuntimeFinalizationContractError, match="duplicate"):
         derive_runtime_raw_open_metrics(capability, (receipt, receipt))
 
-    foreign = mint_raw_acquisition_session_capability(source)
-    with pytest.raises(RuntimeFinalizationContractError, match="capability"):
+    foreign_path = tmp_path / "foreign.raw"
+    foreign_path.write_bytes(b"other-source")
+    foreign = build_acquisition_source_identity(
+        foreign_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    with pytest.raises(
+        RuntimeFinalizationContractError, match="different acquisition source"
+    ):
         derive_runtime_raw_open_metrics(foreign, (receipt,))
 
 
