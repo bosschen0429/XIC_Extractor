@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
 
 SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION = "signal_processing_profile"
-SIGNAL_PROCESSING_PROFILE_ID_PREFIX = "signal-profile:"
 DEFAULT_SIGNAL_PROCESSING_WINDOW_POINTS = 9
 
 _PROFILE_KEYS = (
@@ -28,7 +26,6 @@ _PROFILE_KEYS = (
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",
-    "relative_shape_basis",
 )
 _FIXED_PROFILE_VALUES: dict[str, object] = {
     "gaussian_sigma_rule": "window_points_div_6",
@@ -46,7 +43,6 @@ _FIXED_PROFILE_VALUES: dict[str, object] = {
     "segment_universe_limit": 64,
     "segment_selection_behavior": "apex_supported_local_valley_contains_query",
     "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
-    "relative_shape_basis": "own_max_canonical_signal",
 }
 
 
@@ -72,7 +68,6 @@ class SignalProcessingProfile:
     segment_universe_limit: int = 64
     segment_selection_behavior: str = "apex_supported_local_valley_contains_query"
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
-    relative_shape_basis: str = "own_max_canonical_signal"
 
     def __post_init__(self) -> None:
         if self.schema_version != SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION:
@@ -87,16 +82,6 @@ class SignalProcessingProfile:
                 or actual_value != expected_value
             ):
                 raise ValueError(f"unsupported signal-processing field: {field_name}")
-
-    @property
-    def profile_hash(self) -> str:
-        return hashlib.sha256(
-            canonical_signal_processing_profile_bytes(self)
-        ).hexdigest()
-
-    @property
-    def profile_id(self) -> str:
-        return f"{SIGNAL_PROCESSING_PROFILE_ID_PREFIX}{self.profile_hash}"
 
 
 def resolve_signal_processing_profile(
@@ -132,9 +117,6 @@ def serialize_signal_processing_profile(profile: SignalProcessingProfile) -> byt
 
 def deserialize_signal_processing_profile(
     payload: bytes | str,
-    *,
-    expected_profile_hash: str | None = None,
-    expected_profile_id: str | None = None,
 ) -> SignalProcessingProfile:
     raw = payload.encode("utf-8") if isinstance(payload, str) else payload
     if not isinstance(raw, bytes):
@@ -161,13 +143,6 @@ def deserialize_signal_processing_profile(
         raise ValueError("profile payload has invalid field types") from exc
     if canonical_signal_processing_profile_bytes(profile) != raw:
         raise ValueError("profile payload is not the canonical representation")
-    if (
-        expected_profile_hash is not None
-        and profile.profile_hash != expected_profile_hash
-    ):
-        raise ValueError("profile_hash does not match canonical profile content")
-    if expected_profile_id is not None and profile.profile_id != expected_profile_id:
-        raise ValueError("profile_id does not match canonical profile content")
     return profile
 
 
@@ -191,14 +166,11 @@ def _unique_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 DEFAULT_SIGNAL_PROCESSING_PROFILE = SignalProcessingProfile()
-DEFAULT_SIGNAL_PROCESSING_PROFILE_ID = DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id
 
 
 __all__ = [
     "DEFAULT_SIGNAL_PROCESSING_PROFILE",
-    "DEFAULT_SIGNAL_PROCESSING_PROFILE_ID",
     "DEFAULT_SIGNAL_PROCESSING_WINDOW_POINTS",
-    "SIGNAL_PROCESSING_PROFILE_ID_PREFIX",
     "SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION",
     "SignalProcessingProfile",
     "canonical_signal_processing_profile_bytes",

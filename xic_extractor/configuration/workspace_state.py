@@ -22,19 +22,17 @@ def read_workspace(config_dir: Path) -> dict:
     path = Path(config_dir) / STATE_NAME
     if not path.exists():
         return {
-            "version": 1,
             "application": {},
             "batch": {},
             "targets": [],
         }
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        if (
-            not isinstance(state, dict)
-            or set(state) != {"version", "application", "batch", "targets"}
-            or type(state["version"]) is not int
-            or state["version"] != 1
-        ):
+        if not isinstance(state, dict) or set(state) != {
+            "application",
+            "batch",
+            "targets",
+        }:
             raise ValueError("unsupported workspace schema")
         for section in ("application", "batch"):
             values = state[section]
@@ -55,7 +53,10 @@ def read_workspace(config_dir: Path) -> dict:
             raise ValueError("invalid target rows")
         return state
     except (OSError, ValueError, TypeError) as exc:
-        raise ConfigError(f"{path}: 工作狀態無法讀取；原檔保留。{exc}") from exc
+        raise ConfigError(
+            f"{path}: 工作狀態無法讀取；原檔保留。"
+            f"請手動修正欄位後重跑；舊設定檔請刪除 version 那一行。{exc}"
+        ) from exc
 
 
 def workspace_settings(state: dict) -> dict[str, str]:

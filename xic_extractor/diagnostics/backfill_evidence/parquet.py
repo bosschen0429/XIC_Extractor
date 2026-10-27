@@ -120,17 +120,16 @@ def iter_skipped_evidence_parquet(
 def lookup_backfill_evidence_parquet(
     path: Path,
     *,
-    feature_family_id: str,
+    feature_id: str,
     sample_stem: str,
-    group_hypothesis_id: str | None = None,
     owner_bindings: BackfillEvidenceOwnerBindings | None = None,
 ) -> EvidenceQueryResult[BackfillEvidenceRecord]:
-    _require_lookup_key("feature_family_id", feature_family_id)
+    _require_lookup_key("feature_id", feature_id)
     _require_lookup_key("sample_stem", sample_stem)
     filters: list[_ParquetFilter] = [
         _backfill_lookup_filter(
-            "feature_family_id",
-            feature_family_id,
+            "feature_id",
+            feature_id,
             owner_bound=owner_bindings is not None,
         ),
         _backfill_lookup_filter(
@@ -139,18 +138,9 @@ def lookup_backfill_evidence_parquet(
             owner_bound=owner_bindings is not None,
         ),
     ]
-    if group_hypothesis_id is not None:
-        _require_lookup_key("group_hypothesis_id", group_hypothesis_id)
-        filters.append(
-            _backfill_lookup_filter(
-                "group_hypothesis_id",
-                group_hypothesis_id,
-                owner_bound=owner_bindings is not None,
-            )
-        )
     records: list[BackfillEvidenceRecord] = []
     owner_results: list[BackfillEvidenceOwnerResult] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     for row_number, projection in _read_filtered_projection_rows(
         path,
         columns=ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
@@ -167,14 +157,9 @@ def lookup_backfill_evidence_parquet(
                 record = owner_result.record
         except ValueError as exc:
             raise ValueError(f"{path}: row ordinal {row_number}: {exc}") from exc
-        if record.feature_family_id != feature_family_id:
+        if record.feature_id != feature_id:
             continue
         if record.sample_stem != sample_stem:
-            continue
-        if (
-            group_hypothesis_id is not None
-            and record.group_hypothesis_id != group_hypothesis_id
-        ):
             continue
         if record.identity in seen:
             raise ValueError(
@@ -199,14 +184,14 @@ def lookup_backfill_evidence_parquet(
 def lookup_skipped_evidence_parquet(
     path: Path,
     *,
-    feature_family_id: str,
+    feature_id: str,
     sample_stem: str,
     owner_bindings: SkippedEvidenceOwnerBindings | None = None,
 ) -> EvidenceQueryResult[SkippedEvidenceRecord]:
-    _require_lookup_key("feature_family_id", feature_family_id)
+    _require_lookup_key("feature_id", feature_id)
     _require_lookup_key("sample_stem", sample_stem)
     filters = [
-        ("feature_family_id", "=", feature_family_id),
+        ("feature_id", "=", feature_id),
         ("sample_stem", "=", sample_stem),
     ]
     records: list[SkippedEvidenceRecord] = []

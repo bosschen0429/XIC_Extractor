@@ -303,9 +303,9 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ("Sample B", 456, "FALSE"),
     ]
     assert records[1]["Review Reason"] == "未設定配對 ISTD，無法確認身分"
-    assert {row[0]: row[2] for row in wb["Run Metadata"].values}[
-        "targeted_workbook_layout_version"
-    ] == 2
+    assert "targeted_workbook_layout_version" not in {
+        row[0] for row in wb["Run Metadata"].values
+    }
     wb.close()
 
 

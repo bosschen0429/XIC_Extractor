@@ -10,26 +10,19 @@ import stat
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
 
-from xic_extractor.artifact_lineage import (
-    EvidenceArtifactClosureError,
-)
-from xic_extractor.artifact_lineage import (
-    canonical_evidence_artifact_closure as _validate_artifact_closure,
-)
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadataSnapshot,
 )
+from xic_extractor.validation_primitives import require_attempt_uuid
 
 
 class IdentityContractError(ValueError):
@@ -40,12 +33,7 @@ class FingerprintCancelledError(IdentityContractError):
     """Raised when a caller cancels an in-progress content fingerprint."""
 
 
-_ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source:"
-_PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
-_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt:"
-PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _canonical_json(value: Any) -> str:
@@ -61,74 +49,6 @@ def _canonical_json(value: Any) -> str:
         )
     except (TypeError, ValueError) as exc:
         raise IdentityContractError("identity payload is not canonical JSON") from exc
-
-
-def canonical_identity_basis_bytes(value: Mapping[str, object]) -> bytes:
-    """Return canonical UTF-8 JSON bytes for a closed typed identity basis."""
-
-    if not isinstance(value, Mapping):
-        raise IdentityContractError("identity basis must be a JSON object")
-    _validate_json_object_keys(value)
-    return _canonical_json(dict(value)).encode("utf-8")
-
-
-def mint_typed_identity(prefix: str, basis: Mapping[str, object]) -> tuple[str, bytes]:
-    """Encode an owner-built basis once and return its identity and exact bytes."""
-
-    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
-        raise IdentityContractError(
-            "typed identity prefix must be non-empty and end in ':'"
-        )
-    basis_bytes = canonical_identity_basis_bytes(basis)
-    return f"{prefix}{hashlib.sha256(basis_bytes).hexdigest()}", basis_bytes
-
-
-def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
-    """Mint a typed SHA-256 identity from exact canonical basis bytes."""
-
-    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
-        raise IdentityContractError(
-            "typed identity prefix must be non-empty and end in ':'"
-        )
-    if not isinstance(basis_bytes, bytes) or not basis_bytes:
-        raise IdentityContractError("identity basis must be non-empty UTF-8 bytes")
-    # Repeated owner checks rebuild equal immutable basis bytes. Reuse only
-    # their canonical-byte proof; callers still rebuild and compare live bases.
-    # The entry/size limits retain at most 16 MiB of basis payloads. Subclasses
-    # keep the original path because they may override decode or equality.
-    if type(basis_bytes) is bytes and len(basis_bytes) <= 4096:
-        digest = _cached_canonical_basis_digest(basis_bytes)
-    else:
-        digest = _canonical_basis_digest(basis_bytes)
-    return f"{prefix}{digest}"
-
-
-def _canonical_basis_digest(basis_bytes: bytes) -> str:
-    try:
-        parsed = json.loads(basis_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise IdentityContractError(
-            "identity basis must be canonical UTF-8 JSON"
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise IdentityContractError("identity basis must be a JSON object")
-    if canonical_identity_basis_bytes(parsed) != basis_bytes:
-        raise IdentityContractError("identity basis bytes are not canonical JSON")
-    return hashlib.sha256(basis_bytes).hexdigest()
-
-
-_cached_canonical_basis_digest = lru_cache(maxsize=4096)(_canonical_basis_digest)
-
-
-def validate_typed_identity_id(
-    identity_id: object,
-    *,
-    prefix: str,
-    field: str,
-) -> str:
-    """Validate a typed identity whose authoritative basis is external."""
-
-    return _validate_typed_id(identity_id, prefix=prefix, field=field)
 
 
 def _canonical_object_json(value: Mapping[str, object]) -> str:
@@ -165,18 +85,6 @@ def _validate_digest(value: object, *, field: str) -> str:
     return value
 
 
-def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise IdentityContractError(f"{field} must use the {prefix!r} identity prefix")
-    digest = value[len(prefix) :]
-    _validate_digest(digest, field=field)
-    return value
-
-
-def _typed_digest(prefix: str, basis: Mapping[str, object]) -> str:
-    return mint_typed_identity(prefix, basis)[0]
-
-
 def _require_nonempty_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise IdentityContractError(f"{field} must be non-empty text")
@@ -204,7 +112,6 @@ class FileContentFingerprint:
 class AcquisitionSourceIdentity:
     """One source bound either to exact content or a local filesystem revision."""
 
-    acquisition_source_id: str
     content_sha256: str | None
     byte_size: int
     acquisition_format: str
@@ -212,33 +119,18 @@ class AcquisitionSourceIdentity:
     local_file_revision: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
-        source_id = _validate_typed_id(
-            self.acquisition_source_id,
-            prefix=_ACQUISITION_SOURCE_PREFIX,
-            field="acquisition_source_id",
-        )
         if (
             isinstance(self.byte_size, bool)
             or not isinstance(self.byte_size, int)
             or self.byte_size < 0
         ):
             raise IdentityContractError("byte_size must be a non-negative integer")
-        acquisition_format = _require_nonempty_text(
-            self.acquisition_format, field="acquisition_format"
-        )
-        observation_namespace = _require_nonempty_text(
+        _require_nonempty_text(self.acquisition_format, field="acquisition_format")
+        _require_nonempty_text(
             self.observation_namespace, field="observation_namespace"
         )
         if self.local_file_revision is None:
-            basis = {
-                "schema": "acquisition_source_identity",
-                "content_sha256": _validate_digest(
-                    self.content_sha256, field="content_sha256"
-                ),
-                "byte_size": self.byte_size,
-                "acquisition_format": acquisition_format,
-                "observation_namespace": observation_namespace,
-            }
+            _validate_digest(self.content_sha256, field="content_sha256")
         else:
             revision = self.local_file_revision
             if (
@@ -252,14 +144,14 @@ class AcquisitionSourceIdentity:
                 or revision[2] != self.byte_size
             ):
                 raise IdentityContractError("invalid local acquisition file revision")
-            basis = _local_acquisition_source_basis(
-                revision, acquisition_format, observation_namespace
-            )
-        expected_id = _typed_digest(_ACQUISITION_SOURCE_PREFIX, basis)
-        if source_id != expected_id:
-            raise IdentityContractError(
-                "acquisition_source_id rebind mismatches source identity"
-            )
+
+    @property
+    def acquisition_source_id(self) -> str:
+        """The source's file fingerprint: content digest or local file revision."""
+
+        if self.local_file_revision is None:
+            return f"sha256:{self.content_sha256}"
+        return "local:" + ":".join(str(value) for value in self.local_file_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,40 +202,10 @@ class AcquisitionInputBinding:
             raise IdentityContractError("injection_order must be a positive integer")
 
 
-def _request_basis(
-    *,
-    acquisition_sources: tuple[AcquisitionSourceIdentity, ...],
-    acquisition_bindings: tuple[AcquisitionInputBinding, ...],
-    scientific_input_schema_version: str,
-    processing_algorithm_version: str,
-    processing_contract_version: str,
-    normalized_scientific_inputs_json: str,
-) -> dict[str, object]:
-    return {
-        "schema": "processing_request_identity",
-        "acquisition_sources": [
-            source.acquisition_source_id for source in acquisition_sources
-        ],
-        "acquisition_bindings": [
-            {
-                "acquisition_source_id": binding.acquisition_source_id,
-                "adapter_input_key": binding.adapter_input_key,
-                "injection_order": binding.injection_order,
-            }
-            for binding in acquisition_bindings
-        ],
-        "scientific_input_schema_version": scientific_input_schema_version,
-        "processing_algorithm_version": processing_algorithm_version,
-        "processing_contract_version": processing_contract_version,
-        "normalized_scientific_inputs": json.loads(normalized_scientific_inputs_json),
-    }
-
-
 @dataclass(frozen=True, slots=True)
 class ProcessingRequestIdentity:
     """Immutable normalized scientific request over identified sources."""
 
-    processing_request_id: str
     acquisition_sources: tuple[AcquisitionSourceIdentity, ...]
     acquisition_bindings: tuple[AcquisitionInputBinding, ...]
     scientific_input_schema_version: str
@@ -352,11 +214,6 @@ class ProcessingRequestIdentity:
     normalized_scientific_inputs_json: str
 
     def __post_init__(self) -> None:
-        request_id = _validate_typed_id(
-            self.processing_request_id,
-            prefix=_PROCESSING_REQUEST_PREFIX,
-            field="processing_request_id",
-        )
         if (
             not isinstance(self.acquisition_sources, tuple)
             or not self.acquisition_sources
@@ -414,15 +271,15 @@ class ProcessingRequestIdentity:
         if len(self.acquisition_bindings) != len(source_ids):
             raise IdentityContractError("bindings must cover each source exactly once")
 
-        schema_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.scientific_input_schema_version,
             field="scientific_input_schema_version",
         )
-        algorithm_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.processing_algorithm_version,
             field="processing_algorithm_version",
         )
-        contract_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.processing_contract_version,
             field="processing_contract_version",
         )
@@ -442,44 +299,12 @@ class ProcessingRequestIdentity:
                 "normalized_scientific_inputs_json must be canonical JSON object"
             )
 
-        expected_id = _typed_digest(
-            _PROCESSING_REQUEST_PREFIX,
-            _request_basis(
-                acquisition_sources=self.acquisition_sources,
-                acquisition_bindings=self.acquisition_bindings,
-                scientific_input_schema_version=schema_version,
-                processing_algorithm_version=algorithm_version,
-                processing_contract_version=contract_version,
-                normalized_scientific_inputs_json=normalized_json,
-            ),
-        )
-        if request_id != expected_id:
-            raise IdentityContractError(
-                "processing_request_id rebind mismatches immutable request"
-            )
-
-
-def _attempt_basis(
-    *,
-    processing_request_id: str,
-    attempt_token: str,
-    retry_of_attempt_id: str | None,
-) -> dict[str, object]:
-    return {
-        "schema": "processing_attempt_identity",
-        "processing_request_id": processing_request_id,
-        "attempt_token": attempt_token,
-        "retry_of_attempt_id": retry_of_attempt_id,
-    }
-
 
 @dataclass(frozen=True, slots=True)
 class ProcessingAttemptIdentity:
-    """Unique execution identity referencing one processing request."""
+    """One execution of a request; a retry links its predecessor attempt."""
 
     processing_attempt_id: str
-    processing_request_id: str
-    attempt_token: str
     retry_of: ProcessingAttemptIdentity | None = None
 
     @property
@@ -491,49 +316,17 @@ class ProcessingAttemptIdentity:
         return self.retry_of.processing_attempt_id
 
     def __post_init__(self) -> None:
-        attempt_id = _validate_typed_id(
-            self.processing_attempt_id,
-            prefix=_PROCESSING_ATTEMPT_PREFIX,
-            field="processing_attempt_id",
+        attempt_id = require_attempt_uuid(
+            self.processing_attempt_id, error_factory=IdentityContractError
         )
-        request_id = _validate_typed_id(
-            self.processing_request_id,
-            prefix=_PROCESSING_REQUEST_PREFIX,
-            field="processing_request_id",
-        )
-        if (
-            not isinstance(self.attempt_token, str)
-            or _TOKEN_RE.fullmatch(self.attempt_token) is None
-        ):
-            raise IdentityContractError(
-                "attempt_token must be a lower-case 32-character hex token"
-            )
         retry_of = self.retry_of
         if retry_of is not None:
             if not isinstance(retry_of, ProcessingAttemptIdentity):
                 raise IdentityContractError(
                     "retry_of must be a ProcessingAttemptIdentity"
                 )
-            if retry_of.processing_request_id != request_id:
-                raise IdentityContractError(
-                    "retry predecessor references a different processing request"
-                )
             if retry_of.processing_attempt_id == attempt_id:
                 raise IdentityContractError("an attempt cannot retry itself")
-        expected_id = _typed_digest(
-            _PROCESSING_ATTEMPT_PREFIX,
-            _attempt_basis(
-                processing_request_id=request_id,
-                attempt_token=self.attempt_token,
-                retry_of_attempt_id=(
-                    retry_of.processing_attempt_id if retry_of is not None else None
-                ),
-            ),
-        )
-        if attempt_id != expected_id:
-            raise IdentityContractError(
-                "processing_attempt_id rebind mismatches immutable attempt"
-            )
 
 
 def retry_predecessor_attempt_ids(
@@ -552,54 +345,10 @@ def retry_predecessor_attempt_ids(
         predecessor_id = predecessor.processing_attempt_id
         if predecessor_id in seen:
             raise IdentityContractError("retry predecessor chain must be acyclic")
-        if predecessor.processing_request_id != attempt.processing_request_id:
-            raise IdentityContractError(
-                "retry predecessor chain references a different processing request"
-            )
         seen.add(predecessor_id)
         predecessor_ids.append(predecessor.processing_attempt_id)
         predecessor = predecessor.retry_of
     return tuple(predecessor_ids)
-
-
-def canonical_evidence_artifact_closure(
-    *,
-    producer_attempt: ProcessingAttemptIdentity,
-    artifacts: tuple[EvidenceArtifactRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate artifacts against the producer's complete retry chain."""
-
-    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
-        raise IdentityContractError(
-            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
-        )
-    return _validate_artifact_closure(
-        processing_request_id=producer_attempt.processing_request_id,
-        processing_attempt_id=producer_attempt.processing_attempt_id,
-        dependency_processing_attempt_ids=retry_predecessor_attempt_ids(
-            producer_attempt
-        ),
-        artifacts=artifacts,
-    )
-
-
-def canonical_current_attempt_artifact_closure(
-    *,
-    producer_attempt: ProcessingAttemptIdentity,
-    artifacts: tuple[EvidenceArtifactRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate artifacts produced only by the current attempt."""
-
-    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
-        raise IdentityContractError(
-            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
-        )
-    return _validate_artifact_closure(
-        processing_request_id=producer_attempt.processing_request_id,
-        processing_attempt_id=producer_attempt.processing_attempt_id,
-        dependency_processing_attempt_ids=(),
-        artifacts=artifacts,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -611,7 +360,6 @@ class ProcessingOwnerReferences:
     sample_snapshot: SampleMetadataSnapshot
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
     target_snapshot: TargetListSnapshot | None = None
-    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = ()
     _sources_by_sample_key: dict[
         str, tuple[ResolvedCanonicalSampleIdentity, AcquisitionSourceIdentity]
     ] = field(init=False, repr=False, compare=False)
@@ -621,10 +369,6 @@ class ProcessingOwnerReferences:
             raise IdentityContractError("request must be a ProcessingRequestIdentity")
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
             raise IdentityContractError("attempt must be a ProcessingAttemptIdentity")
-        if self.attempt.processing_request_id != self.request.processing_request_id:
-            raise IdentityContractError(
-                "attempt references a different processing request"
-            )
         if not isinstance(self.sample_snapshot, SampleMetadataSnapshot):
             raise IdentityContractError("sample_snapshot must be owner-minted")
         if not isinstance(self.sample_resolutions, tuple) or any(
@@ -635,7 +379,7 @@ class ProcessingOwnerReferences:
                 "sample_resolutions must contain owner-resolved sample identities"
             )
         if any(
-            resolution.snapshot.snapshot_id != self.sample_snapshot.snapshot_id
+            resolution.snapshot != self.sample_snapshot
             for resolution in self.sample_resolutions
         ):
             raise IdentityContractError(
@@ -665,8 +409,7 @@ class ProcessingOwnerReferences:
                     "sample metadata injection_order must match request binding"
                 )
         sample_ids = tuple(
-            resolution.identity.sample_identity_id
-            for resolution in self.sample_resolutions
+            resolution.identity.sample_key for resolution in self.sample_resolutions
         )
         if len(set(sample_ids)) != len(sample_ids):
             raise IdentityContractError(
@@ -684,15 +427,6 @@ class ProcessingOwnerReferences:
             if not isinstance(self.target_snapshot, TargetListSnapshot):
                 raise IdentityContractError("target_snapshot must be owner-minted")
             _validate_request_target_snapshot(request_inputs, self.target_snapshot)
-        try:
-            canonical_artifacts = canonical_evidence_artifact_closure(
-                producer_attempt=self.attempt,
-                artifacts=self.evidence_artifacts,
-            )
-        except EvidenceArtifactClosureError as exc:
-            raise IdentityContractError(str(exc)) from exc
-        if canonical_artifacts != self.evidence_artifacts:
-            raise IdentityContractError("evidence_artifacts must be canonical-sorted")
         sources_by_id = {
             source.acquisition_source_id: source
             for source in self.request.acquisition_sources
@@ -722,19 +456,6 @@ def _validate_request_target_snapshot(
         )
 
 
-def _local_acquisition_source_basis(
-    revision: tuple[int, int, int, int, int],
-    acquisition_format: str,
-    observation_namespace: str,
-) -> dict[str, object]:
-    return {
-        "schema": "local_acquisition_file_revision",
-        "local_file_revision": revision,
-        "acquisition_format": acquisition_format,
-        "observation_namespace": observation_namespace,
-    }
-
-
 def build_local_acquisition_source_identity(
     path: str | Path,
     *,
@@ -756,12 +477,6 @@ def build_local_acquisition_source_identity(
         state.st_ctime_ns,
     )
     return AcquisitionSourceIdentity(
-        acquisition_source_id=_typed_digest(
-            _ACQUISITION_SOURCE_PREFIX,
-            _local_acquisition_source_basis(
-                revision, acquisition_format, observation_namespace
-            ),
-        ),
         content_sha256=None,
         byte_size=state.st_size,
         acquisition_format=acquisition_format,
@@ -923,18 +638,7 @@ def _build_acquisition_source_identity(
         observation_namespace,
         field="observation_namespace",
     )
-    source_id = _typed_digest(
-        _ACQUISITION_SOURCE_PREFIX,
-        {
-            "schema": "acquisition_source_identity",
-            "content_sha256": content_sha256,
-            "byte_size": byte_size,
-            "acquisition_format": acquisition_format,
-            "observation_namespace": observation_namespace,
-        },
-    )
     return AcquisitionSourceIdentity(
-        acquisition_source_id=source_id,
         content_sha256=content_sha256,
         byte_size=byte_size,
         acquisition_format=acquisition_format,
@@ -1000,17 +704,7 @@ def build_processing_request_identity(
                 ),
             )
         )
-    basis = _request_basis(
-        acquisition_sources=acquisition_sources,
-        acquisition_bindings=acquisition_bindings,
-        scientific_input_schema_version=scientific_input_schema_version,
-        processing_algorithm_version=processing_algorithm_version,
-        processing_contract_version=processing_contract_version,
-        normalized_scientific_inputs_json=normalized_json,
-    )
-    request_id = _typed_digest(_PROCESSING_REQUEST_PREFIX, basis)
     return ProcessingRequestIdentity(
-        processing_request_id=request_id,
         acquisition_sources=acquisition_sources,
         acquisition_bindings=acquisition_bindings,
         scientific_input_schema_version=scientific_input_schema_version,
@@ -1021,34 +715,15 @@ def build_processing_request_identity(
 
 
 def issue_processing_attempt(
-    request: ProcessingRequestIdentity,
     *,
     retry_of: ProcessingAttemptIdentity | None = None,
 ) -> ProcessingAttemptIdentity:
-    """Issue a fresh attempt token, optionally linked to a same-request retry."""
+    """Issue a fresh attempt token, optionally linked to the attempt it retries."""
 
-    if not isinstance(request, ProcessingRequestIdentity):
-        raise IdentityContractError("request must be a ProcessingRequestIdentity")
-    if retry_of is not None:
-        if not isinstance(retry_of, ProcessingAttemptIdentity):
-            raise IdentityContractError("retry_of must be a ProcessingAttemptIdentity")
-        if retry_of.processing_request_id != request.processing_request_id:
-            raise IdentityContractError(
-                "retry predecessor references a different processing request"
-            )
-    attempt_token = uuid.uuid4().hex
-    attempt_id = _typed_digest(
-        _PROCESSING_ATTEMPT_PREFIX,
-        _attempt_basis(
-            processing_request_id=request.processing_request_id,
-            attempt_token=attempt_token,
-            retry_of_attempt_id=retry_of.processing_attempt_id if retry_of else None,
-        ),
-    )
+    if retry_of is not None and not isinstance(retry_of, ProcessingAttemptIdentity):
+        raise IdentityContractError("retry_of must be a ProcessingAttemptIdentity")
     return ProcessingAttemptIdentity(
-        processing_attempt_id=attempt_id,
-        processing_request_id=request.processing_request_id,
-        attempt_token=attempt_token,
+        processing_attempt_id=str(uuid.uuid4()),
         retry_of=retry_of,
     )
 
@@ -1060,28 +735,15 @@ def compose_processing_owner_references(
     sample_snapshot: SampleMetadataSnapshot,
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...],
     target_snapshot: TargetListSnapshot | None = None,
-    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = (),
 ) -> ProcessingOwnerReferences:
     """Compose owner references without minting or inferring either identity."""
 
-    try:
-        canonical_artifacts = tuple(
-            sorted(
-                evidence_artifacts,
-                key=lambda artifact: artifact.evidence_artifact_id,
-            )
-        )
-    except (AttributeError, TypeError) as exc:
-        raise IdentityContractError(
-            "evidence_artifacts must contain owner-minted EvidenceArtifactRef values"
-        ) from exc
     return ProcessingOwnerReferences(
         request=request,
         attempt=attempt,
         sample_snapshot=sample_snapshot,
         sample_resolutions=sample_resolutions,
         target_snapshot=target_snapshot,
-        evidence_artifacts=canonical_artifacts,
     )
 
 
@@ -1114,22 +776,15 @@ __all__ = [
     "AcquisitionSourceIdentity",
     "FileContentFingerprint",
     "IdentityContractError",
-    "PROCESSING_REQUEST_ID_PREFIX",
     "ProcessingAttemptIdentity",
     "ProcessingOwnerReferences",
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
     "build_local_acquisition_source_identity",
     "build_processing_request_identity",
-    "canonical_identity_basis_bytes",
-    "mint_typed_identity",
-    "canonical_current_attempt_artifact_closure",
-    "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
     "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
-    "typed_identity_digest",
-    "validate_typed_identity_id",
 ]

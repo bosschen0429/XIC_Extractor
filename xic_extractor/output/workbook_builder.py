@@ -13,7 +13,6 @@ from xic_extractor.output.detection import (
     is_accepted_row_detection,
 )
 from xic_extractor.output.review_queue_model import review_queue_rows
-from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
 from xic_extractor.output.sheet_field_guide import build_field_guide_sheet
@@ -76,9 +75,6 @@ def write_workbook_from_rows(
     _build_metadata_sheet(
         wb.create_sheet("Run Metadata"),
         config,
-        extra_metadata=(
-            ("targeted_workbook_layout_version", TARGETED_WORKBOOK_LAYOUT_VERSION),
-        ),
     )
     build_field_guide_sheet(wb.create_sheet("欄位說明"))
     if diagnostics:

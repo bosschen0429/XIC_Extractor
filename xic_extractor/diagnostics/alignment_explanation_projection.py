@@ -16,6 +16,7 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     INITIAL_GROUPING_POLICY,
     UNLISTED_PAIR_DISPOSITION,
 )
+from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_extractor.diagnostics.explanation_review import review_cell, review_record
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     )
     from xic_extractor.discovery.models import DiscoveryCandidate
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlMethodAssessmentContent,
         CidNlMethodAssessmentRef,
     )
     from xic_extractor.untargeted_execution.execution_result import (
@@ -44,43 +46,39 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
     return {name: getattr(value, name) for name in names}
 
 
-def _artifact(value: Any) -> dict[str, Any]:
+def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     return {
-        **_fields(
-            value,
-            "evidence_artifact_id",
-            "producer_processing_request_id",
-            "producer_processing_attempt_id",
-            "upstream_artifact_ids",
+        "sample_key": content.sample_key,
+        "group_owner_ids": list(content.group_owner_ids),
+        "group_method_subject_id": content.group_method_subject_id,
+        "group_target_label": content.group_target_label,
+        "technical_state": content.technical_state,
+        "method_result": content.method_result,
+        "physical_peak_key": content.physical_peak_key,
+        "peak_hypothesis_id": content.peak_hypothesis_id,
+        "reason_codes": list(content.reason_codes),
+        "outside_group": (
+            asdict(content.outside_group) if content.outside_group is not None else None
         ),
-        "content_identity": asdict(value.content_identity),
-        "semantic_contract": asdict(value.semantic_contract),
     }
 
 
-def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
+def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
     return {
-        "canonical_sample_identity_id": content.canonical_sample_identity_id,
-        "group_hypothesis_id": content.group_hypothesis_id,
-        "group_owner_ids": list(content.group_owner_ids),
-        "group_method_subject_id": content.group_method_subject_id,
-        "group_target_key_id": content.group_target_key_id,
-        "group_target_definition_id": content.group_target_definition_id,
-        "group_support_assessment_artifact_content_ids": list(
-            content.group_support_assessment_artifact_content_ids
-        ),
-        "technical_state": content.technical_state,
-        "method_result": content.method_result,
-        "peak_observation_content_id": content.peak_observation_content_id,
-        "peak_hypothesis_id": content.peak_hypothesis_id,
-        "method_assessment_artifact_content_id": (
-            content.method_assessment_artifact_content_id
-        ),
-        "evidence_artifact_ids": list(content.evidence_artifact_ids),
-        "reason_codes": list(content.reason_codes),
-        "human_disposition_ref_id": None,
-        "outside_group": (
-            asdict(content.outside_group) if content.outside_group is not None else None
+        "evidence_states": observation.evidence_states,
+        "sample_key": (observation.canonical_sample.identity.sample_key),
+        "predecessor_cells": [
+            {"content": _cell_observation_content_payload(ref.content)}
+            for ref in observation.predecessor_cells
+        ],
+        "backfill_cell": (
+            None
+            if observation.backfill_cell is None
+            else {
+                "content": _cell_observation_content_payload(
+                    observation.backfill_cell.content
+                )
+            }
         ),
     }
 
@@ -114,18 +112,27 @@ def _emit_curve_payload(
     if trace is None and content is None:
         return
     generation = ref.generation_provenance if ref is not None else None
-    actual = dict(provenance or {})
+    actual = {
+        "profile_version": None,
+        "acquisition_source_id": None,
+        "processing_attempt_id": None,
+        "selected_trace_indices": None,
+        "resolver_mode": None,
+        "proposal_sources": None,
+        "method_subject_id": None,
+        "profile": None,
+        "physical_state": None,
+        "physical_reason": None,
+        **(provenance or {}),
+    }
     if evaluation is not None:
         actual.update(
-            trace_content_id=evaluation.question.trace_content_id,
-            prepared_signal_id=evaluation.prepared.prepared_signal_id,
-            profile_id=evaluation.prepared.profile_id,
+            profile=asdict(evaluation.prepared.profile),
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
         )
     if prepared is not None:
         actual.update(
-            profile_id=prepared.profile.profile_id,
             profile_version=prepared.profile.schema_version,
             profile=asdict(prepared.profile),
         )
@@ -133,22 +140,15 @@ def _emit_curve_payload(
         actual.update(
             _fields(
                 generation,
-                "full_trace_sha256",
-                "selection_trace_sha256",
                 "acquisition_source_id",
                 "selected_trace_indices",
                 "resolver_mode",
                 "proposal_sources",
             )
         )
-        actual.update(
-            observation_artifact_id=ref.artifact.evidence_artifact_id,
-            processing_request_id=ref.artifact.producer_processing_request_id,
-            processing_attempt_id=ref.artifact.producer_processing_attempt_id,
-        )
     elif trace is not None:
         actual["acquisition_source_id"] = trace.acquisition_source_id
-    obs_id = content.peak_observation_content_id if content is not None else None
+    obs_id = content.physical_peak_key if content is not None else None
     record_id = obs_id or candidate_id or actual.get("method_subject_id")
     if record_id is None:
         raise ValueError("retained curve lacks an actual owner binding")
@@ -174,7 +174,7 @@ def _emit_curve_payload(
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "peak_observation_content_id": obs_id,
+        "physical_peak_key": obs_id,
         "trace_coordinate": {name: float(value) for name, value in coordinate.items()},
         "curves": {
             "rt": [float(x) for x in rt],
@@ -190,7 +190,6 @@ def _emit_curve_payload(
     }
     # One envelope per actual content/binding; candidate associations are links.
     payload_id = sink.add_curve_payload(
-        payload_id=None,
         sample_id=sample_id,
         kind=kind,
         record_id=record_id,
@@ -203,7 +202,7 @@ def _emit_curve_payload(
             "payload_id": payload_id,
             "sample_id": sample_id,
             "candidate_id": candidate_id,
-            "peak_observation_content_id": obs_id,
+            "physical_peak_key": obs_id,
             "record_id": record_id,
             "kind": kind,
         },
@@ -268,7 +267,6 @@ def prepare_alignment_explanation(
     ) as sink:
         application = completed.application_result
         request = application.processing_request
-        request_id = request.processing_request_id
         subjects = cid_nl_method_subject_batch_from_request(request)
         memberships = dict(subjects.candidate_memberships)
         membership_risks = {
@@ -281,7 +279,7 @@ def prepare_alignment_explanation(
             sample.metadata.raw_stem: sample for sample in application.canonical_samples
         }
         sample_ordinals = {
-            sample.identity.sample_identity_id: index
+            sample.identity.sample_key: index
             for index, sample in enumerate(samples.values())
         }
         reasons: Counter[str] = Counter()
@@ -297,8 +295,17 @@ def prepare_alignment_explanation(
         physical_candidates: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(
             set
         )
+        located_peaks: dict[str, Any] = {}
 
-        assessment_bindings: dict[str, int] = {}
+        def locate(content: Any) -> str:
+            """Written locator of one physical peak; never shared by two peaks."""
+            key: str = content.physical_peak_key
+            identity = content.physical_identity
+            if located_peaks.setdefault(key, identity) != identity:
+                raise ValueError(f"distinct physical peaks share one locator: {key}")
+            return key
+
+        emitted_assessments: set[CidNlMethodAssessmentContent] = set()
 
         def report_progress(stage: str, completed: int, total: int | None) -> None:
             if progress_callback is not None:
@@ -329,7 +336,7 @@ def prepare_alignment_explanation(
                 report_progress(stage, completed_count, total)
 
         def add(
-            kind: str, identity: str, payload: dict[str, Any], related: Any
+            kind: str, identity: str | None, payload: dict[str, Any], related: Any
         ) -> None:
             if sink.add_record(
                 kind,
@@ -347,7 +354,7 @@ def prepare_alignment_explanation(
                     reasons.update((payload["route"]["reason"],))
 
         for stem, declared in candidates_by_sample.items():
-            sid = samples[stem].identity.sample_identity_id
+            sid = samples[stem].identity.sample_key
             for candidate in phase_items("candidates", declared):
                 key = candidate.candidate_id, sid
                 subject_id = memberships[candidate.candidate_id]
@@ -365,7 +372,7 @@ def prepare_alignment_explanation(
                             "neutral_loss_tag",
                         ),
                         "sample_stem": stem,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "method_subject_id": subject_id,
                         "availability": {
                             "method_assessments": "unavailable",
@@ -385,7 +392,7 @@ def prepare_alignment_explanation(
             ),
         ):
             work = record.work_item
-            sid = samples[work.sample_stem].identity.sample_identity_id
+            sid = samples[work.sample_stem].identity.sample_key
             related = {(link.candidate_id, sid) for link in record.candidate_links}
             if not related:
                 related = {(record.candidate_id, sid)}
@@ -394,7 +401,7 @@ def prepare_alignment_explanation(
                     sid,
                     {
                         "candidate_id": record.candidate_id,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "sample_stem": work.sample_stem,
                         "precursor_mz": work.precursor_mz,
                         "physical_state": record.evaluation.state,
@@ -425,7 +432,6 @@ def prepare_alignment_explanation(
                 ),
                 evaluation=record.evaluation,
                 provenance={
-                    "processing_request_id": request_id,
                     "processing_attempt_id": (
                         application.processing_attempt.processing_attempt_id
                     ),
@@ -438,7 +444,7 @@ def prepare_alignment_explanation(
             "capture_evidence",
             capture_evidence if full_audit or curve_mz_ranges else (),
         ):
-            sid = evidence.canonical_sample_identity_id
+            sid = evidence.sample_key
             related = (
                 {(evidence.candidate_id, sid)}
                 if evidence.candidate_id is not None
@@ -459,7 +465,6 @@ def prepare_alignment_explanation(
                 evaluation=evidence.physical_evaluation,
                 provenance=_fields(
                     evidence,
-                    "processing_request_id",
                     "processing_attempt_id",
                     "method_subject_id",
                 ),
@@ -488,29 +493,14 @@ def prepare_alignment_explanation(
             )
 
         def emit_assessment(assessment: CidNlMethodAssessmentRef) -> None:
-            identity = assessment.artifact.evidence_artifact_id
-            binding_key = (
-                assessment.artifact.evidence_artifact_id,
-                tuple(
-                    ref.artifact.evidence_artifact_id
-                    for ref in assessment.evidence_refs
-                ),
-            )
-            binding_hash = hash(binding_key)
-            if identity in assessment_bindings:
-                if assessment_bindings[identity] != binding_hash:
-                    raise ValueError(
-                        "conflicting diagnostic owner identity: "
-                        f"{('method_assessments', identity)}"
-                    )
-                return
-            # The typed assessment owner already verified content against its
-            # immutable artifact. Retain only its diagnostic identity bindings,
-            # not the assessment's peak/evidence graph or another projection.
             content = assessment.content
+            # The same settled attempt can reach this projection through more
+            # than one completed relation; its content is the record.
+            if content in emitted_assessments:
+                return
             related = method_candidates[
                 content.method_subject.method_subject_id,
-                content.canonical_sample_identity_id,
+                content.sample_key,
             ]
             if (
                 content.detector_invocation_id == "untargeted-cid-nl-backfill"
@@ -520,25 +510,25 @@ def prepare_alignment_explanation(
                 # support links so the original candidate can explain the cell.
                 for relation in assessment.individual_support_refs:
                     physical_candidates[
-                        content.canonical_sample_identity_id,
-                        relation.content.peak_observation_content_id,
+                        content.sample_key,
+                        locate(relation.content.peak_observation),
                     ].update(related)
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
                         _emit_curve_payload(
                             sink,
                             peak,
-                            content.canonical_sample_identity_id,
+                            content.sample_key,
                             kind="backfill_observation",
                             related=related,
                         )
             add(
                 "method_assessments",
-                assessment.artifact.evidence_artifact_id,
+                None,
                 {
                     **_fields(
                         content,
-                        "canonical_sample_identity_id",
+                        "sample_key",
                         "acquisition_source_id",
                         "provider_id",
                         "method_id",
@@ -547,21 +537,13 @@ def prepare_alignment_explanation(
                         "technical_state",
                         "method_result",
                         "reason_codes",
-                        "candidate_peak_content_ids",
-                        "evidence_artifact_content_ids",
-                        "individual_relation_artifact_content_ids",
-                        "set_relation_artifact_content_ids",
+                    ),
+                    "candidate_physical_peak_keys": tuple(
+                        locate(peak.content) for peak in assessment.candidate_peaks
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
                     **(
-                        {
-                            "evaluation_receipt": asdict(content.evaluation_receipt),
-                            "artifact": _artifact(assessment.artifact),
-                            "evidence_refs": [
-                                _artifact(ref.artifact)
-                                for ref in assessment.evidence_refs
-                            ],
-                        }
+                        {"evaluation_receipt": asdict(content.evaluation_receipt)}
                         if full_audit
                         else {}
                     ),
@@ -570,7 +552,7 @@ def prepare_alignment_explanation(
             )
             for key in related:
                 sink.update_availability(key, method_assessments="recorded")
-            assessment_bindings[identity] = binding_hash
+            emitted_assessments.add(content)
 
         for assessment in phase_items(
             "method_assessments", completed.method_assessments
@@ -578,7 +560,7 @@ def prepare_alignment_explanation(
             emit_assessment(assessment)
 
         for excluded in phase_items("exclusions", application.excluded_candidates):
-            key = excluded.candidate_id, excluded.canonical_sample_identity_id
+            key = excluded.candidate_id, excluded.sample_key
             refs = (*excluded.method_assessments, *excluded.composite_assessments)
             add(
                 "exclusions",
@@ -587,14 +569,11 @@ def prepare_alignment_explanation(
                     **_fields(
                         excluded,
                         "candidate_id",
-                        "canonical_sample_identity_id",
+                        "sample_key",
                         "method_subject_id",
                         "discovery_candidate_state",
                         "reason_code",
                     ),
-                    "assessment_artifact_ids": [
-                        ref.artifact.evidence_artifact_id for ref in refs
-                    ],
                 },
                 (key,),
             )
@@ -602,20 +581,20 @@ def prepare_alignment_explanation(
             for assessment in refs:
                 emit_assessment(assessment)
 
-        def emit_group(stage: str, group: Any, methods: set[str]) -> None:
+        def emit_group(
+            stage: str, group: Any, methods: set[str], feature_id: str | None = None
+        ) -> None:
             related = set()
             if stage == "initial_groups":
                 methods = {
                     memberships[key[0]]
                     for member in group.member_subjects
                     for key in hypothesis_candidates[
-                        member.canonical_sample_identity_id, member.subject_id
+                        member.sample_key, member.subject_id
                     ]
                 }
             for member in group.member_subjects:
-                if member.processing_request_id != request_id:
-                    raise ValueError("diagnostic group crossed processing request")
-                sid = member.canonical_sample_identity_id
+                sid = member.sample_key
                 keys = (
                     hypothesis_candidates[sid, member.subject_id]
                     if member.subject_kind == "peak_hypothesis"
@@ -623,29 +602,23 @@ def prepare_alignment_explanation(
                 )
                 # Exact physical bindings survive successor hypothesis identities;
                 # provider scope prevents a shared peak crossing method subjects.
-                for pid in member.physical_observation_ids:
-                    keys = keys | physical_candidates[sid, pid]
+                for peak in member.physical_peaks:
+                    keys = keys | physical_candidates[sid, locate(peak)]
                 keys = {key for key in keys if memberships[key[0]] in methods}
-                member_candidates[member.member_subject_id].update(keys)
+                member_candidates[member.subject_id].update(keys)
                 related.update(keys)
             if stage == "final_groups":
                 group_candidates[group.group_hypothesis_id].update(related)
             group_payload = {
-                **_fields(
-                    group,
-                    "group_hypothesis_id",
-                    "processing_request_id",
-                    "disposition",
-                ),
+                **({} if feature_id is None else {"feature_id": feature_id}),
+                "disposition": group.disposition,
                 "member_subjects": [
-                    _fields(
-                        member,
-                        "member_subject_id",
-                        "canonical_sample_identity_id",
-                        "subject_kind",
-                        "subject_id",
-                        "physical_observation_ids",
-                    )
+                    {
+                        **_fields(member, "sample_key", "subject_kind", "subject_id"),
+                        "physical_peak_keys": [
+                            locate(peak) for peak in member.physical_peaks
+                        ],
+                    }
                     for member in group.member_subjects
                 ],
             }
@@ -655,42 +628,36 @@ def prepare_alignment_explanation(
                 group_payload["inference_decisions"] = [
                     asdict(decision) for decision in group.inference_decisions
                 ]
-            add(
-                stage,
-                group.group_hypothesis_id,
-                group_payload,
-                related,
-            )
+            # A published group is located by its feature_id; others by rowid.
+            add(stage, feature_id, group_payload, related)
 
         child_count = 0
+        row_count = 0
         report_progress("children", 0, len(application.children))
 
         def consume_child(child: FinalizedUntargetApplicationResult) -> None:
-            nonlocal child_count
+            nonlocal child_count, row_count
             core = child.scientific_core
             for terminal in core.terminal_subjects:
-                key = terminal.candidate_id, terminal.canonical_sample_identity_id
+                key = terminal.candidate_id, terminal.sample_key
                 payload = _fields(
                     terminal,
                     "candidate_id",
-                    "canonical_sample_identity_id",
+                    "sample_key",
                     "trace_group_id",
                     "variant",
                 )
                 hypothesis = getattr(terminal, "hypothesis", None)
                 if hypothesis is not None:
                     physical_ids = tuple(
-                        ref.content.peak_observation_content_id
-                        for ref in hypothesis.peak_observation_refs
+                        locate(ref.content) for ref in hypothesis.peak_observation_refs
                     )
                     payload.update(
                         hypothesis_id=hypothesis.hypothesis_id,
-                        physical_observation_ids=physical_ids,
+                        physical_peak_keys=physical_ids,
                         observations=[
                             {
-                                "peak_observation_content_id": (
-                                    ref.content.peak_observation_content_id
-                                ),
+                                "physical_peak_key": locate(ref.content),
                                 "rt_apex_min": ref.content.integration.rt_apex_min,
                             }
                             for ref in hypothesis.peak_observation_refs
@@ -698,8 +665,7 @@ def prepare_alignment_explanation(
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
                     for ref in hypothesis.peak_observation_refs:
-                        physical_id = ref.content.peak_observation_content_id
-                        physical_candidates[key[1], physical_id].add(key)
+                        physical_candidates[key[1], locate(ref.content)].add(key)
                         if not capture_evidence:
                             _emit_curve_payload(
                                 sink,
@@ -718,8 +684,18 @@ def prepare_alignment_explanation(
             methods = {
                 provider.method_subject_id for provider in core.scope.evidence_providers
             }
+            # Same child and row order as the TSV writer that labels rows.
+            feature_ids = {}
+            for row in child.completed_projection.rows:
+                row_count += 1
+                feature_ids[row.group.group_hypothesis_id] = feature_id_label(row_count)
             for group in core.final_population:
-                emit_group("final_groups", group, methods)
+                emit_group(
+                    "final_groups",
+                    group,
+                    methods,
+                    feature_ids.get(group.group_hypothesis_id),
+                )
             risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = (
                 defaultdict(list)
             )
@@ -728,7 +704,7 @@ def prepare_alignment_explanation(
                     if risk := membership_risks.get(member.subject_id):
                         risks_by_group_sample[
                             group.group_hypothesis_id,
-                            member.canonical_sample_identity_id,
+                            member.sample_key,
                         ].append(risk)
 
             for (
@@ -738,50 +714,9 @@ def prepare_alignment_explanation(
             ) in core.grouping_result.backfill_membership_risks:
                 risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
 
-            for observation in (
-                child.scientific_core.cell_observations if full_audit else ()
-            ):
-                related = group_candidates[observation.group.group_hypothesis_id]
-                add(
-                    "cell_observations",
-                    observation.cell_observation_id,
-                    {
-                        **_fields(
-                            observation,
-                            "cell_observation_id",
-                            "processing_request_id",
-                            "evidence_states",
-                        ),
-                        "group_hypothesis_id": observation.group.group_hypothesis_id,
-                        "canonical_sample_identity_id": (
-                            observation.canonical_sample.identity.sample_identity_id
-                        ),
-                        "predecessor_cells": [
-                            {
-                                "content": _cell_observation_content_payload(
-                                    ref.content
-                                ),
-                                "artifact": _artifact(ref.artifact),
-                            }
-                            for ref in observation.predecessor_cells
-                        ],
-                        "backfill_cell": (
-                            None
-                            if observation.backfill_cell is None
-                            else {
-                                "content": _cell_observation_content_payload(
-                                    observation.backfill_cell.content
-                                ),
-                                "artifact": _artifact(
-                                    observation.backfill_cell.artifact
-                                ),
-                            }
-                        ),
-                    },
-                    related,
-                )
             for row in child.completed_projection.rows:
-                group_id = row.row_key.group_hypothesis_id
+                group_id = row.group.group_hypothesis_id
+                feature_id = feature_ids[group_id]
                 related = group_candidates[group_id]
                 cells = [
                     {
@@ -789,7 +724,7 @@ def prepare_alignment_explanation(
                         "membership_risks": risks_by_group_sample.get(
                             (
                                 group_id,
-                                decision.subject.canonical_sample.identity.sample_identity_id,
+                                decision.subject.canonical_sample.identity.sample_key,
                             ),
                             [],
                         ),
@@ -798,10 +733,9 @@ def prepare_alignment_explanation(
                 ]
                 add(
                     "rows",
-                    row.row_key.untarget_row_key_id,
+                    feature_id,
                     {
-                        "row_key_id": row.row_key.untarget_row_key_id,
-                        "group_hypothesis_id": group_id,
+                        "feature_id": feature_id,
                         "route": {
                             "destination": row.route.destination,
                             "reason": row.route.reason,
@@ -819,8 +753,7 @@ def prepare_alignment_explanation(
                 )
                 if not full_audit:
                     sink.add_row_cells(
-                        row.row_key.untarget_row_key_id,
-                        group_id,
+                        feature_id,
                         cells,
                         sample_ordinals,
                     )
@@ -828,19 +761,18 @@ def prepare_alignment_explanation(
                 for decision, cell in zip(row.decisions, cells, strict=True):
                     add(
                         "cell_decisions",
-                        decision.decision_id,
+                        None,
                         {
-                            **_fields(
-                                decision, "decision_id", "variant", "value", "source"
-                            ),
+                            **_fields(decision, "variant", "value", "source"),
                             "signal_quality": review_cell(decision)["signal_quality"],
                             "membership_risks": cell["membership_risks"],
-                            "row_key_id": row.row_key.untarget_row_key_id,
-                            "group_hypothesis_id": group_id,
-                            "canonical_sample_identity_id": (
-                                decision.subject.canonical_sample.identity.sample_identity_id
+                            "feature_id": feature_id,
+                            "sample_key": (
+                                decision.subject.canonical_sample.identity.sample_key
                             ),
-                            **_fields(decision.evidence, "cell_observation_id"),
+                            "observation": _final_cell_observation_payload(
+                                decision.evidence
+                            ),
                         },
                         related,
                     )
@@ -858,19 +790,16 @@ def prepare_alignment_explanation(
 
             for edge in phase_items("initial_edges", completed.initial_edges):
                 related = (
-                    member_candidates[edge.left_member_subject_id]
-                    | member_candidates[edge.right_member_subject_id]
+                    member_candidates[edge.left_owner.owner_id]
+                    | member_candidates[edge.right_owner.owner_id]
                 )
                 add(
                     "initial_edges",
-                    _key(edge.left_member_subject_id, edge.right_member_subject_id),
+                    _key(edge.left_owner.owner_id, edge.right_owner.owner_id),
                     {
-                        **_fields(
-                            edge,
-                            "left_member_subject_id",
-                            "right_member_subject_id",
-                            "disposition",
-                        ),
+                        "left_subject_id": edge.left_owner.owner_id,
+                        "right_subject_id": edge.right_owner.owner_id,
+                        "disposition": edge.disposition,
                         "initial_evidence": asdict(edge.initial_evidence),
                         "initial_context": edge.initial_context,
                         "alignment_config": asdict(edge.config),
@@ -893,7 +822,6 @@ def prepare_alignment_explanation(
             summary = {
                 **_fields(
                     request,
-                    "processing_request_id",
                     "scientific_input_schema_version",
                     "processing_algorithm_version",
                     "processing_contract_version",
@@ -904,9 +832,7 @@ def prepare_alignment_explanation(
                 "samples": [
                     {
                         "sample_stem": stem,
-                        "canonical_sample_identity_id": (
-                            sample.identity.sample_identity_id
-                        ),
+                        "sample_key": (sample.identity.sample_key),
                     }
                     for stem, sample in samples.items()
                 ],
@@ -959,8 +885,11 @@ def prepare_alignment_explanation(
                     )
                 },
             }
-            if known_istd_reference_provenance is not None:
-                summary["known_istd_reference"] = dict(known_istd_reference_provenance)
+            summary["known_istd_reference"] = (
+                dict(known_istd_reference_provenance)
+                if known_istd_reference_provenance is not None
+                else None
+            )
             return sink.finalize(summary)
 
         yield PreparedAlignmentExplanation(consume_child, finalize)

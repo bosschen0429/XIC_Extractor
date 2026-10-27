@@ -82,7 +82,7 @@ def _match_target_to_alignment_with_shift(
         matches.append(
             CandidateMatch(
                 target_label=target.label,
-                feature_family_id=feature.feature_family_id,
+                feature_id=feature.feature_id,
                 include_in_primary_matrix=feature.include_in_primary_matrix,
                 family_center_mz=feature.family_center_mz,
                 family_center_rt=feature.family_center_rt,
@@ -153,7 +153,7 @@ def _match_sort_key(match: CandidateMatch) -> tuple[object, ...]:
         match.distance_score,
         abs(match.rt_delta_sec),
         abs(match.mz_delta_ppm),
-        match.feature_family_id,
+        match.feature_id,
     )
 
 

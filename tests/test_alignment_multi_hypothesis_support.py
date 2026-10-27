@@ -92,7 +92,6 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=2,
             reason_code=None,
         ),
         candidate_peaks=peaks,
@@ -108,11 +107,11 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
 
     assert len(hypotheses) == 2
     assert {
-        hypothesis.peak_observation_refs[0].content.peak_observation_content_id
+        hypothesis.peak_observation_refs[0].content.physical_peak_key
         for hypothesis in hypotheses
     } == {
-        left.content.peak_observation_content_id,
-        right.content.peak_observation_content_id,
+        left.content.physical_peak_key,
+        right.content.physical_peak_key,
     }
     for hypothesis in hypotheses:
         owner = owner_from_cid_nl_assessment_support(
@@ -240,7 +239,6 @@ def _assessment_with_observation_only_peak(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1,
             reason_code=None,
         ),
         candidate_peaks=peaks,
@@ -330,7 +328,6 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
                 support_policy=cid_nl_support_policy(),
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=len(supported) + 1,
                 reason_code=None,
             ),
             candidate_peaks=(peak,),
@@ -341,7 +338,9 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             processing_owners=fixture.owners, sample=sample, assessment=assessment
         )
         owner = owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
         projected[stem] = owner
         assert owner.sample_stem == stem

@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
-from dataclasses import InitVar, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.completion import (
-    AlignmentWorkflowContractError,
-    CaptureWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
-    WorkflowStage,
     WorkflowStageFailure,
     complete_analysis,
     resolve_workflow_processing_owners,
@@ -36,28 +33,6 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
     resolve_target_definition,
-)
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
-from xic_extractor.execution._lifecycle import (
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution._observability import RuntimeMetricAvailability
-from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
-    RuntimeProcessTreePeakRssSample,
-    RuntimeTelemetrySamples,
-    RuntimeWorkerBatchReceipt,
-    RuntimeWorkerPeakRssSample,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-    runtime_started_worker_keys,
-    start_runtime_attempt,
 )
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
@@ -103,7 +78,6 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
-    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
 )
@@ -114,15 +88,6 @@ from xic_extractor.sample_metadata import (
 )
 
 _IDENTITY_NAMESPACE = "targeted-production"
-_NO_OBSERVATION_ARTIFACT_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.applications.targeted.production_workflow",
-    semantic_role="retained_no_observation_capture_population",
-    schema_version="targeted_no_observation_capture",
-    validation_status="production_input",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
-_COMPLETED_WORKFLOW_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,30 +137,23 @@ class _PreparedTargetedProductionWorkflow:
     results_by_sample: tuple[tuple[ResolvedCanonicalSampleIdentity, FileResult], ...]
     raw_stems: frozenset[str]
     acquisition_file_ids: tuple[int, ...]
-    acquisition_snapshot: RunOutput
+    acquisition_evidence: RunOutput
 
 
 @dataclass(frozen=True, slots=True)
 class CompletedTargetedProductionWorkflow:
-    """Owner-completed science and the exact public result model it produced."""
+    """Owner-completed science and a publication model consumed without mutation."""
 
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
     _acquisition_file_ids: tuple[int, ...]
-    _publication_snapshot: RunOutput
-    _mint_token: InitVar[object] = None
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _COMPLETED_WORKFLOW_MINT_TOKEN:
-            raise TypeError(
-                "CompletedTargetedProductionWorkflow must be minted by its owner"
-            )
+    _publication_output: RunOutput
 
     def publication_output(
         self,
         request: TargetedApplicationRequest,
         acquisition_evidence: RunOutput,
     ) -> RunOutput:
-        """Bind a publication request and isolate its already-completed result view."""
+        """Bind a publication request and return its already-completed result view."""
 
         acquisition_file_ids = tuple(
             id(file_result) for file_result in acquisition_evidence.file_results
@@ -205,7 +163,7 @@ class CompletedTargetedProductionWorkflow:
                 "prepared Targeted workflow crossed the acquisition evidence"
             )
         _validate_target_population(request, self.finalized_results)
-        return deepcopy(self._publication_snapshot)
+        return self._publication_output
 
     def __len__(self) -> int:
         return len(self.finalized_results)
@@ -223,7 +181,7 @@ def execute_targeted_production_workflow(
     *,
     expected_inputs: TargetedProductionInputSnapshot | None = None,
 ) -> CompletedTargetedProductionWorkflow:
-    """Complete the admitted Target population and seal its publication model."""
+    """Complete the admitted Target population and build its publication model."""
 
     prepared = _prepare_targeted_production_workflow(
         request, acquisition_evidence, expected_inputs=expected_inputs
@@ -246,14 +204,13 @@ def execute_targeted_production_workflow(
         expected_processing_request=prepared.owners.request,
         expected_samples=prepared.samples,
     )
-    publication_snapshot = _build_publication_output(
-        finalized_results, prepared.acquisition_snapshot, config=request.config
+    publication_output = _build_publication_output(
+        finalized_results, prepared.acquisition_evidence, config=request.config
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
         _acquisition_file_ids=prepared.acquisition_file_ids,
-        _publication_snapshot=publication_snapshot,
-        _mint_token=_COMPLETED_WORKFLOW_MINT_TOKEN,
+        _publication_output=publication_output,
     )
 
 
@@ -271,11 +228,9 @@ def _validate_finalized_result_population(
             "finalized workflow must return an exact immutable Target result tuple"
         )
     _validate_target_population(request, results)
-    request_ids = {
-        result.processing_request.processing_request_id for result in results
-    }
+    request_ids = {result.processing_request for result in results}
     sample_populations = {
-        tuple(sample.identity.sample_identity_id for sample in result.canonical_samples)
+        tuple(sample.identity.sample_key for sample in result.canonical_samples)
         for result in results
     }
     if len(request_ids) != 1 or len(sample_populations) != 1:
@@ -283,15 +238,12 @@ def _validate_finalized_result_population(
             "finalized Target results crossed request or sample populations"
         )
     expected_sample_population = tuple(
-        sorted(sample.identity.sample_identity_id for sample in expected_samples)
+        sorted(sample.identity.sample_key for sample in expected_samples)
     )
     if any(
         result.processing_request != expected_processing_request
         or tuple(
-            sorted(
-                sample.identity.sample_identity_id
-                for sample in result.canonical_samples
-            )
+            sorted(sample.identity.sample_key for sample in result.canonical_samples)
         )
         != expected_sample_population
         for result in results
@@ -327,7 +279,7 @@ def _build_publication_output(
 ) -> RunOutput:
     expected_samples = finalized_results[0].canonical_samples
     expected_sample_ids = tuple(
-        sample.identity.sample_identity_id for sample in expected_samples
+        sample.identity.sample_key for sample in expected_samples
     )
     samples_by_raw_stem = {
         sample.metadata.raw_stem: sample for sample in expected_samples
@@ -345,7 +297,7 @@ def _build_publication_output(
     for result in finalized_results:
         target = result.completed_projection.row_binding.target.definition
         target_label = target.target.label
-        target_id = target.target_definition_id
+        target_id = target_label
         if target_label in target_ids_by_label:
             raise TargetedOutputBoundaryError(
                 "finalized Targeted result population contains duplicate Targets"
@@ -353,11 +305,11 @@ def _build_publication_output(
         target_ids_by_label[target_label] = target_id
         targets_by_label[target_label] = target.target
         for backfill in result.scientific_core.targeted_backfill_decisions:
-            sample_id = backfill.target_cell.content.canonical_sample_identity_id
+            sample_id = backfill.target_cell.content.sample_key
             backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
-            sample_id = subject.sample.identity.sample_identity_id
+            sample_id = subject.sample.identity.sample_key
             if sample_id not in expected_sample_ids:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decision crossed the canonical "
@@ -380,7 +332,7 @@ def _build_publication_output(
             raise TargetedOutputBoundaryError(
                 "acquisition evidence does not resolve to a canonical sample identity"
             )
-        sample_id = sample.identity.sample_identity_id
+        sample_id = sample.identity.sample_key
         if sample_id in consumed_sample_ids:
             raise TargetedOutputBoundaryError(
                 "acquisition evidence contains duplicate canonical samples"
@@ -715,8 +667,8 @@ def _same_physical_peak(
         and reported is not None
         and captured.facts is not None
         and reported.facts is not None
-        and captured.facts.prepared_signal_id == reported.facts.prepared_signal_id
-        and captured.facts.physical_segment_id == reported.facts.physical_segment_id
+        and captured.prepared == reported.prepared
+        and captured.answer.selected_segment == reported.answer.selected_segment
     )
 
 
@@ -832,10 +784,9 @@ def _prepare_targeted_production_workflow(
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
     acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
-    acquisition_snapshot = deepcopy(acquisition_evidence)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
-        acquisition_snapshot.file_results,
+        acquisition_evidence.file_results,
     )
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
@@ -879,16 +830,15 @@ def _prepare_targeted_production_workflow(
                         evaluation
                     )
     if any(
-        evaluation.prepared.profile_id != profile.profile_id
+        evaluation.prepared.profile != profile
         for evaluation in physical_evaluations.values()
     ):
         raise RuntimeError("Targeted acquisition crossed its configured signal profile")
     processing_request = bind_targeted_physical_capture_request(
         current_inputs.processing_request,
         profile=profile,
-        evaluations=physical_evaluations,
     )
-    attempt = issue_processing_attempt(processing_request)
+    attempt = issue_processing_attempt()
     owners = compose_processing_owner_references(
         request=processing_request,
         attempt=attempt,
@@ -911,7 +861,7 @@ def _prepare_targeted_production_workflow(
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
         acquisition_file_ids=acquisition_file_ids,
-        acquisition_snapshot=acquisition_snapshot,
+        acquisition_evidence=acquisition_evidence,
     )
 
 
@@ -1026,7 +976,7 @@ def _context_for_target(
     if target_index == 0:
         return context
     owners = context.owners
-    attempt = issue_processing_attempt(owners.request)
+    attempt = issue_processing_attempt()
     return replace(
         context,
         owners=compose_processing_owner_references(
@@ -1065,39 +1015,10 @@ def _execute_target(
     assessment_tuple = tuple(
         sorted(
             assessments,
-            key=lambda item: item[0].identity.sample_identity_id,
+            key=lambda item: item[0].identity.sample_key,
         )
     )
     capture_inputs = population.capture_inputs
-    workflow_artifact: EvidenceArtifactRef
-    if assessment_tuple:
-        workflow_artifact = assessment_tuple[0][1].artifact
-    else:
-        captured_artifact = next(
-            (
-                item.owner_observation.artifact
-                for item in capture_inputs
-                if item.owner_observation is not None
-            ),
-            None,
-        )
-        workflow_artifact = (
-            captured_artifact
-            if captured_artifact is not None
-            else _mint_no_observation_capture_artifact(
-                context.owners,
-                target,
-                capture_inputs,
-            )
-        )
-    work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
-    # RAW acquisition has already completed; this attempt acknowledges its
-    # retained artifact handoff before scientific composition begins.
-    runtime = start_runtime_attempt(
-        attempt=context.owners.attempt,
-        work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-retained-acquisition-handoff",
-    )
     return _complete_retained_target(
         TargetWorkflowRequest(
             scope=population.scope,
@@ -1113,59 +1034,15 @@ def _execute_target(
             completed_capture_handoff=population.captures,
             targeted_backfill_decisions=backfill.decisions,
         ),
-        runtime=runtime,
-        workflow_artifact=workflow_artifact,
-        work_unit_key=work_unit_key,
     )
 
 
 def _complete_retained_target(
     request: TargetWorkflowRequest,
     adapter: TargetWorkflowAdapter,
-    *,
-    runtime: AttemptRuntime,
-    workflow_artifact: EvidenceArtifactRef,
-    work_unit_key: str,
 ) -> FinalizedTargetProductionResult:
-    """Acknowledge retained acquisition, then complete its exact owner evidence."""
+    """Complete retained acquisition directly into its scientific result."""
     owners = resolve_workflow_processing_owners(request, adapter)
-    if (
-        runtime.manifest.attempt is not request.processing_attempt
-        or runtime.history.attempt is not request.processing_attempt
-    ):
-        raise AlignmentWorkflowContractError(
-            "workflow runtime crossed the exact processing attempt"
-        )
-    receipt = execute_runtime_attempt(
-        runtime,
-        (),
-        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=request.processing_attempt,
-                    work_unit_key=work_unit_key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=workflow_artifact,
-                ),
-            ),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key=work_unit_key,
-                    artifact=workflow_artifact,
-                ),
-            ),
-        ),
-        telemetry_provider=_runtime_telemetry,
-        persister=lambda receipt: receipt,
-    )
-    outcome = receipt.supervisor.terminal_outcome
-    if outcome is not AttemptTerminalOutcome.SUCCEEDED:
-        stage = (
-            WorkflowStage.RUNTIME if outcome is AttemptTerminalOutcome.FAILED else None
-        )
-        raise RuntimeError(
-            f"Targeted workflow failed before publication: stage={stage}; reason=None"
-        )
     try:
         result = complete_analysis(request, adapter, processing_owners=owners)
     except WorkflowStageFailure as failure:
@@ -1176,68 +1053,6 @@ def _complete_retained_target(
     if type(result) is not FinalizedTargetProductionResult:
         raise RuntimeError("Targeted completion returned a crossed result")
     return result
-
-
-def _mint_no_observation_capture_artifact(
-    owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition,
-    captures: tuple[CaptureWorkflowArguments, ...],
-) -> EvidenceArtifactRef:
-    if not captures or any(
-        item.owner_observation is not None or item.owner_hypothesis is not None
-        for item in captures
-    ):
-        raise RuntimeError(
-            "no-observation artifact requires a non-empty unselected capture population"
-        )
-    payload = canonical_identity_basis_bytes(
-        {
-            "schema_version": "targeted_no_observation_capture",
-            "processing_request_id": owners.request.processing_request_id,
-            "processing_attempt_id": owners.attempt.processing_attempt_id,
-            "target_definition_id": target.definition.target_definition_id,
-            "captures": [
-                {
-                    "candidate_id": item.candidate_id,
-                    "sample_name": item.trace.sample_name,
-                    "acquisition_source_id": item.trace.acquisition_source_id,
-                    "scan_count": item.trace.scan_count,
-                }
-                for item in captures
-            ],
-        }
-    )
-    return mint_evidence_artifact_ref(
-        producer_processing_request_id=owners.request.processing_request_id,
-        producer_processing_attempt_id=owners.attempt.processing_attempt_id,
-        semantic_contract=_NO_OBSERVATION_ARTIFACT_CONTRACT,
-        payload_bytes=payload,
-    )
-
-
-def _runtime_telemetry(
-    coordinator: object,
-) -> RuntimeTelemetrySamples:
-    terminal = cast(Any, coordinator)
-    worker_keys = runtime_started_worker_keys(terminal)
-    reason = "not_collected_by_targeted_foreground_runner"
-    return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=None,
-        artifact_io=None,
-        process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=RuntimeMetricAvailability.UNSUPPORTED,
-            reason=reason,
-        ),
-        worker_peak_rss=tuple(
-            RuntimeWorkerPeakRssSample(
-                worker_key=worker_key,
-                availability=RuntimeMetricAvailability.UNSUPPORTED,
-                reason=reason,
-            )
-            for worker_key in worker_keys
-        ),
-        unavailable_reason=reason,
-    )
 
 
 __all__ = ["execute_targeted_production_workflow"]

@@ -197,7 +197,6 @@ def assess_targeted_candidate_population(
             prepared_result,
             universe,
             candidate,
-            selection_subject_id=target.label,
             acquisition_rt_window=(trace.rt_min, trace.rt_max),
             selection_rt_window=selection_window,
             selection_policy_version=physical_policy,
@@ -230,7 +229,6 @@ def assess_targeted_candidate_population(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=method_window.scanned_event_count,
             reason_code=None,
         )
         relations = evaluate_cid_nl_method_relations(
@@ -415,7 +413,6 @@ def select_targeted_peak(
         prepared_result,
         universe,
         candidate,
-        selection_subject_id=target.label,
         acquisition_rt_window=(trace.rt_min, trace.rt_max),
         selection_rt_window=(selection_rt_min, selection_rt_max),
         candidate_evaluations=candidate_evaluations,

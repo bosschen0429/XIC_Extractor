@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from xic_extractor.alignment.evidence_claims import (
     EvidenceClaim,
@@ -22,9 +22,7 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = (
 )
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "schema_version",
-    "feature_family_id",
-    "group_hypothesis_id",
-    "public_family_id",
+    "feature_id",
     "sample_stem",
     "status",
     "production_cell_status",
@@ -57,7 +55,7 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
 
 SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION = "skipped_evidence_ledger"
 SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "sample_stem",
     "family_center_mz",
     "family_center_rt",
@@ -106,16 +104,14 @@ _SKIPPED_SCOPE_REASON = {
 
 @dataclass(frozen=True, slots=True)
 class BackfillEvidenceOwnerBindings:
-    known_group_ids: frozenset[str]
+    known_feature_ids: frozenset[str]
     known_sample_stems: frozenset[str]
     candidate_samples: Mapping[str, str]
-    group_feature_family_ids: Mapping[str, str] = field(default_factory=dict)
-    group_public_family_ids: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class SkippedEvidenceOwnerBindings:
-    known_feature_family_ids: frozenset[str]
+    known_feature_ids: frozenset[str]
     known_sample_stems: frozenset[str]
     expected_backfill_scope: str
     expected_predicate_version: str = PREDICATE_VERSION
@@ -127,9 +123,7 @@ class BackfillEvidenceRecord:
     """Exact compact row; decision and full-cell authority remain unavailable."""
 
     schema_version: str
-    feature_family_id: str
-    group_hypothesis_id: str
-    public_family_id: str
+    feature_id: str
     sample_stem: str
     status: CellStatus
     production_cell_status: ProductionStatus
@@ -166,7 +160,7 @@ class BackfillEvidenceRecord:
                 f"{ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION!r}"
             )
         for field_name in (
-            "feature_family_id",
+            "feature_id",
             "sample_stem",
             "identity_decision",
             "neutral_loss_tag",
@@ -254,10 +248,9 @@ class BackfillEvidenceRecord:
             raise ValueError("peak_start_rt, apex_rt, and peak_end_rt are inconsistent")
 
     @property
-    def identity(self) -> tuple[str, str, str]:
+    def identity(self) -> tuple[str, str]:
         return (
-            self.feature_family_id,
-            self.group_hypothesis_id,
+            self.feature_id,
             self.sample_stem,
         )
 
@@ -266,22 +259,18 @@ class BackfillEvidenceRecord:
 class BackfillEvidenceCandidateAssignment:
     sample_stem: str
     source_candidate_id: str
-    group_hypothesis_id: str
+    feature_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class BackfillEvidenceOwnerResult:
     record: BackfillEvidenceRecord
     group_assignment_binding: EvidenceClaimState
-    public_family_binding: EvidenceClaimState
     candidate_assignment: BackfillEvidenceCandidateAssignment | None
 
     @property
     def cross_artifact_binding(self) -> EvidenceClaimState:
-        if (
-            self.group_assignment_binding is EvidenceClaimState.OWNER_REHYDRATED
-            and self.public_family_binding is EvidenceClaimState.OWNER_REHYDRATED
-        ):
+        if self.group_assignment_binding is EvidenceClaimState.OWNER_REHYDRATED:
             return EvidenceClaimState.OWNER_REHYDRATED
         return EvidenceClaimState.UNAVAILABLE
 
@@ -290,7 +279,7 @@ class BackfillEvidenceOwnerResult:
 class SkippedEvidenceRecord:
     """Complete persisted form of the Backfill-scope producer record."""
 
-    feature_family_id: str
+    feature_id: str
     sample_stem: str
     family_center_mz: float
     family_center_rt: float
@@ -308,7 +297,7 @@ class SkippedEvidenceRecord:
 
     def __post_init__(self) -> None:
         for field_name in (
-            "feature_family_id",
+            "feature_id",
             "sample_stem",
             "pre_backfill_category",
             "skipped_stage",
@@ -359,7 +348,7 @@ class SkippedEvidenceRecord:
     @property
     def identity(self) -> tuple[str, str, str, str, str]:
         return (
-            self.feature_family_id,
+            self.feature_id,
             self.sample_stem,
             self.skipped_stage,
             self.backfill_scope,

@@ -309,7 +309,6 @@ class PreparedReport:
             "title": "Inspector",
             "evidence_capability": self.evidence_capability,
             "strategy": self.payload["selection"]["strategy"],
-            "request_id": self.payload["summary"].get("processing_request_id", ""),
             "run_total": self.run_total,
             "eligible_count": self.eligible_count,
             "selected_count": self.selected_count,
@@ -387,7 +386,6 @@ def prepare_report(
         }
 
     schema_version = summary["schema_version"]
-    req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
     if isinstance(source, (CurveBundleSource, TargetedWorkbookSource)):
         source_locator: (
@@ -423,7 +421,6 @@ def prepare_report(
             report_path=report_path,
             matrix_path=matrix_file,
             matrix_sha256=actual_matrix_sha256,
-            processing_request_id=req_id,
             processing_attempt_id=att_id,
             schema_version=schema_version,
         )
@@ -435,7 +432,6 @@ def prepare_report(
             expected_source.report_path.resolve() != src.report_path
             or expected_source.matrix_path.resolve() != src.matrix_path
             or expected_source.matrix_sha256 != src.matrix_sha256
-            or expected_source.processing_request_id != src.processing_request_id
             or expected_source.processing_attempt_id != src.processing_attempt_id
             or expected_source.schema_version != src.schema_version
         ):
@@ -462,9 +458,7 @@ def prepare_report(
     # Colours span the whole source so a narrower selection keeps them.
     colors = group_colors(s["group"] for s in summary_samples if "group" in s)
     universe_sample_ids = {
-        s["canonical_sample_identity_id"]
-        for s in summary_samples
-        if "canonical_sample_identity_id" in s
+        s["sample_key"] for s in summary_samples if "sample_key" in s
     }
 
     if not selection.sample_ids:
@@ -612,8 +606,8 @@ def prepare_report(
         },
         "samples": [
             {
-                "id": s["canonical_sample_identity_id"],
-                "label": s.get("sample_stem", s["canonical_sample_identity_id"]),
+                "id": s["sample_key"],
+                "label": s.get("sample_stem", s["sample_key"]),
                 **(
                     {"group": s["group"], "group_color": colors[s["group"]]}
                     if "group" in s
@@ -621,7 +615,7 @@ def prepare_report(
                 ),
             }
             for s in summary_samples
-            if s.get("canonical_sample_identity_id") in normalized_set
+            if s.get("sample_key") in normalized_set
         ],
         "items": rendered_items,
     }

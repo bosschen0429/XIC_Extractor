@@ -25,14 +25,12 @@ def _make_item(
     sample_id = sample_ids[0] if kind == "candidate" else None
     ref, sref = build_canonical_ref(
         kind=kind,  # type: ignore
-        request_id="req1",
         attempt_id="att1",
         identifier=identifier,
         sample_id=sample_id,
     )
     return CanonicalItem(
         kind=kind,  # type: ignore
-        request_id="req1",
         attempt_id="att1",
         identifier=identifier,
         serialized_ref=sref,
@@ -146,14 +144,14 @@ def test_scoped_strata_priority() -> None:
 def test_acceptance_a3_witness_chain_query() -> None:
     """Acceptance A3: 無row的G: C1/S1=(500, 1min), C2/S2=(600, 8min)."""
     w1 = Witness(
-        canonical_sample_identity_id="S1",
+        sample_key="S1",
         candidate_id="C1",
         group_hypothesis_id="G",
         precursor_mz=500.0,
         rt_apex_min=1.0,
     )
     w2 = Witness(
-        canonical_sample_identity_id="S2",
+        sample_key="S2",
         candidate_id="C2",
         group_hypothesis_id="G",
         precursor_mz=600.0,
@@ -206,7 +204,7 @@ def test_query_pagination_and_stability() -> None:
             ("s1",),
             witnesses=(
                 Witness(
-                    canonical_sample_identity_id="s1",
+                    sample_key="s1",
                     candidate_id=f"c_{i:02d}",
                     precursor_mz=400.0 + i,
                     rt_apex_min=2.0 + i * 0.1,

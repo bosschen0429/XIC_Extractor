@@ -961,15 +961,15 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
             row, group = f"row-{index:02}", f"G{index:02}"
             groups[row] = group
             for kind, identity, payload in (
-                ("rows", row, {"row_key_id": row, "group_hypothesis_id": group}),
+                ("rows", row, {"feature_id": group}),
                 (
                     "final_groups",
                     group,
-                    {"group_hypothesis_id": group, "disposition": "completed"},
+                    {"feature_id": group, "disposition": "completed"},
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, identity, json.dumps(payload)),
                 )
                 _insert_link(connection, ("C1", "S1", kind, identity))
@@ -2754,7 +2754,6 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
-    metadata.append(["targeted_workbook_layout_version", 2])
     book.save(path)
     book.close()
     return path

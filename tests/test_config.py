@@ -3,10 +3,7 @@ import csv
 import pytest
 
 from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS
-from xic_extractor.configuration.hashing import (
-    compute_config_hash,
-    compute_target_config_hash,
-)
+from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.settings import fill_setting_defaults, resolve_settings
@@ -57,9 +54,6 @@ def test_load_config_snapshot_freezes_intent_hashes_and_fixed_strategy(tmp_path)
     assert config.output_csv == tmp_path / "output" / "xic_results.csv"
     assert config.signal_processing_method == "gaussian"
     assert config.signal_processing_window_points == 9
-    assert config.config_hash == compute_config_hash(
-        tmp_path / "config/targets.csv", tmp_path / "config/settings.csv"
-    )
     assert config.target_config_hash == compute_target_config_hash(
         tmp_path / "config/targets.csv"
     )

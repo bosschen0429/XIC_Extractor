@@ -6,14 +6,14 @@ diaries.
 
 [`processing-lineage.md`](processing-lineage.md) owns the workflow-neutral
 request/attempt/artifact/delivery identity and retention contract. This page
-owns Targeted workbook run metadata. A workbook config hash is not a complete
-lineage seal.
+owns Targeted workbook run metadata. A workbook target config hash is not a
+complete lineage seal.
 
 ## Contract
 
-- `config_hash` and `target_config_hash` are configuration fragments. The two
-  hashes are not a complete method record and do not reproduce a run.
-- A generated timestamp, config hash, output path, or successful process exit
+- `target_config_hash` is a target-list display fragment. It is not a complete
+  method record and does not reproduce a run.
+- A generated timestamp, target config hash, output path, or successful process exit
   is not a canonical processing-attempt or delivery identity.
 - A point-in-time validation packet must distinguish the evaluated revision
   from the revision that sealed the reviewed evidence of the packet.
@@ -46,7 +46,7 @@ lineage seal.
 | Surface | Role |
 | --- | --- |
 | `Run Metadata` workbook sheet | Human-readable run metadata |
-| `config_hash` / `target_config_hash` | Configuration and target fragments |
+| `target_config_hash` | Target-list display fragment |
 | CLI arguments and runner config | Run inputs and behavior surface |
 | Output schema versions | Contract for produced CSV/TSV/workbook sidecars |
 

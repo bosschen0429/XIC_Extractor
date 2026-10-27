@@ -84,7 +84,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
-                run_spec_id="processing-run:" + "0" * 64,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,
@@ -174,7 +173,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             job=result.job,
             resource_key=None,
             initial_requires_raw=False,
-            observer=workers._PartitionWorkObserver(result.job.processing_owners),
+            observer=workers._PartitionAcquisitionObserver(),
             adapter_result=result.adapter_result,
         )
         for result in initial.result[1].sample_results
@@ -307,7 +306,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
-                run_spec_id="processing-run:" + "0" * 64,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,

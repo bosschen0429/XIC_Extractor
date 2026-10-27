@@ -15,7 +15,6 @@ from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     BatchXICAdapter,
     TraceAcquisitionBatch,
-    acquired_trace_content_id,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -57,6 +56,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
+    PhysicalSegment,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.xic_models import XICRequest
@@ -146,7 +146,6 @@ def capture_ms1_candidates(
     groups: Iterable[DiscoverySeedGroup],
     *,
     acquisition_source: AcquisitionSourceIdentity,
-    run_spec_id: str,
     settings: DiscoverySettings,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
     signal_processing_profile: SignalProcessingProfile,
@@ -154,8 +153,6 @@ def capture_ms1_candidates(
 ) -> _DiscoveryMs1AcquisitionResult:
     """Resolve CID-NL hits against shared physical capture, then project evidence."""
 
-    if not run_spec_id:
-        raise ValueError("canonical physical bindings require run_spec_id")
     group_tuple = tuple(groups)
     plans = _discovery_ms1_request_plan(
         group_tuple,
@@ -345,7 +342,6 @@ def capture_ms1_candidates(
     physical_indices = [retained_ordinals[index] for index in physical_indices]
     physical_bindings = tuple(
         DiscoveryCandidatePhysicalBinding(
-            run_spec_id=run_spec_id,
             acquisition_source=acquisition_source,
             final_ordinal=binding.final_ordinal,
             candidate=replace(
@@ -539,16 +535,15 @@ def _groups_for_physical_peaks(
     settings: DiscoverySettings,
 ) -> tuple[DiscoverySeedGroup, ...]:
     """Partition a seed group by owner-selected physical segments, not RT gaps."""
-    by_segment: dict[tuple[str, ...], list[DiscoverySeed]] = {}
+    by_segment: dict[tuple[PhysicalSegment, ...], list[DiscoverySeed]] = {}
     for seed in group.seeds:
         question = mint_physical_peak_question(
             evaluation.prepared,
             evaluation.segment_universe,
-            selection_subject_id=evaluation.question.selection_subject_id,
             query_rt_min=seed.rt,
             selection_policy_version=evaluation.question.selection_policy_version,
         )
-        key = question.admissible_segment_ids
+        key = question.admissible_segments
         # Unmapped or ambiguous seeds retain their own diagnostic lineage;
         # they are not members of the representative's resolved peak.
         by_segment.setdefault(key, []).append(seed)
@@ -828,7 +823,7 @@ def _cid_nl_physical_record(
     return DiscoveryPhysicalFactRecord(
         work_item=DiscoveryPhysicalWorkItem(
             work_ordinal=captured.work_ordinal,
-            acquisition_source_id=coordinate.acquisition_source_id,
+            acquisition_source_id=coordinate.capability.acquisition_source.acquisition_source_id,
             sample_stem=group.sample_stem,
             best_ms2_scan_id=select_representative_seed(group.seeds).scan_number,
             precursor_mz=group.precursor_mz,
@@ -836,8 +831,6 @@ def _cid_nl_physical_record(
             query_rt_min=captured.search.query_rt_min,
             context_rt_start_min=question.context_rt_start_min,
             context_rt_end_min=question.context_rt_end_min,
-            trace_coordinate_id=coordinate.trace_coordinate_id,
-            acquired_trace_content_id=acquired_trace_content_id(acquired),
             xic_mz=request.mz,
             xic_rt_min=request.rt_min,
             xic_rt_max=request.rt_max,

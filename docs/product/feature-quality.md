@@ -32,29 +32,30 @@ part of this rule.
 ## Input and delivery contract
 
 The input is the finalized `alignment_matrix.tsv`, its current bound
-`alignment_matrix_identity.tsv`, and an explicit canonical sample metadata TSV.
-The Matrix and identity must pass the existing complete ordered census and row
-binding validator. A production export without its identity sidecar cannot be
-used; select an Alignment output level that emits identity for future runs.
+`alignment_review.tsv`, and an explicit canonical sample metadata TSV.
+The Review Matrix subset must pass the complete row-index census and Matrix
+row-binding validator. Review can also contain non-Matrix groups with blank
+`matrix_row_index`; its physical row order is not used for the join. A production
+export without Review cannot be used; select an output level that emits Review.
 This command never reconstructs identity from rounded m/z or RT.
 
-The output directory must be new. The bundle schema is `xic_feature_quality.v1`:
+The output directory must be new. The bundle schema is `xic_feature_quality.v2`:
 
 | File | Meaning |
 | --- | --- |
 | `full_matrix.tsv` | All original rows, sample columns and numeric/missing tokens |
-| `full_matrix_identity.tsv` | Original bound identity table, without renumbering |
+| `full_review.tsv` | Original Review table, including non-Matrix groups, without renumbering |
 | `analysis_matrix.tsv` | Kept rows in original order, with all sample columns |
-| `analysis_features.tsv` | Selected row position → source row position, original `peak_hypothesis_id` and original row-binding digest |
+| `analysis_features.tsv` | Selected row position → source row position, original `feature_id` and original row-binding digest |
 | `feature_quality.tsv` | Metric and keep/drop reason for every source feature |
 | `sample_metadata.tsv` | Matrix column → canonical sample identity, role, group, order and exclusion data |
 | `feature_quality_manifest.json` | Schema, stages, exact input snapshot hashes, rule, eligible sample columns, counts and output file hashes |
 
-`peak_hypothesis_id` is scoped by the source Matrix identified in the manifest;
+`feature_id` is scoped by the source Matrix identified in the manifest;
 it does not assert identity across independent reruns. The selected Matrix is a
 row selection of a finalized product, not a new Alignment finalization. Use
 `analysis_features.tsv` to recover the original row position; its source indices
-can have gaps. The full Matrix and identity remain independently valid under
+can have gaps. The full Matrix and Review remain independently valid under
 the original binding contract. Serialization may change TSV line endings, but
 never numeric tokens, row identities, column order or values.
 
@@ -69,13 +70,13 @@ filtering. QC drift correction and normalization belong to the analysis backend.
 In the Untargeted HTML view, export the sample table as TSV with **匯出樣品資料**.
 After Alignment finishes, choose **Feature Quality** in the results, select that TSV,
 enter an explicit minimum finite-value fraction and choose a new output folder.
-The workbench binds the Matrix and identity from the completed result and runs the
+The workbench binds the Matrix and Review from the completed result and runs the
 same `export_feature_quality` owner in a background thread. It opens the output
 folder only after the manifest is published. Export failures remain in the
 dialog for correction. No scientific threshold is preselected.
 
 HTML Alignment uses the existing `machine` output level to retain its bound
-identity. Older results without identity cannot be filtered through this
+Review. Older results without Review cannot be filtered through this
 action; rerun Alignment rather than reconstructing identity from coordinates.
 
 Run `xic-feature-quality --help` for the command interface. The equivalent
@@ -84,6 +85,6 @@ module entry is `python -m scripts.run_feature_quality`; the Python API is
 
 Verification compares independently calculated fractions and selected original
 rows, including zero versus missing, role/exclusion denominators and exact
-sample attribution. Stale identity, missing metadata and an invalid threshold
+sample attribution. Stale Review binding, missing metadata and an invalid threshold
 must fail before publication. These checks prove engineering behavior, not a
 method-independent scientific threshold or biological readiness.

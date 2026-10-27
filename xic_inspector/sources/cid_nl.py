@@ -17,6 +17,7 @@ from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationMetadata,
+    RecordKey,
     open_review_cells,
     read_cid_nl_curves,
     read_cid_nl_explanation,
@@ -76,21 +77,24 @@ class CidNlSource:
         self._row_samples = (
             read_review_row_samples(path, self.summary) if self._query_only else {}
         )
-        self._selection_cells: Callable[[str], dict[str, dict[str, Any]]] | None = None
-        self.request_id = self.summary.get("processing_request_id", "")
+        self._selection_cells: (
+            Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
+        ) = None
         self.attempt_id = self.summary.get("processing_attempt_id", "")
         self.records = metadata.records
         self.candidates = metadata.candidates
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
-        self.record_links: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        self.record_links: dict[tuple[str, RecordKey], set[tuple[str, str]]] = {}
         self.initial_edge_refs_by_member: dict[str, set[str]] = {}
         self.sample_labels: dict[str, str] = {}
-        self.row_cell_decisions: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self.row_cell_decisions: dict[
+            tuple[str, str], dict[RecordKey, dict[str, Any]]
+        ] = {}
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
         self.calibration_by_sample_stem: dict[str, tuple[tuple[float, float], ...]] = {}
 
         for sample in self.summary.get("samples", []):
-            sid = sample.get("canonical_sample_identity_id")
+            sid = sample.get("sample_key")
             sample_stem = sample.get("sample_stem")
             if isinstance(sid, str) and isinstance(sample_stem, str):
                 self.sample_labels[sid] = sample_stem
@@ -100,15 +104,15 @@ class CidNlSource:
             if isinstance(sample_stem, str) and sample_stem:
                 self.sample_labels.setdefault(sid, sample_stem)
         for edge_ref, edge in self.records.get("initial_edges", {}).items():
-            for field in ("left_member_subject_id", "right_member_subject_id"):
+            for field in ("left_subject_id", "right_subject_id"):
                 member_id = edge.get(field)
                 if isinstance(member_id, str):
                     self.initial_edge_refs_by_member.setdefault(member_id, set()).add(
-                        edge_ref
+                        cast(str, edge_ref)
                     )
         for rid, fact in self.records.get("cell_decisions", {}).items():
-            group_id = fact.get("group_hypothesis_id")
-            row_key_id = fact.get("row_key_id")
+            group_id = fact.get("feature_id")
+            row_key_id = fact.get("feature_id")
             if isinstance(group_id, str) and isinstance(row_key_id, str):
                 self.row_cell_decisions.setdefault((group_id, row_key_id), {})[rid] = (
                     fact
@@ -139,7 +143,7 @@ class CidNlSource:
         grouped = set()
         # Construct the run population before applying sample scope.
         for rid, payload in self.records.get("rows", {}).items():
-            gid = payload.get("group_hypothesis_id")
+            gid = payload.get("feature_id")
             row_groups.add(gid)
             keys = self._linked("rows", rid)
             grouped.update(keys)
@@ -184,7 +188,9 @@ class CidNlSource:
                     if peer_ref != item_ref
                 }
                 for peer_ref in peer_refs:
-                    peer_edges[item_ref].setdefault(peer_ref, set()).add(edge_ref)
+                    peer_edges[item_ref].setdefault(peer_ref, set()).add(
+                        cast(str, edge_ref)
+                    )
         for item in items:
             peers = peer_edges[item.serialized_ref]
             ranked = sorted(
@@ -292,7 +298,7 @@ class CidNlSource:
         decision = evidence.get("decision")
         return 0 if decision in {"blocked_edge", "split_edge", "split"} else 1
 
-    def _linked(self, kind: str, rid: str) -> set[tuple[str, str]]:
+    def _linked(self, kind: str, rid: RecordKey) -> set[tuple[str, str]]:
         return set(self.record_links.get((kind, rid), ()))
 
     def _witnesses(self, kind, identifier, gid, scoped) -> list[Witness]:
@@ -300,9 +306,9 @@ class CidNlSource:
         group = self.records.get("final_groups", {}).get(gid, {})
         members_by_sample: dict[str, set[str]] = {}
         for member in group.get("member_subjects", []):
-            members_by_sample.setdefault(
-                member.get("canonical_sample_identity_id"), set()
-            ).update(member.get("physical_observation_ids", []))
+            members_by_sample.setdefault(member.get("sample_key"), set()).update(
+                member.get("physical_peak_keys", [])
+            )
         witnesses: list[Witness] = []
         for cid, sid in scoped:
             candidate = self.candidates[cid, sid]
@@ -314,13 +320,13 @@ class CidNlSource:
             )
             witnesses.extend(
                 Witness(
-                    canonical_sample_identity_id=sid,
+                    sample_key=sid,
                     candidate_id=cid,
                     group_hypothesis_id=gid,
                     row_key_id=identifier if kind == "row" else None,
                     precursor_mz=candidate.get("precursor_mz"),
                     rt_apex_min=observation.get("rt_apex_min"),
-                    observation_id=observation.get("peak_observation_content_id"),
+                    observation_id=observation.get("physical_peak_key"),
                     sample_stem=candidate.get("sample_stem"),
                 )
                 for observation in observations
@@ -338,14 +344,12 @@ class CidNlSource:
             sample_ids.update(self._row_samples.get(identifier, set()) & scope)
             _, ref = build_canonical_ref(
                 kind,
-                self.request_id,
                 self.attempt_id,
                 identifier,
                 sample_id=next(iter(keys))[1] if kind == "candidate" else None,
             )
             return CanonicalItem(
                 kind=kind,
-                request_id=self.request_id,
                 attempt_id=self.attempt_id,
                 identifier=identifier,
                 serialized_ref=ref,
@@ -360,7 +364,7 @@ class CidNlSource:
             cells = tuple(
                 cell
                 for cell in self._selection_cells(identifier).values()
-                if cell["canonical_sample_identity_id"] in scope
+                if cell["sample_key"] in scope
             )
         flags = selection_sample_facts(
             kind,
@@ -371,7 +375,7 @@ class CidNlSource:
             self.records,
             self.links,
             cells,
-            {w.canonical_sample_identity_id for w in witnesses if w.observation_id},
+            {w.sample_key for w in witnesses if w.observation_id},
         )
         sample_ids = set(flags)
         observed = {sid for sid, flag in flags.items() if flag & OBSERVED}
@@ -392,14 +396,12 @@ class CidNlSource:
         members = group.get("member_subjects", [])
         _, ref = build_canonical_ref(
             kind,
-            self.request_id,
             self.attempt_id,
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
         )
         return CanonicalItem(
             kind=kind,
-            request_id=self.request_id,
             attempt_id=self.attempt_id,
             identifier=identifier,
             serialized_ref=ref,
@@ -432,29 +434,28 @@ class CidNlSource:
         self, kind, identifier, gid, keys, scope, payload
     ) -> CanonicalItem:
         scoped = sorted(key for key in keys if key[1] in scope)
-        facts: dict[tuple[str, str], dict[str, Any]] = {}
-        fact_samples: dict[tuple[str, str], set[str]] = {}
+        facts: dict[tuple[str, RecordKey], dict[str, Any]] = {}
+        fact_samples: dict[tuple[str, RecordKey], set[str]] = {}
         cell_bound_samples: set[str] = set()
+        rid: RecordKey
         witnesses = self._witnesses(kind, identifier, gid, scoped)
         for cid, sid in scoped:
             linked = self.links.get((cid, sid), set())
             for record_kind, rid in linked:
                 fact = self.records.get(record_kind, {}).get(rid, {})
-                fact_sid = fact.get(
-                    "canonical_sample_identity_id", fact.get("sample_id")
-                )
+                fact_sid = fact.get("sample_key", fact.get("sample_id"))
                 if fact_sid is not None and fact_sid != sid:
                     continue
-                if fact.get("group_hypothesis_id") not in (None, gid):
+                if fact.get("feature_id") not in (None, gid):
                     continue
-                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+                if kind == "row" and fact.get("feature_id") not in (None, identifier):
                     continue
                 facts[record_kind, rid] = fact
                 fact_samples.setdefault((record_kind, rid), set()).add(sid)
         if kind == "row" and isinstance(gid, str):
             indexed_cells = self.row_cell_decisions.get((gid, identifier), {})
             for rid, fact in sorted(indexed_cells.items()):
-                sid = fact.get("canonical_sample_identity_id", fact.get("sample_id"))
+                sid = fact.get("sample_key", fact.get("sample_id"))
                 if not isinstance(sid, str) or sid not in scope:
                     continue
                 facts["cell_decisions", rid] = fact
@@ -469,12 +470,12 @@ class CidNlSource:
                 if not isinstance(observation, dict):
                     continue
                 observation_sid = observation.get(
-                    "canonical_sample_identity_id", observation.get("sample_id")
+                    "sample_key", observation.get("sample_id")
                 )
                 if (
-                    observation.get("group_hypothesis_id") != gid
+                    observation.get("feature_id") != gid
                     or observation_sid != sid
-                    or observation.get("row_key_id") not in (None, identifier)
+                    or observation.get("feature_id") not in (None, identifier)
                 ):
                     continue
                 facts["cell_observations", observation_id] = observation
@@ -522,9 +523,7 @@ class CidNlSource:
         item_sample_ids = {sid for _, sid in scoped} | cell_bound_samples
         for sid in sorted(item_sample_ids):
             local_cells = [
-                c
-                for c in cells
-                if c.get("canonical_sample_identity_id", c.get("sample_id")) == sid
+                c for c in cells if c.get("sample_key", c.get("sample_id")) == sid
             ]
             local_attention = any(
                 sid in trigger.get("sample_ids", ()) for trigger in triggers
@@ -553,7 +552,6 @@ class CidNlSource:
             )
         _, ref = build_canonical_ref(
             kind,
-            self.request_id,
             self.attempt_id,
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
@@ -567,15 +565,14 @@ class CidNlSource:
             for sid in sorted(item_sample_ids)
         }
         initial_member_ids = {
-            member.get("member_subject_id")
+            member.get("subject_id")
             for initial_ref, fact in self.records.get("initial_groups", {}).items()
             if any(
                 ("initial_groups", initial_ref) in self.links.get(key, set())
                 for key in scoped
             )
             for member in fact.get("member_subjects", [])
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         }
         final_members = group.get("member_subjects")
         review_summary = {
@@ -594,7 +591,6 @@ class CidNlSource:
         }
         return CanonicalItem(
             kind=kind,
-            request_id=self.request_id,
             attempt_id=self.attempt_id,
             identifier=identifier,
             serialized_ref=ref,
@@ -609,10 +605,7 @@ class CidNlSource:
                 "sample_status": sample_status,
                 "support_origins": origins,
                 "review_summary": review_summary,
-                "initial_edge_coverage": self.summary.get(
-                    "initial_edge_coverage",
-                    {"policy": "legacy-unspecified", "unlisted_pairs": "unrecorded"},
-                ),
+                "initial_edge_coverage": self.summary["initial_edge_coverage"],
                 "records": [
                     {"kind": k, "ref": r, "facts": f}
                     for (k, r), f in sorted(facts.items())
@@ -625,32 +618,28 @@ class CidNlSource:
         observation_refs = {
             witness.observation_id
             for witness in witnesses
-            if witness.canonical_sample_identity_id == sample_id
-            and witness.observation_id
+            if witness.sample_key == sample_id and witness.observation_id
         }
         observation_refs.update(
             observation_id
             for member in group.get("member_subjects", [])
-            if member.get("canonical_sample_identity_id") == sample_id
-            for observation_id in member.get("physical_observation_ids", [])
+            if member.get("sample_key") == sample_id
+            for observation_id in member.get("physical_peak_keys", [])
             if isinstance(observation_id, str)
         )
         for (record_kind, _), fact in facts.items():
-            if (
-                record_kind == "cell_decisions"
-                and fact.get("canonical_sample_identity_id") == sample_id
-            ):
+            if record_kind == "cell_decisions" and fact.get("sample_key") == sample_id:
                 observation_refs.update(fact.get("observation_ids", ()))
             if record_kind != "cell_observations":
                 continue
             for predecessor in fact.get("predecessor_cells", []):
                 content = predecessor.get("content", {})
                 if (
-                    content.get("canonical_sample_identity_id") == sample_id
-                    and content.get("group_hypothesis_id") == group_id
-                    and isinstance(content.get("peak_observation_content_id"), str)
+                    content.get("sample_key") == sample_id
+                    and content.get("feature_id") == group_id
+                    and isinstance(content.get("physical_peak_key"), str)
                 ):
-                    observation_refs.add(content["peak_observation_content_id"])
+                    observation_refs.add(content["physical_peak_key"])
         return sorted(observation_refs)
 
     @staticmethod
@@ -659,7 +648,7 @@ class CidNlSource:
             fact["support_origin"]
             for (kind, _), fact in facts.items()
             if kind == "cell_decisions"
-            and fact.get("canonical_sample_identity_id") == sample_id
+            and fact.get("sample_key") == sample_id
             and "support_origin" in fact
         }
         if recorded:
@@ -686,19 +675,19 @@ class CidNlSource:
         captures = []
         methods = []
         for (record_kind, ref), fact in facts.items():
-            fact_sid = fact.get("canonical_sample_identity_id", fact.get("sample_id"))
+            fact_sid = fact.get("sample_key", fact.get("sample_id"))
             if fact_sid != sample_id:
                 continue
             if (
                 record_kind == "capture_evidence"
-                and fact.get("peak_observation_content_id") in observation_set
+                and fact.get("physical_peak_key") in observation_set
             ):
                 captures.append((ref, fact))
             elif (
                 record_kind == "method_assessments"
                 and fact.get("method_result") == "SUPPORT"
             ):
-                peak_ids = fact.get("candidate_peak_content_ids", [])
+                peak_ids = fact.get("candidate_physical_peak_keys", [])
                 if isinstance(peak_ids, list) and observation_set.intersection(
                     peak_ids
                 ):
@@ -747,7 +736,7 @@ class CidNlSource:
                 candidate_keys=tuple(
                     sorted(
                         {
-                            (w.candidate_id, w.canonical_sample_identity_id)
+                            (w.candidate_id, w.sample_key)
                             for item in expanded
                             for w in item.witnesses
                         }
@@ -803,9 +792,7 @@ class CidNlSource:
                     capture["record_id"]
                 )
             for witness in item.witnesses:
-                refs = refs_by_sample.setdefault(
-                    witness.canonical_sample_identity_id, set()
-                )
+                refs = refs_by_sample.setdefault(witness.sample_key, set())
                 if witness.observation_id:
                     refs.add(witness.observation_id)
                 elif item.kind == "candidate":
@@ -822,11 +809,11 @@ class CidNlSource:
                     )
                 )
             present = {
-                (curve.get("sample_id"), curve.get("peak_observation_content_id"))
+                (curve.get("sample_id"), curve.get("physical_peak_key"))
                 for curve in raw_curves
             }
             promised = {
-                (w.canonical_sample_identity_id, w.observation_id)
+                (w.sample_key, w.observation_id)
                 for item in items
                 for w in item.witnesses
                 if w.observation_id
@@ -853,10 +840,7 @@ class CidNlSource:
                 )
             for curve in raw_curves:
                 provenance = curve.get("provenance", {})
-                for name, expected in (
-                    ("processing_request_id", self.request_id),
-                    ("processing_attempt_id", self.attempt_id),
-                ):
+                for name, expected in (("processing_attempt_id", self.attempt_id),):
                     if name in provenance and provenance[name] != expected:
                         raise ExplanationError(f"Selected curve crosses {name} binding")
         rendered = []
@@ -909,33 +893,29 @@ class CidNlSource:
         return rendered
 
     def _relationship_members(self, item: CanonicalItem) -> list[dict[str, Any]]:
-        group_id = item.details["source"].get("group_hypothesis_id")
+        group_id = item.details["source"].get("feature_id")
         group = self.records.get("final_groups", {}).get(group_id, {})
         return [
             {
-                "member_subject_id": member["member_subject_id"],
-                "sample_id": member.get("canonical_sample_identity_id"),
-                "sample_label": self._member_sample_label(
-                    member["member_subject_id"], member
-                ),
+                "subject_id": member["subject_id"],
+                "sample_id": member.get("sample_key"),
+                "sample_label": self._member_sample_label(member["subject_id"], member),
             }
             for member in group.get("member_subjects", [])
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         ]
 
     def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
         source = item.details["source"]
-        group_id = source.get("group_hypothesis_id")
+        group_id = source.get("feature_id")
         group = self.records.get("final_groups", {}).get(group_id, {})
         members = group.get("member_subjects")
         if not isinstance(members, list):
             return []
         members_by_id = {
-            member["member_subject_id"]: member
+            member["subject_id"]: member
             for member in members
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         }
         edge_refs = {
             edge_ref
@@ -945,8 +925,8 @@ class CidNlSource:
         projected = []
         for edge_ref in sorted(edge_refs):
             edge = self.records.get("initial_edges", {}).get(edge_ref, {})
-            left_id = edge.get("left_member_subject_id")
-            right_id = edge.get("right_member_subject_id")
+            left_id = edge.get("left_subject_id")
+            right_id = edge.get("right_subject_id")
             if left_id not in members_by_id or right_id not in members_by_id:
                 continue
             # Membership above admits only the string IDs collected from members.
@@ -960,8 +940,8 @@ class CidNlSource:
             projected.append(
                 {
                     "edge_ref": edge_ref,
-                    "left_member_subject_id": left_id,
-                    "right_member_subject_id": right_id,
+                    "left_subject_id": left_id,
+                    "right_subject_id": right_id,
                     "left_sample_label": self._member_sample_label(
                         left_id, members_by_id[left_id]
                     ),
@@ -985,7 +965,7 @@ class CidNlSource:
         return projected
 
     def _member_sample_label(self, member_id: str, member: dict[str, Any]) -> str:
-        sample_id = member.get("canonical_sample_identity_id")
+        sample_id = member.get("sample_key")
         if isinstance(sample_id, str) and sample_id in self.sample_labels:
             return self.sample_labels[sample_id]
         for field in ("sample_label", "sample_stem", "label"):
@@ -995,13 +975,9 @@ class CidNlSource:
         return sample_id if isinstance(sample_id, str) and sample_id else member_id
 
     def _project_curves(self, item, raw_curves, captures):
-        keys = {
-            (w.candidate_id, w.canonical_sample_identity_id) for w in item.witnesses
-        }
+        keys = {(w.candidate_id, w.sample_key) for w in item.witnesses}
         observation_keys = {
-            (w.observation_id, w.canonical_sample_identity_id)
-            for w in item.witnesses
-            if w.observation_id
+            (w.observation_id, w.sample_key) for w in item.witnesses if w.observation_id
         }
         capture_keys = {
             (capture["sample_id"], capture["payload_id"]) for capture in captures
@@ -1011,7 +987,7 @@ class CidNlSource:
             for curve in raw_curves
             if (curve.get("sample_id"), curve.get("payload_id")) in capture_keys
             or (
-                (curve.get("peak_observation_content_id"), curve.get("sample_id"))
+                (curve.get("physical_peak_key"), curve.get("sample_id"))
                 in observation_keys
                 if observation_keys
                 else (curve.get("candidate_id"), curve.get("sample_id")) in keys
@@ -1030,9 +1006,8 @@ class CidNlSource:
                         in self.links.get((cid, sid), set())
                         or any(
                             witness.candidate_id == cid
-                            and witness.canonical_sample_identity_id == sid
-                            and witness.observation_id
-                            == curve.get("peak_observation_content_id")
+                            and witness.sample_key == sid
+                            and witness.observation_id == curve.get("physical_peak_key")
                             for witness in item.witnesses
                             if witness.observation_id
                         )
@@ -1042,10 +1017,9 @@ class CidNlSource:
             projected_curves.append(projected)
         return projected_curves
 
-    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[str]:
+    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[RecordKey]:
         item_keys = {
-            (witness.candidate_id, witness.canonical_sample_identity_id)
-            for witness in item.witnesses
+            (witness.candidate_id, witness.sample_key) for witness in item.witnesses
         }
         refs = []
         for record in item.details["records"]:
@@ -1062,9 +1036,7 @@ class CidNlSource:
             if record["kind"] != "cell_decisions":
                 continue
             facts = record["facts"]
-            recorded_sample = facts.get(
-                "canonical_sample_identity_id", facts.get("sample_id")
-            )
+            recorded_sample = facts.get("sample_key", facts.get("sample_id"))
             if recorded_sample is not None:
                 applies = recorded_sample == sample_id
             else:
@@ -1171,9 +1143,7 @@ class CidNlSource:
         item_keys = self._item_keys(item)
         linked_keys = self._record_link_keys(item, record)
         facts = record["facts"]
-        recorded_sample = facts.get(
-            "canonical_sample_identity_id", facts.get("sample_id")
-        )
+        recorded_sample = facts.get("sample_key", facts.get("sample_id"))
         if recorded_sample is not None:
             sample_ids = [recorded_sample] if recorded_sample in item.sample_ids else []
             linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
@@ -1192,8 +1162,7 @@ class CidNlSource:
     @staticmethod
     def _item_keys(item: CanonicalItem) -> set[tuple[str, str]]:
         return {
-            (witness.candidate_id, witness.canonical_sample_identity_id)
-            for witness in item.witnesses
+            (witness.candidate_id, witness.sample_key) for witness in item.witnesses
         }
 
     def _record_link_keys(
@@ -1205,7 +1174,7 @@ class CidNlSource:
             if (record["kind"], record["ref"]) in self.links.get(key, set())
         }
         recorded_sample = record["facts"].get(
-            "canonical_sample_identity_id", record["facts"].get("sample_id")
+            "sample_key", record["facts"].get("sample_id")
         )
         if recorded_sample is not None:
             linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
@@ -1218,10 +1187,8 @@ class CidNlSource:
         result = {
             "sample_id": payload.get("sample_id"),
             "candidate_id": payload.get("candidate_id"),
-            "evidence_ref": payload.get(
-                "payload_id", payload.get("peak_observation_content_id")
-            ),
-            "observation_id": payload.get("peak_observation_content_id"),
+            "evidence_ref": payload.get("payload_id", payload.get("physical_peak_key")),
+            "observation_id": payload.get("physical_peak_key"),
             "kind": payload.get("kind"),
             "stage_label": presentation.curve_stage_label(payload.get("kind")),
             "raw_rts": rts,

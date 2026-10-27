@@ -6,7 +6,6 @@ from typing import Literal
 from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
-    validate_peak_hypothesis_id_selection_authority,
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult
@@ -39,12 +38,6 @@ class PeakHypothesisSelectionDecision:
     compatibility_oracle: SelectionDecisionCompatibilityOracle = (
         "legacy_peak_scoring_current_oracle"
     )
-
-    def __post_init__(self) -> None:
-        validate_peak_hypothesis_id_selection_authority(
-            self.selected_candidate_id,
-            consumer="PeakHypothesisSelectionDecision",
-        )
 
 
 def selection_decision_from_hypothesis(

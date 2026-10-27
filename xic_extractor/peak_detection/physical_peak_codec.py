@@ -17,17 +17,10 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     _physical_operation,
     _physical_state,
+    _physical_vector,
     evaluate_physical_peak,
     prepare_physical_signal,
     validate_bounded_physical_peak_evaluation,
-)
-from xic_extractor.peak_detection.physical_peak_identity import (
-    _canonical_physical_json_bytes,
-    _physical_float_text,
-    _physical_question_basis,
-    _physical_segment_basis,
-    _physical_vector,
-    validate_physical_trace_content_id,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakAnswer,
@@ -50,8 +43,7 @@ _PERSISTED_PHYSICAL_KEYS = (
     "trace",
     "evaluation",
 )
-_PERSISTED_PROFILE_KEYS = ("profile_hash", "profile_id", "content")
-_PERSISTED_TRACE_KEYS = ("trace_content_id", "rt", "raw")
+_PERSISTED_TRACE_KEYS = ("rt", "raw")
 _PERSISTED_EVALUATION_KEYS = (
     "state",
     "reason",
@@ -63,17 +55,8 @@ _PERSISTED_EVALUATION_KEYS = (
     "integration",
     "operations",
 )
-_PREPARED_PROJECTION_KEYS = (
-    "schema_version",
-    "trace_content_id",
-    "profile_id",
-    "prepared_signal_id",
-    "trace_point_count",
-    "state",
-    "reason",
-)
+_PREPARED_PROJECTION_KEYS = ("schema_version", "state", "reason")
 _SEGMENT_KEYS = (
-    "physical_segment_id",
     "schema_version",
     "start_index",
     "end_index",
@@ -90,43 +73,21 @@ _SEGMENT_KEYS = (
 )
 _SEGMENT_UNIVERSE_KEYS = (
     "schema_version",
-    "prepared_signal_id",
     "context_rt_start_min",
     "context_rt_end_min",
     "state",
     "reason",
     "segments",
-    "segment_universe_id",
 )
 _QUESTION_KEYS = (
     "schema_version",
-    "trace_content_id",
-    "prepared_signal_id",
-    "segment_universe_id",
-    "segment_ids",
-    "selection_subject_id",
     "query_rt_min",
-    "context_rt_start_min",
-    "context_rt_end_min",
-    "admissible_segment_ids",
+    "admissible_segment_indices",
     "selection_policy_version",
-    "physical_question_id",
 )
-_ANSWER_KEYS = (
-    "schema_version",
-    "state",
-    "reason",
-    "prepared_signal_id",
-    "physical_question_id",
-    "physical_segment_id",
-    "physical_answer_id",
-)
+_ANSWER_KEYS = ("schema_version", "state", "reason", "selected_segment_index")
 _FACT_KEYS = (
     "schema_version",
-    "prepared_signal_id",
-    "physical_question_id",
-    "physical_answer_id",
-    "physical_segment_id",
     "apex_rt_min",
     "left_rt_min",
     "right_rt_min",
@@ -134,10 +95,6 @@ _FACT_KEYS = (
     "scan_support_count",
     "area_counts_seconds",
     "area_source",
-    "relative_shape_schema_version",
-    "relative_shape_point_count",
-    "relative_shape_content_hash",
-    "fact_content_id",
 )
 _INTEGRATION_KEYS = (
     "rt_left_min",
@@ -180,12 +137,10 @@ def rehydrate_physical_peak_evaluation(
     prepared_result = prepare_physical_signal(
         rt_values,
         intensity_values,
-        trace_content_id=expected.prepared.trace_content_id,
         profile=profile,
     )
     actual = evaluate_physical_peak(
         prepared_result,
-        selection_subject_id=expected.question.selection_subject_id,
         query_rt_min=expected.question.query_rt_min,
         request_context_rt_start_min=request_context_rt_start_min,
         request_context_rt_end_min=request_context_rt_end_min,
@@ -202,7 +157,13 @@ def rehydrate_physical_peak_evaluation(
         actual = replace(
             actual, integration=replace(actual.integration, signal_quality=None)
         )
-    if actual != expected:
+    if (
+        not _same_trace_values(actual.prepared.rt, expected.prepared.rt)
+        or not _same_trace_values(actual.prepared.raw, expected.prepared.raw)
+        or actual.prepared.profile != expected.prepared.profile
+        or _physical_evaluation_payload(actual)
+        != _physical_evaluation_payload(expected)
+    ):
         raise ValueError(
             "persisted physical evaluation does not match live owner result"
         )
@@ -225,12 +186,11 @@ def serialize_physical_peak_evaluation(
     rt = _physical_vector(rt_values, field="rt_values")
     raw = _physical_vector(intensity_values, field="intensity_values")
     validate_bounded_physical_peak_evaluation(evaluation)
-    validate_physical_trace_content_id(
-        evaluation.prepared.trace_content_id,
-        rt,
-        raw,
-    )
-    if evaluation.prepared.profile_id != profile.profile_id:
+    if not _same_trace_values(rt, evaluation.prepared.rt) or not _same_trace_values(
+        raw, evaluation.prepared.raw
+    ):
+        raise ValueError("physical evaluation crosses RT/raw content")
+    if evaluation.prepared.profile != profile:
         raise ValueError("physical evaluation crosses signal-processing profile")
     return _canonical_physical_json_bytes(
         _persisted_physical_payload(rt, raw, profile, evaluation)
@@ -241,7 +201,6 @@ def deserialize_physical_peak_evaluation(
     payload: bytes | str,
     *,
     expected_profile: SignalProcessingProfile | None = None,
-    expected_trace_content_id: str | None = None,
 ) -> tuple[
     tuple[float, ...],
     tuple[float, ...],
@@ -266,19 +225,9 @@ def deserialize_physical_peak_evaluation(
     if root["schema_version"] != _PERSISTED_PHYSICAL_EVALUATION_SCHEMA:
         raise ValueError("unsupported physical evaluation persistence schema")
 
-    profile_envelope = _physical_mapping(root["profile"], label="profile")
-    _require_physical_keys(profile_envelope, _PERSISTED_PROFILE_KEYS, label="profile")
-    profile_content = _physical_mapping(
-        profile_envelope["content"], label="profile content"
-    )
+    profile_content = _physical_mapping(root["profile"], label="profile")
     profile = deserialize_signal_processing_profile(
-        _canonical_physical_json_bytes(profile_content),
-        expected_profile_hash=_physical_text(
-            profile_envelope["profile_hash"], field="profile_hash"
-        ),
-        expected_profile_id=_physical_text(
-            profile_envelope["profile_id"], field="profile_id"
-        ),
+        _canonical_physical_json_bytes(profile_content)
     )
     if expected_profile is not None and profile != expected_profile:
         raise ValueError("persisted physical profile crosses expected run profile")
@@ -293,22 +242,10 @@ def deserialize_physical_peak_evaluation(
         _physical_float_from_text(item, field="trace.raw")
         for item in _physical_list(trace["raw"], label="trace.raw")
     )
-    trace_content_id = _physical_text(
-        trace["trace_content_id"], field="trace_content_id"
-    )
-    validate_physical_trace_content_id(trace_content_id, rt, raw)
-    if (
-        expected_trace_content_id is not None
-        and trace_content_id != expected_trace_content_id
-    ):
-        raise ValueError("persisted trace crosses expected trace identity")
-
     evaluation_value = _physical_mapping(root["evaluation"], label="evaluation")
-    evaluation = physical_evaluation_from_payload(evaluation_value)
-    if evaluation.prepared.trace_content_id != trace_content_id:
-        raise ValueError("persisted physical evaluation crosses trace identity")
-    if evaluation.prepared.profile_id != profile.profile_id:
-        raise ValueError("persisted physical evaluation crosses profile identity")
+    evaluation = physical_evaluation_from_payload(
+        evaluation_value, profile=profile, rt=rt, raw=raw
+    )
     rehydrated = rehydrate_physical_peak_evaluation(
         rt,
         raw,
@@ -317,13 +254,11 @@ def deserialize_physical_peak_evaluation(
         request_context_rt_start_min=evaluation.question.context_rt_start_min,
         request_context_rt_end_min=evaluation.question.context_rt_end_min,
     )
-    # Profile and trace tokens are already canonical and identity-checked.
-    # Keep the live-owner evaluation check above and rebuild its payload, but
-    # reuse the checked inputs instead of converting and hashing them again.
+    # Replay validates the decision. Reuse the parsed inputs for byte-canonical output.
     canonical = _canonical_physical_json_bytes(
         {
             "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
-            "profile": profile_envelope,
+            "profile": profile_content,
             "trace": trace,
             "evaluation": _physical_evaluation_payload(rehydrated),
         }
@@ -341,15 +276,8 @@ def _persisted_physical_payload(
 ) -> dict[str, object]:
     return {
         "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
-        "profile": {
-            "profile_hash": profile.profile_hash,
-            "profile_id": profile.profile_id,
-            "content": json.loads(
-                canonical_signal_processing_profile_bytes(profile).decode("utf-8")
-            ),
-        },
+        "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
         "trace": {
-            "trace_content_id": evaluation.prepared.trace_content_id,
             "rt": [_physical_float_text(item) for item in rt],
             "raw": [_physical_float_text(item) for item in raw],
         },
@@ -371,51 +299,51 @@ def _physical_evaluation_payload(
         "reason": evaluation.reason,
         "prepared": {
             "schema_version": prepared.schema_version,
-            "trace_content_id": prepared.trace_content_id,
-            "profile_id": prepared.profile_id,
-            "prepared_signal_id": prepared.prepared_signal_id,
-            "trace_point_count": prepared.trace_point_count,
             "state": prepared.state,
             "reason": prepared.reason,
         },
         "segment_universe": {
             "schema_version": universe.schema_version,
-            "prepared_signal_id": universe.prepared_signal_id,
             "context_rt_start_min": _physical_float_text(universe.context_rt_start_min),
             "context_rt_end_min": _physical_float_text(universe.context_rt_end_min),
             "state": universe.state,
             "reason": universe.reason,
             "segments": [
-                {
-                    "physical_segment_id": segment.physical_segment_id,
-                    **_physical_segment_basis(segment),
-                }
-                for segment in universe.segments
+                _physical_segment_payload(segment) for segment in universe.segments
             ],
-            "segment_universe_id": universe.segment_universe_id,
         },
         "question": {
-            **_physical_question_basis(question),
-            "physical_question_id": question.physical_question_id,
+            "schema_version": question.schema_version,
+            "query_rt_min": _physical_float_text(question.query_rt_min),
+            "admissible_segment_indices": [
+                universe.segments.index(segment)
+                for segment in question.admissible_segments
+            ],
+            "selection_policy_version": question.selection_policy_version,
+            **(
+                {
+                    "search_rt_window": [
+                        _physical_float_text(value)
+                        for value in question.search_rt_window
+                    ]
+                }
+                if question.search_rt_window is not None
+                else {}
+            ),
         },
         "answer": {
             "schema_version": answer.schema_version,
             "state": answer.state,
             "reason": answer.reason,
-            "prepared_signal_id": answer.prepared_signal_id,
-            "physical_question_id": answer.physical_question_id,
-            "physical_segment_id": answer.physical_segment_id,
-            "physical_answer_id": answer.physical_answer_id,
+            "selected_segment_index": None
+            if answer.selected_segment is None
+            else universe.segments.index(answer.selected_segment),
         },
         "facts": (
             None
             if facts is None
             else {
                 "schema_version": facts.schema_version,
-                "prepared_signal_id": facts.prepared_signal_id,
-                "physical_question_id": facts.physical_question_id,
-                "physical_answer_id": facts.physical_answer_id,
-                "physical_segment_id": facts.physical_segment_id,
                 "apex_rt_min": _physical_float_text(facts.apex_rt_min),
                 "left_rt_min": _physical_float_text(facts.left_rt_min),
                 "right_rt_min": _physical_float_text(facts.right_rt_min),
@@ -423,16 +351,30 @@ def _physical_evaluation_payload(
                 "scan_support_count": facts.scan_support_count,
                 "area_counts_seconds": _physical_float_text(facts.area_counts_seconds),
                 "area_source": facts.area_source,
-                "relative_shape_schema_version": (facts.relative_shape_schema_version),
-                "relative_shape_point_count": facts.relative_shape_point_count,
-                "relative_shape_content_hash": facts.relative_shape_content_hash,
-                "fact_content_id": facts.fact_content_id,
             }
         ),
         "integration": (
             None if integration is None else _integration_payload(integration)
         ),
         "operations": list(evaluation.operations),
+    }
+
+
+def _physical_segment_payload(segment: PhysicalSegment) -> dict[str, object]:
+    return {
+        "schema_version": "physical_segment",
+        "start_index": segment.start_index,
+        "end_index": segment.end_index,
+        "apex_index": segment.apex_index,
+        "left_rt_min": _physical_float_text(segment.left_rt_min),
+        "right_rt_min": _physical_float_text(segment.right_rt_min),
+        "apex_rt_min": _physical_float_text(segment.apex_rt_min),
+        "height": _physical_float_text(segment.height),
+        "scan_support_count": segment.scan_support_count,
+        "area_counts_seconds": _physical_float_text(segment.area_counts_seconds),
+        "segment_class": segment.segment_class,
+        "boundary_stop_reason": segment.boundary_stop_reason,
+        "evidence_sources": list(segment.evidence_sources),
     }
 
 
@@ -469,6 +411,10 @@ def _integration_payload(integration: IntegrationResult) -> dict[str, object]:
 
 def physical_evaluation_from_payload(
     value: Mapping[str, object],
+    *,
+    profile: SignalProcessingProfile,
+    rt: tuple[float, ...],
+    raw: tuple[float, ...],
 ) -> PhysicalPeakEvaluation:
     _require_physical_keys(value, _PERSISTED_EVALUATION_KEYS, label="evaluation")
     prepared_value = _physical_mapping(value["prepared"], label="prepared")
@@ -477,19 +423,9 @@ def physical_evaluation_from_payload(
         schema_version=_physical_text(
             prepared_value["schema_version"], field="prepared.schema_version"
         ),
-        trace_content_id=_physical_text(
-            prepared_value["trace_content_id"], field="prepared.trace_content_id"
-        ),
-        profile_id=_physical_text(
-            prepared_value["profile_id"], field="prepared.profile_id"
-        ),
-        prepared_signal_id=_physical_text(
-            prepared_value["prepared_signal_id"],
-            field="prepared.prepared_signal_id",
-        ),
-        trace_point_count=_physical_integer(
-            prepared_value["trace_point_count"], field="prepared.trace_point_count"
-        ),
+        profile=profile,
+        rt=rt,
+        raw=raw,
         state=_physical_state(prepared_value["state"], field="prepared.state"),
         reason=_physical_text(prepared_value["reason"], field="prepared.reason"),
     )
@@ -510,9 +446,6 @@ def physical_evaluation_from_payload(
             raise ValueError("unsupported physical segment schema")
         segments.append(
             PhysicalSegment(
-                physical_segment_id=_physical_text(
-                    segment["physical_segment_id"], field="physical_segment_id"
-                ),
                 start_index=_physical_integer(
                     segment["start_index"], field="start_index"
                 ),
@@ -549,9 +482,7 @@ def physical_evaluation_from_payload(
         schema_version=_physical_text(
             universe_value["schema_version"], field="universe.schema_version"
         ),
-        prepared_signal_id=_physical_text(
-            universe_value["prepared_signal_id"], field="universe.prepared_signal_id"
-        ),
+        prepared=prepared,
         context_rt_start_min=_physical_float_from_text(
             universe_value["context_rt_start_min"], field="context_rt_start_min"
         ),
@@ -561,9 +492,6 @@ def physical_evaluation_from_payload(
         state=_physical_state(universe_value["state"], field="universe.state"),
         reason=_physical_text(universe_value["reason"], field="universe.reason"),
         segments=tuple(segments),
-        segment_universe_id=_physical_text(
-            universe_value["segment_universe_id"], field="segment_universe_id"
-        ),
     )
     question_value = _physical_mapping(value["question"], label="question")
     bounded_search = (
@@ -571,9 +499,7 @@ def physical_evaluation_from_payload(
     )
     _require_physical_keys(
         question_value,
-        (*_QUESTION_KEYS[:-1], "search_rt_window", _QUESTION_KEYS[-1])
-        if bounded_search
-        else _QUESTION_KEYS,
+        (*_QUESTION_KEYS, "search_rt_window") if bounded_search else _QUESTION_KEYS,
         label="question",
     )
     search_window = None
@@ -589,41 +515,22 @@ def physical_evaluation_from_payload(
         schema_version=_physical_text(
             question_value["schema_version"], field="question.schema_version"
         ),
-        trace_content_id=_physical_text(
-            question_value["trace_content_id"], field="question.trace_content_id"
-        ),
-        prepared_signal_id=_physical_text(
-            question_value["prepared_signal_id"],
-            field="question.prepared_signal_id",
-        ),
-        segment_universe_id=_physical_text(
-            question_value["segment_universe_id"], field="segment_universe_id"
-        ),
-        segment_ids=_physical_text_tuple(
-            question_value["segment_ids"], field="segment_ids"
-        ),
-        selection_subject_id=_physical_text(
-            question_value["selection_subject_id"], field="selection_subject_id"
-        ),
+        universe=universe,
         query_rt_min=_physical_float_from_text(
             question_value["query_rt_min"], field="query_rt_min"
         ),
-        context_rt_start_min=_physical_float_from_text(
-            question_value["context_rt_start_min"], field="context_rt_start_min"
-        ),
-        context_rt_end_min=_physical_float_from_text(
-            question_value["context_rt_end_min"], field="context_rt_end_min"
-        ),
-        admissible_segment_ids=_physical_text_tuple(
-            question_value["admissible_segment_ids"],
-            field="admissible_segment_ids",
+        admissible_segments=tuple(
+            _physical_segment_at_index(
+                item, universe.segments, field="admissible_segment_indices"
+            )
+            for item in _physical_list(
+                question_value["admissible_segment_indices"],
+                label="admissible_segment_indices",
+            )
         ),
         selection_policy_version=_physical_text(
             question_value["selection_policy_version"],
             field="selection_policy_version",
-        ),
-        physical_question_id=_physical_text(
-            question_value["physical_question_id"], field="physical_question_id"
         ),
         search_rt_window=search_window,
     )
@@ -635,17 +542,15 @@ def physical_evaluation_from_payload(
         ),
         state=_physical_state(answer_value["state"], field="answer.state"),
         reason=_physical_text(answer_value["reason"], field="answer.reason"),
-        prepared_signal_id=_physical_text(
-            answer_value["prepared_signal_id"], field="answer.prepared_signal_id"
-        ),
-        physical_question_id=_physical_text(
-            answer_value["physical_question_id"], field="answer.physical_question_id"
-        ),
-        physical_segment_id=_optional_physical_text(
-            answer_value["physical_segment_id"], field="physical_segment_id"
-        ),
-        physical_answer_id=_physical_text(
-            answer_value["physical_answer_id"], field="physical_answer_id"
+        question=question,
+        selected_segment=(
+            None
+            if answer_value["selected_segment_index"] is None
+            else _physical_segment_at_index(
+                answer_value["selected_segment_index"],
+                universe.segments,
+                field="selected_segment_index",
+            )
         ),
     )
     facts = _physical_facts_from_payload(value["facts"])
@@ -668,6 +573,15 @@ def physical_evaluation_from_payload(
     return evaluation
 
 
+def _physical_segment_at_index(
+    value: object, segments: tuple[PhysicalSegment, ...], *, field: str
+) -> PhysicalSegment:
+    index = _physical_integer(value, field=field)
+    if index < 0 or index >= len(segments):
+        raise ValueError(f"{field} must reference a segment in this universe")
+    return segments[index]
+
+
 def _physical_facts_from_payload(value: object) -> PhysicalPeakFacts | None:
     if value is None:
         return None
@@ -675,18 +589,6 @@ def _physical_facts_from_payload(value: object) -> PhysicalPeakFacts | None:
     _require_physical_keys(facts, _FACT_KEYS, label="facts")
     return PhysicalPeakFacts(
         schema_version=_physical_text(facts["schema_version"], field="facts.schema"),
-        prepared_signal_id=_physical_text(
-            facts["prepared_signal_id"], field="facts.prepared_signal_id"
-        ),
-        physical_question_id=_physical_text(
-            facts["physical_question_id"], field="facts.physical_question_id"
-        ),
-        physical_answer_id=_physical_text(
-            facts["physical_answer_id"], field="facts.physical_answer_id"
-        ),
-        physical_segment_id=_physical_text(
-            facts["physical_segment_id"], field="facts.physical_segment_id"
-        ),
         apex_rt_min=_physical_float_from_text(
             facts["apex_rt_min"], field="apex_rt_min"
         ),
@@ -704,19 +606,6 @@ def _physical_facts_from_payload(value: object) -> PhysicalPeakFacts | None:
             facts["area_counts_seconds"], field="area_counts_seconds"
         ),
         area_source=_physical_text(facts["area_source"], field="area_source"),
-        relative_shape_schema_version=_physical_text(
-            facts["relative_shape_schema_version"],
-            field="relative_shape_schema_version",
-        ),
-        relative_shape_point_count=_physical_integer(
-            facts["relative_shape_point_count"], field="relative_shape_point_count"
-        ),
-        relative_shape_content_hash=_physical_text(
-            facts["relative_shape_content_hash"], field="relative_shape_content_hash"
-        ),
-        fact_content_id=_physical_text(
-            facts["fact_content_id"], field="fact_content_id"
-        ),
     )
 
 
@@ -896,12 +785,6 @@ def _physical_text(value: object, *, field: str) -> str:
     return value
 
 
-def _optional_physical_text(value: object, *, field: str) -> str | None:
-    if value is None:
-        return None
-    return _physical_text(value, field=field)
-
-
 def _physical_integer(value: object, *, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{field} must be an integer")
@@ -946,4 +829,28 @@ def _optional_physical_float_from_text(
 def _physical_text_tuple(value: object, *, field: str) -> tuple[str, ...]:
     return tuple(
         _physical_text(item, field=field) for item in _physical_list(value, label=field)
+    )
+
+
+def _canonical_physical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _physical_float_text(value: float) -> str:
+    number = float(value)
+    if number == 0.0:
+        return (0.0).hex()
+    if math.isnan(number):
+        return "nan"
+    if math.isinf(number):
+        return "inf" if number > 0 else "-inf"
+    return number.hex()
+
+
+def _same_trace_values(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
+    return len(left) == len(right) and all(
+        a == b or (math.isnan(a) and math.isnan(b))
+        for a, b in zip(left, right, strict=True)
     )

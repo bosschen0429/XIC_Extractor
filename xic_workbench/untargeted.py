@@ -50,14 +50,12 @@ _MODES = frozenset({"full", "discovery_only", "align_only"})
 _SUMMARY_ALIGNMENT_ATTRS = (
     "review_tsv",
     "matrix_tsv",
-    "matrix_identity_tsv",
     "cells_tsv",
     "run_metadata_json",
 )
 _PUBLISHED_OUTPUT_ATTRS = (
     "review_tsv",
     "matrix_tsv",
-    "matrix_identity_tsv",
     "owner_backfill_peak_fact_provenance_tsv",
     "backfill_cell_evidence_tsv",
     "cells_tsv",

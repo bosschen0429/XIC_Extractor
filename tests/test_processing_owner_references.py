@@ -11,15 +11,9 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
-    ProcessingAttemptIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
@@ -35,17 +29,6 @@ from xic_extractor.sample_metadata import (
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
 )
-
-_REVIEW_REQUEST_ID = "xic.processing-request:" + "a" * 64
-_TEST_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="tests.review_roundtrip.artifact_owner",
-    semantic_role="review_fixture_evidence",
-    schema_version="review_fixture_evidence",
-    validation_status="diagnostic_only",
-    media_type="application/octet-stream",
-    serialization_format="review_fixture_bytes",
-)
-_TEST_ARTIFACT_ATTEMPT_ID = "xic.processing-attempt:" + "d" * 64
 
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
@@ -63,13 +46,6 @@ def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None
         identity_namespace=snapshot.identity_namespace,
     )
 
-    assert snapshot.snapshot_id == (
-        "xic.sample-metadata-snapshot:"
-        "51cb5f4fc98a99b9e67b439667f81b1166ee6fd1db65ffb75616e2877be371fe"
-    )
-    assert identity.sample_identity_id == (
-        "xic.sample:e322e40f4137abbc784c2d9a004e703ff63aeb29fa16bec19038cf9905d8d7f6"
-    )
     assert identity.sample_key == "Sample A"
     assert identity.sample_metadata_schema_version == "sample_metadata"
     by_key = resolve_canonical_sample_identity(snapshot, "Sample A")
@@ -111,9 +87,7 @@ def test_sample_identity_ignores_projection_metadata_but_not_sample_rename() -> 
             identity_namespace="study:package-0-test",
         )
     )
-    assert _sample_snapshot(projection_changed).snapshot_id != (
-        _sample_snapshot(original).snapshot_id
-    )
+    assert _sample_snapshot(projection_changed) != (_sample_snapshot(original))
 
 
 def test_sample_resolution_fails_closed_for_missing_ambiguous_or_stale_alias() -> None:
@@ -165,7 +139,7 @@ def test_sample_snapshot_is_order_neutral_and_content_bound() -> None:
     mutated = _sample_snapshot(first, replace(second, raw_stem="raw_b_changed"))
 
     assert forward == reverse
-    assert forward.snapshot_id != mutated.snapshot_id
+    assert forward != mutated
 
 
 def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:
@@ -174,16 +148,6 @@ def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:
             (SampleMetadata(sample_name="Sample A", raw_stem="shared"),),
             "shared",
         )
-
-
-def test_sample_identity_rejects_forged_owner_binding() -> None:
-    identity = mint_canonical_sample_identity(
-        SampleMetadata(sample_name="Sample A", raw_stem="raw_a"),
-        identity_namespace="study:package-0-test",
-    )
-
-    with pytest.raises(SampleMetadataError, match="mismatches"):
-        replace(identity, sample_key="Sample B")
 
 
 def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> None:
@@ -204,7 +168,7 @@ def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> N
     ):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(sample,),
         )
@@ -217,8 +181,7 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         payload=b"request-a",
         target_snapshot=target_snapshot,
     )
-    attempt = issue_processing_attempt(request)
-    artifacts = _artifact_refs(attempt=attempt)
+    attempt = issue_processing_attempt()
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
@@ -233,7 +196,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample_snapshot=sample_snapshot,
         sample_resolutions=(sample,),
         target_snapshot=target_snapshot,
-        evidence_artifacts=artifacts,
     )
 
     assert references.request is request
@@ -241,9 +203,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     assert references.sample_snapshot is sample_snapshot
     assert references.sample_resolutions == (sample,)
     assert references.target_snapshot is target_snapshot
-    assert references.evidence_artifacts == tuple(
-        sorted(artifacts, key=lambda artifact: artifact.evidence_artifact_id)
-    )
 
 
 def test_lineage_rejects_metadata_injection_order_mismatch(
@@ -263,7 +222,7 @@ def test_lineage_rejects_metadata_injection_order_mismatch(
     )
     matching = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=matching_snapshot,
         sample_resolutions=(matching_sample,),
     )
@@ -282,7 +241,7 @@ def test_lineage_rejects_metadata_injection_order_mismatch(
     with pytest.raises(IdentityContractError, match="injection_order.*request binding"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(sample,),
         )
@@ -292,13 +251,12 @@ def test_lineage_composition_rejects_raw_or_cross_request_references(
     tmp_path: Path,
 ) -> None:
     request = _request(tmp_path, payload=b"request-a")
-    other_request = _request(tmp_path, payload=b"request-b")
-    attempt = issue_processing_attempt(other_request)
+    issue_processing_attempt()
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
     )
-    sample = resolve_canonical_sample_identity(
+    resolve_canonical_sample_identity(
         sample_snapshot,
         "request-a",
     )
@@ -306,24 +264,17 @@ def test_lineage_composition_rejects_raw_or_cross_request_references(
         sample_snapshot,
         "request-b",
     )
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=attempt,
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=(sample,),
-        )
     with pytest.raises(IdentityContractError, match="cover.*acquisition binding"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(wrong_sample,),
         )
     with pytest.raises(IdentityContractError, match="owner-resolved"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=("Sample A",),  # type: ignore[arg-type]
         )
@@ -346,7 +297,7 @@ def test_lineage_rejects_resolutions_mixed_across_owner_snapshots(
     with pytest.raises(IdentityContractError, match="same sample metadata snapshot"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=complete,
             sample_resolutions=(first, mixed_second),
         )
@@ -365,53 +316,10 @@ def test_lineage_rejects_two_sources_collapsed_to_one_canonical_sample(
     with pytest.raises(IdentityContractError, match="distinct canonical sample"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=collapsed,
             sample_resolutions=(first, second),
         )
-
-
-def _artifact_ref(
-    label: str,
-    *,
-    attempt: ProcessingAttemptIdentity | None = None,
-    processing_request_id: str | None = None,
-    upstream_artifacts: tuple[EvidenceArtifactRef, ...] = (),
-) -> EvidenceArtifactRef:
-    return mint_evidence_artifact_ref(
-        producer_processing_request_id=(
-            attempt.processing_request_id
-            if attempt is not None
-            else processing_request_id or _REVIEW_REQUEST_ID
-        ),
-        producer_processing_attempt_id=(
-            attempt.processing_attempt_id
-            if attempt is not None
-            else _TEST_ARTIFACT_ATTEMPT_ID
-        ),
-        semantic_contract=_TEST_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=label.encode("utf-8"),
-        upstream_artifacts=upstream_artifacts,
-    )
-
-
-def _artifact_refs(
-    *,
-    attempt: ProcessingAttemptIdentity | None = None,
-    processing_request_id: str | None = None,
-) -> tuple[EvidenceArtifactRef, ...]:
-    return (
-        _artifact_ref(
-            "artifact-a",
-            attempt=attempt,
-            processing_request_id=processing_request_id,
-        ),
-        _artifact_ref(
-            "artifact-b",
-            attempt=attempt,
-            processing_request_id=processing_request_id,
-        ),
-    )
 
 
 def _request(

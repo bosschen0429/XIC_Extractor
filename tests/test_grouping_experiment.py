@@ -267,9 +267,7 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
         if d["accepted_risk_json"]
     ]
     assert risks
-    assert all(
-        risk["phase"] == "initial" and risk["selected_owner_ids"] for risk in risks
-    )
+    assert all(risk["phase"] == "initial" and risk["selected_owners"] for risk in risks)
     assert (
         '"changed_observation_count": 0'
         in (tmp_path / "replay" / "summary.json").read_text()
@@ -480,9 +478,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     from xic_extractor.alignment.cross_sample.grouping_result import (
         CrossSampleGroupingResult,
     )
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        validate_cross_sample_peak_group_identity,
-    )
     from xic_extractor.alignment.grouping_bootstrap import InitialGroupingScope
     from xic_extractor.alignment.grouping_workflow import (
         _partition_transition,
@@ -533,7 +528,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
                 support_policy=cid_nl_support_policy(),
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=1,
                 reason_code=None,
             ),
             candidate_peaks=(peak,),
@@ -672,13 +666,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
         population = tuple(
             sorted(
-                (
-                    validate_cross_sample_peak_group_identity(
-                        group,
-                        require_canonical=True,
-                    )
-                    for group in initial
-                ),
+                (group.membership for group in initial),
                 key=lambda group: group.group_hypothesis_id,
             )
         )

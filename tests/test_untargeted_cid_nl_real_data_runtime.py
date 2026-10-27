@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -805,9 +806,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     }
     warm_s1 = warm_by_stem["S1"].adapter_result
     assert warm_s1.assessment_input.assessment.content == (s1_assessment.content)
-    assert warm_s1.assessment_input.assessment.artifact.evidence_artifact_id == (
-        s1_assessment.artifact.evidence_artifact_id
-    )
     assert warm_s1.acquisition is not None
     assert by_stem["S1"].adapter_result.acquisition is not None
     assert tuple(map(serialize_acquired_trace, warm_s1.acquisition.traces)) == tuple(
@@ -1170,11 +1168,10 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         assert not initial.content.evaluation_receipt.search_completed
     assert by_stem["Missing"].backfill_attempt is not None
     assert by_stem["Missing"].backfill_input is not None
-    assert by_stem["Missing"].result_ref.backfill_candidate_count == 1
+    assert len(by_stem["Missing"].backfill_attempt.assessment.candidate_peaks) == 1
     assert by_stem["NoPeak"].backfill_attempt is not None
     assert by_stem["NoPeak"].backfill_input is None
-    assert by_stem["NoPeak"].result_ref.backfill_assessment_artifact_id is not None
-    assert by_stem["NoPeak"].result_ref.backfill_candidate_count == 0
+    assert len(by_stem["NoPeak"].backfill_attempt.assessment.candidate_peaks) == 0
     assert by_stem["Blank"].backfill_attempt is None
     assert raw_paths[4] not in opened
     assert {
@@ -1559,7 +1556,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=context.processing_owners.sample_snapshot,
         sample_resolutions=context.samples,
     )
@@ -2018,6 +2015,7 @@ def _discovery_receipts(
             sample_stem=raw_path.stem,
             acquisition_source=source,
             candidate_csv=candidate_csv,
+            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             candidates=candidates,
         )
     return receipts
@@ -2173,15 +2171,16 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
             assert left.content.technical_state == right.content.technical_state
             assert left.candidate_peaks == right.candidate_peaks
         assert (
-            actual.result_ref.source_candidate_ids
-            == expected.result_ref.source_candidate_ids
+            actual.adapter_result.source_candidate_ids
+            == expected.adapter_result.source_candidate_ids
         )
-        assert (
-            actual.result_ref.backfill_query_bounds
-            == expected.result_ref.backfill_query_bounds
+        assert tuple(
+            a.assessment.content.evaluation_receipt for a in actual.backfill_attempts
+        ) == tuple(
+            a.assessment.content.evaluation_receipt for a in expected.backfill_attempts
         )
     expected_keys = {
-        f"part-1:{job.sample.identity.sample_identity_id}:{phase}"
+        f"part-1:{job.sample.identity.sample_key}:{phase}"
         for job in jobs
         for phase in ("initial", "backfill")
     }

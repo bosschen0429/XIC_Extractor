@@ -67,7 +67,6 @@ def _current_candidates(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
         ms1_centroid_mz=lambda *_: None,
@@ -102,14 +101,12 @@ def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
         processing_contract_version=original.processing_contract_version,
         scientific_inputs={
             **json.loads(original.normalized_scientific_inputs_json),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile, {key: record.evaluation for key, record in records.items()}
-            ),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
         },
     )
     return compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=owners.sample_snapshot,
         sample_resolutions=owners.sample_resolutions,
     )

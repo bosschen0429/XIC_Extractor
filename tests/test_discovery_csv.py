@@ -27,7 +27,7 @@ EXPECTED_CANDIDATE_REVIEW_COLUMNS = (
     "ms1_support",
     "rt_alignment",
     "candidate_id",
-    "feature_family_id",
+    "feature_id",
     "feature_family_size",
     "precursor_mz",
     "product_mz",
@@ -98,7 +98,7 @@ def _candidate(
     ms2_product_max_intensity: float = 12000.0,
     ms1_peak_found: bool = True,
     seed_scan_ids: tuple[int, ...] = (6095,),
-    feature_family_id: str = "Sample_1@F0001",
+    feature_id: str = "Sample_1@F0001",
     feature_family_size: int = 1,
     ms1_scan_support_score: float | None = None,
     discovery_candidate_state: str = "ms1_feature_nl_supported",
@@ -114,7 +114,7 @@ def _candidate(
         discovery_candidate_state=discovery_candidate_state,  # type: ignore[arg-type]
         ms1_feature_row_id=ms1_feature_row_id,
         candidate_id=candidate_id,
-        feature_family_id=feature_family_id,
+        feature_id=feature_id,
         feature_family_size=feature_family_size,
         precursor_mz=258.108512345,
         product_mz=142.061112345,
@@ -373,19 +373,19 @@ def test_write_discovery_candidates_csv_keeps_feature_families_together(
     candidates = [
         _candidate(
             candidate_id="family-a-lower-intensity",
-            feature_family_id="Sample_1@F0001",
+            feature_id="Sample_1@F0001",
             feature_family_size=2,
             ms2_product_max_intensity=1000.0,
         ),
         _candidate(
             candidate_id="family-b-between",
-            feature_family_id="Sample_1@F0002",
+            feature_id="Sample_1@F0002",
             feature_family_size=1,
             ms2_product_max_intensity=9000.0,
         ),
         _candidate(
             candidate_id="family-a-higher-intensity",
-            feature_family_id="Sample_1@F0001",
+            feature_id="Sample_1@F0001",
             feature_family_size=2,
             ms2_product_max_intensity=8000.0,
         ),
@@ -417,7 +417,7 @@ def test_write_discovery_candidates_csv_formats_review_values_stably(
     assert row["rt_alignment"] == "aligned"
     assert row["discovery_candidate_state"] == "ms1_feature_nl_supported"
     assert row["ms1_feature_row_id"] == "Sample_1|DNA_dR|258.108512|7.841234"
-    assert row["feature_family_id"] == "Sample_1@F0001"
+    assert row["feature_id"] == "Sample_1@F0001"
     assert row["feature_family_size"] == "1"
     assert row["product_mz"] == "142.061112345"
     assert row["observed_neutral_loss_da"] == "116.0474"

@@ -2,41 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import math
-import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.mass_accuracy import neutral_loss_match
-from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    ACQUISITION_MODE,
+    CidNlEvidenceObservation,
+)
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
 )
 
-SCHEMA_VERSION = "dda_cid_nl_peak_support"
-ARTIFACT_SEMANTIC_ROLE = "dda_cid_nl_peak_support"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
-
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class DdaCidNlPeakSupportContractError(ValueError):
@@ -90,10 +70,10 @@ class DdaCidNlPeakSupportPolicy:
 class DdaCidNlPeakSupportContent:
     """Immutable method relation between one DDA event and one MS1 peak."""
 
-    canonical_sample_identity_id: str
-    cid_nl_evidence_content_id: str
-    peak_observation_content_id: str
-    candidate_peak_content_ids: tuple[str, ...]
+    sample_key: str
+    evidence: CidNlEvidenceObservation
+    peak_observation: PeakObservationContent
+    candidate_peaks: tuple[PeakObservationContent, ...]
     acquisition_mode: str
     dda_scan_number: int
     scan_rt_min: float
@@ -111,43 +91,6 @@ class DdaCidNlPeakSupportContent:
     neutral_loss_window_da: float = field(init=False)
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
-        _validate_typed_digest_id(
-            self.cid_nl_evidence_content_id,
-            prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-            field="cid_nl_evidence_content_id",
-        )
-        _validate_typed_digest_id(
-            self.peak_observation_content_id,
-            prefix=_PEAK_CONTENT_ID_PREFIX,
-            field="peak_observation_content_id",
-        )
-        if not isinstance(self.candidate_peak_content_ids, tuple):
-            raise DdaCidNlPeakSupportContractError(
-                "candidate_peak_content_ids must be a tuple"
-            )
-        candidate_content_ids = tuple(
-            _validate_typed_digest_id(
-                value,
-                prefix=_PEAK_CONTENT_ID_PREFIX,
-                field="candidate_peak_content_id",
-            )
-            for value in self.candidate_peak_content_ids
-        )
-        if not candidate_content_ids or candidate_content_ids != tuple(
-            sorted(set(candidate_content_ids))
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "candidate_peak_content_ids must be non-empty, unique, and sorted"
-            )
-        if self.peak_observation_content_id not in candidate_content_ids:
-            raise DdaCidNlPeakSupportContractError(
-                "selected peak observation is missing from the candidate universe"
-            )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise DdaCidNlPeakSupportContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -239,43 +182,9 @@ class DdaCidNlPeakSupportContent:
 
 @dataclass(frozen=True, slots=True)
 class DdaCidNlPeakSupportRef:
-    """One immutable DDA-to-peak support artifact with exact upstream refs."""
+    """One immutable DDA-to-peak support relation."""
 
     content: DdaCidNlPeakSupportContent
-    artifact: EvidenceArtifactRef
-
-
-def canonical_dda_cid_nl_peak_support_bytes(
-    reference: DdaCidNlPeakSupportRef,
-) -> bytes:
-    """Return canonical bytes for one immutable support reference."""
-
-    if not isinstance(reference, DdaCidNlPeakSupportRef):
-        raise DdaCidNlPeakSupportContractError(
-            "canonical serialization requires DdaCidNlPeakSupportRef"
-        )
-    return _support_bytes(reference.content)
-
-
-def _support_bytes(content: DdaCidNlPeakSupportContent) -> bytes:
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": asdict(content),
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _finite_float(value: object, *, field: str) -> float:
@@ -287,23 +196,10 @@ def _finite_float(value: object, *, field: str) -> float:
     return 0.0 if normalized == 0.0 else normalized
 
 
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise DdaCidNlPeakSupportContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise DdaCidNlPeakSupportContractError(f"{field} must contain a SHA-256 digest")
-    return value
-
-
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "DdaCidNlPeakSupportContent",
     "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_dda_cid_nl_peak_support_bytes",
 ]

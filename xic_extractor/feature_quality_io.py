@@ -11,7 +11,7 @@ import numpy as np
 from xic_extractor.feature_quality import evaluate_feature_quality
 from xic_extractor.output.alignment.matrix_output_contract import (
     MATRIX_ROW_BINDING_COLUMN,
-    validate_matrix_identity_rows,
+    matrix_review_rows,
 )
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
@@ -26,10 +26,10 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-FEATURE_QUALITY_SCHEMA = "xic_feature_quality.v1"
+FEATURE_QUALITY_SCHEMA = "xic_feature_quality"
 QUALITY_COLUMNS = (
     "source_matrix_row_index",
-    "peak_hypothesis_id",
+    "feature_id",
     "finite_count",
     "eligible_sample_count",
     "finite_fraction",
@@ -39,7 +39,7 @@ QUALITY_COLUMNS = (
 ANALYSIS_FEATURE_COLUMNS = (
     "analysis_row_index",
     "source_matrix_row_index",
-    "peak_hypothesis_id",
+    "feature_id",
     "source_matrix_row_binding_sha256",
 )
 
@@ -47,7 +47,7 @@ ANALYSIS_FEATURE_COLUMNS = (
 def export_feature_quality(
     *,
     matrix_path: Path,
-    identity_path: Path,
+    review_path: Path,
     sample_metadata_path: Path,
     output_dir: Path,
     min_finite_fraction: float,
@@ -63,15 +63,15 @@ def export_feature_quality(
         required_columns=("Mz", "RT"),
         encoding="utf-8-sig",
     )
-    identity_header, identities, identity_digest = read_tsv_with_header_snapshot(
-        identity_path,
+    review_header, review_rows, review_digest = read_tsv_with_header_snapshot(
+        review_path,
         encoding="utf-8-sig",
     )
-    validate_matrix_identity_rows(
+    identities = matrix_review_rows(
         matrix_header=header,
         matrix_rows=rows,
-        identity_columns=identity_header,
-        identity_rows=identities,
+        review_columns=review_header,
+        review_rows=review_rows,
     )
     _, metadata_rows, metadata_digest = read_tsv_with_header_snapshot(
         sample_metadata_path,
@@ -122,7 +122,7 @@ def export_feature_quality(
         quality_rows.append(
             {
                 "source_matrix_row_index": index,
-                "peak_hypothesis_id": identity["peak_hypothesis_id"],
+                "feature_id": identity["feature_id"],
                 "finite_count": result.finite_count,
                 "eligible_sample_count": result.eligible_sample_count,
                 "finite_fraction": repr(result.finite_fraction),
@@ -136,7 +136,7 @@ def export_feature_quality(
                 {
                     "analysis_row_index": len(selected_rows),
                     "source_matrix_row_index": index,
-                    "peak_hypothesis_id": identity["peak_hypothesis_id"],
+                    "feature_id": identity["feature_id"],
                     "source_matrix_row_binding_sha256": identity[
                         MATRIX_ROW_BINDING_COLUMN
                     ],
@@ -156,7 +156,7 @@ def export_feature_quality(
     output_dir.mkdir(parents=True, exist_ok=False)
     tables = (
         ("full_matrix.tsv", rows, header),
-        ("full_matrix_identity.tsv", identities, identity_header),
+        ("full_review.tsv", review_rows, review_header),
         ("analysis_matrix.tsv", selected_rows, header),
         ("analysis_features.tsv", selected_features, ANALYSIS_FEATURE_COLUMNS),
         ("feature_quality.tsv", quality_rows, QUALITY_COLUMNS),
@@ -183,9 +183,9 @@ def export_feature_quality(
         "sample_count": len(samples),
         "sources": {
             "matrix": {"path": str(matrix_path.resolve()), "sha256": matrix_digest},
-            "identity": {
-                "path": str(identity_path.resolve()),
-                "sha256": identity_digest,
+            "review": {
+                "path": str(review_path.resolve()),
+                "sha256": review_digest,
             },
             "sample_metadata": {
                 "path": str(sample_metadata_path.resolve()),

@@ -36,10 +36,8 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     build_acquisition_source_identity,
     build_processing_request_identity,
-    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
-    typed_identity_digest,
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
@@ -229,7 +227,6 @@ def test_rejected_disposition_is_retained(
     fixture = _fixture(tmp_path, sample_stems=("sample-a",))
     predecessor = _group(fixture, ("sample-a",))
     rejected = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=predecessor.member_subjects,
         disposition="rejected",
     )
@@ -249,27 +246,14 @@ def test_rejected_disposition_is_retained(
     assert handoff.position_associations[0].final_successor.disposition == "rejected"
 
 
-def test_crossed_request_and_zero_successor_reject(
+def test_zero_successor_rejects(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path / "one", sample_stems=("sample-a",))
     other = _fixture(tmp_path / "two", sample_stems=("sample-x",))
     group = _group(fixture, ("sample-a",))
-    other_group = _group(other, ("sample-x",))
+    _group(other, ("sample-x",))
     coverage = _coverage(fixture, (group,))
-
-    with pytest.raises(
-        CrossSampleAssociationContractError,
-        match="cross processing request",
-    ):
-        build_cross_sample_association_lineage_handoff(
-            coverage=coverage,
-            final_receipt=_final_receipt(
-                other,
-                predecessors=(other_group,),
-                successors=(other_group,),
-            ),
-        )
 
     valid_receipt = _final_receipt(
         fixture,
@@ -397,7 +381,7 @@ def _coverage_context(
     return _CoverageContext(
         processing_owners=compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=snapshot,
             sample_resolutions=resolved,
         ),
@@ -410,31 +394,15 @@ def _coverage_context(
 
 def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
     fixture = _Fixture(_coverage_context(tmp_path, sample_order=sample_stems))
-    request_id = fixture.context.processing_owners.request.processing_request_id
     for sample_stem, sample in fixture.samples.items():
         original = _owner(sample_stem, f"association-{sample_stem}")
         member = original.cross_sample_member_subject
         assert member is not None
-        basis = canonical_identity_basis_bytes(
-            {
-                "schema_version": "group_member_subject",
-                "processing_request_id": request_id,
-                "canonical_sample_identity_id": sample.identity.sample_identity_id,
-                "subject": {
-                    "kind": member.subject_kind,
-                    "id": member.subject_id,
-                },
-                "physical_observation_ids": list(member.physical_observation_ids),
-            }
-        )
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            member_subject_id=typed_identity_digest("xic.group-member-subject:", basis),
-            processing_request_id=request_id,
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            sample_key=sample.identity.sample_key,
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
-            physical_observation_ids=member.physical_observation_ids,
-            basis_bytes=basis,
+            physical_peaks=member.physical_peaks,
         )
     return fixture
 
@@ -444,9 +412,6 @@ def _group(
     sample_stems: tuple[str, ...],
 ) -> CrossSampleGroupIdentity:
     return mint_cross_sample_group_identity(
-        processing_request_id=(
-            fixture.context.processing_owners.request.processing_request_id
-        ),
         member_subjects=tuple(fixture.members[sample] for sample in sample_stems),
     )
 

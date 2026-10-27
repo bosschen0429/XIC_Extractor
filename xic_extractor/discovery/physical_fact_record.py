@@ -6,7 +6,6 @@ from dataclasses import dataclass, field, replace
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
-    acquired_trace_content_id,
 )
 from xic_extractor.discovery.models import (
     CID_NL_ALIGNMENT_STATES,
@@ -17,9 +16,6 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
-)
-from xic_extractor.peak_detection.physical_peak_identity import (
-    validate_physical_trace_content_id,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -64,8 +60,7 @@ class DiscoveryPhysicalFactRecord:
             return NotImplemented
         return (
             self.work_item == other.work_item
-            and acquired_trace_content_id(self.acquired_trace)
-            == acquired_trace_content_id(other.acquired_trace)
+            and self.acquired_trace == other.acquired_trace
             and self.evaluation == other.evaluation
         )
 
@@ -90,7 +85,6 @@ class DiscoveryPhysicalFactRecord:
 class DiscoveryCandidatePhysicalBinding:
     """Discovery-owned in-memory binding from a final candidate to peak facts."""
 
-    run_spec_id: str
     acquisition_source: AcquisitionSourceIdentity
     final_ordinal: int
     candidate: DiscoveryCandidate
@@ -125,14 +119,11 @@ def validate_discovery_physical_fact_record(
     validate_bounded_physical_peak_evaluation(record.evaluation)
     _validate_evaluation_work_identity(record.evaluation, record.work_item)
     _validate_acquired_trace_work_identity(record.acquired_trace, record.work_item)
-    try:
-        validate_physical_trace_content_id(
-            record.evaluation.prepared.trace_content_id,
-            record.acquired_trace.trace.rt,
-            record.acquired_trace.trace.intensity,
-        )
-    except ValueError as exc:
-        raise ValueError("physical evaluation crosses acquired trace content") from exc
+    if (
+        record.evaluation.prepared.rt != record.rt
+        or record.evaluation.prepared.raw != record.raw
+    ):
+        raise ValueError("physical evaluation crosses acquired trace content")
 
 
 def validate_discovery_candidate_physical_binding(
@@ -142,8 +133,6 @@ def validate_discovery_candidate_physical_binding(
 
     if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
         raise TypeError("binding must be a DiscoveryCandidatePhysicalBinding")
-    if not isinstance(binding.run_spec_id, str) or not binding.run_spec_id.strip():
-        raise ValueError("run_spec_id must be non-empty text")
     if not isinstance(binding.acquisition_source, AcquisitionSourceIdentity):
         raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
     if binding.final_ordinal < 0:
@@ -192,10 +181,6 @@ def validate_discovery_candidate_physical_binding(
     )
     if expected_subject_id != binding.selection_subject_id:
         raise ValueError("Discovery physical binding crosses candidate identity")
-    if binding.physical_evaluation.question.selection_subject_id != (
-        binding.selection_subject_id
-    ):
-        raise ValueError("Discovery physical binding crosses selection subject")
 
 
 def bind_discovery_physical_record_evidence(
@@ -265,8 +250,6 @@ def _validate_evaluation_work_identity(
     work_item: DiscoveryPhysicalWorkItem,
 ) -> None:
     question = evaluation.question
-    if question.selection_subject_id != work_item.selection_subject_id:
-        raise ValueError("physical evaluation crosses Discovery selection subject")
     if question.query_rt_min != work_item.query_rt_min:
         raise ValueError("physical evaluation crosses Discovery query RT")
     if (
@@ -282,12 +265,11 @@ def _validate_acquired_trace_work_identity(
 ) -> None:
     coordinate = acquired_trace.coordinate
     request = coordinate.request
-    if coordinate.acquisition_source_id != work_item.acquisition_source_id:
+    if (
+        coordinate.capability.acquisition_source.acquisition_source_id
+        != work_item.acquisition_source_id
+    ):
         raise ValueError("acquired trace crosses Discovery acquisition source")
-    if coordinate.trace_coordinate_id != work_item.trace_coordinate_id:
-        raise ValueError("acquired trace crosses Discovery trace coordinate")
-    if acquired_trace_content_id(acquired_trace) != work_item.acquired_trace_content_id:
-        raise ValueError("acquired trace crosses Discovery trace content")
     if (
         request.mz != work_item.xic_mz
         or request.rt_min != work_item.xic_rt_min

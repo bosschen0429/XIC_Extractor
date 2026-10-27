@@ -30,7 +30,7 @@ def read_detected_rts(
     samples: set[str] = set()
     with cells_path.open(encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream, delimiter="\t")
-        missing = {"feature_family_id", "sample_stem", "status", "apex_rt"} - set(
+        missing = {"feature_id", "sample_stem", "status", "apex_rt"} - set(
             reader.fieldnames or ()
         )
         if missing:
@@ -41,9 +41,7 @@ def read_detected_rts(
                 continue
             rt = float(row["apex_rt"])
             if math.isfinite(rt):
-                detected.setdefault(row["feature_family_id"], {})[
-                    row["sample_stem"]
-                ] = rt
+                detected.setdefault(row["feature_id"], {})[row["sample_stem"]] = rt
     return detected, tuple(sorted(samples))
 
 

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import shutil
 from collections.abc import Callable, Iterable
-from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -18,17 +16,15 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 PRESERVED_INDEX_NAME = "partition-index.pickle"
 
 
-class _HashingWriter:
+class _PartitionWriter:
     def __init__(self, stream: BinaryIO):
         self.stream = stream
-        self.digest = hashlib.sha256()
         self.size_bytes = 0
 
     def write(self, data: bytes) -> int:
         written = self.stream.write(data)
         if written != len(data):
             raise OSError("incomplete partition write")
-        self.digest.update(data)
         self.size_bytes += written
         return written
 
@@ -37,7 +33,6 @@ class _HashingWriter:
 class SealedPartition:
     index: int
     key: str
-    sha256: str
     size_bytes: int
 
 
@@ -62,7 +57,6 @@ def write_partition_payload(
     before_publish: Callable[[], None] | None = None,
     retain_memory: bool = False,
 ) -> tuple[
-    str,
     int,
     dict[str, int],
     dict[str, tuple[tuple[int, int], ...]],
@@ -94,7 +88,7 @@ def write_partition_payload(
     stream = temporary.open("xb", buffering=1024 * 1024)
     try:
         with stream:
-            writer = _HashingWriter(stream)
+            writer = _PartitionWriter(stream)
             # Non-tuple fields share a header; tuple fields have independent
             # records so consumers need not restore the entire payload graph.
             header = (
@@ -147,21 +141,20 @@ def write_partition_payload(
                     cached_fields[name] = tuple(cached_chunks)
             if before_publish is not None:
                 before_publish()
-        digest = writer.digest.hexdigest()
         size_bytes = writer.size_bytes
         if path.exists():
             raise FileExistsError(f"partition artifact already exists: {path}")
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-    return digest, size_bytes, lengths, records, cached_fields
+    return size_bytes, lengths, records, cached_fields
 
 
 class StreamedResultStore:
     """Spool private payloads while retaining only explicit shared authorities.
 
     This object owns every readable path and its metadata. Reads reuse the
-    append receipt rather than rehashing owner-controlled, unchanged files.
+    owned paths and record offsets without rescanning unchanged files.
     A failure snapshot retains this private store for diagnostic replay; it
     neither resumes a runtime attempt nor grants publication authority.
     """
@@ -236,7 +229,7 @@ class StreamedResultStore:
         self._require_writable_key(partition_key)
         index = self._claim_index()
         path = self._path(index)
-        digest, size_bytes, lengths, records, cached_fields = write_partition_payload(
+        size_bytes, lengths, records, cached_fields = write_partition_payload(
             path,
             payload,
             shared_objects=self._shared_objects,
@@ -245,7 +238,7 @@ class StreamedResultStore:
             before_publish=before_publish,
             retain_memory=retain_memory,
         )
-        entry = SealedPartition(index, partition_key, digest, size_bytes)
+        entry = SealedPartition(index, partition_key, size_bytes)
         self._register(entry, lengths, records, cached_fields)
         return entry
 
@@ -291,8 +284,8 @@ class StreamedResultStore:
 
         The store keeps ownership of the index and the readable path. A writer
         given this reservation produces the bytes; it does not decide where they
-        land, and `adopt_partition` derives the sealed identity here rather than
-        accepting a reported one.
+        land. `adopt_partition` records the landed file size and checks record
+        offsets before making the reserved partition readable.
         """
 
         self._require_writable_key(partition_key)
@@ -319,12 +312,7 @@ class StreamedResultStore:
             raise FileNotFoundError(
                 f"reserved partition is missing: {reservation.path}"
             )
-        digest = hashlib.sha256()
-        size_bytes = 0
-        with reservation.path.open("rb") as stream:
-            for block in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(block)
-                size_bytes += len(block)
+        size_bytes = reservation.path.stat().st_size
         validated_lengths = {str(name): int(value) for name, value in lengths.items()}
         validated_records = {
             str(name): tuple((int(offset), int(length)) for offset, length in entries)
@@ -336,9 +324,7 @@ class StreamedResultStore:
                 for offset, length in entries
             ):
                 raise ValueError("adopted partition record leaves its sealed bytes")
-        entry = SealedPartition(
-            reservation.index, reservation.key, digest.hexdigest(), size_bytes
-        )
+        entry = SealedPartition(reservation.index, reservation.key, size_bytes)
         self._register(entry, validated_lengths, validated_records, {})
         self._reserved_keys.discard(reservation.key)
         del self._reservations[reservation.index]
@@ -491,9 +477,13 @@ class StreamedResultStore:
         and private: it neither resumes a runtime attempt nor grants
         publication authority.
         """
-        snapshot = copy(self)
-        snapshot._sealed = True
-        snapshot._field_caches = []
+        snapshot = {
+            "shared_objects": self._shared_objects,
+            "individually_addressable_fields": self._individually_addressable_fields,
+            "partitions": self._partitions,
+            "field_lengths": self._field_lengths,
+            "field_records": self._field_records,
+        }
         destination = self._directory / name
         temporary = destination.with_suffix(".tmp")
         if destination.exists():
@@ -536,11 +526,27 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
     """
     resolved = Path(path).resolve()
     with resolved.open("rb") as stream:
-        store = _OwnerUnpickler(stream, ()).load()
-    if type(store) is not StreamedResultStore:
-        raise TypeError("preserved index does not hold a partition store")
-    if not store._sealed:
-        raise ValueError("preserved index is not sealed")
+        index = _OwnerUnpickler(stream, ()).load()
+    if not isinstance(index, dict) or set(index) != {
+        "shared_objects",
+        "individually_addressable_fields",
+        "partitions",
+        "field_lengths",
+        "field_records",
+    }:
+        raise ValueError(
+            "unsupported preserved partition structure; rerun the analysis"
+        )
+    store = object.__new__(StreamedResultStore)
     store._directory = resolved.parent
+    store._shared_objects = index["shared_objects"]
+    store._individually_addressable_fields = index["individually_addressable_fields"]
+    store._partitions = index["partitions"]
+    store._field_lengths = index["field_lengths"]
+    store._field_records = index["field_records"]
     store._field_caches = []
+    store._keys = {partition.key for partition in store._partitions}
+    store._reserved_keys = set()
+    store._reservations = {}
+    store._sealed = True
     return store

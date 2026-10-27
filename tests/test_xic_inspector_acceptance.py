@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run
+from tests.test_cid_nl_explanation import _owner_run, _summary_fixture
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
@@ -48,7 +48,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         alignment_config=config,
     )
     expected_observations = {
-        ref.content.peak_observation_content_id: asdict(ref.content.integration)
+        ref.content.physical_peak_key: asdict(ref.content.integration)
         for child in completed.application_result.children
         for terminal in child.scientific_core.terminal_subjects
         if getattr(terminal, "hypothesis", None) is not None
@@ -80,20 +80,18 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     curves = json.loads(reread.stdout)
     assert len(curves) >= 1
     for retained in curves:
-        observation_id = retained["peak_observation_content_id"]
+        observation_id = retained["physical_peak_key"]
         if observation_id in expected_observations:
             assert retained["integration"] == json.loads(
                 json.dumps(expected_observations[observation_id])
             )
     assert expected_observations.keys() <= {
-        retained["peak_observation_content_id"] for retained in curves
+        retained["physical_peak_key"] for retained in curves
     }
     s1_sample = next(s for s in summary["samples"] if s["sample_stem"] == "S1")
-    curve = next(
-        c for c in curves if c["sample_id"] == s1_sample["canonical_sample_identity_id"]
-    )
+    curve = next(c for c in curves if c["sample_id"] == s1_sample["sample_key"])
     assert curve["kind"] == "initial_capture"
-    assert curve["sample_id"] == s1_sample["canonical_sample_identity_id"]
+    assert curve["sample_id"] == s1_sample["sample_key"]
     assert len(curve["curves"]["rt"]) == len(curve["curves"]["raw"])
     assert len(curve["curves"]["rt"]) > 0
     assert curve["integration"] is not None
@@ -112,13 +110,15 @@ def test_missing_bound_matrix_rejects_generation(
 
     with ExplanationReportWriter(fake_db) as writer:
         writer.finalize(
-            {
-                "processing_request_id": "req-1",
-                "processing_attempt_id": "att-1",
-                "matrix_path": str(matrix_file),
-                "matrix_sha256": "0" * 64,
-                "samples": [],
-            }
+            _summary_fixture(
+                {
+                    "processing_attempt_id": "att-1",
+                    "matrix_path": str(matrix_file),
+                    "matrix_sha256": "0" * 64,
+                    "samples": [],
+                },
+                review_only=writer.review_only,
+            )
         )
     out_html = tmp_path / "out.html"
     with pytest.raises(InspectorError) as exc:
@@ -291,7 +291,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     locator = outputs.evidence
     assert isinstance(locator, EvidenceLocator)
     summary = read_cid_nl_explanation(locator.report_path)
-    assert locator.processing_request_id == summary["processing_request_id"]
     assert locator.processing_attempt_id == summary["processing_attempt_id"]
     assert (
         locator.matrix_sha256

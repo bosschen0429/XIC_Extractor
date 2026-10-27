@@ -14,7 +14,6 @@ from xic_extractor.alignment.production_decisions import (
 from xic_extractor.output.alignment.pipeline_outputs import output_paths
 from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
-    write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
     write_alignment_review_tsv,
 )
@@ -86,10 +85,9 @@ def test_matrix_only_output_plan_omits_unselected_provenance(
     (
         ("review", "review/review.tsv"),
         ("matrix", "matrix/matrix.tsv"),
-        ("identity", "identity/identity.tsv"),
         ("backfill", "backfill/evidence.tsv"),
     ),
-    ids=("review-tsv", "matrix-tsv", "identity-tsv", "backfill-tsv"),
+    ids=("review-tsv", "matrix-tsv", "backfill-tsv"),
 )
 def test_activated_renderers_reject_wrong_decision_type_before_writes(
     tmp_path: Path,
@@ -107,12 +105,6 @@ def test_activated_renderers_reject_wrong_decision_type_before_writes(
             production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
         "matrix": lambda path: write_alignment_matrix_tsv(
-            path,
-            matrix,
-            alignment_config=config,
-            production_decisions=wrong_decisions,  # type: ignore[arg-type]
-        ),
-        "identity": lambda path: write_alignment_matrix_identity_tsv(
             path,
             matrix,
             alignment_config=config,

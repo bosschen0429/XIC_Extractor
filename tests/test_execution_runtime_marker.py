@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import os
 import threading
@@ -12,7 +10,6 @@ import pytest
 
 import xic_extractor.execution.recovery as runtime_marker_module
 from tests.runtime_observability_fixtures import (
-    register_runtime_artifact,
     reserve_runtime_resource,
     settle_runtime_resource,
     settle_work_unit,
@@ -20,19 +17,14 @@ from tests.runtime_observability_fixtures import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.runtime_telemetry_fixtures import (
-    mint_test_process_result_ref as mint_targeted_process_result_ref,
-)
 from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     begin_attempt_finalization,
-    canonical_coordinator_terminal_record_bytes,
     mint_supervisor_finalization,
     propose_attempt_terminal,
 )
@@ -48,13 +40,10 @@ from xic_extractor.execution._lifecycle import (
     preflight_required_work_manifest,
     start_attempt_runtime,
 )
-from xic_extractor.execution._observability import (
-    canonical_runtime_observability_ledger_bytes,
-)
 from xic_extractor.execution.attempt import (
+    RuntimeAttemptAggregate,
+    RuntimeFinalizationReceipt,
     _derive_runtime_observability_ledger,
-    _mint_runtime_attempt_aggregate,
-    _mint_runtime_finalization_receipt,
 )
 from xic_extractor.execution.recovery import (
     OwnerPathRuntimeMarker,
@@ -69,7 +58,7 @@ from xic_extractor.processing_identity import (
 )
 
 
-def test_launch_marker_makes_pre_ack_coordinator_loss_fail_closed(
+def test_launch_marker_persists_unfinished_attempt_scope(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
@@ -80,32 +69,23 @@ def test_launch_marker_makes_pre_ack_coordinator_loss_fail_closed(
     )
 
     launch = marker.record_launch(runtime)
-    recovered = marker.recover_after_coordinator_loss(attempt)
+    persisted = marker.read()
 
     assert launch.state is RuntimeMarkerState.LAUNCHED
     assert marker.record_launch(runtime) == launch
-    assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert recovered.finalization_acknowledged is False
-    assert recovered.quarantine_artifact_namespace is True
-    assert recovered.artifact_namespace == "runtime-attempt-artifacts:a"
-    assert recovered.artifact_dispositions == ()
+    assert persisted == launch
+    assert persisted.terminal_outcome is None
 
 
-def test_finalization_atomically_replaces_launch_and_survives_loss(
+def test_finalization_atomically_replaces_launch_with_terminal_status(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
     runtime = _runtime(attempt)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="sample:a",
-        owner_result_payload=b"no-raw-result",
-    )
     runtime = settle_work_unit(
         runtime,
         work_unit_key="sample:a",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=reference.artifact,
     )
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
@@ -124,18 +104,13 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="sample:a",
-        artifact=reference.artifact,
-    )
     coordinator = propose_attempt_terminal(state)
     ledger = _ledger(coordinator)
     proposed = mint_supervisor_finalization(
         coordinator,
         observability_ledger=ledger,
     )
-    receipt = _mint_runtime_finalization_receipt(
+    receipt = RuntimeFinalizationReceipt(
         coordinator=coordinator,
         supervisor=proposed,
     )
@@ -146,30 +121,24 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     marker.record_launch(_runtime(attempt))
 
     accepted = marker(receipt)
-    recovered = marker.recover_after_coordinator_loss(attempt)
+    persisted = marker.read()
 
     assert accepted == receipt
     payload = json.loads(marker.path.read_bytes())
-    assert payload["schema_version"] == "execution_runtime_recovery_marker"
+    assert payload["schema_version"] == "execution_runtime_status_marker"
     assert marker.read().state is RuntimeMarkerState.FINALIZED
     assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
         marker.record_launch(_runtime(attempt))
-    assert recovered.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert recovered.finalization_acknowledged is True
-    assert recovered.quarantine_artifact_namespace is False
-    assert recovered.coordinator_record_bytes == (
-        canonical_coordinator_terminal_record_bytes(coordinator)
-    )
-    assert recovered.observability_ledger_bytes == (
-        canonical_runtime_observability_ledger_bytes(ledger)
-    )
-    assert recovered.artifact_dispositions == (
-        (
-            reference.artifact.evidence_artifact_id,
-            RuntimeArtifactDisposition.OFFERED_TO_OWNER,
-        ),
-    )
+    assert persisted.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert set(payload) == {
+        "schema_version",
+        "state",
+        "processing_attempt_id",
+        "artifact_namespace",
+        "manifest_work_unit_keys",
+        "terminal_outcome",
+    }
 
 
 def test_failed_attempt_retry_preserves_receipt_and_uses_new_attempt(
@@ -204,14 +173,10 @@ def test_failed_attempt_retry_preserves_receipt_and_uses_new_attempt(
     assert len(archives) == 1
     assert archives[0].read_bytes() == failed_bytes
     old_marker = OwnerPathRuntimeMarker(archives[0], marker.artifact_namespace)
-    assert old_marker.recover_after_coordinator_loss(failed).terminal_outcome is (
-        AttemptTerminalOutcome.FAILED
-    )
+    assert old_marker.read().terminal_outcome is (AttemptTerminalOutcome.FAILED)
     assert launch.processing_attempt_id == retry.processing_attempt_id
     marker(_terminal_records(retry, outcome=WorkUnitTerminalOutcome.SUCCEEDED))
-    assert marker.recover_after_coordinator_loss(retry).terminal_outcome is (
-        AttemptTerminalOutcome.SUCCEEDED
-    )
+    assert marker.read().terminal_outcome is (AttemptTerminalOutcome.SUCCEEDED)
     assert archives[0].read_bytes() == failed_bytes
 
 
@@ -242,112 +207,24 @@ def test_marker_reader_rejects_obsolete_outer_schema(tmp_path: Path) -> None:
     )
     marker.record_launch(_runtime(attempt))
     payload = json.loads(marker.path.read_bytes())
-    payload["schema_version"] = "unsupported_runtime_marker"
-    unsigned = {key: value for key, value in payload.items() if key != "marker_sha256"}
-    payload["marker_sha256"] = hashlib.sha256(
-        _canonical_json_bytes(unsigned)
-    ).hexdigest()
+    payload["schema_version"] = "execution_runtime_recovery_marker"
     marker.path.write_bytes(_canonical_json_bytes(payload))
 
-    with pytest.raises(RuntimeFinalizationContractError, match="schema_version"):
+    with pytest.raises(RuntimeFinalizationContractError, match="rerun"):
         marker.read()
 
 
-def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    coordinator = _terminal_records(
-        attempt,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-    ).coordinator
-    first_ledger = _derive_runtime_observability_ledger(
-        _mint_runtime_attempt_aggregate(state=coordinator.state),
-        coordinator,
-        telemetry=build_runtime_telemetry_samples_from_coordinator(
-            coordinator,
-            process_tree_peak_rss_bytes=1,
-        ),
-    )
-    second_ledger = _derive_runtime_observability_ledger(
-        _mint_runtime_attempt_aggregate(state=coordinator.state),
-        coordinator,
-        telemetry=build_runtime_telemetry_samples_from_coordinator(
-            coordinator,
-            process_tree_peak_rss_bytes=2,
-        ),
-    )
-    first_marker = OwnerPathRuntimeMarker(
-        tmp_path / "first.runtime.json",
-        "runtime-attempt-artifacts:a",
-    )
-    second_marker = OwnerPathRuntimeMarker(
-        tmp_path / "second.runtime.json",
-        "runtime-attempt-artifacts:a",
-    )
-    for marker in (first_marker, second_marker):
-        marker.record_launch(_runtime(attempt))
-
-    first_marker(
-        _mint_runtime_finalization_receipt(
-            coordinator=coordinator,
-            supervisor=mint_supervisor_finalization(
-                coordinator,
-                observability_ledger=first_ledger,
-            ),
-        ),
-    )
-    second_marker(
-        _mint_runtime_finalization_receipt(
-            coordinator=coordinator,
-            supervisor=mint_supervisor_finalization(
-                coordinator,
-                observability_ledger=second_ledger,
-            ),
-        ),
-    )
-
-    first_recovery = first_marker.recover_after_coordinator_loss(attempt)
-    second_recovery = second_marker.recover_after_coordinator_loss(attempt)
-    assert first_marker.path.read_bytes() != second_marker.path.read_bytes()
-    assert first_recovery.observability_ledger_bytes == (
-        canonical_runtime_observability_ledger_bytes(first_ledger)
-    )
-    assert second_recovery.observability_ledger_bytes == (
-        canonical_runtime_observability_ledger_bytes(second_ledger)
-    )
-    assert (
-        first_recovery.observability_ledger_bytes
-        != second_recovery.observability_ledger_bytes
-    )
-
-
-def test_recovery_rejects_coordinator_bytes_that_do_not_match_digest(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    receipt = _terminal_records(
-        attempt,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-    )
+def test_marker_reader_rejects_invalid_persisted_identity(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(
-        tmp_path / "attempt.runtime.json",
-        "runtime-attempt-artifacts:a",
+        tmp_path / "attempt.runtime.json", "runtime-attempt-artifacts:a"
     )
-    marker.record_launch(_runtime(attempt))
-    marker(receipt)
+    marker.record_launch(_runtime(_attempt(tmp_path)))
     payload = json.loads(marker.path.read_bytes())
-    payload["coordinator_record_base64"] = base64.b64encode(
-        b'{"tampered":true}'
-    ).decode("ascii")
-    unsigned = {key: value for key, value in payload.items() if key != "marker_sha256"}
-    payload["marker_sha256"] = hashlib.sha256(
-        _canonical_json_bytes(unsigned)
-    ).hexdigest()
-    marker.path.write_bytes(_canonical_json_bytes(payload))
+    payload["processing_attempt_id"] = "../different-attempt"
+    marker.path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(RuntimeFinalizationContractError, match="coordinator digest"):
-        marker.recover_after_coordinator_loss(attempt)
+    with pytest.raises(RuntimeFinalizationContractError, match="processing identity"):
+        marker.read()
 
 
 def test_concurrent_different_launches_fail_closed_at_replace(
@@ -508,14 +385,14 @@ def test_marker_lock_does_not_recast_unrelated_permission_denial(
         marker.record_launch(runtime)
 
 
-def test_marker_rejects_noncanonical_or_wrong_attempt_content(
+def test_marker_rejects_unsupported_schema_or_wrong_attempt_content(
     tmp_path: Path,
 ) -> None:
     marker_path = tmp_path / "attempt.runtime.json"
     marker_path.write_text('{"schema_version": "wrong"}', encoding="utf-8")
     marker = OwnerPathRuntimeMarker(marker_path, "runtime-attempt-artifacts:a")
 
-    with pytest.raises(RuntimeFinalizationContractError, match="fields"):
+    with pytest.raises(RuntimeFinalizationContractError, match="rerun"):
         marker.read()
 
     marker_path.unlink()
@@ -526,50 +403,16 @@ def test_marker_rejects_noncanonical_or_wrong_attempt_content(
         marker.record_launch(_runtime(second))
 
 
-def test_marker_rejects_canonical_but_digest_mismatched_content(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "attempt.runtime.json",
-        "runtime-attempt-artifacts:a",
-    )
-    marker.record_launch(_runtime(attempt))
-    payload = json.loads(marker.path.read_bytes())
-    payload["artifact_namespace"] = "runtime-attempt-artifacts:tampered"
-    marker.path.write_text(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(RuntimeFinalizationContractError, match="digest"):
-        marker.read()
-
-
 def _terminal_records(
     attempt: ProcessingAttemptIdentity,
     *,
     outcome: WorkUnitTerminalOutcome,
 ):
     runtime = _runtime(attempt)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="sample:a",
-        owner_result_payload=b"no-raw-result",
-    )
     runtime = settle_work_unit(
         runtime,
         work_unit_key="sample:a",
         outcome=outcome,
-        owner_result_ref=(
-            reference.artifact if outcome is WorkUnitTerminalOutcome.SUCCEEDED else None
-        ),
         failure_detail=(
             None
             if outcome is WorkUnitTerminalOutcome.SUCCEEDED
@@ -598,14 +441,8 @@ def _terminal_records(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    if outcome is WorkUnitTerminalOutcome.SUCCEEDED:
-        state = register_runtime_artifact(
-            state,
-            work_unit_key="sample:a",
-            artifact=reference.artifact,
-        )
     coordinator = propose_attempt_terminal(state)
-    return _mint_runtime_finalization_receipt(
+    return RuntimeFinalizationReceipt(
         coordinator=coordinator,
         supervisor=mint_supervisor_finalization(
             coordinator,
@@ -669,7 +506,7 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
 
 def _ledger(coordinator: CoordinatorTerminalRecord):
     return _derive_runtime_observability_ledger(
-        _mint_runtime_attempt_aggregate(state=coordinator.state),
+        RuntimeAttemptAggregate(state=coordinator.state),
         coordinator,
         telemetry=build_runtime_telemetry_samples_from_coordinator(coordinator),
     )
@@ -687,7 +524,7 @@ def _attempt(
         acquisition_format="thermo_raw",
         observation_namespace="thermo.raw.ms_controller_1",
     )
-    request = build_processing_request_identity(
+    build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -701,4 +538,4 @@ def _attempt(
         processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
-    return issue_processing_attempt(request)
+    return issue_processing_attempt()

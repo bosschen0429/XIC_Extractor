@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -14,10 +11,6 @@ from xic_extractor.configuration.targets import (
 )
 
 TARGET_LIST_SCHEMA_VERSION = "target_list_snapshot"
-_TARGET_KEY_PREFIX = "xic.target-key:"
-_TARGET_DEFINITION_PREFIX = "xic.target-definition:"
-_TARGET_LIST_SNAPSHOT_PREFIX = "xic.target-list-snapshot:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class TargetIdentityError(ValueError):
@@ -28,35 +21,18 @@ class TargetIdentityError(ValueError):
 class TargetKey:
     """Owner-stable target key; definition fields are deliberately excluded."""
 
-    target_key_id: str
     identity_namespace: str
     target_label: str
 
     def __post_init__(self) -> None:
-        namespace = _owner_normalized_text(
-            self.identity_namespace,
-            field="identity_namespace",
-        )
-        label = _owner_normalized_text(self.target_label, field="target_label")
-        expected_id = _typed_digest(
-            _TARGET_KEY_PREFIX,
-            {
-                "schema": "target_key_identity",
-                "identity_namespace": namespace,
-                "target_label": label,
-            },
-        )
-        if self.target_key_id != expected_id:
-            raise TargetIdentityError(
-                "target_key_id mismatches the owner namespace and target label"
-            )
+        _owner_normalized_text(self.identity_namespace, field="identity_namespace")
+        _owner_normalized_text(self.target_label, field="target_label")
 
 
 @dataclass(frozen=True, slots=True)
 class TargetDefinitionIdentity:
     """Exact immutable Target definition under one owner-stable key."""
 
-    target_definition_id: str
     target_key: TargetKey
     target: Target
 
@@ -68,22 +44,12 @@ class TargetDefinitionIdentity:
             raise TargetIdentityError(
                 "target definition label mismatches its owner-minted target key"
             )
-        expected_id = _typed_digest(
-            _TARGET_DEFINITION_PREFIX,
-            _target_definition_basis(self.target_key, self.target),
-        )
-        if self.target_definition_id != expected_id:
-            raise TargetIdentityError(
-                "target_definition_id mismatches the exact target definition"
-            )
 
 
 @dataclass(frozen=True, slots=True)
 class TargetListSnapshot:
     """Owner-minted immutable ordered target-list snapshot."""
 
-    snapshot_id: str
-    content_sha256: str
     identity_namespace: str
     definitions: tuple[TargetDefinitionIdentity, ...]
 
@@ -92,10 +58,6 @@ class TargetListSnapshot:
             self.identity_namespace,
             field="identity_namespace",
         )
-        content_sha256 = _validate_sha256(
-            self.content_sha256,
-            field="content_sha256",
-        )
         definitions = _validated_definitions(
             self.definitions,
             identity_namespace=namespace,
@@ -103,17 +65,6 @@ class TargetListSnapshot:
         if definitions != self.definitions:
             raise TargetIdentityError(
                 "target-list snapshot definitions must preserve owner order"
-            )
-        expected_content_sha256 = _content_sha256(
-            _target_list_content(namespace, definitions)
-        )
-        if content_sha256 != expected_content_sha256:
-            raise TargetIdentityError(
-                "target-list snapshot content digest mismatches owner definitions"
-            )
-        if self.snapshot_id != f"{_TARGET_LIST_SNAPSHOT_PREFIX}{content_sha256}":
-            raise TargetIdentityError(
-                "target-list snapshot ID mismatches owner content"
             )
 
 
@@ -156,14 +107,6 @@ def mint_target_key(
     )
     label = _owner_normalized_text(target.label, field="target_label")
     return TargetKey(
-        target_key_id=_typed_digest(
-            _TARGET_KEY_PREFIX,
-            {
-                "schema": "target_key_identity",
-                "identity_namespace": namespace,
-                "target_label": label,
-            },
-        ),
         identity_namespace=namespace,
         target_label=label,
     )
@@ -178,10 +121,6 @@ def mint_target_definition_identity(
 
     key = mint_target_key(target, identity_namespace=identity_namespace)
     return TargetDefinitionIdentity(
-        target_definition_id=_typed_digest(
-            _TARGET_DEFINITION_PREFIX,
-            _target_definition_basis(key, target),
-        ),
         target_key=key,
         target=target,
     )
@@ -214,10 +153,7 @@ def mint_target_list_snapshot(
         )
         for target in target_tuple
     )
-    content_sha256 = _content_sha256(_target_list_content(namespace, definitions))
     return TargetListSnapshot(
-        snapshot_id=f"{_TARGET_LIST_SNAPSHOT_PREFIX}{content_sha256}",
-        content_sha256=content_sha256,
         identity_namespace=namespace,
         definitions=definitions,
     )
@@ -268,11 +204,7 @@ def target_list_snapshot_payload(snapshot: TargetListSnapshot) -> dict[str, obje
         raise TargetIdentityError(
             "processing input requires an owner-minted TargetListSnapshot"
         )
-    return {
-        "snapshot_id": snapshot.snapshot_id,
-        "content_sha256": snapshot.content_sha256,
-        **_target_list_content(snapshot.identity_namespace, snapshot.definitions),
-    }
+    return _target_list_content(snapshot.identity_namespace, snapshot.definitions)
 
 
 def _resolve_definition(
@@ -392,17 +324,6 @@ def _validate_target(target: Target) -> None:
         )
 
 
-def _target_definition_basis(
-    target_key: TargetKey,
-    target: Target,
-) -> dict[str, object]:
-    return {
-        "schema": "target_definition_identity",
-        "target_key_id": target_key.target_key_id,
-        "target": asdict(target),
-    }
-
-
 def _target_list_content(
     identity_namespace: str,
     definitions: tuple[TargetDefinitionIdentity, ...],
@@ -412,8 +333,7 @@ def _target_list_content(
         "identity_namespace": identity_namespace,
         "definitions": [
             {
-                "target_key_id": definition.target_key.target_key_id,
-                "target_definition_id": definition.target_definition_id,
+                "target_label": definition.target_key.target_label,
                 "target": asdict(definition.target),
             }
             for definition in definitions
@@ -421,35 +341,9 @@ def _target_list_content(
     }
 
 
-def _typed_digest(prefix: str, content: Mapping[str, object]) -> str:
-    return f"{prefix}{_content_sha256(content)}"
-
-
-def _content_sha256(content: Mapping[str, object]) -> str:
-    try:
-        payload = json.dumps(
-            dict(content),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise TargetIdentityError(
-            "target identity content must be canonical JSON"
-        ) from exc
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
 def _owner_normalized_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise TargetIdentityError(f"{field} must be non-empty owner-normalized text")
-    return value
-
-
-def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise TargetIdentityError(f"{field} must be a lower-case SHA-256 digest")
     return value
 
 

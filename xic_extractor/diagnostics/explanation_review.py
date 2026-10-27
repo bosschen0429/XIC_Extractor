@@ -35,20 +35,37 @@ def validate_membership_risks(risks: object) -> None:
     def strings(value: object) -> bool:
         return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
+    def owner(value: object) -> bool:
+        return (
+            isinstance(value, list)
+            and len(value) == 3
+            and isinstance(value[0], str)
+            and all(
+                isinstance(item, (int, float)) and not isinstance(item, bool)
+                for item in value[1:]
+            )
+        )
+
+    def owners(value: object) -> bool:
+        return isinstance(value, list) and all(owner(item) for item in value)
+
     def partition(value: object) -> bool:
-        return isinstance(value, list) and all(strings(group) for group in value)
+        return isinstance(value, list) and all(owners(group) for group in value)
 
     if not isinstance(risks, list):
         raise ValueError("membership risks must be a list")
     for risk in risks:
         if not isinstance(risk, dict):
             raise ValueError("membership risk must be an object")
-        valid = all(
-            isinstance(risk.get(key), str)
-            for key in ("status", "phase", "rt_basis", "evidence_basis")
-        ) and all(
-            strings(risk.get(key))
-            for key in ("selected_owner_ids", "soft_contradictions", "risk_flags")
+        valid = (
+            all(
+                isinstance(risk.get(key), str)
+                for key in ("status", "phase", "rt_basis", "evidence_basis")
+            )
+            and owners(risk.get("selected_owners"))
+            and all(
+                strings(risk.get(key)) for key in ("soft_contradictions", "risk_flags")
+            )
         )
         alternative = risk.get("alternative_partition")
         equivalents = risk.get("equivalent_alternatives")
@@ -157,21 +174,21 @@ def selection_sample_facts(
             if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
                 continue
             fact = records.get(record_kind, {}).get(rid, {})
-            if fact.get("canonical_sample_identity_id", fact.get("sample_id")) not in (
+            if fact.get("sample_key", fact.get("sample_id")) not in (
                 None,
                 sid,
             ):
                 continue
-            if fact.get("group_hypothesis_id") not in (None, gid):
+            if fact.get("feature_id") not in (None, gid):
                 continue
-            if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+            if kind == "row" and fact.get("feature_id") not in (None, identifier):
                 continue
             if attention_reason(record_kind, fact) is not None:
                 flags[sid] |= ATTENTION
             if record_kind == "exclusions":
                 flags[sid] |= EXCLUDED
     for cell in cells:
-        sid = cell["canonical_sample_identity_id"]
+        sid = cell["sample_key"]
         flag = flags.setdefault(sid, initial)
         value = cell.get("value")
         flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
@@ -185,9 +202,9 @@ def selection_sample_facts(
         flags[sid] = flag
     observed = set(observed)
     observed.update(
-        member["canonical_sample_identity_id"]
+        member["sample_key"]
         for member in group.get("member_subjects", [])
-        if member.get("physical_observation_ids")
+        if member.get("physical_peak_keys")
     )
     for sid in observed & flags.keys():
         flags[sid] |= OBSERVED
@@ -198,7 +215,7 @@ def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -
     """Store a row's values once, with sample ordinals and shared field names."""
     values = [
         [
-            samples[cell["canonical_sample_identity_id"]],
+            samples[cell["sample_key"]],
             cell["variant"],
             cell.get("value"),
             cell.get("source"),
@@ -222,14 +239,29 @@ def unpack_cells(
     row_id: str,
     group_id: str,
     sample_ids: Sequence[str],
-) -> dict[str, dict[str, Any]]:
-    """Diagnostic row positions identify display facts, not scientific decisions."""
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Locate each cell by its group and canonical sample."""
     values = json.loads(zlib.decompress(payload))
+    if not isinstance(values, list):
+        raise ValueError("review cells must be an array; rerun Alignment")
     result = {}
-    for position, cell in enumerate(values):
-        sample, variant, value, source, states, reasons, origin, observations = cell[:8]
-        quality = cell[8] if len(cell) > 8 else []
-        risks = cell[9] if len(cell) > 9 else []
+    for cell in values:
+        if not isinstance(cell, list) or len(cell) != 10:
+            raise ValueError(
+                "review cell fields do not match the schema; rerun Alignment"
+            )
+        (
+            sample,
+            variant,
+            value,
+            source,
+            states,
+            reasons,
+            origin,
+            observations,
+            quality,
+            risks,
+        ) = cell
         validate_membership_risks(risks)
         if (
             isinstance(sample, bool)
@@ -237,12 +269,14 @@ def unpack_cells(
             or not 0 <= sample < len(sample_ids)
         ):
             raise ValueError("review cell has an invalid sample ordinal")
-        identity = f"review-cell:{row_id}:{position}"
-        result[identity] = {
-            "review_cell_id": identity,
-            "row_key_id": row_id,
-            "group_hypothesis_id": group_id,
-            "canonical_sample_identity_id": sample_ids[sample],
+        key = (group_id, sample_ids[sample])
+        if key in result:
+            raise ValueError(
+                "duplicate review cell for group and sample; rerun Alignment"
+            )
+        result[key] = {
+            "feature_id": group_id,
+            "sample_key": sample_ids[sample],
             "variant": variant,
             "value": value,
             "source": source,
@@ -281,14 +315,12 @@ def review_cell(decision: Any) -> dict[str, Any]:
             continue
         content = observation.content
         quality = content.integration.signal_quality
-        qualities[content.peak_observation_content_id] = {
-            "observation_id": content.peak_observation_content_id,
+        qualities[content.physical_peak_key] = {
+            "observation_id": content.physical_peak_key,
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
         }
     return {
-        "canonical_sample_identity_id": (
-            decision.subject.canonical_sample.identity.sample_identity_id
-        ),
+        "sample_key": (decision.subject.canonical_sample.identity.sample_key),
         "variant": decision.variant,
         "value": getattr(decision, "value", None),
         "source": getattr(decision, "source", None),
@@ -300,9 +332,9 @@ def review_cell(decision: Any) -> dict[str, Any]:
         "signal_quality": [qualities[key] for key in sorted(qualities)],
         "observation_ids": sorted(
             {
-                cell.content.peak_observation_content_id
+                cell.content.physical_peak_key
                 for cell in cells
-                if cell.content.peak_observation_content_id is not None
+                if cell.content.physical_peak_key is not None
             }
         ),
     }
@@ -312,7 +344,7 @@ def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """The retained review facts also define conversion of existing full reports."""
     if kind == "method_assessments":
         names = (
-            "canonical_sample_identity_id",
+            "sample_key",
             "provider_id",
             "method_id",
             "method_version",
@@ -320,10 +352,8 @@ def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             "technical_state",
             "method_result",
             "reason_codes",
-            "candidate_peak_content_ids",
+            "candidate_physical_peak_keys",
             "method_subject_id",
         )
         return {name: payload[name] for name in names if name in payload}
-    return {
-        key: value for key, value in payload.items() if key != "processing_request_id"
-    }
+    return dict(payload)

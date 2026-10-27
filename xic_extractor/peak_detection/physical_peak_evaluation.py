@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import replace
 from typing import Any
@@ -25,24 +24,6 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
     canonical_gaussian_signal_traces,
-)
-from xic_extractor.peak_detection.physical_peak_identity import (
-    _canonical_physical_json_bytes,
-    _finite_physical_float,
-    _physical_float_text,
-    _physical_segment_universe_basis,
-    _physical_vector,
-    _require_typed_physical_hash,
-    _required_physical_text,
-    _typed_physical_id,
-    canonical_physical_peak_facts_bytes,
-    canonical_physical_peak_question_bytes,
-    canonical_physical_segment_bytes,
-    canonical_prepared_signal_identity_bytes,
-    mint_physical_trace_content_id,
-    validate_physical_peak_answer_identity,
-    validate_physical_segment_universe_identity,
-    validate_prepared_signal_identity,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_OPERATION_ORDER,
@@ -87,35 +68,21 @@ def prepare_physical_signal(
     rt_values: object,
     intensity_values: object,
     *,
-    trace_content_id: str | None = None,
     profile: SignalProcessingProfile = DEFAULT_SIGNAL_PROCESSING_PROFILE,
 ) -> PreparedSignalResult:
     if not isinstance(profile, SignalProcessingProfile):
         raise TypeError("profile must be a SignalProcessingProfile")
     rt = _physical_vector(rt_values, field="rt_values")
     raw = _physical_vector(intensity_values, field="intensity_values")
-    actual_trace_id = mint_physical_trace_content_id(rt, raw)
-    if trace_content_id is not None:
-        if not isinstance(trace_content_id, str) or not trace_content_id:
-            raise TypeError("trace_content_id must be non-empty text")
-        if trace_content_id != actual_trace_id:
-            raise ValueError("trace_content_id does not match exact RT/raw content")
-    prepared_id = _typed_physical_id(
-        "prepared-signal:",
-        canonical_prepared_signal_identity_bytes(actual_trace_id, profile.profile_id),
-    )
-    projection_profile_id = profile.profile_id
-    projection_trace_point_count = len(rt)
 
     def projection_for(
         *, state: PhysicalPeakState, reason: str
     ) -> PreparedSignalProjection:
         return PreparedSignalProjection(
             schema_version="prepared_signal_projection",
-            trace_content_id=actual_trace_id,
-            profile_id=projection_profile_id,
-            prepared_signal_id=prepared_id,
-            trace_point_count=projection_trace_point_count,
+            profile=profile,
+            rt=rt,
+            raw=raw,
             state=state,
             reason=reason,
         )
@@ -238,7 +205,6 @@ def enumerate_physical_segment_universe(
 ) -> PhysicalSegmentUniverse:
     if not isinstance(prepared_result, PreparedSignalResult):
         raise TypeError("prepared_result must be a PreparedSignalResult")
-    validate_prepared_signal_identity(prepared_result.projection)
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     universe_schema = PHYSICAL_SEGMENT_UNIVERSE_SCHEMA
@@ -335,26 +301,14 @@ def enumerate_physical_segment_universe(
             state, reason = "unavailable", "peak_not_found"
         else:
             state, reason = "failed", "malformed_trace"
-    basis = _physical_segment_universe_basis(
-        prepared_result.projection.prepared_signal_id,
-        context_start,
-        context_end,
-        state,
-        reason,
-        physical_segments,
-        schema_version=universe_schema,
-    )
     return PhysicalSegmentUniverse(
         schema_version=universe_schema,
-        prepared_signal_id=prepared_result.projection.prepared_signal_id,
+        prepared=prepared_result.projection,
         context_rt_start_min=context_start,
         context_rt_end_min=context_end,
         state=state,
         reason=reason,
         segments=physical_segments,
-        segment_universe_id=_typed_physical_id(
-            "segment-universe:", _canonical_physical_json_bytes(basis)
-        ),
     )
 
 
@@ -474,7 +428,6 @@ def _censoring_aware_segments(
             continue
         apex = left + int(np.argmax(signal[left:right]))
         provisional = PhysicalSegment(
-            physical_segment_id="",
             start_index=left,
             end_index=right,
             apex_index=apex,
@@ -489,15 +442,7 @@ def _censoring_aware_segments(
             boundary_stop_reason="detection_density_return",
             evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
         )
-        replacements.append(
-            replace(
-                provisional,
-                physical_segment_id=_typed_physical_id(
-                    "physical-segment:",
-                    canonical_physical_segment_bytes(provisional),
-                ),
-            )
-        )
+        replacements.append(provisional)
     retained = [
         s
         for s in segments
@@ -510,7 +455,6 @@ def mint_physical_peak_question(
     prepared: PreparedSignalProjection,
     universe: PhysicalSegmentUniverse,
     *,
-    selection_subject_id: str,
     query_rt_min: float,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
     search_rt_window: tuple[float, float] | None = None,
@@ -519,19 +463,10 @@ def mint_physical_peak_question(
         raise TypeError("prepared must be a PreparedSignalProjection")
     if not isinstance(universe, PhysicalSegmentUniverse):
         raise TypeError("universe must be a PhysicalSegmentUniverse")
-    validate_prepared_signal_identity(prepared)
-    validate_physical_segment_universe_identity(universe)
-    if universe.prepared_signal_id != prepared.prepared_signal_id:
-        raise ValueError("segment universe crosses prepared signal identity")
-    subject_id = _required_physical_text(
-        selection_subject_id, field="selection_subject_id"
-    )
     query_rt = _finite_physical_float(query_rt_min, field="query_rt_min")
     search_rt_window = _validated_search_window(
         search_rt_window, query_rt, selection_policy_version
     )
-    context_start = universe.context_rt_start_min
-    context_end = universe.context_rt_end_min
     admissible = _admissible_physical_segments(
         universe, query_rt, selection_policy_version, search_rt_window
     )
@@ -540,26 +475,13 @@ def mint_physical_peak_question(
         if search_rt_window is not None
         else "physical_peak_question"
     )
-    question = PhysicalPeakQuestion(
+    return PhysicalPeakQuestion(
         schema_version=schema_version,
-        trace_content_id=prepared.trace_content_id,
-        prepared_signal_id=prepared.prepared_signal_id,
-        segment_universe_id=universe.segment_universe_id,
-        segment_ids=universe.segment_ids,
-        selection_subject_id=subject_id,
+        universe=universe,
         query_rt_min=query_rt,
-        context_rt_start_min=context_start,
-        context_rt_end_min=context_end,
-        admissible_segment_ids=admissible,
+        admissible_segments=admissible,
         selection_policy_version=selection_policy_version,
-        physical_question_id="",
         search_rt_window=search_rt_window,
-    )
-    return replace(
-        question,
-        physical_question_id=_typed_physical_id(
-            "physical-question:", canonical_physical_peak_question_bytes(question)
-        ),
     )
 
 
@@ -594,7 +516,7 @@ def _admissible_physical_segments(
     query_rt: float,
     selection_policy_version: str,
     search_rt_window: tuple[float, float] | None = None,
-) -> tuple[str, ...]:
+) -> tuple[PhysicalSegment, ...]:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
@@ -630,15 +552,15 @@ def _admissible_physical_segments(
             PHYSICAL_PEAK_BACKFILL_POLICY,
         }:
             containing = tuple(
-                segment.physical_segment_id
+                segment
                 for segment in candidates
                 if segment.left_rt_min <= query_rt <= segment.right_rt_min
             )
             if len(containing) == 1:
                 return containing
-        return tuple(segment.physical_segment_id for segment in candidates)
+        return candidates
     return tuple(
-        segment.physical_segment_id
+        segment
         for segment in universe.segments
         if segment.left_rt_min <= query_rt <= segment.right_rt_min
     )
@@ -646,7 +568,7 @@ def _admissible_physical_segments(
 
 def unique_physical_segment_at_rt(
     universe: PhysicalSegmentUniverse, query_rt_min: float
-) -> str | None:
+) -> PhysicalSegment | None:
     """Project point ownership from an already evaluated segment universe.
 
     In-memory consumers need the segment answer, not a new persisted question
@@ -656,66 +578,6 @@ def unique_physical_segment_at_rt(
         universe, query_rt_min, PHYSICAL_PEAK_POINT_POLICY, None
     )
     return admissible[0] if len(admissible) == 1 else None
-
-
-def validate_physical_peak_question_identity(
-    question: PhysicalPeakQuestion,
-    *,
-    universe: PhysicalSegmentUniverse | None = None,
-) -> None:
-    expected_schema = (
-        "bounded_physical_peak_question"
-        if question.search_rt_window is not None
-        else "physical_peak_question"
-    )
-    if question.schema_version != expected_schema:
-        raise ValueError("unsupported physical peak question schema")
-    _validated_search_window(
-        question.search_rt_window,
-        question.query_rt_min,
-        question.selection_policy_version,
-    )
-    if question.selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
-        raise ValueError("unsupported physical peak selection policy")
-    _finite_physical_float(question.query_rt_min, field="query_rt_min")
-    _finite_physical_float(question.context_rt_start_min, field="context_rt_start_min")
-    _finite_physical_float(question.context_rt_end_min, field="context_rt_end_min")
-    if len(question.segment_ids) != len(set(question.segment_ids)):
-        raise ValueError("physical question segment IDs must be unique")
-    if len(question.admissible_segment_ids) != len(
-        set(question.admissible_segment_ids)
-    ):
-        raise ValueError("physical question admissible IDs must be unique")
-    if any(
-        segment_id not in set(question.segment_ids)
-        for segment_id in question.admissible_segment_ids
-    ):
-        raise ValueError("physical question admissible ID is outside its universe")
-    expected = _typed_physical_id(
-        "physical-question:", canonical_physical_peak_question_bytes(question)
-    )
-    if question.physical_question_id != expected:
-        raise ValueError("physical_question_id does not match owner content")
-    if universe is not None:
-        validate_physical_segment_universe_identity(universe)
-        if (
-            question.segment_universe_id != universe.segment_universe_id
-            or question.segment_ids != universe.segment_ids
-        ):
-            raise ValueError("physical question crosses segment universe")
-        expected_admissible = _admissible_physical_segments(
-            universe,
-            question.query_rt_min,
-            question.selection_policy_version,
-            question.search_rt_window,
-        )
-        if question.admissible_segment_ids != expected_admissible:
-            raise ValueError("physical question omits owner-admissible segments")
-        if (
-            question.context_rt_start_min != universe.context_rt_start_min
-            or question.context_rt_end_min != universe.context_rt_end_min
-        ):
-            raise ValueError("physical question crosses universe context")
 
 
 def physical_segment_has_incomplete_context(
@@ -734,7 +596,7 @@ def qualified_physical_segments(
 ) -> tuple[PhysicalSegment, ...]:
     """Return segments with shared original-XIC support before candidate ranking.
 
-    This does not rebuild preparation, universe identity, or question hashes.
+    This reuses the prepared signal and measured segments.
     """
     return tuple(
         segment
@@ -847,31 +709,22 @@ def answer_physical_peak_question(
 ) -> PhysicalPeakEvaluation:
     if not isinstance(prepared_result, PreparedSignalResult):
         raise TypeError("prepared_result must be a PreparedSignalResult")
-    validate_prepared_signal_identity(prepared_result.projection)
-    validate_physical_peak_question_identity(question, universe=universe)
-    if question.prepared_signal_id != prepared_result.projection.prepared_signal_id:
-        raise ValueError("physical question crosses prepared signal")
     state = universe.state
     reason = universe.reason
     selected: PhysicalSegment | None = None
     background_qualified = False
     if state == "available":
-        if not question.admissible_segment_ids:
+        if not question.admissible_segments:
             state = "unavailable"
             reason = (
                 "no_peak_in_sample_local_window"
                 if question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
                 else "no_selection"
             )
-        elif len(question.admissible_segment_ids) > 1:
+        elif len(question.admissible_segments) > 1:
             state, reason = "unavailable", "ambiguous_segment_candidates"
         else:
-            selected_id = question.admissible_segment_ids[0]
-            selected = next(
-                segment
-                for segment in universe.segments
-                if segment.physical_segment_id == selected_id
-            )
+            selected = question.admissible_segments[0]
             prepared = prepared_result.prepared
             if prepared is None:
                 raise ValueError("available physical answer lacks worker-local signal")
@@ -890,28 +743,12 @@ def answer_physical_peak_question(
                 # Shared acquired support and local contrast qualify the peak.
                 # Overlap remains review evidence on the measured interval.
                 background_qualified = True
-    answer_basis = {
-        "schema_version": "physical_peak_answer",
-        "state": state,
-        "reason": reason,
-        "prepared_signal_id": prepared_result.projection.prepared_signal_id,
-        "physical_question_id": question.physical_question_id,
-        "physical_segment_id": (
-            selected.physical_segment_id if selected is not None else None
-        ),
-    }
     answer = PhysicalPeakAnswer(
         schema_version="physical_peak_answer",
         state=state,
         reason=reason,
-        prepared_signal_id=prepared_result.projection.prepared_signal_id,
-        physical_question_id=question.physical_question_id,
-        physical_segment_id=(
-            selected.physical_segment_id if selected is not None else None
-        ),
-        physical_answer_id=_typed_physical_id(
-            "physical-answer:", _canonical_physical_json_bytes(answer_basis)
-        ),
+        question=question,
+        selected_segment=selected,
     )
     facts: PhysicalPeakFacts | None = None
     integration: IntegrationResult | None = None
@@ -924,26 +761,8 @@ def answer_physical_peak_question(
         prepared = prepared_result.prepared
         if prepared is None:
             raise ValueError("available physical answer lacks worker-local signal")
-        selected_values = prepared.positive_signal[
-            selected.start_index : selected.end_index
-        ]
-        maximum = max(selected_values, default=0.0)
-        if maximum <= 0.0:
-            raise ValueError("available physical segment has no positive signal")
-        normalized = tuple(float(value / maximum) for value in selected_values)
-        normalized_bytes = _canonical_physical_json_bytes(
-            {
-                "schema_version": "physical_relative_shape",
-                "values": [_physical_float_text(value) for value in normalized],
-            }
-        )
-        shape_hash = hashlib.sha256(normalized_bytes).hexdigest()
-        provisional = PhysicalPeakFacts(
+        facts = PhysicalPeakFacts(
             schema_version="physical_peak_facts",
-            prepared_signal_id=prepared_result.projection.prepared_signal_id,
-            physical_question_id=question.physical_question_id,
-            physical_answer_id=answer.physical_answer_id,
-            physical_segment_id=selected.physical_segment_id,
             apex_rt_min=selected.apex_rt_min,
             left_rt_min=selected.left_rt_min,
             right_rt_min=selected.right_rt_min,
@@ -955,24 +774,11 @@ def answer_physical_peak_question(
                 if "near_detection_limit" in selected.evidence_sources
                 else "trapezoid_counts_seconds_on_canonical_signal"
             ),
-            relative_shape_schema_version="physical_relative_shape",
-            relative_shape_point_count=len(normalized),
-            relative_shape_content_hash=shape_hash,
-            fact_content_id="",
         )
-        fact_id = _typed_physical_id(
-            "physical-facts:",
-            canonical_physical_peak_facts_bytes(
-                provisional,
-                relative_shape_values=normalized,
-            ),
-        )
-        facts = replace(provisional, fact_content_id=fact_id)
         integration = _physical_raw_descriptor_projection(prepared, selected, facts)
         operations = (
             *operations,
             "integration",
-            "normalization",
             "raw_descriptor_projection",
         )
     return PhysicalPeakEvaluation(
@@ -992,7 +798,6 @@ def answer_physical_peak_question(
 def evaluate_physical_peak(
     prepared_result: PreparedSignalResult,
     *,
-    selection_subject_id: str,
     query_rt_min: float,
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
@@ -1012,7 +817,6 @@ def evaluate_physical_peak(
     question = mint_physical_peak_question(
         prepared_result.projection,
         universe,
-        selection_subject_id=selection_subject_id,
         query_rt_min=query_rt_min,
         selection_policy_version=selection_policy_version,
         search_rt_window=search_rt_window,
@@ -1072,6 +876,94 @@ def _physical_raw_descriptor_projection(
     )
 
 
+def _physical_vector(values: object, *, field: str) -> tuple[float, ...]:
+    if isinstance(values, (str, bytes)):
+        raise TypeError(f"{field} must be a one-dimensional numeric sequence")
+    try:
+        array = np.asarray(values, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{field} must be a one-dimensional numeric sequence") from exc
+    if array.ndim != 1:
+        raise ValueError(f"{field} must be one-dimensional")
+    return tuple(float(value) for value in array)
+
+
+def _finite_physical_float(value: object, *, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{field} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field} must be a finite number")
+    return result
+
+
+def validate_prepared_signal(projection: PreparedSignalProjection) -> None:
+    if projection.schema_version != "prepared_signal_projection":
+        raise ValueError("unsupported prepared signal projection schema")
+    if projection.state not in {"available", "unavailable", "failed"}:
+        raise ValueError("unsupported prepared signal state")
+    if (projection.state == "available") != (projection.reason == ""):
+        raise ValueError("prepared signal state/reason is not canonical")
+
+
+def validate_physical_segment_universe(universe: PhysicalSegmentUniverse) -> None:
+    if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
+        raise ValueError("unsupported physical segment universe schema")
+    if universe.state not in {"available", "unavailable", "failed"}:
+        raise ValueError("unsupported physical segment universe state")
+    if (universe.state == "available") != (universe.reason == ""):
+        raise ValueError("physical segment universe state/reason is not canonical")
+    if universe.state == "available" and not universe.segments:
+        raise ValueError("available physical segment universe must not be empty")
+    start = _finite_physical_float(
+        universe.context_rt_start_min, field="context_rt_start_min"
+    )
+    end = _finite_physical_float(
+        universe.context_rt_end_min, field="context_rt_end_min"
+    )
+    if start > end:
+        raise ValueError("physical segment universe context is reversed")
+
+
+def validate_physical_peak_question(question: PhysicalPeakQuestion) -> None:
+    expected_schema = (
+        "bounded_physical_peak_question"
+        if question.search_rt_window is not None
+        else "physical_peak_question"
+    )
+    if question.schema_version != expected_schema:
+        raise ValueError("unsupported physical peak question schema")
+    _validated_search_window(
+        question.search_rt_window,
+        question.query_rt_min,
+        question.selection_policy_version,
+    )
+    query_rt = _finite_physical_float(question.query_rt_min, field="query_rt_min")
+    if question.admissible_segments != _admissible_physical_segments(
+        question.universe,
+        query_rt,
+        question.selection_policy_version,
+        question.search_rt_window,
+    ):
+        raise ValueError("physical question omits owner-admissible segments")
+
+
+def validate_physical_peak_answer(answer: PhysicalPeakAnswer) -> None:
+    if answer.schema_version != "physical_peak_answer":
+        raise ValueError("unsupported physical peak answer schema")
+    if answer.state not in {"available", "unavailable", "failed"}:
+        raise ValueError("unsupported physical peak answer state")
+    if (answer.state == "available") != (answer.reason == ""):
+        raise ValueError("physical peak answer state/reason is not canonical")
+    if (answer.state == "available") != (answer.selected_segment is not None):
+        raise ValueError("physical peak answer selection is not canonical")
+    if (
+        answer.selected_segment is not None
+        and answer.selected_segment not in answer.question.admissible_segments
+    ):
+        raise ValueError("physical peak answer selects outside admissible segments")
+
+
 def validate_bounded_physical_peak_evaluation(
     evaluation: PhysicalPeakEvaluation,
 ) -> None:
@@ -1101,29 +993,16 @@ def validate_bounded_physical_peak_evaluation(
     )
     if evaluation.operations not in allowed_operation_sequences:
         raise ValueError("physical evaluation operations are not canonical")
-    validate_prepared_signal_identity(evaluation.prepared)
-    validate_physical_segment_universe_identity(evaluation.segment_universe)
-    validate_physical_peak_question_identity(
-        evaluation.question,
-        universe=evaluation.segment_universe,
-    )
-    validate_physical_peak_answer_identity(evaluation.answer)
-    if (
-        evaluation.prepared.prepared_signal_id
-        != evaluation.segment_universe.prepared_signal_id
-        or evaluation.prepared.prepared_signal_id
-        != evaluation.question.prepared_signal_id
-        or evaluation.prepared.prepared_signal_id
-        != evaluation.answer.prepared_signal_id
-    ):
-        raise ValueError("bounded physical evaluation crosses prepared identities")
-    if evaluation.question.trace_content_id != evaluation.prepared.trace_content_id:
-        raise ValueError("bounded physical evaluation crosses trace identities")
-    if (
-        evaluation.answer.physical_question_id
-        != evaluation.question.physical_question_id
-    ):
-        raise ValueError("bounded physical evaluation crosses question identities")
+    validate_prepared_signal(evaluation.prepared)
+    validate_physical_segment_universe(evaluation.segment_universe)
+    validate_physical_peak_question(evaluation.question)
+    validate_physical_peak_answer(evaluation.answer)
+    if evaluation.prepared != evaluation.segment_universe.prepared:
+        raise ValueError("physical evaluation crosses prepared signal")
+    if evaluation.question.universe != evaluation.segment_universe:
+        raise ValueError("physical evaluation crosses segment universe")
+    if evaluation.answer.question != evaluation.question:
+        raise ValueError("physical evaluation crosses question")
     if (
         evaluation.state != evaluation.answer.state
         or evaluation.reason != evaluation.answer.reason
@@ -1133,7 +1012,7 @@ def validate_bounded_physical_peak_evaluation(
         if (
             evaluation.facts is None
             or evaluation.integration is None
-            or evaluation.answer.physical_segment_id is None
+            or evaluation.answer.selected_segment is None
         ):
             raise ValueError("available physical evaluation requires complete facts")
         facts = evaluation.facts
@@ -1147,27 +1026,16 @@ def validate_bounded_physical_peak_evaluation(
             raise ValueError("available physical evaluation lacks completed operations")
         if facts.schema_version != "physical_peak_facts":
             raise ValueError("unsupported physical peak facts schema")
-        if facts.relative_shape_schema_version != "physical_relative_shape":
-            raise ValueError("unsupported physical relative-shape schema")
-        if facts.relative_shape_point_count < 1:
-            raise ValueError("physical relative shape must contain at least one point")
+        segment = evaluation.answer.selected_segment
         if (
-            facts.prepared_signal_id != evaluation.prepared.prepared_signal_id
-            or facts.physical_question_id != evaluation.question.physical_question_id
-            or facts.physical_answer_id != evaluation.answer.physical_answer_id
-            or facts.physical_segment_id != evaluation.answer.physical_segment_id
+            facts.apex_rt_min != segment.apex_rt_min
+            or facts.left_rt_min != segment.left_rt_min
+            or facts.right_rt_min != segment.right_rt_min
+            or facts.height != segment.height
+            or facts.scan_support_count != segment.scan_support_count
+            or facts.area_counts_seconds != segment.area_counts_seconds
         ):
-            raise ValueError("bounded physical facts cross owner identities")
-        _require_typed_physical_hash(
-            facts.relative_shape_content_hash,
-            prefix="",
-            field="relative_shape_content_hash",
-        )
-        _require_typed_physical_hash(
-            facts.fact_content_id,
-            prefix="physical-facts:",
-            field="fact_content_id",
-        )
+            raise ValueError("physical facts cross selected segment")
         if (
             integration.rt_left_min != facts.left_rt_min
             or integration.rt_apex_min != facts.apex_rt_min
@@ -1180,7 +1048,7 @@ def validate_bounded_physical_peak_evaluation(
     elif (
         evaluation.facts is not None
         or evaluation.integration is not None
-        or evaluation.answer.physical_segment_id is not None
+        or evaluation.answer.selected_segment is not None
     ):
         raise ValueError("non-available physical evaluation cannot carry facts")
     elif len(evaluation.operations) > terminal_prefix_length:
@@ -1188,8 +1056,7 @@ def validate_bounded_physical_peak_evaluation(
 
 
 def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
-    provisional = PhysicalSegment(
-        physical_segment_id="",
+    return PhysicalSegment(
         start_index=segment.interval.start_index,
         end_index=segment.interval.end_index,
         apex_index=segment.apex_index,
@@ -1202,12 +1069,6 @@ def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
         segment_class=segment.segment_class,
         boundary_stop_reason=segment.boundary_stop_reason,
         evidence_sources=segment.evidence_sources,
-    )
-    return replace(
-        provisional,
-        physical_segment_id=_typed_physical_id(
-            "physical-segment:", canonical_physical_segment_bytes(provisional)
-        ),
     )
 
 

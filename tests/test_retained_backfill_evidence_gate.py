@@ -48,7 +48,7 @@ def test_cli_writes_retained_product_backfill_gate_and_summary(
     assert _sha256_file(matrix_path) == before_hash
     rows = _read_tsv(output_dir / "alignment_retained_backfill_evidence_gate.tsv")
     assert tuple(rows[0]) == RETAINED_BACKFILL_EVIDENCE_GATE_COLUMNS
-    by_id = {row["feature_family_id"]: row for row in rows}
+    by_id = {row["feature_id"]: row for row in rows}
     assert set(by_id) == {"FAM_SUPPORT", "FAM_CONFLICT", "FAM_MISSING"}
     assert "FAM_CELL_GAP" not in by_id
 
@@ -85,11 +85,11 @@ def test_cli_writes_retained_product_backfill_gate_and_summary(
     queue_rows = _read_tsv(
         output_dir / "alignment_retained_backfill_missing_overlay_queue.tsv",
     )
-    assert [row["feature_family_id"] for row in queue_rows] == ["FAM_MISSING"]
+    assert [row["feature_id"] for row in queue_rows] == ["FAM_MISSING"]
     review_queue_rows = _read_tsv(
         output_dir / "alignment_retained_backfill_overlay_review_queue.tsv",
     )
-    assert [row["feature_family_id"] for row in review_queue_rows] == ["FAM_MISSING"]
+    assert [row["feature_id"] for row in review_queue_rows] == ["FAM_MISSING"]
     queue = queue_rows[0]
     assert queue["rank"] == "1"
     assert queue["family_center_mz"] == "269.145"
@@ -151,7 +151,7 @@ def test_overlay_support_without_seed_provenance_fails_closed(
 
     assert code == 0
     rows = _read_tsv(output_dir / "alignment_retained_backfill_evidence_gate.tsv")
-    by_id = {row["feature_family_id"]: row for row in rows}
+    by_id = {row["feature_id"]: row for row in rows}
     assert by_id["FAM_SUPPORT"]["evidence_gate_status"] == "evidence_missing"
     assert (
         "ms1_shape_supports_family_backfill"
@@ -268,7 +268,7 @@ def test_unbound_family_overlay_is_not_evidence(
 
     assert code == 0
     rows = _read_tsv(output_dir / "alignment_retained_backfill_evidence_gate.tsv")
-    by_id = {row["feature_family_id"]: row for row in rows}
+    by_id = {row["feature_id"]: row for row in rows}
     supported = by_id["FAM_SUPPORT"]
     assert supported["evidence_gate_status"] == "evidence_missing"
     assert supported["recommended_action"] == "generate_missing_evidence"
@@ -279,7 +279,7 @@ def test_unbound_family_overlay_is_not_evidence(
     queue_rows = _read_tsv(
         output_dir / "alignment_retained_backfill_missing_overlay_queue.tsv",
     )
-    by_queue_id = {row["feature_family_id"]: row for row in queue_rows}
+    by_queue_id = {row["feature_id"]: row for row in queue_rows}
     assert by_queue_id["FAM_SUPPORT"]["seed_group_id"] == _seed_group_id(
         "FAM_SUPPORT",
     )
@@ -346,13 +346,13 @@ def test_seed_specific_overlay_rows_do_not_leak_across_seed_groups(
         overlay_path,
         [
             {
-                "feature_family_id": family_id,
+                "feature_id": family_id,
                 "seed_group_id": seed_a,
                 "family_verdict": "ms1_shape_supports_family_backfill",
                 "png_path": "plots/fam-multi-a.png",
             },
             {
-                "feature_family_id": family_id,
+                "feature_id": family_id,
                 "seed_group_id": seed_b,
                 "family_verdict": "review_required_neighboring_ms1_interference",
                 "png_path": "plots/fam-multi-b.png",
@@ -410,7 +410,7 @@ def test_cli_prefers_compact_backfill_cell_evidence_over_full_cells(
         (alignment_dir / "alignment_cells.tsv").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    _write_tsv(alignment_dir / "alignment_cells.tsv", [{"feature_family_id": "FAM"}])
+    _write_tsv(alignment_dir / "alignment_cells.tsv", [{"feature_id": "FAM"}])
 
     code = gate_cli.main(["--alignment-dir", str(alignment_dir)])
 
@@ -426,8 +426,8 @@ def test_cli_prefers_compact_backfill_cell_evidence_over_full_cells(
 def test_cli_reports_missing_required_columns(tmp_path: Path, capsys) -> None:
     alignment_dir = tmp_path / "alignment"
     alignment_dir.mkdir()
-    _write_tsv(alignment_dir / "alignment_review.tsv", [{"feature_family_id": "FAM"}])
-    _write_tsv(alignment_dir / "alignment_cells.tsv", [{"feature_family_id": "FAM"}])
+    _write_tsv(alignment_dir / "alignment_review.tsv", [{"feature_id": "FAM"}])
+    _write_tsv(alignment_dir / "alignment_cells.tsv", [{"feature_id": "FAM"}])
     _write_tsv(
         alignment_dir / "alignment_matrix.tsv",
         [{"Mz": "269.145", "RT": "10.0", "S1": "1"}],
@@ -526,7 +526,7 @@ def _review_row(
     flags: str = "",
 ) -> dict[str, str]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "family_center_mz": "269.145",
         "family_center_rt": "10.0000",
         "include_in_primary_matrix": include,
@@ -543,7 +543,7 @@ def _review_row(
 
 def _cell_row(family_id: str, sample: str, status: str) -> dict[str, str]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "sample_stem": sample,
         "status": status,
         "primary_matrix_area": "100",
@@ -569,7 +569,7 @@ def _seed_row(
     rt_max: str = "11.0000",
 ) -> dict[str, str]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "sample_stem": sample,
         "status": "backfilled",
         "backfill_seed_mz": "269.145",
@@ -594,12 +594,12 @@ def _seed_group_id(
 
 def _write_overlay_summary(path: Path, *, seed_specific: bool = True) -> Path:
     support: dict[str, str] = {
-        "feature_family_id": "FAM_SUPPORT",
+        "feature_id": "FAM_SUPPORT",
         "family_verdict": "ms1_shape_supports_family_backfill",
         "png_path": "plots/fam-support.png",
     }
     conflict: dict[str, str] = {
-        "feature_family_id": "FAM_CONFLICT",
+        "feature_id": "FAM_CONFLICT",
         "family_verdict": "review_required_neighboring_ms1_interference",
         "png_path": "plots/fam-conflict.png",
     }

@@ -27,7 +27,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    supported_cid_nl_peak_ids,
+    supported_cid_nl_peaks,
 )
 
 _DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
@@ -241,22 +241,21 @@ def compatible_composite_owners(
         if (
             member is None
             or member.subject_id != owner.owner_id
-            or member.processing_request_id
-            != assessment.artifact.producer_processing_request_id
-            or member.canonical_sample_identity_id
-            != assessment.content.canonical_sample_identity_id
+            or member.sample_key != assessment.content.sample_key
         ):
             return False
-        if len(member.physical_observation_ids) != 1 or not set(
-            member.physical_observation_ids
-        ).issubset(supported_cid_nl_peak_ids(assessment)):
+        if len(member.physical_peaks) != 1:
             return False
         peak = next(
-            item
-            for item in assessment.candidate_peaks
-            if item.content.peak_observation_content_id
-            == member.physical_observation_ids[0]
+            (
+                item
+                for item in assessment.candidate_peaks
+                if item.content.physical_identity == member.physical_peaks[0]
+            ),
+            None,
         )
+        if peak is None or peak.content not in supported_cid_nl_peaks(assessment):
+            return False
         if (
             owner.raw_file != assessment.content.acquisition_source_id
             or owner.selected_integration != peak.content.integration

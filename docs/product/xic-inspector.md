@@ -254,7 +254,7 @@ seed 0.
 
 ## Lightweight Alignment review
 
-New Alignment explanations default to `alignment_explanation_review`. They
+New Alignment explanations default to `alignment_explanation_review.v2`. They
 retain the full candidate/group population, grouping reasons, compact method
 conclusions and sample cell values. Cell values are stored once per row; full
 artifact envelopes and curve arrays are not included by default. Query,
@@ -291,15 +291,8 @@ reasons, omitting curve payloads and duplicated artifact chains. Compact review
 cell references are display positions, not scientific decision IDs; full audit
 retains the latter. The bound Matrix file must remain available.
 
-An older compact review can gain or upgrade the selection index without losing retained facts
-or curves. This writes a new file and requires no RAW access:
-
-```powershell
-.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
-```
-
-Older reports without the current index remain readable through population
-selection. Query-only indexes remain usable for query selection until upgraded.
+Reports with obsolete fields or an incomplete query index are rejected. Rerun
+Alignment to produce a current report; readers do not upgrade old files.
 
 For a curve not retained in the report, acquire only the requested candidate's
 or group's observed windows into a portable bundle:
@@ -352,7 +345,6 @@ The owned output collision guard reserves this artifact and its temporary/backup
 names before acquisition. Matrix publication still uses its existing atomic
 writer. Explanation publication follows successful Matrix writing; if explanation
 IO fails, the command fails and the Matrix may remain, without a complete report.
-This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 
 Explanation summaries publish `initial_edge_coverage`
 with the versioned sparse-pair policy (`absence_means_not_evaluated`), so an empty retained edge set is not missing audit

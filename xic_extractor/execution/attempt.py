@@ -3,7 +3,7 @@
 Workflow adapters translate their worker outputs into the typed receipts in
 this module.  This owner applies the existing reducers, derives the complete
 observability ledger from accepted facts plus narrow external telemetry
-samples, and emits one content-bound finalization receipt.  It does not collect
+samples, and emits one typed finalization result.  It does not collect
 live telemetry, choose storage, or acquire scientific/product authority.
 """
 
@@ -11,14 +11,11 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterable, Sequence
-from dataclasses import InitVar, dataclass, field, replace
-from typing import final
+from dataclasses import dataclass, replace
 
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     CoordinatorTerminalRecord,
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeResourceCleanupOutcome,
@@ -26,10 +23,8 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
-    SupervisorFinalizationRecord,
     _record_runtime_resource_cleanups,
     _record_runtime_resource_opens,
-    _register_runtime_artifacts,
     _reserve_runtime_resources,
     begin_attempt_finalization,
     mint_supervisor_finalization,
@@ -57,15 +52,12 @@ from xic_extractor.execution._observability import (
     RuntimeObservationEvent,
     RuntimeObservationSubject,
     _index_event_offsets,
-    _mint_runtime_observability_ledger,
 )
 from xic_extractor.execution._receipts import (
     _RUNTIME_OWNER_MEASUREMENT_SOURCE,
-    _RUNTIME_OWNER_MINT_TOKEN,
     RuntimeAcquisitionMetrics,
     RuntimeAcquisitionReceipt,
     RuntimeArtifactIoSample,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
@@ -148,51 +140,16 @@ class RuntimeCancellationIngress:
             return self._request
 
 
-@final
 @dataclass(frozen=True, slots=True)
 class RuntimeAttemptAggregate:
     """The sole runtime-owned state carried across adapter boundaries."""
 
     state: AttemptFinalizationState
     acquisitions: tuple[RuntimeAcquisitionReceipt, ...] = ()
-    _mint_token: InitVar[object] = field(kw_only=True)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeAttemptAggregate is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
-            raise RuntimeFinalizationContractError(
-                "RuntimeAttemptAggregate must be minted by the runtime owner"
-            )
 
     @property
     def runtime(self) -> AttemptRuntime:
         return self.state.runtime
-
-
-def _mint_runtime_attempt_aggregate(
-    *,
-    state: AttemptFinalizationState,
-    acquisitions: tuple[RuntimeAcquisitionReceipt, ...] = (),
-) -> RuntimeAttemptAggregate:
-    return RuntimeAttemptAggregate(
-        state=state,
-        acquisitions=acquisitions,
-        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
-    )
-
-
-def _mint_runtime_finalization_receipt(
-    *,
-    coordinator: CoordinatorTerminalRecord,
-    supervisor: SupervisorFinalizationRecord,
-) -> RuntimeFinalizationReceipt:
-    return RuntimeFinalizationReceipt(
-        coordinator=coordinator,
-        supervisor=supervisor,
-        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
-    )
 
 
 def start_runtime_attempt(
@@ -234,7 +191,6 @@ def mint_work_unit_settlement(
     attempt: ProcessingAttemptIdentity,
     work_unit_key: str,
     outcome: WorkUnitTerminalOutcome,
-    owner_result_ref: EvidenceArtifactRef | None = None,
     failure_detail: WorkUnitFailureDetail | None = None,
 ) -> WorkUnitSettlement:
     """Mint one typed work settlement through the runtime authority facade."""
@@ -243,7 +199,6 @@ def mint_work_unit_settlement(
         attempt=attempt,
         work_unit_key=work_unit_key,
         outcome=outcome,
-        owner_result_ref=owner_result_ref,
         failure_detail=failure_detail,
     )
 
@@ -258,7 +213,7 @@ def _prepare_runtime_attempt(
         raise RuntimeFinalizationContractError("runtime must be an AttemptRuntime")
     state = begin_attempt_finalization(runtime)
     if runtime.manifest_preflight_failed:
-        return _mint_runtime_attempt_aggregate(state=state)
+        return RuntimeAttemptAggregate(state=state)
     if isinstance(reservations, (str, bytes)):
         raise RuntimeFinalizationContractError(
             "reservations must contain RuntimeResourceReservation values"
@@ -279,7 +234,7 @@ def _prepare_runtime_attempt(
             yield reservation
 
     state = _reserve_runtime_resources(state, checked_reservations())
-    return _mint_runtime_attempt_aggregate(state=state)
+    return RuntimeAttemptAggregate(state=state)
 
 
 def _apply_runtime_worker_batch(
@@ -347,20 +302,6 @@ def _apply_runtime_worker_batch(
             runtime=_settle_work_units(state.runtime, ordered_settlements()),
         )
 
-    state = _register_runtime_artifacts(
-        state,
-        (
-            (registration.work_unit_key, registration.artifact)
-            for registration in sorted(
-                batch.artifact_registrations,
-                key=lambda item: (
-                    manifest_order.get(item.work_unit_key, len(manifest_order)),
-                    item.artifact.evidence_artifact_id,
-                ),
-            )
-        ),
-    )
-
     state = _record_runtime_resource_cleanups(
         state,
         ((item.resource_key, item.cleanup_outcome) for item in resource_settlements),
@@ -400,16 +341,9 @@ def _apply_runtime_worker_batch(
         if replay_index is not None:
             existing_for_work[replay_index] = acquisition_receipt
             continue
-        acquisition = acquisition_receipt.acquisition
-        acquisition_identity = (
-            None
-            if isinstance(acquisition, RuntimeAcquisitionMetrics)
-            else acquisition.capability.capability_id
-        )
+        acquisition_identity = acquisition_receipt.acquisition_capability
         if any(
-            isinstance(existing.acquisition, RuntimeAcquisitionMetrics)
-            or acquisition_identity is None
-            or existing.acquisition.capability.capability_id == acquisition_identity
+            existing.acquisition_capability == acquisition_identity
             for existing in existing_for_work
         ):
             raise RuntimeFinalizationContractError(
@@ -417,7 +351,7 @@ def _apply_runtime_worker_batch(
             )
         existing_for_work.append(acquisition_receipt)
 
-    return _mint_runtime_attempt_aggregate(
+    return RuntimeAttemptAggregate(
         state=state,
         acquisitions=tuple(
             acquisition
@@ -444,7 +378,7 @@ def _finalize_runtime_attempt(
     if not callable(persister):
         raise RuntimeFinalizationContractError("persister must be callable")
     coordinator = propose_attempt_terminal(aggregate.state)
-    terminal_aggregate = _mint_runtime_attempt_aggregate(
+    terminal_aggregate = RuntimeAttemptAggregate(
         state=coordinator.state,
         acquisitions=aggregate.acquisitions,
     )
@@ -464,7 +398,7 @@ def _finalize_runtime_attempt(
         coordinator,
         observability_ledger=ledger,
     )
-    proposed = _mint_runtime_finalization_receipt(
+    proposed = RuntimeFinalizationReceipt(
         coordinator=coordinator,
         supervisor=supervisor,
     )
@@ -490,7 +424,7 @@ def _accept_cancellation_into_aggregate(
         replace(ev, sequence=first_sequence + idx)
         for idx, ev in enumerate(aggregate.state.events)
     )
-    return _mint_runtime_attempt_aggregate(
+    return RuntimeAttemptAggregate(
         state=replace(
             aggregate.state,
             runtime=replace(
@@ -758,7 +692,7 @@ def _derive_runtime_observability_ledger(
                 events=events,
             )
         )
-        return _mint_runtime_observability_ledger(
+        return RuntimeObservabilityLedger(
             attempt=attempt,
             work_unit_keys=(),
             events=events,
@@ -868,7 +802,7 @@ def _derive_runtime_observability_ledger(
             reason=telemetry.process_tree_peak_rss.reason,
         )
     )
-    return _mint_runtime_observability_ledger(
+    return RuntimeObservabilityLedger(
         attempt=attempt,
         work_unit_keys=state.runtime.manifest.work_unit_keys,
         events=events,
@@ -969,10 +903,6 @@ def _runtime_observation_shapes(
             )
         )
     append_lifecycle_phase(
-        frozenset({RuntimeLifecycleEventKind.ARTIFACT_REGISTERED}),
-        RuntimeObservationSubject.ARTIFACT,
-    )
-    append_lifecycle_phase(
         frozenset(
             {
                 RuntimeLifecycleEventKind.RESOURCE_CLEANUP_SUCCEEDED,
@@ -993,20 +923,6 @@ def _runtime_observation_shapes(
             "attempt",
         )
     )
-    for artifact in state.artifacts:
-        kind = (
-            SupervisorFinalizationEventKind.ARTIFACT_OFFERED_TO_OWNER
-            if artifact.proposed_disposition
-            is RuntimeArtifactDisposition.OFFERED_TO_OWNER
-            else SupervisorFinalizationEventKind.ARTIFACT_QUARANTINED_DIAGNOSTIC
-        )
-        shapes.append(
-            (
-                kind.value,
-                RuntimeObservationSubject.ARTIFACT,
-                artifact.artifact.evidence_artifact_id,
-            )
-        )
     shapes.append(
         (
             SupervisorFinalizationEventKind.TERMINAL_OUTCOME.value,
@@ -1170,7 +1086,6 @@ __all__ = [
     "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
-    "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
     "RuntimeCancellationIngress",
     "RuntimeCancellationRequest",

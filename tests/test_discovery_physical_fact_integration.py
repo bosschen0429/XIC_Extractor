@@ -54,8 +54,6 @@ from xic_extractor.raw_reader import (
 )
 from xic_extractor.xic_models import XICTrace
 
-_TEST_RUN_SPEC_ID = "processing-run:" + ("0" * 64)
-
 
 class _OwnerBoundBatchRaw(_BatchRaw):
     def __init__(self, source, **kwargs) -> None:
@@ -340,7 +338,6 @@ def test_discovery_retained_physical_peak_cardinality(
         RetainedTraceRaw(source),
         groups,
         acquisition_source=source,
-        run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -511,7 +508,6 @@ def test_merged_physical_candidate_persists_representative_search_window(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -726,7 +722,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     assert (
         records[0].candidate_id == _read_csv(outputs.candidates_csv)[0]["candidate_id"]
     )
-    assert records[0].evaluation.prepared.profile_id == spec.profile_id
+    assert records[0].evaluation.prepared.profile == spec.signal_processing_profile
     assert physical_calls == {"prepare": 2, "evaluate": 2}
     assert raw.raw_chromatogram_call_count == 1
 
@@ -891,7 +887,6 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
         raw,
         (group,),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -905,10 +900,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.state == physical_state
-    assert (
-        result.physical_evaluations[0].evaluation.prepared.profile_id
-        == profile.profile_id
-    )
+    assert result.physical_evaluations[0].evaluation.prepared.profile == profile
     candidate = result.candidates[0]
     if physical_state == "available":
         assert candidate.ms1_peak_found is True
@@ -947,7 +939,6 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         raw,
         (group,),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -961,7 +952,6 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     assert candidate.ms1_search_rt_max - candidate.ms1_peak_rt_end >= 0.04
     full_trace_evaluation = evaluate_physical_peak(
         prepare_physical_signal(full_rt, full_intensity, profile=profile),
-        selection_subject_id="full-trace-oracle",
         query_rt_min=12.063,
         request_context_rt_start_min=float(full_rt[0]),
         request_context_rt_end_min=float(full_rt[-1]),
@@ -1013,7 +1003,6 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
         raw,
         (group,),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1061,7 +1050,6 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         raw,
         (group,),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1122,7 +1110,6 @@ def test_qualification_survives_physical_fact_reuse(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(),
         ms1_centroid_mz=lambda *_: None,
@@ -1172,7 +1159,6 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         raw,
         (first, duplicate_trace),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
         ms1_centroid_mz=lambda *_: None,
@@ -1183,10 +1169,9 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     )
     assert preparation_count == 1
     assert len(result.physical_evaluations) == 2
-    assert {
-        record.evaluation.prepared.prepared_signal_id
-        for record in result.physical_evaluations
-    } == {result.physical_evaluations[0].evaluation.prepared.prepared_signal_id}
+    assert {record.evaluation.prepared for record in result.physical_evaluations} == {
+        result.physical_evaluations[0].evaluation.prepared
+    }
     assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
@@ -1220,7 +1205,6 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         _OwnerBoundBatchRaw(current_source),
         (group,),
         acquisition_source=current_source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1231,7 +1215,6 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         foreign_raw,
         (group,),
         acquisition_source=foreign_source,
-        run_spec_id="processing-run:" + ("1" * 64),
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1308,7 +1291,6 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         raw,
         (_group((_seed(scan_number=10, rt=7.80),)),),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=window_points),
         ms1_centroid_mz=lambda *_: None,
@@ -1394,7 +1376,6 @@ def test_discovery_publishes_physical_qualification(
         raw,
         (_group((_seed(scan_number=10, rt=query_rt),)),),
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1503,7 +1484,6 @@ def test_physical_fact_sharing_uses_exact_owner_question(
         raw,
         (first, second),
         acquisition_source=source,
-        run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -1598,7 +1578,6 @@ def _inferred_apex_case(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=15),
         ms1_centroid_mz=read_ion,
@@ -1908,7 +1887,6 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
         ms1_centroid_mz=read_ion,

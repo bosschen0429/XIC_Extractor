@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,17 +10,11 @@ from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
     record_runtime_resource_cleanup,
     record_runtime_resource_open,
-    register_runtime_artifact,
     reserve_runtime_resource,
     settle_runtime_resource,
     settle_work_unit,
 )
-from tests.runtime_telemetry_fixtures import (
-    mint_test_process_result_ref as mint_targeted_process_result_ref,
-)
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
-    RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeLifecycleFailureKind,
@@ -31,7 +24,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
     begin_attempt_finalization,
-    canonical_coordinator_terminal_record_bytes,
     mint_supervisor_finalization,
     propose_attempt_terminal,
 )
@@ -56,18 +48,13 @@ from xic_extractor.processing_identity import (
 )
 
 
-def test_success_closes_resource_artifact_and_atomic_acknowledgement(
+def test_success_closes_resource_and_atomic_acknowledgement(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = begin_attempt_finalization(runtime)
     state = reserve_runtime_resource(state, _reservation(attempt))
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
-    )
     state = settle_runtime_resource(
         state,
         resource_key="session:a",
@@ -83,42 +70,27 @@ def test_success_closes_resource_artifact_and_atomic_acknowledgement(
     accepted = submitted
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.OFFERED_TO_OWNER
-    )
     assert accepted is submitted
-    assert accepted.artifact_dispositions == (
-        (artifact.evidence_artifact_id, RuntimeArtifactDisposition.OFFERED_TO_OWNER),
-    )
     assert [event.kind for event in accepted.events] == [
         SupervisorFinalizationEventKind.TERMINAL_ACKNOWLEDGED,
-        SupervisorFinalizationEventKind.ARTIFACT_OFFERED_TO_OWNER,
         SupervisorFinalizationEventKind.TERMINAL_OUTCOME,
     ]
     assert tuple(event.sequence for event in accepted.events) == tuple(
         range(
             coordinator.state.events[-1].sequence + 1,
-            coordinator.state.events[-1].sequence + 4,
+            coordinator.state.events[-1].sequence + 3,
         )
     )
-    assert canonical_coordinator_terminal_record_bytes(coordinator) == (
-        canonical_coordinator_terminal_record_bytes(coordinator)
-    )
 
 
-def test_failed_cleanup_terminalizes_and_quarantines_whole_attempt(
+def test_failed_cleanup_terminalizes_whole_attempt(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -134,12 +106,6 @@ def test_failed_cleanup_terminalizes_and_quarantines_whole_attempt(
     )
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
-    assert finalization.artifact_dispositions == (
-        (
-            artifact.evidence_artifact_id,
-            RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC,
-        ),
-    )
     assert finalization.events[-1].terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
@@ -155,15 +121,10 @@ def test_failed_or_unknown_resource_open_prevents_successful_terminalization(
     open_outcome: RuntimeResourceOpenOutcome,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -175,24 +136,16 @@ def test_failed_or_unknown_resource_open_prevents_successful_terminalization(
     coordinator = propose_attempt_terminal(state)
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
-    )
 
 
 def test_not_opened_resource_without_accepted_cancellation_fails_attempt(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -204,27 +157,19 @@ def test_not_opened_resource_without_accepted_cancellation_fails_attempt(
     coordinator = propose_attempt_terminal(state)
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
-    )
 
 
 def test_condition_not_activated_keeps_success_without_opening_resource(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(
             attempt,
             owner_conditional=True,
         ),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -234,30 +179,22 @@ def test_condition_not_activated_keeps_success_without_opening_resource(
     )
 
     coordinator = propose_attempt_terminal(state)
-    payload = json.loads(canonical_coordinator_terminal_record_bytes(coordinator))
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.OFFERED_TO_OWNER
+    assert coordinator.state.resources[0].reservation.owner_conditional is True
+    assert coordinator.state.resources[0].open_outcome is (
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
     )
-    assert payload["schema_version"] == "execution_runtime_coordinator_terminal"
-    assert payload["resources"][0]["owner_conditional"] is True
-    assert payload["resources"][0]["open_outcome"] == "condition_not_activated"
 
 
 def test_required_resource_cannot_claim_condition_not_activated(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -276,12 +213,9 @@ def test_required_resource_cannot_claim_condition_not_activated(
     assert failure.message == (
         "required resource cannot close as condition_not_activated"
     )
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
-    )
 
 
-def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
+def test_cancelled_attempt_closes_resources_without_becoming_failed(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
@@ -301,19 +235,9 @@ def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
             message="owner accepted cancellation",
         ),
     )
-    artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"partial-before-cancel",
-    ).artifact
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -325,9 +249,6 @@ def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
     coordinator = propose_attempt_terminal(state)
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.CANCELLED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
-    )
 
 
 def test_worker_loss_preserves_open_fact_and_closes_cleanup_unknown(
@@ -418,7 +339,7 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
@@ -433,108 +354,58 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
-    with pytest.raises(RuntimeFinalizationContractError, match="must be registered"):
-        propose_attempt_terminal(state)
-
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
-    )
     coordinator = propose_attempt_terminal(state)
     with pytest.raises(RuntimeFinalizationContractError, match="cannot change"):
-        register_runtime_artifact(
-            coordinator.state,
-            work_unit_key="raw:a",
-            artifact=artifact,
-        )
+        reserve_runtime_resource(coordinator.state, _reservation(attempt))
 
 
 def test_coordinator_receipt_binds_settlement_integrity_failure(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, accepted_artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     failed_submission = settle_work_unit(
         runtime,
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.FAILED,
         failure_detail=_failure_detail("raw:a", message="conflicting settlement"),
     )
-    alternate_artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"alternate-owner-result",
-    ).artifact
     alternate_submission = settle_work_unit(
         runtime,
         work_unit_key="raw:a",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=alternate_artifact,
+        outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=_failure_detail("raw:a", message="alternate failure"),
     )
 
     def close(conflicted: AttemptRuntime):
-        state = register_runtime_artifact(
-            begin_attempt_finalization(conflicted),
-            work_unit_key="raw:a",
-            artifact=accepted_artifact,
-        )
-        return propose_attempt_terminal(state)
+        return propose_attempt_terminal(begin_attempt_finalization(conflicted))
 
     failed_coordinator = close(failed_submission)
     alternate_coordinator = close(alternate_submission)
-    failed_bytes = canonical_coordinator_terminal_record_bytes(failed_coordinator)
-    alternate_bytes = canonical_coordinator_terminal_record_bytes(alternate_coordinator)
-    failure_payload = json.loads(failed_bytes)["settlement_integrity_failure"]
-
-    assert failed_bytes != alternate_bytes
-    assert failure_payload == {
-        "accepted_settlement": {
-            "failure_detail": None,
-            "outcome": "succeeded",
-            "owner_result_artifact_id": accepted_artifact.evidence_artifact_id,
-            "work_unit_key": "raw:a",
-        },
-        "kind": "conflicting_settlement",
-        "submitted_settlement": {
-            "failure_detail": {
-                "category": "execution_error",
-                "message": "conflicting settlement",
-                "source_reference": "raw:a",
-                "stage": "runtime-finalization-test",
-            },
-            "outcome": "failed",
-            "owner_result_artifact_id": None,
-            "work_unit_key": "raw:a",
-        },
-        "work_unit_key": "raw:a",
-    }
-    assert json.loads(failed_bytes)["schema_version"] == (
-        "execution_runtime_coordinator_terminal"
+    failure = failed_coordinator.state.runtime.integrity_failure
+    alternate_failure = alternate_coordinator.state.runtime.integrity_failure
+    assert failure is not None and alternate_failure is not None
+    assert failure != alternate_failure
+    assert failure.work_unit_key == "raw:a"
+    assert failure.accepted_settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
+    assert failure.submitted_settlement.outcome is WorkUnitTerminalOutcome.FAILED
+    assert (
+        failure.submitted_settlement.failure_detail.message == "conflicting settlement"
     )
     assert (
-        mint_supervisor_finalization(
-            failed_coordinator,
-            observability_ledger=_ledger(attempt, failed_coordinator),
-        ).coordinator_record_sha256
-        != mint_supervisor_finalization(
-            alternate_coordinator,
-            observability_ledger=_ledger(attempt, alternate_coordinator),
-        ).coordinator_record_sha256
+        alternate_failure.submitted_settlement.failure_detail.message
+        == "alternate failure"
     )
+    assert failed_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
+    assert alternate_coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_supervisor_receipt_binds_validated_runtime_observability(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
-    state = register_runtime_artifact(
-        begin_attempt_finalization(runtime),
-        work_unit_key="raw:a",
-        artifact=artifact,
-    )
-    coordinator = propose_attempt_terminal(state)
+    runtime = _successful_runtime(attempt)
+    coordinator = propose_attempt_terminal(begin_attempt_finalization(runtime))
     first_ledger = _ledger(
         attempt,
         coordinator,
@@ -564,15 +435,10 @@ def test_supervisor_rejects_observability_that_conflicts_with_finalized_facts(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     state = settle_runtime_resource(
         state,
@@ -593,7 +459,7 @@ def test_supervisor_rejects_raw_open_count_that_conflicts_with_resources(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         _reservation(attempt),
@@ -603,11 +469,6 @@ def test_supervisor_rejects_raw_open_count_that_conflicts_with_resources(
         resource_key="session:a",
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
     inconsistent = _ledger(
@@ -627,7 +488,7 @@ def test_process_worker_open_does_not_increment_raw_open_count(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, artifact = _successful_runtime(attempt)
+    runtime = _successful_runtime(attempt)
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
         replace(
@@ -641,11 +502,6 @@ def test_process_worker_open_does_not_increment_raw_open_count(
         resource_key="process:a",
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-    )
-    state = register_runtime_artifact(
-        state,
-        work_unit_key="raw:a",
-        artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
     ledger = _ledger(attempt, coordinator)
@@ -663,72 +519,22 @@ def test_process_worker_open_does_not_increment_raw_open_count(
     )
 
 
-def test_undeclared_artifact_is_rejected_by_registration(
+def test_successful_settlement_does_not_require_a_synthetic_result_artifact(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    runtime, accepted_artifact = _successful_runtime(attempt)
-    rogue_artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:rogue",
-        owner_result_payload=b"rogue-owner-result",
-    ).artifact
-    state = register_runtime_artifact(
-        begin_attempt_finalization(runtime),
+    runtime = settle_work_unit(
+        _runtime(attempt, work_unit_keys=("raw:a",)),
         work_unit_key="raw:a",
-        artifact=accepted_artifact,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
     )
-
-    with pytest.raises(RuntimeFinalizationContractError, match="declared manifest"):
-        register_runtime_artifact(
-            state,
-            work_unit_key="raw:rogue",
-            artifact=rogue_artifact,
-        )
-    coordinator = propose_attempt_terminal(state)
-
-    assert tuple(item.work_unit_key for item in state.artifacts) == ("raw:a",)
+    coordinator = propose_attempt_terminal(begin_attempt_finalization(runtime))
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert coordinator.state.artifacts[0].proposed_disposition is (
-        RuntimeArtifactDisposition.OFFERED_TO_OWNER
-    )
-
-
-def test_successful_settlement_requires_artifact_registered_for_same_work_unit(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    artifact = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"shared-owner-result",
-    ).artifact
-    runtime = settle_work_unit(
-        _runtime(attempt, work_unit_keys=("raw:a", "raw:b")),
-        work_unit_key="raw:a",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=artifact,
-    )
-    runtime = settle_work_unit(
-        runtime,
-        work_unit_key="raw:b",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=artifact,
-    )
-    state = register_runtime_artifact(
-        begin_attempt_finalization(runtime),
-        work_unit_key="raw:a",
-        artifact=artifact,
-    )
-
-    with pytest.raises(RuntimeFinalizationContractError, match="same work unit"):
-        propose_attempt_terminal(state)
 
 
 def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
     expected = {
         "xic_extractor/execution/_finalization.py": (
-            "xic_extractor.evidence_artifacts",
             "xic_extractor.execution._lifecycle",
             "xic_extractor.execution._observability",
             "xic_extractor.processing_identity",
@@ -750,19 +556,13 @@ def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
 
 def _successful_runtime(
     attempt: ProcessingAttemptIdentity,
-) -> tuple[AttemptRuntime, EvidenceArtifactRef]:
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key="raw:a",
-        owner_result_payload=b"owner-result",
-    )
+) -> AttemptRuntime:
     runtime = settle_work_unit(
         _runtime(attempt),
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=reference.artifact,
     )
-    return runtime, reference.artifact
+    return runtime
 
 
 def _runtime(
@@ -822,7 +622,6 @@ def _ledger(
     logical_xic_request_count: int = 0,
 ):
     resource_lifecycles = ()
-    artifact_dispositions = ()
     if coordinator is not None:
         resource_lifecycles = tuple(
             (
@@ -833,13 +632,6 @@ def _ledger(
             )
             for record in coordinator.state.resources
         )
-        artifact_dispositions = tuple(
-            (
-                record.artifact.evidence_artifact_id,
-                f"artifact_{record.proposed_disposition.value}",
-            )
-            for record in coordinator.state.artifacts
-        )
     return build_runtime_observability_ledger(
         attempt,
         work_unit_keys=("raw:a",),
@@ -847,7 +639,6 @@ def _ledger(
         raw_open_count=raw_open_count,
         logical_xic_request_count=logical_xic_request_count,
         resource_lifecycles=resource_lifecycles,
-        artifact_dispositions=artifact_dispositions,
     )
 
 
@@ -859,7 +650,7 @@ def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
         acquisition_format="thermo_raw",
         observation_namespace="thermo.raw.ms_controller_1",
     )
-    request = build_processing_request_identity(
+    build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -873,4 +664,4 @@ def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
         processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
-    return issue_processing_attempt(request)
+    return issue_processing_attempt()

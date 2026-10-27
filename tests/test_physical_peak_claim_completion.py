@@ -20,7 +20,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
@@ -94,7 +93,6 @@ def _view(
 
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=stem,
         query_rt_min=query_rt,
         search_rt_window=(center - 0.2, center + 0.2) if unreliable else None,
         selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
@@ -136,7 +134,6 @@ def _view(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1 if support else 0,
             reason_code=None,
         ),
         candidate_peaks=(peak,),
@@ -206,7 +203,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             processing_owners=fixture.owners, sample=sample, assessment=assessment
         )
         owners[stem] = owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
     config, frame = AlignmentConfig(), SampleRtFrame()
     groups = tuple(
@@ -219,10 +218,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         for stems in (("A", "B", "S") if direct else ("A", "B"), ("C", "D"))
     )
     assert all(group.disposition == "established" for group in groups)
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
+    identities = tuple(group.membership for group in groups)
     initial = CrossSampleGroupingResult(
         processing_owners=fixture.owners,
         rt_frame=frame,
@@ -258,7 +254,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills[
             (
                 group.group_hypothesis_id,
-                sample.identity.sample_identity_id,
+                sample.identity.sample_key,
                 assessment.content.method_subject.method_subject_id,
             )
         ] = (sample, assessment)
@@ -268,9 +264,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == (
         1 if off_apex_difference or unreliable else 2
     )
-    assert len(
-        {peak.content.peak_observation_content_id for peak in comparison_peaks}
-    ) == (1 if unreliable else 2)
+    assert len({peak.content.physical_identity for peak in comparison_peaks}) == (
+        1 if unreliable else 2
+    )
     if fresh_context:
         integrations = [peak.content.integration for peak in comparison_peaks]
         lower = max(i.rt_left_min for i in integrations)
@@ -349,7 +345,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills=backfills,
         alignment_config=config,
         member_observations={
-            peak.content.peak_observation_content_id: peak
+            peak.content.physical_identity: peak
             for _, assessment in pairs.values()
             for peak in assessment.candidate_peaks
         },
@@ -395,8 +391,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     sample_cells = [
         cell
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == fixture.sample("S").identity.sample_identity_id
+        if cell.content.sample_key == fixture.sample("S").identity.sample_key
     ]
     assert len(sample_cells) == 2
     numeric_sources = [

@@ -30,11 +30,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Write compact review facts from a full report, without RAW or Backfill",
     )
     parser.add_argument(
-        "--index-query-to",
-        type=Path,
-        help="Copy a compact review with the current query, sample and attention index",
-    )
-    parser.add_argument(
         "--curve-bundle",
         type=Path,
         help="Acquire selected candidate/group XIC windows into an Inspector bundle",
@@ -47,30 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--curve-padding-min", type=float, default=0.5)
     parser.add_argument("--curve-ppm", type=float, default=5.0)
     args = parser.parse_args(argv)
-    if (
-        sum(
-            option is not None
-            for option in (args.compact_to, args.index_query_to, args.curve_bundle)
-        )
-        > 1
-    ):
-        parser.error(
-            "Choose only one of --compact-to, --index-query-to, or --curve-bundle"
-        )
+    if sum(option is not None for option in (args.compact_to, args.curve_bundle)) > 1:
+        parser.error("Choose only one of --compact-to or --curve-bundle")
     if args.group_id is not None and args.curve_bundle is None:
         parser.error("--group-id requires --curve-bundle")
     try:
-        if args.index_query_to is not None:
-            from xic_extractor.diagnostics.explanation_conversion import (
-                index_review_query,
-            )
-
-            print(
-                json.dumps(
-                    index_review_query(Path(args.report), args.index_query_to), indent=2
-                )
-            )
-            return 0
         if args.curve_bundle is not None:
             if (
                 args.compact_to is not None
@@ -132,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Candidates: {result['candidate_count']} | "
             f"Matrix rows: {result['matrix_row_count']}"
         )
-        print(f"Request: {result['processing_request_id']}")
+        print(f"Attempt: {result['processing_attempt_id']}")
         for candidate in result.get("candidate_examples", ()):
             print(f"  {candidate['sample_stem']}: {candidate['candidate_id']}")
         reasons = sorted(

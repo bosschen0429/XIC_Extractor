@@ -9,6 +9,8 @@ from xic_extractor.alignment.membership_selection import (
     AcceptedMembershipRisk,
     MembershipComparison,
     canonical_partition,
+    owner_facts,
+    owner_partition_facts,
 )
 
 
@@ -158,11 +160,14 @@ def select_backfill_memberships(
         risks[index] = AcceptedMembershipRisk(
             status="equivalent_alternatives" if equivalent else "evaluated_alternative",
             phase="backfill",
-            selected_owner_ids=tuple(sorted(groups[group])),
-            alternative_partition=canonical_partition(
-                tuple(groups_for(alternative).values())
+            selected_owners=owner_facts(comparison.owners, groups[group]),
+            alternative_partition=owner_partition_facts(
+                comparison.owners,
+                canonical_partition(tuple(groups_for(alternative).values())),
             ),
-            equivalent_alternatives=equivalent,
+            equivalent_alternatives=tuple(
+                owner_partition_facts(comparison.owners, value) for value in equivalent
+            ),
             selected_cost=selected_cost,
             alternative_cost=alternative_cost,
             cost_gap=alternative_cost - selected_cost,

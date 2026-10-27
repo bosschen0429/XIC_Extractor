@@ -49,8 +49,9 @@ def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
     cli_spec = compile_cli_processing_run_spec(raw_paths, discovery_settings=settings)
 
     assert workbench_spec == cli_spec
-    assert workbench_spec.run_spec_id == cli_spec.run_spec_id
-    assert workbench_spec.profile_id == cli_spec.profile_id
+    assert (
+        workbench_spec.signal_processing_profile == cli_spec.signal_processing_profile
+    )
     assert canonical_processing_run_spec_bytes(workbench_spec) == (
         canonical_processing_run_spec_bytes(cli_spec)
     )
@@ -149,8 +150,11 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         cast(ProcessingRunSpec, spec).discovery_method.settings.ms1_search_padding_min
         for spec in specs
     } == {0.35}
-    assert len({cast(ProcessingRunSpec, spec).run_spec_id for spec in specs}) == 1
-    assert len({cast(ProcessingRunSpec, spec).profile_id for spec in specs}) == 1
+    assert specs[0] == specs[1]
+    assert (
+        len({cast(ProcessingRunSpec, spec).signal_processing_profile for spec in specs})
+        == 1
+    )
     assert (
         len(
             {

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output import metadata
 from xic_extractor.output.workbook_styles import (
@@ -12,14 +10,12 @@ from xic_extractor.output.workbook_styles import (
 )
 
 _DESCRIPTIONS = {
-    "config_hash": "分析設定的識別碼，供比對兩次執行是否採用相同設定。",
     "app_version": "產生這份結果的 XIC Extractor 版本。",
     "generated_at": "結果產生時間（UTC）。",
     "target_config_hash": "目標清單的識別碼，供追查所使用的目標設定。",
     "targeted_output_schema_version": (
         "已保存結果的資料格式，供 Inspector 與其他讀取工具使用。"
     ),
-    "targeted_workbook_layout_version": "活頁簿欄位契約版本。版面樣式不改變量測數值。",
     "mass_recalibration": "質量校正政策；檢閱沿用此值，舊結果缺值為 none。",
     "targeted_strategy": "Targeted 選峰與計入規則的完整設定（JSON），供追查使用。",
     "parallel_mode": "樣本處理方式；serial 表示循序處理。",
@@ -37,13 +33,11 @@ _DESCRIPTIONS = {
 }
 
 
-def _build_metadata_sheet(
-    ws, config: ExtractionConfig, *, extra_metadata: Sequence[tuple[str, object]] = ()
-) -> None:
+def _build_metadata_sheet(ws, config: ExtractionConfig) -> None:
     """Value comes last so a long saved setting extends into empty space."""
     _prepare_sheet(ws, landscape=False)
     _write_header(ws, 1, ("Key", "說明", "Value"))
-    rows = [*metadata.build_metadata_rows(config), *extra_metadata]
+    rows = metadata.build_metadata_rows(config)
     for row, (key, value) in enumerate(rows, start=2):
         for column, cell_value in enumerate(
             (key, _DESCRIPTIONS.get(key, ""), value), start=1

@@ -22,8 +22,7 @@ def acquire_ms2_window(
 ) -> Ms2Window:
     """Materialize one bounded reader request while its source is open.
 
-    With a precursor scope, only admitted events carry spectra; the others
-    remain counted as scanned events of the window.
+    With a precursor scope, only admitted events carry spectra.
     """
     if precursor_scope is None:
         return Ms2Window(
@@ -34,7 +33,7 @@ def acquire_ms2_window(
         )
     read_window = getattr(raw, "read_ms2_window", None)
     if callable(read_window):
-        events, unread = read_window(rt_min, rt_max, precursor_scope=precursor_scope)
+        events = read_window(rt_min, rt_max, precursor_scope=precursor_scope)
     else:
         scanned = tuple(raw.iter_ms2_scans(rt_min, rt_max))
         events = tuple(
@@ -43,11 +42,9 @@ def acquire_ms2_window(
             if event.scan is None
             or precursor_scope(event.scan.precursor_mz, event.scan.precursor_metadata)
         )
-        unread = len(scanned) - len(events)
     return Ms2Window(
         sample_key=sample_key,
         rt_min=rt_min,
         rt_max=rt_max,
         events=events,
-        unread_event_count=unread,
     )

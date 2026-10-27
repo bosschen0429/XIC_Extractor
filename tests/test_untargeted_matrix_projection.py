@@ -26,9 +26,6 @@ from tests.test_cross_sample_association_lineage import (
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
-    NEUTRAL_LOSS_DA,
-    PRECURSOR_MZ,
-    PRODUCT_MZ,
     UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
@@ -44,7 +41,6 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.untarget import (
     UntargetProjectionContractError,
@@ -53,11 +49,6 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
 )
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionRef,
-    mint_untargeted_cid_nl_projection_ref,
-)
-from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -144,10 +135,7 @@ def _untarget_projection_inputs(
             ),
         ),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    predecessor = spine.group.membership
     predecessor_groups = (predecessor,)
     predecessor_cells = spine.cells
     successors = predecessor_groups
@@ -167,10 +155,7 @@ def _untarget_projection_inputs(
                 ),
             ),
         )
-        right = validate_cross_sample_peak_group_identity(
-            right_spine.group,
-            require_canonical=True,
-        )
+        right = right_spine.group.membership
         predecessor_groups = tuple(
             sorted(
                 (predecessor, right),
@@ -183,7 +168,6 @@ def _untarget_projection_inputs(
         else:
             successors = (
                 mint_cross_sample_group_identity(
-                    processing_request_id=request.processing_request_id,
                     member_subjects=tuple(
                         sorted(
                             (
@@ -191,7 +175,7 @@ def _untarget_projection_inputs(
                                 for group in predecessor_groups
                                 for member in group.member_subjects
                             ),
-                            key=lambda member: member.member_subject_id,
+                            key=lambda member: member.sample_key,
                         )
                     ),
                 ),
@@ -199,7 +183,6 @@ def _untarget_projection_inputs(
     if disposition is not None:
         successors = tuple(
             mint_cross_sample_group_identity(
-                processing_request_id=group.processing_request_id,
                 member_subjects=group.member_subjects,
                 disposition=disposition,  # type: ignore[arg-type]
             )
@@ -329,11 +312,11 @@ def test_completed_values_project_to_exact_group_sample_positions(
     projection = project_untarget_matrix(alignment, answers)
     assert projection.finalized_alignment is alignment
     assert projection.lineage is alignment.lineage
-    assert [row.row_key.group for row in projection.rows] == sorted(
+    assert [row.group for row in projection.rows] == sorted(
         alignment.final_population, key=lambda group: group.group_hypothesis_id
     )
     observations = {
-        (item.group_hypothesis_id, item.canonical_sample_identity_id): item
+        (item.group_hypothesis_id, item.sample_key): item
         for item in alignment.cell_observations
     }
     assert len(projection.decisions) == len(observations)
@@ -347,11 +330,11 @@ def test_completed_values_project_to_exact_group_sample_positions(
             subject = decision.subject
             evidence = observations[
                 subject.group_hypothesis_id,
-                subject.canonical_sample.identity.sample_identity_id,
+                subject.canonical_sample.identity.sample_key,
             ]
             assert decision.evidence is evidence
-            assert subject.row_key is row.row_key
-            payload, integration = answers[evidence.cell_observation_id]
+            assert subject.group is row.group
+            payload, integration = answers[evidence.key]
             assert decision.payload is payload
             assert decision.selected_integration is integration
             if subject.member_subject is None:
@@ -397,9 +380,6 @@ def test_disposition_projects_row_route_and_complete_counts(
         alignment, dict(reversed(tuple(answers.items())))
     )
     assert projection == reordered
-    assert tuple(d.decision_id for d in projection.decisions) == tuple(
-        d.decision_id for d in reordered.decisions
-    )
 
 
 def test_projection_is_deterministic_for_reversed_capture_order(tmp_path, monkeypatch):
@@ -429,9 +409,8 @@ def test_projection_requires_answers_for_the_exact_observation_population(
     elif variant == "extra":
         changed["other-observation"] = next(iter(changed.values()))
     else:
-        _, changed, _ = _completed_projection(
-            tmp_path / "other", monkeypatch, disposition="established"
-        )
+        group, sample_key = next(iter(changed))
+        changed[group, sample_key + "-other"] = changed.pop((group, sample_key))
     with pytest.raises(UntargetProjectionContractError, match="missing|extra|crossed"):
         project_untarget_matrix(alignment, changed)
 
@@ -461,7 +440,7 @@ def _support_input(
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
         detector_invocation_id=f"gaussian15:{sample_stem}",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
         individual_support_refs=(support,),
@@ -469,51 +448,15 @@ def _support_input(
     return UntargetedCidNlAssessmentInput(
         sample=fixture.sample(sample_stem),
         assessment=assessment,
-        discovery_projections=(_projection(fixture, sample_stem, evidence),),
     )
 
 
-def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
+def _completed_receipt() -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=scanned_event_count,
         reason_code=None,
-    )
-
-
-def _projection(
-    fixture: UntargetedCidNlNoRawFixture,
-    sample_stem: str,
-    evidence,
-) -> UntargetedCidNlProjectionRef:
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-    )
-    observation = evidence.observation
-    seed = DiscoverySeed(
-        raw_file=fixture.source_paths[sample_stem],
-        sample_stem=sample_stem,
-        scan_number=observation.scan_number,
-        rt=observation.scan_rt_min,
-        precursor_mz=PRECURSOR_MZ,
-        product_mz=PRODUCT_MZ,
-        product_intensity=observation.product_intensity,
-        neutral_loss_tag="NL116",
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=0.0,
-        matched_tag_names=("NL116",),
-        scan_precursor_mz=PRECURSOR_MZ,
-        acquisition_source_id=source.acquisition_source_id,
-    )
-    return mint_untargeted_cid_nl_projection_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        canonical_evidence=evidence,
-        discovery_seed=seed,
     )

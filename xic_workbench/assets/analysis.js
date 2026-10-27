@@ -1864,7 +1864,7 @@
             "subtle",
           ),
         );
-      if (result.matrix_tsv && result.alignment_outputs?.matrix_identity_tsv)
+      if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
         actions.append(
           button(
             "Feature Quality 篩選匯出",
@@ -1914,13 +1914,13 @@
       const label = el("label");
       const input = el("input");
       input.type = "checkbox";
-      input.value = sample.canonical_sample_identity_id;
+      input.value = sample.sample_key;
       label.append(
         input,
         document.createTextNode(
           sample.sample_name ||
             sample.sample_id ||
-            sample.canonical_sample_identity_id,
+            sample.sample_key,
         ),
       );
       $("export-samples").append(label);
@@ -2438,7 +2438,7 @@
         const result = state.analysis.results.untargeted;
         await startJob("quality", {
           matrix_path: result.matrix_tsv,
-          identity_path: result.alignment_outputs.matrix_identity_tsv,
+          review_path: result.alignment_outputs.review_tsv,
           sample_metadata_path: $("quality-metadata").value,
           output_dir: $("quality-output").value,
           min_finite_fraction: Number($("quality-threshold").value),

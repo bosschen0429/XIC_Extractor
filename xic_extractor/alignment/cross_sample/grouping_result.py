@@ -36,10 +36,6 @@ class CrossSampleGroupingResult:
     backfill_membership_risks: tuple[tuple[str, str, AcceptedMembershipRisk], ...] = ()
 
     @property
-    def processing_request_id(self) -> str:
-        return self.processing_owners.request.processing_request_id
-
-    @property
     def initial_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
         return self.partition_transition.predecessors
 

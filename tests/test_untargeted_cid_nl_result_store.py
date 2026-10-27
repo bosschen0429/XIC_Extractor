@@ -1,7 +1,6 @@
 """Partition storage preserves authority and releases serialized result graphs."""
 
 import gc
-import hashlib
 import pickle
 import shutil
 import subprocess
@@ -62,7 +61,6 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
     assert entry.size_bytes > 0
     stored_bytes = next(tmp_path.iterdir()).read_bytes()
     assert entry.size_bytes == len(stored_bytes)
-    assert entry.sha256 == hashlib.sha256(stored_bytes).hexdigest()
     restored = store.read(entry.index)
     assert restored is not payload
     assert restored.children[0]["owner"] is owner
@@ -150,7 +148,9 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
         ),
         children=children(),
     )
-    assert stream_entry.sha256 == tuple_entry.sha256
+    assert next((tmp_path / "stream").glob("*.pickle")).read_bytes() == (
+        next((tmp_path / "tuple").glob("*.pickle")).read_bytes()
+    )
     assert stream_entry.size_bytes == tuple_entry.size_bytes
     stream_store.seal()
     assert stream_store.read(0) == payload
@@ -436,11 +436,10 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         (batch.jobs[0]._request_subjects, batch.subject_batch),
     )
     jobs_by_sample = {
-        job.sample.identity.sample_identity_id: tuple(
+        job.sample.identity.sample_key: tuple(
             candidate
             for candidate in batch.jobs
-            if candidate.sample.identity.sample_identity_id
-            == job.sample.identity.sample_identity_id
+            if candidate.sample.identity.sample_key == job.sample.identity.sample_key
         )
         for job in batch.jobs
     }
@@ -471,7 +470,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         job = store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0]
         assert isinstance(job, UntargetedPartitionJob)
         print(
-            job.sample.identity.sample_identity_id
+            job.sample.identity.sample_key
             + ":"
             + job.method_subject.method_subject_id
         )
@@ -484,9 +483,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         position = len(cohort) - 1
         job = cohort[position]
         expected = (
-            job.sample.identity.sample_identity_id
-            + ":"
-            + job.method_subject.method_subject_id
+            job.sample.identity.sample_key + ":" + job.method_subject.method_subject_id
         )
         completed = subprocess.run(
             [
@@ -542,11 +539,27 @@ def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
         store.preserve_results()
 
 
-def test_preserved_index_refuses_an_unsealed_store(tmp_path):
-    """Only a sealed store may be published; an open spool can still grow."""
-    store = StreamedResultStore(tmp_path / "spool", ())
-    store.append("alpha", Payload(children=("a0",)))
-    forged = tmp_path / "spool" / "forged.pickle"
-    forged.write_bytes(owner_pickle_dumps(store, ()))
-    with pytest.raises(ValueError, match="sealed"):
-        open_preserved_results(forged)
+def test_preserved_results_reject_master_pickled_store(tmp_path):
+    store = StreamedResultStore(tmp_path, ())
+    store.append("partition", Payload((1,)))
+    store.seal()
+    index = tmp_path / "master-index.pickle"
+    # Master serialized the runtime object itself, not a record-index document.
+    index.write_bytes(owner_pickle_dumps(store, ()))
+    with pytest.raises(ValueError, match="rerun the analysis"):
+        open_preserved_results(index)
+
+
+@pytest.mark.parametrize("change", ["missing", "extra"])
+def test_preserved_results_require_complete_index_fields(tmp_path, change):
+    store = StreamedResultStore(tmp_path, ())
+    store.append("partition", Payload((1,)))
+    index = store.preserve_results()
+    payload = pickle.loads(index.read_bytes())
+    if change == "missing":
+        del payload["field_records"]
+    else:
+        payload["extra"] = None
+    index.write_bytes(owner_pickle_dumps(payload, ()))
+    with pytest.raises(ValueError, match="rerun the analysis"):
+        open_preserved_results(index)

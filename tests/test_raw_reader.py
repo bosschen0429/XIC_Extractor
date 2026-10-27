@@ -390,9 +390,6 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
 
 
 def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) -> None:
-    from xic_extractor.acquisition_contract import (
-        mint_raw_acquisition_session_capability,
-    )
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import open_raw
 
@@ -404,19 +401,17 @@ def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) 
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    capability = mint_raw_acquisition_session_capability(source)
 
     handle = open_raw(
         raw_path,
         tmp_path,
         expected_acquisition_source=source,
-        _raw_session_capability=capability,
         _import_module=_working_imports(),
         _thermo=_fake_thermo(_FakeRaw()),
     )
 
     assert handle.raw_open_receipt is not None
-    assert handle.raw_open_receipt.capability == capability
+    assert handle.raw_open_receipt.acquisition_source == source
 
 
 def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
@@ -424,9 +419,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
-    from xic_extractor.acquisition_contract import (
-        mint_raw_acquisition_session_capability,
-    )
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
     class _SelectFailRaw(_FakeRaw):
@@ -441,7 +433,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    capability = mint_raw_acquisition_session_capability(source)
     mint_calls: list[object] = []
     original_mint = raw_reader._mint_raw_acquisition_session_receipt
 
@@ -460,7 +451,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
             raw_path,
             tmp_path,
             expected_acquisition_source=source,
-            _raw_session_capability=capability,
             _import_module=_working_imports(),
             _thermo=_fake_thermo(_SelectFailRaw()),
         )
@@ -505,58 +495,12 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
         )
 
 
-def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None:
-    from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import (
-        open_raw,
-        require_owner_bound_raw_handle,
-    )
-
-    _write_expected_dlls(tmp_path)
-    raw_path = tmp_path / "sample.raw"
-    other_path = tmp_path / "other.raw"
-    raw_path.write_bytes(b"sample-a")
-    other_path.write_bytes(b"sample-b")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    other_source = build_acquisition_source_identity(
-        other_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    raw = _FakeRaw()
-    thermo = _fake_thermo(raw)
-    handle = open_raw(
-        raw_path,
-        tmp_path,
-        expected_acquisition_source=source,
-        _import_module=_working_imports(),
-        _thermo=thermo,
-    )
-
-    for attribute, replacement in (
-        ("_raw_file", _FakeRaw()),
-        ("_thermo", _fake_thermo(_FakeRaw())),
-        ("_bound_acquisition_source", other_source),
-    ):
-        with pytest.raises(AttributeError, match="is sealed"):
-            setattr(handle, attribute, replacement)
-        with pytest.raises(AttributeError, match="is sealed"):
-            delattr(handle, attribute)
-
-    assert handle.acquisition_source == source
-    assert require_owner_bound_raw_handle(handle, source) is handle
-
-
 def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import (
         RawFileHandle,
         RawReaderError,
-        require_owner_bound_raw_handle,
+        require_source_bound_raw_handle,
     )
 
     raw_path = tmp_path / "sample.raw"
@@ -571,9 +515,9 @@ def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) ->
 
     with pytest.raises(
         RawReaderError,
-        match="was not owner-bound by open_raw",
+        match="has no acquisition source binding",
     ):
-        require_owner_bound_raw_handle(handle, source)
+        require_source_bound_raw_handle(handle, source)
 
 
 def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
@@ -1185,7 +1129,7 @@ def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
     full = tuple(handle.iter_ms2_scans(rt_min=8.0, rt_max=8.2))
     raw.scan_calls.clear()
 
-    events, unread = handle.read_ms2_window(
+    events = handle.read_ms2_window(
         8.0,
         8.2,
         precursor_scope=PrecursorMassScope.around(
@@ -1195,7 +1139,6 @@ def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
 
     assert [event.scan_number for event in full] == [1, 2]
     assert events == full[:1]
-    assert unread == 1
     assert raw.scan_calls == [1]
 
 

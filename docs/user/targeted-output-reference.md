@@ -105,13 +105,12 @@ Value is the last column so a long setting such as `targeted_strategy` stays rea
 
 | Key | Example value | Description |
 | --- | --- | --- |
-| config_hash | `a3f2...` | SHA-256 hash of config |
 | app_version | `1.2.0` | Application version |
 | generated_at | `2026-06-27T10:00:00` | ISO 8601 timestamp |
+| target_config_hash | `1a2b3c4d` | First 8 hex characters of the target CSV SHA-256, for comparing target settings |
 | signal_processing_method | `gaussian` | Shared physical signal smoothing method |
 | signal_processing_window_points | `15` | Gaussian smoothing window (points) |
-| targeted_workbook_layout_version | `2` | Delivered workbook presentation layout |
-| targeted_output_schema_version | `targeted_output` | Output schema version |
+| targeted_output_schema_version | `targeted_output` | Unversioned output format |
 
 ---
 

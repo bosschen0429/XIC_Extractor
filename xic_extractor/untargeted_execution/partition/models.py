@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
-    mint_backfill_completion_projection,
 )
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupContext
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
@@ -29,9 +28,6 @@ from xic_extractor.alignment.completion import (
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    validate_cross_sample_peak_group_identity,
-)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_bootstrap import (
     measured_calibration_anchor_groups,
@@ -54,12 +50,6 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
-)
 from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
@@ -102,7 +92,6 @@ from xic_extractor.untargeted_execution.partition.request import (
 )
 from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
-    sha256_hexdigest,
 )
 from xic_extractor.xic_models import XICRequest
 
@@ -135,14 +124,6 @@ RUNTIME_CALL_COST_METRIC_NAMES = (
     "trace_point_count",
 )
 _RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime"
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
-    semantic_role="untargeted_cid_nl_real_data_sample_result",
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
 
 
 class UntargetedPartitionError(ValueError):
@@ -354,83 +335,9 @@ def build_sample_jobs(
     return tuple(jobs)
 
 
-def canonical_sample_result_bytes(
-    reference: UntargetedSampleResultRef,
-) -> bytes:
-    return _sample_result_bytes(
-        work_unit_key=reference.work_unit_key,
-        canonical_sample_identity_id=reference.canonical_sample_identity_id,
-        method_subject_id=reference.method_subject_id,
-        discovery_receipt_id=reference.discovery_receipt_id,
-        assessment_artifact_id=reference.assessment_artifact_id,
-        discovery_projection_artifact_ids=(reference.discovery_projection_artifact_ids),
-        source_candidate_ids=reference.source_candidate_ids,
-        strict_scan_count=reference.strict_scan_count,
-        backfill_assessment_artifact_id=(reference.backfill_assessment_artifact_id),
-        backfill_candidate_count=reference.backfill_candidate_count,
-        acquisition_sha256=reference.acquisition_sha256,
-        backfill_assessment_artifact_ids=reference.backfill_assessment_artifact_ids,
-        backfill_query_bounds=reference.backfill_query_bounds,
-        backfill_query_predictions=reference.backfill_query_predictions,
-        backfill_group_hypothesis_ids=reference.backfill_group_hypothesis_ids,
-    )
-
-
-def _sample_result_bytes(**values: object) -> bytes:
-    return (
-        json.dumps(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "validation_status": VALIDATION_STATUS,
-                **values,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        + "\n"
-    ).encode("utf-8")
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetedSampleResultRef:
-    work_unit_key: str
-    canonical_sample_identity_id: str
-    method_subject_id: str
-    discovery_receipt_id: str
-    assessment_artifact_id: str
-    discovery_projection_artifact_ids: tuple[str, ...]
-    source_candidate_ids: tuple[str, ...]
-    strict_scan_count: int
-    backfill_assessment_artifact_id: str | None
-    backfill_candidate_count: int
-    acquisition_sha256: str | None
-    backfill_assessment_artifact_ids: tuple[str, ...]
-    backfill_query_bounds: tuple[tuple[float, float], ...]
-    backfill_query_predictions: tuple[tuple[float | None, str], ...]
-    backfill_group_hypothesis_ids: tuple[str | None, ...]
-    artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise UntargetedPartitionError(
-                "sample result artifact has the wrong semantic owner"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_sample_result_bytes(self),
-            )
-        except ValueError as exc:
-            raise UntargetedPartitionError(
-                "sample result mismatches its immutable artifact"
-            ) from exc
-
-
 @dataclass(frozen=True, slots=True)
 class UntargetedInitialSampleResult:
-    """Initial evidence available before backfill and runtime result sealing."""
+    """Initial evidence available before backfill completion."""
 
     job: UntargetedPartitionJob
     adapter_result: CidNlAcquisitionResult
@@ -463,7 +370,6 @@ class UntargetedPreparedGrouping:
 class UntargetedSampleResult:
     job: UntargetedPartitionJob
     adapter_result: CidNlAcquisitionResult
-    result_ref: UntargetedSampleResultRef
     backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
 
@@ -523,25 +429,6 @@ def project_completed_backfill(
         group_context=group_context,
         exact_traces=_exact_acquisition_traces,
     )
-    backfill = result.backfill_for_group(
-        projection.group_center_rt,
-        group_hypothesis_id=group_context.group.group_hypothesis_id,
-    )
-    assert backfill is not None
-    replace(result.result_ref)
-    expected_result = _mint_sample_result_ref(
-        job=result.job,
-        result=result.adapter_result,
-        backfill_input=result.backfill_input,
-        backfill_attempt=None,
-        backfill_attempts=result.backfill_attempts,
-        acquisition=backfill.acquisition,
-        acquisition_content=_canonical_acquisition_content,
-    )
-    if result.result_ref != expected_result:
-        raise UntargetedPartitionError(
-            "completed backfill lost its sealed runtime result"
-        )
     return projection
 
 
@@ -553,11 +440,9 @@ def _project_completed_backfill(
         [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
     ],
 ) -> BackfillCompletionProjection:
-    """Bind an admitted batch result; standalone replay validates at its entry."""
+    """Project the completed group query from its actual assessment and trace."""
     job = result.job
-    group = validate_cross_sample_peak_group_identity(
-        group_context.group, require_canonical=True
-    )
+    group = group_context.group.membership
     assert group is not None
     center = group_context.group.group_center_rt
     if (
@@ -607,9 +492,7 @@ def _project_completed_backfill(
     ):
         raise UntargetedPartitionError("backfill crossed its exact request coordinates")
     (acquired,) = exact
-    digest = result.result_ref.acquisition_sha256
-    assert digest is not None
-    return mint_backfill_completion_projection(
+    return BackfillCompletionProjection(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,
@@ -617,11 +500,8 @@ def _project_completed_backfill(
         group_center_rt=center,
         query_rt=query_rt,
         query_rt_basis=backfill.query_rt_basis,
-        source_result_artifact=result.result_ref.artifact,
-        initial_assessment_artifact=initial.artifact,
         backfill_assessment=assessment,
         trace_coordinate=acquired.coordinate,
-        acquisition_sha256=digest,
     )
 
 
@@ -640,223 +520,6 @@ class UntargetedPartitionResult:
         )
 
 
-def mint_sample_result_ref(
-    *,
-    job: UntargetedPartitionJob,
-    result: CidNlAcquisitionResult,
-    backfill_input: UntargetedCidNlBackfillInput | None,
-    backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
-    acquisition: TraceAcquisitionBatch | None,
-    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
-) -> UntargetedSampleResultRef:
-    return _mint_sample_result_ref(
-        job=job,
-        result=result,
-        backfill_input=backfill_input,
-        backfill_attempt=backfill_attempt,
-        acquisition=acquisition,
-        backfill_attempts=backfill_attempts,
-        acquisition_content=_canonical_acquisition_content,
-    )
-
-
-def _mint_sample_result_ref(
-    *,
-    job: UntargetedPartitionJob,
-    result: CidNlAcquisitionResult,
-    backfill_input: UntargetedCidNlBackfillInput | None,
-    backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
-    acquisition: TraceAcquisitionBatch | None,
-    acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
-    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
-) -> UntargetedSampleResultRef:
-    if backfill_attempt is not None:
-        if backfill_attempts:
-            raise UntargetedPartitionError("duplicate backfill input carriers")
-        backfill_attempts = (backfill_attempt,)
-    if len(backfill_attempts) == 1:
-        backfill_attempt = backfill_attempts[0]
-    backfill_assessments = tuple(attempt.assessment for attempt in backfill_attempts)
-    assessment = result.assessment_input.assessment
-    projections = result.assessment_input.discovery_projections
-    content = acquisition_content(acquisition) if acquisition is not None else None
-    acquisition_sha256 = content[1] if content is not None else None
-    if (
-        backfill_attempt is not None
-        and backfill_input != backfill_attempt.backfill_input
-    ):
-        raise UntargetedPartitionError(
-            "backfill input does not match the observed backfill attempt"
-        )
-    for observed in backfill_attempts:
-        validate_cid_nl_method_assessment_binding(
-            observed.assessment,
-            processing_owners=job.processing_owners,
-            sample=job.sample,
-            method_subject=job.method_subject,
-        )
-        if content is None or (
-            observed.acquisition is not acquisition
-            and acquisition_content(observed.acquisition)[0] != content[0]
-        ):
-            raise UntargetedPartitionError(
-                "backfill lost its sealed runtime result acquisition"
-            )
-    if len(backfill_attempts) > 1 and backfill_input is not None:
-        raise UntargetedPartitionError(
-            "multiple backfills cannot use a scalar backfill input"
-        )
-    backfill_assessment = (
-        backfill_attempt.assessment
-        if backfill_attempt is not None
-        else (
-            backfill_input.candidate_assessment if backfill_input is not None else None
-        )
-    )
-    backfill_candidate_count = len(
-        {
-            peak.content.peak_observation_content_id
-            for ref in backfill_assessments
-            or ((backfill_assessment,) if backfill_assessment is not None else ())
-            for peak in ref.candidate_peaks
-        }
-    )
-    values = {
-        "work_unit_key": job.work_unit_key,
-        "canonical_sample_identity_id": job.sample.identity.sample_identity_id,
-        "method_subject_id": job.method_subject.method_subject_id,
-        "discovery_receipt_id": job.discovery_receipt.discovery_receipt_id,
-        "assessment_artifact_id": assessment.artifact.evidence_artifact_id,
-        "discovery_projection_artifact_ids": tuple(
-            projection.artifact.evidence_artifact_id for projection in projections
-        ),
-        "source_candidate_ids": result.source_candidate_ids,
-        "strict_scan_count": result.strict_scan_count,
-        "backfill_assessment_artifact_id": (
-            backfill_assessment.artifact.evidence_artifact_id
-            if backfill_assessment is not None
-            else None
-        ),
-        "backfill_candidate_count": backfill_candidate_count,
-        "backfill_group_hypothesis_ids": tuple(
-            attempt.group_hypothesis_id for attempt in backfill_attempts
-        ),
-        "backfill_assessment_artifact_ids": tuple(
-            ref.artifact.evidence_artifact_id for ref in backfill_assessments
-        ),
-        "backfill_query_predictions": tuple(
-            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
-        ),
-        "backfill_query_bounds": tuple(
-            (
-                ref.content.evaluation_receipt.query_rt_min,
-                ref.content.evaluation_receipt.query_rt_max,
-            )
-            for ref in backfill_assessments
-        ),
-        "acquisition_sha256": acquisition_sha256,
-    }
-    payload = _sample_result_bytes(**values)
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=(
-            job.processing_owners.request.processing_request_id
-        ),
-        producer_processing_attempt_id=(
-            job.processing_owners.attempt.processing_attempt_id
-        ),
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=payload,
-        upstream_artifacts=tuple(
-            dict.fromkeys(
-                (
-                    assessment.artifact,
-                    *(projection.artifact for projection in projections),
-                    *(ref.artifact for ref in backfill_assessments),
-                    *(
-                        (backfill_assessment.artifact,)
-                        if backfill_assessment is not None
-                        else ()
-                    ),
-                )
-            )
-        ),
-    )
-    return UntargetedSampleResultRef(
-        work_unit_key=job.work_unit_key,
-        canonical_sample_identity_id=job.sample.identity.sample_identity_id,
-        method_subject_id=job.method_subject.method_subject_id,
-        discovery_receipt_id=job.discovery_receipt.discovery_receipt_id,
-        assessment_artifact_id=assessment.artifact.evidence_artifact_id,
-        discovery_projection_artifact_ids=tuple(
-            projection.artifact.evidence_artifact_id for projection in projections
-        ),
-        source_candidate_ids=result.source_candidate_ids,
-        strict_scan_count=result.strict_scan_count,
-        backfill_assessment_artifact_id=(
-            backfill_assessment.artifact.evidence_artifact_id
-            if backfill_assessment is not None
-            else None
-        ),
-        backfill_candidate_count=backfill_candidate_count,
-        backfill_group_hypothesis_ids=tuple(
-            attempt.group_hypothesis_id for attempt in backfill_attempts
-        ),
-        acquisition_sha256=acquisition_sha256,
-        backfill_assessment_artifact_ids=tuple(
-            ref.artifact.evidence_artifact_id for ref in backfill_assessments
-        ),
-        backfill_query_predictions=tuple(
-            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
-        ),
-        # Backfill receipts are bound to explicit numeric group query windows.
-        backfill_query_bounds=tuple(
-            (
-                cast(float, ref.content.evaluation_receipt.query_rt_min),
-                cast(float, ref.content.evaluation_receipt.query_rt_max),
-            )
-            for ref in backfill_assessments
-        ),
-        artifact=artifact,
-    )
-
-
-def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
-    payload = {
-        "capability_id": acquisition.capability.capability_id,
-        "acquisition_source_id": (
-            acquisition.capability.acquisition_source.acquisition_source_id
-        ),
-        "logical_xic_request_count": acquisition.logical_xic_request_count,
-        "xic_batch_count": acquisition.xic_batch_count,
-        "adapter_chromatogram_call_count": (
-            acquisition.adapter_chromatogram_call_count
-        ),
-        "trace_point_count": acquisition.trace_point_count,
-        "traces": [
-            {
-                "trace_coordinate_id": item.coordinate.trace_coordinate_id,
-                "rt": list(map(float, item.trace.rt)),
-                "intensity": list(map(float, item.trace.intensity)),
-            }
-            for item in acquisition.traces
-        ],
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-
-
-def _canonical_acquisition_content(
-    acquisition: TraceAcquisitionBatch,
-) -> tuple[bytes, str]:
-    payload = _canonical_acquisition_bytes(acquisition)
-    return payload, sha256_hexdigest(payload)
-
-
 def _exact_acquisition_traces(
     acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
 ) -> tuple[AcquiredTrace, ...]:
@@ -864,7 +527,8 @@ def _exact_acquisition_traces(
         replace(acquired)
         for acquired in acquisition.traces
         if acquired.coordinate.request == request
-        and acquired.coordinate.acquisition_source_id == source_id
+        and acquired.coordinate.capability.acquisition_source.acquisition_source_id
+        == source_id
     )
 
 
@@ -905,22 +569,12 @@ def _validate_request_bound_inputs(
         raise UntargetedPartitionError("physical replay candidate coverage changed")
     expected_physical = physical_capture_input_payload(
         job.signal_processing_profile,
-        {candidate_id: record.evaluation for candidate_id, record in records.items()},
     )
     if (
         not isinstance(physical_payload, dict)
         or physical_payload.get("profile") != expected_physical["profile"]
-        or not isinstance(physical_payload.get("candidates"), dict)
     ):
         raise UntargetedPartitionError("physical replay profile is not request-bound")
-    expected_candidates = expected_physical["candidates"]
-    assert isinstance(expected_candidates, dict)
-    actual_candidates = physical_payload["candidates"]
-    if any(
-        actual_candidates.get(candidate_id) != value
-        for candidate_id, value in expected_candidates.items()
-    ):
-        raise UntargetedPartitionError("physical replay answer is not request-bound")
     try:
         pinned = cid_nl_method_subjects_from_request(request)
     except CidNlMethodSubjectContractError as exc:
@@ -1106,7 +760,6 @@ def _validate_partition_candidates(
     _validate_sample_candidates(job.support_candidates, job=job, label="support")
     receipt = job.discovery_receipt
     expected_receipt_values = (
-        ("discovery_receipt_id", receipt.discovery_receipt_id),
         ("candidate_payload_sha256", receipt.candidate_payload_sha256),
         (
             "candidate_artifact_schema_version",
@@ -1209,7 +862,6 @@ class _SampleResultContext:
 
     def __init__(self, jobs: tuple[UntargetedPartitionJob, ...]) -> None:
         self._jobs = {id(job): job for job in jobs}
-        self._content: dict[int, tuple[TraceAcquisitionBatch, bytes, str]] = {}
         self._traces: dict[
             int,
             tuple[
@@ -1217,16 +869,6 @@ class _SampleResultContext:
                 dict[tuple[XICRequest, str], tuple[AcquiredTrace, ...]],
             ],
         ] = {}
-
-    def acquisition_content(
-        self, acquisition: TraceAcquisitionBatch
-    ) -> tuple[bytes, str]:
-        cached = self._content.get(id(acquisition))
-        if cached is None:
-            payload, digest = _canonical_acquisition_content(acquisition)
-            cached = (acquisition, payload, digest)
-            self._content[id(acquisition)] = cached
-        return cached[1], cached[2]
 
     def exact_traces(
         self, acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
@@ -1237,7 +879,7 @@ class _SampleResultContext:
             for acquired in acquisition.traces:
                 key = (
                     acquired.coordinate.request,
-                    acquired.coordinate.acquisition_source_id,
+                    acquired.coordinate.capability.acquisition_source.acquisition_source_id,
                 )
                 grouped.setdefault(key, []).append(acquired)
             cached = (

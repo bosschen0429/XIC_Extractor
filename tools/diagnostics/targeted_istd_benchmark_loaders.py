@@ -34,9 +34,6 @@ from xic_extractor.tabular_io import (
     required_indexes as _required_indexes,
 )
 from xic_extractor.tabular_io import (
-    split_semicolon_labels as _split_semicolon_labels,
-)
-from xic_extractor.tabular_io import (
     text_value as _text,
 )
 
@@ -179,7 +176,7 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
     _require_fields(
         rows,
         (
-            "feature_family_id",
+            "feature_id",
             "neutral_loss_tag",
             "family_center_mz",
             "family_center_rt",
@@ -191,27 +188,27 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
     )
     return tuple(
         AlignmentFeature(
-            feature_family_id=row["feature_family_id"],
+            feature_id=row["feature_id"],
             neutral_loss_tag=row["neutral_loss_tag"],
             family_center_mz=_required_float(
                 row.get("family_center_mz"),
                 "family_center_mz",
-                row["feature_family_id"],
+                row["feature_id"],
             ),
             family_center_rt=_required_float(
                 row.get("family_center_rt"),
                 "family_center_rt",
-                row["feature_family_id"],
+                row["feature_id"],
             ),
             family_product_mz=_required_float(
                 row.get("family_product_mz"),
                 "family_product_mz",
-                row["feature_family_id"],
+                row["feature_id"],
             ),
             family_observed_neutral_loss_da=_required_float(
                 row.get("family_observed_neutral_loss_da"),
                 "family_observed_neutral_loss_da",
-                row["feature_family_id"],
+                row["feature_id"],
             ),
             include_in_primary_matrix=_is_primary_review_row(row),
         )
@@ -221,7 +218,7 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
 
 def read_alignment_matrix(path: Path) -> AlignmentMatrixData:
     rows = list(read_tsv_required(path, ()))
-    if rows and "feature_family_id" not in rows[0]:
+    if rows and "feature_id" not in rows[0]:
         return _read_clean_alignment_matrix(path, rows)
     return _read_legacy_alignment_matrix(path, rows)
 
@@ -230,9 +227,9 @@ def _read_legacy_alignment_matrix(
     path: Path,
     rows: list[dict[str, str]],
 ) -> AlignmentMatrixData:
-    _require_fields(rows, ("feature_family_id",), path)
+    _require_fields(rows, ("feature_id",), path)
     metadata_columns = {
-        "feature_family_id",
+        "feature_id",
         "neutral_loss_tag",
         "family_center_mz",
         "family_center_rt",
@@ -245,7 +242,7 @@ def _read_legacy_alignment_matrix(
     matrix: dict[str, dict[str, float]] = {}
     normalized_samples = frozenset(sample for _column, sample in sample_column_pairs)
     for row in rows:
-        family_id = row["feature_family_id"]
+        family_id = row["feature_id"]
         values: dict[str, float] = {}
         for column, sample in sample_column_pairs:
             area = _float_value(row.get(column))
@@ -263,11 +260,11 @@ def _read_clean_alignment_matrix(
     rows: list[dict[str, str]],
 ) -> AlignmentMatrixData:
     _require_fields(rows, ("Mz", "RT"), path)
-    identity_path = path.with_name("alignment_matrix_identity.tsv")
+    identity_path = path.with_name("alignment_review.tsv")
     identity_rows = list(read_tsv_required(identity_path, ()))
     _require_fields(
         identity_rows,
-        ("matrix_row_index", "source_feature_family_ids"),
+        ("matrix_row_index", "feature_id"),
         identity_path,
     )
     identity_by_index = _matrix_identity_by_index(identity_path, identity_rows)
@@ -301,6 +298,8 @@ def _matrix_identity_by_index(
     identity_by_index: dict[int, tuple[str, ...]] = {}
     for row_number, row in enumerate(rows, start=2):
         index_text = _text(row.get("matrix_row_index"))
+        if not index_text:
+            continue
         try:
             matrix_row_index = int(index_text)
         except ValueError as exc:
@@ -311,13 +310,9 @@ def _matrix_identity_by_index(
             raise ValueError(
                 f"{path} has duplicate matrix_row_index {matrix_row_index}"
             )
-        family_ids = tuple(
-            _split_semicolon_labels(row.get("source_feature_family_ids"))
-        )
-        if not family_ids:
-            raise ValueError(
-                f"{path} row {row_number} is missing source_feature_family_ids"
-            )
+        family_ids = (_text(row.get("feature_id")),)
+        if not family_ids[0]:
+            raise ValueError(f"{path} row {row_number} is missing feature_id")
         identity_by_index[matrix_row_index] = family_ids
     return identity_by_index
 
@@ -339,20 +334,20 @@ def read_alignment_cells(path: Path) -> dict[tuple[str, str], AlignmentCell]:
     rows = list(read_tsv_required(path, ()))
     _require_fields(
         rows,
-        ("feature_family_id", "sample_stem", "status", "area", "apex_rt"),
+        ("feature_id", "sample_stem", "status", "area", "apex_rt"),
         path,
     )
     cells: dict[tuple[str, str], AlignmentCell] = {}
     for row in rows:
         sample = _normalize_sample_id(row["sample_stem"])
         cell = AlignmentCell(
-            feature_family_id=row["feature_family_id"],
+            feature_id=row["feature_id"],
             sample_stem=sample,
             status=row.get("status", ""),
             area=_float_value(row.get("area")),
             apex_rt=_float_value(row.get("apex_rt")),
         )
-        cells[(cell.feature_family_id, sample)] = cell
+        cells[(cell.feature_id, sample)] = cell
     return cells
 
 

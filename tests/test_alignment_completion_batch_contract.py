@@ -133,7 +133,6 @@ def _candidate_universe_payload(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_payload_sha256": "0" * 64,
-                "discovery_receipt_id": ("xic.discovery-candidate-universe:test"),
                 "candidate_artifact_schema_version": "discovery_candidates_csv",
                 "candidate_artifact_sha256": "0" * 64,
                 "candidate_artifact_byte_size": 0,
@@ -151,7 +150,7 @@ def _candidate_universe_payload(
 
 
 def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
-    member = SimpleNamespace(physical_observation_ids=(physical_id,))
+    member = SimpleNamespace(physical_peaks=(physical_id,))
     group = SimpleNamespace(
         group_hypothesis_id=f"group:{row_id}",
         member_subjects=(member,),
@@ -171,12 +170,7 @@ def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
             partition_transition=SimpleNamespace(lineage=()),
         ),
     )
-    row = SimpleNamespace(
-        row_key=SimpleNamespace(
-            untarget_row_key_id=row_id,
-            group=group,
-        )
-    )
+    row = SimpleNamespace(group=group)
     projection = SimpleNamespace(rows=(row,))
     return _uninitialized(
         FinalizedUntargetApplicationResult,
@@ -215,7 +209,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     subject_id = fixture.method_subject.method_subject_id
     parent_scope = _fake_scope(
         request=request,
@@ -251,7 +245,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
             )
         )
 
-    retry = issue_processing_attempt(request, retry_of=attempt)
+    retry = issue_processing_attempt(retry_of=attempt)
     with pytest.raises(
         ApplicationResultContractError,
         match="crossed its processing attempt",
@@ -296,7 +290,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     parent_scope = _fake_scope(
         request=request,
         samples=fixture.samples,
@@ -319,9 +313,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
                     UntargetedCandidateExclusion(
                         candidate_id=candidate_id,
                         method_subject_id=fixture.method_subject.method_subject_id,
-                        canonical_sample_identity_id=(
-                            sample_b.identity.sample_identity_id
-                        ),
+                        sample_key=(sample_b.identity.sample_key),
                         discovery_candidate_state="review_only_orphan_nl",
                     ),
                 ),
@@ -366,13 +358,13 @@ def test_batch_application_result_requires_owner_candidate_universe(
                 subject_ids=(fixture.method_subject.method_subject_id,),
             ),
             processing_request=request,
-            processing_attempt=issue_processing_attempt(request),
+            processing_attempt=issue_processing_attempt(),
             children=(),
             excluded_candidates=(
                 UntargetedCandidateExclusion(
                     candidate_id=candidate_id,
                     method_subject_id=fixture.method_subject.method_subject_id,
-                    canonical_sample_identity_id=sample.identity.sample_identity_id,
+                    sample_key=sample.identity.sample_key,
                     discovery_candidate_state="review_only_orphan_nl",
                 ),
             ),
@@ -434,7 +426,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     parent_scope = _fake_scope(
         request=request,
         samples=fixture.samples,
@@ -460,15 +452,15 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
 
     if case == "wrong_attempt":
         handoff = children[1].scientific_core.cell_observation_handoff
-        handoff.coverage.processing_owners.attempt = issue_processing_attempt(request)
+        handoff.coverage.processing_owners.attempt = issue_processing_attempt()
     elif case == "duplicate_physical":
         children[1].scientific_core.final_population[0].member_subjects[
             0
-        ].physical_observation_ids = (
+        ].physical_peaks = (
             children[0]
             .scientific_core.final_population[0]
             .member_subjects[0]
-            .physical_observation_ids
+            .physical_peaks
         )
     loads = []
 
@@ -556,11 +548,10 @@ def _universe_entry(**overrides: object) -> dict[str, object]:
         "candidate_count": 1,
         "candidate_ids": ["c1"],
         "candidate_payload_sha256": "a" * 64,
-        "discovery_receipt_id": "xic.discovery-candidate-universe:test",
         "candidate_artifact_schema_version": "discovery_candidates_csv",
         "candidate_artifact_sha256": "b" * 64,
         "candidate_artifact_byte_size": 0,
-        "acquisition_source_id": "xic.acquisition-source:test",
+        "acquisition_source_id": "sha256:" + "c" * 64,
     }
     entry.update(overrides)
     return entry

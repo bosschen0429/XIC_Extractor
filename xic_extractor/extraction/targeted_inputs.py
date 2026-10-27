@@ -22,7 +22,6 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     discovery_settings_identity_fields,
 )
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
     physical_capture_input_payload,
@@ -171,7 +170,6 @@ def bind_targeted_physical_capture_request(
     request: ProcessingRequestIdentity,
     *,
     profile: SignalProcessingProfile,
-    evaluations: Mapping[str, PhysicalPeakEvaluation],
 ) -> ProcessingRequestIdentity:
     """Mint the attempt-owning request after acquisition physical facts exist."""
 
@@ -184,7 +182,6 @@ def bind_targeted_physical_capture_request(
         )
     scientific_inputs[PHYSICAL_CAPTURE_INPUT_KEY] = physical_capture_input_payload(
         profile,
-        evaluations,
     )
     return build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,

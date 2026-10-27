@@ -58,7 +58,6 @@ from xic_extractor.xic_models import XICTrace
 
 
 def _bind_mock_publication_inputs(completed, kwargs):
-    completed.processing_request_id = "request-test"
     completed.processing_attempt_id = "attempt-test"
     completed.initial_groups = ()
     candidates = kwargs["candidates_by_sample"]
@@ -114,7 +113,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     captured_write: dict[str, object] = {}
     reference_provenance = {
         "workbook_sha256": "a" * 64,
-        "content_sha256": "b" * 64,
+        "target_snapshot": '{"definitions": []}',
     }
     reference = SimpleNamespace(
         provenance=reference_provenance,
@@ -238,8 +237,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
         "effective_owner_build_xic_backend": None,
         "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
     }
     metadata = captured_write["metadata"]
     assert isinstance(metadata, dict)
@@ -249,8 +246,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
-    assert metadata.get("known_istd_reference_content_sha256") == (
-        reference.provenance["content_sha256"] if with_reference else None
+    assert metadata.get("known_istd_reference_target_snapshot") == (
+        reference.provenance["target_snapshot"] if with_reference else None
     )
     assert closed == [True]
 
@@ -708,10 +705,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             else:
                 assert result.evidence.report_path == report_path
                 assert (
-                    result.evidence.processing_request_id
-                    == completed.processing_request_id
-                )
-                assert (
                     result.evidence.processing_attempt_id
                     == completed.processing_attempt_id
                 )
@@ -878,12 +871,12 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     )
     plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
     plain_summary = read_cid_nl_explanation(plain)
-    assert "known_istd_reference" not in plain_summary
+    assert plain_summary["known_istd_reference"] is None
     matrix_bytes = matrix.read_bytes()
     reference_path = tmp_path / "reference.xlsx"
     _known_reference_workbook(reference_path)
     provenance = read_known_istd_reference(reference_path).provenance
-    assert "content_sha256" in provenance
+    assert "definitions" in json.loads(provenance["target_snapshot"])
     report = write_cid_nl_explanation(
         tmp_path / "reference.sqlite",
         **arguments,
@@ -1157,7 +1150,6 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         (cli_output / "alignment_run_metadata.json").read_text(encoding="utf-8")
     )
     assert "mass_recalibration_by_sample" in metadata
-    assert metadata["processing_request_id"]
     assert metadata["processing_attempt_id"]
     if not backfill_enabled:
         assert metadata["backfill_execution"] == "not_run"

@@ -12,6 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -109,9 +110,7 @@ class ReviewWorkspace:
         with self._lock:
             self._require_idle()
             summary = read_evidence_summary(path)
-            sample_ids = tuple(
-                sample["canonical_sample_identity_id"] for sample in summary["samples"]
-            )
+            sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
             page = prepare_report(
@@ -121,7 +120,7 @@ class ReviewWorkspace:
                     sample_ids=sample_ids,
                     limit=25,
                     review_scope="matrix"
-                    if summary.get("query_index_version") == 2
+                    if summary.get("schema_version") == REVIEW_SCHEMA_VERSION
                     else "all",
                 ),
             )
@@ -168,7 +167,7 @@ class ReviewWorkspace:
                 sample_ids=(sample_id,)
                 if sample_id
                 else tuple(
-                    sample["canonical_sample_identity_id"]
+                    sample["sample_key"]
                     for sample in self._page.payload["summary"]["samples"]
                 ),
                 group_ids=(group_id.strip(),) if group_id.strip() else (),
@@ -222,14 +221,11 @@ class ReviewWorkspace:
             "review_scope": page.payload["selection"].get("review_scope", "all"),
             "all_samples": [
                 {
-                    "id": row["canonical_sample_identity_id"],
-                    "label": row.get(
-                        "sample_stem", row["canonical_sample_identity_id"]
-                    ),
+                    "id": row["sample_key"],
+                    "label": row.get("sample_stem", row["sample_key"]),
                 }
                 for row in page.payload["summary"]["samples"]
             ],
-            "request_id": page.payload["summary"].get("processing_request_id", ""),
             "samples": page.payload["samples"],
             "run_total": page.run_total,
             "matched_count": page.matched_count,
@@ -252,13 +248,13 @@ class ReviewWorkspace:
     def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
         # Translate source-owned identifiers and coordinates; never infer a group.
         source = item.get("details", {}).get("source", {})
-        group_id = source.get("group_hypothesis_id")
+        group_id = source.get("feature_id")
         candidate_id = (
             source.get("candidate_id") if item["kind"] == "candidate" else None
         )
         observed = sorted(
             {
-                witness["canonical_sample_identity_id"]
+                witness["sample_key"]
                 for witness in item.get("witnesses", [])
                 if witness.get("rt_apex_min") is not None
                 and witness.get("precursor_mz") is not None

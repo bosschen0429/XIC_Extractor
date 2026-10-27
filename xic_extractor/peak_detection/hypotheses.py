@@ -7,7 +7,6 @@ from typing import Literal
 import numpy as np
 
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     asls_baseline,
@@ -44,7 +43,6 @@ from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
-OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
 
@@ -141,27 +139,15 @@ class PeakHypothesis:
     audit: AuditTrail
     hypothesis_method: str = ""
     peak_observation_refs: tuple[PeakObservationRef, ...] = ()
-    artifact: EvidenceArtifactRef | None = None
 
     @property
     def is_owner_backed(self) -> bool:
         return bool(
             self.hypothesis_method
             or self.peak_observation_refs
-            or self.artifact is not None
             or self.evidence.cid_nl_chromatographic_support_ref is not None
             or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
-            or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
         )
-
-    def __post_init__(self) -> None:
-        if not self.is_owner_backed:
-            return
-        from xic_extractor.peak_detection.peak_hypothesis_identity import (
-            validate_owner_backed_peak_hypothesis_instance,
-        )
-
-        validate_owner_backed_peak_hypothesis_instance(self)
 
 
 def validate_peak_hypothesis_selection_authority(
@@ -172,20 +158,6 @@ def validate_peak_hypothesis_selection_authority(
     """Reject diagnostic owner-backed identity at selection/product boundaries."""
 
     if hypothesis.is_owner_backed:
-        validate_peak_hypothesis_id_selection_authority(
-            hypothesis.hypothesis_id,
-            consumer=consumer,
-        )
-
-
-def validate_peak_hypothesis_id_selection_authority(
-    hypothesis_id: str,
-    *,
-    consumer: str,
-) -> None:
-    """Reject the reserved diagnostic identity namespace without needing an object."""
-
-    if hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX):
         raise PeakHypothesisAuthorityError(
             f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
         )

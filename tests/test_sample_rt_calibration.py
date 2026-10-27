@@ -156,7 +156,7 @@ def test_failed_strong_fit_retains_explicit_weak_estimate():
     assert estimate.fit_status == sample.status != "calibrated"
 
 
-def test_weak_estimate_snapshot_round_trip_does_not_upgrade_legacy_maps(tmp_path):
+def test_weak_estimate_snapshot_round_trip_rejects_old_maps(tmp_path):
     from xic_extractor.diagnostics.grouping_experiment_io import (
         read_rt_calibration,
         write_rt_calibration,
@@ -174,15 +174,10 @@ def test_weak_estimate_snapshot_round_trip_does_not_upgrade_legacy_maps(tmp_path
     strong = _calibrate(_batch())
     write_rt_calibration(path, strong)
     payload = json.loads(path.read_text())
-    payload["schema_version"] = 2
-    for sample in payload["samples"]:
-        sample.pop("estimate_support", None)
+    payload["schema_version"] = 3
     path.write_text(json.dumps(payload))
-    legacy = read_rt_calibration(path).samples["S01"]
-    assert legacy.calibrated_rt(20) == strong.samples["S01"].calibrated_rt(20)
-    assert legacy.estimate_rt(20).method == "retained_map"
-    assert legacy.estimate_rt(20).anchor_count is None
-    assert legacy.estimate_rt(40) is None
+    with pytest.raises(ValueError, match="rerun the analysis"):
+        read_rt_calibration(path)
 
 
 @pytest.mark.parametrize(
@@ -465,7 +460,7 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     detected["heldout"]["S01"] = 10.4
     detected["heldout"]["S09"] = 33.0  # outside S09's anchor span
     cells = tmp_path / "alignment_cells.tsv"
-    lines = ["feature_family_id\tsample_stem\tstatus\tapex_rt"]
+    lines = ["feature_id\tsample_stem\tstatus\tapex_rt"]
     for feature, rts in detected.items():
         status = "detected"
         lines += [f"{feature}\t{s}\t{status}\t{rt}" for s, rt in rts.items()]

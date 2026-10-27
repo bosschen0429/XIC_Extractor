@@ -23,7 +23,7 @@ from xic_extractor.tabular_io import (
 SCHEMA_VERSION = "alignment_health_packet"
 
 REVIEW_REQUIRED = (
-    "feature_family_id",
+    "feature_id",
     "detected_count",
     "ambiguous_ms1_owner_count",
     "duplicate_assigned_count",
@@ -38,19 +38,13 @@ REVIEW_REQUIRED = (
     "reason",
 )
 MATRIX_REQUIRED = ("Mz", "RT")
-IDENTITY_REQUIRED = (
-    "peak_hypothesis_id",
-    "matrix_row_index",
-    "source_feature_family_ids",
-    "evidence_status",
-)
-CELL_OPTIONAL_REQUIRED = ("feature_family_id", "sample_stem", "status")
-SEED_AUDIT_REQUIRED = ("feature_family_id", "sample_stem", "status")
+CELL_OPTIONAL_REQUIRED = ("feature_id", "sample_stem", "status")
+SEED_AUDIT_REQUIRED = ("feature_id", "sample_stem", "status")
 
 SUMMARY_COLUMNS = ("metric", "value", "detail")
 SENTINEL_COLUMNS = (
     "rank",
-    "feature_family_id",
+    "feature_id",
     "issue_class",
     "severity_score",
     "detected_count",
@@ -108,7 +102,6 @@ def build_alignment_health_packet(
 
     review_path = alignment_dir / "alignment_review.tsv"
     matrix_path = alignment_dir / "alignment_matrix.tsv"
-    identity_path = alignment_dir / "alignment_matrix_identity.tsv"
     review_header, review_rows = read_tsv_with_header(
         review_path,
         required_columns=REVIEW_REQUIRED,
@@ -119,12 +112,10 @@ def build_alignment_health_packet(
         required_columns=MATRIX_REQUIRED,
         encoding="utf-8-sig",
     )
-    identity_header, identity_rows = read_tsv_with_header(
-        identity_path,
-        required_columns=IDENTITY_REQUIRED,
-        encoding="utf-8-sig",
-    )
-    del review_header, identity_header
+    identity_rows = [
+        row for row in review_rows if row.get("matrix_row_index", "").strip()
+    ]
+    del review_header
 
     cell_path = _first_existing(
         alignment_dir / "alignment_backfill_cell_evidence.tsv",
@@ -148,7 +139,7 @@ def build_alignment_health_packet(
 
     cell_status_by_family = _status_counts_by_family(cell_rows)
     seed_count_by_family = Counter(
-        text_value(row.get("feature_family_id")) for row in seed_rows
+        text_value(row.get("feature_id")) for row in seed_rows
     )
     seed_count_by_family.pop("", None)
 
@@ -170,7 +161,6 @@ def build_alignment_health_packet(
     inputs = _input_descriptors(
         review_path=review_path,
         matrix_path=matrix_path,
-        identity_path=identity_path,
         cell_path=cell_path,
         seed_audit_path=seed_audit_path if seed_audit_path.is_file() else None,
     )
@@ -226,7 +216,7 @@ def _summary_metrics(
         "review_family_count": len(review_rows),
         "matrix_row_count": len(matrix_rows),
         "matrix_sample_column_count": len(sample_columns),
-        "matrix_identity_row_count": len(identity_rows),
+        "matrix_review_row_count": len(identity_rows),
         "cell_evidence_row_count": len(cell_rows),
         "seed_audit_row_count": len(seed_rows),
         "detected_count_total": _sum_int(review_rows, "detected_count"),
@@ -262,7 +252,7 @@ def _sentinel_rows(
 ) -> list[dict[str, object]]:
     candidates = []
     for row in review_rows:
-        family_id = text_value(row.get("feature_family_id"))
+        family_id = text_value(row.get("feature_id"))
         if not family_id:
             continue
         issues = _issue_classes(row)
@@ -271,7 +261,7 @@ def _sentinel_rows(
             continue
         candidates.append(
             {
-                "feature_family_id": family_id,
+                "feature_id": family_id,
                 "issue_class": ";".join(issues),
                 "severity_score": score,
                 "detected_count": _int_value(row.get("detected_count")),
@@ -302,7 +292,7 @@ def _sentinel_rows(
     candidates.sort(
         key=lambda row: (
             -int(cast(int, row["severity_score"])),
-            text_value(row["feature_family_id"]),
+            text_value(row["feature_id"]),
         ),
     )
     output: list[dict[str, object]] = []
@@ -363,7 +353,7 @@ def _status_counts_by_family(
 ) -> dict[str, Counter[str]]:
     output: dict[str, Counter[str]] = defaultdict(Counter)
     for row in rows:
-        family_id = text_value(row.get("feature_family_id"))
+        family_id = text_value(row.get("feature_id"))
         status = text_value(row.get("status"))
         if family_id and status:
             output[family_id][status] += 1
@@ -390,14 +380,12 @@ def _input_descriptors(
     *,
     review_path: Path,
     matrix_path: Path,
-    identity_path: Path,
     cell_path: Path | None,
     seed_audit_path: Path | None,
 ) -> dict[str, dict[str, object]]:
     inputs = {
         "alignment_review_tsv": _descriptor(review_path),
         "alignment_matrix_tsv": _descriptor(matrix_path),
-        "alignment_matrix_identity_tsv": _descriptor(identity_path),
     }
     if cell_path is not None:
         inputs["alignment_cell_evidence_tsv"] = _descriptor(cell_path)

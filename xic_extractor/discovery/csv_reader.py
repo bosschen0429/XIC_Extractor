@@ -38,7 +38,7 @@ _CANDIDATE_UNESCAPE_FIELDS = {
     "sample_stem",
     "raw_file",
     "candidate_id",
-    "feature_family_id",
+    "feature_id",
     "ms1_feature_row_id",
 }
 
@@ -347,7 +347,7 @@ def _parse_candidate_row(
         discovery_candidate_state=discovery_candidate_state,
         ms1_feature_row_id=ms1_feature_row_id,
         candidate_id=candidate_id,
-        feature_family_id=_machine_field(row, "feature_family_id"),
+        feature_id=_machine_field(row, "feature_id"),
         feature_family_size=_parse_int(path, row_number, row, "feature_family_size"),
         precursor_mz=precursor_mz,
         product_mz=product_mz,

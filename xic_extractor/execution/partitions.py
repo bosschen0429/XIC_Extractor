@@ -35,7 +35,6 @@ from xic_extractor.execution._lifecycle import (
 )
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
     RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
@@ -148,14 +147,11 @@ class PartitionPipelineAdapter(
         should_cancel: Callable[[], None] | Callable[[], bool] | None = None,
     ) -> PartitionCompositionOutput[TCompositionResult]: ...
 
-    def create_partition_artifacts(
+    def settle_partition(
         self,
         partition: WorkPartition[TPartitionPayload],
         composition_output: PartitionCompositionOutput[TCompositionResult],
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]: ...
+    ) -> Sequence[WorkUnitSettlement]: ...
 
     def finalize_application(
         self,
@@ -168,15 +164,12 @@ class PartitionPipelineAdapter(
         """Optional declared manifest work-unit key for global closure."""
         return None
 
-    def create_global_closure_artifacts(
+    def settle_global_closure(
         self,
         application_result: TApplicationResult,
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]:
-        """Mint artifact registrations and work settlements for global closure."""
-        return (), ()
+    ) -> Sequence[WorkUnitSettlement]:
+        """Settle the completed global application result."""
+        return ()
 
     def build_workflow_result(
         self,
@@ -264,7 +257,6 @@ class PartitionPipelineScheduler:
             nonlocal failure, application_result
             settlements: list[WorkUnitSettlement] = []
             resources: dict[str, RuntimeResourceSettlementReceipt] = {}
-            artifacts: list[RuntimeArtifactRegistrationReceipt] = []
             acquisitions: list[RuntimeAcquisitionReceipt] = []
             composition_outputs: list[
                 PartitionCompositionOutput[TCompositionResult]
@@ -457,10 +449,9 @@ class PartitionPipelineScheduler:
                             timeline_records[index]["status"] = "completed"
                             composition_outputs.append(comp_out)
                             check_cancellation()
-                            part_artifacts, part_settlements = (
-                                adapter.create_partition_artifacts(partition, comp_out)
+                            part_settlements = adapter.settle_partition(
+                                partition, comp_out
                             )
-                            artifacts.extend(part_artifacts)
                             settlements.extend(part_settlements)
                             del acq_out, comp_out
                             progress("partition_released", index + 1)
@@ -676,13 +667,10 @@ class PartitionPipelineScheduler:
                                             timeline_by_index[partition.index][
                                                 "status"
                                             ] = "completed"
-                                        part_artifacts, part_settlements = (
-                                            adapter.create_partition_artifacts(
-                                                partition, comp_out
-                                            )
+                                        part_settlements = adapter.settle_partition(
+                                            partition, comp_out
                                         )
                                         with thread_lock:
-                                            artifacts.extend(part_artifacts)
                                             settlements.extend(part_settlements)
                                         del acq_out, comp_out
                                         progress(
@@ -765,10 +753,9 @@ class PartitionPipelineScheduler:
                     )
                     check_cancellation()
                     if global_closure_key is not None:
-                        closure_artifacts, closure_settlements = (
-                            adapter.create_global_closure_artifacts(application_result)
+                        closure_settlements = adapter.settle_global_closure(
+                            application_result
                         )
-                        artifacts.extend(closure_artifacts)
                         settlements.extend(closure_settlements)
                 except Exception as exc:
                     if not (
@@ -900,7 +887,6 @@ class PartitionPipelineScheduler:
             return RuntimeWorkerBatchReceipt(
                 settlements=tuple(settlements),
                 resource_settlements=tuple(resources.values()),
-                artifact_registrations=tuple(artifacts),
                 acquisitions=tuple(acquisitions),
             )
 
@@ -943,7 +929,6 @@ class PartitionPipelineScheduler:
                             for key in work_unit_keys
                         ),
                         resource_settlements=batch.resource_settlements,
-                        artifact_registrations=batch.artifact_registrations,
                         acquisitions=batch.acquisitions,
                     )
                 return batch

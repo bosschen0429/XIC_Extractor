@@ -38,7 +38,7 @@ def test_assign_peak_anchors_groups_candidates_sharing_ms1_peak() -> None:
         ),
     )
 
-    assert {candidate.feature_family_id for candidate in assigned} == {"Sample@F0001"}
+    assert {candidate.feature_id for candidate in assigned} == {"Sample@F0001"}
     assert [candidate.feature_family_size for candidate in assigned] == [2, 2]
     assert [candidate.candidate_id for candidate in assigned] == [
         "Sample#20",
@@ -70,7 +70,7 @@ def test_assign_peak_anchors_keeps_same_apex_different_precursors_separate() -> 
 
     assigned = assign_peak_anchors((first, second), settings=settings)
 
-    assert [candidate.feature_family_id for candidate in assigned] == [
+    assert [candidate.feature_id for candidate in assigned] == [
         "Sample@F0001",
         "Sample@F0002",
     ]
@@ -93,17 +93,15 @@ def test_assign_peak_anchors_does_not_chain_precursor_tolerance_groups() -> None
         candidate.candidate_id: candidate for candidate in reversed_assigned
     }
 
-    assert by_id[low.candidate_id].feature_family_id == (
-        by_id[middle.candidate_id].feature_family_id
-    )
-    assert by_id[high.candidate_id].feature_family_id != (
-        by_id[middle.candidate_id].feature_family_id
+    assert by_id[low.candidate_id].feature_id == (by_id[middle.candidate_id].feature_id)
+    assert by_id[high.candidate_id].feature_id != (
+        by_id[middle.candidate_id].feature_id
     )
     assert {
-        candidate_id: (candidate.feature_family_id, candidate.feature_family_size)
+        candidate_id: (candidate.feature_id, candidate.feature_family_size)
         for candidate_id, candidate in by_id.items()
     } == {
-        candidate_id: (candidate.feature_family_id, candidate.feature_family_size)
+        candidate_id: (candidate.feature_id, candidate.feature_family_size)
         for candidate_id, candidate in reversed_by_id.items()
     }
 
@@ -142,7 +140,7 @@ def test_assign_peak_anchors_keeps_raw_sample_and_tag_boundaries_separate() -> N
     )
 
     assert [candidate.feature_family_size for candidate in assigned] == [1, 1, 1, 1]
-    assert len({candidate.feature_family_id for candidate in assigned}) == 4
+    assert len({candidate.feature_id for candidate in assigned}) == 4
 
 
 def test_assign_peak_anchors_keeps_distinct_ms1_peaks_separate() -> None:
@@ -166,7 +164,7 @@ def test_assign_peak_anchors_keeps_distinct_ms1_peaks_separate() -> None:
         ),
     )
 
-    assert [candidate.feature_family_id for candidate in assigned] == [
+    assert [candidate.feature_id for candidate in assigned] == [
         "Sample@F0001",
         "Sample@F0002",
     ]
@@ -184,7 +182,7 @@ def test_assign_peak_anchors_does_not_group_missing_ms1_peaks() -> None:
         ),
     )
 
-    assert [candidate.feature_family_id for candidate in assigned] == [
+    assert [candidate.feature_id for candidate in assigned] == [
         "Sample@F0001",
         "Sample@F0002",
     ]
@@ -343,8 +341,8 @@ def test_peak_anchors_preserve_distinct_feature_backed_inferred_candidates() -> 
         assert candidate.ms1_feature_row_id == original.ms1_feature_row_id
         assert candidate.ms1_area == original.ms1_area
         assert candidate.best_ms2_scan_id == original.best_ms2_scan_id
-    assert by_id[weaker.candidate_id].feature_family_id != (
-        by_id[stronger.candidate_id].feature_family_id
+    assert by_id[weaker.candidate_id].feature_id != (
+        by_id[stronger.candidate_id].feature_id
     )
     assert by_id[stronger.candidate_id].evidence_score > (
         by_id[weaker.candidate_id].evidence_score
@@ -360,7 +358,7 @@ def test_peak_anchors_preserve_distinct_feature_backed_inferred_candidates() -> 
             candidate.discovery_candidate_state,
             candidate.ms1_feature_row_id,
             candidate.ms1_area,
-            candidate.feature_family_id,
+            candidate.feature_id,
             candidate.evidence_score,
         )
         for candidate_id, candidate in by_id.items()
@@ -369,7 +367,7 @@ def test_peak_anchors_preserve_distinct_feature_backed_inferred_candidates() -> 
             candidate.discovery_candidate_state,
             candidate.ms1_feature_row_id,
             candidate.ms1_area,
-            candidate.feature_family_id,
+            candidate.feature_id,
             candidate.evidence_score,
         )
         for candidate_id, candidate in reversed_by_id.items()

@@ -226,9 +226,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     assert all(
         len(item.candidate_peaks) == (2 if with_signal else 0) for item in assessments
     )
-    assert all(
-        item.content.evaluation_receipt.scanned_event_count == 6 for item in assessments
-    )
     assert all(len(item.evidence_refs) == (6 if with_nl else 0) for item in assessments)
     assert all(
         item.content.method_result
@@ -373,7 +370,6 @@ def test_publication_returns_concrete_public_result_models(
         from xic_extractor.extraction.result_assembly import (
             prepare_acquired_observation,
         )
-        from xic_extractor.peak_detection import observations
 
         for file_result in output.file_results:
             source = build_local_acquisition_source_identity(
@@ -387,12 +383,6 @@ def test_publication_returns_concrete_public_result_models(
                 resolver_mode=config.resolver_mode,
             )
 
-        def unexpected_trace_serialization(_trace):
-            raise AssertionError("acquisition already serialized this trace")
-
-        monkeypatch.setattr(
-            observations, "_canonical_trace_bytes", unexpected_trace_serialization
-        )
     request = build_targeted_application_request(
         config,
         [target],
@@ -684,7 +674,6 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
             acquisition_trace=trace,
             physical_evaluation=evaluate_physical_peak(
                 prepare_physical_signal(rt, trace.intensity, profile=profile),
-                selection_subject_id=target.label,
                 query_rt_min=1.5,
                 request_context_rt_start_min=trace.rt_min,
                 request_context_rt_end_min=trace.rt_max,
@@ -1449,88 +1438,6 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
         )
 
 
-def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-    extraction = output.file_results[0].results[target.label]
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        target_label="CrossedTarget",
-    )
-    output.file_results[0].group = "mutated-group"
-    output.diagnostics.append(
-        DiagnosticRecord("SampleA", target.label, "FILE_ERROR", "mutated")
-    )
-
-    publication = publish_targeted_outputs(request, completed, output)
-
-    assert publication.output.file_results[0].results[target.label].target_label == (
-        target.label
-    )
-    assert publication.output.file_results[0].group is None
-    assert publication.output.diagnostics == []
-
-
-def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) -> None:
-    config, target, output = production_case(
-        tmp_path,
-        sample_names=("SampleA", "SampleB"),
-        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
-    )
-    expected_areas = {
-        file_result.sample_name: file_result.results[target.label].reported_peak_area
-        for file_result in output.file_results
-    }
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1, "SampleB": 2},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-    publication = publish_targeted_outputs(request, completed, output)
-    published_extraction = publication.output.file_results[0].results[target.label]
-    published_trace = published_extraction.acquisition_trace
-    assert published_trace is not None
-    expected_raw = published_trace.intensity.copy()
-    published_trace.intensity.fill(0.0)
-    publication.output.file_results[0].results.clear()
-    publication.output.file_results.reverse()
-    publication.output.diagnostics.append(
-        DiagnosticRecord("SampleA", target.label, "FILE_ERROR", "mutated")
-    )
-
-    replay = publish_targeted_outputs(
-        replace(request, replace_existing_outputs=True), completed, output
-    )
-
-    assert [row.sample_name for row in replay.output.file_results] == [
-        "SampleA",
-        "SampleB",
-    ]
-    assert {
-        row.sample_name: row.results[target.label].reported_peak_area
-        for row in replay.output.file_results
-    } == expected_areas
-    assert expected_areas["SampleA"] != expected_areas["SampleB"]
-    replayed = replay.output.file_results[0].results[target.label]
-    assert replayed.acquisition_trace is not None
-    np.testing.assert_array_equal(replayed.acquisition_trace.intensity, expected_raw)
-    assert replayed.physical_evaluation is not None
-    assert replayed.physical_evaluation.retained_prepared_signal is not None
-    np.testing.assert_array_equal(
-        replayed.physical_evaluation.retained_prepared_signal.raw, expected_raw
-    )
-    assert replay.output.diagnostics == []
-    assert replay.paths == publication.paths
-
-
 def test_publisher_rejects_reordered_acquisition_after_completion(
     tmp_path: Path,
 ) -> None:
@@ -1557,7 +1464,7 @@ def test_publisher_rejects_reordered_acquisition_after_completion(
 def test_service_accepts_raw_order_that_differs_from_canonical_order(
     tmp_path: Path,
 ) -> None:
-    sample_names = ("SampleA", "SampleB", "SampleC", "SampleD")
+    sample_names = ("SampleD", "SampleC", "SampleB", "SampleA")
     config, target, output = production_case(
         tmp_path,
         sample_names=sample_names,
@@ -1816,22 +1723,12 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     initial_counts = []
 
     def execute_reverse_identity(context, *args, **kwargs):
-        from xic_extractor.peak_detection import observations
-
-        def unexpected_trace_serialization(_trace):
-            raise AssertionError(
-                "paired ISTD trace was already prepared during acquisition"
-            )
-
-        monkeypatch.setattr(
-            observations, "_canonical_trace_bytes", unexpected_trace_serialization
-        )
         context = replace(
             context,
             results_by_sample=tuple(
                 sorted(
                     context.results_by_sample,
-                    key=lambda item: item[0].identity.sample_identity_id,
+                    key=lambda item: item[0].identity.sample_key,
                     reverse=True,
                 )
             ),

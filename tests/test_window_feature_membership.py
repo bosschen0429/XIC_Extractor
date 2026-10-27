@@ -816,7 +816,9 @@ def test_singleton_shape_disagreement_is_retained_after_band_extension() -> None
     assert len(result.groups) == 1
     ramp = next(d for d in result.sparse_decisions if d.owner_id == "ramp")
     assert "shape_disagreement" in ramp.accepted_risk.soft_contradictions
-    assert set(ramp.accepted_risk.selected_owner_ids) == set(orders)
+    assert {sample for sample, _, _ in ramp.accepted_risk.selected_owners} == set(
+        orders
+    )
 
 
 @pytest.mark.parametrize("with_order", [False, True])

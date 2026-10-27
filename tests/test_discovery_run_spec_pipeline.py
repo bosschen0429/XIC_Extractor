@@ -19,7 +19,6 @@ from tests.test_discovery_pipeline import (
     _settings,
 )
 from xic_extractor.acquisition_contract import (
-    mint_raw_acquisition_session_capability,
     serialize_acquired_trace,
 )
 from xic_extractor.discovery.batch_contract import discovery_candidate_payload_sha256
@@ -307,7 +306,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     }
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, raw_session_capability, _mass_recalibration: (
+        lambda acquisition_source, _mass_recalibration: (
             lambda path, dll_dir: process_handles[path]
         ),
     )
@@ -379,7 +378,6 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     assert restored_result.publication.outputs == process.per_sample[0]
 
     first_bindings = serial.per_sample[0].physical_bindings
-    assert first_bindings[0].run_spec_id == spec.run_spec_id
     assert first_bindings[0].acquisition_source == (
         spec.acquisition_inputs[0].acquisition_source
     )
@@ -403,7 +401,6 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
         settings=replace(settings, seed_rt_gap_min=0.33),
         dll_dir=tmp_path / "dll",
         acquisition_source=source,
-        raw_session_capability=mint_raw_acquisition_session_capability(source),
         run_spec=spec,
         acquisition_input=acquisition_input,
     )
@@ -419,17 +416,8 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
 
     assert isinstance(result, DiscoverySampleProcessError)
     assert result.message == "ValueError: Discovery process job crosses method settings"
-    assert result.run_spec_id == spec.run_spec_id
-    assert result.profile_id == spec.profile_id
+    assert result.signal_processing_profile == spec.signal_processing_profile
     assert result.acquisition_source_id == source.acquisition_source_id
-    assert all(
-        value.strip()
-        for value in (
-            result.run_spec_id,
-            result.profile_id,
-            result.acquisition_source_id,
-        )
-    )
 
 
 def test_process_job_validates_binding_and_preserves_failure_identity(
@@ -444,10 +432,9 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
     )
     acquisition_input = spec.acquisition_inputs[0]
     source = acquisition_input.acquisition_source
-    capability = mint_raw_acquisition_session_capability(source)
     opener_requests: list[Path] = []
 
-    def _rejecting_owner_opener(_source, _capability, _mass_recalibration):
+    def _rejecting_owner_opener(_source, _mass_recalibration):
         def _open(path: Path, _dll_dir: Path):
             opener_requests.append(path)
             raise RuntimeError("owner boom")
@@ -465,7 +452,6 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
         settings=settings,
         dll_dir=tmp_path / "dll",
         acquisition_source=source,
-        raw_session_capability=capability,
         run_spec=spec,
         acquisition_input=acquisition_input,
     )
@@ -473,8 +459,7 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
     failure = _run_discovery_sample_process_job(valid_job)
 
     assert isinstance(failure, DiscoverySampleProcessError)
-    assert failure.run_spec_id == spec.run_spec_id
-    assert failure.profile_id == spec.profile_id
+    assert failure.signal_processing_profile == spec.signal_processing_profile
     assert failure.acquisition_source_id == source.acquisition_source_id
     assert failure.message == "RuntimeError: owner boom"
     assert opener_requests == [raw_path]
@@ -488,7 +473,6 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
     assert (
         crossed.message == "ValueError: Discovery process job crosses method settings"
     )
-    assert crossed.run_spec_id == spec.run_spec_id
-    assert crossed.profile_id == spec.profile_id
+    assert crossed.signal_processing_profile == spec.signal_processing_profile
     assert crossed.acquisition_source_id == source.acquisition_source_id
     assert opener_requests == [raw_path]

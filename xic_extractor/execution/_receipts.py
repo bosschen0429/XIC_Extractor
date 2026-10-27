@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, final
+from typing import Any
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     TraceAcquisitionBatch,
-    acquired_trace_content_id,
+    TraceAcquisitionCapability,
 )
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
     RuntimeFinalizationContractError,
@@ -28,11 +25,11 @@ from xic_extractor.execution._observability import (
     RuntimeObservabilityLedger,
 )
 from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
     ProcessingAttemptIdentity,
 )
 
 _RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner"
-_RUNTIME_OWNER_MINT_TOKEN = object()
 
 
 class RuntimeExecutionPhase(str, Enum):
@@ -109,37 +106,13 @@ class RuntimeResourceSettlementReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeArtifactRegistrationReceipt:
-    """One owner-minted artifact bound to its manifest work unit."""
-
-    work_unit_key: str
-    artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        _required_text(self.work_unit_key, field="work_unit_key")
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise RuntimeFinalizationContractError(
-                "artifact registration requires an owner-minted EvidenceArtifactRef"
-            )
-
-
-@final
-@dataclass(frozen=True, slots=True)
 class RuntimeAcquisitionMetrics:
     logical_xic_request_count: int
     xic_batch_count: int
     adapter_chromatogram_call_count: int
     trace_point_count: int
-    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeAcquisitionMetrics is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
-            raise RuntimeFinalizationContractError(
-                "runtime acquisition metrics must be minted by the runtime owner"
-            )
+    def __post_init__(self) -> None:
         for field_name in (
             "logical_xic_request_count",
             "xic_batch_count",
@@ -159,29 +132,27 @@ class RuntimeAcquisitionReceipt:
 
     work_unit_key: str
     acquisition: TraceAcquisitionBatch | RuntimeAcquisitionMetrics
-    _acquisition_digest: str | None = field(default=None, repr=False, kw_only=True)
-    _mint_token: InitVar[object | None] = field(default=None, kw_only=True)
+    acquisition_capability: TraceAcquisitionCapability | None = field(
+        default=None, kw_only=True
+    )
 
-    def __post_init__(self, _mint_token: object | None) -> None:
+    def __post_init__(self) -> None:
         _required_text(self.work_unit_key, field="work_unit_key")
-        if type(self.acquisition) not in (
-            TraceAcquisitionBatch,
-            RuntimeAcquisitionMetrics,
-        ):
+        if isinstance(self.acquisition, TraceAcquisitionBatch):
+            capability = self.acquisition.capability
+            if self.acquisition_capability not in (None, capability):
+                raise RuntimeFinalizationContractError(
+                    "acquisition receipt capability does not match its batch"
+                )
+            object.__setattr__(self, "acquisition_capability", capability)
+        elif isinstance(self.acquisition, RuntimeAcquisitionMetrics):
+            if not isinstance(self.acquisition_capability, TraceAcquisitionCapability):
+                raise RuntimeFinalizationContractError(
+                    "compacted acquisition requires its capability"
+                )
+        else:
             raise RuntimeFinalizationContractError(
                 "acquisition must be an owner-produced TraceAcquisitionBatch or metrics"
-            )
-        if isinstance(self.acquisition, RuntimeAcquisitionMetrics):
-            if (
-                _mint_token is not _RUNTIME_OWNER_MINT_TOKEN
-                or not self._acquisition_digest
-            ):
-                raise RuntimeFinalizationContractError(
-                    "compact acquisition receipts must be minted by the runtime owner"
-                )
-        elif self._acquisition_digest is not None:
-            raise RuntimeFinalizationContractError(
-                "full acquisition receipts cannot carry a compact digest"
             )
 
 
@@ -214,7 +185,6 @@ def derive_runtime_acquisition_metrics(
             item.adapter_chromatogram_call_count for item in batch
         ),
         trace_point_count=sum(item.trace_point_count for item in batch),
-        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
     )
 
 
@@ -231,49 +201,18 @@ def compact_runtime_acquisition_receipt(
     return RuntimeAcquisitionReceipt(
         work_unit_key=receipt.work_unit_key,
         acquisition=derive_runtime_acquisition_metrics((receipt.acquisition,)),
-        _acquisition_digest=_runtime_acquisition_digest(receipt.acquisition),
-        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+        acquisition_capability=receipt.acquisition_capability,
     )
 
 
-def _runtime_acquisition_digest(acquisition: TraceAcquisitionBatch) -> str:
-    # Batch has no cached content identity. Reuse the acquisition owner's exact
-    # trace identity codec and include the remaining replay-comparison facts.
-    digest = hashlib.sha256()
-    digest.update(
-        repr(
-            (
-                acquisition.capability,
-                acquisition.logical_xic_request_count,
-                acquisition.xic_batch_count,
-                acquisition.adapter_chromatogram_call_count,
-                acquisition.trace_point_count,
-                len(acquisition.traces),
-            )
-        ).encode("utf-8")
-    )
-    for trace in acquisition.traces:
-        digest.update(acquired_trace_content_id(trace).encode("ascii"))
-    return digest.hexdigest()
-
-
-@final
 @dataclass(frozen=True, slots=True)
 class RuntimeRawOpenMetrics:
     """Runtime-owned projection for exactly one planned RAW-open session."""
 
     raw_open_count: int | None
     unavailable_reason: str
-    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeRawOpenMetrics is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
-            raise RuntimeFinalizationContractError(
-                "runtime RAW-open metrics must be minted by the runtime owner"
-            )
+    def __post_init__(self) -> None:
         if self.raw_open_count is None:
             _required_text(self.unavailable_reason, field="unavailable_reason")
             return
@@ -288,10 +227,10 @@ class RuntimeRawOpenMetrics:
 
 
 def derive_runtime_raw_open_metrics(
-    capability: RawAcquisitionSessionCapability | None,
+    acquisition_source: AcquisitionSourceIdentity | None,
     receipts: Sequence[RawAcquisitionSessionReceipt],
 ) -> RuntimeRawOpenMetrics:
-    """Accept only the receipt bound to this exact planned RAW-open session."""
+    """Accept only the receipt bound to the existing job/sample source."""
 
     if isinstance(receipts, (str, bytes)):
         raise RuntimeFinalizationContractError(
@@ -314,34 +253,31 @@ def derive_runtime_raw_open_metrics(
         raise RuntimeFinalizationContractError(
             "duplicate RAW-open receipts for one session are forbidden"
         )
-    if capability is None:
+    if acquisition_source is None:
         if receipt_batch:
             raise RuntimeFinalizationContractError(
-                "RAW-open receipt has no matching parent capability"
+                "RAW-open receipt has no matching job source"
             )
         return RuntimeRawOpenMetrics(
             raw_open_count=None,
-            unavailable_reason="RAW opener carries no owner session capability",
-            _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+            unavailable_reason="RAW opener has no bound acquisition source",
         )
-    if not isinstance(capability, RawAcquisitionSessionCapability):
+    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
         raise RuntimeFinalizationContractError(
-            "capability must be an owner-minted RAW session capability"
+            "acquisition_source must be an AcquisitionSourceIdentity"
         )
     if not receipt_batch:
         return RuntimeRawOpenMetrics(
             raw_open_count=None,
             unavailable_reason="process result carries no owner RAW-open receipt",
-            _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
         )
-    if receipt_batch[0].capability != capability:
+    if receipt_batch[0].acquisition_source != acquisition_source:
         raise RuntimeFinalizationContractError(
-            "RAW-open receipt is bound to a different session capability"
+            "RAW-open receipt is bound to a different acquisition source"
         )
     return RuntimeRawOpenMetrics(
         raw_open_count=1,
         unavailable_reason="",
-        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
     )
 
 
@@ -351,7 +287,6 @@ class RuntimeWorkerBatchReceipt:
 
     settlements: tuple[WorkUnitSettlement, ...]
     resource_settlements: tuple[RuntimeResourceSettlementReceipt, ...] = ()
-    artifact_registrations: tuple[RuntimeArtifactRegistrationReceipt, ...] = ()
     acquisitions: tuple[RuntimeAcquisitionReceipt, ...] = ()
 
     def __post_init__(self) -> None:
@@ -364,11 +299,6 @@ class RuntimeWorkerBatchReceipt:
             self.resource_settlements,
             RuntimeResourceSettlementReceipt,
             field="resource_settlements",
-        )
-        _require_tuple_of(
-            self.artifact_registrations,
-            RuntimeArtifactRegistrationReceipt,
-            field="artifact_registrations",
         )
         _require_tuple_of(
             self.acquisitions,
@@ -484,23 +414,12 @@ class RuntimeTelemetrySamples:
             )
 
 
-@final
 @dataclass(frozen=True, slots=True)
 class RuntimeFinalizationReceipt:
     """One accepted pair of coordinator and supervisor terminal facts."""
 
     coordinator: CoordinatorTerminalRecord
     supervisor: SupervisorFinalizationRecord
-    _mint_token: InitVar[object] = field(kw_only=True)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeFinalizationReceipt is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
-            raise RuntimeFinalizationContractError(
-                "RuntimeFinalizationReceipt must be minted by the runtime owner"
-            )
 
     @property
     def observability_ledger(self) -> RuntimeObservabilityLedger:
@@ -527,7 +446,7 @@ def accept_runtime_finalization_receipt(
     *,
     existing: RuntimeFinalizationReceipt | None = None,
 ) -> RuntimeFinalizationReceipt:
-    """Accept only the owner-minted receipt; identical replay is idempotent."""
+    """Accept the persisted finalization; identical replay is idempotent."""
 
     if not isinstance(expected, RuntimeFinalizationReceipt):
         raise RuntimeFinalizationContractError(
@@ -600,42 +519,13 @@ def _acquisition_receipts_match(
     first: RuntimeAcquisitionReceipt,
     second: RuntimeAcquisitionReceipt,
 ) -> bool:
-    """Compare acquisition truth without NumPy's ambiguous array equality."""
+    """Compare replayed runtime counts for the same acquisition capability."""
 
-    if first.work_unit_key != second.work_unit_key:
-        return False
-    left = first.acquisition
-    right = second.acquisition
-    if isinstance(left, RuntimeAcquisitionMetrics) or isinstance(
-        right, RuntimeAcquisitionMetrics
-    ):
-        left_digest = (
-            first._acquisition_digest
-            if isinstance(left, RuntimeAcquisitionMetrics)
-            else _runtime_acquisition_digest(left)
-        )
-        right_digest = (
-            second._acquisition_digest
-            if isinstance(right, RuntimeAcquisitionMetrics)
-            else _runtime_acquisition_digest(right)
-        )
-        return left_digest == right_digest
-    if (
-        left.capability != right.capability
-        or left.logical_xic_request_count != right.logical_xic_request_count
-        or left.xic_batch_count != right.xic_batch_count
-        or left.adapter_chromatogram_call_count != right.adapter_chromatogram_call_count
-        or left.trace_point_count != right.trace_point_count
-        or len(left.traces) != len(right.traces)
-    ):
-        return False
-    return all(
-        left_trace.coordinate == right_trace.coordinate
-        and tuple(float(value) for value in left_trace.trace.rt)
-        == tuple(float(value) for value in right_trace.trace.rt)
-        and tuple(float(value) for value in left_trace.trace.intensity)
-        == tuple(float(value) for value in right_trace.trace.intensity)
-        for left_trace, right_trace in zip(left.traces, right.traces, strict=True)
+    return (
+        first.work_unit_key == second.work_unit_key
+        and first.acquisition_capability == second.acquisition_capability
+        and derive_runtime_acquisition_metrics((first.acquisition,))
+        == derive_runtime_acquisition_metrics((second.acquisition,))
     )
 
 
@@ -643,7 +533,6 @@ __all__ = (
     "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
-    "RuntimeArtifactRegistrationReceipt",
     "RuntimeCancellationRequest",
     "RuntimeExecutionPhase",
     "RuntimeExecutionPhaseError",

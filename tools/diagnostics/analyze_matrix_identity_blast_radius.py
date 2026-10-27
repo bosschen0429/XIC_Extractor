@@ -25,10 +25,10 @@ from xic_extractor.alignment.primary_matrix_area import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.tabular_io import write_tsv
 
-REVIEW_REQUIRED = {"feature_family_id", "include_in_primary_matrix"}
+REVIEW_REQUIRED = {"feature_id", "include_in_primary_matrix"}
 REVIEW_EVIDENCE_COLUMNS = {"family_evidence", "evidence"}
 CELL_REQUIRED = {
-    "feature_family_id",
+    "feature_id",
     "sample_stem",
     "status",
     "area",
@@ -40,11 +40,11 @@ CELL_REQUIRED = {
     "rt_delta_sec",
     "reason",
 }
-MATRIX_IDENTITY_COLUMNS = {"feature_family_id"}
+MATRIX_IDENTITY_COLUMNS = {"feature_id"}
 MATRIX_DOWNSTREAM_COLUMNS = {"Mz", "RT"}
 
 OUTPUT_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "current_include_in_primary_matrix",
     "proposed_include_in_primary_matrix",
     "identity_decision",
@@ -141,7 +141,7 @@ def run_blast_radius(
         proposed_include = row_decision.include_in_primary_matrix
         benchmark = benchmark_by_family.get(family_id, {})
         projected_review_row = {
-            "feature_family_id": family_id,
+            "feature_id": family_id,
             "neutral_loss_tag": current_row.get("neutral_loss_tag", ""),
             "include_in_primary_matrix": proposed_include,
             "identity_decision": row_decision.identity_decision,
@@ -162,7 +162,7 @@ def run_blast_radius(
         )
         output_rows.append(
             {
-                "feature_family_id": family_id,
+                "feature_id": family_id,
                 "current_include_in_primary_matrix": current_include,
                 "proposed_include_in_primary_matrix": proposed_include,
                 "identity_decision": row_decision.identity_decision,
@@ -205,7 +205,7 @@ def _blast_radius_inputs_from_tsv(
     current_by_family: dict[str, Mapping[str, str]] = {}
     for row in review_rows:
         clusters.append(_cluster_from_review(row))
-        current_by_family[row.get("feature_family_id", "")] = row
+        current_by_family[row.get("feature_id", "")] = row
 
     cells = []
     sample_stems = set[str]()
@@ -215,7 +215,7 @@ def _blast_radius_inputs_from_tsv(
         sample_stem = row.get("sample_stem", "")
         if sample_stem:
             sample_stems.add(sample_stem)
-        grouped_cell_rows.setdefault(row.get("feature_family_id", ""), []).append(row)
+        grouped_cell_rows.setdefault(row.get("feature_id", ""), []).append(row)
 
     return _BlastRadiusInputs(
         matrix=AlignmentMatrix(
@@ -233,7 +233,7 @@ def _blast_radius_inputs_from_tsv(
 def _cluster_from_review(row: Mapping[str, str]) -> SimpleNamespace:
     evidence = row.get("family_evidence") or row.get("evidence") or ""
     return SimpleNamespace(
-        feature_family_id=row.get("feature_family_id", ""),
+        feature_id=row.get("feature_id", ""),
         neutral_loss_tag=row.get("neutral_loss_tag", ""),
         family_center_mz=_float(row.get("family_center_mz")) or 0.0,
         family_center_rt=_float(row.get("family_center_rt")) or 0.0,
@@ -260,7 +260,7 @@ def _cell_from_row(row: Mapping[str, str]) -> AlignedCell:
         apex = (start + end) / 2.0
     return AlignedCell(
         sample_stem=row.get("sample_stem", ""),
-        cluster_id=row.get("feature_family_id", ""),
+        cluster_id=row.get("feature_id", ""),
         status=row.get("status", ""),  # type: ignore[arg-type]
         area=raw_area,
         apex_rt=apex,
@@ -338,7 +338,7 @@ def _missing_columns(
         MATRIX_IDENTITY_COLUMNS <= matrix_columns
         or MATRIX_DOWNSTREAM_COLUMNS <= matrix_columns
     ):
-        missing.append("alignment_matrix.tsv:feature_family_id or Mz+RT")
+        missing.append("alignment_matrix.tsv:feature_id or Mz+RT")
     return missing
 
 
@@ -358,14 +358,14 @@ def _incomplete_rows(
     benchmark_by_family: Mapping[str, Mapping[str, str]],
 ) -> list[dict[str, object]]:
     if not review_rows:
-        review_rows = ({"feature_family_id": ""},)
+        review_rows = ({"feature_id": ""},)
     rows: list[dict[str, object]] = []
     for review_row in review_rows:
-        family_id = review_row.get("feature_family_id", "")
+        family_id = review_row.get("feature_id", "")
         benchmark = benchmark_by_family.get(family_id, {})
         rows.append(
             {
-                "feature_family_id": family_id,
+                "feature_id": family_id,
                 "current_include_in_primary_matrix": review_row.get(
                     "include_in_primary_matrix",
                     "",
@@ -427,7 +427,7 @@ def _load_benchmark_by_family(
     }
     by_family: dict[str, dict[str, str]] = {}
     for row in rows:
-        family_id = row.get("feature_family_id", "")
+        family_id = row.get("feature_id", "")
         if family_id:
             target_name = _target_name(row)
             summary = summary_by_target.get(target_name, {})
@@ -440,7 +440,7 @@ def _normalized_benchmark_row(
     summary_row: Mapping[str, str],
 ) -> dict[str, str]:
     target_name = _target_name(match_row) or _target_name(summary_row)
-    family_id = match_row.get("feature_family_id", "")
+    family_id = match_row.get("feature_id", "")
     selected_family_id = summary_row.get("selected_feature_id", "")
     return {
         **dict(match_row),

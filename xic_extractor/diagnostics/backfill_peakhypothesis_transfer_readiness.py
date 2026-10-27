@@ -348,19 +348,10 @@ def _full_cohort_failures(
         for key, expected in _CANONICAL_FULL_COHORT_BASE_METADATA.items()
     )
     schema_version = text_value(metadata.get("schema_version"))
-    has_targeted_istd_anchor = bool(
-        text_value(metadata.get("targeted_istd_anchor_identity"))
-    )
-    has_targeted_istd_snapshot = bool(
-        text_value(metadata.get("targeted_istd_target_snapshot_id"))
-    )
     matrix_value_policy = text_value(metadata.get("matrix_value_policy"))
     if (
         schema_version != _ALIGNMENT_METADATA_SCHEMA_VERSION
         or matrix_value_policy != _CURRENT_MATRIX_VALUE_POLICY
-        or "targeted_istd_anchor_identity" not in metadata
-        or "targeted_istd_target_snapshot_id" not in metadata
-        or has_targeted_istd_anchor != has_targeted_istd_snapshot
     ):
         metadata_contract_invalid = True
     if metadata_contract_invalid:

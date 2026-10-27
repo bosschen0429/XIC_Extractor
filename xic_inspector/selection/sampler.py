@@ -46,7 +46,7 @@ def review_case_key(item: CanonicalItem) -> tuple[str, str, str]:
         "observed_sample_count",
         len(
             {
-                witness.canonical_sample_identity_id
+                witness.sample_key
                 for witness in item.witnesses
                 if witness.observation_id is not None
             }

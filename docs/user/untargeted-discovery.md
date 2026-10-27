@@ -96,7 +96,7 @@ Start with the file that matches your review question:
 | `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
-| `alignment_matrix_identity.tsv` | Bound feature identities and source-row checks | Input for traceable Matrix selection |
+| `alignment_review.tsv` | Group review and bound Matrix row references | Input for traceable Matrix selection |
 | `cid_nl_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
 | `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Review output |
 | `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |

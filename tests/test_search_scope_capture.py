@@ -698,8 +698,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     )
     other_binding = replace(
         other_binding,
-        sample_identity_id=other_sample.identity.sample_identity_id,
-        sample_name=other_sample.metadata.sample_name,
+        sample_key=other_sample.identity.sample_key,
         acquisition_source_id=other_source.acquisition_source_id,
     )
     prepared_feature_visits = feature_visits
@@ -1134,7 +1133,6 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1,
             reason_code=None,
         ),
         candidate_peaks=(observation,),
@@ -1171,8 +1169,6 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
 ) -> None:
     import json
 
-    from xic_extractor.peak_detection import physical_peak_evaluation as physical_owner
-    from xic_extractor.peak_detection import physical_peak_identity as physical_identity
     from xic_extractor.peak_detection.peak_hypothesis_identity import (
         compose_ms1_observation_peak_hypothesis,
     )
@@ -1210,7 +1206,6 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     prepared = prepare_physical_signal(rt, intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=method_subject.method_subject_id,
         query_rt_min=8.0,
         request_context_rt_start_min=float(rt[0]),
         request_context_rt_end_min=float(rt[-1]),
@@ -1239,13 +1234,12 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {binding.candidate_id: evaluation},
             )
         },
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -1267,17 +1261,10 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         declared_candidate_ids=(binding.candidate_id,),
         capture_bindings=(binding,),
     )
-    trace_hashes = 0
     projections = 0
     evaluation_calls = 0
-    real_trace_hash = physical_owner.mint_physical_trace_content_id
     real_projection = capture_owner._project_peak_observation_values
     real_evaluation = capture_owner.evaluate_physical_peak
-
-    def count_trace_hash(*args, **kwargs):
-        nonlocal trace_hashes
-        trace_hashes += 1
-        return real_trace_hash(*args, **kwargs)
 
     def count_projection(**kwargs):
         nonlocal projections
@@ -1289,21 +1276,6 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         evaluation_calls += 1
         return real_evaluation(*args, **kwargs)
 
-    monkeypatch.setattr(
-        physical_owner,
-        "mint_physical_trace_content_id",
-        count_trace_hash,
-    )
-    monkeypatch.setattr(
-        physical_identity,
-        "mint_physical_trace_content_id",
-        count_trace_hash,
-    )
-    monkeypatch.setattr(
-        capture_owner,
-        "mint_physical_trace_content_id",
-        count_trace_hash,
-    )
     monkeypatch.setattr(
         capture_owner,
         "_project_peak_observation_values",
@@ -1372,7 +1344,6 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     if ripple:
         assert owner_hypothesis.integration.rt_left_min <= 6.8
         assert owner_hypothesis.integration.rt_right_min >= 9.2
-    assert trace_hashes == 0
     assert projections == 1
     assert evaluation_calls == 0
 
@@ -1431,8 +1402,7 @@ def _capture_binding(
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
         method_subject_id=method_subject_id,
-        sample_identity_id=sample.identity.sample_identity_id,
-        sample_name=sample.metadata.sample_name,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=acquisition_source_id,
         query_mz=mz,
         query_rt_min=rt_min,

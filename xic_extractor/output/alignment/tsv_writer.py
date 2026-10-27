@@ -24,6 +24,7 @@ from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
     GROUP_REVIEW_PROJECTION_COLUMNS,
+    delivery_feature_id,
     delivery_group_projection,
 )
 from xic_extractor.alignment.production_decisions import (
@@ -33,7 +34,8 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
 )
 from xic_extractor.output.alignment.matrix_output_contract import (
-    bind_matrix_identity_row,
+    MATRIX_REVIEW_COLUMNS,
+    bind_matrix_review_row,
     canonical_mz_text,
     serialize_public_matrix_table,
 )
@@ -42,16 +44,19 @@ from xic_extractor.output.alignment.output_rows import (
     safe_rate,
 )
 from xic_extractor.output.alignment.product_matrix import (
-    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     build_product_matrix_rows,
-    formatted_identity_rows,
     product_matrix_tsv_rows,
 )
 from xic_extractor.tabular_io import escape_excel_formula
 
 ALIGNMENT_REVIEW_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     *GROUP_REVIEW_PROJECTION_COLUMNS,
+    *(
+        column
+        for column in MATRIX_REVIEW_COLUMNS
+        if column not in {"feature_id", "accepted_cell_count"}
+    ),
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
@@ -88,7 +93,7 @@ ALIGNMENT_REVIEW_COLUMNS = (
 )
 
 ALIGNMENT_CELLS_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     *CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     "sample_stem",
     "status",
@@ -126,7 +131,7 @@ BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
 
 
 ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     *GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
     "sample_stem",
     "status",
@@ -168,7 +173,6 @@ def write_alignment_tsv_row_batches(
     ).header
     headers = {
         "matrix": matrix_header,
-        "identity": ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         "review": ALIGNMENT_REVIEW_COLUMNS,
         "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         "cells": ALIGNMENT_CELLS_COLUMNS,
@@ -204,6 +208,7 @@ def write_alignment_tsv_row_batches(
                 production_decisions=decisions,
                 source_candidate_owners=source_candidate_owners,
             )
+            projection_by_feature = {}
             for product in products:
                 product_count += 1
                 table = serialize_public_matrix_table(
@@ -211,19 +216,14 @@ def write_alignment_tsv_row_batches(
                     sample_columns=sample_order,
                 )
                 emit("matrix", table.rows)
-                if "identity" in writers:
-                    emit(
-                        "identity",
-                        (
-                            bind_matrix_identity_row(
-                                matrix_header=matrix_header,
-                                matrix_row=table.rows[0],
-                                identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-                                source_identity=product.identity,
-                                index=product_count,
-                            ),
-                        ),
+                if "review" in writers:
+                    bound = bind_matrix_review_row(
+                        matrix_header=matrix_header,
+                        matrix_row=table.rows[0],
+                        source_review=product.review_projection,
+                        index=product_count,
                     )
+                    projection_by_feature[bound["feature_id"]] = bound
             if "review" in writers:
                 emit(
                     "review",
@@ -232,6 +232,7 @@ def write_alignment_tsv_row_batches(
                             matrix,
                             alignment_config=alignment_config,
                             production_decisions=decisions,
+                            matrix_projection=projection_by_feature,
                         )
                     ),
                 )
@@ -254,6 +255,27 @@ def write_alignment_review_tsv(
 ) -> Path:
     decisions = _require_production_decisions(production_decisions)
     config = alignment_config or AlignmentConfig()
+    products = build_product_matrix_rows(
+        matrix, alignment_config=config, production_decisions=decisions
+    )
+    table = serialize_public_matrix_table(
+        (
+            {"Mz": product.mz, "RT": product.rt, **product.sample_values}
+            for product in products
+        ),
+        sample_columns=matrix.sample_order,
+    )
+    projection = {
+        str(product.review_projection["feature_id"]): bind_matrix_review_row(
+            matrix_header=table.header,
+            matrix_row=values,
+            source_review=product.review_projection,
+            index=index,
+        )
+        for index, (product, values) in enumerate(
+            zip(products, table.rows, strict=True), start=1
+        )
+    }
     return _write_tsv(
         path,
         ALIGNMENT_REVIEW_COLUMNS,
@@ -262,6 +284,7 @@ def write_alignment_review_tsv(
                 matrix,
                 alignment_config=config,
                 production_decisions=decisions,
+                matrix_projection=projection,
             )
         ),
     )
@@ -298,25 +321,6 @@ def _format_alignment_review_rows(
         yield formatted
 
 
-def write_alignment_matrix_identity_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    production_decisions: ProductionDecisionSet,
-    alignment_config: AlignmentConfig | None = None,
-) -> Path:
-    decisions = _require_production_decisions(production_decisions)
-    return _write_tsv(
-        path,
-        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-        formatted_identity_rows(
-            matrix,
-            alignment_config=alignment_config,
-            production_decisions=decisions,
-        ),
-    )
-
-
 def write_alignment_cells_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
     return _write_tsv(path, ALIGNMENT_CELLS_COLUMNS, _alignment_cell_rows(matrix))
 
@@ -331,9 +335,7 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             else None
         )
         yield {
-            "feature_family_id": cell.cluster_id,
-            "group_hypothesis_id": cell.group_hypothesis_id,
-            "public_family_id": cell.public_family_id,
+            "feature_id": delivery_feature_id(cluster),
             "group_construction_role": cell.group_construction_role,
             "group_delivery_role": cell.group_delivery_role,
             "group_membership_source": cell.group_membership_source,
@@ -407,9 +409,7 @@ def _backfill_cell_evidence_rows(
                 continue
             yield (
                 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-                cell.cluster_id,
-                cell.group_hypothesis_id,
-                cell.public_family_id,
+                delivery_feature_id(cluster),
                 cell.sample_stem,
                 cell.status,
                 cell_decision.production_status,
@@ -455,9 +455,7 @@ def write_alignment_backfill_seed_audit_tsv(
         cluster = clusters_by_id[cell.cluster_id]
         rows.append(
             {
-                "feature_family_id": cell.cluster_id,
-                "group_hypothesis_id": cell.group_hypothesis_id,
-                "public_family_id": cell.public_family_id,
+                "feature_id": delivery_feature_id(cluster),
                 "group_construction_role": cell.group_construction_role,
                 "group_delivery_role": cell.group_delivery_role,
                 "group_membership_source": cell.group_membership_source,
@@ -491,7 +489,7 @@ def write_alignment_backfill_seed_audit_tsv(
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
     columns = (
-        "feature_family_id",
+        "feature_id",
         "neutral_loss_tag",
         "family_center_mz",
         "family_center_rt",
@@ -504,7 +502,7 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
         cells = grouped_cells.get(cluster_id, ())
         cells_by_sample = {cell.sample_stem: cell for cell in cells}
         row: dict[str, object] = {
-            "feature_family_id": cluster_id,
+            "feature_id": delivery_feature_id(cluster),
             "neutral_loss_tag": cluster.neutral_loss_tag,
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
@@ -521,6 +519,7 @@ def _review_rows(
     *,
     alignment_config: AlignmentConfig,
     production_decisions: ProductionDecisionSet,
+    matrix_projection: Mapping[str, Mapping[str, object]],
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     grouped_cells = cells_by_cluster(matrix)
@@ -542,8 +541,9 @@ def _review_rows(
         present_count = detected_count + backfilled_count
         rows.append(
             {
-                "feature_family_id": cluster_id,
+                "feature_id": delivery_feature_id(cluster),
                 **delivery_group_projection(cluster),
+                **matrix_projection.get(delivery_feature_id(cluster), {}),
                 "neutral_loss_tag": cluster.neutral_loss_tag,
                 "family_center_mz": _family_center_mz(cluster),
                 "family_center_rt": _family_center_rt(cluster),
@@ -590,7 +590,7 @@ def _review_rows(
                 ),
                 "membership_risks_json": json.dumps(
                     [
-                        {"canonical_sample_identity_id": sample, **asdict(risk)}
+                        {"sample_key": sample, **asdict(risk)}
                         for sample, risk in getattr(cluster, "membership_risks", ())
                     ],
                     ensure_ascii=False,

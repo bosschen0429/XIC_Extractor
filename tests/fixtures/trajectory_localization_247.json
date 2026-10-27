@@ -57,9 +57,7 @@
           "height": 6896.067914648183,
           "width": 0.24570950225739807
         }
-      ],
-      "trace_content_id": "trace-content:e8b67a53973fc236309ebb3d9451b812ca3203ee152e871d645fe5cf324e1030",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "BenignfatBC1108_DNA",
@@ -77,9 +75,7 @@
           "height": 2351.785230407969,
           "width": 0.1811855525830044
         }
-      ],
-      "trace_content_id": "trace-content:af76b1153fd5d3b2a5f6a058c7584c69f7e40e83e89139f13541ac950f9f6cca",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "BenignfatBC1117_DNA",
@@ -107,9 +103,7 @@
           "height": 3701.781457745703,
           "width": 0.3762948396664729
         }
-      ],
-      "trace_content_id": "trace-content:fb89418515f3f1c84c0da05c852ba0a3f9ad901e26df300f827612ad6de63b3d",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "BenignfatBC1228_DNA",
@@ -162,9 +156,7 @@
           "height": 3562.1093543883476,
           "width": 0.3651553885840393
         }
-      ],
-      "trace_content_id": "trace-content:ac7c228c1a5ade083c8f122aaa2b2961e5fe6c3a2bf853aca64dd8ade09432e8",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "Breast_Cancer_Tissue_pooled_QC5",
@@ -187,9 +179,7 @@
           "height": 2638.315861345468,
           "width": 0.2434696154241216
         }
-      ],
-      "trace_content_id": "trace-content:672a9538de587b59193a31f8aff992ef1caec4ca59aeffd09afad6c7d36c5052",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "NormalBC2282_DNA",
@@ -207,9 +197,7 @@
           "height": 1595.4376243633499,
           "width": 0.21460321384936343
         }
-      ],
-      "trace_content_id": "trace-content:85c2e48c4e677fee46d1af38b18e7e03cd0d8b1f3ba4e9e51331e4bf2ad2f72b",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     },
     {
       "sample_stem": "NormalBC2289_DNA",
@@ -227,9 +215,7 @@
           "height": 2932.263099085802,
           "width": 0.11061693741675604
         }
-      ],
-      "trace_content_id": "trace-content:e64d073702105be895a32e2bbb08aba096e9cc582b945fae6d732bbf4206ef42",
-      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+      ]
     }
   ],
   "injection_order": {

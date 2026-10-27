@@ -30,7 +30,6 @@ def answer_selected_physical_candidate(
     universe: PhysicalSegmentUniverse,
     candidate: PeakCandidate | None,
     *,
-    selection_subject_id: str,
     acquisition_rt_window: tuple[float, float],
     selection_rt_window: tuple[float, float],
     candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation] | None = None,
@@ -61,7 +60,6 @@ def answer_selected_physical_candidate(
     question = mint_physical_peak_question(
         prepared_result.projection,
         universe,
-        selection_subject_id=selection_subject_id,
         query_rt_min=query_rt_min,
         selection_policy_version=(
             selection_policy_version
@@ -151,6 +149,6 @@ def _physical_segment_candidate(
         region_duration_min=duration,
         region_edge_ratio=edge_ratio,
         region_trace_continuity=1.0,
-        proposal_sources=(f"physical_segment:{segment.physical_segment_id}",),
+        proposal_sources=("physical_segment",),
         physical_segment=segment,
     )

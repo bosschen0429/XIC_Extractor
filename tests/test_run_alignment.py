@@ -10,7 +10,11 @@ from typing import Any
 import pytest
 
 from scripts import run_alignment
-from tests.alignment_pipeline_helpers import _owner_closed_receipt_fields, write_csv
+from tests.alignment_pipeline_helpers import (
+    _owner_closed_receipt_fields,
+    physical_facts_fingerprint_beside,
+    write_csv,
+)
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
@@ -446,15 +450,13 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
-        identity = output_dir / "alignment_matrix_identity.tsv"
         cells = output_dir / "alignment_cells.tsv"
         seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, identity, cells, seed_audit):
+        for path in (review, matrix, cells, seed_audit):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
-            matrix_identity_tsv=identity,
             cells_tsv=cells,
             backfill_seed_audit_tsv=seed_audit,
         )
@@ -577,7 +579,6 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
             "matrix_tsv": output_dir / "alignment_matrix.tsv",
-            "matrix_identity_tsv": output_dir / "alignment_matrix_identity.tsv",
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -628,7 +629,7 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
     assert "Configured owner-build XIC backend: raw_superwindow" in stdout
     assert "Effective owner-build route: retained_untargeted_cid_nl_batch" in stdout
     assert "Effective route validation: owner_validated" in stdout
-    assert "ProcessingRunSpec identity: <none" in stdout
+    assert "ProcessingRunSpec" not in stdout
     assert "Preset readiness authority: not_evaluated" in stdout
 
 
@@ -651,7 +652,6 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
         return AlignmentRunOutputs(
             review_tsv=output_dir / "alignment_review.tsv",
             matrix_tsv=output_dir / "alignment_matrix.tsv",
-            matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
             backfill_cell_evidence_tsv=(
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -723,7 +723,6 @@ backfill_expansion_productization = "clean-target-selective"
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
             "matrix_tsv": output_dir / "alignment_matrix.tsv",
-            "matrix_identity_tsv": output_dir / "alignment_matrix_identity.tsv",
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -805,15 +804,13 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
-        identity = output_dir / "alignment_matrix_identity.tsv"
         light_cells = output_dir / "alignment_backfill_cell_evidence.tsv"
         seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, identity, light_cells, seed_audit):
+        for path in (review, matrix, light_cells, seed_audit):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
-            matrix_identity_tsv=identity,
             backfill_cell_evidence_tsv=light_cells,
             backfill_seed_audit_tsv=seed_audit,
         )
@@ -1376,6 +1373,7 @@ def _write_owner_closed_preflight_batch(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
             candidate_csv=candidate_csv,
+            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             candidates=(),
         )
         rows.append(

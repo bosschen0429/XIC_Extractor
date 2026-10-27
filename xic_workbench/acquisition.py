@@ -72,8 +72,7 @@ def export_explanation_curves(
     summary = read_cid_nl_explanation(report)
     mass_policies = _review_mass_policies(report, summary)
     sample_labels = {
-        row["canonical_sample_identity_id"]: row["sample_stem"]
-        for row in summary["samples"]
+        row["sample_key"]: row["sample_stem"] for row in summary["samples"]
     }
     requested_samples = set(sample_ids)
     unknown_samples = requested_samples - sample_labels.keys()
@@ -88,26 +87,25 @@ def export_explanation_curves(
     for cid in candidate_ids:
         detail = read_cid_nl_explanation(report, candidate_id=cid)
         for candidate in detail["candidates"]:
-            sid = candidate["canonical_sample_identity_id"]
+            sid = candidate["sample_key"]
             terminals = [
                 terminal
                 for terminal in detail["records"].get("terminal_subjects", [])
-                if terminal["canonical_sample_identity_id"] == sid
-                and terminal["candidate_id"] == cid
+                if terminal["sample_key"] == sid and terminal["candidate_id"] == cid
             ]
             allowed = None
             if group_id is not None:
                 allowed = {
                     oid
                     for group in detail["records"].get("final_groups", [])
-                    if group["group_hypothesis_id"] == group_id
+                    if group["feature_id"] == group_id
                     for member in group["member_subjects"]
-                    if member["canonical_sample_identity_id"] == sid
-                    for oid in member["physical_observation_ids"]
+                    if member["sample_key"] == sid
+                    for oid in member["physical_peak_keys"]
                 }
             for terminal in terminals:
                 for observation in terminal.get("observations", []):
-                    oid = observation["peak_observation_content_id"]
+                    oid = observation["physical_peak_key"]
                     if allowed is not None and oid not in allowed:
                         continue
                     selected[sid, oid] = {
@@ -205,7 +203,6 @@ def export_explanation_curves(
                             "candidate_id": observation["candidate_id"],
                             "new_diagnostic_extraction": True,
                             "source_binding_basis": _SOURCE_BINDING_BASIS,
-                            "processing_request_id": summary["processing_request_id"],
                             "processing_attempt_id": summary["processing_attempt_id"],
                         },
                     )
@@ -224,7 +221,6 @@ def export_explanation_curves(
                 review_rt_window=window,
                 quality_flags={
                     "new_diagnostic_extraction": True,
-                    "processing_request_id": summary["processing_request_id"],
                     "processing_attempt_id": summary["processing_attempt_id"],
                 },
                 traces=tuple(traces),
@@ -346,10 +342,7 @@ def _review_mass_policies(
     payload = metadata.get("mass_recalibration_by_sample")
     if payload is None:
         return {}
-    if any(
-        metadata.get(key) != summary[key]
-        for key in ("processing_request_id", "processing_attempt_id")
-    ):
+    if any(metadata.get(key) != summary[key] for key in ("processing_attempt_id",)):
         raise ExplanationError(
             "Alignment metadata 不屬於這份檢閱結果，請使用同次執行的檔案。"
         )

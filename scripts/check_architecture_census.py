@@ -117,7 +117,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
     ),
     "xic_extractor/execution/_finalization.py": frozenset(
         {
-            "RuntimeArtifactDisposition",
             "RuntimeFinalizationContractError",
             "RuntimeLifecycleEventKind",
             "RuntimeLifecycleFailureKind",
@@ -126,7 +125,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "RuntimeResourceOpenOutcome",
             "RuntimeResourceReservation",
             "SupervisorFinalizationEventKind",
-            "canonical_coordinator_terminal_record_bytes",
         }
     ),
     "xic_extractor/execution/_observability.py": frozenset(
@@ -136,7 +134,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "RuntimeMetricScope",
             "RuntimeObservabilityContractError",
             "RuntimeObservationSubject",
-            "canonical_runtime_observability_ledger_bytes",
             "validate_runtime_acquisition_metrics",
         }
     ),
@@ -145,7 +142,6 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
             "RuntimeExecutionPhaseError",
@@ -185,7 +181,6 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationIngress",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
@@ -212,7 +207,6 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
-            "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationRequest",
             "RuntimeExecutionPhase",
             "RuntimeExecutionPhaseError",

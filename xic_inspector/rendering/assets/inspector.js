@@ -417,7 +417,7 @@
     if (!payload.items.length) review.append(element('p', '沒有符合條件的目標。'));
     const provenance = element('details', undefined, 'tgt-provenance');
     provenance.append(element('summary', '執行資訊'));
-    const labels = {generated_at: '建立時間', app_version: '版本', config_hash: '設定識別', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
+    const labels = {generated_at: '建立時間', app_version: '版本', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
     review.append(provenance);
     // The online host states the readonly result scope beside this surface.
@@ -455,7 +455,7 @@
   const color=id=>sample(id)?.group_color||colors[Math.max(0,samples.findIndex(s=>s.id===id))%colors.length];
   const itemRows=item=>Array.isArray(item.samples)?item.samples:[];
   const witnesses=item=>Array.isArray(item.witnesses)?item.witnesses:(Array.isArray(item.candidates)?item.candidates:[]);
-  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.canonical_sample_identity_id||w?.sample_id||'';
+  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.sample_key||w?.sample_id||'';
   const records=item=>Array.isArray(item?.details?.readable_records)?item.details.readable_records:[];
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
@@ -480,7 +480,7 @@
     const risks=row.membership_risks;
     if(Array.isArray(risks)){
       if(!risks.length)notices.push({kind:'membership',label:'配對風險未記錄',short:'風險未記錄'});
-      else if(risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))))notices.push({kind:'membership',label:risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))&&r.selected_owner_ids?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
+      else if(risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))))notices.push({kind:'membership',label:risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))&&r.selected_owners?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
       if(risks?.some(r=>r.risk_flags?.includes('accepted_contradiction')))notices.push({kind:'membership',label:'已接受含矛盾證據的配對',short:'含矛盾證據'});
       if(risks?.some(r=>(r.risk_flags?.includes('low_rt_support')||r.risk_flags?.includes('backfill_low_localization_confidence'))))notices.push({kind:'membership',label:'RT 支援較弱',short:'弱 RT 支援'});
       if(risks?.some(r=>r.risk_flags?.includes('weak_identity')))notices.push({kind:'membership',label:'身分證據較弱',short:'弱身分證據'});
@@ -537,13 +537,13 @@
       // Group curves require the source's exact support binding, including missing bindings.
       const curves=refs.length?all.filter(c=>refs.includes(c.evidence_ref)):['group','row'].includes(item.kind)?[]:all;
       byId.set(id,{id,sid,label:label||sampleName(sid),row,order:finite(order)?order:null,curves});};
-    (item.relationship_members||[]).forEach(m=>add(m.member_subject_id,m.sample_id,m.sample_label));
-    pairs.forEach(p=>['left','right'].forEach(side=>{const label=p[`${side}_sample_label`],matches=rows.filter(r=>r.sample_stem===label||sampleName(r.sample_id)===label);add(p[`${side}_member_subject_id`],matches.length===1?matches[0].sample_id:null,label);}));
+    (item.relationship_members||[]).forEach(m=>add(m.subject_id,m.sample_id,m.sample_label));
+    pairs.forEach(p=>['left','right'].forEach(side=>{const label=p[`${side}_sample_label`],matches=rows.filter(r=>r.sample_stem===label||sampleName(r.sample_id)===label);add(p[`${side}_subject_id`],matches.length===1?matches[0].sample_id:null,label);}));
     if(!byId.size)rows.forEach(r=>add(r.sample_id,r.sample_id,r.sample_stem||sampleName(r.sample_id)));
     const nodes=[...byId.values()].sort((a,b)=>(a.order===null)-(b.order===null)||(a.order??0)-(b.order??0));
-    return {nodes,pairs:pairs.filter(p=>byId.has(p.left_member_subject_id)&&byId.has(p.right_member_subject_id)),byId,availability:item.relationship_availability||'unavailable'};
+    return {nodes,pairs:pairs.filter(p=>byId.has(p.left_subject_id)&&byId.has(p.right_subject_id)),byId,availability:item.relationship_availability||'unavailable'};
   }
-  const pairIds=p=>[p.left_member_subject_id,p.right_member_subject_id];
+  const pairIds=p=>[p.left_subject_id,p.right_subject_id];
   function relationshipSelection(model){
     const pair=model.pairs.find(p=>p.edge_ref===rel.pair);
     return pair?pairIds(pair):rel.node&&model.byId.has(rel.node)?[rel.node]:model.nodes.map(n=>n.id);
@@ -562,7 +562,7 @@
   function relationshipDetail(item,model){
     if(!model.pairs.length){const label=model.availability==='recorded'?'本群組沒有保存的配對紀錄':model.availability==='not_retained'?'來源未保存樣本配對圖':'來源未提供樣本關係資料';return `<strong>${label}</strong>。不能據此判定沒有配對支持。`;}
     const pair=model.pairs.find(p=>p.edge_ref===rel.pair),node=model.byId.get(rel.node);
-    if(pair){const a=model.byId.get(pair.left_member_subject_id),b=model.byId.get(pair.right_member_subject_id),basis=pair.rt_basis==='drift_corrected'?'校正 RT':pair.rt_basis==='raw'?'原始 RT':'來源未提供';return `<span class="eyebrow">目前比較</span><h3>${esc(shortName(a.label))}<br>↔ ${esc(shortName(b.label))}</h3><span class="badge badge-${pair.support_kind==='direct'?'ok':'attention'}">${pair.support_kind==='direct'?'直接支持':'僅供檢閱'}</span><dl class="relation-metrics"><div><dt>原始 RT 差</dt><dd>${drt(pair.rt_raw_delta_sec)} s</dd></div><div><dt>校正 RT 差</dt><dd>${drt(pair.rt_drift_corrected_delta_sec)} s</dd></div></dl><p class="reading-hint">判定採用：${basis}。下方只比較這兩個樣本。</p><details><summary>配對判斷與來源</summary><p>分數 ${num(pair.score)} · ${esc(pair.decision||'未提供')}<br>${esc(pair.reason||'未提供')}</p>${evidenceButtons([pair.edge_ref],'目前配對的支持紀錄','查看配對紀錄')}</details>`;}
+    if(pair){const a=model.byId.get(pair.left_subject_id),b=model.byId.get(pair.right_subject_id),basis=pair.rt_basis==='drift_corrected'?'校正 RT':pair.rt_basis==='raw'?'原始 RT':'來源未提供';return `<span class="eyebrow">目前比較</span><h3>${esc(shortName(a.label))}<br>↔ ${esc(shortName(b.label))}</h3><span class="badge badge-${pair.support_kind==='direct'?'ok':'attention'}">${pair.support_kind==='direct'?'直接支持':'僅供檢閱'}</span><dl class="relation-metrics"><div><dt>原始 RT 差</dt><dd>${drt(pair.rt_raw_delta_sec)} s</dd></div><div><dt>校正 RT 差</dt><dd>${drt(pair.rt_drift_corrected_delta_sec)} s</dd></div></dl><p class="reading-hint">判定採用：${basis}。下方只比較這兩個樣本。</p><details><summary>配對判斷與來源</summary><p>分數 ${num(pair.score)} · ${esc(pair.decision||'未提供')}<br>${esc(pair.reason||'未提供')}</p>${evidenceButtons([pair.edge_ref],'目前配對的支持紀錄','查看配對紀錄')}</details>`;}
     if(node){const pairs=model.pairs.filter(p=>pairIds(p).includes(node.id));return `<span class="eyebrow">目前樣本</span><h3>${esc(shortName(node.label))}</h3><p class="reading-hint">${esc(node.row?.status_label||'來源未提供狀態')} · ${node.curves.length} 份來源綁定曲線</p><div class="relation-neighbors">${pairs.map(p=>{const other=model.byId.get(pairIds(p).find(id=>id!==node.id));return `<button type="button" data-relation-pair="${esc(p.edge_ref)}"><span>${esc(shortName(other.label))}</span><span>${p.support_kind==='direct'?'直接支持':'僅供檢閱'} →</span></button>`;}).join('')||'<p class="reading-hint">沒有保存的成員配對紀錄。</p>'}</div>${evidenceButtons(node.row?.decision_refs,`${node.label} 的正式結果`)}${evidenceButtons(originRefs(node.row?.support_origin),`${node.label} 的支持來源`,'查看支持記錄')}`;}
     const direct=model.pairs.filter(p=>p.support_kind==='direct').length;return `<span class="eyebrow">群組概覽</span><h3>${model.nodes.length} 個樣本的連結</h3><p>${direct} 對直接支持，${model.pairs.length-direct} 對僅供檢閱。</p><div class="relation-guide"><p><b>1　點樣本，看它連到誰</b><br>相關連線與單一樣本一起顯示。</p><p><b>2　點連線，比較兩個樣本</b><br>RT 差與所選曲線一起出現。</p></div><details><summary>連線如何解讀</summary><p>實線是保存的直接支持，可透過其他成員連接；這不表示族群內每一對都一致。圖的位置不表示 RT 距離，也不是最終分組決策的完整追蹤。</p></details>`;
   }
@@ -673,10 +673,11 @@
     const fact=(label,value,unit='',warn=false,title='')=>`<div class="fact ${warn?'warn':''}"${title?` title="${esc(title)}"`:''}><dt>${label}</dt><dd>${value}${unit?`<small>${unit}</small>`:''}</dd></div>`;
     return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${fact('主要 RT',rt(item.rt_apex_min),finite(item.rt_apex_min)?'min':'')}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
   }
+  const recordRefText=ref=>Array.isArray(ref)?JSON.stringify(ref):ref;
   function evidenceButtons(refs,context,label='查看定量依據'){
-    const values=[...new Set((Array.isArray(refs)?refs:[]).filter(Boolean))];
+    const values=[...new Set((Array.isArray(refs)?refs:[]).filter(Boolean).map(recordRefText))];
     // Several references are told apart by their readable record title when the report embeds one.
-    const titled=ref=>records(items.find(i=>i.id===state.id)).find(r=>r.ref===ref)?.title;
+    const titled=ref=>records(items.find(i=>i.id===state.id)).find(r=>recordRefText(r.ref)===ref)?.title;
     return values.length?`<div class="evidence-actions">${values.map((ref,i)=>`<button type="button" class="evidence-link" data-evidence-ref="${esc(ref)}" data-evidence-context="${esc(context)}">${values.length>1?esc(titled(ref)||`${label} ${i+1}`):label}</button>`).join('')}</div>`:'';
   }
   function sampleTable(item){
@@ -755,10 +756,10 @@
     return value===''?'<span class="muted">（空）</span>':esc(value??'未提供');
   }
   function evidencePanel(item){
-    if(!state.evidence)return '';const record=records(item).find(r=>r.ref===state.evidence);
+    if(!state.evidence)return '';const record=records(item).find(r=>recordRefText(r.ref)===state.evidence);
     if(!record)return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>來源內容未提供</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div><p>${records(item).length?'這筆引用沒有對應到本報告內嵌的可讀紀錄。':'本報告未提供可讀來源紀錄，無法在離線頁面中補出說明。'}</p><details><summary>完整紀錄與引用</summary><div class="technical-ref"><code>${esc(state.evidence)}</code><button type="button" data-copy="${esc(state.evidence)}">複製</button></div><p class="control-note">本報告僅保留引用，未包含內容。</p></details></aside>`;
     const fields=Array.isArray(record.fields)?record.fields:[],links=Array.isArray(record.links)?record.links:[],tech=Array.isArray(record.technical_refs)?record.technical_refs:[];
-    return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>${esc(record.title||'可讀來源紀錄')}</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div>${record.summary?`<p class="evidence-summary">${esc(record.summary)}</p>`:''}${links.length?`<section class="record-links"><h4>相關紀錄</h4>${links.map(link=>records(item).some(r=>r.ref===link.ref)?`<button type="button" data-record-ref="${esc(link.ref)}">${esc(link.label||'查看相關紀錄')}</button>`:`<div class="external-reference"><strong>${esc(link.label||'外部引用')}</strong><span>本報告僅保留引用，未包含內容。</span></div>`).join('')}</section>`:''}<details><summary>完整紀錄與引用</summary>${fields.length?`<dl class="evidence-fields">${fields.map(f=>`<div><dt>${esc(f.label||'欄位')}</dt><dd>${fieldValue(f.value)}</dd></div>`).join('')}</dl>`:''}${tech.length?tech.map(t=>`<div class="technical-ref"><span><strong>${esc(t.label||'技術引用')}</strong><code>${esc(t.value??'')}</code></span><button type="button" data-copy="${esc(t.value??'')}">複製</button></div>`).join(''):`<div class="technical-ref"><span><strong>紀錄識別碼</strong><code>${esc(record.ref)}</code></span><button type="button" data-copy="${esc(record.ref)}">複製</button></div>`}</details></aside>`;
+    return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>${esc(record.title||'可讀來源紀錄')}</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div>${record.summary?`<p class="evidence-summary">${esc(record.summary)}</p>`:''}${links.length?`<section class="record-links"><h4>相關紀錄</h4>${links.map(link=>records(item).some(r=>recordRefText(r.ref)===recordRefText(link.ref))?`<button type="button" data-record-ref="${esc(recordRefText(link.ref))}">${esc(link.label||'查看相關紀錄')}</button>`:`<div class="external-reference"><strong>${esc(link.label||'外部引用')}</strong><span>本報告僅保留引用，未包含內容。</span></div>`).join('')}</section>`:''}<details><summary>完整紀錄與引用</summary>${fields.length?`<dl class="evidence-fields">${fields.map(f=>`<div><dt>${esc(f.label||'欄位')}</dt><dd>${fieldValue(f.value)}</dd></div>`).join('')}</dl>`:''}${tech.length?tech.map(t=>`<div class="technical-ref"><span><strong>${esc(t.label||'技術引用')}</strong><code>${esc(t.value??'')}</code></span><button type="button" data-copy="${esc(t.value??'')}">複製</button></div>`).join(''):`<div class="technical-ref"><span><strong>紀錄識別碼</strong><code>${esc(record.ref)}</code></span><button type="button" data-copy="${esc(record.ref)}">複製</button></div>`}</details></aside>`;
   }
   function differentialSeries(curve){
     if(display.signal==='raw')return {rts:curve.raw_rts||[],intensities:curve.raw_intensities||[]};

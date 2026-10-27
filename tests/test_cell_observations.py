@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from copy import copy
 from dataclasses import replace
@@ -10,7 +9,6 @@ from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.cell_observation.observations as cell_owner
 import xic_extractor.alignment.cross_sample.peak_groups as group_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
@@ -55,7 +53,6 @@ from xic_extractor.alignment.cross_sample.association import (
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -101,9 +98,7 @@ def _outside_group_fixture(
             sample=fixture.sample(stem),
             method_subject=fixture.method_subject,
             detector_invocation_id=f"outside-group:{stem}",
-            evaluation_receipt=replace(
-                _completed_receipt(scanned_event_count=len(centers)), query_rt_max=16.5
-            ),
+            evaluation_receipt=replace(_completed_receipt(), query_rt_max=16.5),
             candidate_peaks=peaks,
             evidence_refs=evidence,
             individual_support_refs=supports,
@@ -112,7 +107,9 @@ def _outside_group_fixture(
         assessments.append((fixture.sample(stem), assessment))
     owners = tuple(
         owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
         for sample, assessment in assessments
         for hypothesis in compose_cid_nl_peak_hypotheses_from_assessment(
@@ -145,29 +142,16 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             rt_frame=SampleRtFrame(),
         )
         assert len(cells) == len(groups) * len(assessments)
-        payloads = [
-            json.loads(cell_owner.canonical_cell_observation_bytes(cell.content))
-            for cell in cells
-        ]
-        assert {payload["schema_version"] for payload in payloads} == {
-            "cell_observation"
-        }
-        assert all("outside_group" in payload["content"] for payload in payloads)
-        assert all(
-            payload["content"]["human_disposition_ref_id"] is None
-            for payload in payloads
-        )
-        assert len({frozenset(payload["content"]) for payload in payloads}) == 1
-        assert any(payload["content"]["outside_group"] is None for payload in payloads)
+        assert any(cell.content.outside_group is None for cell in cells)
 
         assert {
             (
                 cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
+                cell.content.sample_key,
             )
             for cell in cells
         } == {
-            (group.group_hypothesis_id, sample.identity.sample_identity_id)
+            (group.group_hypothesis_id, sample.identity.sample_key)
             for group in groups
             for sample, _assessment in assessments
         }
@@ -175,8 +159,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             sample_cells = tuple(
                 cell
                 for cell in cells
-                if cell.content.canonical_sample_identity_id
-                == sample.identity.sample_identity_id
+                if cell.content.sample_key == sample.identity.sample_key
             )
             assert all(cell.method_assessment is assessment for cell in sample_cells)
             direct = tuple(
@@ -194,12 +177,12 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
                     continue
                 assert relation.supporting_group_hypothesis_id == witness_id
                 assert cell.peak_observation is None and cell.peak_hypothesis is None
-                assert cell.content.peak_observation_content_id is None
+                assert cell.content.physical_peak_key is None
                 assert cell.content.peak_hypothesis_id is None
         contents = {
             (
                 cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
+                cell.content.sample_key,
             ): cell.content
             for cell in cells
         }
@@ -210,8 +193,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     third_group = next(
         cell.group_context.group
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == fixture.sample("Third").identity.sample_identity_id
+        if cell.content.sample_key == fixture.sample("Third").identity.sample_key
         and cell.peak_observation is not None
     )
     with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
@@ -233,10 +215,7 @@ def _outside_population_handoff(tmp_path: Path):
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
     )
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
+    identities = tuple(group.membership for group in groups)
     binding = SimpleNamespace(
         samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
     )
@@ -292,8 +271,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     groups = tuple(
         group
         for group in all_groups
-        if group.member_subjects[0].canonical_sample_identity_id
-        == initial_sample.identity.sample_identity_id
+        if group.member_subjects[0].sample_key == initial_sample.identity.sample_key
     )
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.family_center_rt)
@@ -303,7 +281,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         sample=recovered_sample,
         method_subject=fixture.method_subject,
         detector_invocation_id="group-local-recovery",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(recovered_peak,),
     )
     assert backfill_assessment.content.method_result == "HOLD"
@@ -314,7 +292,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         backfill_assessments_by_group={
             (
                 recovered_group.group_hypothesis_id,
-                recovered_sample.identity.sample_identity_id,
+                recovered_sample.identity.sample_key,
                 fixture.method_subject.method_subject_id,
             ): (recovered_sample, backfill_assessment)
         },
@@ -325,8 +303,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     recovered_cells = tuple(
         cell
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == recovered_sample.identity.sample_identity_id
+        if cell.content.sample_key == recovered_sample.identity.sample_key
     )
     assert len(recovered_cells) == 1
     assert recovered_cells[0].content.group_hypothesis_id == (
@@ -343,10 +320,7 @@ def _owner_handoff(tmp_path: Path):
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert spine.group is not None
-    group = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    group = spine.group.membership
     return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
 
 
@@ -410,7 +384,7 @@ def _support_assessment(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
-        evaluation_receipt=_completed_receipt(scanned_event_count=seed_count),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
@@ -453,7 +427,7 @@ def _coverage_for_groups(
     cells = {
         (
             cell.group_context.group_identity.group_hypothesis_id,
-            cell.content.canonical_sample_identity_id,
+            cell.content.sample_key,
         ): cell
         for cell in predecessor_cells
     }
@@ -462,7 +436,7 @@ def _coverage_for_groups(
         groups,
         samples,
         planning_reason=lambda group, sample: _cell_planning_reason(
-            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id)),
+            cells.get((group.group_hypothesis_id, sample.identity.sample_key)),
             backfill_enabled=backfill_enabled,
         ),
     )
@@ -544,7 +518,7 @@ def test_composer_distinguishes_completed_negative_search(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:completed-negative",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     negative_cell = mint_cell_observation_ref(
         processing_owners=fixture.owners,
@@ -554,10 +528,7 @@ def test_composer_distinguishes_completed_negative_search(
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell
-        if cell.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
-        else cell
+        negative_cell if cell.content.sample_key == sample.identity.sample_key else cell
         for cell in spine.cells
     )
     handoff = _owner_handoff_for_cells(
@@ -612,14 +583,8 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         target=fixture.target,
         sample_assessments=((sample, second_assessment),),
     )
-    first_group = validate_cross_sample_peak_group_identity(
-        first_spine.group,
-        require_canonical=True,
-    )
-    second_group = validate_cross_sample_peak_group_identity(
-        second_spine.group,
-        require_canonical=True,
-    )
+    first_group = first_spine.group.membership
+    second_group = second_spine.group.membership
     assert first_group != second_group
     samples = (sample,)
     first_cell = first_spine.cells[0]
@@ -690,16 +655,9 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         target=fixture.target,
         sample_assessments=((samples[1], second_assessment),),
     )
-    left = validate_cross_sample_peak_group_identity(
-        left_spine.group,
-        require_canonical=True,
-    )
-    right = validate_cross_sample_peak_group_identity(
-        right_spine.group,
-        require_canonical=True,
-    )
+    left = left_spine.group.membership
+    right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
-        processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
     if outside_support:
@@ -755,7 +713,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for item in forward
     )
     expected_positions_by_sample = {
-        item.canonical_sample.identity.sample_identity_id: {
+        item.canonical_sample.identity.sample_key: {
             association.position.key
             for association in handoff.position_associations
             if association.position.sample is item.canonical_sample
@@ -764,9 +722,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     }
     assert all(
         {association.position.key for association in item.position_associations}
-        == expected_positions_by_sample[
-            item.canonical_sample.identity.sample_identity_id
-        ]
+        == expected_positions_by_sample[item.canonical_sample.identity.sample_key]
         for item in forward
     )
 
@@ -803,21 +759,15 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
             (samples[1], second_assessment),
         ),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        predecessor_spine.group,
-        require_canonical=True,
-    )
+    predecessor = predecessor_spine.group.membership
     members_by_sample = {
-        member.canonical_sample_identity_id: member
-        for member in predecessor.member_subjects
+        member.sample_key: member for member in predecessor.member_subjects
     }
     left = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
-        member_subjects=(members_by_sample[samples[0].identity.sample_identity_id],),
+        member_subjects=(members_by_sample[samples[0].identity.sample_key],),
     )
     right = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
-        member_subjects=(members_by_sample[samples[1].identity.sample_identity_id],),
+        member_subjects=(members_by_sample[samples[1].identity.sample_key],),
     )
     coverage = _coverage_for_groups(
         fixture,
@@ -856,13 +806,12 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     source = next(
         cell
         for cell in spine.cells
-        if cell.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
+        if cell.content.sample_key == sample.identity.sample_key
     )
     invalid_source = mint_cell_observation_ref(
         processing_owners=fixture.owners,

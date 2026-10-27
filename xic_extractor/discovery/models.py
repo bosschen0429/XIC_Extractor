@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from xic_extractor.discovery.physical_fact_record import (
         DiscoveryCandidatePhysicalBinding,
     )
+    from xic_extractor.processing_identity import FileContentFingerprint
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
 GroupPrecursorMzBasis = Literal[
@@ -73,7 +74,7 @@ DISCOVERY_CANDIDATE_REVIEW_COLUMNS = (
     "ms1_support",
     "rt_alignment",
     "candidate_id",
-    "feature_family_id",
+    "feature_id",
     "feature_family_size",
     "precursor_mz",
     "product_mz",
@@ -308,8 +309,6 @@ class DiscoveryPhysicalWorkItem:
     query_rt_min: float
     context_rt_start_min: float
     context_rt_end_min: float
-    trace_coordinate_id: str
-    acquired_trace_content_id: str
     xic_mz: float
     xic_rt_min: float
     xic_rt_max: float
@@ -325,8 +324,6 @@ class DiscoveryPhysicalWorkItem:
         for field in (
             "acquisition_source_id",
             "sample_stem",
-            "trace_coordinate_id",
-            "acquired_trace_content_id",
         ):
             if not getattr(self, field):
                 raise ValueError(f"{field} must be non-empty text")
@@ -428,7 +425,7 @@ class DiscoveryCandidate:
     scan_precursor_mz: float | None = None
     scan_precursor_delta_da: float | None = None
     max_scan_precursor_abs_delta_da: float | None = None
-    feature_family_id: str = ""
+    feature_id: str = ""
     feature_family_size: int = 1
     selected_tag_count: int = 1
     matched_tag_count: int = 1
@@ -583,7 +580,7 @@ def discovery_candidate_output_sort_key(
         ),
         -candidate.evidence_score,
         -candidate.feature_family_size,
-        candidate.feature_family_id,
+        candidate.feature_id,
         -candidate.seed_event_count,
         -candidate.ms2_product_max_intensity,
         area_is_missing,
@@ -599,6 +596,7 @@ class DiscoveryRunOutputs:
     physical_facts_json: Path
     batch_index_csv: Path | None = None
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
+    physical_facts_fingerprint: "FileContentFingerprint | None" = None
 
 
 @dataclass(frozen=True)

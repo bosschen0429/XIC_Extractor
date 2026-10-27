@@ -41,7 +41,6 @@ PhysicalPeakOperation = Literal[
     "segment_enumeration",
     "background_qualification",
     "integration",
-    "normalization",
     "raw_descriptor_projection",
     "region_audit_projection",
 ]
@@ -52,7 +51,6 @@ _PHYSICAL_PEAK_OPERATION_ORDER: tuple[PhysicalPeakOperation, ...] = (
     "segment_enumeration",
     "background_qualification",
     "integration",
-    "normalization",
     "raw_descriptor_projection",
     "region_audit_projection",
 )
@@ -61,12 +59,15 @@ _PHYSICAL_PEAK_OPERATION_ORDER: tuple[PhysicalPeakOperation, ...] = (
 @dataclass(frozen=True, slots=True)
 class PreparedSignalProjection:
     schema_version: str
-    trace_content_id: str
-    profile_id: str
-    prepared_signal_id: str
-    trace_point_count: int
+    profile: SignalProcessingProfile
+    rt: tuple[float, ...]
+    raw: tuple[float, ...]
     state: PhysicalPeakState
     reason: str
+
+    @property
+    def trace_point_count(self) -> int:
+        return len(self.rt)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +94,6 @@ class PreparedSignalResult:
 
 @dataclass(frozen=True, slots=True)
 class PhysicalSegment:
-    physical_segment_id: str
     start_index: int
     end_index: int
     apex_index: int
@@ -111,35 +111,31 @@ class PhysicalSegment:
 @dataclass(frozen=True, slots=True)
 class PhysicalSegmentUniverse:
     schema_version: str
-    prepared_signal_id: str
+    prepared: PreparedSignalProjection
     context_rt_start_min: float
     context_rt_end_min: float
     state: PhysicalPeakState
     reason: str
     segments: tuple[PhysicalSegment, ...]
-    segment_universe_id: str
-
-    @property
-    def segment_ids(self) -> tuple[str, ...]:
-        return tuple(segment.physical_segment_id for segment in self.segments)
 
 
 @dataclass(frozen=True, slots=True)
 class PhysicalPeakQuestion:
     schema_version: str
-    trace_content_id: str
-    prepared_signal_id: str
-    segment_universe_id: str
-    segment_ids: tuple[str, ...]
-    selection_subject_id: str
+    universe: PhysicalSegmentUniverse
     query_rt_min: float
-    context_rt_start_min: float
-    context_rt_end_min: float
-    admissible_segment_ids: tuple[str, ...]
+    admissible_segments: tuple[PhysicalSegment, ...]
     selection_policy_version: str
-    physical_question_id: str
     # Candidate apex eligibility, independent of the measured signal context.
     search_rt_window: tuple[float, float] | None = None
+
+    @property
+    def context_rt_start_min(self) -> float:
+        return self.universe.context_rt_start_min
+
+    @property
+    def context_rt_end_min(self) -> float:
+        return self.universe.context_rt_end_min
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,19 +143,13 @@ class PhysicalPeakAnswer:
     schema_version: str
     state: PhysicalPeakState
     reason: str
-    prepared_signal_id: str
-    physical_question_id: str
-    physical_segment_id: str | None
-    physical_answer_id: str
+    question: PhysicalPeakQuestion
+    selected_segment: PhysicalSegment | None
 
 
 @dataclass(frozen=True, slots=True)
 class PhysicalPeakFacts:
     schema_version: str
-    prepared_signal_id: str
-    physical_question_id: str
-    physical_answer_id: str
-    physical_segment_id: str
     apex_rt_min: float
     left_rt_min: float
     right_rt_min: float
@@ -167,10 +157,6 @@ class PhysicalPeakFacts:
     scan_support_count: int
     area_counts_seconds: float
     area_source: str
-    relative_shape_schema_version: str
-    relative_shape_point_count: int
-    relative_shape_content_hash: str
-    fact_content_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,13 +180,9 @@ class PhysicalPeakEvaluation:
 
     @property
     def requires_overlap_review(self) -> bool:
-        selected_id = self.answer.physical_segment_id
-        return selected_id is not None and any(
-            segment.physical_segment_id == selected_id
-            and (
-                segment.segment_class == "shoulder_candidate"
-                or segment.boundary_stop_reason == "shoulder_overlap_review"
-                or "shoulder_overlap" in segment.evidence_sources
-            )
-            for segment in self.segment_universe.segments
+        segment = self.answer.selected_segment
+        return segment is not None and (
+            segment.segment_class == "shoulder_candidate"
+            or segment.boundary_stop_reason == "shoulder_overlap_review"
+            or "shoulder_overlap" in segment.evidence_sources
         )

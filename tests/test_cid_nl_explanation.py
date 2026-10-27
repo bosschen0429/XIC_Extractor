@@ -56,6 +56,39 @@ from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
 
 
+def _summary_fixture(values, *, review_only=False):
+    """Complete persisted metadata for small diagnostic writer fixtures."""
+    summary = {
+        "scientific_input_schema_version": "fixture",
+        "processing_algorithm_version": "fixture",
+        "processing_contract_version": "fixture",
+        "processing_attempt_id": "fixture",
+        "samples": [],
+        "acquisition_sources": [],
+        "candidate_count": 0,
+        "matrix_row_count": 0,
+        "candidate_examples": [],
+        "writer_row_count": 0,
+        "matrix_path": "",
+        "matrix_sha256": "",
+        "alignment_config": {},
+        "reason_counts": {},
+        "record_counts": {},
+        "retention": "review" if review_only else "full_audit",
+        "selection_evidence_capability": "recorded_decisions",
+        "curve_retention": "none",
+        "curve_mz_ranges": [],
+        "initial_edge_coverage": {},
+        "audit_availability": {},
+        "known_istd_reference": None,
+        **values,
+    }
+    summary["samples"] = [
+        {"sample_stem": sample["sample_key"], **sample} for sample in summary["samples"]
+    ]
+    return summary
+
+
 def test_missing_report_is_unavailable(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import (
         ExplanationUnavailableError,
@@ -164,7 +197,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     summary = read_cid_nl_explanation(report)
     assert summary["diagnostic_only"] is True
     assert summary["initial_edge_coverage"] == {
-        "policy": "feature-group-membership-v1",
+        "policy": "feature-group-membership",
         "unlisted_pairs": "not_evaluated",
         "rt_pruning": True,
         "retained_pair_record_count": len(completed.initial_edges),
@@ -185,8 +218,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assessment = next(
         item
         for item in completed.method_assessments
-        if item.content.canonical_sample_identity_id
-        == detail["candidates"][0]["canonical_sample_identity_id"]
+        if item.content.sample_key == detail["candidates"][0]["sample_key"]
     )
     retained = records["method_assessments"][0]
     assert retained["reason_codes"] == list(assessment.content.reason_codes)
@@ -194,10 +226,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assert retained["evaluation_receipt"] == json.loads(
         json.dumps(asdict(assessment.content.evaluation_receipt))
     )
-    assert (
-        retained["artifact"]["evidence_artifact_id"]
-        == assessment.artifact.evidence_artifact_id
-    )
+    assert "artifact" not in retained
     assert all(item["candidate_id"] == candidate_id for item in detail["candidates"])
     if scenario == "all_hold":
         excluded = next(
@@ -211,16 +240,18 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         assert retained["method_result"] == "HOLD"
     else:
         terminal = records["terminal_subjects"][0]
-        assert terminal["physical_observation_ids"]
-        assert terminal["trace_group_id"] not in {
-            g["group_hypothesis_id"] for g in records["initial_groups"]
-        }
+        assert terminal["physical_peak_keys"]
         assert "initial_edges" not in records
         source_groups = {
-            group.group_hypothesis_id: group for group in completed.initial_groups
+            tuple(member.subject_id for member in group.member_subjects): group
+            for group in completed.initial_groups
         }
         for retained_group in records["initial_groups"]:
-            source_group = source_groups[retained_group["group_hypothesis_id"]]
+            source_group = source_groups[
+                tuple(
+                    member["subject_id"] for member in retained_group["member_subjects"]
+                )
+            ]
             assert retained_group["inference_basis"] == json.loads(
                 json.dumps(asdict(source_group.inference_basis))
             )
@@ -228,22 +259,19 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
                 json.dumps(
                     [
                         {
-                            "member_subject_id": member.member_subject_id,
-                            "canonical_sample_identity_id": (
-                                member.canonical_sample_identity_id
-                            ),
+                            "sample_key": (member.sample_key),
                             "subject_kind": member.subject_kind,
                             "subject_id": member.subject_id,
-                            "physical_observation_ids": (
-                                member.physical_observation_ids
-                            ),
+                            "physical_peak_keys": [
+                                peak.physical_peak_key for peak in member.physical_peaks
+                            ],
                         }
                         for member in source_group.member_subjects
                     ]
                 )
             )
             assert all(
-                member["physical_observation_ids"]
+                member["physical_peak_keys"]
                 for member in retained_group["member_subjects"]
             )
         if scenario == "review_only":
@@ -320,7 +348,11 @@ def test_partial_write_never_publishes_complete_report(tmp_path):
 
     with pytest.raises(OSError, match="interrupted write"):
         write_explanation_report(
-            report, summary={}, candidates=interrupted(), records={}, links=()
+            report,
+            summary=_summary_fixture({}),
+            candidates=interrupted(),
+            records={},
+            links=(),
         )
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
@@ -506,7 +538,8 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
     assert not report.with_name(report.name + ".tmp").exists()
 
 
-def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
+@pytest.mark.parametrize("flushed", [False, True])
+def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed):
     from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "stream.sqlite"
@@ -516,8 +549,10 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
         with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
+        if flushed:
+            writer._flush_records()
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize({})
+        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
     detail = read_cid_nl_explanation(report, candidate_id="a")
     assert detail["records"] == {"facts": [{"value": 1}]}
     assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
@@ -525,12 +560,14 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
         with ExplanationReportWriter(failed) as writer:
             writer.add_record("facts", "one", {"value": 1}, ())
+            if flushed:
+                writer._flush_records()
             writer.add_record("facts", "one", {"value": 2}, ())
     assert not failed.exists()
     assert not failed.with_name(failed.name + ".tmp").exists()
 
 
-def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
+def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "normalized.sqlite"
@@ -561,7 +598,7 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
             {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
         )
-        writer.finalize({})
+        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
 
     expected = {
         (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
@@ -571,12 +608,27 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
         detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
         assert detail["records"] == {"facts": [{"value": 1}]}
 
-    # Materialize the logical view only for this legacy-reader fixture.
     with sqlite3.connect(report) as connection:
-        connection.execute("CREATE TABLE legacy_links AS SELECT * FROM links")
-        connection.execute("DROP VIEW links")
-        connection.execute("ALTER TABLE legacy_links RENAME TO links")
-    assert set(read_explanation_metadata(report).links) == expected
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT DISTINCT typeof(record_rowid) FROM record_links"
+        ).fetchall() == [("integer",)]
+        connection.execute("PRAGMA foreign_keys=ON")
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+            connection.execute("DELETE FROM records")
+
+
+def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+
+    report = tmp_path / "missing-candidate.sqlite"
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        with ExplanationReportWriter(report) as writer:
+            writer.add_record("facts", "one", {"value": 1}, (("missing", "S1"),))
+            writer.finalize(_summary_fixture({}))
+    assert not report.exists()
+    assert not report.with_name(report.name + ".tmp").exists()
 
 
 def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
@@ -611,7 +663,7 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 
     report = write_explanation_report(
         tmp_path / "bounded.sqlite",
-        summary={},
+        summary=_summary_fixture({}),
         candidates=rows(),
         records=Records(),
         links=(("199", "s", "facts", "199"),),
@@ -627,15 +679,15 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
-        summary={"candidate_count": 2},
+        summary=_summary_fixture({"candidate_count": 2}),
         candidates=(
             ("a", "s1", {"candidate_id": "a"}),
             ("b", "s2", {"candidate_id": "b"}),
         ),
         records={
-            ("initial_groups", "shared"): {"group_hypothesis_id": "shared"},
-            ("initial_groups", "second"): {"group_hypothesis_id": "second"},
-            ("final_groups", "shared"): {"group_hypothesis_id": "shared"},
+            ("initial_groups", "shared"): {"feature_id": "shared"},
+            ("initial_groups", "second"): {"feature_id": "second"},
+            ("final_groups", "shared"): {"feature_id": "shared"},
             ("exclusions", "unrelated"): {"reason_code": "unrelated"},
         },
         links=(
@@ -673,7 +725,7 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
         report.write_bytes(b"not sqlite")
     else:
         write_explanation_report(
-            report, summary={}, candidates=(), records={}, links=()
+            report, summary=_summary_fixture({}), candidates=(), records={}, links=()
         )
         with sqlite3.connect(report) as connection:
             if corruption == "schema_identity":
@@ -687,5 +739,10 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
                 connection.execute("DROP TABLE records")
             else:
                 connection.execute("UPDATE metadata SET payload='null'")
-    with pytest.raises(ExplanationError, match="malformed|unsupported|failed reading"):
+    message = (
+        "重新執行 Alignment"
+        if corruption == "schema_identity"
+        else "malformed|failed reading"
+    )
+    with pytest.raises(ExplanationError, match=message):
         reader(report)

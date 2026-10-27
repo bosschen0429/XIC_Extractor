@@ -70,7 +70,6 @@ def build_extraction_config(
     settings: dict[str, str],
     settings_path: Path,
     output_dir: Path,
-    config_hash: str,
 ) -> ExtractionConfig:
     from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 
@@ -91,5 +90,4 @@ def build_extraction_config(
         injection_order_source=parsed.injection_order_source,
         parallel_mode="process",
         parallel_workers=parsed.parallel_workers,
-        config_hash=config_hash,
     )

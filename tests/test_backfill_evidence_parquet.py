@@ -50,9 +50,7 @@ def _write_rows(
 def _backfill_row(**overrides: str) -> dict[str, str]:
     row = {
         "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-        "feature_family_id": "FAM000001",
-        "group_hypothesis_id": "FAM000001",
-        "public_family_id": "FAM000001",
+        "feature_id": "F000001",
         "sample_stem": "sample-a",
         "status": "detected",
         "production_cell_status": "detected",
@@ -86,7 +84,7 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
 
 def _skipped_row(**overrides: str) -> dict[str, str]:
     row = {
-        "feature_family_id": "FAM000001",
+        "feature_id": "F000001",
         "sample_stem": "sample-a",
         "family_center_mz": "242.1",
         "family_center_rt": "1.25",
@@ -115,9 +113,7 @@ def _sources(
     backfill_rows = [
         _backfill_row(),
         _backfill_row(
-            feature_family_id=("FAM000001" if multiple_lookup_matches else "FAM000002"),
-            group_hypothesis_id="FAM000002",
-            public_family_id="FAM000002",
+            feature_id=("F000001" if multiple_lookup_matches else "F000002"),
             sample_stem="sample-a" if multiple_lookup_matches else "sample-b",
             source_candidate_id=(
                 "sample-a#candidate-2"
@@ -139,9 +135,7 @@ def _sources(
         [
             _skipped_row(),
             _skipped_row(
-                feature_family_id=(
-                    "FAM000001" if multiple_lookup_matches else "FAM000002"
-                ),
+                feature_id=("F000001" if multiple_lookup_matches else "F000002"),
                 sample_stem="sample-a" if multiple_lookup_matches else "sample-b",
                 family_center_mz="243.1",
                 **(
@@ -174,26 +168,18 @@ def _sources(
 
 def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
     return BackfillEvidenceOwnerBindings(
-        known_group_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_feature_ids=frozenset({"F000001", "F000002"}),
         known_sample_stems=frozenset({"sample-a", "sample-b"}),
         candidate_samples={
             "sample-a#candidate-1": "sample-a",
             "sample-b#candidate-1": "sample-b",
-        },
-        group_feature_family_ids={
-            "FAM000001": "FAM000001",
-            "FAM000002": "FAM000002",
-        },
-        group_public_family_ids={
-            "FAM000001": "FAM000001",
-            "FAM000002": "FAM000002",
         },
     )
 
 
 def _skipped_bindings() -> SkippedEvidenceOwnerBindings:
     return SkippedEvidenceOwnerBindings(
-        known_feature_family_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_feature_ids=frozenset({"F000001", "F000002"}),
         known_sample_stems=frozenset({"sample-a", "sample-b"}),
         expected_backfill_scope="production-equivalent",
     )
@@ -227,13 +213,13 @@ def test_shadow_bundle_roundtrips_owner_records_queries_and_claims(
 
     tsv_backfill = lookup_backfill_evidence_tsv(
         backfill,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_backfill_bindings(),
     )
     parquet_backfill = lookup_backfill_evidence_parquet(
         bundle.backfill_parquet,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_backfill_bindings(),
     )
@@ -241,13 +227,13 @@ def test_shadow_bundle_roundtrips_owner_records_queries_and_claims(
 
     tsv_skipped = lookup_skipped_evidence_tsv(
         skipped,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_skipped_bindings(),
     )
     parquet_skipped = lookup_skipped_evidence_parquet(
         bundle.skipped_parquet,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_skipped_bindings(),
     )
@@ -259,9 +245,7 @@ def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
 ) -> None:
     backfill, skipped, metadata = _sources(tmp_path)
     canonical = {
-        "feature_family_id": "=family",
-        "group_hypothesis_id": "=group",
-        "public_family_id": "=public",
+        "feature_id": "=family",
         "sample_stem": "=sample",
         "source_candidate_id": "=candidate",
     }
@@ -272,15 +256,9 @@ def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
         [_backfill_row(**persisted)],
     )
     bindings = BackfillEvidenceOwnerBindings(
-        known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
+        known_feature_ids=frozenset({canonical["feature_id"]}),
         known_sample_stems=frozenset({canonical["sample_stem"]}),
         candidate_samples={canonical["source_candidate_id"]: canonical["sample_stem"]},
-        group_feature_family_ids={
-            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
-        },
-        group_public_family_ids={
-            canonical["group_hypothesis_id"]: canonical["public_family_id"]
-        },
     )
     output_dir = write_backfill_evidence_parquet_shadow_bundle(
         tmp_path / "shadow",
@@ -291,8 +269,7 @@ def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
 
     parquet_result = lookup_backfill_evidence_parquet(
         output_dir / "backfill.parquet",
-        feature_family_id=canonical["feature_family_id"],
-        group_hypothesis_id=canonical["group_hypothesis_id"],
+        feature_id=canonical["feature_id"],
         sample_stem=canonical["sample_stem"],
         owner_bindings=bindings,
     )
@@ -301,40 +278,6 @@ def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
     record = parquet_result.records[0]
     for field, value in canonical.items():
         assert getattr(record, field) == value
-
-
-def test_shadow_bundle_roundtrips_structure_bound_rows_without_owner_ids(
-    tmp_path: Path,
-) -> None:
-    backfill, skipped, metadata = _sources(tmp_path)
-    _write_rows(
-        backfill,
-        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-        [_backfill_row(group_hypothesis_id="", public_family_id="")],
-    )
-    output_dir = write_backfill_evidence_parquet_shadow_bundle(
-        tmp_path / "shadow",
-        backfill_tsv=backfill,
-        skipped_tsv=skipped,
-        run_metadata_json=metadata,
-    )
-
-    result = lookup_backfill_evidence_parquet(
-        output_dir / "backfill.parquet",
-        feature_family_id="FAM000001",
-        sample_stem="sample-a",
-        owner_bindings=BackfillEvidenceOwnerBindings(
-            known_group_ids=frozenset(),
-            known_sample_stems=frozenset({"sample-a"}),
-            candidate_samples={"sample-a#candidate-1": "sample-a"},
-        ),
-    )
-
-    assert len(result.records) == 1
-    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
-    assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
 
 
 def test_shadow_manifest_uses_relative_locators_and_reduced_claim(
@@ -372,12 +315,12 @@ def test_missing_parquet_lookup_never_becomes_absence_proof(tmp_path: Path) -> N
 
     backfill_result = lookup_backfill_evidence_parquet(
         bundle.backfill_parquet,
-        feature_family_id="missing",
+        feature_id="missing",
         sample_stem="sample-a",
     )
     skipped_result = lookup_skipped_evidence_parquet(
         bundle.skipped_parquet,
-        feature_family_id="missing",
+        feature_id="missing",
         sample_stem="sample-a",
     )
 
@@ -401,7 +344,7 @@ def test_shadow_bundle_rejects_stale_source_bytes(tmp_path: Path) -> None:
     )
     source_text = backfill.read_text(encoding="utf-8")
     backfill.write_text(
-        source_text.replace("FAM000001", "FAM999999", 1),
+        source_text.replace("F000001", "F999999", 1),
         encoding="utf-8",
     )
 
@@ -561,7 +504,7 @@ def test_filtered_parquet_lookup_rejects_non_increasing_ordinals(
     with pytest.raises(ValueError, match="strictly increasing"):
         lookup(
             mutated_path,
-            feature_family_id="FAM000001",
+            feature_id="F000001",
             sample_stem="sample-a",
         )
 
@@ -578,7 +521,7 @@ def test_parquet_lookup_rejects_duplicate_composite_identity(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="duplicate composite identity"):
         lookup_backfill_evidence_parquet(
             output_dir / "backfill.parquet",
-            feature_family_id="FAM000001",
+            feature_id="F000001",
             sample_stem="sample-a",
         )
 

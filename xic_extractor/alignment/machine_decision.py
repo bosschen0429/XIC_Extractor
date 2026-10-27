@@ -76,7 +76,7 @@ _GENERIC_PROVISIONAL_REASONS = {"", _PROVISIONAL_DECISION}
 
 @dataclass(frozen=True)
 class MachineDecisionVector:
-    feature_family_id: str
+    feature_id: str
     matrix_role: MatrixRole
     evidence_tier: EvidenceTier
     support_reasons: tuple[str, ...]
@@ -117,7 +117,7 @@ def project_machine_decision(
         blockers=blockers,
     )
     return MachineDecisionVector(
-        feature_family_id=_text(review.get("feature_family_id")),
+        feature_id=_text(review.get("feature_id")),
         matrix_role=matrix_role,
         evidence_tier=_evidence_tier(cells, support_reasons),
         support_reasons=support_reasons,

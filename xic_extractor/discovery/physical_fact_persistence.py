@@ -10,13 +10,12 @@ from typing import Any, Mapping, Sequence
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
-    TraceCoordinate,
-    TraceCoordinateKind,
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
+    deserialize_signal_processing_profile,
 )
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_record import (
@@ -37,6 +36,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PreparedSignal,
 )
+from xic_extractor.processing_identity import FileContentFingerprint
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
@@ -55,7 +55,6 @@ from xic_extractor.validation_primitives import (
     require_mapping,
     require_text,
 )
-from xic_extractor.xic_models import XICRequest, XICTrace
 
 DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
 
@@ -74,16 +73,12 @@ _SAMPLE_KEYS = (
 )
 _WORK_KEYS = (
     "work_ordinal",
-    "acquisition_source_id",
-    "sample_stem",
     "best_ms2_scan_id",
     "precursor_mz",
     "product_mz",
     "query_rt_min",
     "context_rt_start_min",
     "context_rt_end_min",
-    "trace_coordinate_id",
-    "acquired_trace_content_id",
     "xic_mz",
     "xic_rt_min",
     "xic_rt_max",
@@ -105,8 +100,6 @@ def _retained_signal_content(evaluation: PhysicalPeakEvaluation) -> dict | None:
         return None
     return {
         "schema_version": "retained_prepared_signal",
-        "prepared_signal_id": signal.projection.prepared_signal_id,
-        "profile_id": signal.profile.profile_id,
         **{
             name: [_float_text(value) for value in getattr(signal, name)]
             for name in ("rt", "raw", "baseline", "smoothed", "positive_signal")
@@ -129,15 +122,11 @@ def _restore_retained_signal(
     names = ("rt", "raw", "baseline", "smoothed", "positive_signal")
     _require_keys(
         signal,
-        ("schema_version", "prepared_signal_id", "profile_id", *names),
+        ("schema_version", *names),
         label="retained_prepared_signal",
     )
-    if (
-        signal["schema_version"] != "retained_prepared_signal"
-        or signal["prepared_signal_id"] != evaluation.prepared.prepared_signal_id
-        or signal["profile_id"] != profile.profile_id
-    ):
-        raise ValueError("retained prepared signal crosses owner identity")
+    if signal["schema_version"] != "retained_prepared_signal":
+        raise ValueError("unsupported retained prepared signal schema")
     arrays = {
         name: tuple(
             _float_from_text(point, field=f"retained_prepared_signal.{name}")
@@ -217,8 +206,11 @@ def write_discovery_physical_fact_sidecar(
     acquisition_input: ProcessingAcquisitionInput,
     work_manifest: Sequence[DiscoveryPhysicalWorkItem],
     records: Sequence[DiscoveryPhysicalFactRecord],
-) -> Path:
-    """Purely encode, byte-verify, and atomically publish one sample sidecar."""
+) -> FileContentFingerprint:
+    """Encode, byte-verify, and atomically publish one sample sidecar.
+
+    Returns the fingerprint of the published bytes for the batch index.
+    """
 
     if not isinstance(path, Path):
         raise TypeError("sidecar path must be a Path")
@@ -255,7 +247,7 @@ def write_discovery_physical_fact_sidecar(
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-    return path
+    return FileContentFingerprint(content_sha256=expected.hex(), byte_size=len(payload))
 
 
 def serialize_discovery_physical_fact_sidecar(
@@ -319,7 +311,6 @@ class DetachedIndexedDiscoveryPhysicalFacts:
     source: DetachedPhysicalFactSource
     candidate_ordinals: dict[str, int]
     precursor_mz: dict[str, float]
-    physical_identities: dict[str, dict[str, str]]
     physical_apices: dict[str, float]
     resolved_candidate_ids: frozenset[str]
 
@@ -338,9 +329,9 @@ class IndexedDiscoveryPhysicalFacts:
     ) -> None:
         _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
         self.run_spec = expected_run_spec
+        self.acquisition_input = expected_acquisition_input
         self.candidate_ordinals: dict[str, int] = {}
         self.precursor_mz: dict[str, float] = {}
-        self.physical_identities: dict[str, dict[str, str]] = {}
         self.physical_apices: dict[str, float] = {}
         resolved_candidate_ids: set[str] = set()
         manifest_ids: list[str] = []
@@ -348,14 +339,9 @@ class IndexedDiscoveryPhysicalFacts:
         questions: set[tuple[object, ...]] = set()
 
         def manifest_visitor(index: int, value: dict) -> None:
-            item = _work_from_content(value)
-            if (
-                item.work_ordinal != index
-                or item.sample_stem != expected_acquisition_input.sample_stem
-                or item.acquisition_source_id
-                != expected_acquisition_input.acquisition_source.acquisition_source_id
-            ):
-                raise ValueError("Discovery physical work crosses sample or order")
+            item = _work_from_content(value, expected_acquisition_input)
+            if item.work_ordinal != index:
+                raise ValueError("Discovery physical work order changed")
             question = (
                 item.acquisition_source_id,
                 item.selection_subject_id,
@@ -384,41 +370,30 @@ class IndexedDiscoveryPhysicalFacts:
                     value.get("physical_evaluation"), label="physical_evaluation"
                 )
                 evaluation = _mapping(physical.get("evaluation"), label="evaluation")
-                owner_evaluation = physical_evaluation_from_payload(evaluation)
+                trace = _mapping(physical["trace"], label="trace")
+                owner_evaluation = physical_evaluation_from_payload(
+                    evaluation,
+                    profile=expected_run_spec.signal_processing_profile,
+                    rt=tuple(
+                        _float_from_text(point, field="rt")
+                        for point in _list(trace["rt"], label="rt")
+                    ),
+                    raw=tuple(
+                        _float_from_text(point, field="raw")
+                        for point in _list(
+                            trace["raw"],
+                            label="raw",
+                        )
+                    ),
+                )
                 if (
                     owner_evaluation.state == "available"
                     and not owner_evaluation.requires_overlap_review
                 ):
                     resolved_candidate_ids.add(cid)
-                fact_value = evaluation.get("facts")
-                facts = (
-                    _mapping(fact_value, label="facts")
-                    if fact_value is not None
-                    else None
-                )
-                prepared = _mapping(evaluation["prepared"], label="prepared")
-                question = _mapping(evaluation["question"], label="question")
-                answer = _mapping(evaluation["answer"], label="answer")
-                self.physical_identities[cid] = {
-                    "prepared_signal_id": _text(
-                        prepared["prepared_signal_id"], field="prepared_signal_id"
-                    ),
-                    "physical_question_id": _text(
-                        question["physical_question_id"], field="physical_question_id"
-                    ),
-                    "physical_answer_id": _text(
-                        answer["physical_answer_id"], field="physical_answer_id"
-                    ),
-                    "physical_fact_id": _text(
-                        facts["fact_content_id"], field="fact_content_id"
-                    )
-                    if facts
-                    else "",
-                }
+                facts = owner_evaluation.facts
                 if facts is not None:
-                    self.physical_apices[cid] = _float_from_text(
-                        facts["apex_rt_min"], field="apex_rt_min"
-                    )
+                    self.physical_apices[cid] = facts.apex_rt_min
 
         self.source = PhysicalFactSource(
             path,
@@ -448,7 +423,9 @@ class IndexedDiscoveryPhysicalFacts:
 
     def read_record(self, index: int) -> DiscoveryPhysicalFactRecord:
         return restore_discovery_physical_fact_record(
-            _work_from_content(self.source.read_manifest(index)),
+            _work_from_content(
+                self.source.read_manifest(index), self.acquisition_input
+            ),
             self.source.read_record(index),
             expected_run_spec=self.run_spec,
         )
@@ -470,7 +447,6 @@ class IndexedDiscoveryPhysicalFacts:
             source=self.source.detach(),
             candidate_ordinals=self.candidate_ordinals,
             precursor_mz=self.precursor_mz,
-            physical_identities=self.physical_identities,
             physical_apices=self.physical_apices,
             resolved_candidate_ids=self.resolved_candidate_ids,
         )
@@ -481,6 +457,7 @@ class IndexedDiscoveryPhysicalFacts:
         transfer: DetachedIndexedDiscoveryPhysicalFacts,
         *,
         expected_run_spec: ProcessingRunSpec,
+        expected_acquisition_input: ProcessingAcquisitionInput,
     ) -> IndexedDiscoveryPhysicalFacts:
         """Adopt a validated worker index without hydrating physical graphs."""
 
@@ -488,9 +465,9 @@ class IndexedDiscoveryPhysicalFacts:
             raise TypeError("indexed physical transfer has the wrong owner type")
         value = object.__new__(cls)
         value.run_spec = expected_run_spec
+        value.acquisition_input = expected_acquisition_input
         value.candidate_ordinals = transfer.candidate_ordinals
         value.precursor_mz = transfer.precursor_mz
-        value.physical_identities = transfer.physical_identities
         value.physical_apices = transfer.physical_apices
         value.resolved_candidate_ids = transfer.resolved_candidate_ids
         value.source = PhysicalFactSource.from_detached(transfer.source)
@@ -531,7 +508,7 @@ def read_discovery_physical_fact_records(
     root = _mapping(value, label="Discovery physical sidecar")
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     manifest = tuple(
-        _work_from_content(item)
+        _work_from_content(item, expected_acquisition_input)
         for item in _list(root["work_manifest"], label="work_manifest")
     )
     return _read_discovery_physical_fact_records_direct(
@@ -559,9 +536,7 @@ def _read_discovery_physical_fact_records_direct(
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
-        _canonical_json_bytes(run_spec_value),
-        expected_run_spec_hash=expected_run_spec.run_spec_hash,
-        expected_run_spec_id=expected_run_spec.run_spec_id,
+        _canonical_json_bytes(run_spec_value)
     )
     if persisted_spec != expected_run_spec:
         raise ValueError("Discovery physical sidecar crosses expected run spec")
@@ -571,7 +546,7 @@ def _read_discovery_physical_fact_records_direct(
         raise ValueError("Discovery physical sidecar crosses sample input binding")
 
     persisted_manifest = tuple(
-        _work_from_content(raw_item)
+        _work_from_content(raw_item, expected_acquisition_input)
         for raw_item in _list(root["work_manifest"], label="work_manifest")
     )
     _validate_manifest(
@@ -615,51 +590,11 @@ def restore_discovery_physical_fact_record(
     ):
         raise ValueError("Discovery physical selection subject changed")
 
-    acq_val = _mapping(record["acquired_trace"], label="acquired_trace")
-    coord_val = _mapping(acq_val["coordinate"], label="coordinate")
-    req_val = _mapping(coord_val["request"], label="coordinate request")
-    request = XICRequest(
-        mz=_float_from_text(req_val["mz"], field="request.mz"),
-        rt_min=_float_from_text(req_val["rt_min"], field="request.rt_min"),
-        rt_max=_float_from_text(req_val["rt_max"], field="request.rt_max"),
-        ppm_tol=_float_from_text(req_val["ppm_tol"], field="request.ppm_tol"),
-    )
-    first_scan = coord_val.get("first_scan")
-    last_scan = coord_val.get("last_scan")
-    coordinate = TraceCoordinate(
-        trace_coordinate_id=_text(
-            coord_val["trace_coordinate_id"], field="trace_coordinate_id"
-        ),
-        capability_id=_text(coord_val["capability_id"], field="capability_id"),
-        acquisition_source_id=_text(
-            coord_val["acquisition_source_id"], field="acquisition_source_id"
-        ),
-        request=request,
-        coordinate_kind=TraceCoordinateKind(
-            _text(coord_val["coordinate_kind"], field="coordinate_kind")
-        ),
-        first_scan=_integer(first_scan, field="first_scan")
-        if first_scan is not None
-        else None,
-        last_scan=_integer(last_scan, field="last_scan")
-        if last_scan is not None
-        else None,
-        trace_point_count=_integer(
-            coord_val["trace_point_count"], field="trace_point_count"
+    acquired = deserialize_acquired_trace(
+        _canonical_json_bytes(
+            _mapping(record["acquired_trace"], label="acquired_trace")
         ),
     )
-    trace_val = _mapping(acq_val["trace"], label="trace")
-    trace = XICTrace.from_arrays(
-        tuple(
-            _float_from_text(x, field="trace.rt")
-            for x in _list(trace_val["rt"], label="trace.rt")
-        ),
-        tuple(
-            _float_from_text(x, field="trace.intensity")
-            for x in _list(trace_val["intensity"], label="trace.intensity")
-        ),
-    )
-    acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
 
     phys_val = _mapping(record["physical_evaluation"], label="physical_evaluation")
     _require_keys(
@@ -669,26 +604,26 @@ def restore_discovery_physical_fact_record(
     )
     if phys_val["schema_version"] != "physical_peak_evaluation_persistence":
         raise ValueError("unsupported physical evaluation persistence schema")
-    profile_envelope = _mapping(phys_val["profile"], label="profile")
-    _require_keys(
-        profile_envelope,
-        ("profile_hash", "profile_id", "content"),
-        label="profile",
+    profile_content = _mapping(phys_val["profile"], label="profile")
+    profile = deserialize_signal_processing_profile(
+        _canonical_json_bytes(profile_content)
     )
-    if (
-        _text(profile_envelope["profile_id"], field="profile_id")
-        != expected_run_spec.signal_processing_profile.profile_id
-        or _text(profile_envelope["profile_hash"], field="profile_hash")
-        != expected_run_spec.signal_processing_profile.profile_hash
-    ):
-        raise ValueError("Discovery physical sidecar crosses profile identity")
+    if profile != expected_run_spec.signal_processing_profile:
+        raise ValueError("Discovery physical sidecar crosses run profile")
     eval_payload = _mapping(phys_val["evaluation"], label="evaluation")
-    evaluation = physical_evaluation_from_payload(eval_payload)
-    if (
-        evaluation.prepared.profile_id
-        != expected_run_spec.signal_processing_profile.profile_id
-    ):
-        raise ValueError("Discovery physical sidecar crosses profile identity")
+    trace_content = _mapping(phys_val["trace"], label="physical trace")
+    evaluation = physical_evaluation_from_payload(
+        eval_payload,
+        profile=profile,
+        rt=tuple(
+            _float_from_text(point, field="rt")
+            for point in _list(trace_content["rt"], label="rt")
+        ),
+        raw=tuple(
+            _float_from_text(point, field="raw")
+            for point in _list(trace_content["raw"], label="raw")
+        ),
+    )
 
     restored = DiscoveryPhysicalFactRecord(
         work_item=item,
@@ -751,9 +686,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
-        _canonical_json_bytes(run_spec_value),
-        expected_run_spec_hash=expected_run_spec.run_spec_hash,
-        expected_run_spec_id=expected_run_spec.run_spec_id,
+        _canonical_json_bytes(run_spec_value)
     )
     if persisted_spec != expected_run_spec:
         raise ValueError("Discovery physical sidecar crosses expected run spec")
@@ -763,7 +696,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         raise ValueError("Discovery physical sidecar crosses sample input binding")
 
     persisted_manifest = tuple(
-        _work_from_content(raw_item)
+        _work_from_content(raw_item, expected_acquisition_input)
         for raw_item in _list(root["work_manifest"], label="work_manifest")
     )
     _validate_manifest(
@@ -796,9 +729,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         acquired_value = _mapping(record["acquired_trace"], label="acquired_trace")
         acquired = deserialize_acquired_trace(
             _canonical_json_bytes(acquired_value),
-            expected_acquisition_source_id=item.acquisition_source_id,
-            expected_trace_coordinate_id=item.trace_coordinate_id,
-            expected_trace_content_id=item.acquired_trace_content_id,
+            expected_acquisition_source=expected_acquisition_input.acquisition_source,
         )
         physical_value = _mapping(
             record["physical_evaluation"], label="physical_evaluation"
@@ -900,16 +831,12 @@ def _sample_content(acquisition_input: ProcessingAcquisitionInput) -> dict[str, 
 def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
     return {
         "work_ordinal": item.work_ordinal,
-        "acquisition_source_id": item.acquisition_source_id,
-        "sample_stem": item.sample_stem,
         "best_ms2_scan_id": item.best_ms2_scan_id,
         "precursor_mz": _float_text(item.precursor_mz),
         "product_mz": _float_text(item.product_mz),
         "query_rt_min": _float_text(item.query_rt_min),
         "context_rt_start_min": _float_text(item.context_rt_start_min),
         "context_rt_end_min": _float_text(item.context_rt_end_min),
-        "trace_coordinate_id": item.trace_coordinate_id,
-        "acquired_trace_content_id": item.acquired_trace_content_id,
         "xic_mz": _float_text(item.xic_mz),
         "xic_rt_min": _float_text(item.xic_rt_min),
         "xic_rt_max": _float_text(item.xic_rt_max),
@@ -919,15 +846,19 @@ def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
     }
 
 
-def _work_from_content(value: object) -> DiscoveryPhysicalWorkItem:
+def _work_from_content(
+    value: object, acquisition_input: ProcessingAcquisitionInput
+) -> DiscoveryPhysicalWorkItem:
+    """Restore one work item; its sample binding is stored once per sidecar."""
+
     content = _mapping(value, label="physical work item")
     _require_keys(content, _WORK_KEYS, label="physical work item")
     item = DiscoveryPhysicalWorkItem(
         work_ordinal=_integer(content["work_ordinal"], field="work_ordinal"),
-        acquisition_source_id=_text(
-            content["acquisition_source_id"], field="acquisition_source_id"
+        acquisition_source_id=(
+            acquisition_input.acquisition_source.acquisition_source_id
         ),
-        sample_stem=_text(content["sample_stem"], field="sample_stem"),
+        sample_stem=acquisition_input.sample_stem,
         best_ms2_scan_id=_integer(
             content["best_ms2_scan_id"], field="best_ms2_scan_id"
         ),
@@ -939,13 +870,6 @@ def _work_from_content(value: object) -> DiscoveryPhysicalWorkItem:
         ),
         context_rt_end_min=_float_from_text(
             content["context_rt_end_min"], field="context_rt_end_min"
-        ),
-        trace_coordinate_id=_text(
-            content["trace_coordinate_id"], field="trace_coordinate_id"
-        ),
-        acquired_trace_content_id=_text(
-            content["acquired_trace_content_id"],
-            field="acquired_trace_content_id",
         ),
         xic_mz=_float_from_text(content["xic_mz"], field="xic_mz"),
         xic_rt_min=_float_from_text(content["xic_rt_min"], field="xic_rt_min"),

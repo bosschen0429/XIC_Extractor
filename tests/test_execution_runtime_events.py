@@ -275,9 +275,9 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
         preflight_required_work_manifest,
     )
 
-    request = _request(tmp_path)
-    attempt = issue_processing_attempt(request)
-    other_attempt = issue_processing_attempt(request, retry_of=attempt)
+    _request(tmp_path)
+    attempt = issue_processing_attempt()
+    other_attempt = issue_processing_attempt(retry_of=attempt)
     queued = append_attempt_lifecycle_event(
         AttemptLifecycleHistory(attempt=attempt),
         AttemptLifecycleEventKind.ATTEMPT_QUEUED,
@@ -320,32 +320,20 @@ def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> N
     )
 
     runtime = start_attempt_runtime(preflight)
-    target_1_ref = _owner_result_ref(
-        attempt,
-        "sample-a:target-1",
-        b"target-1-result",
-    )
     first = settle_work_unit(
         runtime,
         work_unit_key="sample-a:target-1",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=target_1_ref,
     )
     identical_replay = settle_work_unit(
         first,
         work_unit_key="sample-a:target-1",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=target_1_ref,
     )
     complete = settle_work_unit(
         identical_replay,
         work_unit_key="sample-a:target-2",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=_owner_result_ref(
-            attempt,
-            "sample-a:target-2",
-            b"target-2-result",
-        ),
     )
 
     assert runtime.history.events[-1].kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
@@ -364,6 +352,8 @@ def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
     from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
+        WorkUnitFailureCategory,
+        WorkUnitFailureDetail,
         WorkUnitSettlementIntegrityFailureKind,
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
@@ -388,31 +378,24 @@ def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
         runtime,
         work_unit_key="sample-a:target-1",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=_owner_result_ref(
-            attempt,
-            "sample-a:target-1",
-            b"first",
-        ),
+    )
+    failure = WorkUnitFailureDetail(
+        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+        stage="runtime-test",
+        source_reference="sample-a:target-1",
+        message="conflicting failure",
     )
     conflicted = settle_work_unit(
         accepted,
         work_unit_key="sample-a:target-1",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=_owner_result_ref(
-            attempt,
-            "sample-a:target-1",
-            b"different",
-        ),
+        outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=failure,
     )
     repeated_conflict = settle_work_unit(
         conflicted,
         work_unit_key="sample-a:target-1",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=_owner_result_ref(
-            attempt,
-            "sample-a:target-1",
-            b"different",
-        ),
+        outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=failure,
     )
 
     assert conflicted.settlements == accepted.settlements
@@ -456,11 +439,6 @@ def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
         runtime,
         work_unit_key="sample-a:target-late",
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=_owner_result_ref(
-            attempt,
-            "sample-a:target-late",
-            b"late",
-        ),
     )
 
     assert rejected.settlements == ()
@@ -501,39 +479,6 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
 
     with pytest.raises(
         AttemptLifecycleContractError,
-        match="requires an owner-minted EvidenceArtifactRef",
-    ):
-        settle_work_unit(
-            runtime,
-            work_unit_key="sample-a:target-1",
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        )
-    with pytest.raises(AttemptLifecycleContractError, match="only succeeded"):
-        settle_work_unit(
-            runtime,
-            work_unit_key="sample-a:target-1",
-            outcome=WorkUnitTerminalOutcome.FAILED,
-            owner_result_ref=_owner_result_ref(
-                attempt,
-                "sample-a:target-1",
-                b"not-allowed",
-            ),
-        )
-    other_attempt = issue_processing_attempt(attempt_request := _request(tmp_path))
-    assert other_attempt.processing_request_id == attempt_request.processing_request_id
-    with pytest.raises(AttemptLifecycleContractError, match="request and attempt"):
-        settle_work_unit(
-            runtime,
-            work_unit_key="sample-a:target-1",
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=_owner_result_ref(
-                other_attempt,
-                "sample-a:target-1",
-                b"wrong-attempt",
-            ),
-        )
-    with pytest.raises(
-        AttemptLifecycleContractError,
         match="requires accepted cancellation",
     ):
         settle_work_unit(
@@ -571,11 +516,6 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
             runtime,
             work_unit_key="sample-a:target-1",
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=_owner_result_ref(
-                attempt,
-                "sample-a:target-1",
-                b"unexpected-failure-detail",
-            ),
             failure_detail=execution_failure,
         )
     with pytest.raises(
@@ -693,9 +633,9 @@ def test_history_rejects_forged_attempt_sequence_and_transition(
         AttemptLifecycleHistory,
     )
 
-    request = _request(tmp_path)
-    attempt = issue_processing_attempt(request)
-    retry = issue_processing_attempt(request, retry_of=attempt)
+    _request(tmp_path)
+    attempt = issue_processing_attempt()
+    retry = issue_processing_attempt(retry_of=attempt)
     queued = AttemptLifecycleEvent(
         attempt=attempt,
         sequence=1,
@@ -821,14 +761,11 @@ def test_execution_runtime_contract_stays_inside_identity_boundary() -> None:
         imported for imported in _imports(tree) if imported.startswith("xic_extractor")
     )
 
-    assert imports == (
-        "xic_extractor.evidence_artifacts",
-        "xic_extractor.processing_identity",
-    )
+    assert imports == ("xic_extractor.processing_identity",)
 
 
 def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
-    return issue_processing_attempt(_request(tmp_path))
+    return issue_processing_attempt()
 
 
 def _request(tmp_path: Path) -> ProcessingRequestIdentity:
@@ -853,22 +790,6 @@ def _request(tmp_path: Path) -> ProcessingRequestIdentity:
         processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
-
-
-def _owner_result_ref(
-    attempt: ProcessingAttemptIdentity,
-    work_unit_key: str,
-    payload: bytes,
-):
-    from tests.runtime_telemetry_fixtures import (
-        mint_test_process_result_ref as mint_targeted_process_result_ref,
-    )
-
-    return mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key=work_unit_key,
-        owner_result_payload=payload,
-    ).artifact
 
 
 def _imports(tree: ast.AST) -> tuple[str, ...]:

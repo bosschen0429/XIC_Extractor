@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
@@ -12,6 +11,7 @@ from xic_extractor.execution.attempt import (
     derive_runtime_raw_open_metrics,
 )
 from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
     {
@@ -200,12 +200,12 @@ def _record_rss_unavailable(
 
 def record_raw_open_metrics(
     timing_recorder: TimingRecorder,
-    raw_session_capability: RawAcquisitionSessionCapability | None,
+    acquisition_source: AcquisitionSourceIdentity | None,
     raw_open_receipt: RawAcquisitionSessionReceipt | None,
     sample_stem: str,
 ) -> None:
     metrics = derive_runtime_raw_open_metrics(
-        raw_session_capability,
+        acquisition_source,
         () if raw_open_receipt is None else (raw_open_receipt,),
     )
     timing_recorder.observe(

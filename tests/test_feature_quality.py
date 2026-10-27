@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.matrix_identity_fixtures import current_matrix_identity_row
+from tests.matrix_review_fixtures import current_matrix_review_row
 from xic_extractor.output.alignment.matrix_output_contract import (
-    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    MATRIX_REVIEW_COLUMNS,
 )
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
@@ -25,11 +25,11 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
         )
         matrix.append({"Mz": f"{100 + index}.0000", "RT": "2.5", **sample_values})
         identities.append(
-            current_matrix_identity_row(
+            current_matrix_review_row(
                 index=index,
                 mz=str(100 + index),
                 rt="2.5",
-                peak_hypothesis_id=f"ph:{index}",
+                feature_id=f"F{index:06d}",
                 sample_values=sample_values,
             )
         )
@@ -50,11 +50,13 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     ]
     paths = (
         tmp_path / "matrix.tsv",
-        tmp_path / "identity.tsv",
+        tmp_path / "review.tsv",
         tmp_path / "samples.tsv",
     )
     write_tsv(paths[0], matrix, ("Mz", "RT", *samples))
-    write_tsv(paths[1], identities, ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
+    archive = {column: "" for column in MATRIX_REVIEW_COLUMNS}
+    archive["feature_id"] = "F000005"
+    write_tsv(paths[1], [archive, *reversed(identities)], MATRIX_REVIEW_COLUMNS)
     write_tsv(paths[2], metadata, SAMPLE_METADATA_COLUMNS)
     return paths
 
@@ -69,7 +71,7 @@ def _run(
             "scripts.run_feature_quality",
             "--matrix",
             str(paths[0]),
-            "--identity",
+            "--review",
             str(paths[1]),
             "--sample-metadata",
             str(paths[2]),
@@ -100,9 +102,9 @@ def test_cli_selects_original_rows_and_preserves_zero_and_sample_identity(tmp_pa
         source_header,
         source_rows,
     )
-    assert read_tsv_with_header(
-        output / "full_matrix_identity.tsv"
-    ) == read_tsv_with_header(paths[1])
+    assert read_tsv_with_header(output / "full_review.tsv") == read_tsv_with_header(
+        paths[1]
+    )
     _, quality = read_tsv_with_header(output / "feature_quality.tsv")
     assert [row["decision"] for row in quality] == ["keep", "drop", "keep", "drop"]
     assert [row["finite_count"] for row in quality] == ["2", "1", "3", "0"]
@@ -116,7 +118,7 @@ def test_cli_selects_original_rows_and_preserves_zero_and_sample_identity(tmp_pa
     ]
     _, features = read_tsv_with_header(output / "analysis_features.tsv")
     assert [row["source_matrix_row_index"] for row in features] == ["1", "3"]
-    assert [row["peak_hypothesis_id"] for row in features] == ["ph:1", "ph:3"]
+    assert [row["feature_id"] for row in features] == ["F000001", "F000003"]
     assert [row["analysis_row_index"] for row in features] == ["1", "2"]
     _, samples = read_tsv_with_header(output / "sample_metadata.tsv")
     assert [row["matrix_column"] for row in samples] == list(header[2:])
@@ -178,7 +180,7 @@ def _html_quality(paths, output, threshold):
             "quality",
             {
                 "matrix_path": str(paths[0]),
-                "identity_path": str(paths[1]),
+                "review_path": str(paths[1]),
                 "sample_metadata_path": str(paths[2]),
                 "output_dir": str(output),
                 "min_finite_fraction": threshold,

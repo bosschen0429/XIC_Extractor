@@ -44,9 +44,7 @@ def backfill_evidence_record_from_projection(
     _require_exact_fields(row, ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
     return BackfillEvidenceRecord(
         schema_version=_required_text(row, "schema_version"),
-        feature_family_id=_required_text(row, "feature_family_id"),
-        group_hypothesis_id=_optional_text(row, "group_hypothesis_id"),
-        public_family_id=_optional_text(row, "public_family_id"),
+        feature_id=_required_text(row, "feature_id"),
         sample_stem=_required_text(row, "sample_stem"),
         status=cast(CellStatus, _required_text(row, "status")),
         production_cell_status=cast(
@@ -90,7 +88,7 @@ def skipped_evidence_record_from_projection(
 ) -> SkippedEvidenceRecord:
     _require_exact_fields(row, SKIPPED_EVIDENCE_LEDGER_COLUMNS)
     return SkippedEvidenceRecord(
-        feature_family_id=_required_text(row, "feature_family_id"),
+        feature_id=_required_text(row, "feature_id"),
         sample_stem=_required_text(row, "sample_stem"),
         family_center_mz=_parse_required_float(row, "family_center_mz"),
         family_center_rt=_parse_required_float(row, "family_center_rt"),
@@ -124,9 +122,7 @@ def backfill_evidence_record_to_projection(
 ) -> dict[str, str]:
     return {
         "schema_version": record.schema_version,
-        "feature_family_id": record.feature_family_id,
-        "group_hypothesis_id": record.group_hypothesis_id,
-        "public_family_id": record.public_family_id,
+        "feature_id": record.feature_id,
         "sample_stem": record.sample_stem,
         "status": record.status,
         "production_cell_status": record.production_cell_status,
@@ -165,7 +161,7 @@ def skipped_evidence_record_to_projection(
     record: SkippedEvidenceRecord,
 ) -> dict[str, str]:
     return {
-        "feature_family_id": record.feature_family_id,
+        "feature_id": record.feature_id,
         "sample_stem": record.sample_stem,
         "family_center_mz": _float_text(record.family_center_mz),
         "family_center_rt": _float_text(record.family_center_rt),

@@ -9,10 +9,10 @@ from scripts.compare_alignment_workbooks import compare_alignment_workbooks
 def test_compare_alignment_workbooks_compares_matrix_only(tmp_path: Path) -> None:
     left = tmp_path / "left.xlsx"
     right = tmp_path / "right.xlsx"
-    _workbook(left, matrix_rows=(("feature_family_id", "S1"), ("FAM001", 10.0)))
+    _workbook(left, matrix_rows=(("feature_id", "S1"), ("FAM001", 10.0)))
     _workbook(
         right,
-        matrix_rows=(("feature_family_id", "S1"), ("FAM001", 10.0)),
+        matrix_rows=(("feature_id", "S1"), ("FAM001", 10.0)),
         review_value="different review text",
     )
 
@@ -25,8 +25,8 @@ def test_compare_alignment_workbooks_compares_matrix_only(tmp_path: Path) -> Non
 def test_compare_alignment_workbooks_reports_matrix_difference(tmp_path: Path) -> None:
     left = tmp_path / "left.xlsx"
     right = tmp_path / "right.xlsx"
-    _workbook(left, matrix_rows=(("feature_family_id", "S1"), ("FAM001", 10.0)))
-    _workbook(right, matrix_rows=(("feature_family_id", "S1"), ("FAM001", 12.0)))
+    _workbook(left, matrix_rows=(("feature_id", "S1"), ("FAM001", 10.0)))
+    _workbook(right, matrix_rows=(("feature_id", "S1"), ("FAM001", 12.0)))
 
     result = compare_alignment_workbooks(left, right)
 
@@ -42,8 +42,8 @@ def test_compare_alignment_workbooks_cli_writes_artifacts_on_failure(
     right = tmp_path / "right.xlsx"
     output_tsv = tmp_path / "compare.tsv"
     output_report = tmp_path / "compare.txt"
-    _workbook(left, matrix_rows=(("feature_family_id", "S1"), ("FAM001", 10.0)))
-    _workbook(right, matrix_rows=(("feature_family_id", "S1"), ("FAM001", 12.0)))
+    _workbook(left, matrix_rows=(("feature_id", "S1"), ("FAM001", 10.0)))
+    _workbook(right, matrix_rows=(("feature_id", "S1"), ("FAM001", 12.0)))
 
     code = compare_cli.main(
         [

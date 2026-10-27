@@ -68,8 +68,8 @@ classify each row pair as complementary split, distinct peaks sharing a
 Backfill, or duplicate view.
 **Topic group**: `duplicate_quantification.py` + package-owned
 `xic_extractor.diagnostics.duplicate_quantification`
-**Status**: diagnostic_only. Reads `alignment_matrix_identity.tsv`,
-the compact `alignment_backfill_cell_evidence.tsv` (or `alignment_cells.tsv`
+**Status**: diagnostic_only. Reads the Matrix projection of
+`alignment_review.tsv`, the compact `alignment_backfill_cell_evidence.tsv` (or `alignment_cells.tsv`
 for `validation`/`debug`) and `cid_nl_explanation.sqlite` from a
 `validation-minimal` or richer output. Does not open RAW or change Matrix values;
 a screening count, not chemical identity.
@@ -120,8 +120,7 @@ compact summary or exact candidate details without reading RAW.
 **Owner**: [CID-NL execution explanations](../../docs/product/xic-inspector.md#cid-nl-execution-explanations).
 **Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
 **Output**: Readable text or JSON; `--compact-to` writes compact review from an
-existing full report; `--index-query-to` copies an older compact review with an
-current query/sample/attention index; `--curve-bundle` acquires only explicitly selected windows
+existing full report; `--curve-bundle` acquires only explicitly selected windows
 for Inspector. [Retention and curve export](../../docs/product/xic-inspector.md#lightweight-alignment-review).
 **Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
@@ -134,21 +133,6 @@ default runs.
 CLI reports and audits over alignment outputs (cells, families, owner
 decisions, RT calibration, matrix identity).
 
-### `row_completion_confidence.py`
-
-**Purpose**: Build the daily artifact-lane row-completion confidence packet from
-existing alignment health and matrix artifacts.
-**Topic group**: `row_completion_confidence.py` + package-owned
-`xic_extractor.diagnostics.row_completion_confidence`
-**Originating spec/plan**:
-`docs/product/quant-matrix.md`; retired row-completion confidence benchmark
-design provenance `retired-provenance:6f1e25e036cf`
-**Status**: diagnostic_only. Builds manifest-bound row-completion confidence
-outputs from existing alignment health and matrix artifacts. Does not open RAW,
-recompute evidence, run mature tools, alter matrix authority, or change
-selected values/counting.
-
----
 
 ### `targeted_gt_alignment_audit.py`
 
@@ -181,8 +165,8 @@ families.
 **Topic group**: `alignment_health_packet.py` (single-file)
 **Status note**: Writes `alignment_health_summary.json`,
 `alignment_health_summary.tsv`, and `alignment_health_family_sentinels.tsv`.
-It reads `alignment_review.tsv`, `alignment_matrix.tsv`,
-`alignment_matrix_identity.tsv`, optional `alignment_backfill_cell_evidence.tsv`
+It reads `alignment_review.tsv` (including its Matrix projection),
+`alignment_matrix.tsv`, optional `alignment_backfill_cell_evidence.tsv`
 or `alignment_cells.tsv`, and optional `alignment_owner_backfill_seed_audit.tsv`.
 It is `diagnostic_only`: it does not read RAW, recompute evidence, change
 selected peaks/areas/counting, alter matrix identity, or grant product
@@ -285,23 +269,6 @@ remains unavailable.
 
 ---
 
-### `dna_dr_product_ready_fast_mode_expected_diff.py`
-
-**Purpose**: Compare explicit fast-mode candidate outputs against an exact
-`dna_dr_product_ready` output and write an expected-diff packet.
-**Topic group**: `scripts.run_alignment` fast-mode backend candidates,
-`validate_ms1_scan_index_xic.py`
-**Status note**: Writes
-`dna_dr_product_ready_fast_mode_expected_diff.json/tsv` with public artifact
-hash parity, matrix/key coverage, selected cell/status/numeric drift,
-matrix-identity drift, timing deltas, and optional MS1-index audit summaries.
-It can classify a candidate as `fast_mode_candidate` only when the candidate is
-explicitly supplied and the packet supports that decision; otherwise results
-remain `diagnostic_only_do_not_wire_to_default`. This tool never mutates exact
-outputs and cannot promote an approximate backend into the default preset by
-itself.
-
----
 
 ### `backfill_peakhypothesis_transfer_readiness.py`
 
@@ -349,7 +316,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 **Topic group**: `targeted_istd_benchmark.py` + `_loaders`, `_matching`, `_models`, `_stats`, `_summary`, `_writers` (7 files; largest group)
 **Originating spec**: `retired-provenance:53a763b9ec7a`
 **Recent doc**: `retired-provenance:5162156a9766`
-**Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices with `alignment_matrix_identity.tsv` provenance; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
+**Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices bound through the `matrix_row_index` projection of `alignment_review.tsv`; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
 
 ---
 

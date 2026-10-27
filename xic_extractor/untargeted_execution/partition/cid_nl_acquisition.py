@@ -1,7 +1,7 @@
 """Current Discovery-to-assessment adapter for one Untargeted CID-NL subject.
 
 Discovery candidates are receipts.  This adapter reacquires their exact MS1 and
-MS2 observations from one owner-bound RAW handle, then closes the existing
+MS2 observations from one source-bound RAW handle, then closes the existing
 CellObservationRef assessment input without fabricating Targeted identity or
 Matrix authority.
 """
@@ -35,10 +35,6 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionRef,
-    mint_untargeted_cid_nl_projection_ref,
-)
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
@@ -53,7 +49,6 @@ from xic_extractor.discovery.strict_seed_receipts import (
     read_parent_ms1_observations,
     resolve_discovery_scan_events,
 )
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
@@ -111,7 +106,6 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
-    canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import (
@@ -155,7 +149,6 @@ class CidNlAcquisitionResult:
     captures: tuple[capture_owner.SampleLocalCapture, ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
-    lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
@@ -168,7 +161,6 @@ class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessmentRef
     backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch
-    lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
     group_hypothesis_id: str | None = None
     query_rt: float | None = None
@@ -182,7 +174,7 @@ class UntargetedCidNlBackfillAttemptResult:
 class UntargetedCidNlSampleTraceBatch:
     """One sample-local XIC batch keyed by exact Discovery candidate identity."""
 
-    sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     candidate_ids: tuple[str, ...]
     acquisition: TraceAcquisitionBatch
@@ -191,10 +183,7 @@ class UntargetedCidNlSampleTraceBatch:
     elution_contexts: tuple[SampleElutionContext, ...] = ()
 
     def __post_init__(self) -> None:
-        if (
-            not self.sample_identity_id.strip()
-            or not self.acquisition_source_id.strip()
-        ):
+        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
             raise CidNlAcquisitionError("sample trace batch requires owner identities")
         if type(self.candidate_ids) is not tuple or not self.candidate_ids:
             raise CidNlAcquisitionError(
@@ -317,7 +306,7 @@ class UntargetedCidNlBackfillTarget:
 class UntargetedCidNlBackfillTraceBatch:
     """One sample-local backfill phase with exact group-to-trace attribution."""
 
-    sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     targets: tuple[UntargetedCidNlBackfillTarget, ...]
     requests: tuple[XICRequest, ...]
@@ -331,10 +320,7 @@ class UntargetedCidNlBackfillTraceBatch:
         return tuple(target.group_hypothesis_id for target in self.targets)
 
     def __post_init__(self) -> None:
-        if (
-            not self.sample_identity_id.strip()
-            or not self.acquisition_source_id.strip()
-        ):
+        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
             raise CidNlAcquisitionError(
                 "backfill trace batch requires owner identities"
             )
@@ -413,21 +399,17 @@ class UntargetedCidNlBackfillTraceBatch:
         )
 
 
-class _PartitionWorkObserver:
-    """Retain already-minted facts so runtime failure can quarantine them."""
+class _PartitionAcquisitionObserver:
+    """Retain actual acquisitions for runtime accounting, including failures."""
 
     __slots__ = (
-        "_artifacts",
-        "_processing_owners",
         "initial_acquisition",
         "backfill_acquisition",
     )
 
-    def __init__(self, processing_owners: ProcessingOwnerReferences) -> None:
-        self._processing_owners = processing_owners
+    def __init__(self) -> None:
         self.initial_acquisition: TraceAcquisitionBatch | None = None
         self.backfill_acquisition: TraceAcquisitionBatch | None = None
-        self._artifacts: dict[str, EvidenceArtifactRef] = {}
 
     @property
     def acquisition(self) -> TraceAcquisitionBatch | None:
@@ -445,34 +427,6 @@ class _PartitionWorkObserver:
             self.backfill_acquisition = acquisition
         else:
             self.initial_acquisition = acquisition
-
-    def record_artifact(self, artifact: EvidenceArtifactRef) -> None:
-        attempt = self._processing_owners.attempt
-        if (
-            artifact.producer_processing_request_id != attempt.processing_request_id
-            or artifact.producer_processing_attempt_id != attempt.processing_attempt_id
-        ):
-            raise CidNlAcquisitionError(
-                "observer artifact must bind the current processing attempt"
-            )
-        existing = self._artifacts.get(artifact.evidence_artifact_id)
-        if existing is not None and existing != artifact:
-            raise CidNlAcquisitionError("observer artifact identity was rebound")
-        self._artifacts[artifact.evidence_artifact_id] = artifact
-
-    def artifact_closure(self) -> tuple[EvidenceArtifactRef, ...]:
-        return canonical_current_attempt_artifact_closure(
-            producer_attempt=self._processing_owners.attempt,
-            artifacts=tuple(self._artifacts.values()),
-        )
-
-    def observed_artifacts(self) -> tuple[EvidenceArtifactRef, ...]:
-        return tuple(
-            sorted(
-                self._artifacts.values(),
-                key=lambda artifact: artifact.evidence_artifact_id,
-            )
-        )
 
 
 def _sample_capture_requests(
@@ -626,7 +580,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         if context is not None:
             contexts.append(context)
     return UntargetedCidNlSampleTraceBatch(
-        sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
         candidate_ids=tuple(candidate.candidate_id for candidate in capture_candidates),
         acquisition=acquisition,
@@ -781,7 +735,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         acquire_untargeted_trace_batch(capability, tuple(unique), bound_raw)
     )
     return UntargetedCidNlBackfillTraceBatch(
-        sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
         targets=targets,
         requests=requests,
@@ -802,7 +756,7 @@ def adapt_current_discovery_sample_subject(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
-    _observer: _PartitionWorkObserver | None = None,
+    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
     signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
@@ -878,12 +832,6 @@ def adapt_current_discovery_sample_subject(
             technical_state="not_evaluated",
             technical_reason_code="no_search_eligible_discovery_input",
         )
-        if _observer is not None:
-            _observer.record_artifact(assessment.artifact)
-        lineage = canonical_current_attempt_artifact_closure(
-            producer_attempt=processing_owners.attempt,
-            artifacts=(assessment.artifact,),
-        )
         return CidNlAcquisitionResult(
             assessment_input=UntargetedCidNlAssessmentInput(
                 sample=sample,
@@ -898,7 +846,6 @@ def adapt_current_discovery_sample_subject(
             ),
             source_candidate_ids=tuple(item.candidate_id for item in bounded),
             strict_scan_count=0,
-            lineage_artifacts=lineage,
         )
     if raw is None:
         raise CidNlAcquisitionError(
@@ -952,17 +899,13 @@ def adapt_current_discovery_sample_subject(
         _observer=_observer,
         _preacquired_traces=_preacquired_traces,
     )
-    if _observer is not None:
-        for observation in observations:
-            _observer.record_artifact(observation.artifact)
     evidence_refs: list[CidNlEvidenceRef] = []
-    projections: list[UntargetedCidNlProjectionRef] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     candidate_universe = tuple(
         sorted(
             observations,
-            key=lambda item: item.content.peak_observation_content_id,
+            key=lambda item: item.content.measured_order_key,
         )
     )
     verified_seeds = read_parent_ms1_observations(
@@ -997,17 +940,7 @@ def adapt_current_discovery_sample_subject(
                 else None
             ),
         )
-        projection = mint_untargeted_cid_nl_projection_ref(
-            processing_owners=processing_owners,
-            sample=sample,
-            canonical_evidence=evidence,
-            discovery_seed=seed,
-        )
         evidence_refs.append(evidence)
-        projections.append(projection)
-        if _observer is not None:
-            _observer.record_artifact(evidence.artifact)
-            _observer.record_artifact(projection.artifact)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(
             processing_owners=processing_owners,
             sample=sample,
@@ -1017,12 +950,6 @@ def adapt_current_discovery_sample_subject(
         )
         individual_refs.extend(resolved_support)
         set_refs.extend(resolved_sets)
-        if _observer is not None:
-            resolved_relations: tuple[
-                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
-            ] = (*resolved_support, *resolved_sets)
-            for ref in resolved_relations:
-                _observer.record_artifact(ref.artifact)
 
     assessment = _mint_assessment(
         processing_owners=processing_owners,
@@ -1036,24 +963,10 @@ def adapt_current_discovery_sample_subject(
         individual_support_refs=tuple(individual_refs),
         set_relation_refs=tuple(set_refs),
     )
-    if _observer is not None:
-        _observer.record_artifact(assessment.artifact)
-    lineage = canonical_current_attempt_artifact_closure(
-        producer_attempt=processing_owners.attempt,
-        artifacts=(
-            *(observation.artifact for observation in candidate_universe),
-            *(evidence.artifact for evidence in evidence_refs),
-            *(projection.artifact for projection in projections),
-            *(support.artifact for support in individual_refs),
-            *(relation.artifact for relation in set_refs),
-            assessment.artifact,
-        ),
-    )
     return CidNlAcquisitionResult(
         assessment_input=UntargetedCidNlAssessmentInput(
             sample=sample,
             assessment=assessment,
-            discovery_projections=tuple(projections),
         ),
         acquisition=acquisition,
         captures=captures,
@@ -1072,7 +985,6 @@ def adapt_current_discovery_sample_subject(
                 ).supports_nl
             }
         ),
-        lineage_artifacts=lineage,
         capture_evidence=tuple(capture_evidence),
     )
 
@@ -1095,7 +1007,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     initial_assessment: CidNlMethodAssessmentRef | None = None,
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile,
-    _observer: _PartitionWorkObserver | None = None,
+    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
 ) -> UntargetedCidNlBackfillAttemptResult:
     """Evaluate one owner-authorized bounded physical candidate universe.
@@ -1224,7 +1136,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 "preacquired backfill requires exact group identity"
             )
         if (
-            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            _preacquired_traces.sample_key != sample.identity.sample_key
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -1280,13 +1192,9 @@ def backfill_untargeted_cid_nl_sample_subject(
         if physical_evaluations[0].reason != "incomplete_peak_context":
             break
     observations = (observation,) if observation is not None else ()
-    if _observer is not None:
-        for observation in observations:
-            _observer.record_artifact(observation.artifact)
     backfill_evidence: tuple[CidNlEvidenceRef, ...] = ()
     backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
     backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
-    scanned_count = 0
     if initial_assessment is not None and observations:
         backfill_evidence = tuple(
             ref
@@ -1300,13 +1208,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             candidate_peaks=observations,
             policy=support_policy,
         )
-        scanned_count = len({ref.observation.scan_number for ref in backfill_evidence})
-        if _observer is not None:
-            backfill_relations: tuple[
-                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
-            ] = (*backfill_support, *backfill_sets)
-            for ref in backfill_relations:
-                _observer.record_artifact(ref.artifact)
     elif method_subject.composition is not None:
         if raw is None or settings is None:
             raise CidNlAcquisitionError(
@@ -1328,7 +1229,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 "backfill composition mismatches the method subject"
             )
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
-        backfill_evidence, backfill_support, backfill_sets, scanned_count = (
+        backfill_evidence, backfill_support, backfill_sets = (
             _composite_backfill_evidence(
                 processing_owners=processing_owners,
                 sample=sample,
@@ -1341,13 +1242,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 support_policy=support_policy,
             )
         )
-        if _observer is not None:
-            for artifact in (
-                *(ref.artifact for ref in backfill_evidence),
-                *(ref.artifact for ref in backfill_support),
-                *(ref.artifact for ref in backfill_sets),
-            ):
-                _observer.record_artifact(artifact)
     try:
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -1373,7 +1267,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 support_policy=support_policy,
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=scanned_count,
                 reason_code=None,
                 evidence_scope=(
                     initial_assessment.content.evaluation_receipt.evidence_scope
@@ -1389,18 +1282,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
     except CidNlMethodAssessmentContractError as exc:
         raise CidNlAcquisitionError(str(exc)) from exc
-    if _observer is not None:
-        _observer.record_artifact(assessment.artifact)
-    lineage = canonical_current_attempt_artifact_closure(
-        producer_attempt=processing_owners.attempt,
-        artifacts=(
-            *(observation.artifact for observation in observations),
-            *(ref.artifact for ref in backfill_evidence),
-            *(ref.artifact for ref in backfill_support),
-            *(ref.artifact for ref in backfill_sets),
-            assessment.artifact,
-        ),
-    )
     backfill_input = (
         UntargetedCidNlBackfillInput(
             sample=sample,
@@ -1413,14 +1294,12 @@ def backfill_untargeted_cid_nl_sample_subject(
         assessment=assessment,
         backfill_input=backfill_input,
         acquisition=acquisition,
-        lineage_artifacts=lineage,
         group_hypothesis_id=group_hypothesis_id,
         query_rt=float(query_rt),
         query_rt_basis=query_rt_basis,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
-                canonical_sample_identity_id=sample.identity.sample_identity_id,
-                processing_request_id=processing_owners.request.processing_request_id,
+                sample_key=sample.identity.sample_key,
                 processing_attempt_id=processing_owners.attempt.processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
@@ -1449,7 +1328,6 @@ def _composite_backfill_evidence(
     tuple[CidNlEvidenceRef, ...],
     tuple[DdaCidNlPeakSupportRef, ...],
     tuple[DdaCidNlCandidateSetRelationRef, ...],
-    int,
 ]:
     """Evaluate the configured loss set on the backfilled physical universe."""
     evidence_refs: list[CidNlEvidenceRef] = []
@@ -1514,7 +1392,6 @@ def _composite_backfill_evidence(
         tuple(evidence_refs),
         tuple(individual_refs),
         tuple(set_refs),
-        len(scan_numbers),
     )
 
 
@@ -1530,7 +1407,7 @@ def _reacquire_peak_observations(
     search_scope: UntargetedSearchScope,
     method_subject: CidNlMethodSubject | None = None,
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
-    _observer: _PartitionWorkObserver | None = None,
+    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
     TraceAcquisitionBatch | None,
@@ -1557,7 +1434,7 @@ def _reacquire_peak_observations(
         acquired_traces = tuple(acquisition.traces[index] for index in indices)
     else:
         if (
-            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            _preacquired_traces.sample_key != sample.identity.sample_key
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -1622,8 +1499,7 @@ def _reacquire_peak_observations(
             )
         captures.append(capture)
         retained = RetainedCaptureEvidence(
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
-            processing_request_id=processing_owners.request.processing_request_id,
+            sample_key=sample.identity.sample_key,
             processing_attempt_id=processing_owners.attempt.processing_attempt_id,
             method_subject_id=binding.method_subject_id,
             candidate_id=candidate.candidate_id,
@@ -1768,11 +1644,6 @@ def _mint_assessment(
                 support_policy=support_policy,
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
-                scanned_event_count=(
-                    len({ref.observation.scan_number for ref in evidence_refs})
-                    if search_completed
-                    else 0
-                ),
                 reason_code=technical_reason_code,
                 evidence_scope="declared_scans",
             ),
@@ -1865,8 +1736,7 @@ def _untargeted_search_scope(
                 CaptureCandidateBinding(
                     candidate_id=item.candidate_id,
                     method_subject_id=method_subject.method_subject_id,
-                    sample_identity_id=sample.identity.sample_identity_id,
-                    sample_name=sample.metadata.sample_name,
+                    sample_key=sample.identity.sample_key,
                     acquisition_source_id=acquisition_source_id,
                     query_mz=item.physical_mz,
                     query_rt_min=item.ms1_search_rt_min,

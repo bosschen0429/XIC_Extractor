@@ -145,7 +145,7 @@ def _cells_by_sample_in_review_range(
 ) -> dict[str, tuple[dict[str, str], ...]]:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for cell in cell_rows:
-        review_row = review_index.get(cell.get("feature_family_id", ""))
+        review_row = review_index.get(cell.get("feature_id", ""))
         if review_row is None:
             continue
         enriched_cell = dict(cell)

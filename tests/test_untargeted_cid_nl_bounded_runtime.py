@@ -826,7 +826,10 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     )
     worksets = cid_nl_alignment_subject_worksets(subjects)
     assert tuple(len(workset) for workset in worksets) == (2, 2)
-    assert tuple(subject for workset in worksets for subject in workset) != subjects
+    interleaved_subjects = tuple(
+        subject for pair in zip(*worksets, strict=True) for subject in pair
+    )
+    assert cid_nl_alignment_subject_worksets(interleaved_subjects) == worksets
     memberships = tuple(
         (f"candidate-{index}", subject.method_subject_id)
         for index, subject in enumerate(subjects)
@@ -1060,10 +1063,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             eager.application_result
         )
         assert {
-            assessment.artifact.evidence_artifact_id: assessment
-            for assessment in result.method_assessments
+            assessment.content: assessment for assessment in result.method_assessments
         } == {
-            assessment.artifact.evidence_artifact_id: assessment
+            assessment.content: assessment
             for assessment in eager.method_assessments
             if assessment.content.method_subject.method_subject_id
             in eligible_subject_ids
@@ -1208,7 +1210,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     actual = bounded.application_result
     expected = eager.application_result
     assert actual.candidate_ids == expected.candidate_ids
-    assert actual.physical_observation_ids == expected.physical_observation_ids
+    assert actual.physical_peak_keys == expected.physical_peak_keys
     assert tuple(actual.excluded_candidates) == expected.excluded_candidates
     owners = plan.context.processing_owners
     assert actual.processing_request is owners.request
@@ -1232,9 +1234,10 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
                 child.canonical_samples, expected.canonical_samples, strict=True
             )
         )
-    assert sorted(
-        item.artifact.evidence_artifact_id for item in bounded.method_assessments
-    ) == sorted(item.artifact.evidence_artifact_id for item in eager.method_assessments)
+    assert len(bounded.method_assessments) == len(eager.method_assessments)
+    assert {item.content for item in bounded.method_assessments} == {
+        item.content for item in eager.method_assessments
+    }
     _assert_explanation_parity(tmp_path, plan, config, eager, bounded)
     partition_stages = [
         (event["stage"], event["completed"])
@@ -1454,8 +1457,8 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert completed.application_result.candidate_ids == (
         baseline.application_result.candidate_ids
     )
-    assert completed.application_result.physical_observation_ids == (
-        baseline.application_result.physical_observation_ids
+    assert completed.application_result.physical_peak_keys == (
+        baseline.application_result.physical_peak_keys
     )
     completed_samples = tuple(
         sample.metadata for sample in completed.application_result.canonical_samples
@@ -1593,8 +1596,8 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert overlapped.application_result.candidate_ids == (
         serial.application_result.candidate_ids
     )
-    assert overlapped.application_result.physical_observation_ids == (
-        serial.application_result.physical_observation_ids
+    assert overlapped.application_result.physical_peak_keys == (
+        serial.application_result.physical_peak_keys
     )
 
 
@@ -1854,12 +1857,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         )
 
         expected_initial_sample_ids = {
-            sample.identity.sample_identity_id
+            sample.identity.sample_key
             for sample in plan.context.samples
             if plan.context.candidates_by_sample[sample.metadata.raw_stem]
         }
         assert {
-            job.sample.identity.sample_identity_id for job in batch.jobs
+            job.sample.identity.sample_key for job in batch.jobs
         } == expected_initial_sample_ids
         assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
@@ -2133,11 +2136,11 @@ def test_sample_worker_transport_references_global_request_owners(
             on_completed=lambda _done, _total, _job, result: transported.append(result),
         )
     assert all(pid != os.getpid() for pid, _job in transported)
-    expected = {job.sample.identity.sample_identity_id: job for job in batch.jobs}
+    expected = {job.sample.identity.sample_key: job for job in batch.jobs}
     assert len(expected) == 2
     assert len(transported) == len(batch.jobs)
     for _pid, job in transported:
-        original = expected[job.sample.identity.sample_identity_id]
+        original = expected[job.sample.identity.sample_key]
         assert job.processing_owners is original.processing_owners
         assert job._request_subjects is original._request_subjects
         assert job.sample == original.sample
@@ -2243,17 +2246,17 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     assert serial.succeeded and process.succeeded
     serial_results = tuple(
         (
-            result.job.sample.identity.sample_identity_id,
+            result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
-            result.result_ref,
+            tuple(ref.content for ref in result.effective_assessments),
         )
         for result in serial.sample_results
     )
     process_results = tuple(
         (
-            result.job.sample.identity.sample_identity_id,
+            result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
-            result.result_ref,
+            tuple(ref.content for ref in result.effective_assessments),
         )
         for result in process.sample_results
     )
@@ -2321,9 +2324,9 @@ def test_sparse_partition_materializes_only_samples_with_request_candidates(
     assert len(batch.sample_job_templates) == len(plan.context.samples)
     assert batch.jobs
     assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {job.sample.identity.sample_identity_id for job in batch.jobs}
+    initial_sample_ids = {job.sample.identity.sample_key for job in batch.jobs}
     assert len(initial_sample_ids) >= 2
-    missing_sample_id = plan.context.samples[-1].identity.sample_identity_id
+    missing_sample_id = plan.context.samples[-1].identity.sample_key
     assert missing_sample_id not in initial_sample_ids
 
 
@@ -2575,10 +2578,9 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         == child_scope.capture_bindings
     )
     assert child_after.scientific_core.cell_observations == child_observations
-    assert (
-        child_after.completed_projection.decisions[0].basis_bytes
-        == child_decision.basis_bytes
-    )
+    restored_decision = child_after.completed_projection.decisions[0]
+    assert restored_decision.payload == child_decision.payload
+    assert restored_decision.selected_integration == child_decision.selected_integration
     assert child_after.completed_projection.decisions[0].value == child_decision.value
 
 
@@ -2676,8 +2678,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
     assert len(spools) == 1
     child_ids = tuple(
         tuple(
-            observation.cell_observation_id
-            for observation in child.scientific_core.cell_observations
+            observation.key for observation in child.scientific_core.cell_observations
         )
         for child in result.application_result.children
     )
@@ -2716,8 +2717,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     restored = open_preserved_results(index)
     recovered = tuple(
         tuple(
-            observation.cell_observation_id
-            for observation in child.scientific_core.cell_observations
+            observation.key for observation in child.scientific_core.cell_observations
         )
         for child in restored.sequence("children")
     )
@@ -2732,8 +2732,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     first = restored.read_selected(first_child_partition, "children", (0,))[0]
     assert (
         tuple(
-            observation.cell_observation_id
-            for observation in first.scientific_core.cell_observations
+            observation.key for observation in first.scientific_core.cell_observations
         )
         == child_ids[0]
     )

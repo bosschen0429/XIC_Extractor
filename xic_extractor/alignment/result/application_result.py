@@ -22,6 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
@@ -51,7 +52,7 @@ class UntargetedCandidateExclusion:
 
     candidate_id: str
     method_subject_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     discovery_candidate_state: DiscoveryCandidateState
     reason_code: Literal[
         "discovery_candidate_not_search_eligible",
@@ -205,13 +206,13 @@ class FinalizedUntargetBatchApplicationResult:
         )
 
     @property
-    def physical_observation_ids(self) -> tuple[str, ...]:
+    def physical_peak_keys(self) -> tuple[str, ...]:
         return tuple(
-            physical_id
+            content.physical_peak_key
             for child in self.children
             for group in child.scientific_core.final_population
             for member in group.member_subjects
-            for physical_id in member.physical_observation_ids
+            for content in member.physical_peaks
         )
 
     @property
@@ -305,10 +306,7 @@ def _require_batch_population(
         request.processing_request, samples=request.scope.samples
     )
     for item in request.excluded_candidates:
-        if (
-            candidate_samples.get(item.candidate_id)
-            != item.canonical_sample_identity_id
-        ):
+        if candidate_samples.get(item.candidate_id) != item.sample_key:
             raise ApplicationResultContractError(
                 "Untarget batch exclusion crossed candidate, subject, or sample"
             )
@@ -324,9 +322,8 @@ def _require_batch_population(
         if candidate not in excluded_ids
     }
     actual_subjects: Counter[str] = Counter()
-    seen_rows: set[str] = set()
     seen_groups: set[str] = set()
-    seen_physical: set[str] = set()
+    seen_physical: set[PeakObservationContent] = set()
     sample_ids = set(_sample_ids(request.scope.samples))
     for child in request.children:
         core = child.scientific_core
@@ -343,28 +340,20 @@ def _require_batch_population(
             raise ApplicationResultContractError(
                 "Untarget batch child crossed its processing attempt"
             )
-        if core.processing_request.processing_request_id != (
-            request.processing_request.processing_request_id
-        ):
-            raise ApplicationResultContractError(
-                "Untarget batch child crossed its processing request"
-            )
         if set(_sample_ids(core.canonical_samples)) != sample_ids:
             raise ApplicationResultContractError(
                 "Untarget batch children must share one sample universe"
             )
         for row in child.completed_projection.rows:
-            row_id = row.row_key.untarget_row_key_id
-            group_id = row.row_key.group.group_hypothesis_id
-            if row_id in seen_rows or group_id in seen_groups:
+            group_id = row.group.group_hypothesis_id
+            if group_id in seen_groups:
                 raise ApplicationResultContractError(
                     "Untarget batch row identity conflicts across children"
                 )
-            seen_rows.add(row_id)
             seen_groups.add(group_id)
         for group in core.final_population:
             for member in group.member_subjects:
-                physical_ids = set(member.physical_observation_ids)
+                physical_ids = set(member.physical_peaks)
                 if seen_physical.intersection(physical_ids):
                     raise ApplicationResultContractError(
                         "Untarget batch children share a physical observation"
@@ -384,8 +373,7 @@ def _sample_ids(
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> tuple[str, ...]:
     return tuple(
-        sample.identity.sample_identity_id
-        for sample in sorted(samples, key=_sample_sort_key)
+        sample.identity.sample_key for sample in sorted(samples, key=_sample_sort_key)
     )
 
 
@@ -405,8 +393,7 @@ def _candidate_sample_ids_from_request(
             f"{exc}"
         ) from exc
     sample_id_by_stem = {
-        sample.metadata.raw_stem: sample.identity.sample_identity_id
-        for sample in samples
+        sample.metadata.raw_stem: sample.identity.sample_key for sample in samples
     }
     if feature_ids is not None:
         subject_batch = cid_nl_method_subject_batch_from_request(request)
@@ -418,7 +405,7 @@ def _candidate_sample_ids_from_request(
 
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
-    return sample.identity.sample_identity_id
+    return sample.identity.sample_key
 
 
 __all__ = (

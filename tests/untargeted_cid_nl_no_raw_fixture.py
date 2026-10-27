@@ -122,7 +122,7 @@ def build_untargeted_cid_nl_no_raw_fixture(
         resolve_canonical_sample_identity(sample_snapshot, sample_stem)
         for sample_stem in sample_roles
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     owners = compose_processing_owner_references(
         request=request,
         attempt=attempt,

@@ -47,7 +47,7 @@ class ObservedSearchSubject:
     """One owner-sealed capture with a selected scientific hypothesis."""
 
     candidate_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     trace_group_id: str
     hypothesis: PeakHypothesis
 
@@ -61,7 +61,7 @@ class SearchedNoObservationSubject:
     """One owner-sealed completed capture without a selected hypothesis."""
 
     candidate_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     trace_group_id: str
     detection_status: Literal["not_detected"]
 
@@ -140,10 +140,6 @@ class FinalizedScientificAlignment:
         )
 
     @property
-    def processing_request_id(self) -> str:
-        return self.processing_request.processing_request_id
-
-    @property
     def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
         return self.grouping_result.final_population
 
@@ -172,10 +168,6 @@ def finalize_scientific_alignment(
         raise FinalizedScientificAlignmentContractError(
             "finalization requires an exact CrossSample final receipt"
         )
-    if grouping_result.processing_request_id != scope.request.processing_request_id:
-        raise FinalizedScientificAlignmentContractError(
-            "CrossSample final receipt crossed the processing request"
-        )
     if isinstance(captures, (str, bytes)):
         raise FinalizedScientificAlignmentContractError(
             "captures must be a finite sequence of owner-sealed values"
@@ -191,8 +183,7 @@ def finalize_scientific_alignment(
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     samples = scope.samples
     if type(samples) is tuple and all(
-        samples[i].identity.sample_identity_id
-        <= samples[i + 1].identity.sample_identity_id
+        samples[i].identity.sample_key <= samples[i + 1].identity.sample_key
         for i in range(len(samples) - 1)
     ):
         canonical_samples = samples
@@ -200,7 +191,7 @@ def finalize_scientific_alignment(
         canonical_samples = tuple(
             sorted(
                 samples,
-                key=lambda sample: sample.identity.sample_identity_id,
+                key=lambda sample: sample.identity.sample_key,
             )
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
@@ -298,7 +289,7 @@ def _terminal_subject(
             )
         return SearchedNoObservationSubject(
             candidate_id=capture.candidate_id,
-            canonical_sample_identity_id=binding.sample_identity_id,
+            sample_key=binding.sample_key,
             trace_group_id=capture.trace_group.trace_group_id,
             detection_status="not_detected",
         )
@@ -308,7 +299,7 @@ def _terminal_subject(
         )
     return ObservedSearchSubject(
         candidate_id=capture.candidate_id,
-        canonical_sample_identity_id=binding.sample_identity_id,
+        sample_key=binding.sample_key,
         trace_group_id=capture.trace_group.trace_group_id,
         hypothesis=selected,
     )
@@ -320,15 +311,12 @@ def _require_terminal_population(
     """Require one attributed terminal for every capture in the owner scope."""
     expected = Counter(
         (
-            (binding.candidate_id, binding.sample_identity_id)
+            (binding.candidate_id, binding.sample_key)
             for binding in scope.capture_bindings
         )
     )
     actual = Counter(
-        (
-            (subject.candidate_id, subject.canonical_sample_identity_id)
-            for subject in terminal_subjects
-        )
+        ((subject.candidate_id, subject.sample_key) for subject in terminal_subjects)
     )
     if actual != expected:
         raise FinalizedScientificAlignmentContractError(
@@ -342,7 +330,7 @@ def _terminal_sort_key(subject: TerminalSearchObservation) -> tuple[str, str, st
             "terminal subject has an unsupported variant"
         )
     return (
-        subject.canonical_sample_identity_id,
+        subject.sample_key,
         subject.candidate_id,
         subject.variant,
     )

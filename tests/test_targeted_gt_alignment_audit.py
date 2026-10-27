@@ -485,7 +485,7 @@ def _write_alignment_run(
 
 def _review_row(feature_id: str, *, mz: float, rt: float) -> dict[str, object]:
     return {
-        "feature_family_id": feature_id,
+        "feature_id": feature_id,
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": mz,
         "family_center_rt": rt,
@@ -505,7 +505,7 @@ def _cell_row(
     mz: float = 242.1136,
 ) -> dict[str, object]:
     return {
-        "feature_family_id": feature_id,
+        "feature_id": feature_id,
         "sample_stem": sample,
         "status": status,
         "area": "1000",

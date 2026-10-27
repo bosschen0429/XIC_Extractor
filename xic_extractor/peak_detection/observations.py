@@ -2,29 +2,20 @@
 
 ``peak_detection`` owns the measured trace region and integration facts.  The
 reference keeps physical content equality separate from the exact generation
-context and producer attempt.  It grants no hypothesis, selection, or product
+context.  It grants no hypothesis, selection, or product
 authority.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
-import re
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, fields, replace
-from typing import Any, cast
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-)
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
 )
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
@@ -38,7 +29,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_TRACE_METHOD,
     gaussian15_positive_asls_residual_metrics,
 )
-from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -55,48 +45,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "ms1_peak_observation"
-ARTIFACT_SEMANTIC_ROLE = "canonical_ms1_peak_observation"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
-
-_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_CONTENT_PAYLOAD_FIELDS = frozenset(
-    {
-        "peak_observation_content_id",
-        "canonical_sample_identity_id",
-        "mz",
-        "rt",
-        "intensity",
-        "integration",
-    }
-)
-_INTEGRATION_PAYLOAD_FIELDS = frozenset(
-    field.name for field in fields(IntegrationResult) if field.name != "signal_quality"
-)
-_INTEGRATION_TEXT_FIELDS = frozenset(
-    {
-        "integration_method",
-        "area_uncertainty_formula_version",
-        "area_uncertainty_noise_source",
-        "baseline_type",
-        "ms1_morphology_area_source",
-        "ms1_morphology_trace_method",
-    }
-)
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.observations",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
-
 
 class PeakObservationContractError(ValueError):
     """Raised when physical content or generation provenance is inconsistent."""
@@ -106,24 +54,13 @@ class PeakObservationContractError(ValueError):
 class PeakObservationContent:
     """Exact sample-local selected MS1 signal and integration content."""
 
-    peak_observation_content_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     mz: float
     rt: tuple[float, ...]
     intensity: tuple[float, ...]
     integration: IntegrationResult
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.peak_observation_content_id,
-            prefix=_CONTENT_ID_PREFIX,
-            field="peak_observation_content_id",
-        )
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
         mz = _finite_float(self.mz, field="mz")
         if mz <= 0.0:
             raise PeakObservationContractError("mz must be positive")
@@ -149,175 +86,44 @@ class PeakObservationContent:
         object.__setattr__(self, "mz", mz)
         object.__setattr__(self, "rt", rt)
         object.__setattr__(self, "intensity", intensity)
-        expected_id = _content_id(
-            canonical_sample_identity_id=self.canonical_sample_identity_id,
-            mz=mz,
-            rt=rt,
-            intensity=intensity,
-            integration=self.integration,
-        )
-        if self.peak_observation_content_id != expected_id:
-            raise PeakObservationContractError(
-                "peak_observation_content_id mismatches physical content"
+
+    @property
+    def physical_identity(self) -> PeakObservationContent:
+        """This peak without advisory measurement quality, for in-process joins."""
+
+        if self.integration.signal_quality is None:
+            return self
+        return replace(self, integration=replace(self.integration, signal_quality=None))
+
+    @property
+    def physical_peak_key(self) -> str:
+        """Measured coordinates that locate this peak in a written report."""
+
+        return "|".join(
+            (
+                self.sample_key,
+                repr(self.mz),
+                repr(self.rt[0]),
+                repr(self.rt[-1]),
+                str(len(self.rt)),
+                repr(self.integration.rt_apex_min),
+                repr(self.integration.height_raw),
             )
+        )
 
+    @property
+    def measured_order_key(
+        self,
+    ) -> tuple[float, float, tuple[float, ...], tuple[float, ...]]:
+        """Total order over distinct selected signals from raw measured values."""
 
-@dataclass(frozen=True, slots=True)
-class _VerifiedPersistedPeakObservationClaims:
-    """Raw-signal claims that the persisted selected subtrace can prove."""
-
-    peak_observation_content_id: str
-    canonical_sample_identity_id: str
-    mz: float
-    raw_apex_rt_min: float
-    height_raw: float
-    area_raw_counts_seconds: float
-
-
-def verify_persisted_peak_observation_claims(
-    payload: object,
-) -> _VerifiedPersistedPeakObservationClaims:
-    """Verify only claims supported by retained selected RT/intensity samples."""
-
-    content = _exact_payload_mapping(
-        payload,
-        expected_fields=_CONTENT_PAYLOAD_FIELDS,
-        field="peak observation content",
-    )
-    integration_payload = _exact_payload_mapping(
-        content["integration"],
-        expected_fields=_INTEGRATION_PAYLOAD_FIELDS,
-        optional_fields=frozenset({"signal_quality"}),
-        field="peak observation integration",
-    )
-    for field_name in _INTEGRATION_TEXT_FIELDS:
-        if not isinstance(integration_payload[field_name], str):
-            raise PeakObservationContractError(
-                f"peak observation integration {field_name} must be text"
-            )
-    boundary_sources = _payload_json_array(
-        integration_payload["boundary_sources"],
-        field="peak observation integration boundary_sources",
-    )
-    if any(not isinstance(value, str) for value in boundary_sources):
-        raise PeakObservationContractError(
-            "peak observation integration boundary_sources must contain text"
-        )
-    raw_scan_indices = _payload_json_array(
-        integration_payload["raw_scan_indices"],
-        field="peak observation integration raw_scan_indices",
-    )
-    if any(
-        isinstance(value, bool) or not isinstance(value, int)
-        for value in raw_scan_indices
-    ):
-        raise PeakObservationContractError(
-            "peak observation integration raw_scan_indices must contain integers"
-        )
-    integration_values = dict(integration_payload)
-    integration_values["boundary_sources"] = boundary_sources
-    integration_values["raw_scan_indices"] = raw_scan_indices
-    integration_values["signal_quality"] = signal_quality_from_payload(
-        integration_payload.get("signal_quality")
-    )
-    try:
-        integration = IntegrationResult(**cast(dict[str, Any], integration_values))
-        content_id = _required_text(
-            content["peak_observation_content_id"],
-            field="peak_observation_content_id",
-        )
-        _validate_typed_digest_id(
-            content_id,
-            prefix=_CONTENT_ID_PREFIX,
-            field="peak_observation_content_id",
-        )
-        sample_id = _required_text(
-            content["canonical_sample_identity_id"],
-            field="canonical_sample_identity_id",
-        )
-        _validate_typed_digest_id(
-            sample_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
-        mz = _finite_float(content["mz"], field="mz")
-        if mz <= 0.0:
-            raise PeakObservationContractError("mz must be positive")
-        rt = _finite_float_tuple(
-            _payload_json_array(content["rt"], field="rt"),
-            field="rt",
-        )
-        intensity = _finite_float_tuple(
-            _payload_json_array(content["intensity"], field="intensity"),
-            field="intensity",
-        )
-        if not rt or len(rt) != len(intensity):
-            raise PeakObservationContractError(
-                "selected rt and intensity must be matching non-empty tuples"
-            )
-        if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
-            raise PeakObservationContractError(
-                "selected rt values must be strictly increasing"
-            )
-        if integration.raw_scan_indices != tuple(range(len(rt))):
-            raise PeakObservationContractError(
-                "content integration indices must address the selected subtrace"
-            )
-        _validate_integration(integration, selected_rt=rt)
-        expected_id = _content_id(
-            canonical_sample_identity_id=sample_id,
-            mz=mz,
-            rt=rt,
-            intensity=intensity,
-            integration=integration,
-        )
-        if content_id != expected_id:
-            raise PeakObservationContractError(
-                "peak_observation_content_id mismatches physical content"
-            )
-
-        raw_apex_index = int(np.argmax(np.asarray(intensity, dtype=float)))
-        raw_apex_rt_min = rt[raw_apex_index]
-        height_raw = intensity[raw_apex_index]
-        area_raw_counts_seconds = integrate_area_counts_seconds(
-            np.asarray(intensity, dtype=float),
-            np.asarray(rt, dtype=float),
-            0,
-            len(rt),
-        )
-        _require_close(
-            integration.raw_apex_rt_min,
-            raw_apex_rt_min,
-            field="raw_apex_rt_min",
-        )
-        _require_close(integration.height_raw, height_raw, field="height_raw")
-        _require_close(
-            integration.area_raw_counts_seconds,
-            area_raw_counts_seconds,
-            field="area_raw_counts_seconds",
-        )
-        return _VerifiedPersistedPeakObservationClaims(
-            peak_observation_content_id=content_id,
-            canonical_sample_identity_id=sample_id,
-            mz=mz,
-            raw_apex_rt_min=raw_apex_rt_min,
-            height_raw=height_raw,
-            area_raw_counts_seconds=area_raw_counts_seconds,
-        )
-    except PeakObservationContractError:
-        raise
-    except (TypeError, ValueError) as exc:
-        raise PeakObservationContractError(
-            "persisted peak observation content is malformed"
-        ) from exc
+        return (self.integration.rt_apex_min, self.mz, self.rt, self.intensity)
 
 
 @dataclass(frozen=True, slots=True)
 class PeakObservationGenerationProvenance:
     """Exact trace/query and peak-generation context for one observation ref."""
 
-    full_trace_sha256: str
-    selection_trace_sha256: str
     acquisition_source_id: str
     query_rt_min: float
     query_rt_max: float
@@ -328,16 +134,6 @@ class PeakObservationGenerationProvenance:
     proposal_sources: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _validate_sha256(self.full_trace_sha256, field="full_trace_sha256")
-        _validate_sha256(
-            self.selection_trace_sha256,
-            field="selection_trace_sha256",
-        )
-        _validate_typed_digest_id(
-            self.acquisition_source_id,
-            prefix=_ACQUISITION_SOURCE_ID_PREFIX,
-            field="acquisition_source_id",
-        )
         rt_min = _finite_float(self.query_rt_min, field="query_rt_min")
         rt_max = _finite_float(self.query_rt_max, field="query_rt_max")
         ppm_tol = _finite_float(self.query_ppm_tol, field="query_ppm_tol")
@@ -378,7 +174,6 @@ class PeakObservationRef:
 
     content: PeakObservationContent
     generation_provenance: PeakObservationGenerationProvenance
-    artifact: EvidenceArtifactRef
     source_trace: Trace = field(compare=False)
     physical_evaluation: PhysicalPeakEvaluation | None = field(
         default=None, compare=False
@@ -393,8 +188,7 @@ class PeakObservationRef:
 class RetainedCaptureEvidence:
     """Actual capture inputs and output, with no scientific decision authority."""
 
-    canonical_sample_identity_id: str
-    processing_request_id: str
+    sample_key: str
     processing_attempt_id: str
     method_subject_id: str
     candidate_id: str | None
@@ -435,7 +229,7 @@ def mint_peak_observation_ref(
     )
 
     content, generation_provenance = _peak_observation_values(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         trace=trace,
         integration=integration,
         selection_intensity=selection_intensity,
@@ -444,8 +238,7 @@ def mint_peak_observation_ref(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
     )
-    return _mint_peak_observation_artifact(
-        processing_owners=processing_owners,
+    return PeakObservationRef(
         content=content,
         generation_provenance=generation_provenance,
         source_trace=trace,
@@ -471,7 +264,7 @@ def mint_physical_peak_observations(
 
     Acquisition/physical decoding owns evaluation validity. This handoff checks
     the current sample, trace and profile once; candidate projections share their
-    full-trace provenance, but retain their own selected region and artifact.
+    query provenance, but retain their own selected region and artifact.
     Independently assembled integrations use ``mint_peak_observation_ref``.
     """
     if not evaluations:
@@ -486,7 +279,6 @@ def mint_physical_peak_observations(
         and np.array_equal(trace.intensity, retained.raw)
     ):
         raise PeakObservationContractError("physical observations cross retained trace")
-    selection_values = np.asarray(retained.positive_signal, dtype=float)
     provenance = acquired_trace_provenance
     if trace_observation is not None:
         if (
@@ -524,18 +316,16 @@ def mint_physical_peak_observations(
                 integration=integration,
             )
         content, provenance = _project_peak_observation_values(
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            sample_key=sample.identity.sample_key,
             trace=trace,
             integration=integration,
-            selection_values=selection_values,
             selected_indices=integration.raw_scan_indices,
             resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
             shared_trace_provenance=provenance,
         )
         observations.append(
-            _mint_peak_observation_artifact(
-                processing_owners=processing_owners,
+            PeakObservationRef(
                 content=content,
                 generation_provenance=provenance,
                 source_trace=trace,
@@ -573,41 +363,10 @@ def _validate_peak_observation_inputs(
         )
 
 
-def _mint_peak_observation_artifact(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    content: PeakObservationContent,
-    generation_provenance: PeakObservationGenerationProvenance,
-    source_trace: Trace,
-    physical_evaluation: PhysicalPeakEvaluation | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    capture_stage: str = "initial_capture",
-) -> PeakObservationRef:
-    payload_bytes = canonical_peak_observation_ref_bytes(
-        content,
-        generation_provenance,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=payload_bytes,
-    )
-    return PeakObservationRef(
-        content=content,
-        generation_provenance=generation_provenance,
-        artifact=artifact,
-        source_trace=source_trace,
-        physical_evaluation=physical_evaluation,
-        signal_processing_profile=signal_processing_profile,
-        capture_stage=capture_stage,
-    )
-
-
 def validate_peak_observation_trace_binding(
     reference: PeakObservationRef,
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
     selection_intensity: object | None = None,
@@ -623,7 +382,7 @@ def validate_peak_observation_trace_binding(
             "reference must be an owner-minted PeakObservationRef"
         )
     expected_content, expected_provenance = _peak_observation_values(
-        canonical_sample_identity_id=canonical_sample_identity_id,
+        sample_key=sample_key,
         trace=trace,
         integration=integration,
         selection_intensity=selection_intensity,
@@ -643,7 +402,7 @@ def validate_peak_observation_trace_binding(
 
 def _peak_observation_values(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
     selection_intensity: object | None,
@@ -674,10 +433,9 @@ def _peak_observation_values(
         signal_processing_profile=signal_processing_profile,
     )
     return _project_peak_observation_values(
-        canonical_sample_identity_id=canonical_sample_identity_id,
+        sample_key=sample_key,
         trace=trace,
         integration=integration,
-        selection_values=selection_values,
         selected_indices=selected_indices,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
@@ -686,10 +444,9 @@ def _peak_observation_values(
 
 def _project_peak_observation_values(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
-    selection_values: np.ndarray,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
@@ -710,7 +467,7 @@ def _project_peak_observation_values(
     )
     return (
         _owner_minted_peak_observation_content(
-            canonical_sample_identity_id=canonical_sample_identity_id,
+            sample_key=sample_key,
             mz=float(trace.mz),
             rt=selected_rt,
             intensity=selected_intensity,
@@ -725,7 +482,6 @@ def _project_peak_observation_values(
         if shared_trace_provenance is not None
         else prepare_peak_observation_provenance(
             trace=trace,
-            selection_values=selection_values,
             selected_indices=selected_indices,
             resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
@@ -736,17 +492,12 @@ def _project_peak_observation_values(
 def prepare_peak_observation_provenance(
     *,
     trace: Trace,
-    selection_values: np.ndarray,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
 ) -> PeakObservationGenerationProvenance:
-    """Serialize an acquired trace once, before projecting its observation set."""
+    """Retain query and selection context without hashing signal arrays."""
     return PeakObservationGenerationProvenance(
-        full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
-        selection_trace_sha256=hashlib.sha256(
-            _canonical_selection_trace_bytes(trace, selection_values)
-        ).hexdigest(),
         acquisition_source_id=trace.acquisition_source_id,
         query_rt_min=float(trace.rt_min),
         query_rt_max=float(trace.rt_max),
@@ -767,7 +518,7 @@ def prepare_peak_observation_provenance(
 
 def _owner_minted_peak_observation_content(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
@@ -778,19 +529,8 @@ def _owner_minted_peak_observation_content(
     content = object.__new__(PeakObservationContent)
     object.__setattr__(
         content,
-        "peak_observation_content_id",
-        _content_id(
-            canonical_sample_identity_id=canonical_sample_identity_id,
-            mz=mz,
-            rt=rt,
-            intensity=intensity,
-            integration=integration,
-        ),
-    )
-    object.__setattr__(
-        content,
-        "canonical_sample_identity_id",
-        canonical_sample_identity_id,
+        "sample_key",
+        sample_key,
     )
     object.__setattr__(content, "mz", mz)
     object.__setattr__(content, "rt", rt)
@@ -799,64 +539,20 @@ def _owner_minted_peak_observation_content(
     return content
 
 
-def canonical_peak_observation_ref_bytes(
-    content: PeakObservationContent,
-    generation_provenance: PeakObservationGenerationProvenance,
-) -> bytes:
-    """Return canonical bytes for the exact content/provenance envelope."""
-
-    if not isinstance(content, PeakObservationContent):
-        raise PeakObservationContractError(
-            "content must be owner-normalized peak observation content"
-        )
-    if not isinstance(
-        generation_provenance,
-        PeakObservationGenerationProvenance,
-    ):
-        raise PeakObservationContractError(
-            "generation_provenance must be owner-normalized"
-        )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": _content_payload(content),
-        "generation_provenance": asdict(generation_provenance),
-    }
-    return _canonical_json_bytes(payload)
-
-
 def validate_peak_observation_binding(
     reference: PeakObservationRef,
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> None:
-    """Reject processing-request, attempt, or canonical-sample substitution."""
+    """Check the sample and RAW source against the acquisition request."""
 
     if not isinstance(reference, PeakObservationRef):
         raise PeakObservationContractError(
             "reference must be an owner-minted PeakObservationRef"
         )
     acquisition_source = _request_acquisition_source(processing_owners, sample)
-    artifact = reference.artifact
-    if (
-        artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise PeakObservationContractError(
-            "peak observation references a different processing request"
-        )
-    if (
-        artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise PeakObservationContractError(
-            "peak observation references a different processing attempt"
-        )
-    if (
-        reference.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
-    ):
+    if reference.content.sample_key != sample.identity.sample_key:
         raise PeakObservationContractError(
             "peak observation references a different sample"
         )
@@ -867,136 +563,6 @@ def validate_peak_observation_binding(
         raise PeakObservationContractError(
             "peak observation references a different acquisition source"
         )
-
-
-def _finite_signal_values(values: np.ndarray, *, field: str) -> list[float]:
-    numeric = np.asarray(values, dtype=float)
-    if not np.isfinite(numeric).all():
-        raise PeakObservationContractError(f"{field} must be finite")
-    # Canonical JSON represents both signed zeros as 0.0.
-    return cast(list[float], np.where(numeric == 0.0, 0.0, numeric).tolist())
-
-
-def _canonical_trace_bytes(trace: Trace) -> bytes:
-    return _canonical_json_bytes(
-        {
-            "schema": "ms1_trace_generation_provenance",
-            "mz": _finite_float(float(trace.mz), field="trace.mz"),
-            "rt": _finite_signal_values(trace.rt, field="trace.rt"),
-            "intensity": _finite_signal_values(
-                trace.intensity, field="trace.intensity"
-            ),
-            "query_rt_min": _finite_float(float(trace.rt_min), field="trace.rt_min"),
-            "query_rt_max": _finite_float(float(trace.rt_max), field="trace.rt_max"),
-            "query_ppm_tol": _finite_float(float(trace.ppm_tol), field="trace.ppm_tol"),
-            "trace_source": trace.source,
-            "acquisition_source_id": trace.acquisition_source_id,
-        }
-    )
-
-
-def _canonical_selection_trace_bytes(
-    trace: Trace,
-    selection_intensity: np.ndarray,
-) -> bytes:
-    return _canonical_json_bytes(
-        {
-            "schema": "ms1_peak_selection_trace",
-            "rt": _finite_signal_values(trace.rt, field="selection.rt"),
-            "intensity": _finite_signal_values(
-                selection_intensity, field="selection.intensity"
-            ),
-        }
-    )
-
-
-def _content_id(
-    *,
-    canonical_sample_identity_id: str,
-    mz: float,
-    rt: tuple[float, ...],
-    intensity: tuple[float, ...],
-    integration: IntegrationResult,
-) -> str:
-    return _typed_digest(
-        _CONTENT_ID_PREFIX,
-        _physical_content_basis(
-            canonical_sample_identity_id=canonical_sample_identity_id,
-            mz=mz,
-            rt=rt,
-            intensity=intensity,
-            integration=integration,
-        ),
-    )
-
-
-def _physical_content_basis(
-    *,
-    canonical_sample_identity_id: str,
-    mz: float,
-    rt: tuple[float, ...],
-    intensity: tuple[float, ...],
-    integration: IntegrationResult,
-) -> dict[str, object]:
-    # Measurement quality is advisory, not part of physical peak identity.
-    integration_basis = asdict(integration)
-    integration_basis.pop("signal_quality")
-    return {
-        "schema": "ms1_peak_observation_content",
-        "canonical_sample_identity_id": canonical_sample_identity_id,
-        "mz": mz,
-        "rt": list(rt),
-        "intensity": list(intensity),
-        "integration": integration_basis,
-    }
-
-
-def _content_payload(content: PeakObservationContent) -> dict[str, object]:
-    return {
-        "peak_observation_content_id": content.peak_observation_content_id,
-        "canonical_sample_identity_id": content.canonical_sample_identity_id,
-        "mz": content.mz,
-        "rt": list(content.rt),
-        "intensity": list(content.intensity),
-        "integration": {
-            key: value
-            for key, value in asdict(content.integration).items()
-            if key != "signal_quality" or value is not None
-        },
-    }
-
-
-def _exact_payload_mapping(
-    value: object,
-    *,
-    expected_fields: frozenset[str],
-    field: str,
-    optional_fields: frozenset[str] = frozenset(),
-) -> dict[str, object]:
-    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
-        raise PeakObservationContractError(f"{field} must be a JSON object")
-    normalized = dict(value)
-    actual_fields = frozenset(normalized)
-    expected_fields = expected_fields | (actual_fields & optional_fields)
-    if actual_fields != expected_fields:
-        missing = ", ".join(sorted(expected_fields - actual_fields))
-        unexpected = ", ".join(sorted(actual_fields - expected_fields))
-        detail = "; ".join(
-            item
-            for item in (
-                f"missing fields: {missing}" if missing else "",
-                f"unexpected fields: {unexpected}" if unexpected else "",
-            )
-            if item
-        )
-        raise PeakObservationContractError(f"{field} fields changed: {detail}")
-    return normalized
-
-
-def _payload_json_array(value: object, *, field: str) -> tuple[object, ...]:
-    if not isinstance(value, list):
-        raise PeakObservationContractError(f"{field} must be a JSON array")
-    return tuple(value)
 
 
 def _validate_integration(
@@ -1026,7 +592,6 @@ def _validate_integration(
         raise PeakObservationContractError(
             "integration rt_width_min mismatches its RT bounds"
         )
-    _canonical_json_bytes(asdict(integration))
 
 
 def _validate_trace_region_binding(
@@ -1176,16 +741,12 @@ def physical_peak_observation_integration(
         raise PeakObservationContractError(
             "physical observation requires available facts"
         )
-    segment = next(
-        segment
-        for segment in evaluation.segment_universe.segments
-        if segment.physical_segment_id == facts.physical_segment_id
-    )
+    segment = evaluation.answer.selected_segment
+    assert segment is not None
     return replace(
         integration,
         height_smoothed=facts.height,
         raw_scan_indices=tuple(range(segment.start_index, segment.end_index)),
-        boundary_sources=(*integration.boundary_sources, facts.physical_segment_id),
     )
 
 
@@ -1205,11 +766,9 @@ def _validate_physical_integration_facts(
         trace.rt,
         trace.intensity,
         profile=profile,
-        trace_content_id=physical_evaluation.prepared.trace_content_id,
     )
     actual = evaluate_physical_peak(
         prepared,
-        selection_subject_id=physical_evaluation.question.selection_subject_id,
         query_rt_min=physical_evaluation.question.query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
@@ -1439,26 +998,6 @@ def _finite_float(value: object, *, field: str) -> float:
     return 0.0 if normalized == 0.0 else normalized
 
 
-def _typed_digest(prefix: str, basis: dict[str, object]) -> str:
-    return f"{prefix}{hashlib.sha256(_canonical_json_bytes(basis)).hexdigest()}"
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    try:
-        serialized = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise PeakObservationContractError(
-            "peak observation payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
-
-
 def _required_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise PeakObservationContractError(
@@ -1467,19 +1006,12 @@ def _required_text(value: object, *, field: str) -> str:
     return value
 
 
-def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise PeakObservationContractError(
-            f"{field} must be a lower-case SHA-256 digest"
-        )
-    return value
+def index_physical_peaks(
+    peaks: Iterable[PeakObservationRef],
+) -> dict[PeakObservationContent, PeakObservationRef]:
+    """Index peaks by physical identity; a later ref of one peak replaces it."""
 
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise PeakObservationContractError(f"{field} must use the {prefix!r} prefix")
-    _validate_sha256(value[len(prefix) :], field=field)
-    return value
+    return {peak.content.physical_identity: peak for peak in peaks}
 
 
 def same_selected_peak(left: PeakObservationRef, right: PeakObservationRef) -> bool:
@@ -1496,16 +1028,13 @@ def same_selected_peak(left: PeakObservationRef, right: PeakObservationRef) -> b
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "PeakObservationContent",
     "PeakObservationContractError",
     "PeakObservationGenerationProvenance",
     "PeakObservationRef",
-    "SCHEMA_VERSION",
-    "canonical_peak_observation_ref_bytes",
+    "index_physical_peaks",
     "mint_peak_observation_ref",
     "same_selected_peak",
     "validate_peak_observation_binding",
     "validate_peak_observation_trace_binding",
-    "verify_persisted_peak_observation_claims",
 ]

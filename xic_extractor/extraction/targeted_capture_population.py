@@ -141,8 +141,7 @@ class TargetedCapturePopulation:
         """Bind each selected observation to its assessment-universe hypothesis."""
 
         assessment_by_sample = {
-            sample.identity.sample_identity_id: assessment
-            for sample, assessment in assessments
+            sample.identity.sample_key: assessment for sample, assessment in assessments
         }
         bound_entries = []
         for entry in self.entries:
@@ -157,9 +156,7 @@ class TargetedCapturePopulation:
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
                 processing_owners=self.processing_owners,
                 sample=entry.sample,
-                assessment=assessment_by_sample[
-                    entry.sample.identity.sample_identity_id
-                ],
+                assessment=assessment_by_sample[entry.sample.identity.sample_key],
             )
             matches = tuple(
                 hypothesis
@@ -189,9 +186,7 @@ class TargetedCapturePopulation:
 
         replacements: dict[str, CaptureCandidateBinding] = {}
         for entry in self.entries:
-            recovery = recovery_observations.get(
-                entry.sample.identity.sample_identity_id
-            )
+            recovery = recovery_observations.get(entry.sample.identity.sample_key)
             if (
                 entry.candidate_id is None
                 or recovery is None
@@ -224,9 +219,7 @@ class TargetedCapturePopulation:
             capture_bindings=bindings,
             declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         )
-        sample_by_id = {
-            sample.identity.sample_identity_id: sample for sample in self.samples
-        }
+        sample_by_id = {sample.identity.sample_key: sample for sample in self.samples}
         rebound_entries = []
         for entry in self.entries:
             if entry.captured is None:
@@ -243,14 +236,14 @@ class TargetedCapturePopulation:
             observation = entry.selected_observation
             hypothesis = entry.owner_hypothesis
             if binding is not None:
-                recovery = recovery_observations[binding.sample_identity_id]
+                recovery = recovery_observations[binding.sample_key]
                 result = replace(
                     result, physical_evaluation=recovery.physical_evaluation
                 )
                 observation = recovery
                 hypothesis = compose_ms1_observation_peak_hypothesis(
                     processing_owners=self.processing_owners,
-                    sample=sample_by_id[binding.sample_identity_id],
+                    sample=sample_by_id[binding.sample_key],
                     peak_observation=observation,
                 )
             if observation is not None and hypothesis is not None:
@@ -352,13 +345,13 @@ def build_targeted_capture_population(
         target=target,
     )
     candidate_by_sample = {
-        sample.identity.sample_identity_id: (result, candidate_id)
+        sample.identity.sample_key: (result, candidate_id)
         for sample, result, candidate_id in candidates
     }
     entries = []
     for sample, file_result in results_by_sample:
         result = file_result.results[label]
-        candidate = candidate_by_sample.get(sample.identity.sample_identity_id)
+        candidate = candidate_by_sample.get(sample.identity.sample_key)
         if candidate is None:
             if ms1_only:
                 raise RuntimeError(
@@ -506,8 +499,8 @@ def targeted_capture_candidate_id(
     return ":".join(
         (
             "targeted-capture",
-            target.definition.target_definition_id,
-            sample.identity.sample_identity_id,
+            target.lookup_label,
+            sample.identity.sample_key,
         )
     )
 
@@ -567,8 +560,7 @@ def _capture_binding(
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
         method_subject_id=method_subject_id,
-        sample_identity_id=sample.identity.sample_identity_id,
-        sample_name=sample.metadata.sample_name,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
         query_mz=trace.mz,
         query_rt_min=trace.rt_min,

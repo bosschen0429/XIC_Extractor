@@ -1,4 +1,6 @@
 import csv
+import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -27,14 +29,26 @@ from xic_extractor.peak_detection.elution_context import (
     project_elution_context,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
+    FileContentFingerprint,
     build_acquisition_source_identity,
-    canonical_identity_basis_bytes,
-    typed_identity_digest,
+    fingerprint_file_content,
 )
+
+
+def physical_facts_fingerprint_beside(candidates_csv: Path) -> FileContentFingerprint:
+    """Fingerprint the sample's physical-facts sidecar, or empty bytes if absent."""
+
+    path = candidates_csv.with_name("discovery_physical_facts.json")
+    if path.exists():
+        return fingerprint_file_content(path)
+    return FileContentFingerprint(
+        content_sha256=hashlib.sha256(b"").hexdigest(), byte_size=0
+    )
 
 
 def resolved_elution_context(
@@ -53,8 +67,8 @@ def resolved_elution_context(
     )
     assert context is not None
     assert tuple(p.apex_rt for p in context.landmarks) == tuple(sorted(apices))
-    assert len({p.physical_segment_id for p in context.landmarks}) == len(peaks)
-    assert all(p.physical_segment_id is not None for p in context.landmarks)
+    assert len({p.physical_segment for p in context.landmarks}) == len(peaks)
+    assert all(p.physical_segment is not None for p in context.landmarks)
     return context
 
 
@@ -120,6 +134,7 @@ def _owner_closed_receipt_fields(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
         candidate_csv=candidates_csv,
+        physical_facts=physical_facts_fingerprint_beside(candidates_csv),
         candidates=candidates,
     )
     return {
@@ -155,7 +170,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "discovery_candidate_state": "ms1_feature_nl_supported",
         "ms1_feature_row_id": f"{sample_stem}|DNA_dR|500|8.5",
         "candidate_id": candidate_id(sample_stem),
-        "feature_family_id": f"{sample_stem}@F0001",
+        "feature_id": f"{sample_stem}@F0001",
         "feature_family_size": "1",
         "precursor_mz": "500.0",
         "product_mz": "384.0",
@@ -299,9 +314,6 @@ def owner_edge_evidence() -> OwnerEdgeEvidence:
     )
 
 
-_TEST_PROCESSING_REQUEST_ID = "xic.processing-request:" + "0" * 64
-
-
 def _integration(apex_rt: float) -> IntegrationResult:
     return IntegrationResult(
         rt_left_min=apex_rt - 0.05,
@@ -346,23 +358,15 @@ def _owner(
         evidence_score=evidence_score,
         seed_event_count=seed_event_count,
     )
-    physical_id = typed_identity_digest(
-        "xic.peak-observation-content:",
-        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
+    physical_peak = PeakObservationContent(
+        sample_key=f"test-sample:{sample_stem}",
+        mz=precursor_mz,
+        rt=(apex_rt - 0.05, apex_rt, apex_rt + 0.05),
+        # The suffix separates distinct owners that share one apex in a sample.
+        intensity=(1.0 + sum(map(ord, suffix)) / 1000.0, 100.0, 1.0),
+        integration=replace(_integration(apex_rt), raw_scan_indices=(0, 1, 2)),
     )
-    hypothesis_id = typed_identity_digest(
-        "xic.peak-hypothesis:",
-        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
-    )
-    member_basis = canonical_identity_basis_bytes(
-        {
-            "schema_version": "group_member_subject",
-            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
-            "canonical_sample_identity_id": f"test-sample:{sample_stem}",
-            "subject": {"kind": "peak_hypothesis", "id": hypothesis_id},
-            "physical_observation_ids": [physical_id],
-        }
-    )
+    hypothesis_id = f"{sample_stem}|hypothesis|{suffix}"
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
         sample_stem=sample_stem,
@@ -379,15 +383,10 @@ def _owner(
         assignment_reason="owner_exact_apex_match",
         selected_integration=_integration(apex_rt),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
-            member_subject_id=typed_identity_digest(
-                "xic.group-member-subject:", member_basis
-            ),
-            processing_request_id=_TEST_PROCESSING_REQUEST_ID,
-            canonical_sample_identity_id=f"test-sample:{sample_stem}",
+            sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
-            physical_observation_ids=(physical_id,),
-            basis_bytes=member_basis,
+            physical_peaks=(physical_peak,),
         ),
         is_provisional=is_provisional,
     )

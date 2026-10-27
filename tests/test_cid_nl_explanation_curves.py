@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 import tempfile
 import zlib
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationReportWriter,
@@ -19,6 +20,7 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_cid_nl_explanation,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def test_cid_nl_evidence_locator_immutability() -> None:
@@ -26,12 +28,10 @@ def test_cid_nl_evidence_locator_immutability() -> None:
         report_path=Path("out/cid_nl_explanation.sqlite"),
         matrix_path=Path("out/alignment_matrix.tsv"),
         matrix_sha256="abcd" * 16,
-        processing_request_id="req-01",
         processing_attempt_id="att-01",
         schema_version="alignment_explanation",
     )
     assert locator.schema_version == "alignment_explanation"
-    assert locator.processing_request_id == "req-01"
     with pytest.raises(AttributeError):
         locator.schema_version = "unknown"  # type: ignore
 
@@ -40,15 +40,13 @@ def test_curve_payload_write_and_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.sqlite"
         with ExplanationReportWriter(db_path) as writer:
-            writer.add_candidate(
-                "C1", "S1", {"candidate_id": "C1", "canonical_sample_identity_id": "S1"}
-            )
+            writer.add_candidate("C1", "S1", {"candidate_id": "C1", "sample_key": "S1"})
             curve_envelope = {
                 "schema_version": "curve_payload",
                 "kind": "initial_capture",
                 "sample_id": "S1",
                 "candidate_id": "C1",
-                "peak_observation_content_id": "obs-01",
+                "physical_peak_key": "obs-01",
                 "trace_coordinate": {
                     "mz": 450.1234,
                     "rt_min": 1.0,
@@ -62,34 +60,34 @@ def test_curve_payload_write_and_read() -> None:
                     "smoothed": None,
                     "positive": None,
                 },
-                "integration": {
-                    "apex_rt_min": 1.5,
-                    "raw_apex_rt_min": 1.5,
-                    "rt_left_min": 1.1,
-                    "rt_right_min": 1.9,
-                    "height_raw": 5000.0,
-                    "area_raw_counts_seconds": 12000.0,
-                    "area_profile_selected": None,
-                    "integration_method": "raw_trapezoid",
-                    "boundary_source": "candidate_interval",
-                },
-                "provenance": {"profile_id": None, "trace_content_id": None},
+                "integration": asdict(
+                    IntegrationResult(
+                        rt_left_min=1.1,
+                        rt_apex_min=1.5,
+                        rt_right_min=1.9,
+                        raw_apex_rt_min=1.5,
+                        rt_width_min=0.7999999999999998,
+                        height_raw=5000.0,
+                        height_smoothed=5000.0,
+                        area_raw_counts_seconds=12000.0,
+                    )
+                ),
+                "provenance": _curve_provenance(),
             }
             writer.add_curve_payload(
-                payload_id="S1:initial_capture:C1",
                 sample_id="S1",
                 kind="initial_capture",
                 record_id="C1",
                 payload=curve_envelope,
             )
             final_path = writer.finalize(
-                {
-                    "processing_request_id": "req-1",
-                    "processing_attempt_id": "att-1",
-                    "samples": [
-                        {"sample_stem": "s1", "canonical_sample_identity_id": "S1"}
-                    ],
-                }
+                _summary_fixture(
+                    {
+                        "processing_attempt_id": "att-1",
+                        "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
+                    },
+                    review_only=writer.review_only,
+                )
             )
 
         summary = read_cid_nl_explanation(final_path)
@@ -109,7 +107,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
             # Undeclared kind
             with pytest.raises(ExplanationError, match="undeclared curve kind"):
                 writer.add_curve_payload(
-                    payload_id="p1",
                     sample_id="S1",
                     kind="fraudulent_curve_kind",
                     record_id="C1",
@@ -119,7 +116,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
             # Undeclared key
             with pytest.raises(ExplanationError, match="undeclared curve payload keys"):
                 writer.add_curve_payload(
-                    payload_id="p1",
                     sample_id="S1",
                     kind="initial_capture",
                     record_id="C1",
@@ -146,13 +142,9 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         for terminal in child.scientific_core.terminal_subjects:
             hypothesis = getattr(terminal, "hypothesis", None)
             if hypothesis is not None:
-                expected[
-                    (terminal.candidate_id, terminal.canonical_sample_identity_id)
-                ] = [
+                expected[(terminal.candidate_id, terminal.sample_key)] = [
                     {
-                        "peak_observation_content_id": (
-                            ref.content.peak_observation_content_id
-                        ),
+                        "physical_peak_key": (ref.content.physical_peak_key),
                         "rt_apex_min": ref.content.integration.rt_apex_min,
                     }
                     for ref in hypothesis.peak_observation_refs
@@ -170,9 +162,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     completed.close()
     with sqlite3.connect(report) as connection:
         actual = {
-            (record["candidate_id"], record["canonical_sample_identity_id"]): record[
-                "observations"
-            ]
+            (record["candidate_id"], record["sample_key"]): record["observations"]
             for (raw,) in connection.execute(
                 "SELECT payload FROM records WHERE kind='terminal_subjects'"
             )
@@ -181,13 +171,28 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     assert actual == expected
 
 
+def _curve_provenance():
+    return {
+        "profile_version": None,
+        "acquisition_source_id": None,
+        "processing_attempt_id": None,
+        "selected_trace_indices": None,
+        "resolver_mode": None,
+        "proposal_sources": None,
+        "method_subject_id": None,
+        "profile": None,
+        "physical_state": None,
+        "physical_reason": None,
+    }
+
+
 def _bound_curve_payload():
     return {
         "schema_version": "curve_payload",
         "kind": "initial_capture",
         "sample_id": "S1",
         "candidate_id": "C1",
-        "peak_observation_content_id": "obs-1",
+        "physical_peak_key": "obs-1",
         "trace_coordinate": {"mz": 500.0, "rt_min": 1.0, "rt_max": 2.0, "ppm_tol": 7.0},
         "curves": {
             "rt": [1.0, 1.5, 2.0],
@@ -197,11 +202,11 @@ def _bound_curve_payload():
             "positive": None,
         },
         "integration": None,
-        "provenance": {"profile_id": None, "trace_content_id": None},
+        "provenance": _curve_provenance(),
     }
 
 
-def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_payload(
+def test_curve_rowid_preserves_exact_payload_across_reopen(
     tmp_path,
 ):
     payload = _bound_curve_payload()
@@ -212,17 +217,18 @@ def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_pa
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    expected_payload_id = "xic.inspector-curve:" + hashlib.sha256(canonical).hexdigest()
+    expected_payload_id = 1
 
     with ExplanationReportWriter(tmp_path / "automatic-id.sqlite") as writer:
         payload_id = writer.add_curve_payload(
-            payload_id=None,
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-1",
             payload=payload,
         )
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
 
     assert payload_id == expected_payload_id
     with sqlite3.connect(report) as connection:
@@ -243,27 +249,27 @@ def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_pa
     ]
 
 
-def test_shared_curve_is_reused_and_conflicting_same_identity_rejected(tmp_path):
+def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
     payload = _bound_curve_payload()
     with ExplanationReportWriter(tmp_path / "dedup.sqlite") as writer:
-        binding = dict(
-            payload_id="p1", sample_id="S1", kind="initial_capture", record_id="obs-1"
-        )
+        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
         writer.add_curve_payload(**binding, payload=payload)
         writer._flush_curve_payloads()
         writer.add_curve_payload(**binding, payload=deepcopy(payload))
         changed = deepcopy(payload)
         changed["curves"]["raw"][1] = 8.0
-        with pytest.raises(ExplanationError, match="conflict"):
-            writer.add_curve_payload(**binding, payload=changed)
-        report = writer.finalize({"samples": []})
+        distinct = writer.add_curve_payload(**binding, payload=changed)
+        assert distinct == 2
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
     with sqlite3.connect(report) as connection:
         assert (
-            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 1
+            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 2
         )
     assert read_cid_nl_curves(report, record_ids=["obs-1"])[0] == {
         **payload,
-        "payload_id": "p1",
+        "payload_id": 1,
     }
 
 
@@ -285,17 +291,18 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
     payload = _bound_curve_payload()
     with ExplanationReportWriter(tmp_path / "corrupt.sqlite") as writer:
         writer.add_curve_payload(
-            payload_id="p1",
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-1",
             payload=payload,
         )
-        report = writer.finalize({"samples": []})
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
     if corruption == "sample":
         payload["sample_id"] = "S2"
     elif corruption == "record":
-        payload["peak_observation_content_id"] = "other-observation"
+        payload["physical_peak_key"] = "other-observation"
     elif corruption == "nested_field":
         payload["curves"]["invented_smoothed"] = [0.0, 1.0, 0.0]
     elif corruption == "length":
@@ -317,7 +324,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
 
 def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path):
     payload = _bound_curve_payload()
-    payload["peak_observation_content_id"] = None
+    payload["physical_peak_key"] = None
     payload["integration"] = None
     payload["curves"] = {
         "rt": [],
@@ -329,20 +336,70 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
     payload["provenance"]["physical_state"] = "unavailable"
     with ExplanationReportWriter(tmp_path / "empty.sqlite") as writer:
         writer.add_curve_payload(
-            payload_id="empty",
             sample_id="S1",
             kind="initial_capture",
             record_id=payload["candidate_id"],
             payload=payload,
         )
-        invented = {**payload, "peak_observation_content_id": "obs-1"}
+        invented = {**payload, "physical_peak_key": "obs-1"}
         with pytest.raises(ExplanationError, match="empty acquisition"):
             writer.add_curve_payload(
-                payload_id="invalid",
                 sample_id="S1",
                 kind="initial_capture",
                 record_id="obs-1",
                 payload=invented,
             )
-        report = writer.finalize({"samples": []})
-    assert read_cid_nl_curves(report) == [{**payload, "payload_id": "empty"}]
+        report = writer.finalize(
+            _summary_fixture({"samples": []}, review_only=writer.review_only)
+        )
+    assert read_cid_nl_curves(report) == [{**payload, "payload_id": 1}]
+
+
+@pytest.mark.parametrize("section", ["provenance", "integration", "signal_quality"])
+@pytest.mark.parametrize("change", ["missing", "extra"])
+def test_curve_reader_requires_complete_nested_fields(tmp_path, section, change):
+    from dataclasses import asdict
+
+    from xic_extractor.peak_detection.integration_result import IntegrationResult
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    payload = _bound_curve_payload()
+    payload["integration"] = asdict(
+        IntegrationResult(
+            rt_left_min=1.0,
+            rt_apex_min=1.5,
+            rt_right_min=2.0,
+            raw_apex_rt_min=1.5,
+            rt_width_min=1.0,
+            height_raw=9.0,
+            height_smoothed=9.0,
+            area_raw_counts_seconds=270.0,
+            signal_quality=SignalQuality(
+                status="available",
+                noise_sigma=1.0,
+                signal_to_noise=9.0,
+                low_signal_to_noise=True,
+            ),
+        )
+    )
+    with ExplanationReportWriter(tmp_path / "nested.sqlite") as writer:
+        writer.add_curve_payload(
+            sample_id="S1", kind="initial_capture", record_id="obs-1", payload=payload
+        )
+        report = writer.finalize(_summary_fixture({"samples": []}, review_only=False))
+    nested = (
+        payload["integration"]["signal_quality"]
+        if section == "signal_quality"
+        else payload[section]
+    )
+    if change == "missing":
+        nested.pop(next(iter(nested)))
+    else:
+        nested["unexpected"] = None
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "UPDATE curve_payloads SET payload=?",
+            (zlib.compress(json.dumps(payload).encode()),),
+        )
+    with pytest.raises(ExplanationError, match="rerun"):
+        read_cid_nl_curves(report, record_ids=["obs-1"])

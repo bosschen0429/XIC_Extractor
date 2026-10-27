@@ -268,13 +268,8 @@ def test_extraction_result_reports_ms1_morphology_area_when_available() -> None:
 
 def test_selected_physical_shoulder_adds_review_without_changing_values() -> None:
     evaluation = _physical_evaluation()
-    selected_id = evaluation.answer.physical_segment_id
-    assert selected_id is not None
-    selected = next(
-        segment
-        for segment in evaluation.segment_universe.segments
-        if segment.physical_segment_id == selected_id
-    )
+    selected = evaluation.answer.selected_segment
+    assert selected is not None
     shoulder = replace(
         selected,
         segment_class="shoulder_candidate",
@@ -283,6 +278,7 @@ def test_selected_physical_shoulder_adds_review_without_changing_values() -> Non
     )
     evaluation = replace(
         evaluation,
+        answer=replace(evaluation.answer, selected_segment=shoulder),
         segment_universe=replace(
             evaluation.segment_universe,
             segments=(shoulder,),
@@ -310,16 +306,10 @@ def test_selected_physical_shoulder_adds_review_without_changing_values() -> Non
 
 def test_unselected_physical_shoulder_does_not_flag_clean_projection() -> None:
     evaluation = _physical_evaluation()
-    selected_id = evaluation.answer.physical_segment_id
-    assert selected_id is not None
-    selected = next(
-        segment
-        for segment in evaluation.segment_universe.segments
-        if segment.physical_segment_id == selected_id
-    )
+    selected = evaluation.answer.selected_segment
+    assert selected is not None
     unselected_shoulder = replace(
         selected,
-        physical_segment_id="physical-segment:unselected-shoulder",
         segment_class="shoulder_candidate",
         boundary_stop_reason="shoulder_overlap",
         evidence_sources=(*selected.evidence_sources, "shoulder_overlap"),
@@ -1141,7 +1131,6 @@ def _physical_evaluation() -> PhysicalPeakEvaluation:
     )
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="Analyte",
         query_rt_min=8.5,
         request_context_rt_start_min=8.0,
         request_context_rt_end_min=9.0,

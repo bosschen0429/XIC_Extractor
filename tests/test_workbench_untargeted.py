@@ -448,10 +448,9 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
         encoding="utf-8",
     )
     matrix = output / "alignment_matrix.tsv"
-    identity = output / "alignment_matrix_identity.tsv"
     review = output / "alignment_review.tsv"
     evidence = output / "cid_nl_explanation.sqlite"
-    for path in (matrix, identity, review, evidence):
+    for path in (matrix, review, evidence):
         path.write_text("x", encoding="utf-8")
     locator = SimpleNamespace(report_path=evidence)
     captured = {}
@@ -461,7 +460,6 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
         return SimpleNamespace(
             review_tsv=review,
             matrix_tsv=matrix,
-            matrix_identity_tsv=identity,
             cells_tsv=None,
             run_metadata_json=None,
             evidence=locator,
@@ -480,7 +478,6 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     assert summary["published_paths"] == [
         str(review),
         str(matrix),
-        str(identity),
         str(evidence),
     ]
 
@@ -518,7 +515,6 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
         lambda request, context=None, **_kwargs: SimpleNamespace(
             review_tsv=None,
             matrix_tsv=None,
-            matrix_identity_tsv=None,
             cells_tsv=None,
             run_metadata_json=None,
             evidence=None,

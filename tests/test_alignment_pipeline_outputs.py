@@ -1,3 +1,4 @@
+import csv
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -8,20 +9,19 @@ import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_modul
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.output.alignment import artifact_write_receipts as receipts_module
-from xic_extractor.output.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-    AlignmentArtifactFingerprintReceipt,
+from xic_extractor.alignment.backfill.peak_fact_provenance import (
+    BackfillPeakFactProvenanceBatch,
+    run_profile_row,
 )
+from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    deserialize_signal_processing_profile,
+)
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
-)
-from xic_extractor.processing_identity import (
-    FileContentFingerprint,
-    fingerprint_file_content,
 )
 
 
@@ -38,13 +38,11 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
 
     assert metadata["schema_version"] == "alignment-results"
-    assert metadata["targeted_istd_anchor_identity"] == ""
-    assert metadata["targeted_istd_target_snapshot_id"] == ""
     assert (
         metadata["cross_sample_peak_group_policy"]
         == "cross_sample_peak_group_hypothesis"
     )
-    assert metadata["public_family_id_policy"] == "fam_compatibility_id"
+    assert metadata["feature_id_policy"] == "report_scoped_measured_member_order"
     assert (
         metadata["group_delivery_policy"] == "owner_group_delivery_successor_projection"
     )
@@ -64,14 +62,11 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     assert metadata["output_scope"] == "full-audit"
     assert metadata["selected_family_source"] == ""
     assert metadata["scope_warning"] == ""
-    assert metadata["signal_processing_profile_schema_version"] == (
-        "signal_processing_profile"
-    )
-    assert metadata["signal_processing_profile_id"].startswith("signal-profile:")
-    assert len(metadata["signal_processing_profile_hash"]) == 64
-    assert metadata["signal_processing_method"] == "gaussian"
-    assert metadata["signal_processing_window_points"] == "9"
-    assert metadata["physical_signal_formula"] == (
+    profile = json.loads(metadata["signal_processing_profile_json"])
+    assert profile["schema_version"] == "signal_processing_profile"
+    assert profile["method"] == "gaussian"
+    assert profile["window_points"] == 9
+    assert profile["physical_signal_formula"] == (
         "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
@@ -79,39 +74,6 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
     assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
-
-
-def test_alignment_metadata_keeps_targeted_istd_fields_in_current_shape() -> None:
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
-        output_level="validation",
-        peak_config=_peak_config(),
-        targeted_istd_anchor_identity="anchor-id",
-        targeted_istd_target_snapshot_id="snapshot-id",
-    )
-
-    assert metadata["schema_version"] == "alignment-results"
-    assert metadata["targeted_istd_anchor_identity"] == "anchor-id"
-    assert metadata["targeted_istd_target_snapshot_id"] == "snapshot-id"
-
-
-def test_alignment_metadata_rejects_partial_targeted_istd_binding() -> None:
-    with pytest.raises(
-        ValueError,
-        match="anchor identity and target snapshot id must be provided together",
-    ):
-        alignment_metadata(
-            discovery_batch_index=Path("batch.csv"),
-            raw_dir=Path("raw"),
-            dll_dir=Path("dll"),
-            owner_backfill_xic_backend="raw",
-            output_level="validation",
-            peak_config=_peak_config(),
-            targeted_istd_anchor_identity="anchor-id",
-        )
 
 
 def test_alignment_metadata_records_owner_build_xic_backend() -> None:
@@ -209,7 +171,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
-    assert outputs.matrix_identity_tsv == tmp_path / "alignment_matrix_identity.tsv"
     assert outputs.review_tsv == tmp_path / "alignment_review.tsv"
     assert outputs.backfill_cell_evidence_tsv == (
         tmp_path / "alignment_backfill_cell_evidence.tsv"
@@ -219,7 +180,7 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     )
     assert outputs.cells_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert outputs.run_metadata_json is None
+    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
 
 
 def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
@@ -325,93 +286,7 @@ def test_writer_hashing_requires_instrumentation_opt_in(
     assert outputs.matrix_tsv is not None and outputs.matrix_tsv.exists()
 
 
-def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
-    tmp_path: Path,
-) -> None:
-    outputs = output_paths(
-        tmp_path / "out",
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
-    batch = pipeline_outputs_module.write_outputs_atomic(
-        outputs,
-        matrix,
-        metadata={},
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
-        capture_artifact_fingerprints=True,
-    )
-
-    assert isinstance(batch, AlignmentArtifactFingerprintBatch)
-    receipts = batch.receipts
-    output_files = {
-        path.resolve() for path in outputs.__dict__.values() if isinstance(path, Path)
-    }
-    assert {receipt.artifact_path for receipt in receipts} == output_files
-    assert all(
-        receipt.artifact_name == receipt.artifact_path.name
-        and receipt.fingerprint == fingerprint_file_content(receipt.artifact_path)
-        for receipt in receipts
-    )
-
-
-def test_writer_fingerprint_batch_rejects_missing_duplicate_or_foreign_receipts(
-    tmp_path: Path,
-) -> None:
-    first_outputs = output_paths(
-        tmp_path / "first",
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-    second_outputs = output_paths(
-        tmp_path / "second",
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
-    writer_kwargs = {
-        "metadata": {},
-        "alignment_config": config,
-        "production_decisions": build_production_decisions(matrix, config),
-        "capture_artifact_fingerprints": True,
-    }
-    first_batch = pipeline_outputs_module.write_outputs_atomic(
-        first_outputs,
-        matrix,
-        **writer_kwargs,
-    )
-    second_batch = pipeline_outputs_module.write_outputs_atomic(
-        second_outputs,
-        matrix,
-        **writer_kwargs,
-    )
-    assert isinstance(first_batch, AlignmentArtifactFingerprintBatch)
-    assert isinstance(second_batch, AlignmentArtifactFingerprintBatch)
-
-    with pytest.raises(ValueError, match="exactly cover"):
-        receipts_module._mint_alignment_artifact_fingerprint_batch(
-            artifact_paths=first_batch.artifact_paths,
-            receipts=first_batch.receipts[:-1],
-        )
-    with pytest.raises(ValueError, match="receipt artifact paths must be unique"):
-        receipts_module._mint_alignment_artifact_fingerprint_batch(
-            artifact_paths=first_batch.artifact_paths,
-            receipts=(first_batch.receipts[0],) * len(first_batch.receipts),
-        )
-    with pytest.raises(ValueError, match="exactly cover"):
-        receipts_module._mint_alignment_artifact_fingerprint_batch(
-            artifact_paths=first_batch.artifact_paths,
-            receipts=(*first_batch.receipts[:-1], second_batch.receipts[-1]),
-        )
-
-
-def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_changes(
+def test_writer_instrumentation_preserves_output_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -454,16 +329,13 @@ def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_change
         "fingerprint_file_content",
         counted_fingerprint,
     )
-    batch = pipeline_outputs_module.write_outputs_atomic(
+    pipeline_outputs_module.write_outputs_atomic(
         candidate_outputs,
         *writer_args,
         **writer_kwargs,
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
-        capture_artifact_fingerprints=True,
     )
 
-    assert isinstance(batch, AlignmentArtifactFingerprintBatch)
-    receipts = batch.receipts
     baseline_files = {
         path.name: path
         for path in baseline_outputs.__dict__.values()
@@ -474,7 +346,7 @@ def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_change
         for path in candidate_outputs.__dict__.values()
         if isinstance(path, Path)
     }
-    assert fingerprint_calls == len(receipts) == len(candidate_files)
+    assert fingerprint_calls == len(candidate_files)
     assert baseline_files.keys() == candidate_files.keys()
     assert all(
         baseline_files[name].read_bytes() == candidate_files[name].read_bytes()
@@ -542,7 +414,7 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
     assert production_bytes == machine_outputs.matrix_tsv.read_bytes()
 
 
-def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
+def test_writer_instrumentation_failure_rolls_back(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -584,7 +456,7 @@ def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
             metadata={},
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
-            capture_artifact_fingerprints=True,
+            timing_recorder=TimingRecorder("alignment", instrument_writers=True),
         )
 
     assert fingerprint_calls == 2
@@ -605,6 +477,7 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
     config = AlignmentConfig()
+    profile = SignalProcessingProfile(window_points=21)
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
@@ -612,20 +485,23 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         metadata={},
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
+        backfill_peak_fact_provenance=BackfillPeakFactProvenanceBatch(
+            (run_profile_row(profile),)
+        ),
     )
 
     assert outputs.run_metadata_json is not None
     persisted = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
     assert persisted["owner_backfill_peak_fact_provenance_row_count"] == "1"
     assert outputs.owner_backfill_peak_fact_provenance_tsv is not None
-    assert (
-        len(
-            outputs.owner_backfill_peak_fact_provenance_tsv.read_text(
-                encoding="utf-8"
-            ).splitlines()
-        )
-        == 2
-    )
+    with outputs.owner_backfill_peak_fact_provenance_tsv.open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        assert reader.fieldnames == ["row_kind", "schema_version", "profile_json"]
+        (row,) = reader
+    assert row["row_kind"] == "run_profile"
+    assert deserialize_signal_processing_profile(row["profile_json"]) == profile
 
 
 def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
@@ -720,30 +596,6 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
         if path.name.endswith((".tmp", ".bak", ".tmp.tmp"))
     )
     assert leftovers == ()
-
-
-def test_alignment_artifact_fingerprint_receipt_cannot_be_caller_minted(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "artifact.tsv"
-    path.write_bytes(b"")
-    fingerprint = FileContentFingerprint(content_sha256="0" * 64, byte_size=0)
-
-    with pytest.raises(TypeError, match="_mint_token"):
-        AlignmentArtifactFingerprintReceipt(
-            artifact_name=path.name,
-            artifact_path=path.resolve(),
-            fingerprint=fingerprint,
-        )
-    with pytest.raises(ValueError, match="must be minted by the Alignment writer"):
-        AlignmentArtifactFingerprintReceipt(
-            artifact_name=path.name,
-            artifact_path=path.resolve(),
-            fingerprint=fingerprint,
-            _mint_token=object(),
-        )
-    with pytest.raises(TypeError, match="_mint_token"):
-        AlignmentArtifactFingerprintBatch(artifact_paths=(), receipts=())
 
 
 class _Timer:

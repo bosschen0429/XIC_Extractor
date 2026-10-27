@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -24,6 +23,9 @@ from xic_extractor.diagnostics.explanation_review import (
     validate_membership_risks,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+RecordKey = str | tuple[str, str]
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
@@ -43,7 +45,7 @@ ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
         "kind",
         "sample_id",
         "candidate_id",
-        "peak_observation_content_id",
+        "physical_peak_key",
         "trace_coordinate",
         "curves",
         "integration",
@@ -67,23 +69,13 @@ class CandidateNotFoundError(ExplanationError):
 _CURVE_KEYS = frozenset({"rt", "raw", "baseline", "smoothed", "positive"})
 _COORDINATE_KEYS = frozenset({"mz", "rt_min", "rt_max", "ppm_tol"})
 _PROFILE_KEYS = frozenset(field.name for field in fields(SignalProcessingProfile))
-_INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult)) | {
-    "apex_rt_min",
-    "area_profile_selected",
-    "boundary_source",
-}
+_INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult))
+_SIGNAL_QUALITY_KEYS = frozenset(field.name for field in fields(SignalQuality))
 _PROVENANCE_KEYS = frozenset(
     {
-        "profile_id",
         "profile_version",
-        "trace_content_id",
-        "prepared_signal_id",
         "acquisition_source_id",
-        "full_trace_sha256",
-        "selection_trace_sha256",
-        "processing_request_id",
         "processing_attempt_id",
-        "observation_artifact_id",
         "selected_trace_indices",
         "resolver_mode",
         "proposal_sources",
@@ -109,25 +101,31 @@ def _validate_curve_payload(
         raise ExplanationError("curve payload must be an object")
     extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS
     if extra:
-        raise ExplanationError(f"undeclared curve payload keys: {sorted(extra)}")
+        raise ExplanationError(
+            f"undeclared curve payload keys: {sorted(extra)}; rerun Alignment"
+        )
     if set(payload) != ALLOWED_CURVE_PAYLOAD_KEYS:
-        raise ExplanationError("curve payload missing required fields")
+        raise ExplanationError("curve payload missing required fields; rerun Alignment")
     if payload["schema_version"] != "curve_payload":
-        raise ExplanationError("unsupported curve payload schema version")
+        raise ExplanationError(
+            "不支援此曲線資料格式；請重新執行 Alignment 產生新輸出。"
+        )
     if payload["kind"] != kind or payload["sample_id"] != sample_id:
         raise ExplanationError("curve payload crosses sample or kind binding")
     if not isinstance(sample_id, str) or not sample_id or not record_id:
         raise ExplanationError("curve payload missing sample or record identity")
     provenance = payload["provenance"]
-    if not isinstance(provenance, Mapping) or set(provenance) - _PROVENANCE_KEYS:
-        raise ExplanationError("undeclared provenance fields")
+    if not isinstance(provenance, Mapping) or set(provenance) != _PROVENANCE_KEYS:
+        raise ExplanationError(
+            "undeclared or missing provenance fields; rerun Alignment"
+        )
     profile = provenance.get("profile")
     if profile is not None and (
         not isinstance(profile, Mapping) or set(profile) != _PROFILE_KEYS
     ):
-        raise ExplanationError("undeclared or missing profile fields")
+        raise ExplanationError("undeclared or missing profile fields; rerun Alignment")
     if record_id not in (
-        payload["peak_observation_content_id"],
+        payload["physical_peak_key"],
         payload["candidate_id"],
         provenance.get("method_subject_id"),
     ):
@@ -135,13 +133,15 @@ def _validate_curve_payload(
 
     curves = payload["curves"]
     if not isinstance(curves, Mapping) or set(curves) != _CURVE_KEYS:
-        raise ExplanationError("undeclared or missing curve array fields")
+        raise ExplanationError(
+            "undeclared or missing curve array fields; rerun Alignment"
+        )
     rt = curves["rt"]
     if not isinstance(rt, (list, tuple)):
         raise ExplanationError("curve RT must be an array")
     if not rt and (
         provenance.get("physical_state") != "unavailable"
-        or payload["peak_observation_content_id"] is not None
+        or payload["physical_peak_key"] is not None
         or payload["integration"] is not None
         or any(
             curves[name] is not None for name in ("baseline", "smoothed", "positive")
@@ -167,7 +167,9 @@ def _validate_curve_payload(
 
     coordinate = payload["trace_coordinate"]
     if not isinstance(coordinate, Mapping) or set(coordinate) != _COORDINATE_KEYS:
-        raise ExplanationError("undeclared or missing trace coordinate fields")
+        raise ExplanationError(
+            "undeclared or missing trace coordinate fields; rerun Alignment"
+        )
     for name, value in coordinate.items():
         if value is None and name == "ppm_tol":
             continue
@@ -184,8 +186,20 @@ def _validate_curve_payload(
 
     integration = payload["integration"]
     if integration is not None:
-        if not isinstance(integration, Mapping) or set(integration) - _INTEGRATION_KEYS:
-            raise ExplanationError("undeclared integration fields")
+        if (
+            not isinstance(integration, Mapping)
+            or set(integration) != _INTEGRATION_KEYS
+        ):
+            raise ExplanationError(
+                "undeclared or missing integration fields; rerun Alignment"
+            )
+        quality = integration["signal_quality"]
+        if quality is not None and (
+            not isinstance(quality, Mapping) or set(quality) != _SIGNAL_QUALITY_KEYS
+        ):
+            raise ExplanationError(
+                "undeclared or missing signal quality fields; rerun Alignment"
+            )
         for name, value in integration.items():
             if isinstance(value, float) and not math.isfinite(value):
                 raise ExplanationError(f"nonfinite integration value: {name}")
@@ -209,13 +223,14 @@ class ExplanationReportWriter:
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        self._record_hashes: dict[tuple[str, str], bytes] = {}
-        self._buffered_records: list[tuple[str, str, str | bytes]] = []
+        self._record_rowids: dict[tuple[str, str | int], int] = {}
+        self._buffered_records: dict[int, tuple[str, str | int, str | bytes]] = {}
         self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
         self._buffered_link_members: list[tuple[int, str, str]] = []
-        self._buffered_record_links: list[tuple[int, str, str]] = []
-        self._buffered_curve_payloads: list[tuple[str, str, str, str, str, bytes]] = []
-        self._curve_hashes: dict[str, bytes] = {}
+        self._buffered_record_links: list[tuple[int, int]] = []
+        self._buffered_link_sets: list[tuple[int]] = []
+        self._buffered_curve_payloads: list[tuple[int, str, str, str, str, bytes]] = []
+        self._curve_rowids: dict[tuple[str, str, str, bytes], int] = {}
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -224,6 +239,7 @@ class ExplanationReportWriter:
             pass
         try:
             self.connection = sqlite3.connect(self.temporary)
+            self.connection.execute("PRAGMA foreign_keys = ON;")
             self.connection.execute(
                 "PRAGMA page_size = 4096;"
                 if self.review_only
@@ -237,20 +253,27 @@ class ExplanationReportWriter:
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
                 "payload TEXT NOT NULL, PRIMARY KEY(candidate_id, sample_id));"
-                "CREATE TABLE records (kind TEXT, record_id TEXT, "
-                "payload TEXT NOT NULL, "
-                "PRIMARY KEY(kind, record_id));"
+                "CREATE TABLE records (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, "
+                "record_id TEXT NOT NULL, payload TEXT NOT NULL, "
+                "UNIQUE(kind, record_id));"
+                "CREATE TABLE link_sets (id INTEGER PRIMARY KEY);"
                 "CREATE TABLE link_members (set_id INTEGER, candidate_id TEXT, "
-                "sample_id TEXT, PRIMARY KEY(set_id, candidate_id, sample_id)) "
+                "sample_id TEXT, PRIMARY KEY(set_id, candidate_id, sample_id), "
+                "FOREIGN KEY(set_id) REFERENCES link_sets(id), "
+                "FOREIGN KEY(candidate_id, sample_id) "
+                "REFERENCES candidates(candidate_id, sample_id) "
+                "DEFERRABLE INITIALLY DEFERRED) "
                 "WITHOUT ROWID;"
                 "CREATE INDEX idx_link_members_candidate "
                 "ON link_members(candidate_id, sample_id, set_id);"
-                "CREATE TABLE record_links (set_id INTEGER, kind TEXT, "
-                "record_id TEXT, PRIMARY KEY(set_id, kind, record_id)) WITHOUT ROWID;"
+                "CREATE TABLE record_links (set_id INTEGER REFERENCES link_sets(id), "
+                "record_rowid INTEGER REFERENCES records(id), "
+                "PRIMARY KEY(set_id, record_rowid)) WITHOUT ROWID;"
                 "CREATE VIEW links AS SELECT DISTINCT m.candidate_id, m.sample_id, "
                 "r.kind, r.record_id FROM link_members m "
-                "JOIN record_links r USING(set_id);"
-                "CREATE TABLE curve_payloads (payload_id TEXT PRIMARY KEY, "
+                "JOIN record_links l USING(set_id) "
+                "JOIN records r ON r.id=l.record_rowid;"
+                "CREATE TABLE curve_payloads (payload_id INTEGER PRIMARY KEY, "
                 "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
                 "codec TEXT NOT NULL, payload BLOB NOT NULL);"
                 "CREATE INDEX idx_curve_payloads_sample_record "
@@ -259,8 +282,9 @@ class ExplanationReportWriter:
             )
             if self.review_only:
                 self.connection.execute(
-                    "CREATE TABLE row_cells (row_key_id TEXT PRIMARY KEY, "
-                    "group_id TEXT NOT NULL, payload BLOB NOT NULL, "
+                    "CREATE TABLE row_cells (row_record_id INTEGER PRIMARY KEY "
+                    "REFERENCES records(id) DEFERRABLE INITIALLY DEFERRED, "
+                    "payload BLOB NOT NULL, "
                     "sample_mask BLOB NOT NULL)"
                 )
         except BaseException:
@@ -296,30 +320,35 @@ class ExplanationReportWriter:
     def add_record(
         self,
         kind: str,
-        identity: str,
+        identity: str | int | None,
         payload: Mapping[str, Any],
         related: Iterable[tuple[str, str]],
     ) -> bool:
+        # Records without a natural locator use their actual database primary key.
+        if identity is None:
+            identity = len(self._record_rowids) + 1
         encoded = _json(payload)
         key = (kind, identity)
-        content_hash = hashlib.blake2b(encoded.encode("utf-8"), digest_size=16).digest()
-        existing_hash = self._record_hashes.get(key)
-        if existing_hash is not None and existing_hash != content_hash:
-            raise ValueError(
-                f"conflicting diagnostic owner identity: {(kind, identity)}"
+        stored_payload = (
+            zlib.compress(encoded.encode("utf-8"), 1) if self.review_only else encoded
+        )
+        rowid = self._record_rowids.get(key)
+        is_new = rowid is None
+        if rowid is not None:
+            pending = self._buffered_records.get(rowid)
+            existing_payload = (
+                pending[2]
+                if pending is not None
+                else self._connection()
+                .execute("SELECT payload FROM records WHERE id=?", (rowid,))
+                .fetchone()[0]
             )
-        is_new = existing_hash is None
-        if is_new:
-            self._record_hashes[key] = content_hash
-            self._buffered_records.append(
-                (
-                    kind,
-                    identity,
-                    zlib.compress(encoded.encode("utf-8"), 1)
-                    if self.review_only
-                    else encoded,
-                )
-            )
+            if existing_payload != stored_payload:
+                raise ValueError(f"conflicting diagnostic owner identity: {key}")
+        else:
+            rowid = len(self._record_rowids) + 1
+            self._record_rowids[key] = rowid
+            self._buffered_records[rowid] = (kind, identity, stored_payload)
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
             if len(self._buffered_records) >= 20000:
                 self._flush_records()
@@ -329,21 +358,17 @@ class ExplanationReportWriter:
     def add_row_cells(
         self,
         row_id: str,
-        group_id: str,
         cells: Sequence[Mapping[str, Any]],
         samples: Mapping[str, int],
     ) -> None:
         self._connection().execute(
-            "INSERT INTO row_cells VALUES (?, ?, ?, ?)",
+            "INSERT INTO row_cells VALUES (?, ?, ?)",
             (
-                row_id,
-                group_id,
+                self._record_rowids["rows", row_id],
                 pack_cells(cells, samples),
                 sum(
                     1 << ordinal
-                    for ordinal in {
-                        samples[cell["canonical_sample_identity_id"]] for cell in cells
-                    }
+                    for ordinal in {samples[cell["sample_key"]] for cell in cells}
                 ).to_bytes((len(samples) + 7) // 8, "little"),
             ),
         )
@@ -352,7 +377,7 @@ class ExplanationReportWriter:
         ) + len(cells)
 
     def _link_record(
-        self, kind: str, identity: str, related: Iterable[tuple[str, str]]
+        self, kind: str, identity: str | int, related: Iterable[tuple[str, str]]
     ) -> None:
         # Sample cells share their group's candidate set. Store the set once;
         # the logical links view expands it only for a reader's selected scope.
@@ -363,23 +388,25 @@ class ExplanationReportWriter:
         if set_id is None:
             set_id = len(self._related_sets)
             self._related_sets[members] = set_id
+            self._buffered_link_sets.append((set_id,))
             self._buffered_link_members.extend(
                 (set_id, cid, sid) for cid, sid in members
             )
-        self._buffered_record_links.append((set_id, kind, identity))
+        self._buffered_record_links.append(
+            (set_id, self._record_rowids[kind, identity])
+        )
         if len(self._buffered_record_links) + len(self._buffered_link_members) >= 50000:
             self._flush_links()
 
     def add_curve_payload(
         self,
-        payload_id: str | None,
         sample_id: str,
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
         codec: str = "zlib-json-utf8",
-    ) -> str:
-        """Encode once for storage and, when absent, the content-derived ID."""
+    ) -> int:
+        """Store exact curve data once and return its database-local rowid."""
         _validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
@@ -392,28 +419,13 @@ class ExplanationReportWriter:
             separators=(",", ":"),
             allow_nan=False,
         ).encode("utf-8")
-        if payload_id is None:
-            payload_id = (
-                "xic.inspector-curve:" + hashlib.sha256(encoded_json).hexdigest()
-            )
-        binding = _json(
-            {
-                "sample_id": sample_id,
-                "kind": kind,
-                "record_id": record_id,
-                "codec": codec,
-            }
-        ).encode("utf-8")
-        digest = hashlib.sha256(binding + b"\0" + encoded_json).digest()
-        previous = self._curve_hashes.get(payload_id)
-        if previous is not None:
-            if previous != digest:
-                raise ExplanationError(
-                    f"conflicting curve payload identity: {payload_id}"
-                )
-            return payload_id
-        self._curve_hashes[payload_id] = digest
         compressed = zlib.compress(encoded_json, level=1)
+        key = (sample_id, kind, record_id, compressed)
+        existing = self._curve_rowids.get(key)
+        if existing is not None:
+            return existing
+        payload_id = len(self._curve_rowids) + 1
+        self._curve_rowids[key] = payload_id
         self._buffered_curve_payloads.append(
             (payload_id, sample_id, kind, record_id, codec, compressed)
         )
@@ -428,32 +440,32 @@ class ExplanationReportWriter:
                 self._buffered_curve_payloads,
             )
             self._buffered_curve_payloads.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def _flush_records(self) -> None:
         if self._buffered_records:
             self._connection().executemany(
-                "INSERT INTO records VALUES (?, ?, ?)", self._buffered_records
+                "INSERT INTO records VALUES (?, ?, ?, ?)",
+                ((rowid, *record) for rowid, record in self._buffered_records.items()),
             )
             self._buffered_records.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def _flush_links(self) -> None:
         if self._buffered_record_links:
+            self._flush_records()
+            self._connection().executemany(
+                "INSERT INTO link_sets VALUES (?)", self._buffered_link_sets
+            )
             self._connection().executemany(
                 "INSERT INTO link_members VALUES (?, ?, ?)",
                 self._buffered_link_members,
             )
             self._connection().executemany(
-                "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO record_links VALUES (?, ?)",
                 self._buffered_record_links,
             )
+            self._buffered_link_sets.clear()
             self._buffered_link_members.clear()
             self._buffered_record_links.clear()
-            self._connection().commit()
-            self._connection().execute("BEGIN;")
 
     def candidate_examples(self) -> list[dict[str, Any]]:
         if self._candidates:
@@ -497,7 +509,7 @@ class ExplanationReportWriter:
                         else SCHEMA_VERSION,
                         plot_evidence_capability=(
                             "retained_curves"
-                            if not self.review_only or self._curve_hashes
+                            if not self.review_only or self._curve_rowids
                             else "metadata_only"
                         ),
                         diagnostic_only=True,
@@ -510,7 +522,12 @@ class ExplanationReportWriter:
             from xic_extractor.diagnostics.explanation_query import build_query_index
 
             build_query_index(
-                self._connection(), _read_completed_summary(self._connection())
+                self._connection(),
+                _object(
+                    self._connection()
+                    .execute("SELECT payload FROM metadata WHERE key='summary'")
+                    .fetchone()[0]
+                ),
             )
         self._connection().commit()
         self._connection().close()
@@ -525,13 +542,14 @@ class ExplanationReportWriter:
             self._connection().close()
             self.connection = None
         self._candidates.clear()
-        self._record_hashes.clear()
+        self._record_rowids.clear()
         self._buffered_records.clear()
         self._related_sets.clear()
+        self._buffered_link_sets.clear()
         self._buffered_link_members.clear()
         self._buffered_record_links.clear()
         self._buffered_curve_payloads.clear()
-        self._curve_hashes.clear()
+        self._curve_rowids.clear()
         self.temporary.unlink(missing_ok=True)
 
 
@@ -584,7 +602,10 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     expected = {
         "metadata": ("key", "payload"),
         "candidates": ("candidate_id", "sample_id", "payload"),
-        "records": ("kind", "record_id", "payload"),
+        "records": ("id", "kind", "record_id", "payload"),
+        "link_sets": ("id",),
+        "link_members": ("set_id", "candidate_id", "sample_id"),
+        "record_links": ("set_id", "record_rowid"),
         "links": ("candidate_id", "sample_id", "kind", "record_id"),
         "curve_payloads": (
             "payload_id",
@@ -600,32 +621,84 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
             row[1] for row in connection.execute(f"PRAGMA table_info({table})")
         )
         if actual != columns:
-            raise ExplanationError(f"malformed explanation schema: {table}")
+            raise ExplanationError(
+                f"malformed explanation schema: {table}; rerun Alignment"
+            )
     row = connection.execute(
         "SELECT payload FROM metadata WHERE key='summary'"
     ).fetchone()
     if row is None:
         raise ExplanationError("malformed explanation: missing completion summary")
     summary = _object(row[0])
-    if summary.get("query_index_version") not in (None, 1, 2):
-        raise ExplanationError("unsupported explanation query index version")
+    if summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION):
+        raise ExplanationError(
+            "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
+        )
+    if set(summary) != {
+        "schema_version",
+        "plot_evidence_capability",
+        "diagnostic_only",
+        "completion",
+        "scientific_input_schema_version",
+        "processing_algorithm_version",
+        "processing_contract_version",
+        "processing_attempt_id",
+        "samples",
+        "acquisition_sources",
+        "candidate_count",
+        "matrix_row_count",
+        "candidate_examples",
+        "writer_row_count",
+        "matrix_path",
+        "matrix_sha256",
+        "alignment_config",
+        "reason_counts",
+        "record_counts",
+        "retention",
+        "selection_evidence_capability",
+        "curve_retention",
+        "curve_mz_ranges",
+        "initial_edge_coverage",
+        "audit_availability",
+        "known_istd_reference",
+    }:
+        raise ExplanationError(
+            "explanation summary fields do not match the schema; rerun Alignment"
+        )
+    if any(
+        not isinstance(sample, dict) or set(sample) != {"sample_key", "sample_stem"}
+        for sample in summary["samples"]
+    ):
+        raise ExplanationError(
+            "explanation sample fields do not match the schema; rerun Alignment"
+        )
     if (
-        summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION)
-        or summary.get("diagnostic_only") is not True
+        summary.get("diagnostic_only") is not True
         or summary.get("completion") != "post_matrix_publication"
         or summary.get("plot_evidence_capability")
         not in ("retained_curves", "metadata_only")
     ):
         raise ExplanationError("malformed explanation: invalid completion summary")
     if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
-        columns = tuple(
-            row[1] for row in connection.execute("PRAGMA table_info(row_cells)")
-        )
-        if columns not in (
-            ("row_key_id", "group_id", "payload"),
-            ("row_key_id", "group_id", "payload", "sample_mask"),
-        ):
-            raise ExplanationError("malformed explanation schema: row_cells")
+        query_tables = {
+            "row_cells": ("row_record_id", "payload", "sample_mask"),
+            "query_samples": ("id", "sample_id"),
+            "query_candidates": ("id", "candidate_id", "sample", "mz", "sample_stem"),
+            "query_items": ("id", "kind", "identifier", "group_id", "sort_key"),
+            "query_members": ("item", "candidate"),
+            "query_scope": ("sample", "item"),
+            "query_witnesses": ("item", "ordinal", "candidate", "rt", "observation_id"),
+            "query_peers": ("item", "peer", "priority", "edge_ref"),
+            "query_review": ("item", "sample_facts"),
+        }
+        for table, columns in query_tables.items():
+            actual = tuple(
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            )
+            if actual != columns:
+                raise ExplanationError(
+                    f"malformed explanation schema: {table}; rerun Alignment"
+                )
     return summary
 
 
@@ -635,7 +708,7 @@ class ExplanationMetadata:
 
     summary: dict[str, Any]
     candidates: dict[tuple[str, str], dict[str, Any]]
-    records: dict[str, dict[str, dict[str, Any]]]
+    records: dict[str, dict[RecordKey, dict[str, Any]]]
     links: tuple[tuple[str, str, str, str], ...]
 
 
@@ -643,25 +716,27 @@ def _read_review_cells(
     connection: sqlite3.Connection,
     summary: Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
-) -> dict[str, dict[str, Any]]:
-    sample_ids = [
-        sample["canonical_sample_identity_id"] for sample in summary["samples"]
-    ]
-    result: dict[str, dict[str, Any]] = {}
-    rows: Iterable[tuple[str, str, bytes]]
+) -> dict[tuple[str, str], dict[str, Any]]:
+    sample_ids = [sample["sample_key"] for sample in summary["samples"]]
+    result: dict[tuple[str, str], dict[str, Any]] = {}
+    query = (
+        "SELECT r.record_id, r.payload, c.payload FROM row_cells c "
+        "JOIN records r ON r.id=c.row_record_id"
+    )
+    rows: Iterable[tuple[str, str | bytes, bytes]]
     if row_ids is None:
-        rows = connection.execute("SELECT row_key_id, group_id, payload FROM row_cells")
+        rows = connection.execute(query)
     else:
         rows = (
             row
             for row_id in row_ids
             for row in connection.execute(
-                "SELECT row_key_id, group_id, payload FROM row_cells "
-                "WHERE row_key_id=?",
+                query + " WHERE r.record_id=?",
                 (row_id,),
             )
         )
-    for row_id, group_id, payload in rows:
+    for row_id, record, payload in rows:
+        group_id = _object(record)["feature_id"]
         result.update(
             unpack_cells(
                 payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
@@ -674,7 +749,7 @@ def _read_review_cells(
 def open_review_cells(
     path: Path,
     summary: Mapping[str, Any],
-) -> Iterator[Callable[[str], dict[str, dict[str, Any]]]]:
+) -> Iterator[Callable[[str], dict[tuple[str, str], dict[str, Any]]]]:
     """Keep a read-only row lookup open during bounded population selection."""
     with closing(
         sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
@@ -688,19 +763,22 @@ def open_review_population(
 ) -> Iterator[Iterator[dict[str, Any]]]:
     """Stream review rows and cells within one read-only connection lifetime."""
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        samples = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+        samples = [s["sample_key"] for s in summary["samples"]]
         yield (
             {
                 "row": _object(record),
                 "cells": list(
                     unpack_cells(
-                        payload, row_id=row_id, group_id=group_id, sample_ids=samples
+                        payload,
+                        row_id=row_id,
+                        group_id=_object(record)["feature_id"],
+                        sample_ids=samples,
                     ).values()
                 ),
             }
-            for row_id, group_id, payload, record in db.execute(
-                "SELECT c.row_key_id,c.group_id,c.payload,r.payload FROM row_cells c "
-                "JOIN records r ON r.kind='rows' AND r.record_id=c.row_key_id"
+            for row_id, payload, record in db.execute(
+                "SELECT r.record_id,c.payload,r.payload FROM row_cells c "
+                "JOIN records r ON r.id=c.row_record_id"
             )
         )
 
@@ -709,36 +787,23 @@ def read_review_row_samples(
     path: Path, summary: Mapping[str, Any]
 ) -> dict[str, frozenset[str]]:
     """Read row membership without unpacking scalar values or evidence reasons."""
-    sample_ids = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+    sample_ids = [s["sample_key"] for s in summary["samples"]]
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        columns = {row[1] for row in db.execute("PRAGMA table_info(row_cells)")}
-        if "sample_mask" in columns:
-            cohorts: dict[bytes, frozenset[str]] = {}
-            rows = {}
-            for row_id, mask in db.execute(
-                "SELECT row_key_id, sample_mask FROM row_cells"
-            ):
-                if mask not in cohorts:
-                    bits = int.from_bytes(mask, "little")
-                    cohorts[mask] = frozenset(
-                        sid
-                        for ordinal, sid in enumerate(sample_ids)
-                        if bits & (1 << ordinal)
-                    )
-                rows[row_id] = cohorts[mask]
-            return rows
-        # Existing compact reports remain queryable without rewriting them.
-        return {
-            row_id: frozenset(
-                cell["canonical_sample_identity_id"]
-                for cell in unpack_cells(
-                    payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
-                ).values()
-            )
-            for row_id, group_id, payload in db.execute(
-                "SELECT row_key_id, group_id, payload FROM row_cells"
-            )
-        }
+        cohorts: dict[bytes, frozenset[str]] = {}
+        rows = {}
+        for row_id, mask in db.execute(
+            "SELECT r.record_id, c.sample_mask FROM row_cells c "
+            "JOIN records r ON r.id=c.row_record_id"
+        ):
+            if mask not in cohorts:
+                bits = int.from_bytes(mask, "little")
+                cohorts[mask] = frozenset(
+                    sid
+                    for ordinal, sid in enumerate(sample_ids)
+                    if bits & (1 << ordinal)
+                )
+            rows[row_id] = cohorts[mask]
+        return rows
 
 
 def read_explanation_metadata(
@@ -773,7 +838,7 @@ def read_explanation_metadata(
                 "SELECT candidate_id, sample_id, payload FROM candidates"
             )
         }
-        records: dict[str, dict[str, dict[str, Any]]] = {}
+        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
         for kind, rid, payload in connection.execute(
             "SELECT kind, record_id, payload FROM records" + record_filter
         ):
@@ -785,7 +850,10 @@ def read_explanation_metadata(
             )
         )
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION and not compact_selection:
-            records["cell_decisions"] = _read_review_cells(connection, summary)
+            records["cell_decisions"] = {
+                key: value
+                for key, value in _read_review_cells(connection, summary).items()
+            }
         return ExplanationMetadata(summary, candidates, records, links)
     except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
         raise ExplanationError(f"malformed explanation: {exc}") from exc
@@ -821,7 +889,7 @@ def read_explanation_selection(
                     (cid, sid),
                 )
             )
-        records: dict[str, dict[str, dict[str, Any]]] = {}
+        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
         requested = {(kind, rid) for _, _, kind, rid in links}
         # Scalar-only rows have no candidate witness links. They are still
         # eligible for sample/attention review and must hydrate by row identity.
@@ -834,7 +902,7 @@ def read_explanation_selection(
                 raise ExplanationError("Selected review links to a missing record")
             records.setdefault(kind, {})[rid] = _object(row[0])
         for payload in records.get("rows", {}).values():
-            gid = payload.get("group_hypothesis_id")
+            gid = payload.get("feature_id")
             if gid is None or gid in records.get("final_groups", {}):
                 continue
             row = connection.execute(
@@ -843,7 +911,10 @@ def read_explanation_selection(
             ).fetchone()
             if row is not None:
                 records.setdefault("final_groups", {})[gid] = _object(row[0])
-        records["cell_decisions"] = _read_review_cells(connection, summary, row_ids)
+        records["cell_decisions"] = {
+            key: value
+            for key, value in _read_review_cells(connection, summary, row_ids).items()
+        }
         return ExplanationMetadata(summary, candidates, records, tuple(sorted(links)))
 
 
@@ -880,7 +951,7 @@ def read_cid_nl_explanation(
         ):
             records.setdefault(kind, []).append(_object(payload))
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
-            row_ids = [row["row_key_id"] for row in records.get("rows", [])]
+            row_ids = [row["feature_id"] for row in records.get("rows", [])]
             records["cell_decisions"] = list(
                 _read_review_cells(connection, summary, row_ids).values()
             )

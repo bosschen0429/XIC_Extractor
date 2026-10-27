@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import final
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
@@ -17,15 +15,11 @@ class RuntimeObservabilityContractError(ValueError):
     """Raised when an attempt ledger or metric set is incomplete or ambiguous."""
 
 
-_RUNTIME_OBSERVABILITY_MINT_TOKEN = object()
-
-
 class RuntimeObservationSubject(str, Enum):
     ATTEMPT = "attempt"
     WORK_UNIT = "work_unit"
     WORKER = "worker"
     RESOURCE = "resource"
-    ARTIFACT = "artifact"
 
 
 class RuntimeMetricScope(str, Enum):
@@ -137,14 +131,7 @@ _RESOURCE_LIFECYCLE_KINDS = {
     *_RESOURCE_OPEN_EVENT_KINDS,
     *_RESOURCE_CLEANUP_EVENT_KINDS,
 }
-_ARTIFACT_DISPOSITION_EVENT_KINDS = {
-    "artifact_offered_to_owner",
-    "artifact_quarantined_diagnostic",
-}
-_ARTIFACT_LIFECYCLE_KINDS = {
-    "artifact_registered",
-    *_ARTIFACT_DISPOSITION_EVENT_KINDS,
-}
+
 
 _RUNNING_ATTEMPT_LIFECYCLE_KINDS = (
     "attempt_queued",
@@ -268,23 +255,14 @@ class RuntimeMetricRecord:
             _required_text(self.reason, "reason")
 
 
-@final
 @dataclass(frozen=True, slots=True)
 class RuntimeObservabilityLedger:
     attempt: ProcessingAttemptIdentity
     work_unit_keys: tuple[str, ...]
     events: tuple[RuntimeObservationEvent, ...]
     metrics: tuple[RuntimeMetricRecord, ...]
-    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RuntimeObservabilityLedger is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RUNTIME_OBSERVABILITY_MINT_TOKEN:
-            raise RuntimeObservabilityContractError(
-                "RuntimeObservabilityLedger must be minted by the runtime owner"
-            )
+    def __post_init__(self) -> None:
         attempt = _require_attempt(self.attempt)
         if not isinstance(self.work_unit_keys, tuple) or any(
             not isinstance(key, str) or not key.strip() for key in self.work_unit_keys
@@ -337,7 +315,7 @@ class RuntimeObservabilityLedger:
             self.events,
         )
         _validate_worker_event_lifecycle(self.events)
-        _validate_resource_artifact_event_lifecycle(self.events)
+        _validate_resource_event_lifecycle(self.events)
         _validate_cross_domain_event_lifecycle(
             self.events,
             preflight_failed=preflight_failed,
@@ -355,75 +333,6 @@ class RuntimeObservabilityLedger:
             self.metrics,
             preflight_failed=preflight_failed,
         )
-
-
-def _mint_runtime_observability_ledger(
-    *,
-    attempt: ProcessingAttemptIdentity,
-    work_unit_keys: tuple[str, ...],
-    events: tuple[RuntimeObservationEvent, ...],
-    metrics: tuple[RuntimeMetricRecord, ...],
-) -> RuntimeObservabilityLedger:
-    """Mint one validated ledger for the runtime owner or owner-model tests."""
-
-    return RuntimeObservabilityLedger(
-        attempt=attempt,
-        work_unit_keys=work_unit_keys,
-        events=events,
-        metrics=metrics,
-        _mint_token=_RUNTIME_OBSERVABILITY_MINT_TOKEN,
-    )
-
-
-def canonical_runtime_observability_ledger_bytes(
-    ledger: RuntimeObservabilityLedger,
-) -> bytes:
-    """Serialize one validated complete ledger for durable terminal binding."""
-
-    if not isinstance(ledger, RuntimeObservabilityLedger):
-        raise RuntimeObservabilityContractError(
-            "ledger must be a RuntimeObservabilityLedger"
-        )
-    payload = {
-        "events": [
-            {
-                "kind": event.kind,
-                "monotonic_offset_ns": event.monotonic_offset_ns,
-                "sequence": event.sequence,
-                "subject": event.subject.value,
-                "subject_key": event.subject_key,
-            }
-            for event in ledger.events
-        ],
-        "metrics": [
-            {
-                "aggregation": metric.aggregation,
-                "availability": metric.availability.value,
-                "measurement_source": metric.measurement_source,
-                "name": metric.name,
-                "reason": metric.reason,
-                "scope": metric.scope.value,
-                "scope_key": metric.scope_key,
-                "unit": metric.unit,
-                "value": metric.value,
-            }
-            for metric in sorted(
-                ledger.metrics,
-                key=lambda item: (item.name, item.scope.value, item.scope_key),
-            )
-        ],
-        "processing_attempt_id": ledger.attempt.processing_attempt_id,
-        "processing_request_id": ledger.attempt.processing_request_id,
-        "schema_version": "execution_runtime_observability_ledger",
-        "work_unit_keys": list(ledger.work_unit_keys),
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def validate_runtime_acquisition_metrics(
@@ -638,7 +547,7 @@ def _validate_worker_event_lifecycle(
             )
 
 
-def _validate_resource_artifact_event_lifecycle(
+def _validate_resource_event_lifecycle(
     events: tuple[RuntimeObservationEvent, ...],
 ) -> None:
     for event in events:
@@ -654,19 +563,6 @@ def _validate_resource_artifact_event_lifecycle(
             raise RuntimeObservabilityContractError(
                 "resource subject contains an unregistered lifecycle event"
             )
-        if event.kind in _ARTIFACT_LIFECYCLE_KINDS and (
-            event.subject is not RuntimeObservationSubject.ARTIFACT
-        ):
-            raise RuntimeObservabilityContractError(
-                "artifact lifecycle events must use the artifact subject"
-            )
-        if event.subject is RuntimeObservationSubject.ARTIFACT and (
-            event.kind not in _ARTIFACT_LIFECYCLE_KINDS
-        ):
-            raise RuntimeObservabilityContractError(
-                "artifact subject contains an unregistered lifecycle event"
-            )
-
     resource_keys = {
         event.subject_key
         for event in events
@@ -696,67 +592,17 @@ def _validate_resource_artifact_event_lifecycle(
                 "resource lifecycle order must be reserved, opened, then cleaned"
             )
 
-    artifact_ids = {
-        event.subject_key
-        for event in events
-        if event.subject is RuntimeObservationSubject.ARTIFACT
-    }
-    artifact_positions = _index_event_positions(
-        events, RuntimeObservationSubject.ARTIFACT
-    )
-    for artifact_id in artifact_ids:
-        registered = artifact_positions.get((artifact_id, "artifact_registered"), ())
-        disposed = tuple(
-            index
-            for kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
-            for index in artifact_positions.get((artifact_id, kind), ())
-        )
-        if len(registered) != 1 or len(disposed) != 1:
-            raise RuntimeObservabilityContractError(
-                "each artifact requires exactly one registered and disposition event"
-            )
-        if registered[0] >= disposed[0]:
-            raise RuntimeObservabilityContractError(
-                "artifact lifecycle order must be registered before disposition"
-            )
-
     proposal_position = next(
         index for index, event in enumerate(events) if event.kind == "terminal_proposal"
     )
-    acknowledgement_position = next(
-        index
-        for index, event in enumerate(events)
-        if event.kind == "terminal_acknowledged"
-    )
-    outcome_position = next(
-        index for index, event in enumerate(events) if event.kind == "terminal_outcome"
-    )
-    coordinator_resource_artifact_positions = tuple(
+    coordinator_resource_positions = tuple(
         index
         for index, event in enumerate(events)
         if event.subject is RuntimeObservationSubject.RESOURCE
-        or event.kind == "artifact_registered"
     )
-    if any(
-        position > proposal_position
-        for position in coordinator_resource_artifact_positions
-    ):
+    if any(position > proposal_position for position in coordinator_resource_positions):
         raise RuntimeObservabilityContractError(
-            "coordinator resource and artifact events must occur before "
-            "terminal proposal"
-        )
-    disposition_positions = tuple(
-        index
-        for index, event in enumerate(events)
-        if event.kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
-    )
-    if any(
-        not acknowledgement_position < position < outcome_position
-        for position in disposition_positions
-    ):
-        raise RuntimeObservabilityContractError(
-            "artifact dispositions must occur after terminal acknowledgement and "
-            "before terminal outcome"
+            "coordinator resource events must occur before terminal proposal"
         )
 
 
@@ -769,7 +615,6 @@ def _validate_cross_domain_event_lifecycle(
         RuntimeObservationSubject.WORK_UNIT,
         RuntimeObservationSubject.WORKER,
         RuntimeObservationSubject.RESOURCE,
-        RuntimeObservationSubject.ARTIFACT,
     }
     if preflight_failed:
         if any(event.subject in runtime_subjects for event in events):
@@ -800,7 +645,6 @@ def _validate_cross_domain_event_lifecycle(
     workers = positions("worker_started")
     work_submitted = positions("work_unit_submitted")
     work_settled = positions("work_unit_settled")
-    artifacts = positions("artifact_registered")
     cleanup_outcomes = positions(*_RESOURCE_CLEANUP_EVENT_KINDS)
     terminal_proposal = positions("terminal_proposal")
     runtime_positions = (
@@ -809,7 +653,6 @@ def _validate_cross_domain_event_lifecycle(
         *workers,
         *work_submitted,
         *work_settled,
-        *artifacts,
         *cleanup_outcomes,
     )
     if runtime_positions and max(attempt_started) >= min(runtime_positions):
@@ -826,10 +669,9 @@ def _validate_cross_domain_event_lifecycle(
     require_before(workers, work_submitted, "worker starts before work submission")
     require_before(
         work_settled,
-        (*artifacts, *cleanup_outcomes),
-        "settled work before artifacts and cleanup",
+        cleanup_outcomes,
+        "settled work before cleanup",
     )
-    require_before(artifacts, cleanup_outcomes, "artifacts before resource cleanup")
     require_before(cleanup_outcomes, terminal_proposal, "cleanup before proposal")
 
 
@@ -1093,6 +935,5 @@ __all__ = (
     "RuntimeMetricScope",
     "RuntimeObservabilityContractError",
     "RuntimeObservationSubject",
-    "canonical_runtime_observability_ledger_bytes",
     "validate_runtime_acquisition_metrics",
 )

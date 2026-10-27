@@ -341,7 +341,6 @@ def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_p
             title="Signals",
             evidence_capability="retained_curves",
             strategy="sample",
-            request_id="signals",
             run_total=3,
             eligible_count=3,
             selected_count=3,

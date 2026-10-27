@@ -137,6 +137,24 @@ def test_work_state_saves_batch_and_targets_in_one_atomic_generation(
     assert (tmp_path / "workspace.json").read_bytes() == before
     save_workspace(tmp_path, settings={"data_dir": "new"}, targets=[{"label": "new"}])
     state = json.loads((tmp_path / "workspace.json").read_text())
-    assert set(state) == {"version", "application", "batch", "targets"}
+    assert set(state) == {"application", "batch", "targets"}
     assert state["batch"]["data_dir"] == "new"
     assert state["targets"] == [{"label": "new"}]
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        '{"version": 1, "application": {}, "batch": {}, "targets": []}',
+        '{"application": {}, "batch": {}}',
+        '{"application": {}, "batch": {}, "targets": [], "extra": null}',
+    ],
+)
+def test_workspace_rejects_old_or_incomplete_structure_without_rewriting(
+    tmp_path, contents
+):
+    path = tmp_path / "workspace.json"
+    path.write_text(contents, encoding="utf-8")
+    with pytest.raises(ConfigError, match="重跑"):
+        read_settings(config_dir=tmp_path)
+    assert path.read_text(encoding="utf-8") == contents

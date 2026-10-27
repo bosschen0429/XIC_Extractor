@@ -26,7 +26,6 @@ def _member(fixture, sample_stem: str, **peak_kwargs):
         peak_observation=cid_nl_peak(fixture, sample_stem, **peak_kwargs),
     )
     return group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         hypothesis=hypothesis,
     )
@@ -40,30 +39,15 @@ def _subjects(tmp_path, *sample_stems: str):
     return fixture, subjects
 
 
-def _mint_group_in_process(processing_request_id, members):
+def _mint_group_in_process(members):
     from xic_extractor.alignment.cross_sample.peak_groups import (
         mint_cross_sample_group_identity,
     )
 
     group = mint_cross_sample_group_identity(
-        processing_request_id=processing_request_id,
         member_subjects=members,
     )
-    return group.group_hypothesis_id, group.basis_bytes
-
-
-def test_equal_digest_with_unequal_basis_bytes_fails_closed(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleContractError,
-        CrossSampleIdentityBasisRegistry,
-    )
-
-    _, (member,) = _subjects(tmp_path, "sample-a")
-    registry = CrossSampleIdentityBasisRegistry()
-    registry.register(member.member_subject_id, member.basis_bytes)
-
-    with pytest.raises(CrossSampleContractError, match="collision"):
-        registry.register(member.member_subject_id, member.basis_bytes + b" ")
+    return group
 
 
 def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -> None:
@@ -77,24 +61,20 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
     )
     first = _member(fixture, "sample-a", apex_rt=8.0)
     second = _member(fixture, "sample-a", apex_rt=8.03)
-    assert first.member_subject_id != second.member_subject_id
+    assert first != second
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(
-            processing_request_id=fixture.request.processing_request_id,
             member_subjects=(first, second),
         )
 
 
 def test_group_identity_is_order_and_parallelism_invariant(tmp_path) -> None:
     fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
-    request_id = fixture.request.processing_request_id
-
     with ProcessPoolExecutor(max_workers=2) as executor:
         receipts = tuple(
             executor.map(
                 _mint_group_in_process,
-                (request_id, request_id),
                 (members, tuple(reversed(members))),
             )
         )
@@ -125,35 +105,15 @@ def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
         peak_observation=observation,
     )
     wrapped_a = group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
         hypothesis=hypothesis_a,
     )
     wrapped_b = group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
         hypothesis=hypothesis_b,
     )
 
-    assert (wrapped_a.member_subject_id, wrapped_a.basis_bytes) == (
-        wrapped_b.member_subject_id,
-        wrapped_b.basis_bytes,
-    )
-
-
-def test_group_mint_rejects_crossed_processing_request(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleContractError,
-        mint_cross_sample_group_identity,
-    )
-
-    fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
-    other, _ = _subjects(tmp_path, "sample-c")
-    with pytest.raises(CrossSampleContractError, match="crossed processing request"):
-        mint_cross_sample_group_identity(
-            processing_request_id=other.request.processing_request_id,
-            member_subjects=(members[0],),
-        )
+    assert wrapped_a == wrapped_b
 
 
 def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> None:

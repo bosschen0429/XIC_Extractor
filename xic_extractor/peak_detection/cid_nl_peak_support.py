@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
-from xic_extractor.evidence_artifacts import mint_evidence_artifact_ref
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
-    _ARTIFACT_SEMANTIC_CONTRACT,
-    ARTIFACT_SEMANTIC_ROLE,
     RELATIONSHIP,
-    SCHEMA_VERSION,
     DdaCidNlPeakSupportContent,
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
-    _support_bytes,
-    canonical_dda_cid_nl_peak_support_bytes,
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
@@ -95,17 +89,7 @@ def resolve_dda_cid_nl_peak_support_ref(
         candidate_peaks=candidate_peaks,
         policy=policy,
     )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=_support_bytes(content),
-        upstream_artifacts=(
-            canonical_evidence.artifact,
-            *(candidate.artifact for candidate in candidate_peaks),
-        ),
-    )
-    return DdaCidNlPeakSupportRef(content=content, artifact=artifact)
+    return DdaCidNlPeakSupportRef(content=content)
 
 
 def validate_dda_cid_nl_peak_support_binding(
@@ -152,8 +136,7 @@ def validate_dda_cid_nl_peak_support_binding(
     )
     if reference.content != expected_content:
         if (
-            reference.content.cid_nl_evidence_content_id
-            != expected_content.cid_nl_evidence_content_id
+            reference.content.evidence != expected_content.evidence
             or reference.content.dda_scan_number != expected_content.dda_scan_number
         ):
             raise DdaCidNlPeakSupportContractError(
@@ -162,32 +145,6 @@ def validate_dda_cid_nl_peak_support_binding(
         raise DdaCidNlPeakSupportContractError(
             "DDA CID-NL peak support references a different peak observation or "
             "candidate universe"
-        )
-    expected_upstream_ids = tuple(
-        sorted(
-            (
-                canonical_evidence.artifact.evidence_artifact_id,
-                *(peak.artifact.evidence_artifact_id for peak in candidate_peaks),
-            )
-        )
-    )
-    if reference.artifact.upstream_artifact_ids != expected_upstream_ids:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support upstream references were substituted"
-        )
-    if (
-        reference.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different processing request"
-        )
-    if (
-        reference.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different processing attempt"
         )
 
 
@@ -206,13 +163,14 @@ def _support_content(
     assert precursor.reference_mz is not None
     assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
-        cid_nl_evidence_content_id=(
-            canonical_evidence.artifact.content_identity.artifact_content_id
-        ),
-        peak_observation_content_id=peak_content.peak_observation_content_id,
-        candidate_peak_content_ids=tuple(
-            sorted(peak.content.peak_observation_content_id for peak in candidate_peaks)
+        sample_key=sample.identity.sample_key,
+        evidence=observation,
+        peak_observation=peak_content,
+        candidate_peaks=tuple(
+            sorted(
+                (peak.content for peak in candidate_peaks),
+                key=lambda content: content.measured_order_key,
+            )
         ),
         acquisition_mode=observation.acquisition_mode,
         dda_scan_number=observation.scan_number,
@@ -286,13 +244,8 @@ def _validate_candidate_peaks(
             "candidate_peaks must contain owner-backed PeakObservationRef values"
         )
     typed_peaks = candidate_peaks
-    artifact_ids = tuple(peak.artifact.evidence_artifact_id for peak in typed_peaks)
-    content_ids = tuple(
-        peak.content.peak_observation_content_id for peak in typed_peaks
-    )
-    if len(set(artifact_ids)) != len(artifact_ids) or len(set(content_ids)) != len(
-        content_ids
-    ):
+    keys = tuple(peak.content.physical_peak_key for peak in typed_peaks)
+    if len(set(keys)) != len(keys):
         raise DdaCidNlPeakSupportContractError(
             "candidate physical MS1 peak observations are ambiguous"
         )
@@ -356,14 +309,11 @@ def _validate_peak_binding(
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "DdaCidNlPeakSupportContent",
     "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_dda_cid_nl_peak_support_bytes",
     "resolve_dda_cid_nl_peak_support_ref",
     "validate_dda_cid_nl_peak_support_binding",
 ]

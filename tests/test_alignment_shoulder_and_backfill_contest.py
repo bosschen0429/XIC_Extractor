@@ -186,7 +186,8 @@ def _candidate(
     content_id: str, *, apex: float, mz: float = _MZ, query_ppm: float = 20.0
 ):
     content = SimpleNamespace(
-        peak_observation_content_id=content_id,
+        physical_peak_key=content_id,
+        physical_identity=content_id,
         mz=mz,
         rt=(apex - 0.2, apex - 0.1, apex, apex + 0.1, apex + 0.2),
         intensity=(1.0, 100.0, 1000.0, 100.0, 1.0),
@@ -270,8 +271,8 @@ def test_backfill_different_apices_require_measured_same_lobe(
                 disposition="established",
                 member_subjects=(
                     SimpleNamespace(
-                        canonical_sample_identity_id="sample",
-                        physical_observation_ids=("0",),
+                        sample_key="sample",
+                        physical_peaks=("0",),
                     ),
                 ),
             ),
@@ -294,7 +295,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
 
 def _sample_id(owner: SampleLocalMS1Owner) -> str:
     assert owner.cross_sample_member_subject is not None
-    return owner.cross_sample_member_subject.canonical_sample_identity_id
+    return owner.cross_sample_member_subject.sample_key
 
 
 def _member_observations(group):
@@ -303,7 +304,7 @@ def _member_observations(group):
             observation_id, apex=owner.owner_apex_rt, mz=owner.precursor_mz
         )
         for owner in group.owners
-        for observation_id in owner.cross_sample_member_subject.physical_observation_ids
+        for observation_id in owner.cross_sample_member_subject.physical_peaks
     }
 
 
@@ -357,7 +358,12 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
 
     assert (
         contested_backfill_peaks(
-            groups=(replace(group, disposition="unresolved"),),
+            groups=(
+                replace(
+                    group,
+                    membership=replace(group.membership, disposition="unresolved"),
+                ),
+            ),
             backfills=backfills,
             member_observations=_member_observations(group),
         )

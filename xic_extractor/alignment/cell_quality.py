@@ -25,7 +25,7 @@ CellQualityStatus = Literal[
 @dataclass(frozen=True)
 class CellQualityDecision:
     sample_stem: str
-    feature_family_id: str
+    feature_id: str
     raw_status: str
     quality_status: CellQualityStatus
     matrix_area: float | None
@@ -41,7 +41,7 @@ def build_cell_quality_decisions(
     config: AlignmentConfig,
 ) -> dict[tuple[str, str], CellQualityDecision]:
     return {
-        (decision.feature_family_id, decision.sample_stem): decision
+        (decision.feature_id, decision.sample_stem): decision
         for decision in (decide_cell_quality(cell, config) for cell in cells)
     }
 
@@ -100,7 +100,7 @@ def decision_map_by_family(
 ) -> dict[str, tuple[CellQualityDecision, ...]]:
     grouped: dict[str, list[CellQualityDecision]] = {}
     for decision in decisions.values():
-        grouped.setdefault(decision.feature_family_id, []).append(decision)
+        grouped.setdefault(decision.feature_id, []).append(decision)
     return {
         family_id: tuple(sorted(values, key=lambda item: item.sample_stem))
         for family_id, values in grouped.items()
@@ -115,7 +115,7 @@ def _decision(
 ) -> CellQualityDecision:
     return CellQualityDecision(
         sample_stem=cell.sample_stem,
-        feature_family_id=cell.cluster_id,
+        feature_id=cell.cluster_id,
         raw_status=cell.status,
         quality_status=quality_status,
         matrix_area=matrix_area,

@@ -2,10 +2,9 @@
 
 Column-level reference for all untargeted discovery and alignment output files.
 
-This page documents the current public schemas. Internal `group_hypothesis_id`
-and projection-owned `UntargetRowKey` do not replace `feature_family_id` or change
-these files without a separately versioned public cutover that passes
-expected-diff, schema, downstream-consumer, and rollback gates. The reserved
+This page documents the current public schemas. Changing them is a public
+cutover that passes expected-diff, schema, downstream-consumer, and rollback
+gates. The reserved
 [Untargeted delivery contract](../product/processing-lineage.md#workflow-specific-delivery)
 is separate from these public schemas; it does not introduce per-cell delivery
 identities.
@@ -139,6 +138,7 @@ One row per sample. Links each sample to its output files.
 
 | Column | Type | Description |
 | --- | --- | --- |
+| schema_version | string | `discovery_batch_index` |
 | sample_stem | string | Sample name |
 | raw_file | string | RAW file path |
 | candidate_csv | string | Path to `discovery_candidates.csv` |
@@ -147,6 +147,20 @@ One row per sample. Links each sample to its output files.
 | high_count | int | HIGH priority count |
 | medium_count | int | MEDIUM priority count |
 | low_count | int | LOW priority count |
+| candidate_artifact_schema_version | string | Candidate CSV format |
+| candidate_artifact_sha256 | string | SHA-256 of the candidate CSV bytes |
+| candidate_artifact_byte_size | int | Candidate CSV byte size |
+| candidate_payload_sha256 | string | Path-independent SHA-256 of the complete candidate facts |
+| physical_facts_sha256 | string | SHA-256 of the sample's `discovery_physical_facts.json` bytes |
+| physical_facts_byte_size | int | `discovery_physical_facts.json` byte size |
+| acquisition_content_sha256 | string | SHA-256 of the RAW file content |
+| acquisition_byte_size | int | RAW file byte size |
+| acquisition_format | string | Acquisition format, for example `thermo_raw` |
+| observation_namespace | string | Adapter-readable observation namespace |
+| mass_recalibration | string | Recalibration result; omitted when vendor masses were used unchanged |
+
+Alignment rejects a candidate CSV or physical-facts file whose bytes no longer
+match these fingerprints.
 
 ---
 
@@ -175,42 +189,32 @@ The TSV uses stable display text for people and spreadsheet consumers:
 - `RT` keeps its existing compact numeric rendering, and absent or unchecked
   sample cells remain blank.
 
-Machine consumers that need the unrounded m/z must bind each Matrix row to
-`alignment_matrix_identity.tsv`; its `Mz` field uses round-trip-safe text.
-`alignment_review.tsv.family_center_mz` also carries round-trip-safe text for
-activation of rows that are not yet present in the Matrix. Activation never
-reconstructs machine m/z from the four-decimal Matrix display. Two distinct
-identity rows may therefore show the same four-decimal `Mz`.
+Machine consumers bind Matrix rows to the nonblank `matrix_row_index` subset
+of `alignment_review.tsv`. Its `matrix_mz` and `matrix_rt` retain machine
+precision; `family_center_mz` remains available for groups outside Matrix.
+Consumers never reconstruct machine coordinates from rounded Matrix display.
 
-New identity sidecars declare
-`untargeted_peak_hypothesis_matrix_identity`. Each row contains
-`matrix_row_binding_sha256`, which seals the complete ordered public Matrix row
-to the complete identity row. A missing, duplicated, reordered, cross-bound, or
-substituted row is rejected even when two rows have the same displayed `Mz` and
-`RT`. This digest is an integrity and association check; it does not grant
-scientific authenticity or activation authority.
-
-This display formatting does not change row inclusion, row or sample ordering,
-blank placement, RT, scientific selection, or activation authority. Legacy
-Matrix/identity pairs using the earlier compact `.6g` m/z text remain accepted
-only when the sidecar explicitly declares the schema and the Matrix and
-identity m/z texts match exactly. Precision already absent from a legacy
-sidecar cannot be recovered.
+Each Matrix-backed Review row contains `matrix_row_binding_sha256`, covering
+the complete Matrix header, its row values and the explicit Review Matrix
+projection fields. Missing, duplicated, cross-bound or substituted rows are
+rejected even when displayed coordinates coincide. Review row order is free:
+its explicit indices must cover exactly 1..N. This is an integrity and
+association check, not scientific authenticity or activation authority.
+The old identity sidecar is not emitted or accepted by these readers.
 
 ---
 
 ### `alignment_review.tsv`
 
 One row per cross-sample group. Alignment quality and identity decisions.
-`feature_family_id` is the stable public row/display label retained for output
-compatibility; pipeline identity decisions should use `group_hypothesis_id`
-where that internal or sidecar identity is available.
+`feature_id` is the group label (for example `F000001`), shared by the
+report tables. It does not assert group identity across different input sets.
 
 #### Core Identity
 
 | Column | Type | Description |
 | --- | --- | --- |
-| feature_family_id | string | Stable public row/display label for the cross-sample group |
+| feature_id | string | Report-scoped group label (`F000001`) shared by the report tables |
 | neutral_loss_tag | string | NL identifier |
 | family_center_mz | float | Center m/z: mean of direct members' Discovery `ms1_apex_mz` when any member has one (`center_mz_basis = discovery_ms1_apex_mean`), otherwise the mean of observed m/z |
 | family_center_rt | float | Center RT (min) |
@@ -269,3 +273,17 @@ where that internal or sidecar identity is available.
 | family_evidence | string | Family fold evidence type |
 | warning | string | Warning flag (`no_anchor`, `high_unchecked`, `high_backfill_dependency`) |
 | reason | string | Comprehensive description |
+
+## Explanation format and reruns
+
+The SQLite explanation uses `alignment_explanation.v2` (full audit) or
+`alignment_explanation_review.v2` (compact review), with `curve_payload.v2`
+for retained curves. Curve provenance records query and selection context,
+not full-trace or selection-trace SHA-256 values. Scientific values and
+curve arrays are unchanged. Artifact and curve identifiers are internal links
+within the generated output and must be regenerated together.
+
+Inspector and Workbench require the current explanation format. Older
+explanations are rejected with a message to rerun Alignment; no conversion
+or compatibility reader is provided. This does not change the Matrix row ID
+format or its row-binding column.

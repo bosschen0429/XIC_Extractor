@@ -192,7 +192,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         return _alignment_outputs(
             configured_backend=request.legacy.owner_build_xic_backend,
             matrix_tsv=output_dir / "alignment_matrix.tsv",
-            matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
         )
 
     def fake_run_discovery_batch(*_args: object, **kwargs: Any) -> SimpleNamespace:
@@ -248,7 +247,6 @@ def test_alignment_modes_apply_product_ready_runtime(
     assert callable(should_cancel) and should_cancel() is False
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
-        "matrix_identity_tsv": str(output_dir / "alignment_matrix_identity.tsv"),
     }
     assert progress == (
         [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
@@ -267,8 +265,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
         "effective_owner_build_xic_backend": None,
         "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
     }
 
 

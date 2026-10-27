@@ -24,8 +24,7 @@ def recorded_observations(candidate, linked_records, records, member_ids):
         for kind, rid in linked_records
         if kind == "terminal_subjects"
         for observation in records[kind][rid].get("observations", [])
-        if not member_ids
-        or observation.get("peak_observation_content_id") in member_ids
+        if not member_ids or observation.get("physical_peak_key") in member_ids
     ]
     return observations or [{"rt_apex_min": candidate.get("rt_apex_min")}]
 
@@ -67,10 +66,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         ) WITHOUT ROWID;
         CREATE TABLE query_review (item INTEGER PRIMARY KEY, sample_facts BLOB);
     """)
-    samples = {
-        sample["canonical_sample_identity_id"]: i
-        for i, sample in enumerate(summary["samples"])
-    }
+    samples = {sample["sample_key"]: i for i, sample in enumerate(summary["samples"])}
     db.executemany(
         "INSERT INTO query_samples VALUES (?,?)", ((i, s) for s, i in samples.items())
     )
@@ -98,7 +94,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         "'method_assessments','exclusions')"
     )
     for kind, rid, payload in db.execute(
-        "SELECT * FROM records WHERE kind IN " + kinds
+        "SELECT kind, record_id, payload FROM records WHERE kind IN " + kinds
     ):
         records.setdefault(kind, {})[rid] = _object(payload)
     links = defaultdict(set)
@@ -110,7 +106,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
     grouped = set()
     row_groups = set()
     for rid, row in records.get("rows", {}).items():
-        gid = row.get("group_hypothesis_id")
+        gid = row.get("feature_id")
         row_groups.add(gid)
         keys = record_keys["rows", rid]
         grouped.update(keys)
@@ -150,8 +146,8 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         for member in (
             records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
         ):
-            members[member.get("canonical_sample_identity_id")].update(
-                member.get("physical_observation_ids", [])
+            members[member.get("sample_key")].update(
+                member.get("physical_peak_keys", [])
             )
         ordinal = 0
         observed = set()
@@ -160,7 +156,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             for observation in recorded_observations(
                 candidates[key], links[key], records, members[key[1]]
             ):
-                if observation.get("peak_observation_content_id"):
+                if observation.get("physical_peak_key"):
                     observed.add(key[1])
                 db.execute(
                     "INSERT INTO query_witnesses VALUES (?,?,?,?,?)",
@@ -169,7 +165,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                         ordinal,
                         candidate_ids[key],
                         observation.get("rt_apex_min"),
-                        observation.get("peak_observation_content_id"),
+                        observation.get("physical_peak_key"),
                     ),
                 )
                 ordinal += 1
@@ -227,11 +223,6 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                 "INSERT INTO query_peers VALUES (?,?,?,?)",
                 ((item, peer, priority, edge_ref) for peer in peers),
             )
-    summary["query_index_version"] = 2
-    db.execute(
-        "UPDATE metadata SET payload=? WHERE key='summary'",
-        (json.dumps(summary, allow_nan=False),),
-    )
     db.execute("ANALYZE")
 
 

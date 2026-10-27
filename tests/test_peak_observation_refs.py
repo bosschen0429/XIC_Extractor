@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -21,10 +20,8 @@ from xic_extractor.peak_detection.models import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     PeakObservationRef,
-    canonical_peak_observation_ref_bytes,
     mint_peak_observation_ref,
     validate_peak_observation_binding,
-    verify_persisted_peak_observation_claims,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -94,15 +91,11 @@ def test_query_provenance_does_not_change_selected_physical_content(
     np.testing.assert_array_equal(wide.source_trace.intensity, wide_trace.intensity)
     assert len(wide.source_trace.rt) > len(wide.content.rt)
     assert narrow.content == wide.content
-    assert narrow.content.peak_observation_content_id == (
-        wide.content.peak_observation_content_id
-    )
+    assert narrow.content.physical_peak_key == (wide.content.physical_peak_key)
     assert narrow.generation_provenance != wide.generation_provenance
-    assert narrow.artifact.content_identity != wide.artifact.content_identity
-    assert narrow.artifact.evidence_artifact_id != wide.artifact.evidence_artifact_id
 
 
-def test_binding_rejects_sample_and_attempt_substitution(tmp_path: Path) -> None:
+def test_binding_rejects_sample_substitution(tmp_path: Path) -> None:
     identity = _identity_fixture(tmp_path)
     reference = mint_peak_observation_ref(
         processing_owners=identity.owners,
@@ -111,24 +104,6 @@ def test_binding_rejects_sample_and_attempt_substitution(tmp_path: Path) -> None
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
-    )
-    retry = issue_processing_attempt(identity.request, retry_of=identity.attempt)
-    changed_request = build_processing_request_identity(
-        acquisition_sources=identity.request.acquisition_sources,
-        acquisition_bindings=identity.request.acquisition_bindings,
-        scientific_input_schema_version=(
-            identity.request.scientific_input_schema_version
-        ),
-        processing_algorithm_version=identity.request.processing_algorithm_version,
-        processing_contract_version=identity.request.processing_contract_version,
-        scientific_inputs={"fixture": "changed-synthetic-input"},
-    )
-    foreign_attempt = issue_processing_attempt(changed_request)
-    retry_owners = _processing_owners(identity.request, retry, identity.sample)
-    foreign_owners = _processing_owners(
-        changed_request,
-        foreign_attempt,
-        identity.sample,
     )
     other_snapshot = mint_sample_metadata_snapshot(
         (SampleMetadata(sample_name="Sample B", raw_stem="sample-b"),),
@@ -141,44 +116,12 @@ def test_binding_rejects_sample_and_attempt_substitution(tmp_path: Path) -> None
         processing_owners=identity.owners,
         sample=identity.sample,
     )
-    with pytest.raises(
-        PeakObservationContractError, match="different processing attempt"
-    ):
-        validate_peak_observation_binding(
-            reference,
-            processing_owners=retry_owners,
-            sample=identity.sample,
-        )
     with pytest.raises(PeakObservationContractError, match="different sample"):
         validate_peak_observation_binding(
             reference,
             processing_owners=identity.owners,
             sample=other_sample,
         )
-    with pytest.raises(
-        PeakObservationContractError, match="different processing request"
-    ):
-        validate_peak_observation_binding(
-            reference,
-            processing_owners=foreign_owners,
-            sample=identity.sample,
-        )
-
-
-def test_retry_preserves_content_but_mints_a_distinct_attempt_artifact(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(identity.request, retry_of=identity.attempt)
-    retry_owners = _processing_owners(identity.request, retry, identity.sample)
-
-    first = _mint_standard_reference(identity.owners, identity.sample)
-    repeated = _mint_standard_reference(retry_owners, identity.sample)
-
-    assert first.content == repeated.content
-    assert first.generation_provenance == repeated.generation_provenance
-    assert first.artifact.content_identity == repeated.artifact.content_identity
-    assert first.artifact.evidence_artifact_id != repeated.artifact.evidence_artifact_id
 
 
 def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
@@ -220,114 +163,7 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.peak_observation_content_id != (
-        mutated.content.peak_observation_content_id
-    )
-    assert original.artifact.content_identity != mutated.artifact.content_identity
-    with pytest.raises(
-        PeakObservationContractError, match="mismatches physical content"
-    ):
-        replace(
-            original.content,
-            intensity=(50.0, 501.0, 50.0),
-        )
-
-
-def test_persisted_content_verifies_supported_claims_and_rejects_stale_id(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        canonical_peak_observation_ref_bytes(
-            reference.content,
-            reference.generation_provenance,
-        )
-    )["content"]
-
-    verified = verify_persisted_peak_observation_claims(payload)
-    assert verified.peak_observation_content_id == (
-        reference.content.peak_observation_content_id
-    )
-    assert verified.canonical_sample_identity_id == (
-        reference.content.canonical_sample_identity_id
-    )
-    assert verified.raw_apex_rt_min == reference.content.integration.raw_apex_rt_min
-    assert verified.height_raw == reference.content.integration.height_raw
-    assert math.isclose(
-        verified.area_raw_counts_seconds,
-        reference.content.integration.area_raw_counts_seconds,
-        rel_tol=1e-12,
-        abs_tol=1e-12,
-    )
-    assert not hasattr(verified, "height_smoothed")
-    assert not hasattr(verified, "area_baseline_corrected")
-    assert not hasattr(verified, "gaussian15_fwhm_min")
-
-    payload["intensity"][0] += 1.0
-    with pytest.raises(
-        PeakObservationContractError,
-        match="peak_observation_content_id mismatches physical content",
-    ):
-        verify_persisted_peak_observation_claims(payload)
-
-
-@pytest.mark.parametrize(
-    ("field_name", "contradiction"),
-    [
-        ("area_raw_counts_seconds", 999999.0),
-        ("height_raw", 999999.0),
-        ("raw_apex_rt_min", 7.9),
-    ],
-)
-def test_persisted_content_rejects_resealed_signal_derived_claim(
-    tmp_path: Path,
-    field_name: str,
-    contradiction: float,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        canonical_peak_observation_ref_bytes(
-            reference.content,
-            reference.generation_provenance,
-        )
-    )["content"]
-    integration = replace(
-        reference.content.integration,
-        **{field_name: contradiction},
-    )
-    payload["integration"] = json.loads(json.dumps(asdict(integration)))
-    payload["peak_observation_content_id"] = observation_owner._content_id(
-        canonical_sample_identity_id=reference.content.canonical_sample_identity_id,
-        mz=reference.content.mz,
-        rt=reference.content.rt,
-        intensity=reference.content.intensity,
-        integration=integration,
-    )
-
-    with pytest.raises(PeakObservationContractError, match=field_name):
-        verify_persisted_peak_observation_claims(payload)
-
-
-@pytest.mark.parametrize("nested", [False, True])
-def test_persisted_content_rejects_undeclared_fields(
-    tmp_path: Path,
-    nested: bool,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = _mint_standard_reference(identity.owners, identity.sample)
-    payload = json.loads(
-        canonical_peak_observation_ref_bytes(
-            reference.content,
-            reference.generation_provenance,
-        )
-    )["content"]
-    target = payload["integration"] if nested else payload
-    target["caller_assertion"] = "not-owner-content"
-
-    with pytest.raises(PeakObservationContractError, match="unexpected fields"):
-        verify_persisted_peak_observation_claims(payload)
+    assert original.content.physical_identity != mutated.content.physical_identity
 
 
 @pytest.mark.parametrize(
@@ -400,42 +236,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.peak_observation_content_id != (
-        changed.content.peak_observation_content_id
-    )
-
-
-def test_selection_trace_mutation_changes_provenance_not_physical_content(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    trace = _standard_trace(identity.owners)
-    integration = _integration(raw_scan_indices=(1, 2, 3))
-
-    first = mint_peak_observation_ref(
-        processing_owners=identity.owners,
-        sample=identity.sample,
-        trace=trace,
-        integration=integration,
-        selection_intensity=(0.0, 40.0, 500.0, 40.0, 0.0),
-        resolver_mode="smoothed",
-        proposal_sources=("synthetic_selection_trace",),
-    )
-    changed = mint_peak_observation_ref(
-        processing_owners=identity.owners,
-        sample=identity.sample,
-        trace=trace,
-        integration=integration,
-        selection_intensity=(0.0, 45.0, 500.0, 45.0, 0.0),
-        resolver_mode="smoothed",
-        proposal_sources=("synthetic_selection_trace",),
-    )
-
-    assert first.content == changed.content
-    assert first.generation_provenance.selection_trace_sha256 != (
-        changed.generation_provenance.selection_trace_sha256
-    )
-    assert first.artifact.content_identity != changed.artifact.content_identity
+    assert original.content.physical_identity != changed.content.physical_identity
 
 
 def test_equivalent_numeric_integration_inputs_have_one_content_identity(
@@ -471,10 +272,9 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
 
     assert integer_integration == float_integration
     assert integer_ref.content == float_ref.content
-    assert integer_ref.content.peak_observation_content_id == (
-        float_ref.content.peak_observation_content_id
+    assert integer_ref.content.physical_peak_key == (
+        float_ref.content.physical_peak_key
     )
-    assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
 
 
 def test_integration_result_collapses_signed_zero() -> None:
@@ -798,9 +598,6 @@ def test_resolver_change_preserves_content_but_changes_generation_provenance(
 
     assert local_minimum.content == arbitrated.content
     assert local_minimum.generation_provenance != arbitrated.generation_provenance
-    assert (
-        local_minimum.artifact.content_identity != arbitrated.artifact.content_identity
-    )
 
 
 def _identity_fixture(
@@ -834,7 +631,7 @@ def _identity_fixture(
         (SampleMetadata(sample_name=sample_name, raw_stem=sample_key),),
         identity_namespace="study:peak-observation",
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     sample = resolve_canonical_sample_identity(snapshot, sample_key)
     return _IdentityFixture(
         request=request,
@@ -981,31 +778,17 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
         old.content,
         integration=replace(old.content.integration, signal_quality=quality),
     )
-    assert (
-        enriched.peak_observation_content_id == old.content.peak_observation_content_id
-    )
-    payload = json.loads(
-        canonical_peak_observation_ref_bytes(enriched, old.generation_provenance)
-    )["content"]
-    assert payload["integration"]["signal_quality"]["signal_to_noise"] == 2.0
-    verified = verify_persisted_peak_observation_claims(payload)
-    assert (
-        verified.peak_observation_content_id == old.content.peak_observation_content_id
-    )
-    legacy = json.loads(
-        canonical_peak_observation_ref_bytes(old.content, old.generation_provenance)
-    )["content"]
-    assert "signal_quality" not in legacy["integration"]
-    assert (
-        verify_persisted_peak_observation_claims(legacy).peak_observation_content_id
-        == verified.peak_observation_content_id
-    )
+    assert enriched.physical_peak_key == old.content.physical_peak_key
+    assert enriched.physical_identity == old.content.physical_identity
+    assert observation_owner.index_physical_peaks(
+        (old, replace(old, content=enriched))
+    ) == {old.content.physical_identity: replace(old, content=enriched)}
 
 
 @pytest.mark.parametrize(
     "reuse_trace_provenance", ["none", "observation", "acquisition"]
 )
-def test_retained_candidate_batch_preserves_canonical_observation_bytes(
+def test_retained_candidate_batch_preserves_observation_values(
     tmp_path,
     monkeypatch,
     reuse_trace_provenance,
@@ -1034,7 +817,6 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
     evaluations = tuple(
         evaluate_physical_peak(
             prepared,
-            selection_subject_id="Analyte",
             query_rt_min=query,
             request_context_rt_start_min=trace.rt_min,
             request_context_rt_end_min=trace.rt_max,
@@ -1060,24 +842,12 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
     acquired_provenance = (
         observation_owner.prepare_peak_observation_provenance(
             trace=trace,
-            selection_values=np.asarray(prepared.prepared.positive_signal),
             selected_indices=expected[0].generation_provenance.selected_trace_indices,
             resolver_mode="local_minimum",
             proposal_sources=("canonical_physical_segment",),
         )
         if reuse_trace_provenance == "acquisition"
         else None
-    )
-    serialized_traces = 0
-    original = observation_owner._canonical_trace_bytes
-
-    def counted_trace_bytes(trace):
-        nonlocal serialized_traces
-        serialized_traces += 1
-        return original(trace)
-
-    monkeypatch.setattr(
-        observation_owner, "_canonical_trace_bytes", counted_trace_bytes
     )
     actual = observation_owner.mint_physical_peak_observations(
         processing_owners=identity.owners,
@@ -1091,14 +861,10 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
         ),
         acquired_trace_provenance=acquired_provenance,
     )
-    assert serialized_traces == (1 if reuse_trace_provenance == "none" else 0)
     assert len(actual) == 2
     for reference, projected in zip(expected, actual, strict=True):
-        assert canonical_peak_observation_ref_bytes(
-            reference.content, reference.generation_provenance
-        ) == canonical_peak_observation_ref_bytes(
-            projected.content, projected.generation_provenance
-        )
+        assert reference.content == projected.content
+        assert reference.generation_provenance == projected.generation_provenance
     assert (
         actual[0].content.integration.area_ms1_morphology
         > actual[1].content.integration.area_ms1_morphology

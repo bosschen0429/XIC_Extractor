@@ -7,11 +7,15 @@ import json
 import re
 import sqlite3
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_cid_nl_explanation_curves import _curve_provenance
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -38,12 +42,14 @@ def _insert_link(
     set_id = connection.execute(
         "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
     ).fetchone()[0]
+    connection.execute("INSERT INTO link_sets VALUES (?)", (set_id,))
     connection.execute(
         "INSERT OR IGNORE INTO link_members VALUES (?, ?, ?)",
         (set_id, candidate_id, sample_id),
     )
     connection.execute(
-        "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO record_links "
+        "SELECT ?, id FROM records WHERE kind=? AND record_id=?",
         (set_id, kind, record_id),
     )
 
@@ -52,10 +58,15 @@ def _delete_links(
     connection: sqlite3.Connection, *, kind: str, record_id: str | None = None
 ) -> None:
     if record_id is None:
-        connection.execute("DELETE FROM record_links WHERE kind=?", (kind,))
+        connection.execute(
+            "DELETE FROM record_links WHERE record_rowid IN "
+            "(SELECT id FROM records WHERE kind=?)",
+            (kind,),
+        )
     else:
         connection.execute(
-            "DELETE FROM record_links WHERE kind=? AND record_id=?",
+            "DELETE FROM record_links WHERE record_rowid IN "
+            "(SELECT id FROM records WHERE kind=? AND record_id=?)",
             (kind, record_id),
         )
 
@@ -79,8 +90,8 @@ def _create_mock_db(
 
     if samples is None:
         samples = [
-            {"sample_stem": "s1", "canonical_sample_identity_id": "S1"},
-            {"sample_stem": "s2", "canonical_sample_identity_id": "S2"},
+            {"sample_stem": "s1", "sample_key": "S1"},
+            {"sample_stem": "s2", "sample_key": "S2"},
         ]
 
     with ExplanationReportWriter(db_path) as writer:
@@ -89,16 +100,15 @@ def _create_mock_db(
             "S1",
             {
                 "candidate_id": "C1",
-                "canonical_sample_identity_id": "S1",
+                "sample_key": "S1",
                 "precursor_mz": 500.0,
             },
         )
         writer.add_record(
             "rows",
-            "row-01",
+            "G1",
             {
-                "row_key_id": "row-01",
-                "group_hypothesis_id": "G1",
+                "feature_id": "G1",
                 "reason": "Passed alignment",
             },
             [("C1", "S1")],
@@ -106,23 +116,19 @@ def _create_mock_db(
         writer.add_record(
             "final_groups",
             "G1",
-            {"group_hypothesis_id": "G1", "disposition": "completed"},
+            {"feature_id": "G1", "disposition": "completed"},
             [("C1", "S1")],
         )
         writer.add_record(
             "cell_decisions",
             "cd-01",
-            {"row_key_id": "row-01", "sample_id": "S1", "quantitative_value": 1000.0},
+            {"feature_id": "G1", "sample_id": "S1", "quantitative_value": 1000.0},
             [("C1", "S1")],
         )
         writer.add_record(
             "terminal_subjects",
             "terminal-01",
-            {
-                "observations": [
-                    {"peak_observation_content_id": "obs-01", "rt_apex_min": 1.0}
-                ]
-            },
+            {"observations": [{"physical_peak_key": "obs-01", "rt_apex_min": 1.0}]},
             [("C1", "S1")],
         )
         # Add a curve payload for C1
@@ -131,7 +137,7 @@ def _create_mock_db(
             "kind": "initial_capture",
             "sample_id": "S1",
             "candidate_id": "C1",
-            "peak_observation_content_id": "obs-01",
+            "physical_peak_key": "obs-01",
             "trace_coordinate": {
                 "mz": 500.0,
                 "rt_min": 0.8,
@@ -145,39 +151,39 @@ def _create_mock_db(
                 "smoothed": None,
                 "positive": None,
             },
-            "integration": {
-                "apex_rt_min": 1.0,
-                "raw_apex_rt_min": 1.0,
-                "rt_left_min": 0.9,
-                "rt_right_min": 1.1,
-                "height_raw": 1000.0,
-                "area_raw_counts_seconds": 2500.0,
-                "area_profile_selected": None,
-                "integration_method": "raw_trapezoid",
-                "boundary_source": "candidate_interval",
-            },
+            "integration": asdict(
+                IntegrationResult(
+                    rt_left_min=0.9,
+                    rt_apex_min=1.0,
+                    rt_right_min=1.1,
+                    raw_apex_rt_min=1.0,
+                    rt_width_min=0.20000000000000007,
+                    height_raw=1000.0,
+                    height_smoothed=1000.0,
+                    area_raw_counts_seconds=2500.0,
+                )
+            ),
             "provenance": {
-                "profile_id": None,
-                "trace_content_id": None,
-                "processing_request_id": request_id,
+                **_curve_provenance(),
                 "processing_attempt_id": attempt_id,
             },
         }
         writer.add_curve_payload(
-            payload_id="S1:initial_capture:C1",
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-01",
             payload=curve_envelope,
         )
         writer.finalize(
-            {
-                "processing_request_id": request_id,
-                "processing_attempt_id": attempt_id,
-                "matrix_path": str(matrix_path),
-                "matrix_sha256": matrix_hash,
-                "samples": samples,
-            }
+            _summary_fixture(
+                {
+                    "processing_attempt_id": attempt_id,
+                    "matrix_path": str(matrix_path),
+                    "matrix_sha256": matrix_hash,
+                    "samples": samples,
+                },
+                review_only=writer.review_only,
+            )
         )
 
     return db_path, matrix_path, matrix_hash
@@ -216,7 +222,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
 
     assert result.selected_count == 1
     item = _report_data(output)["items"][0]
-    assert json.loads(item["id"])[-1] == "row-01"
+    assert json.loads(item["id"])[-1] == "G1"
     assert item["details"]["readable_records"]
     assert {"rows", "final_groups", "cell_decisions"}.issubset(detail["records"])
 
@@ -254,7 +260,6 @@ def test_generate_report_sample_strategy_success() -> None:
         metadata_start = re.search(r"\bmetadata\s*:\s*(\{)", content).start(1)
         metadata, _ = json.JSONDecoder().raw_decode(content[metadata_start:])
         assert title == metadata["title"] == "Inspector"
-        assert res.source.processing_request_id not in title + metadata["title"]
         assert "retained_curves" in content
 
 
@@ -263,18 +268,16 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     stored_cell = {
         "cell_observation_id": "cell-observation-02",
         "decision_id": "decision-02",
-        "group_hypothesis_id": "G1",
-        "row_key_id": "row-01",
-        "canonical_sample_identity_id": "S2",
+        "feature_id": "G1",
+        "sample_key": "S2",
         "source": "",
         "value": None,
         "variant": "not_searched",
     }
     stored_observation = {
         "cell_observation_id": "cell-observation-02",
-        "group_hypothesis_id": "G1",
-        "canonical_sample_identity_id": "S2",
-        "processing_request_id": "req-01",
+        "feature_id": "G1",
+        "sample_key": "S2",
         "evidence_states": [],
         "predecessor_cells": [],
     }
@@ -285,7 +288,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
             (
                 "cell_decisions",
                 "wrong-row",
-                {**stored_cell, "decision_id": "wrong-row", "row_key_id": "row-02"},
+                {**stored_cell, "decision_id": "wrong-row", "feature_id": "row-02"},
             ),
             (
                 "cell_decisions",
@@ -293,7 +296,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 {
                     **stored_cell,
                     "decision_id": "wrong-group",
-                    "group_hypothesis_id": "G2",
+                    "feature_id": "G2",
                 },
             ),
             (
@@ -302,14 +305,14 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 {
                     **stored_cell,
                     "decision_id": "wrong-sample",
-                    "canonical_sample_identity_id": "S3",
+                    "sample_key": "S3",
                 },
             ),
             (
                 "method_assessments",
                 "assessment-hold",
                 {
-                    "canonical_sample_identity_id": "S1",
+                    "sample_key": "S1",
                     "method_result": "HOLD",
                     "reason_codes": [
                         "insufficient_method_evidence",
@@ -319,7 +322,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
         _insert_link(
@@ -349,9 +352,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert readable["cell-observation-02"]["sample_ids"] == ["S2"]
     assert readable["cell-observation-02"]["candidate_ids"] == []
     assert not {"wrong-row", "wrong-group", "wrong-sample"} & readable.keys()
-    assert {
-        witness["canonical_sample_identity_id"] for witness in item["witnesses"]
-    } == {"S1"}
+    assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
     assert "s1" in item["reason_label"]
@@ -487,8 +488,8 @@ def test_normalized_sample_scope_semantics() -> None:
         db_path, _, _ = _create_mock_db(
             tmp,
             samples=[
-                {"sample_stem": "b_sample", "canonical_sample_identity_id": "S_B"},
-                {"sample_stem": "a_sample", "canonical_sample_identity_id": "S_A"},
+                {"sample_stem": "b_sample", "sample_key": "S_B"},
+                {"sample_stem": "a_sample", "sample_key": "S_A"},
             ],
         )
         out_html = tmp / "report.html"
@@ -588,11 +589,11 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         for index in range(2, row_count + 1):
             rid = f"row-{index:02d}"
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "rows",
                     rid,
-                    json.dumps({"row_key_id": rid, "group_hypothesis_id": "G1"}),
+                    json.dumps({"feature_id": "G1"}),
                 ),
             )
             _insert_link(
@@ -608,10 +609,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         return result
 
     monkeypatch.setattr(cid_nl, "read_cid_nl_curves", read)
-    assert (
-        read_evidence_summary(report)["samples"][0]["canonical_sample_identity_id"]
-        == "S1"
-    )
+    assert read_evidence_summary(report)["samples"][0]["sample_key"] == "S1"
     assert reads == []
     output = tmp_path / "shared.html"
     import time
@@ -629,8 +627,8 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     record_property("selected_items", result.selected_count)
     assert result.selected_count == row_count
     items = _report_data(output)["items"]
-    assert {json.loads(item["id"])[-1] for item in items} == {
-        f"row-{index:02d}" for index in range(1, row_count + 1)
+    assert {json.loads(item["id"])[-1] for item in items} == {"G1"} | {
+        f"row-{index:02d}" for index in range(2, row_count + 1)
     }
     assert all(
         item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
@@ -660,7 +658,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
         _insert_link(connection, ("C2", "S2", "final_groups", "G1"))
         for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "terminal_subjects",
                     cid,
@@ -668,7 +666,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
                         {
                             "observations": [
                                 {
-                                    "peak_observation_content_id": "obs-01"
+                                    "physical_peak_key": "obs-01"
                                     if cid == "C1"
                                     else "obs-02",
                                     "rt_apex_min": rt,
@@ -713,7 +711,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     item = _report_data(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
-    assert [w["canonical_sample_identity_id"] for w in item["witnesses"]] == ["S1"]
+    assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
@@ -724,21 +722,20 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
         for kind, rid in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-01"),
         ):
             _insert_link(connection, ("C2", "S2", kind, rid))
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
-                        "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S2",
+                        "feature_id": "G1",
+                        "sample_key": "S2",
                         "value": None,
                         "variant": "missing",
                     }
@@ -764,12 +761,12 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
     assert all(
-        c.get("canonical_sample_identity_id", c.get("sample_id")) == "S1"
+        c.get("sample_key", c.get("sample_id")) == "S1"
         for c in item["details"]["cells"]
     )
 
 
-@pytest.mark.parametrize("failure", ["missing", "request", "attempt", "sample"])
+@pytest.mark.parametrize("failure", ["missing", "attempt", "sample"])
 def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     import zlib
 
@@ -787,8 +784,6 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
             payload = json.loads(zlib.decompress(blob))
             if failure == "attempt":
                 payload["provenance"]["processing_attempt_id"] = "another-attempt"
-            elif failure == "request":
-                payload["provenance"]["processing_request_id"] = "another-request"
             else:
                 payload["sample_id"] = "S2"
             connection.execute(
@@ -864,15 +859,15 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
         blob = connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
         original = json.loads(zlib.decompress(blob))
         captures = [
-            ("first", "initial_capture", "obs-earlier", "obs-earlier"),
-            ("second", "reacquired_capture", "obs-01", "obs-01"),
-            ("nopeak", "reacquired_capture", None, "C1"),
+            (2, "initial_capture", "obs-earlier", "obs-earlier"),
+            (3, "reacquired_capture", "obs-01", "obs-01"),
+            (4, "reacquired_capture", None, "C1"),
         ]
         for pid, kind, observation_id, record_id in captures:
             payload = {
                 **original,
                 "kind": kind,
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
             }
             connection.execute(
                 "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
@@ -889,12 +884,12 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                 "payload_id": pid,
                 "sample_id": "S1",
                 "candidate_id": "C1",
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
                 "record_id": record_id,
                 "kind": kind,
             }
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 ("capture_evidence", pid, json.dumps(capture)),
             )
             _insert_link(
@@ -905,12 +900,12 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     generate_report(report, SelectionRequest(), output)
     curves = _report_data(output)["items"][0]["curves"]
     assert len(curves) == 4
-    assert {c["evidence_ref"] for c in curves} >= {"first", "second", "nopeak"}
+    assert {c["evidence_ref"] for c in curves} >= {2, 3, 4}
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
         # The terminal obs still has its initial payload; losing a distinct
         # reacquisition of that same observation must still fail completion.
-        connection.execute("DELETE FROM curve_payloads WHERE payload_id='second'")
+        connection.execute("DELETE FROM curve_payloads WHERE payload_id=3")
     with pytest.raises(InspectorError) as caught:
         generate_report(report, SelectionRequest(), output)
     assert caught.value.code == 4
@@ -959,7 +954,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
         connection.execute(
             "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
             (
-                "recovery-curve",
+                2,
                 "S1",
                 capture_kind,
                 "obs-01",
@@ -968,16 +963,16 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "capture_evidence",
-                "recovery-curve",
+                2,
                 json.dumps(
                     {
-                        "payload_id": "recovery-curve",
+                        "payload_id": 2,
                         "sample_id": "S1",
                         "candidate_id": "C1",
-                        "peak_observation_content_id": "obs-01",
+                        "physical_peak_key": "obs-01",
                         "record_id": "obs-01",
                         "kind": capture_kind,
                     }
@@ -985,14 +980,14 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "method_assessments",
                 "recovery-method",
                 json.dumps(
                     {
-                        "canonical_sample_identity_id": "S1",
-                        "candidate_peak_content_ids": ["obs-01"],
+                        "sample_key": "S1",
+                        "candidate_physical_peak_keys": ["obs-01"],
                         "detector_invocation_id": invocation,
                         "method_result": "SUPPORT",
                     }
@@ -1000,7 +995,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         for kind, ref in (
-            ("capture_evidence", "recovery-curve"),
+            ("capture_evidence", 2),
             ("method_assessments", "recovery-method"),
         ):
             _insert_link(connection, ("C1", "S1", kind, ref))
@@ -1015,7 +1010,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
         "kind": expected_kind,
         "label": expected_label,
         "method_refs": ["recovery-method"],
-        "capture_refs": ["recovery-curve"],
+        "capture_refs": ["2"],
         "observation_refs": ["obs-01"],
     }
 
@@ -1034,11 +1029,10 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         )
         final_group["member_subjects"] = [
             {
-                "member_subject_id": "member-01",
-                "canonical_sample_identity_id": "S1",
+                "sample_key": "S1",
                 "subject_kind": "peak_hypothesis",
                 "subject_id": "hypothesis-01",
-                "physical_observation_ids": ["obs-01"],
+                "physical_peak_keys": ["obs-01"],
             }
         ]
         connection.execute(
@@ -1061,21 +1055,21 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             (json.dumps(decision),),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_observations",
                 "cell-observation-01",
                 json.dumps(
                     {
                         "cell_observation_id": "cell-observation-01",
-                        "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S1",
+                        "feature_id": "G1",
+                        "sample_key": "S1",
                         "predecessor_cells": [
                             {
                                 "content": {
-                                    "canonical_sample_identity_id": "S1",
-                                    "group_hypothesis_id": "G1",
-                                    "peak_observation_content_id": "obs-01",
+                                    "sample_key": "S1",
+                                    "feature_id": "G1",
+                                    "physical_peak_key": "obs-01",
                                     "method_result": "SUPPORT",
                                 }
                             }
@@ -1092,7 +1086,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         connection.execute(
             "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
             (
-                "recovery-curve",
+                2,
                 "S1",
                 "backfill_observation",
                 "obs-01",
@@ -1105,12 +1099,12 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         for kind, ref, facts in (
             (
                 "capture_evidence",
-                "recovery-curve",
+                2,
                 {
-                    "payload_id": "recovery-curve",
+                    "payload_id": 2,
                     "sample_id": "S1",
                     "candidate_id": "C1",
-                    "peak_observation_content_id": "obs-01",
+                    "physical_peak_key": "obs-01",
                     "record_id": "obs-01",
                     "kind": "backfill_observation",
                 },
@@ -1119,15 +1113,15 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "method_assessments",
                 "recovery-method",
                 {
-                    "canonical_sample_identity_id": "S1",
-                    "candidate_peak_content_ids": ["obs-01"],
+                    "sample_key": "S1",
+                    "candidate_physical_peak_keys": ["obs-01"],
                     "detector_invocation_id": "untargeted-cid-nl-backfill",
                     "method_result": "SUPPORT",
                 },
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
             _insert_link(connection, ("C1", "S1", kind, ref))
@@ -1143,7 +1137,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         "kind": "backfill_support",
         "label": "Backfill（回填）支持",
         "method_refs": ["recovery-method"],
-        "capture_refs": ["recovery-curve"],
+        "capture_refs": ["2"],
         "observation_refs": ["obs-01"],
     }
 
@@ -1164,10 +1158,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 "rt_pruning": False,
             }
             if sparse_coverage
-            else {
-                "policy": "legacy-unspecified",
-                "unlisted_pairs": "unrecorded",
-            }
+            else {}
         )
         if sparse_coverage:
             summary = json.loads(
@@ -1197,7 +1188,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S1",
+                            "sample_key": "S1",
                             "precursor_mz": 501.0,
                         }
                     ),
@@ -1207,12 +1198,12 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 (
                     "rows",
                     row_id,
-                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                    {"feature_id": group_id},
                 ),
                 (
                     "final_groups",
                     group_id,
-                    {"group_hypothesis_id": group_id, "disposition": "provisional"},
+                    {"feature_id": group_id, "disposition": "provisional"},
                 ),
                 (
                     "terminal_subjects",
@@ -1220,7 +1211,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     {
                         "observations": [
                             {
-                                "peak_observation_content_id": observation_id,
+                                "physical_peak_key": observation_id,
                                 "rt_apex_min": 1.0,
                             }
                         ]
@@ -1228,7 +1219,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
                 _insert_link(
@@ -1238,12 +1229,12 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             curve = {
                 **original,
                 "candidate_id": candidate_id,
-                "peak_observation_content_id": observation_id,
+                "physical_peak_key": observation_id,
             }
             connection.execute(
                 "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    f"curve-{candidate_id}",
+                    int(candidate_id[1:]),
                     "S1",
                     "initial_capture",
                     observation_id,
@@ -1252,7 +1243,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 ),
             )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "initial_edges",
                 "edge-c1-c2",
@@ -1322,9 +1313,9 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     report, _, _ = _create_mock_db(
         tmp_path,
         samples=[
-            {"sample_stem": "sample one", "canonical_sample_identity_id": "S1"},
-            {"sample_stem": "sample two", "canonical_sample_identity_id": "S2"},
-            {"sample_stem": "sample three", "canonical_sample_identity_id": "S3"},
+            {"sample_stem": "sample one", "sample_key": "S1"},
+            {"sample_stem": "sample two", "sample_key": "S2"},
+            {"sample_stem": "sample three", "sample_key": "S3"},
         ],
     )
     with sqlite3.connect(report) as connection:
@@ -1341,14 +1332,14 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": sample_id,
+                            "sample_key": sample_id,
                             "precursor_mz": 500.0,
                         }
                     ),
                 ),
             )
         for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
-            for kind, ref in (("rows", "row-01"), ("final_groups", "G1")):
+            for kind, ref in (("rows", "G1"), ("final_groups", "G1")):
                 _insert_link(
                     connection,
                     (candidate_id, sample_id, kind, ref),
@@ -1358,16 +1349,16 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             (
                 json.dumps(
                     {
-                        "group_hypothesis_id": "G1",
+                        "feature_id": "G1",
                         "disposition": "completed",
                         "member_subjects": [
                             {
-                                "member_subject_id": "member-1",
-                                "canonical_sample_identity_id": "S1",
+                                "subject_id": "member-1",
+                                "sample_key": "S1",
                             },
                             {
-                                "member_subject_id": "member-2",
-                                "canonical_sample_identity_id": "S2",
+                                "subject_id": "member-2",
+                                "sample_key": "S2",
                             },
                         ],
                     }
@@ -1378,25 +1369,25 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             (
                 "rows",
                 "row-02",
-                {"row_key_id": "row-02", "group_hypothesis_id": "G2"},
+                {"feature_id": "G2"},
             ),
             (
                 "final_groups",
                 "G2",
                 {
-                    "group_hypothesis_id": "G2",
+                    "feature_id": "G2",
                     "disposition": "completed",
                     "member_subjects": [
                         {
-                            "member_subject_id": "member-3",
-                            "canonical_sample_identity_id": "S3",
+                            "subject_id": "member-3",
+                            "sample_key": "S3",
                         }
                     ],
                 },
             ),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(payload)),
             )
             _insert_link(
@@ -1444,14 +1435,14 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         )
         for ref, left_id, right_id, disposition, evidence, links in edges:
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "initial_edges",
                     ref,
                     json.dumps(
                         {
-                            "left_member_subject_id": left_id,
-                            "right_member_subject_id": right_id,
+                            "left_subject_id": left_id,
+                            "right_subject_id": right_id,
                             "disposition": disposition,
                             "initial_evidence": evidence,
                         }
@@ -1475,8 +1466,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     assert item["internal_pair_support"] == [
         {
             "edge_ref": "edge-direct-three-links",
-            "left_member_subject_id": "member-1",
-            "right_member_subject_id": "member-2",
+            "left_subject_id": "member-1",
+            "right_subject_id": "member-2",
             "left_sample_label": "sample one",
             "right_sample_label": "sample two",
             "support_kind": "direct",
@@ -1490,8 +1481,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         },
         {
             "edge_ref": "edge-review",
-            "left_member_subject_id": "member-1",
-            "right_member_subject_id": "member-2",
+            "left_subject_id": "member-1",
+            "right_subject_id": "member-2",
             "left_sample_label": "sample one",
             "right_sample_label": "sample two",
             "support_kind": "review_only",
@@ -1519,7 +1510,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                 json.dumps(
                     {
                         "candidate_id": "C2",
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "precursor_mz": 501.0,
                     }
                 ),
@@ -1533,16 +1524,16 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                 (
                     "rows",
                     row_id,
-                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                    {"feature_id": group_id},
                 ),
                 (
                     "final_groups",
                     group_id,
-                    {"group_hypothesis_id": group_id, "disposition": "completed"},
+                    {"feature_id": group_id, "disposition": "completed"},
                 ),
             ):
                 connection.execute(
-                    "INSERT INTO records VALUES (?, ?, ?)",
+                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
                 _insert_link(
@@ -1550,7 +1541,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                     (candidate_id, "S1", kind, ref),
                 )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "initial_edges",
                 "edge-shared-multirow",
@@ -1577,7 +1568,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
     items = _report_data(output)["items"]
 
     assert result.selected_count == 2
-    assert {item["details"]["source"]["group_hypothesis_id"] for item in items} == {
+    assert {item["details"]["source"]["feature_id"] for item in items} == {
         "G1",
         "G4",
     }
@@ -1686,7 +1677,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     item = _report_data(output)["items"][0]
     records = item["details"]["records"]
     assert next(r for r in records if r["ref"] == "cd-01")["facts"] == {
-        "row_key_id": "row-01",
+        "feature_id": "G1",
         "sample_id": "S1",
         "quantitative_value": 1000.0,
     }
@@ -1695,7 +1686,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     decision = readable["cd-01"]
     assert decision["sample_ids"] == ["S1"]
     assert decision["candidate_ids"] == ["C1"]
-    assert decision["links"] == [{"ref": "row-01", "label": "查看結果列"}]
+    assert decision["links"] == [{"ref": "G1", "label": "查看分組紀錄"}]
     assert {field["label"]: field["value"] for field in decision["fields"]}[
         "正式定量值"
     ] == "1,000"
@@ -1705,13 +1696,13 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
         >= {
             "來源紀錄 ID": "cd-01",
             "樣本 ID": "S1",
-            "結果列 ID": "row-01",
+            "分組 ID": "G1",
         }.items()
     )
 
     curve = item["curves"][0]
     curve_record = readable[curve["evidence_ref"]]
-    assert curve_record["ref"] == "S1:initial_capture:C1"
+    assert curve_record["ref"] == 1
     assert curve_record["sample_ids"] == ["S1"]
     assert curve_record["candidate_ids"] == ["C1"]
     curve_fields = {field["label"]: field["value"] for field in curve_record["fields"]}
@@ -1729,15 +1720,13 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     assert (
         curve_refs.items()
         >= {
-            "曲線 evidence ref": "S1:initial_capture:C1",
+            "曲線 evidence ref": 1,
             "觀察 ID": "obs-01",
-            "處理 request ID": "req-01",
             "處理 attempt ID": "att-01",
         }.items()
     )
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
     assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
-    assert curve["provenance"]["processing_request_id"] == "req-01"
     assert item["samples"][0]["decision_refs"] == ["cd-01"]
     assert item["samples"][0]["decision_reason"] == "來源未記錄定量理由。"
 
@@ -1752,7 +1741,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": None,
                     }
@@ -1764,13 +1753,13 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S2",
                         "quantitative_value": 0,
                     }
@@ -1778,7 +1767,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ),
         )
         for kind, ref in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
@@ -1816,13 +1805,13 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-extra",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": 2000.0,
                     }
@@ -1844,55 +1833,6 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
     assert "有多筆定量決策，未形成單一結果" in item["reason_label"]
 
 
-def test_structured_external_evidence_refs_remain_technical_without_fake_links(
-    tmp_path,
-):
-    report, _, _ = _create_mock_db(tmp_path)
-    external_ref = {
-        "content_identity": {
-            "artifact_content_id": "xic.artifact-content:content-01",
-            "content_sha256": "content-sha-01",
-        },
-        "evidence_artifact_id": "xic.evidence-artifact:external-01",
-        "producer_processing_attempt_id": "xic.processing-attempt:external-att",
-        "producer_processing_request_id": "xic.processing-request:external-req",
-        "upstream_artifact_ids": [],
-    }
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
-            (
-                "method_assessments",
-                "assessment-01",
-                json.dumps(
-                    {
-                        "method_result": "HOLD",
-                        "evidence_refs": [external_ref],
-                    }
-                ),
-            ),
-        )
-        _insert_link(
-            connection,
-            ("C1", "S1", "method_assessments", "assessment-01"),
-        )
-
-    output = tmp_path / "structured-external-ref.html"
-    generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    assessment = readable["assessment-01"]
-    assert assessment["links"] == []
-    technical_values = {ref["value"] for ref in assessment["technical_refs"]}
-    assert technical_values >= {
-        "xic.artifact-content:content-01",
-        "xic.evidence-artifact:external-01",
-        "xic.processing-attempt:external-att",
-        "xic.processing-request:external-req",
-        "content-sha-01",
-    }
-
-
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
@@ -1901,15 +1841,14 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "cell_decisions",
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
-                        "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S2",
+                        "feature_id": "G1",
+                        "sample_key": "S2",
                         "value": 700.0,
                         "variant": "numeric",
                     }
@@ -1917,7 +1856,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ),
         )
         for kind, ref in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
@@ -1931,13 +1870,13 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("method-s2", "S2", "another_recorded_reason"),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "method_assessments",
                     ref,
                     json.dumps(
                         {
-                            "canonical_sample_identity_id": sample_id,
+                            "sample_key": sample_id,
                             "method_result": "SUPPORT",
                             "reason_codes": [reason_code],
                             "technical_state": "evaluated",
@@ -1959,7 +1898,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("edge-s2-only", (("C2", "S2"),)),
         ):
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "initial_edges",
                     ref,
@@ -2021,7 +1960,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S2",
+                            "sample_key": "S2",
                             "precursor_mz": 510.0,
                             "discovery_candidate_state": (
                                 "review_only_ambiguous_coisolation"
@@ -2031,14 +1970,14 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                 ),
             )
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "exclusions",
                     f"exclusion-{candidate_id.lower()}",
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S2",
+                            "sample_key": "S2",
                             "discovery_candidate_state": (
                                 "review_only_ambiguous_coisolation"
                             ),
@@ -2100,7 +2039,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     area = 28578.925063705414
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
                 "method_subjects",
                 "format-01",
@@ -2121,7 +2060,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": area,
                     }
@@ -2132,7 +2071,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
             "SELECT payload_id,payload FROM curve_payloads"
         ).fetchone()
         payload = json.loads(zlib.decompress(blob))
-        payload["integration"]["apex_rt_min"] = apex_rt
+        payload["integration"]["rt_apex_min"] = apex_rt
         payload["integration"]["raw_apex_rt_min"] = apex_rt
         payload["integration"]["area_raw_counts_seconds"] = area
         connection.execute(
@@ -2179,8 +2118,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     source_code = "trapezoid_counts_seconds_on_canonical_signal"
     with sqlite3.connect(report) as connection:
         row = {
-            "row_key_id": "row-01",
-            "group_hypothesis_id": "G1",
+            "feature_id": "G1",
             "route": {"destination": destination, "reason": state},
         }
         connection.execute(
@@ -2188,14 +2126,14 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='final_groups'",
-            (json.dumps({"group_hypothesis_id": "G1", "disposition": state}),),
+            (json.dumps({"feature_id": "G1", "disposition": state}),),
         )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='cell_decisions'",
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": 1000.0,
                         "variant": "numeric",
@@ -2205,7 +2143,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
             ),
         )
         connection.execute(
-            "INSERT INTO records VALUES (?, ?, ?)",
+            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
         )
         _insert_link(
@@ -2218,13 +2156,13 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
             )
             connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?)",
+                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (
                     "cell_decisions",
                     "cd-02",
                     json.dumps(
                         {
-                            "row_key_id": "row-01",
+                            "feature_id": "G1",
                             "sample_id": "S2",
                             "quantitative_value": 700.0,
                             "variant": "numeric",
@@ -2235,7 +2173,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ),
             )
             for kind, rid in (
-                ("rows", "row-01"),
+                ("rows", "G1"),
                 ("final_groups", "G1"),
                 ("cell_decisions", "cd-02"),
             ):
@@ -2258,7 +2196,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     labels = item["title"] + item["reason_label"] + item["route_label"]
     assert not any(
         token in labels
-        for token in ("row-01", "G1", "一致", "成功", "有效", "信心", "原始理由")
+        for token in ("G1", "G1", "一致", "成功", "有效", "信心", "原始理由")
     )
     assert item["reason"] == state and item["route"] == row["route"]
     assert item["samples"][0]["decision_reason"] == (
@@ -2290,7 +2228,7 @@ def _create_nearest_mz_db(directory, rows):
                     sid,
                     {
                         "candidate_id": cid,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "precursor_mz": mz,
                         "rt_apex_min": rt,
                     },
@@ -2299,8 +2237,7 @@ def _create_nearest_mz_db(directory, rows):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {
                         "destination": row.get("route", "matrix"),
                         "reason": "recorded",
@@ -2308,13 +2245,12 @@ def _create_nearest_mz_db(directory, rows):
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
-                rid,
                 rid,
                 [
                     {
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "variant": "unresolved" if row.get("unresolved") else "numeric",
                         "value": None if row.get("unresolved") else 10,
                     }
@@ -2325,15 +2261,17 @@ def _create_nearest_mz_db(directory, rows):
                 {"S1": 0, "S2": 1},
             )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"canonical_sample_identity_id": sid, "sample_stem": sid}
-                    for sid in ("S1", "S2")
-                ],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [
+                        {"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")
+                    ],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 
@@ -2397,7 +2335,7 @@ def test_nearest_mz_ranks_unrounded_display_mz_not_closest_witness(tmp_path):
         ),
     )
     items = prepared.payload["items"]
-    assert [i["details"]["source"]["row_key_id"] for i in items] == [
+    assert [i["details"]["source"]["feature_id"] for i in items] == [
         "round-b",
         "round-a",
         "near",
@@ -2434,7 +2372,7 @@ def test_nearest_mz_applies_rt_eligibility_without_replacing_display_witness(tmp
     assert multi["precursor_mz"] == 140
     assert multi["rt_apex_min"] == 20
     assert multi["mz_distance"] == pytest.approx(16.6)
-    assert [w["canonical_sample_identity_id"] for w in multi["matched_refs"]] == ["S2"]
+    assert [w["sample_key"] for w in multi["matched_refs"]] == ["S2"]
     assert prepared.missing_rt_count == 1
     scoped = prepare_report(
         report,
@@ -2486,7 +2424,7 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
         )
         assert prepared.matched_count == 33
         pages.extend(
-            i["details"]["source"]["row_key_id"] for i in prepared.payload["items"]
+            i["details"]["source"]["feature_id"] for i in prepared.payload["items"]
         )
     assert pages == expected
     assert len(set(pages)) == 33
@@ -2513,7 +2451,7 @@ def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_pa
         report,
         SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=123.4),
     )
-    assert [i["details"]["source"]["row_key_id"] for i in matrix.payload["items"]] == [
+    assert [i["details"]["source"]["feature_id"] for i in matrix.payload["items"]] == [
         "resolved",
         "valid",
     ]
@@ -2621,3 +2559,26 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
     with pytest.raises(InspectorError, match="Targeted XLSX") as exc:
         prepare_report(source, SelectionRequest(strategy="query", target_role="ISTD"))
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "old_schema", ["alignment_explanation", "alignment_explanation_review"]
+)
+def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
+    path, _matrix, _digest = _create_mock_db(tmp_path)
+    with sqlite3.connect(path) as connection:
+        payload = connection.execute(
+            "SELECT payload FROM metadata WHERE key='summary'"
+        ).fetchone()[0]
+        summary = json.loads(payload)
+        summary["schema_version"] = old_schema
+        summary["query_index_version"] = 2
+        for sample in summary["samples"]:
+            sample["canonical_sample_identity_id"] = sample.pop("sample_key")
+        connection.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
+        )
+    with pytest.raises(InspectorError, match="rerun Alignment") as error:
+        generate_report(path, SelectionRequest(), tmp_path / "review.html")
+    assert error.value.code == 4
+    assert not (tmp_path / "review.html").exists()

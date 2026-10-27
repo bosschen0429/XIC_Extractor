@@ -9,7 +9,7 @@ import math
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,9 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
+from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
+from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -190,15 +192,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                 if value.get("rt_calibration") is not None
                 else None,
                 elution_contexts=tuple(
-                    SampleElutionContext(
-                        **{
-                            **context,
-                            "landmarks": tuple(
-                                ElutionLandmark(**landmark)
-                                for landmark in context["landmarks"]
-                            ),
-                        }
-                    )
+                    _read_elution_context(context)
                     for context in value.get("elution_contexts", ())
                 ),
             )
@@ -224,6 +218,35 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     return inputs, payload["provenance"]
 
 
+def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
+    landmarks = []
+    for item in value["landmarks"]:
+        segment = item["physical_segment"]
+        landmarks.append(
+            ElutionLandmark(
+                **{
+                    **item,
+                    "physical_segment": None
+                    if segment is None
+                    else PhysicalSegment(
+                        **{
+                            **segment,
+                            "evidence_sources": tuple(segment["evidence_sources"]),
+                        }
+                    ),
+                }
+            )
+        )
+    return SampleElutionContext(
+        **{
+            **value,
+            "rt": tuple(value["rt"]),
+            "raw": tuple(value["raw"]),
+            "landmarks": tuple(landmarks),
+        }
+    )
+
+
 def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     if owner.cid_nl_composite_assessment is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
@@ -239,7 +262,6 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     member = value["cross_sample_member_subject"]
     if member is None:
         raise ValueError("Grouping snapshot requires formal member subjects")
-    member["basis_bytes"] = member["basis_bytes"].decode("utf-8")
     return value
 
 
@@ -267,17 +289,20 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     )
     integration = value["selected_integration"]
     if integration is not None:
-        integration["raw_scan_indices"] = tuple(integration["raw_scan_indices"])
-        integration["boundary_sources"] = tuple(integration["boundary_sources"])
-        integration["signal_quality"] = signal_quality_from_payload(
-            integration.get("signal_quality")
-        )
-        value["selected_integration"] = IntegrationResult(**integration)
+        value["selected_integration"] = _read_integration(integration)
     # Retained snapshots may include the retired, non-semantic audit envelope.
     value.pop("region_audit", None)
     member = value["cross_sample_member_subject"]
-    member["physical_observation_ids"] = tuple(member["physical_observation_ids"])
-    member["basis_bytes"] = member["basis_bytes"].encode("utf-8")
+    member["physical_peaks"] = tuple(
+        PeakObservationContent(
+            sample_key=peak["sample_key"],
+            mz=peak["mz"],
+            rt=tuple(peak["rt"]),
+            intensity=tuple(peak["intensity"]),
+            integration=_read_integration(peak["integration"]),
+        )
+        for peak in member["physical_peaks"]
+    )
     value["cross_sample_member_subject"] = CrossSampleGroupMemberSubject(**member)
     if value["cid_nl_composite_assessment"] is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
@@ -302,20 +327,70 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     return owner
 
 
+def _read_integration(value: dict[str, Any]) -> IntegrationResult:
+    return IntegrationResult(
+        **{
+            **value,
+            "raw_scan_indices": tuple(value["raw_scan_indices"]),
+            "boundary_sources": tuple(value["boundary_sources"]),
+            "signal_quality": signal_quality_from_payload(value.get("signal_quality")),
+        }
+    )
+
+
 def read_rt_calibration(path: Path) -> BatchRtCalibration:
     """Read the existing sample_rt_calibration artifact into its domain owner."""
     value = json.loads(path.read_text(encoding="utf-8"))
     return _read_rt_calibration_payload(value)
 
 
+def _require_calibration_fields(value: object, expected: set[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError(
+            "RT calibration fields do not match the schema; rerun the analysis"
+        )
+    return value
+
+
 def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
-    if value.get("schema") != "sample_rt_calibration":
-        raise ValueError("Expected a sample_rt_calibration JSON artifact")
-    version = value.get("schema_version", 1)
-    if version not in (1, 2, 3):
-        raise ValueError(f"Unsupported RT calibration version: {version}")
+    _require_calibration_fields(
+        value,
+        {
+            "schema",
+            "policy",
+            "knots",
+            "samples",
+            "front_shift_center_min",
+            "front_shift_mad_min",
+            "perturbation_tolerance_min",
+        },
+    )
+    if value["schema"] != "sample_rt_calibration":
+        raise ValueError(
+            "Expected a sample_rt_calibration JSON artifact; rerun the analysis"
+        )
+    _require_calibration_fields(
+        value["policy"], {field.name for field in fields(RtCalibrationPolicy)}
+    )
+    for knot in value["knots"]:
+        _require_calibration_fields(
+            knot, {field.name for field in fields(CalibrationKnot)}
+        )
     samples = {}
     for row in value["samples"]:
+        _require_calibration_fields(
+            row,
+            {
+                "sample_stem",
+                "status",
+                "knots_observed_reference_min",
+                "front_shift_min",
+                "perturbation_status",
+                "anchor_count",
+                "standard_residuals",
+                "estimate_support",
+            },
+        )
         knots = tuple(
             (float(x), float(y)) for x, y in row["knots_observed_reference_min"]
         )
@@ -335,23 +410,14 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             sample_stem=stem,
             status=row["status"],
             knots=knots,
-            front_shift_min=row.get("front_shift_min"),
+            front_shift_min=row["front_shift_min"],
             prior_injection=None,
-            perturbation_status=row.get("perturbation_status", "unmeasured"),
-            anchor_count=row.get("anchor_count", 0),
-            standard_residuals=tuple(
-                tuple(item) for item in row.get("standard_residuals", ())
-            ),
-            estimate_support=_read_estimate_support(row.get("estimate_support"))
-            if version >= 3
-            else None,
+            perturbation_status=row["perturbation_status"],
+            anchor_count=row["anchor_count"],
+            standard_residuals=tuple(tuple(item) for item in row["standard_residuals"]),
+            estimate_support=_read_estimate_support(row["estimate_support"]),
         )
     policy = dict(value["policy"])
-    if version == 1:
-        # Historical snapshots retain their exact frozen coordinates. Retired
-        # fitting parameters are not applied to, or refitted from, those maps.
-        policy.pop("anchor_min_sample_fraction", None)
-        policy.pop("knot_merge_tolerance_min", None)
     return BatchRtCalibration(
         policy=RtCalibrationPolicy(**policy),
         knots=tuple(
@@ -359,18 +425,19 @@ def _read_rt_calibration_payload(value: dict[str, Any]) -> BatchRtCalibration:
             for row in value["knots"]
         ),
         samples=samples,
-        front_shift_center_min=value.get("front_shift_center_min"),
-        front_shift_mad_min=value.get("front_shift_mad_min"),
-        perturbation_tolerance_min=value.get("perturbation_tolerance_min"),
+        front_shift_center_min=value["front_shift_center_min"],
+        front_shift_mad_min=value["front_shift_mad_min"],
+        perturbation_tolerance_min=value["perturbation_tolerance_min"],
     )
 
 
 def _read_estimate_support(value: object) -> RtEstimateSupport | None:
-    """Decode new observation facts; old frozen knots cannot supply them."""
+    """Decode persisted RT estimate measurements."""
     if value is None:
         return None
-    if not isinstance(value, dict):
-        raise ValueError("RT estimate support must be an object")
+    value = _require_calibration_fields(
+        value, {field.name for field in fields(RtEstimateSupport)}
+    )
     positions = value.get("positions_min")
     if (
         not isinstance(positions, list)
@@ -410,7 +477,6 @@ def write_rt_calibration(path: Path, calibration: BatchRtCalibration) -> None:
 def _rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
     return {
         "schema": "sample_rt_calibration",
-        "schema_version": 3,
         "policy": asdict(calibration.policy),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [

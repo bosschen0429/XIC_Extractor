@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import os
@@ -21,10 +20,6 @@ from tests.processing_identity_no_raw_fixture import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.evidence_artifacts import (
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -35,11 +30,9 @@ from xic_extractor.execution._lifecycle import (
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
     RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
@@ -58,17 +51,12 @@ from xic_extractor.execution.partitions import (
     WorkPartition,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker, RuntimeMarkerState
-from xic_extractor.execution.result_store import StreamedResultStore, _OwnerUnpickler
-from xic_extractor.execution.workers import WorkerAdmissionPool
-
-_TEST_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.test_execution_engine",
-    semantic_role="test_partition_artifact",
-    schema_version="test",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
+from xic_extractor.execution.result_store import (
+    StreamedResultStore,
+    _OwnerUnpickler,
+    open_preserved_results,
 )
+from xic_extractor.execution.workers import WorkerAdmissionPool
 
 
 @dataclass(frozen=True)
@@ -212,8 +200,7 @@ def test_streamed_result_store_shared_objects_identity(
     assert restored.children[0][1] is shared_ref
     checkpoint = store.preserve_failed_results()
     assert checkpoint is not None
-    with checkpoint.open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(checkpoint)
     replay = retained.read(0)
     assert replay.ref == shared_config
     assert replay.children[0][1] == shared_ref
@@ -312,9 +299,7 @@ class MockAdapter:
             for i in range(num_partitions)
         )
         self._global_closure_work_unit_key = (
-            f"global-closure:{owners.request.processing_request_id}"
-            if declare_global_closure
-            else None
+            "global-closure" if declare_global_closure else None
         )
         self._work_unit_keys = (
             *(key for p in self._partitions for key in p.work_unit_keys),
@@ -367,7 +352,7 @@ class MockAdapter:
 
     @property
     def owner_completeness_attestation(self) -> str:
-        return f"{self._owners.request.processing_request_id}:mock-attestation"
+        return "mock-attestation"
 
     def get_shared_objects(self) -> tuple[object, ...]:
         return (self._owners,)
@@ -437,72 +422,26 @@ class MockAdapter:
             sealed=sealed,
         )
 
-    def create_partition_artifacts(
-        self,
-        partition: WorkPartition[dict[str, int]],
-        composition_output: PartitionCompositionOutput[dict[str, Any]],
-    ) -> tuple[
-        tuple[RuntimeArtifactRegistrationReceipt, ...],
-        tuple[WorkUnitSettlement, ...],
-    ]:
-        artifacts = []
-        settlements = []
-        for key in partition.work_unit_keys:
-            payload_bytes = json.dumps(
-                {
-                    "work_unit_key": key,
-                    "sha256": composition_output.sealed.sha256,
-                }
-            ).encode("utf-8")
-            artifact = mint_evidence_artifact_ref(
-                producer_processing_request_id=self._owners.request.processing_request_id,
-                producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
-                semantic_contract=_TEST_CONTRACT,
-                payload_bytes=payload_bytes,
-                upstream_artifacts=(),
+    def settle_partition(self, partition, composition_output):
+        return tuple(
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
             )
-            artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
-            settlements.append(
-                mint_work_unit_settlement(
-                    attempt=self._owners.attempt,
-                    work_unit_key=key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=artifact,
-                )
-            )
-        return tuple(artifacts), tuple(settlements)
+            for key in partition.work_unit_keys
+        )
 
-    def create_global_closure_artifacts(
-        self,
-        application_result: dict[str, Any],
-    ) -> tuple[
-        tuple[RuntimeArtifactRegistrationReceipt, ...],
-        tuple[WorkUnitSettlement, ...],
-    ]:
+    def settle_global_closure(self, application_result):
         if self._global_closure_work_unit_key is None:
-            return (), ()
-        key = self._global_closure_work_unit_key
-        payload_bytes = json.dumps(
-            {
-                "work_unit_key": key,
-                "total_children": application_result.get("total_children", 0),
-            }
-        ).encode("utf-8")
-        artifact = mint_evidence_artifact_ref(
-            producer_processing_request_id=self._owners.request.processing_request_id,
-            producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
-            semantic_contract=_TEST_CONTRACT,
-            payload_bytes=payload_bytes,
-            upstream_artifacts=(),
+            return ()
+        return (
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=self._global_closure_work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            ),
         )
-        art_receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
-        wu_settlement = mint_work_unit_settlement(
-            attempt=self._owners.attempt,
-            work_unit_key=key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
-        )
-        return (art_receipt,), (wu_settlement,)
 
     def finalize_application(
         self,
@@ -766,8 +705,7 @@ def test_scheduler_composition_failure_retains_completed_results(
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
-    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
     assert tuple(retained.sequence("children")) == ("child-0",)
     assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
     assert not list(spool_dirs[0].glob("*.tmp"))
@@ -796,8 +734,7 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
-    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
     assert tuple(retained.sequence("children")) == ("child-0", "child-1")
     assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
     assert marker.read().state == RuntimeMarkerState.FINALIZED
@@ -1128,7 +1065,6 @@ def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
                 ),
             ),
             resource_settlements=(),
-            artifact_registrations=(),
             acquisitions=(),
         )
 
@@ -1151,6 +1087,7 @@ def test_r386_01_global_closure_failure_retains_prior_success(
     """Closure failure marks only closure unit FAILED; partition units stay
     SUCCEEDED.
     """
+    terminal_records = []
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -1170,35 +1107,33 @@ def test_r386_01_global_closure_failure_retains_prior_success(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            telemetry_provider=_record_terminal_telemetry(terminal_records),
             recovery_marker=marker,
             pipeline_overlap=True,
         )
 
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert snapshot.coordinator_record_bytes is not None
-    record = json.loads(snapshot.coordinator_record_bytes)
-    settlements = record["work_settlements"]
+    assert len(terminal_records) == 1
+    coordinator = terminal_records[0]
+    settlements = coordinator.state.runtime.settlements
     assert len(settlements) == 3
 
     p0_settlement = next(
-        s for s in settlements if s["work_unit_key"] == "wu:partition-00000"
+        s for s in settlements if s.work_unit_key == "wu:partition-00000"
     )
     p1_settlement = next(
-        s for s in settlements if s["work_unit_key"] == "wu:partition-00001"
+        s for s in settlements if s.work_unit_key == "wu:partition-00001"
     )
     closure_settlement = next(
-        s for s in settlements if s["work_unit_key"].startswith("global-closure:")
+        s for s in settlements if s.work_unit_key == "global-closure"
     )
 
-    assert p0_settlement["outcome"] == "succeeded"
-    assert p1_settlement["outcome"] == "succeeded"
-    assert closure_settlement["outcome"] == "failed"
-    assert closure_settlement["failure_detail"] is not None
-    assert (
-        closure_settlement["failure_detail"]["stage"] == "partition-pipeline-completion"
-    )
+    assert p0_settlement.outcome.value == "succeeded"
+    assert p1_settlement.outcome.value == "succeeded"
+    assert closure_settlement.outcome.value == "failed"
+    assert closure_settlement.failure_detail is not None
+    assert closure_settlement.failure_detail.stage == "partition-pipeline-completion"
 
 
 def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
@@ -1216,14 +1151,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cutoff")
     marker.record_launch(runtime)
 
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=fixture.owners.request.processing_request_id,
-        producer_processing_attempt_id=attempt.processing_attempt_id,
-        semantic_contract=_TEST_CONTRACT,
-        payload_bytes=b"dummy",
-        upstream_artifacts=(),
-    )
-
     def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
         return RuntimeWorkerBatchReceipt(
             settlements=(
@@ -1231,13 +1158,9 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
                     attempt=attempt,
                     work_unit_key="wu:1",
                     outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=artifact,
                 ),
             ),
             resource_settlements=(),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt("wu:1", artifact),
-            ),
             acquisitions=(),
         )
 
@@ -1260,6 +1183,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
     tmp_path: Path,
 ) -> None:
     """Consumer composition error marks failing partition FAILED, not CANCELLED."""
+    terminal_records = []
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -1292,7 +1216,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            telemetry_provider=_record_terminal_telemetry(terminal_records),
             recovery_marker=marker,
             progress_callback=events.append,
             pipeline_overlap=True,
@@ -1300,21 +1224,19 @@ def test_r386_01_consumer_composition_failure_settled_failed(
 
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert snapshot.coordinator_record_bytes is not None
-    record = json.loads(snapshot.coordinator_record_bytes)
-    settlements = record["work_settlements"]
+    assert len(terminal_records) == 1
+    coordinator = terminal_records[0]
+    settlements = coordinator.state.runtime.settlements
 
-    p0 = next(s for s in settlements if s["work_unit_key"] == "wu:partition-00000")
-    p1 = next(s for s in settlements if s["work_unit_key"] == "wu:partition-00001")
-    closure = next(
-        s for s in settlements if s["work_unit_key"].startswith("global-closure:")
-    )
+    p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
+    p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
+    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
 
-    assert p0["outcome"] == "failed"
-    assert p0["failure_detail"]["stage"] == "partition-composition"
-    assert "simulated consumer composition failure" in p0["failure_detail"]["message"]
-    assert p1["outcome"] == "cancelled"
-    assert closure["outcome"] == "cancelled"
+    assert p0.outcome.value == "failed"
+    assert p0.failure_detail.stage == "partition-composition"
+    assert "simulated consumer composition failure" in p0.failure_detail.message
+    assert p1.outcome.value == "cancelled"
+    assert closure.outcome.value == "cancelled"
     timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
 
@@ -1322,6 +1244,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
 def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
     tmp_path: Path,
 ) -> None:
+    terminal_records = []
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
@@ -1337,16 +1260,17 @@ def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=tmp_path / "opaque-work-units",
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            telemetry_provider=_record_terminal_telemetry(terminal_records),
             recovery_marker=marker,
         )
 
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert snapshot.coordinator_record_bytes is not None
-    record = json.loads(snapshot.coordinator_record_bytes)
+    assert len(terminal_records) == 1
+    coordinator = terminal_records[0]
     outcomes = {
-        item["work_unit_key"]: item["outcome"] for item in record["work_settlements"]
+        item.work_unit_key: item.outcome.value
+        for item in coordinator.state.runtime.settlements
     }
     assert outcomes == {
         "task-0-initial": "succeeded",
@@ -1359,6 +1283,7 @@ def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
 def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_loss(
     tmp_path: Path,
 ) -> None:
+    terminal_records = []
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
@@ -1379,27 +1304,32 @@ def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_lo
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=tmp_path / "opaque-resource",
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            telemetry_provider=_record_terminal_telemetry(terminal_records),
             recovery_marker=marker,
         )
 
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert snapshot.coordinator_record_bytes is not None
-    record = json.loads(snapshot.coordinator_record_bytes)
-    resources = {item["resource_key"]: item for item in record["resources"]}
-    assert resources["raw-handle-0"]["open_outcome"] == "opened"
+    assert len(terminal_records) == 1
+    coordinator = terminal_records[0]
+    resources = {
+        item.reservation.resource_key: item for item in coordinator.state.resources
+    }
+    assert resources["raw-handle-0"].open_outcome.value == "opened"
     assert (
-        resources["raw-handle-1"]["open_outcome"]
+        resources["raw-handle-1"].open_outcome.value
         == "open_state_unknown_after_worker_loss"
     )
-    assert resources["raw-handle-1"]["cleanup_outcome"] == "unknown_after_worker_loss"
+    assert (
+        resources["raw-handle-1"].cleanup_outcome.value == "unknown_after_worker_loss"
+    )
 
 
 def test_r386_01_closure_boundary_cancellation_settled_cancelled(
     tmp_path: Path,
 ) -> None:
     """Cancellation at closure boundary marks closure and attempt CANCELLED."""
+    terminal_records = []
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -1426,7 +1356,7 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            telemetry_provider=_record_terminal_telemetry(terminal_records),
             recovery_marker=marker,
             progress_callback=progress,
             should_cancel=lambda: cancel,
@@ -1435,20 +1365,18 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
 
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.CANCELLED
-    assert snapshot.coordinator_record_bytes is not None
-    record = json.loads(snapshot.coordinator_record_bytes)
-    settlements = record["work_settlements"]
+    assert len(terminal_records) == 1
+    coordinator = terminal_records[0]
+    settlements = coordinator.state.runtime.settlements
 
-    p0 = next(s for s in settlements if s["work_unit_key"] == "wu:partition-00000")
-    p1 = next(s for s in settlements if s["work_unit_key"] == "wu:partition-00001")
-    closure = next(
-        s for s in settlements if s["work_unit_key"].startswith("global-closure:")
-    )
+    p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
+    p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
+    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
 
-    assert p0["outcome"] == "succeeded"
-    assert p1["outcome"] == "succeeded"
-    assert closure["outcome"] == "cancelled"
-    assert closure["failure_detail"]["stage"] == "partition-pipeline-cancellation"
+    assert p0.outcome.value == "succeeded"
+    assert p1.outcome.value == "succeeded"
+    assert closure.outcome.value == "cancelled"
+    assert closure.failure_detail.stage == "partition-pipeline-cancellation"
 
     timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
@@ -1818,10 +1746,9 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
     tmp_path: Path,
 ) -> None:
     """A writer outside this process may produce the bytes; the store still
-    owns the index, the path and the sealed identity, and the same content
+    owns the index and the path, and the same content
     written elsewhere must land byte-identical."""
 
-    import json
     import subprocess
     import sys
 
@@ -1838,10 +1765,10 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
             "payload = MockPayload(children=(), method_assessments=('a', 'b'),"
             " label='remote')",
             "kids = tuple({'child': index} for index in range(4))",
-            "digest, size, lengths, records, _ = write_partition_payload("
+            "size, lengths, records, _ = write_partition_payload("
             "Path(%r), payload, shared_objects=(), children=kids)"
             % str(reservation.path),
-            "print(json.dumps({'lengths': lengths, 'digest': digest,"
+            "print(json.dumps({'lengths': lengths,"
             " 'size': size, 'records': {name: [list(item) for item in rows]"
             " for name, rows in records.items()}}))",
         )
@@ -1862,11 +1789,8 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
             for name, rows in written["records"].items()
         },
     )
-    assert sealed.sha256 == written["digest"]
     assert sealed.size_bytes == written["size"]
-    # Identity is derived here from the published bytes, not reported by the
-    # writer that produced them.
-    assert sealed.sha256 == hashlib.sha256(reservation.path.read_bytes()).hexdigest()
+    # Adoption reads the landed size rather than accepting a reported one.
     assert sealed.size_bytes == reservation.path.stat().st_size
 
     restored = store.read(0)
@@ -1880,7 +1804,10 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
         MockPayload(children=(), method_assessments=("a", "b"), label="remote"),
         tuple({"child": index} for index in range(4)),
     )
-    assert local_sealed.sha256 == sealed.sha256
+    assert local_sealed.size_bytes == sealed.size_bytes
+    assert next((tmp_path / "local").glob("*.pickle")).read_bytes() == (
+        reservation.path.read_bytes()
+    )
 
 
 @pytest.mark.parametrize("pipeline_overlap", [False, True])
@@ -1896,7 +1823,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         num_partitions=4,
         on_acquisition=lambda i: events.append(("acquire", i)),
     )
-    original_artifacts = adapter.create_partition_artifacts
+    original_artifacts = adapter.settle_partition
     original_finalize = adapter.finalize_application
 
     def artifacts(partition, output):
@@ -1908,7 +1835,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         events.append("finalize")
         return original_finalize(store, outputs)
 
-    adapter.create_partition_artifacts = artifacts
+    adapter.settle_partition = artifacts
     adapter.finalize_application = finalize
 
     def prepare(store, check_cancel):
@@ -2009,3 +1936,11 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
         assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
     preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
     assert len(preserved) == 1
+
+
+def _record_terminal_telemetry(records):
+    def observe(coordinator):
+        records.append(coordinator)
+        return build_runtime_telemetry_samples_from_coordinator(coordinator)
+
+    return observe

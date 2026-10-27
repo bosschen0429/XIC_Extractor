@@ -15,6 +15,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
+from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_xic_inspector_api import _create_mock_db
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
@@ -77,7 +78,7 @@ def _review_batch(tmp_path, sample_count=2):
                         sid,
                         {
                             "candidate_id": cid,
-                            "canonical_sample_identity_id": sid,
+                            "sample_key": sid,
                             "precursor_mz": value,
                             "rt_apex_min": 1,
                         },
@@ -86,19 +87,17 @@ def _review_batch(tmp_path, sample_count=2):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {"destination": route, "reason": "recorded"},
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
-                rid,
                 rid,
                 [
                     {
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "variant": "numeric" if isinstance(value, int) else value,
                         "value": value if isinstance(value, int) else None,
                     }
@@ -111,21 +110,23 @@ def _review_batch(tmp_path, sample_count=2):
             "S1",
             {
                 "candidate_id": "orphan",
-                "canonical_sample_identity_id": "S1",
+                "sample_key": "S1",
                 "precursor_mz": 600,
                 "rt_apex_min": 1,
             },
         )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"canonical_sample_identity_id": s, "sample_stem": s}
-                    for s in sample_ids
-                ],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [
+                        {"sample_key": s, "sample_stem": s} for s in sample_ids
+                    ],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 
@@ -155,7 +156,7 @@ def _nearest_review_batch(tmp_path):
                     "S1",
                     {
                         "candidate_id": cid,
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "precursor_mz": mz,
                         "rt_apex_min": rt,
                     },
@@ -164,19 +165,17 @@ def _nearest_review_batch(tmp_path):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {"destination": "matrix", "reason": "recorded"},
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
-                rid,
                 rid,
                 [
                     {
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "variant": "unresolved" if unresolved else "numeric",
                         "value": None if unresolved else 100.0,
                     }
@@ -184,14 +183,15 @@ def _nearest_review_batch(tmp_path):
                 {"S1": 0},
             )
         writer.finalize(
-            {
-                "matrix_path": str(matrix),
-                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"canonical_sample_identity_id": "S1", "sample_stem": "S1"}
-                ],
-                "selection_evidence_capability": "recorded_decisions",
-            }
+            _summary_fixture(
+                {
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                    "samples": [{"sample_key": "S1", "sample_stem": "S1"}],
+                    "selection_evidence_capability": "recorded_decisions",
+                },
+                review_only=writer.review_only,
+            )
         )
     return report, matrix
 

@@ -92,8 +92,7 @@ class CaptureCandidateBinding:
 
     candidate_id: str
     method_subject_id: str
-    sample_identity_id: str
-    sample_name: str
+    sample_key: str
     acquisition_source_id: str
     query_mz: float
     query_rt_min: float
@@ -111,8 +110,7 @@ class CaptureCandidateBinding:
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
         _normalized_text(self.method_subject_id, field="method_subject_id")
-        _normalized_text(self.sample_identity_id, field="sample_identity_id")
-        _normalized_text(self.sample_name, field="sample_name")
+        _normalized_text(self.sample_key, field="sample_key")
         _normalized_text(self.acquisition_source_id, field="acquisition_source_id")
         _positive_finite_number(self.query_mz, field="query_mz")
         _positive_finite_number(self.query_ppm_tol, field="query_ppm_tol")
@@ -146,8 +144,6 @@ class CaptureCandidateBinding:
                 self.physical_evaluation is None
                 or self.source_physical_evaluation.question.query_rt_min
                 != self.preferred_rt
-                or self.source_physical_evaluation.question.selection_subject_id
-                != self.physical_evaluation.question.selection_subject_id
             ):
                 raise SearchScopeContractError(
                     "fresh physical capture lost its source question"
@@ -284,29 +280,11 @@ SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
 
 def physical_capture_input_payload(
     profile: SignalProcessingProfile,
-    evaluations: Mapping[str, PhysicalPeakEvaluation],
 ) -> dict[str, object]:
-    """Pin the profile and owner-issued physical answers in request identity."""
-    candidates = {}
-    for candidate_id, evaluation in sorted(evaluations.items()):
-        candidates[candidate_id] = _physical_evaluation_identity(evaluation)
+    """Carry the configured signal profile alongside the actual capture bindings."""
     return {
         "schema_version": "physical_capture_inputs",
         "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-        "candidates": candidates,
-    }
-
-
-def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[str, str]:
-    # Physical production and decoding validate the immutable owner answers.
-    # Request/scope projection only joins their established identities.
-    return {
-        "prepared_signal_id": evaluation.prepared.prepared_signal_id,
-        "physical_question_id": evaluation.question.physical_question_id,
-        "physical_answer_id": evaluation.answer.physical_answer_id,
-        "physical_fact_id": evaluation.facts.fact_content_id
-        if evaluation.facts
-        else "",
     }
 
 
@@ -336,13 +314,10 @@ def _validate_physical_capture_scope(scope: SearchScope) -> None:
                 "physical replay lost its request-bound profile"
             )
         return
-    if (
-        not isinstance(payload, dict)
-        or not request_binds_physical_capture_profile(scope.request, profile)
-        or not isinstance(payload.get("candidates"), dict)
+    if not isinstance(payload, dict) or not request_binds_physical_capture_profile(
+        scope.request, profile
     ):
         raise SearchScopeContractError("physical capture profile is not request-bound")
-    candidates = payload["candidates"]
     for binding in scope.capture_bindings:
         evaluation = binding.physical_evaluation
         source_evaluation = binding.source_physical_evaluation or evaluation
@@ -355,10 +330,8 @@ def _validate_physical_capture_scope(scope: SearchScope) -> None:
         if (
             evaluation is None
             or source_evaluation is None
-            or evaluation.prepared.profile_id != profile.profile_id
-            or candidates.get(binding.candidate_id)
-            != _physical_evaluation_identity(source_evaluation)
-            or source_evaluation.prepared.profile_id != profile.profile_id
+            or evaluation.prepared.profile != profile
+            or source_evaluation.prepared.profile != profile
         ):
             raise SearchScopeContractError(
                 "physical capture answer is not bound to its request candidate"
@@ -450,7 +423,7 @@ def validate_scope_trace_coordinates(
     trace_rt_min = _nonnegative_finite_number(rt_min, field="trace rt_min")
     trace_rt_max = _nonnegative_finite_number(rt_max, field="trace rt_max")
     if (
-        trace_sample != binding.sample_name
+        trace_sample != binding.sample_key
         or trace_source != binding.acquisition_source_id
         or trace_mz != binding.query_mz
         or trace_rt_min != binding.query_rt_min
@@ -500,7 +473,7 @@ def _validate_common_scope(
         raise SearchScopeContractError(
             "SearchScope sample universe is not authorized by the processing request"
         )
-    sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
+    sample_ids = tuple(sample.identity.sample_key for sample in samples)
     if len(sample_ids) != len(set(sample_ids)):
         raise SearchScopeContractError(
             "SearchScope sample universe contains duplicate canonical identities"
@@ -541,16 +514,14 @@ def _validate_common_scope(
         raise SearchScopeContractError(
             "capture candidate universe must be a subset of declared evidence"
         )
-    samples_by_identity = {
-        sample.identity.sample_identity_id: sample for sample in samples
-    }
+    samples_by_key = {sample.identity.sample_key: sample for sample in samples}
     request_sources = {
         item.adapter_input_key: item.acquisition_source_id
         for item in request.acquisition_bindings
     }
     for binding in capture_bindings:
-        sample = samples_by_identity.get(binding.sample_identity_id)
-        if sample is None or sample.metadata.sample_name != binding.sample_name:
+        sample = samples_by_key.get(binding.sample_key)
+        if sample is None:
             raise SearchScopeContractError(
                 "capture binding references a different canonical sample"
             )
@@ -880,7 +851,7 @@ def target_ms1_subject_id(target: ResolvedTargetDefinition) -> str:
         raise SearchScopeContractError("MS1 Target subject must be owner-resolved")
     if target.definition.target.neutral_loss_da is not None:
         raise SearchScopeContractError("MS1 Target subject requires neutral loss off")
-    return f"target-ms1:{target.definition.target_definition_id}"
+    return f"target-ms1:{target.lookup_label}"
 
 
 def _target_capture_subject_id(target: ResolvedTargetDefinition) -> str:

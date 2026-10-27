@@ -30,6 +30,7 @@ from xic_extractor.alignment.peak_trajectories import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -103,8 +104,8 @@ class RetainedGroupingCandidate:
     direct_support_assessment: CidNlMethodAssessmentRef | None
 
     @property
-    def canonical_sample_identity_id(self) -> str:
-        return self.sample.identity.sample_identity_id
+    def sample_key(self) -> str:
+        return self.sample.identity.sample_key
 
     @property
     def peak_hypothesis_id(self) -> str:
@@ -143,7 +144,7 @@ def bootstrap_cid_nl_initial_population(
     retain_observation_only_candidates: bool = False,
     elution_contexts: Sequence[SampleElutionContext] = (),
     retained_hypotheses_by_assessment: Mapping[
-        tuple[str, str], tuple[PeakHypothesis, ...]
+        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -183,14 +184,13 @@ def bootstrap_cid_nl_initial_population(
     sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
     owners: list[SampleLocalMS1Owner] = []
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
-    consumed_retained_assessment_ids: set[tuple[str, str]] = set()
+    consumed_retained_assessments: set[CidNlMethodAssessmentContent] = set()
     for sample, assessment in sample_assessments:
-        sample_id = sample.identity.sample_identity_id
-        assessment_content_id = assessment.artifact.content_identity.artifact_content_id
-        retained_key = (sample_id, assessment_content_id)
+        sample_id = sample.identity.sample_key
+        retained_key = assessment.content
         retained_hypotheses = retained_by_assessment.get(retained_key, ())
         if retained_key in retained_by_assessment:
-            consumed_retained_assessment_ids.add(retained_key)
+            consumed_retained_assessments.add(retained_key)
         hypotheses = (
             bind_retained_peak_hypotheses_to_assessment_universe(
                 processing_owners=processing_owners,
@@ -215,7 +215,7 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses:
             assessment_by_hypothesis.setdefault(hypothesis.hypothesis_id, assessment)
         sample_by_id[sample_id] = sample
-    if consumed_retained_assessment_ids != set(retained_by_assessment):
+    if consumed_retained_assessments != set(retained_by_assessment):
         raise GroupingBootstrapError(
             "retained hypotheses reference an assessment outside the bootstrap input"
         )
@@ -243,18 +243,17 @@ def bootstrap_cid_nl_initial_population(
             elif include_observation_only:
                 owners.append(
                     owner_from_cid_nl_assessment_observation(
-                        processing_owners=processing_owners,
                         sample=sample,
                         assessment=assessment,
                         hypothesis=hypothesis,
                     )
                 )
     searched_no_observation = not owners and all(
-        assessment.content.target_snapshot_id is not None
+        assessment.content.method_subject.target is not None
         and assessment.content.technical_state == "evaluated"
         and assessment.content.evaluation_receipt.acquisition_supported
         and assessment.content.evaluation_receipt.search_completed
-        and not assessment.content.candidate_peak_content_ids
+        and not assessment.candidate_peaks
         for _, assessment in sample_assessments
     )
     if not owners and not searched_no_observation:

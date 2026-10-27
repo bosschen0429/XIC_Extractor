@@ -8,9 +8,12 @@ source, reading payloads or validating scientific evidence.
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from xic_inspector.selection.canonical import CanonicalItem
+
+if TYPE_CHECKING:
+    from xic_extractor.diagnostics.alignment_explanation import RecordKey
 
 _RECORD_TITLES = {
     "rows": "結果列與輸出去向",
@@ -52,21 +55,13 @@ _TECHNICAL_LABELS = {
     "record_id": "所指紀錄 ID",
     "payload_id": "曲線 evidence ref",
     "sample_id": "樣本 ID",
-    "canonical_sample_identity_id": "樣本 ID",
+    "sample_key": "樣本 ID",
     "candidate_id": "候選 ID",
-    "row_key_id": "結果列 ID",
-    "group_hypothesis_id": "分組 ID",
-    "peak_observation_content_id": "觀察 ID",
-    "processing_request_id": "處理 request ID",
+    "feature_id": "分組 ID",
+    "physical_peak_key": "觀察 ID",
     "processing_attempt_id": "處理 attempt ID",
-    "profile_id": "訊號處理 profile ID",
-    "prepared_signal_id": "處理訊號 ID",
-    "trace_content_id": "訊號內容 ID",
     "acquisition_source_id": "擷取來源 ID",
-    "observation_artifact_id": "觀察 artifact ID",
     "method_subject_id": "方法對象 ID",
-    "full_trace_sha256": "完整訊號 SHA-256",
-    "selection_trace_sha256": "選取訊號 SHA-256",
     "matrix_path": "Matrix 路徑",
 }
 
@@ -111,8 +106,7 @@ def related_group(
     curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
     source = item.details["source"]
-    group_id = source.get("group_hypothesis_id")
-    row_key_id = source.get("row_key_id") if item.kind == "row" else None
+    group_id = source.get("feature_id")
     route = source.get("route", {})
     reason = route.get(
         "reason", source.get("reason", source.get("disposition", "unavailable"))
@@ -121,7 +115,6 @@ def related_group(
         "id": item.serialized_ref,
         "label": f"相關分組 {group_id or item.identifier}",
         "group_id": group_id or item.identifier,
-        "row_key_id": row_key_id,
         "edge_refs": list(edge_refs),
         "reason": reason,
         "sample_ids": list(item.sample_ids),
@@ -156,7 +149,7 @@ def _decision_reason(cells: list[dict[str, Any]]) -> str:
 def readable_record(
     item: CanonicalItem,
     record: dict[str, Any],
-    available_refs: set[str],
+    available_refs: set[RecordKey],
     *,
     scope: tuple[list[str], list[str]],
 ) -> dict[str, Any]:
@@ -184,7 +177,7 @@ def _sample_name(item: CanonicalItem, sample_id: str) -> str:
         (
             witness.sample_stem
             for witness in item.witnesses
-            if witness.canonical_sample_identity_id == sample_id and witness.sample_stem
+            if witness.sample_key == sample_id and witness.sample_stem
         ),
         sample_id,
     )
@@ -369,7 +362,7 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
         if not risks:
             fields.append({"label": "配對風險", "value": "未記錄"})
         for risk in risks or ():
-            selected = "已配對" if len(risk["selected_owner_ids"]) > 1 else "保持分開"
+            selected = "已配對" if len(risk["selected_owners"]) > 1 else "保持分開"
             fields.append(
                 {
                     "label": "配對風險",
@@ -387,7 +380,7 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
             )
             for label, key in (
                 ("決策階段", "phase"),
-                ("選擇的成員", "selected_owner_ids"),
+                ("選擇的成員", "selected_owners"),
                 ("替代評估狀態", "status"),
                 ("風險標記", "risk_flags"),
                 ("接受的矛盾", "soft_contradictions"),
@@ -550,12 +543,11 @@ def _format_measurement(value: Any) -> Any:
 
 
 def _record_links(
-    facts: dict[str, Any], current_ref: str, available_refs: set[str]
+    facts: dict[str, Any], current_ref: RecordKey, available_refs: set[RecordKey]
 ) -> list[dict[str, str]]:
     links = []
     for key, label in (
-        ("row_key_id", "查看結果列"),
-        ("group_hypothesis_id", "查看分組紀錄"),
+        ("feature_id", "查看分組紀錄"),
         ("payload_id", "查看曲線來源"),
         ("record_id", "查看所指紀錄"),
     ):
@@ -611,6 +603,8 @@ def _is_technical_key(key: str) -> bool:
         key == "id"
         or key.endswith("_id")
         or key.endswith("_ids")
+        or key.endswith("_key")
+        or key.endswith("_keys")
         or key.endswith("_ref")
         or key.endswith("_refs")
         or key.endswith("_sha256")
@@ -633,7 +627,7 @@ def dedupe_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def readable_curve(
     item: CanonicalItem,
     curve: dict[str, Any],
-    available_refs: set[str],
+    available_refs: set[RecordKey],
 ) -> dict[str, Any]:
     ref = curve["evidence_ref"]
     sample_ids = [curve["sample_id"]] if curve.get("sample_id") else []
@@ -691,7 +685,7 @@ def readable_curve(
     facts = {
         "sample_id": curve.get("sample_id"),
         "candidate_id": curve.get("candidate_id"),
-        "peak_observation_content_id": curve.get("observation_id"),
+        "physical_peak_key": curve.get("observation_id"),
         "provenance": curve.get("provenance") or {},
     }
     sample = _sample_name(item, sample_ids[0]) if sample_ids else "這個樣本"
@@ -872,14 +866,14 @@ def build_sample(
     sid: str,
     *,
     fallback_sample_label: str,
-    decision_refs: list[str],
+    decision_refs: list[RecordKey],
     projected_curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Present one already-scoped sample and its exact decision references."""
     cells = [
         c
         for c in item.details["cells"]
-        if c.get("canonical_sample_identity_id", c.get("sample_id")) == sid
+        if c.get("sample_key", c.get("sample_id")) == sid
     ]
     values = [c["quantitative_value"] for c in cells]
     return {
@@ -888,7 +882,7 @@ def build_sample(
             (
                 w.sample_stem
                 for w in item.witnesses
-                if w.canonical_sample_identity_id == sid and w.sample_stem
+                if w.sample_key == sid and w.sample_stem
             ),
             fallback_sample_label,
         ),

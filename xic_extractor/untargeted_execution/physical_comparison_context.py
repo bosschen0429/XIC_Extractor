@@ -5,8 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 
-from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.acquisition_contract import (
+    AcquiredTrace,
+    TraceAcquisitionBatch,
+    TraceCoordinate,
+)
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    PeakObservationRef,
+    index_physical_peaks,
+)
 from xic_extractor.peak_detection.physical_peak_equivalence import (
     PhysicalPeakView,
     physical_peak_view_from_observation,
@@ -27,7 +35,8 @@ def physical_view_with_context(
         coordinate = acquired.coordinate
         request = coordinate.request
         if (
-            coordinate.acquisition_source_id != view.acquisition_source_id
+            coordinate.capability.acquisition_source.acquisition_source_id
+            != view.acquisition_source_id
             or (request.mz, request.ppm_tol) != (view.xic_mz, view.xic_ppm_tol)
             or request.rt_min > original[0][0]
             or request.rt_max < original[-1][0]
@@ -50,28 +59,26 @@ def comparison_views_from_acquisitions(
     entries: Iterable[
         tuple[tuple[PeakObservationRef, ...], TraceAcquisitionBatch | None]
     ],
-) -> dict[str, PhysicalPeakView]:
+) -> dict[PeakObservationContent, PhysicalPeakView]:
     """Reuse phase-batched context at formal claim completion, not quantitation."""
-    peaks: dict[str, PeakObservationRef] = {}
-    contexts: dict[tuple[str, float, float], dict[str, AcquiredTrace]] = {}
+    observed: list[PeakObservationRef] = []
+    contexts: dict[tuple[str, float, float], dict[TraceCoordinate, AcquiredTrace]] = {}
     seen_batches: set[int] = set()
     for observations, batch in entries:
-        peaks.update(
-            (peak.content.peak_observation_content_id, peak) for peak in observations
-        )
+        observed.extend(observations)
         if batch is None or id(batch) in seen_batches:
             continue
         seen_batches.add(id(batch))
         for acquired in batch.traces:
             coordinate = acquired.coordinate
             key = (
-                coordinate.acquisition_source_id,
+                coordinate.capability.acquisition_source.acquisition_source_id,
                 coordinate.request.mz,
                 coordinate.request.ppm_tol,
             )
-            contexts.setdefault(key, {})[coordinate.trace_coordinate_id] = acquired
+            contexts.setdefault(key, {})[coordinate] = acquired
     views = {}
-    for observation_id, peak in peaks.items():
+    for observation_id, peak in index_physical_peaks(observed).items():
         view = physical_peak_view_from_observation(peak)
         views[observation_id] = physical_view_with_context(
             view,

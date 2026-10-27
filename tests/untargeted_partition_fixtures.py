@@ -108,10 +108,7 @@ def execute_dense_partition(
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation=(
-            f"{batch.context.processing_owners.request.processing_request_id}:"
-            "cid-nl-production"
-        ),
+        owner_completeness_attestation="cid-nl-production",
     )
     result = execute_attempt(
         runtime,

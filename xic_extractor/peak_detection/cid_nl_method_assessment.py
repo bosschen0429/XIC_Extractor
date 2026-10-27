@@ -7,18 +7,11 @@ searches, HOLD, and REJECT do not need fake ``PeakHypothesis`` objects.
 
 from __future__ import annotations
 
-import json
 import math
-import re
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     DdaCidNlCandidateSetRelationRef,
@@ -27,6 +20,7 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
+    CidNlEvidenceObservation,
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
@@ -47,6 +41,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     validate_dda_cid_nl_peak_support_binding,
 )
 from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
     PeakObservationContractError,
     PeakObservationRef,
     validate_peak_observation_binding,
@@ -62,12 +57,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_physical_query"
-ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
-
 CidNlTechnicalState: TypeAlias = Literal[
     "evaluated",
     "unsupported",
@@ -76,21 +65,8 @@ CidNlTechnicalState: TypeAlias = Literal[
 ]
 CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class CidNlMethodAssessmentContractError(ValueError):
@@ -198,7 +174,6 @@ class CidNlEvaluationReceipt:
     support_policy: DdaCidNlPeakSupportPolicy
     acquisition_supported: bool
     search_completed: bool
-    scanned_event_count: int
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
     # Untargeted Backfill queries the frozen group while retaining subject lineage.
@@ -211,7 +186,6 @@ class CidNlEvaluationReceipt:
                 and self.query_rt_max is None
                 and self.evidence_scope == "declared_scans"
                 and self.search_completed is False
-                and self.scanned_event_count == 0
             ):
                 raise CidNlMethodAssessmentContractError(
                     "absent evaluation query requires an unattempted "
@@ -237,14 +211,6 @@ class CidNlEvaluationReceipt:
             raise CidNlMethodAssessmentContractError(
                 "search_completed must be a boolean"
             )
-        if (
-            isinstance(self.scanned_event_count, bool)
-            or not isinstance(self.scanned_event_count, int)
-            or self.scanned_event_count < 0
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "scanned_event_count must be a non-negative integer"
-            )
         if self.reason_code is not None:
             _required_text(self.reason_code, field="reason_code")
         if self.evidence_scope not in {"subject_window", "declared_scans"}:
@@ -268,36 +234,21 @@ class CidNlEvaluationReceipt:
 class CidNlMethodAssessmentContent:
     """Orthogonal technical and method-result axes for one attempt."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     provider_id: str
     method_id: str
     method_version: str
     method_subject: CidNlMethodSubject
     detector_invocation_id: str
-    candidate_peak_content_ids: tuple[str, ...]
+    candidate_peaks: tuple[PeakObservationContent, ...]
     evaluation_receipt: CidNlEvaluationReceipt
-    evidence_artifact_content_ids: tuple[str, ...]
-    individual_relation_artifact_content_ids: tuple[str, ...]
-    set_relation_artifact_content_ids: tuple[str, ...]
+    evidence_observations: tuple[CidNlEvidenceObservation, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        for value, prefix, field_name in (
-            (
-                self.canonical_sample_identity_id,
-                _SAMPLE_ID_PREFIX,
-                "canonical_sample_identity_id",
-            ),
-            (
-                self.acquisition_source_id,
-                _ACQUISITION_SOURCE_ID_PREFIX,
-                "acquisition_source_id",
-            ),
-        ):
-            _validate_typed_digest_id(value, prefix=prefix, field=field_name)
         if not isinstance(self.method_subject, CidNlMethodSubject):
             raise CidNlMethodAssessmentContractError(
                 "method_subject must be owner-normalized"
@@ -315,12 +266,6 @@ class CidNlMethodAssessmentContent:
                 f"method_version must be {CID_NL_METHOD_VERSION!r}"
             )
         _required_text(self.detector_invocation_id, field="detector_invocation_id")
-        _canonical_digest_ids(
-            self.candidate_peak_content_ids,
-            prefix=_PEAK_CONTENT_ID_PREFIX,
-            field="candidate_peak_content_ids",
-            allow_empty=True,
-        )
         if not isinstance(self.evaluation_receipt, CidNlEvaluationReceipt):
             raise CidNlMethodAssessmentContractError(
                 "evaluation_receipt must be owner-normalized"
@@ -345,23 +290,6 @@ class CidNlMethodAssessmentContent:
         ):
             raise CidNlMethodAssessmentContractError(
                 "a physical query center requires an Untargeted method subject"
-            )
-        for values, field in (
-            (self.evidence_artifact_content_ids, "evidence_artifact_content_ids"),
-            (
-                self.individual_relation_artifact_content_ids,
-                "individual_relation_artifact_content_ids",
-            ),
-            (
-                self.set_relation_artifact_content_ids,
-                "set_relation_artifact_content_ids",
-            ),
-        ):
-            _canonical_digest_ids(
-                values,
-                prefix=_ARTIFACT_CONTENT_ID_PREFIX,
-                field=field,
-                allow_empty=True,
             )
         if self.technical_state not in _TECHNICAL_STATES:
             raise CidNlMethodAssessmentContractError(
@@ -393,24 +321,6 @@ class CidNlMethodAssessmentContent:
                 "reason_codes must be non-empty, unique, and canonical-sorted"
             )
 
-    @property
-    def target_snapshot_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_snapshot_id
-
-    @property
-    def target_key_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_key_id
-
-    @property
-    def target_definition_id(self) -> str | None:
-        """Targeted compatibility projection; not workflow-neutral identity."""
-
-        return self.method_subject.target_definition_id
-
 
 @dataclass(frozen=True, slots=True)
 class CidNlMethodAssessmentRef:
@@ -421,7 +331,6 @@ class CidNlMethodAssessmentRef:
     evidence_refs: tuple[CidNlEvidenceRef, ...]
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
-    artifact: EvidenceArtifactRef
 
 
 def resolve_cid_nl_method_relations(
@@ -552,42 +461,19 @@ def mint_cid_nl_method_assessment_ref(
         sample=sample,
     )
     content = CidNlMethodAssessmentContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         provider_id=CID_NL_PROVIDER_ID,
         method_id=CID_NL_METHOD_ID,
         method_version=CID_NL_METHOD_VERSION,
         method_subject=subject,
         detector_invocation_id=detector_invocation_id,
-        candidate_peak_content_ids=tuple(
-            peak.content.peak_observation_content_id for peak in candidates
-        ),
+        candidate_peaks=tuple(peak.content for peak in candidates),
         evaluation_receipt=evaluation_receipt,
-        evidence_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in evidence
-        ),
-        individual_relation_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in individual
-        ),
-        set_relation_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in set_relations
-        ),
+        evidence_observations=tuple(ref.observation for ref in evidence),
         technical_state=technical_state,
         method_result=method_result,
         reason_codes=reason_codes,
-    )
-    upstreams = _assessment_upstream_artifacts(
-        candidate_peaks=candidates,
-        evidence_refs=evidence,
-        individual_support_refs=individual,
-        set_relation_refs=set_relations,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_cid_nl_method_assessment_bytes(content),
-        upstream_artifacts=upstreams,
     )
     return CidNlMethodAssessmentRef(
         content=content,
@@ -595,7 +481,6 @@ def mint_cid_nl_method_assessment_ref(
         evidence_refs=evidence,
         individual_support_refs=individual,
         set_relation_refs=set_relations,
-        artifact=artifact,
     )
 
 
@@ -624,63 +509,15 @@ def validate_cid_nl_method_assessment_binding(
         )
     except IdentityContractError as exc:
         raise CidNlMethodAssessmentContractError(str(exc)) from exc
-    # Construction pins content and upstream refs; minting settles the method.
-    # A handoff checks scope without re-running that scientific decision.
+    # Minting settles the method; a handoff checks scope without re-running it.
     if (
-        reference.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise CidNlMethodAssessmentContractError(
-            "CID-NL method assessment references a different processing request"
-        )
-    if (
-        reference.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise CidNlMethodAssessmentContractError(
-            "CID-NL method assessment references a different processing attempt"
-        )
-    if (
-        reference.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
+        reference.content.sample_key != sample.identity.sample_key
         or reference.content.acquisition_source_id != source.acquisition_source_id
         or reference.content.method_subject != subject
     ):
         raise CidNlMethodAssessmentContractError(
             "CID-NL method assessment sample or subject binding was substituted"
         )
-
-
-def canonical_cid_nl_method_assessment_bytes(
-    content: CidNlMethodAssessmentContent,
-) -> bytes:
-    if not isinstance(content, CidNlMethodAssessmentContent):
-        raise CidNlMethodAssessmentContractError(
-            "canonical serialization requires method assessment content"
-        )
-    content_payload = {
-        item.name: getattr(content, item.name) for item in fields(content)
-    }
-    content_payload["method_subject"] = asdict(content.method_subject)
-    content_payload["evaluation_receipt"] = asdict(content.evaluation_receipt)
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": content_payload,
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CidNlMethodAssessmentContractError(
-            "method assessment payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _resolve_method_subject(
@@ -770,21 +607,12 @@ def _validate_attempt_state(
             raise CidNlMethodAssessmentContractError(
                 "completed evaluation cannot carry a technical failure reason"
             )
-        if evaluation_receipt.scanned_event_count < len(
-            {
-                (ref.observation.acquisition_source_id, ref.observation.scan_number)
-                for ref in evidence_refs
-            }
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "scanned_event_count cannot be smaller than measured evidence"
-            )
         return
     if candidate_peaks or evidence_refs or individual_support_refs or set_relation_refs:
         raise CidNlMethodAssessmentContractError(
             "non-evaluated technical state may not carry scientific result refs"
         )
-    if evaluation_receipt.search_completed or evaluation_receipt.scanned_event_count:
+    if evaluation_receipt.search_completed:
         raise CidNlMethodAssessmentContractError(
             "non-evaluated technical state cannot claim a completed search"
         )
@@ -856,7 +684,7 @@ def _validate_upstream_bindings(
             if physical_backfill
             else "candidate peak apex",
         )
-    evidence_by_content_id = {}
+    evidence_by_observation = {}
     for evidence in evidence_refs:
         try:
             validate_cid_nl_evidence_binding(
@@ -890,9 +718,7 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(
                 "CID-NL evidence references a different method-subject neutral loss"
             )
-        evidence_by_content_id[
-            evidence.artifact.content_identity.artifact_content_id
-        ] = evidence
+        evidence_by_observation[evidence.observation] = evidence
     acquisition_scan_keys = tuple(
         (
             evidence.observation.acquisition_source_id,
@@ -907,20 +733,16 @@ def _validate_upstream_bindings(
         raise CidNlMethodAssessmentContractError(
             "duplicate acquisition scan evidence cannot multiply one method event"
         )
-    candidate_ids = tuple(
-        peak.content.peak_observation_content_id for peak in candidate_peaks
-    )
+    candidate_contents = tuple(peak.content for peak in candidate_peaks)
     support_policy = evaluation_receipt.support_policy
-    individual_evidence_ids: set[str] = set()
+    individual_observations: set[CidNlEvidenceObservation] = set()
     for support in individual_support_refs:
-        canonical_evidence = evidence_by_content_id.get(
-            support.content.cid_nl_evidence_content_id
-        )
+        canonical_evidence = evidence_by_observation.get(support.content.evidence)
         if canonical_evidence is None:
             raise CidNlMethodAssessmentContractError(
                 "individual support evidence is missing from the assessment"
             )
-        if support.content.candidate_peak_content_ids != candidate_ids:
+        if support.content.candidate_peaks != candidate_contents:
             raise CidNlMethodAssessmentContractError(
                 "individual support references a different candidate universe"
             )
@@ -946,14 +768,14 @@ def _validate_upstream_bindings(
                 "boundary or positive-width overlapping support requires a set-level "
                 "relation"
             )
-        individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
-    set_relation_evidence_ids: set[str] = set()
+        individual_observations.add(support.content.evidence)
+    set_relation_observations: set[CidNlEvidenceObservation] = set()
     for relation in set_relation_refs:
-        if relation.content.candidate_peak_content_ids != candidate_ids:
+        if relation.content.candidate_peaks != candidate_contents:
             raise CidNlMethodAssessmentContractError(
                 "set relation references a different candidate universe"
             )
-        if relation.content.cid_nl_evidence_content_id not in evidence_by_content_id:
+        if relation.content.evidence not in evidence_by_observation:
             raise CidNlMethodAssessmentContractError(
                 "set relation evidence is missing from the assessment"
             )
@@ -969,14 +791,13 @@ def _validate_upstream_bindings(
             )
         except DdaCidNlCandidateSetRelationContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
-        set_relation_evidence_ids.add(relation.content.cid_nl_evidence_content_id)
-    if individual_evidence_ids & set_relation_evidence_ids:
+        set_relation_observations.add(relation.content.evidence)
+    if individual_observations & set_relation_observations:
         raise CidNlMethodAssessmentContractError(
             "one CID-NL evidence ref cannot carry both individual and set relations"
         )
-    settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
-    for evidence_content_id, evidence in evidence_by_content_id.items():
-        observation = evidence.observation
+    settled_observations = individual_observations | set_relation_observations
+    for observation, evidence in evidence_by_observation.items():
         if not support_policy.accepts_precursor(
             observation.assess_precursor_loss(support_policy.neutral_loss_tolerance_ppm)
         ):
@@ -987,7 +808,7 @@ def _validate_upstream_bindings(
                 candidate_peaks=candidate_peaks,
                 support_policy=support_policy,
             )
-            and evidence_content_id not in settled_evidence_ids
+            and observation not in settled_observations
         ):
             raise CidNlMethodAssessmentContractError(
                 "qualifying CID-NL evidence matching the candidate universe "
@@ -1056,13 +877,8 @@ def _is_strict_unique_support(
     support: DdaCidNlPeakSupportRef,
     candidate_peaks: tuple[PeakObservationRef, ...],
 ) -> bool:
-    selected = next(
-        peak
-        for peak in candidate_peaks
-        if peak.content.peak_observation_content_id
-        == support.content.peak_observation_content_id
-    )
-    selected_interval = selected.content.integration
+    selected = support.content.peak_observation
+    selected_interval = selected.integration
     if not (
         selected_interval.rt_left_min
         < support.content.scan_rt_min
@@ -1070,7 +886,7 @@ def _is_strict_unique_support(
     ):
         return False
     for candidate in candidate_peaks:
-        if candidate is selected:
+        if candidate.content == selected:
             continue
         if abs(support.content.precursor_mz - candidate.content.mz) > (
             support.content.policy.precursor_tolerance_da
@@ -1098,7 +914,7 @@ def _method_result(
     if technical_state != "evaluated":
         assert evaluation_receipt.reason_code is not None
         return None, (evaluation_receipt.reason_code,)
-    if _supported_peak_ids(method_subject, evidence_refs, individual_support_refs):
+    if _supported_peaks(method_subject, individual_support_refs):
         return "SUPPORT", ("unique_support_within_declared_candidate_universe",)
     if method_subject.composition is not None and individual_support_refs:
         return "HOLD", ("incomplete_composite_requirement",)
@@ -1156,62 +972,35 @@ def is_unsearched_cid_nl_discovery_assessment(
     )
 
 
-def supported_cid_nl_peak_ids(assessment: CidNlMethodAssessmentRef) -> frozenset[str]:
+def supported_cid_nl_peaks(
+    assessment: CidNlMethodAssessmentRef,
+) -> frozenset[PeakObservationContent]:
     """Physical peaks that satisfy the complete owner-bound requirement."""
     if assessment.content.technical_state != "evaluated":
         return frozenset()
-    return _supported_peak_ids(
+    return _supported_peaks(
         assessment.content.method_subject,
-        assessment.evidence_refs,
         assessment.individual_support_refs,
     )
 
 
-def _supported_peak_ids(
+def _supported_peaks(
     subject: CidNlMethodSubject,
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-) -> frozenset[str]:
-    loss_by_evidence = {
-        ref.artifact.content_identity.artifact_content_id: (
-            ref.observation.configured_neutral_loss_da
-        )
-        for ref in evidence_refs
-    }
-    losses_by_peak: dict[str, set[float]] = {}
+) -> frozenset[PeakObservationContent]:
+    losses_by_peak: dict[PeakObservationContent, set[float]] = {}
     for support in individual_support_refs:
-        losses_by_peak.setdefault(
-            support.content.peak_observation_content_id, set()
-        ).add(loss_by_evidence[support.content.cid_nl_evidence_content_id])
+        losses_by_peak.setdefault(support.content.peak_observation, set()).add(
+            support.content.evidence.configured_neutral_loss_da
+        )
     required = set(subject.configured_losses)
     return frozenset(
-        peak_id
-        for peak_id, losses in losses_by_peak.items()
+        peak
+        for peak, losses in losses_by_peak.items()
         if subject.composition is None
         or subject.composition.combine_mode == "union"
         or required.issubset(losses)
     )
-
-
-def _assessment_upstream_artifacts(
-    *,
-    candidate_peaks: tuple[PeakObservationRef, ...],
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts = (
-        *(peak.artifact for peak in candidate_peaks),
-        *(ref.artifact for ref in evidence_refs),
-        *(ref.artifact for ref in individual_support_refs),
-        *(ref.artifact for ref in set_relation_refs),
-    )
-    artifact_ids = tuple(artifact.evidence_artifact_id for artifact in artifacts)
-    if len(set(artifact_ids)) != len(artifact_ids):
-        raise CidNlMethodAssessmentContractError(
-            "assessment upstream artifacts must be unique"
-        )
-    return tuple(sorted(artifacts, key=lambda item: item.evidence_artifact_id))
 
 
 def _canonical_candidates(
@@ -1227,22 +1016,10 @@ def _canonical_candidates(
         raise CidNlMethodAssessmentContractError(
             "candidate_peaks must contain owner-backed observations"
         )
-    refs = tuple(
-        sorted(
-            value,
-            key=lambda item: (
-                item.content.peak_observation_content_id,
-                item.artifact.evidence_artifact_id,
-            ),
-        )
-    )
+    refs = tuple(sorted(value, key=lambda item: item.content.measured_order_key))
     _require_unique_refs(
-        tuple(item.content.peak_observation_content_id for item in refs),
+        tuple(item.content.physical_peak_key for item in refs),
         field="candidate peak content",
-    )
-    _require_unique_refs(
-        tuple(item.artifact.evidence_artifact_id for item in refs),
-        field="candidate peak artifact",
     )
     return refs
 
@@ -1280,56 +1057,38 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
         raise CidNlMethodAssessmentContractError(
             f"{field} contains a non-owner reference"
         )
-    refs = tuple(
-        sorted(
-            value,
-            key=lambda item: (
-                item.artifact.content_identity.artifact_content_id,
-                item.artifact.evidence_artifact_id,
-            ),
+
+    def event_key(
+        item: CidNlEvidenceRef
+        | DdaCidNlPeakSupportRef
+        | DdaCidNlCandidateSetRelationRef,
+    ) -> tuple:
+        observation = (
+            item.observation
+            if isinstance(item, CidNlEvidenceRef)
+            else item.content.evidence
         )
-    )
-    _require_unique_refs(
-        tuple(item.artifact.evidence_artifact_id for item in refs),
-        field=field,
-    )
+        return (
+            observation.sample_key,
+            observation.scan_number,
+            observation.configured_neutral_loss_da,
+            observation.scan_rt_min,
+            observation.scan_precursor_mz,
+            observation.product_mz,
+        )
+
+    refs = tuple(sorted(value, key=event_key))
+    keys = tuple(event_key(item) for item in refs)
+    if len(set(keys)) != len(keys):
+        raise CidNlMethodAssessmentContractError(
+            f"duplicate acquisition scan or ambiguous {field} measured events"
+        )
     return refs
 
 
 def _require_unique_refs(values: tuple[str, ...], *, field: str) -> None:
     if len(set(values)) != len(values):
         raise CidNlMethodAssessmentContractError(f"duplicate {field} refs")
-
-
-def _canonical_digest_ids(
-    value: object,
-    *,
-    prefix: str,
-    field: str,
-    allow_empty: bool,
-) -> tuple[str, ...]:
-    if not isinstance(value, tuple) or (not value and not allow_empty):
-        raise CidNlMethodAssessmentContractError(f"{field} must be a tuple")
-    ids = tuple(
-        _validate_typed_digest_id(item, prefix=prefix, field=field) for item in value
-    )
-    if ids != tuple(sorted(set(ids))):
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must be unique and canonical-sorted"
-        )
-    return ids
-
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must contain a SHA-256 digest"
-        )
-    return value
 
 
 def _finite_float(value: object, *, field: str) -> float:
@@ -1352,7 +1111,6 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "CID_NL_METHOD_ID",
     "CID_NL_METHOD_VERSION",
     "CID_NL_PROVIDER_ID",
@@ -1365,8 +1123,6 @@ __all__ = [
     "CidNlMethodResult",
     "CidNlMethodRelations",
     "CidNlTechnicalState",
-    "SCHEMA_VERSION",
-    "canonical_cid_nl_method_assessment_bytes",
     "evaluate_cid_nl_method_relations",
     "mint_cid_nl_method_assessment_ref",
     "resolve_cid_nl_method_relations",

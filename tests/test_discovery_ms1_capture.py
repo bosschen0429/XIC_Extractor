@@ -73,7 +73,7 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     assert facts.area_counts_seconds == pytest.approx(
         1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
     )
-    assert first.evaluation.question.selection_subject_id == search.selection_subject_id
+    assert first.evaluation.question.query_rt_min == search.query_rt_min
     assert first.trace_quality == "clean"
 
 
@@ -231,7 +231,6 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         raw,
         (group,),
         acquisition_source=raw.acquisition_source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
@@ -1044,7 +1043,6 @@ def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_wind
         raw,
         (first, duplicate, later, empty),
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
         ms1_centroid_mz=lambda *_: None,
@@ -1092,7 +1090,6 @@ def test_owner_acquisition_batches_distinct_contexts_at_256(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
         ms1_centroid_mz=lambda *_: None,
@@ -1140,7 +1137,6 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
         ms1_centroid_mz=lambda *_: None,
@@ -1178,7 +1174,6 @@ def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
             raw,
             (_group((_seed(scan_number=10, rt=7.80),)),),
             acquisition_source=source,
-            run_spec_id="processing-run:" + "0" * 64,
             signal_processing_profile=TEST_PROFILE,
             settings=_settings(),
             ms1_centroid_mz=lambda *_: None,
@@ -1413,7 +1408,6 @@ def _candidates_from_raw(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,

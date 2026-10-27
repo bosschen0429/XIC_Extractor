@@ -206,7 +206,7 @@ def _ledger_metrics(path: Path) -> dict[str, int]:
     for record in iter_skipped_evidence_tsv(path):
         row_count += 1
         skipped_requests += record.raw_xic_requests_skipped
-        feature_ids.add(record.feature_family_id)
+        feature_ids.add(record.feature_id)
     return {
         "skipped_evidence_row_count": row_count,
         "raw_xic_requests_skipped": skipped_requests,

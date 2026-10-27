@@ -13,7 +13,7 @@ ItemKind = Literal["row", "group", "candidate", "target"]
 class Witness:
     """A witness chain linking an item to an actual candidate/sample observation."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     candidate_id: str
     group_hypothesis_id: str | None = None
     row_key_id: str | None = None
@@ -28,7 +28,6 @@ class CanonicalItem:
     """Canonical presentation item representing a reviewable unit."""
 
     kind: ItemKind
-    request_id: str
     attempt_id: str
     identifier: str
     serialized_ref: str
@@ -51,20 +50,19 @@ def serialize_canonical_ref(ref: list[str]) -> str:
 
 def build_canonical_ref(
     kind: ItemKind,
-    request_id: str,
     attempt_id: str,
     identifier: str,
     sample_id: str | None = None,
 ) -> tuple[list[str], str]:
     """Construct and serialize a canonical presentation ref."""
     if kind == "row":
-        ref = ["row", request_id, attempt_id, identifier]
+        ref = ["row", attempt_id, identifier]
     elif kind in ("group", "target"):
-        ref = [kind, request_id, attempt_id, identifier]
+        ref = [kind, attempt_id, identifier]
     elif kind == "candidate":
         if not sample_id:
             raise ValueError("Candidate item ref requires sample_id")
-        ref = ["candidate", request_id, attempt_id, sample_id, identifier]
+        ref = ["candidate", attempt_id, sample_id, identifier]
     else:
         raise ValueError(f"Unknown item kind: {kind}")
     return ref, serialize_canonical_ref(ref)

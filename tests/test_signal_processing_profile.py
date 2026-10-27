@@ -6,7 +6,6 @@ import pytest
 
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
     SignalProcessingProfile,
     canonical_signal_processing_profile_bytes,
     deserialize_signal_processing_profile,
@@ -27,8 +26,7 @@ EXPECTED_DEFAULT_JSON = (
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
     b'"apex_supported_local_valley_contains_query",'
-    b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal",'
-    b'"relative_shape_basis":"own_max_canonical_signal"}'
+    b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal"}'
 )
 
 _PROFILE_FIELDS = (
@@ -50,21 +48,18 @@ _PROFILE_FIELDS = (
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",
-    "relative_shape_basis",
 )
 _FIXED_PROFILE_FIELDS = tuple(
     name for name in _PROFILE_FIELDS if name != "window_points"
 )
 
 
-def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
+def test_default_profile_has_exact_canonical_bytes() -> None:
     profile = DEFAULT_SIGNAL_PROCESSING_PROFILE
 
     assert profile == SignalProcessingProfile()
     assert canonical_signal_processing_profile_bytes(profile) == EXPECTED_DEFAULT_JSON
     assert serialize_signal_processing_profile(profile) == EXPECTED_DEFAULT_JSON
-    assert profile.profile_id == f"signal-profile:{profile.profile_hash}"
-    assert DEFAULT_SIGNAL_PROCESSING_PROFILE_ID == profile.profile_id
 
 
 def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> None:
@@ -112,7 +107,7 @@ def test_resolver_supports_only_gaussian_and_9_is_default() -> None:
         resolve_signal_processing_profile(signal_processing_method="savgol")
 
 
-def test_profile_schema_is_closed_and_point9_point21_have_distinct_identity() -> None:
+def test_profile_schema_is_closed_and_smoothing_windows_have_distinct_values() -> None:
     profile_9 = DEFAULT_SIGNAL_PROCESSING_PROFILE
     profile_21 = SignalProcessingProfile(window_points=21)
 
@@ -122,8 +117,7 @@ def test_profile_schema_is_closed_and_point9_point21_have_distinct_identity() ->
     assert canonical_signal_processing_profile_bytes(profile_9) != (
         canonical_signal_processing_profile_bytes(profile_21)
     )
-    assert profile_9.profile_hash != profile_21.profile_hash
-    assert profile_9.profile_id != profile_21.profile_id
+    assert profile_9 != profile_21
 
 
 @pytest.mark.parametrize("field_name", _FIXED_PROFILE_FIELDS)
@@ -142,13 +136,9 @@ def test_every_fixed_profile_field_rejects_mutation(field_name: str) -> None:
         replace(profile, **{field_name: mutated})
 
 
-def test_strict_deserializer_rejects_noncanonical_unknown_duplicate_and_mismatch() -> (
-    None
-):
+def test_profile_reader_rejects_noncanonical_unknown_duplicate_and_invalid() -> None:
     profile = deserialize_signal_processing_profile(
         EXPECTED_DEFAULT_JSON,
-        expected_profile_hash=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_hash,
-        expected_profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
     )
     assert profile == DEFAULT_SIGNAL_PROCESSING_PROFILE
 
@@ -161,16 +151,6 @@ def test_strict_deserializer_rejects_noncanonical_unknown_duplicate_and_mismatch
     with pytest.raises(ValueError, match="duplicate"):
         deserialize_signal_processing_profile(
             EXPECTED_DEFAULT_JSON[:-1] + b',"method":"gaussian"}'
-        )
-    with pytest.raises(ValueError, match="profile_hash"):
-        deserialize_signal_processing_profile(
-            EXPECTED_DEFAULT_JSON,
-            expected_profile_hash="0" * 64,
-        )
-    with pytest.raises(ValueError, match="profile_id"):
-        deserialize_signal_processing_profile(
-            EXPECTED_DEFAULT_JSON,
-            expected_profile_id="signal-profile:" + "0" * 64,
         )
     with pytest.raises(ValueError, match="baseline_lam"):
         deserialize_signal_processing_profile(

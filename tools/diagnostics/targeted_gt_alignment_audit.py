@@ -106,7 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cell_rows = _load_tsv(config.alignment_run / "alignment_cells.tsv")
 
     review_in_mz = _filter_review_by_mz(review_rows, config)
-    review_index = {row["feature_family_id"]: row for row in review_in_mz}
+    review_index = {row["feature_id"]: row for row in review_in_mz}
     cells_by_sample = _cells_by_sample_in_review_range(cell_rows, review_index)
     comparison = [
         _classify_sample(target, cells_by_sample.get(target.sample_stem, ()), config)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -26,11 +25,6 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionError,
-    mint_untargeted_cid_nl_projection_ref,
-)
-from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
@@ -38,7 +32,6 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
-    canonical_cid_nl_evidence_bytes,
     mint_cid_nl_evidence_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -50,6 +43,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
 )
+from xic_extractor.precursor_evidence import precursor_isolation_membership
 
 
 @pytest.mark.parametrize(
@@ -58,7 +52,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
         {"query_rt_min": 7.5},
         {"query_rt_max": 8.5},
         {"search_completed": True},
-        {"scanned_event_count": 1},
         {"evidence_scope": "subject_window"},
     ],
 )
@@ -71,7 +64,6 @@ def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=False,
-        scanned_event_count=0,
         reason_code="no_search_eligible_discovery_input",
         evidence_scope="declared_scans",
     )
@@ -143,9 +135,16 @@ def test_recorded_monoisotopic_reference_accepts_isolated_vendor_isotope(
     )
     assert bool(individual) is (supported and product_matches)
     assert not sets
-    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
-    assert payload["precursor_isolation_membership"] == membership
-    assert payload["supports_direct_nl"] is supported
+    observation = evidence.observation
+    assert (
+        precursor_isolation_membership(
+            observation.precursor_mz,
+            observation.scan_precursor_mz,
+            observation.precursor_metadata,
+        )
+        == membership
+    )
+    assert observation.supports_direct_nl is supported
     if product_matches:
         assert evidence.observation.observed_loss_error_ppm == pytest.approx(
             7.44977, abs=1e-5
@@ -233,7 +232,6 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1,
             reason_code=None,
         ),
         candidate_peaks=(peak,),
@@ -242,11 +240,12 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
         set_relation_refs=sets,
     )
     assert assessment.content.method_result == ("SUPPORT" if supported else "HOLD")
-    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
-    assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
-    assert payload["precursor_mz"] == 500.0
-    assert payload["observed_loss_error_ppm"] is None
-    assert payload["ms1_precursor_observation"]["centroid_mzs"] == list(centroids)
+    observation = evidence.observation
+    assert observation.precursor_mz_basis == "product_plus_neutral_loss"
+    assert observation.precursor_mz == 500.0
+    assert observation.observed_loss_error_ppm is None
+    assert observation.ms1_precursor_observation is not None
+    assert observation.ms1_precursor_observation.centroid_mzs == tuple(centroids)
     if supported:
         assert individual[0].content.precursor_mz == 500.001
         assert individual[0].content.observed_loss_error_ppm == pytest.approx(
@@ -280,11 +279,9 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         scan_precursor_mz=observation.precursor_mz + 0.25,
         precursor_inference_tolerance_da=0.25,
     )
-    payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
-    assert payload["schema_version"] == "cid_nl_evidence_observation"
-    assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
-    assert payload["observed_loss_error_ppm"] is None
-    assert payload["supports_direct_nl"] is False
+    assert inferred.observation.precursor_mz_basis == "product_plus_neutral_loss"
+    assert inferred.observation.observed_loss_error_ppm is None
+    assert inferred.observation.supports_direct_nl is False
     assert assessment_module.resolve_cid_nl_method_relations(
         processing_owners=fixture.owners,
         sample=fixture.sample("s1"),
@@ -294,54 +291,11 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     ) == ((), ())
     with pytest.raises(CidNlEvidenceContractError, match="no independent"):
         replace(inferred.observation, observed_loss_error_ppm=0.0)
-    assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
-    assert payload["precursor_inference_tolerance_da"] == 0.25
+    assert inferred.observation.scan_precursor_mz == observation.precursor_mz + 0.25
+    assert inferred.observation.precursor_inference_tolerance_da == 0.25
     assert direct.observation.precursor_mz_basis == "scan_precursor"
     assert direct.observation.scan_precursor_mz == observation.precursor_mz
     assert direct.observation.precursor_inference_tolerance_da is None
-    assert (
-        inferred.artifact.evidence_artifact_id != direct.artifact.evidence_artifact_id
-    )
-
-    seed = DiscoverySeed(
-        raw_file=Path("s1.raw"),
-        sample_stem="s1",
-        scan_number=observation.scan_number,
-        rt=observation.scan_rt_min,
-        precursor_mz=observation.precursor_mz,
-        product_mz=observation.product_mz,
-        product_intensity=observation.product_intensity,
-        neutral_loss_tag="DNA_dR",
-        configured_neutral_loss_da=observation.configured_neutral_loss_da,
-        observed_neutral_loss_da=observation.observed_neutral_loss_da,
-        observed_loss_error_ppm=None,
-        precursor_mz_basis="product_plus_neutral_loss",
-        scan_precursor_mz=inferred.observation.scan_precursor_mz,
-        acquisition_source_id=observation.acquisition_source_id,
-    )
-    projection = mint_untargeted_cid_nl_projection_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("s1"),
-        canonical_evidence=inferred,
-        discovery_seed=seed,
-    )
-    assert projection.canonical_evidence_artifact_id == (
-        inferred.artifact.evidence_artifact_id
-    )
-    for changed_seed, message in (
-        (replace(seed, precursor_mz_basis="scan_precursor"), "precursor_mz_basis"),
-        (
-            replace(seed, scan_precursor_mz=observation.precursor_mz),
-            "scan_precursor_mz",
-        ),
-    ):
-        with pytest.raises(UntargetedCidNlProjectionError, match=message):
-            mint_untargeted_cid_nl_projection_ref(
-                processing_owners=fixture.owners,
-                sample=fixture.sample("s1"),
-                canonical_evidence=inferred,
-                discovery_seed=changed_seed,
-            )
 
 
 @pytest.mark.parametrize(
@@ -394,23 +348,22 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
 
     monkeypatch.setattr(assessment_module, "_method_result", unexpected_reevaluation)
     by_sample = {
-        assessment.content.canonical_sample_identity_id: assessment
-        for assessment in assessments
+        assessment.content.sample_key: assessment for assessment in assessments
     }
 
     assert by_sample[
-        fixture.sample("s1").identity.sample_identity_id
+        fixture.sample("s1").identity.sample_key
     ].content.method_result == ("SUPPORT")
     assert by_sample[
-        fixture.sample("s2").identity.sample_identity_id
+        fixture.sample("s2").identity.sample_key
     ].content.method_result == ("HOLD")
     assert by_sample[
-        fixture.sample("s3").identity.sample_identity_id
+        fixture.sample("s3").identity.sample_key
     ].content.method_result == ("REJECT")
     assert by_sample[
-        fixture.sample("s4").identity.sample_identity_id
+        fixture.sample("s4").identity.sample_key
     ].content.method_result == ("HOLD")
-    s5 = by_sample[fixture.sample("s5").identity.sample_identity_id]
+    s5 = by_sample[fixture.sample("s5").identity.sample_key]
     assert s5.content.technical_state == "unsupported"
     assert s5.content.method_result is None
     assert all(not hasattr(assessment, "peak_hypothesis") for assessment in assessments)
@@ -422,8 +375,7 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
             sample=next(
                 sample
                 for sample in fixture.samples
-                if sample.identity.sample_identity_id
-                == assessment.content.canonical_sample_identity_id
+                if sample.identity.sample_key == assessment.content.sample_key
             ),
             target=fixture.target,
         )
@@ -434,10 +386,8 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert all(
-        cell.content.group_target_key_id
-        == fixture.target.definition.target_key.target_key_id
-        and cell.content.group_target_definition_id
-        == fixture.target.definition.target_definition_id
+        cell.content.group_target_label
+        == fixture.target.definition.target_key.target_label
         for cell in spine.cells
     )
 
@@ -484,14 +434,7 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
 
     assert forward == reverse
     assert forward.content.relationship == "supports_one_or_more_of"
-    assert forward.content.matched_candidate_content_ids == tuple(
-        sorted(
-            (
-                left.content.peak_observation_content_id,
-                right.content.peak_observation_content_id,
-            )
-        )
-    )
+    assert set(forward.content.matched_candidates) == {left.content, right.content}
     assert not hasattr(forward, "individual_support_votes")
 
 
@@ -516,15 +459,13 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         sample=fixture.sample("edge"),
         target=fixture.target,
         detector_invocation_id="gaussian15:edge",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
         set_relation_refs=(relation,),
     )
 
-    assert relation.content.matched_candidate_content_ids == (
-        peak.content.peak_observation_content_id,
-    )
+    assert relation.content.matched_candidates == (peak.content,)
     assert assessment.content.method_result == "HOLD"
     assert assessment.individual_support_refs == ()
 
@@ -589,7 +530,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="adjacent-peaks",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=peaks,
             evidence_refs=(evidence,),
             individual_support_refs=individual_refs,
@@ -656,23 +597,16 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="adjacent-peaks",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=peaks,
             evidence_refs=(evidence,),
             individual_support_refs=resolved_individual,
             set_relation_refs=resolved_sets,
         )
         assert resolved_assessment == assessment
-        assert assessment_module.canonical_cid_nl_method_assessment_bytes(
-            resolved_assessment.content
-        ) == assessment_module.canonical_cid_nl_method_assessment_bytes(
-            assessment.content
-        )
         assert assessment.content.method_result == expected_result
         if expected_result == "SUPPORT":
-            assert individual_refs[0].content.peak_observation_content_id == (
-                left.content.peak_observation_content_id
-            )
+            assert individual_refs[0].content.peak_observation == left.content
             with pytest.raises(
                 DdaCidNlCandidateSetRelationContractError, match="individual support"
             ):
@@ -685,9 +619,9 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
                 )
         else:
             assert assessment.individual_support_refs == ()
-            assert set_refs[0].content.matched_candidate_content_ids == tuple(
-                sorted(peak.content.peak_observation_content_id for peak in peaks)
-            )
+            assert set(set_refs[0].content.matched_candidates) == {
+                peak.content for peak in peaks
+            }
 
 
 @pytest.mark.parametrize(
@@ -792,7 +726,7 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
     assert spine.group is not None
     assert len(spine.support_hypotheses) == 1
     assert len(spine.cells) == 5
-    assert len({cell.artifact.evidence_artifact_id for cell in spine.cells}) == 5
+    assert len({cell.content for cell in spine.cells}) == 5
     for cell, targeted, untargeted in zip(
         spine.cells,
         spine.targeted_projections,
@@ -806,13 +740,10 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
         assert targeted.validation_status == "diagnostic_only"
         assert untargeted.validation_status == "diagnostic_only"
 
-    by_sample = {
-        cell.content.canonical_sample_identity_id: cell for cell in spine.cells
-    }
-    assert by_sample[fixture.sample("s1").identity.sample_identity_id].peak_hypothesis
+    by_sample = {cell.content.sample_key: cell for cell in spine.cells}
+    assert by_sample[fixture.sample("s1").identity.sample_key].peak_hypothesis
     assert all(
-        by_sample[fixture.sample(stem).identity.sample_identity_id].peak_hypothesis
-        is None
+        by_sample[fixture.sample(stem).identity.sample_key].peak_hypothesis is None
         for stem in ("s2", "s3", "s4", "s5")
     )
 
@@ -884,7 +815,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:wrong-peak",
-            evaluation_receipt=_completed_receipt(scanned_event_count=0),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(wrong_peak,),
         )
     with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
@@ -893,7 +824,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:wrong-evidence",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             evidence_refs=(wrong_evidence,),
         )
 
@@ -909,7 +840,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:late-evidence",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             evidence_refs=(late_evidence,),
         )
 
@@ -946,7 +877,7 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:nonqual",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         evidence_refs=(evidence,),
     )
 
@@ -998,7 +929,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:mixed",
-        evaluation_receipt=_completed_receipt(scanned_event_count=2),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=peaks,
         evidence_refs=(interior, boundary),
         individual_support_refs=(individual,),
@@ -1015,9 +946,9 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     ) == ((individual,), (set_relation,))
-    assert set_relation.content.matched_candidate_content_ids == tuple(
-        sorted(item.content.peak_observation_content_id for item in peaks)
-    )
+    assert set(set_relation.content.matched_candidates) == {
+        item.content for item in peaks
+    }
 
 
 def test_cell_identity_binds_full_provisional_group_membership(
@@ -1047,7 +978,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
             sample=sample,
             target=fixture.target,
             detector_invocation_id=f"gaussian15:{stem}:group-membership",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(peak,),
             evidence_refs=(evidence,),
             individual_support_refs=(support,),
@@ -1072,15 +1003,12 @@ def test_cell_identity_binds_full_provisional_group_membership(
     combined_a = next(
         cell
         for cell in combined.cells
-        if cell.content.canonical_sample_identity_id
-        == sample_assessments[0][0].identity.sample_identity_id
+        if cell.content.sample_key == sample_assessments[0][0].identity.sample_key
     )
 
     assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
     assert single.group.owner_ids != combined.group.owner_ids
-    assert single.cells[0].artifact.evidence_artifact_id != (
-        combined_a.artifact.evidence_artifact_id
-    )
+    assert single.cells[0].content != combined_a.content
     assert single.cells[0].content.group_owner_ids == tuple(
         sorted(single.group.owner_ids)
     )
@@ -1109,7 +1037,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
         sample=fixture.sample("hold"),
         target=fixture.other_target,
         detector_invocation_id="gaussian15:hold:other-target",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
 
     with pytest.raises(CellObservationContractError, match="group recovery subject"):
@@ -1158,7 +1086,7 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
         "sample": fixture.sample("multi"),
         "target": fixture.target,
         "detector_invocation_id": "gaussian15:multi",
-        "evaluation_receipt": _completed_receipt(scanned_event_count=2),
+        "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
     forward = mint_cid_nl_method_assessment_ref(
@@ -1256,14 +1184,14 @@ def test_assessment_rejects_duplicate_acquisition_scan_evidence(
             sample=fixture.sample("same-scan"),
             target=fixture.target,
             detector_invocation_id="gaussian15:same-scan",
-            evaluation_receipt=_completed_receipt(scanned_event_count=2),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(peak,),
             evidence_refs=(first, second),
             individual_support_refs=supports,
         )
 
 
-def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) -> None:
+def test_partial_and_duplicate_inputs_fail_closed(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample",)
     )
@@ -1315,21 +1243,8 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
             sample=fixture.sample("sample"),
             target=fixture.target,
             detector_invocation_id="gaussian15:sample",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(left,),
-            evidence_refs=(evidence,),
-            set_relation_refs=(relation,),
-        )
-
-    retry = fixture.retry()
-    with pytest.raises(CidNlMethodAssessmentContractError, match="attempt"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=retry.owners,
-            sample=retry.sample("sample"),
-            target=retry.target,
-            detector_invocation_id="gaussian15:sample:retry",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
-            candidate_peaks=(left, right),
             evidence_refs=(evidence,),
             set_relation_refs=(relation,),
         )
@@ -1352,7 +1267,6 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=False,
-            scanned_event_count=0,
             reason_code="detector_worker_failed",
         ),
         technical_state="failed",
@@ -1429,7 +1343,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s1"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s1",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s1_peak,),
         evidence_refs=(s1_evidence,),
         individual_support_refs=(s1_support,),
@@ -1441,7 +1355,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s2"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s2",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s2_peak,),
     )
 
@@ -1456,7 +1370,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s3"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s3",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         evidence_refs=(s3_evidence,),
     )
 
@@ -1492,7 +1406,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s4"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s4_left, s4_right),
         evidence_refs=(s4_evidence,),
         set_relation_refs=(s4_relation,),
@@ -1509,7 +1423,6 @@ def _truth_table_fixture(tmp_path: Path):
             support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
-            scanned_event_count=0,
             reason_code="dda_not_available",
         ),
         technical_state="unsupported",
@@ -1530,7 +1443,7 @@ def test_targeted_assessment_retains_its_subject_mass_window(
             target=fixture.target,
             detector_invocation_id="targeted-scope",
             evaluation_receipt=replace(
-                _completed_receipt(scanned_event_count=0),
+                _completed_receipt(),
                 evidence_scope=(
                     "declared_scans"
                     if scope_override == "declared_scans"
@@ -1543,14 +1456,13 @@ def test_targeted_assessment_retains_its_subject_mass_window(
         )
 
 
-def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
+def _completed_receipt() -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=scanned_event_count,
         reason_code=None,
     )
 
@@ -1607,7 +1519,7 @@ def _support_assessment(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}:aggregate",
-        evaluation_receipt=_completed_receipt(scanned_event_count=len(evidence_refs)),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
@@ -1635,7 +1547,7 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
             for field in fields(observed)
             if field.name
             not in {
-                "canonical_sample_identity_id",
+                "sample_key",
                 "acquisition_source_id",
                 "acquisition_mode",
                 "precursor_mz_basis",
@@ -1647,10 +1559,10 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
         scan_precursor_mz=observed.precursor_mz + 1.0035,
         precursor_metadata=metadata,
     )
-    payload = json.loads(canonical_cid_nl_evidence_bytes(mono.observation))
-    assert payload["precursor_metadata"]["master_scan_number"] == 40
-    assert payload["precursor_mz_basis"] == "scan_monoisotopic"
-    assert payload["scan_precursor_mz"] != payload["precursor_mz"]
+    assert mono.observation.precursor_metadata is not None
+    assert mono.observation.precursor_metadata.master_scan_number == 40
+    assert mono.observation.precursor_mz_basis == "scan_monoisotopic"
+    assert mono.observation.scan_precursor_mz != mono.observation.precursor_mz
     with pytest.raises(CidNlEvidenceContractError, match="recorded precursor"):
         replace(mono.observation, precursor_metadata=None)
     with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
@@ -1700,7 +1612,7 @@ def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
         "processing_owners": fixture.owners,
         "sample": sample,
         "target": fixture.target,
-        "evaluation_receipt": _completed_receipt(scanned_event_count=1),
+        "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
     first_assessment = mint_cid_nl_method_assessment_ref(

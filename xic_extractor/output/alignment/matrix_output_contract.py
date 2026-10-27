@@ -11,26 +11,15 @@ from dataclasses import dataclass
 from xic_extractor.output.alignment.output_rows import format_value
 from xic_extractor.tabular_io import escape_excel_formula
 
-MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity"
 MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"
 _MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding"
-ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
-    "identity_schema_version",
+MATRIX_REVIEW_COLUMNS = (
+    "feature_id",
     "matrix_row_index",
-    "Mz",
-    "RT",
-    "peak_hypothesis_id",
-    "row_identity_basis",
-    "split_evaluation_status",
-    "projection_status",
-    "source_feature_family_ids",
-    "source_feature_family_count",
+    "matrix_mz",
+    "matrix_rt",
     "center_mz_basis",
-    "center_rt_basis",
-    "center_weight_basis",
     "accepted_cell_count",
-    "accepted_sample_count",
-    "evidence_status",
     MATRIX_ROW_BINDING_COLUMN,
 )
 
@@ -113,272 +102,127 @@ def serialize_public_matrix_table(
     )
 
 
-def bind_matrix_identity_rows(
-    *,
-    matrix_header: Sequence[str],
-    matrix_rows: Sequence[Mapping[str, object]],
-    identity_columns: Sequence[str],
-    identity_rows: Sequence[Mapping[str, object]],
-) -> tuple[dict[str, str], ...]:
-    """Mint identity rows bound to the complete ordered public Matrix rows."""
-
-    _validate_binding_headers(matrix_header, identity_columns)
-    if len(matrix_rows) != len(identity_rows):
-        raise ValueError("alignment matrix identity row census mismatch")
-    bound_rows: list[dict[str, str]] = []
-    for index, (matrix_row, source_identity) in enumerate(
-        zip(matrix_rows, identity_rows, strict=True),
-        start=1,
-    ):
-        bound_rows.append(
-            bind_matrix_identity_row(
-                matrix_header=matrix_header,
-                matrix_row=matrix_row,
-                identity_columns=identity_columns,
-                source_identity=source_identity,
-                index=index,
-            )
-        )
-    validate_matrix_identity_rows(
-        matrix_header=matrix_header,
-        matrix_rows=matrix_rows,
-        identity_columns=identity_columns,
-        identity_rows=bound_rows,
-    )
-    return tuple(bound_rows)
-
-
-def bind_matrix_identity_row(
+def bind_matrix_review_row(
     *,
     matrix_header: Sequence[str],
     matrix_row: Mapping[str, object],
-    identity_columns: Sequence[str],
-    source_identity: Mapping[str, object],
+    source_review: Mapping[str, object],
     index: int,
 ) -> dict[str, str]:
-    """Bind one row at its global position in a streamed public Matrix."""
-
-    identity = {
-        column: (
-            canonical_mz_text(source_identity.get(column, ""))
-            if column == "Mz"
-            else format_value(source_identity.get(column, ""))
-        )
-        for column in identity_columns
+    """Bind the required Review facts to one complete persisted Matrix row."""
+    review = {
+        column: format_value(source_review.get(column, ""))
+        for column in MATRIX_REVIEW_COLUMNS
     }
-    identity["identity_schema_version"] = MATRIX_IDENTITY_SCHEMA_VERSION
-    identity["matrix_row_index"] = str(index)
-    identity["Mz"] = canonical_mz_text(identity.get("Mz", ""))
-    identity[MATRIX_ROW_BINDING_COLUMN] = ""
-    identity[MATRIX_ROW_BINDING_COLUMN] = matrix_row_binding_sha256(
-        matrix_header=matrix_header,
-        matrix_row=matrix_row,
-        identity_columns=identity_columns,
-        identity_row=identity,
+    review["matrix_row_index"] = str(index)
+    review["matrix_mz"] = canonical_mz_text(source_review.get("matrix_mz", ""))
+    review[MATRIX_ROW_BINDING_COLUMN] = matrix_row_binding_sha256(
+        matrix_header=matrix_header, matrix_row=matrix_row, review_row=review
     )
-    return identity
+    return review
 
 
-def validate_matrix_identity_rows(
+def matrix_review_rows(
     *,
     matrix_header: Sequence[str],
     matrix_rows: Sequence[Mapping[str, object]],
-    identity_columns: Sequence[str],
-    identity_rows: Sequence[Mapping[str, object]],
-) -> None:
-    """Validate an exact ordered Matrix/identity census and every row binding."""
+    review_columns: Sequence[str],
+    review_rows: Sequence[Mapping[str, object]],
+) -> tuple[Mapping[str, object], ...]:
+    """Validate Review and return its Matrix subset in explicit Matrix order.
 
-    header_schema = _validate_binding_headers(
-        matrix_header,
-        identity_columns,
-    )
-    if len(matrix_rows) != len(identity_rows):
-        raise ValueError("alignment matrix identity row census mismatch")
-    peak_hypothesis_ids: set[str] = set()
-    declared_schema = ""
-    for index, (matrix_row, identity_row) in enumerate(
-        zip(matrix_rows, identity_rows, strict=True),
-        start=1,
-    ):
-        schema = _declared_identity_schema(identity_row)
-        if schema != header_schema:
-            raise ValueError(
-                "alignment matrix identity schema does not match its columns"
-            )
-        if not declared_schema:
-            declared_schema = schema
-        elif schema != declared_schema:
-            raise ValueError("alignment matrix identity schema must be uniform")
-        peak_hypothesis_id = str(identity_row.get("peak_hypothesis_id", "")).strip()
-        if not peak_hypothesis_id or peak_hypothesis_id in peak_hypothesis_ids:
-            raise ValueError(
-                "alignment matrix identity peak_hypothesis_id must be unique"
-            )
-        peak_hypothesis_ids.add(peak_hypothesis_id)
-        validate_matrix_identity_row(
-            matrix_header=matrix_header,
-            matrix_row=matrix_row,
-            identity_columns=identity_columns,
-            identity_row=identity_row,
-            expected_index=index,
-        )
-
-
-def validate_matrix_identity_row(
-    *,
-    matrix_header: Sequence[str],
-    matrix_row: Mapping[str, object],
-    identity_columns: Sequence[str],
-    identity_row: Mapping[str, object],
-    expected_index: int,
-) -> None:
-    """Validate one row when a caller already owns the complete census."""
-
-    header_schema = _validate_binding_headers(
-        matrix_header,
-        identity_columns,
-    )
-    _validate_serialized_row_shape(
-        matrix_row,
-        matrix_header,
-        label="Matrix",
-    )
-    _validate_serialized_row_shape(
-        identity_row,
-        identity_columns,
-        label="identity",
-    )
-    schema = _declared_identity_schema(identity_row)
-    if schema != header_schema:
-        raise ValueError("alignment matrix identity schema does not match its columns")
-    if str(identity_row.get("matrix_row_index", "")).strip() != str(expected_index):
+    Archive rows remain in Review. Its physical row order is not a Matrix key.
+    """
+    if len(set(review_columns)) != len(review_columns):
+        raise ValueError("alignment Review columns must be unique")
+    missing = set(MATRIX_REVIEW_COLUMNS) - set(review_columns)
+    if missing:
         raise ValueError(
-            "alignment matrix identity rows must be an exact ordered census"
+            "alignment Review requires current fields: " + ",".join(sorted(missing))
         )
-    _validate_matrix_identity_row(
-        matrix_header=matrix_header,
-        matrix_row=matrix_row,
-        identity_columns=identity_columns,
-        identity_row=identity_row,
-    )
+    features: set[str] = set()
+    projected: dict[int, Mapping[str, object]] = {}
+    for row in review_rows:
+        _validate_serialized_row_shape(row, review_columns, label="Review")
+        feature = str(row["feature_id"]).strip()
+        if not feature or feature in features:
+            raise ValueError("alignment Review feature_id must be nonempty and unique")
+        features.add(feature)
+        position = str(row["matrix_row_index"]).strip()
+        if not position:
+            if any(
+                str(row[column]).strip()
+                for column in ("matrix_mz", "matrix_rt", MATRIX_ROW_BINDING_COLUMN)
+            ):
+                raise ValueError(
+                    "archive Review row cannot contain Matrix projection values"
+                )
+            continue
+        try:
+            index = int(position)
+        except ValueError as exc:
+            raise ValueError(
+                "Review matrix_row_index must be a positive integer"
+            ) from exc
+        if position != str(index) or index < 1 or index in projected:
+            raise ValueError("Review Matrix positions must be positive and unique")
+        projected[index] = row
+    if set(projected) != set(range(1, len(matrix_rows) + 1)):
+        raise ValueError("alignment Matrix/Review row census mismatch")
+    ordered = tuple(projected[index] for index in range(1, len(matrix_rows) + 1))
+    for matrix, review in zip(matrix_rows, ordered, strict=True):
+        _validate_serialized_row_shape(matrix, matrix_header, label="Matrix")
+        if str(matrix["Mz"]).strip() != public_matrix_mz_text(review["matrix_mz"]):
+            raise ValueError("Review matrix_mz binding mismatch")
+        if not _exact_finite_numeric_equal(matrix["RT"], review["matrix_rt"]):
+            raise ValueError("Review matrix_rt binding mismatch")
+        expected = matrix_row_binding_sha256(
+            matrix_header=matrix_header, matrix_row=matrix, review_row=review
+        )
+        if str(review[MATRIX_ROW_BINDING_COLUMN]) != expected:
+            raise ValueError("Review row binding mismatch")
+    return ordered
 
 
 def matrix_row_binding_sha256(
     *,
     matrix_header: Sequence[str],
     matrix_row: Mapping[str, object],
-    identity_columns: Sequence[str],
-    identity_row: Mapping[str, object],
+    review_row: Mapping[str, object],
 ) -> str:
-    """Hash one complete public row together with its complete identity row."""
-
-    _validate_binding_headers(matrix_header, identity_columns)
-    _validate_serialized_row_shape(
-        matrix_row,
-        matrix_header,
-        label="Matrix",
-    )
-    _validate_serialized_row_shape(
-        identity_row,
-        identity_columns,
-        label="identity",
-    )
-    identity_binding_columns = tuple(
-        column for column in identity_columns if column != MATRIX_ROW_BINDING_COLUMN
+    """Bind the full Matrix header/value row and its explicit Review projection."""
+    if tuple(matrix_header[:2]) != ("Mz", "RT") or len(set(matrix_header)) != len(
+        matrix_header
+    ):
+        raise ValueError("alignment Matrix requires unique Mz/RT/sample columns")
+    _validate_serialized_row_shape(matrix_row, matrix_header, label="Matrix")
+    columns = tuple(
+        column
+        for column in MATRIX_REVIEW_COLUMNS
+        if column != MATRIX_ROW_BINDING_COLUMN
     )
     basis = {
         "schema_version": _MATRIX_ROW_BINDING_SCHEMA_VERSION,
         "matrix_header": list(matrix_header),
-        "matrix_row": [str(matrix_row.get(column, "")) for column in matrix_header],
-        "identity_columns": list(identity_binding_columns),
-        "identity_row": [
-            str(identity_row.get(column, "")) for column in identity_binding_columns
-        ],
+        "matrix_row": [str(matrix_row[column]) for column in matrix_header],
+        "review_columns": columns,
+        "review_row": [str(review_row[column]) for column in columns],
     }
     payload = json.dumps(
-        basis,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
+        basis, ensure_ascii=True, separators=(",", ":"), sort_keys=True
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
-def _validate_binding_headers(
-    matrix_header: Sequence[str],
-    identity_columns: Sequence[str],
-) -> str:
-    if tuple(matrix_header[:2]) != ("Mz", "RT"):
-        raise ValueError("alignment matrix identity requires an Mz/RT Matrix")
-    if len(set(matrix_header)) != len(matrix_header):
-        raise ValueError("alignment matrix header must be unique")
-    if len(set(identity_columns)) != len(identity_columns):
-        raise ValueError("alignment matrix identity columns must be unique")
-    identity_column_set = set(identity_columns)
-    if identity_column_set == set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS):
-        return MATRIX_IDENTITY_SCHEMA_VERSION
-    expected = set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
-    missing = sorted(expected - identity_column_set)
-    unexpected = sorted(identity_column_set - expected)
-    details = []
-    if missing:
-        details.append("missing=" + ",".join(missing))
-    if unexpected:
-        details.append("unexpected=" + ",".join(unexpected))
-    if not details:
-        details.append("schema columns are incomplete")
-    raise ValueError(
-        "alignment matrix identity columns do not match current schema: "
-        + "; ".join(details)
-    )
-
-
 def _validate_serialized_row_shape(
-    row: Mapping[str, object],
-    columns: Sequence[str],
-    *,
-    label: str,
+    row: Mapping[str, object], columns: Sequence[str], *, label: str
 ) -> None:
     if set(row) != set(columns):
         raise ValueError(
-            f"alignment matrix {label} row fields must exactly match declared columns"
+            f"alignment {label} row fields must exactly match declared columns"
         )
     if any(row[column] is None for column in columns):
-        raise ValueError(f"alignment matrix {label} row contains missing cells")
-
-
-def _validate_matrix_identity_row(
-    *,
-    matrix_header: Sequence[str],
-    matrix_row: Mapping[str, object],
-    identity_columns: Sequence[str],
-    identity_row: Mapping[str, object],
-) -> None:
-    display_mz = str(matrix_row.get("Mz", "")).strip()
-    canonical_mz = str(identity_row.get("Mz", "")).strip()
-    if display_mz != public_matrix_mz_text(canonical_mz):
-        raise ValueError("identity Mz binding mismatch")
-    binding = str(identity_row.get(MATRIX_ROW_BINDING_COLUMN, "")).strip()
-    expected = matrix_row_binding_sha256(
-        matrix_header=matrix_header,
-        matrix_row=matrix_row,
-        identity_columns=identity_columns,
-        identity_row=identity_row,
-    )
-    if binding != expected:
-        raise ValueError("identity row binding mismatch")
-    if not _exact_finite_numeric_equal(
-        matrix_row.get("RT", ""),
-        identity_row.get("RT", ""),
-    ):
-        raise ValueError("alignment matrix identity RT binding mismatch")
-
-
-def _declared_identity_schema(identity_row: Mapping[str, object]) -> str:
-    schema = str(identity_row.get("identity_schema_version", "")).strip()
-    if schema != MATRIX_IDENTITY_SCHEMA_VERSION:
-        raise ValueError("alignment matrix identity schema is missing or unknown")
-    return schema
+        raise ValueError(f"alignment {label} row contains missing cells")
 
 
 def _exact_finite_numeric_equal(left: object, right: object) -> bool:

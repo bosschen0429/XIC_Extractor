@@ -37,7 +37,6 @@ from xic_extractor.execution._observability import (
 )
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
     RuntimeResourceSettlementReceipt,
     RuntimeTelemetryProvider,
@@ -48,13 +47,12 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.processing_identity import (
-    canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     _has_recorded_precursor_reference,
-    _PartitionWorkObserver,
+    _PartitionAcquisitionObserver,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
@@ -65,12 +63,8 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
     UntargetedPreparedGrouping,
     UntargetedSampleResult,
-    UntargetedSampleResultRef,
-    _canonical_acquisition_content,
-    _mint_sample_result_ref,
     _request_subject_candidates,
     _request_uses_subject_batch,
-    _SampleResultContext,
 )
 from xic_extractor.untargeted_execution.partition.workers import (
     _backfill_support_context,
@@ -423,7 +417,7 @@ def _prepare_runtime_work(
                 job=job,
                 resource_key=resource_key,
                 initial_requires_raw=initial_requires_raw,
-                observer=_PartitionWorkObserver(job.processing_owners),
+                observer=_PartitionAcquisitionObserver(),
                 error=error,
             )
         )
@@ -435,13 +429,10 @@ def _prepare_runtime_work(
         }
         for state in states:
             state.adapter_result = seeded[state.job.work_unit_key]
-            for artifact in state.adapter_result.lineage_artifacts:
-                state.observer.record_artifact(artifact)
 
     sample_groups = _runtime_sample_groups(states)
     initial_groups_by_sample = {
-        group[0].job.sample.identity.sample_identity_id: group
-        for group in sample_groups
+        group[0].job.sample.identity.sample_key: group for group in sample_groups
     }
     phase_templates = backfill_templates or tuple(
         group[0].job for group in sample_groups
@@ -449,11 +440,11 @@ def _prepare_runtime_work(
     batch_phases: list[_BatchSamplePhaseState] = []
     for first in phase_templates:
         sample_states = initial_groups_by_sample.get(
-            first.sample.identity.sample_identity_id, ()
+            first.sample.identity.sample_key, ()
         )
         if partition_key is None and not _request_uses_subject_batch(first):
             continue
-        sample_id = first.sample.identity.sample_identity_id
+        sample_id = first.sample.identity.sample_key
         source = resolve_request_acquisition_source(
             processing_owners=first.processing_owners,
             sample=first.sample,
@@ -520,7 +511,6 @@ def _prepare_runtime_work(
     def provide_worker_batch(_aggregate: object) -> RuntimeWorkerBatchReceipt:
         settlements: list[WorkUnitSettlement] = []
         resource_settlements: list[RuntimeResourceSettlementReceipt] = []
-        artifact_registrations: list[RuntimeArtifactRegistrationReceipt] = []
         acquisitions: list[RuntimeAcquisitionReceipt] = []
         worker_pool = pool or WorkerAdmissionPool(
             max_workers=raw_workers,
@@ -558,8 +548,7 @@ def _prepare_runtime_work(
                         state.error = worker_pool.first_error
 
         phases_by_sample = {
-            phase.job.sample.identity.sample_identity_id: phase
-            for phase in batch_phases
+            phase.job.sample.identity.sample_key: phase for phase in batch_phases
         }
 
         def initial(
@@ -569,9 +558,7 @@ def _prepare_runtime_work(
                 sample_states[0].job
             ):
                 return _execute_initial_sample_phase(
-                    phases_by_sample[
-                        sample_states[0].job.sample.identity.sample_identity_id
-                    ],
+                    phases_by_sample[sample_states[0].job.sample.identity.sample_key],
                     partition_candidates=partition_key is not None,
                 )
             else:
@@ -590,7 +577,7 @@ def _prepare_runtime_work(
                 ):
                     _execute_backfill(state)
             phase = phases_by_sample.get(
-                sample_states[0].job.sample.identity.sample_identity_id
+                sample_states[0].job.sample.identity.sample_key
             )
             if phase is not None:
                 return _execute_backfill_sample_phase(phase)
@@ -623,7 +610,7 @@ def _prepare_runtime_work(
         def make_process_initial_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleInitialWorkerRequest:
-            sample_id = sample_states[0].job.sample.identity.sample_identity_id
+            sample_id = sample_states[0].job.sample.identity.sample_key
             phase = phases_by_sample[sample_id]
             return _SampleInitialWorkerRequest(
                 jobs=tuple(s.job for s in sample_states),
@@ -638,7 +625,7 @@ def _prepare_runtime_work(
             resp: _SampleInitialWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.identity.sample_identity_id
+                sample_id = sample_states[0].job.sample.identity.sample_key
                 resp.apply_to(phases_by_sample[sample_id])
             on_sample_completed("partition_initial", comp, tot, sample_states)
 
@@ -651,7 +638,7 @@ def _prepare_runtime_work(
         def make_process_backfill_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleBackfillWorkerRequest:
-            sample_id = sample_states[0].job.sample.identity.sample_identity_id
+            sample_id = sample_states[0].job.sample.identity.sample_key
             phase = phases_by_sample[sample_id]
             pending = tuple(
                 state
@@ -680,7 +667,7 @@ def _prepare_runtime_work(
             resp: _SampleBackfillWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.identity.sample_identity_id
+                sample_id = sample_states[0].job.sample.identity.sample_key
                 resp.apply_to(phases_by_sample[sample_id])
             on_sample_completed("partition_backfill", comp, tot, sample_states)
 
@@ -736,7 +723,7 @@ def _prepare_runtime_work(
                     backfill_groups = _runtime_sample_groups(states)
                     for sample_states in backfill_groups:
                         phase = phases_by_sample.get(
-                            sample_states[0].job.sample.identity.sample_identity_id
+                            sample_states[0].job.sample.identity.sample_key
                         )
                         if phase is not None:
                             phase.states = sample_states
@@ -769,7 +756,6 @@ def _prepare_runtime_work(
                 worker_pool.shutdown()
         apply_stop()
 
-        result_context = _SampleResultContext(tuple(state.job for state in states))
         for completed, state in enumerate(states, 1):
             observe_cancellation()
             apply_stop()
@@ -778,12 +764,10 @@ def _prepare_runtime_work(
                 include_acquisition_receipt=(
                     partition_key is None and not _request_uses_subject_batch(state.job)
                 ),
-                result_context=result_context,
                 cancellation_observed=cancellation_observed,
             )
             settlements.extend(batch.settlements)
             resource_settlements.extend(batch.resource_settlements)
-            artifact_registrations.extend(batch.artifact_registrations)
             acquisitions.extend(batch.acquisitions)
             if sample_result is not None:
                 observed_results.append(sample_result)
@@ -814,7 +798,7 @@ def _prepare_runtime_work(
                     if acquisition is not None
                 )
             else:
-                sample_id = phase.job.sample.identity.sample_identity_id
+                sample_id = phase.job.sample.identity.sample_key
                 for name, acquisition in (
                     ("initial", phase.initial_acquisition),
                     ("backfill", phase.backfill_acquisition),
@@ -829,7 +813,6 @@ def _prepare_runtime_work(
         return RuntimeWorkerBatchReceipt(
             settlements=tuple(settlements),
             resource_settlements=tuple(resource_settlements),
-            artifact_registrations=tuple(artifact_registrations),
             acquisitions=tuple(acquisitions),
         )
 
@@ -905,7 +888,6 @@ def _finalize_job_state(
     *,
     cancellation_observed: bool,
     include_acquisition_receipt: bool = True,
-    result_context: _SampleResultContext | None = None,
 ) -> tuple[
     RuntimeWorkerBatchReceipt,
     UntargetedSampleResult | None,
@@ -915,62 +897,7 @@ def _finalize_job_state(
     adapter_result = state.adapter_result
     acquisition = state.observer.acquisition
 
-    try:
-        observed_artifacts = state.observer.artifact_closure()
-    except Exception as exc:
-        observed_artifacts = state.observer.observed_artifacts()
-        if state.error is None:
-            state.error = exc
-
-    result_ref: UntargetedSampleResultRef | None = None
-    registered_artifacts = observed_artifacts
-    if adapter_result is not None:
-        try:
-            # Backfill may reuse exact measured evidence from the initial result.
-            # Equal artifacts are one lineage node; conflicting identities still fail.
-            expected_lineage = canonical_current_attempt_artifact_closure(
-                producer_attempt=job.processing_owners.attempt,
-                artifacts=tuple(
-                    dict.fromkeys(
-                        (
-                            *adapter_result.lineage_artifacts,
-                            *(
-                                artifact
-                                for backfill in state.backfill_attempts
-                                for artifact in backfill.lineage_artifacts
-                            ),
-                        )
-                    )
-                ),
-            )
-            if observed_artifacts != expected_lineage:
-                raise UntargetedPartitionError(
-                    "worker observer does not close the exact adapter/backfill result"
-                )
-            result_ref = _mint_sample_result_ref(
-                job=job,
-                result=adapter_result,
-                backfill_input=state.backfill_input,
-                backfill_attempt=None,
-                backfill_attempts=state.backfill_attempts,
-                acquisition=acquisition,
-                acquisition_content=(
-                    result_context.acquisition_content
-                    if result_context is not None
-                    else _canonical_acquisition_content
-                ),
-            )
-            registered_artifacts = canonical_current_attempt_artifact_closure(
-                producer_attempt=job.processing_owners.attempt,
-                artifacts=(*observed_artifacts, result_ref.artifact),
-            )
-        except Exception as exc:
-            if state.error is None:
-                state.error = exc
-
-    success = (
-        state.error is None and adapter_result is not None and result_ref is not None
-    )
+    success = state.error is None and adapter_result is not None
     if not success and state.error is None:
         state.error = UntargetedPartitionError(
             "adapter returned no terminal scientific result"
@@ -991,9 +918,6 @@ def _finalize_job_state(
         attempt=job.processing_owners.attempt,
         work_unit_key=job.work_unit_key,
         outcome=outcome,
-        owner_result_ref=(
-            result_ref.artifact if success and result_ref is not None else None
-        ),
         failure_detail=failure_detail,
     )
     resource_receipts = (
@@ -1019,13 +943,6 @@ def _finalize_job_state(
     batch = RuntimeWorkerBatchReceipt(
         settlements=(settlement,),
         resource_settlements=resource_receipts,
-        artifact_registrations=tuple(
-            RuntimeArtifactRegistrationReceipt(
-                work_unit_key=job.work_unit_key,
-                artifact=artifact,
-            )
-            for artifact in registered_artifacts
-        ),
         acquisitions=(
             (
                 RuntimeAcquisitionReceipt(
@@ -1041,11 +958,10 @@ def _finalize_job_state(
         UntargetedSampleResult(
             job=job,
             adapter_result=adapter_result,
-            result_ref=result_ref,
             backfill_input=state.backfill_input,
             backfill_attempts=state.backfill_attempts,
         )
-        if success and adapter_result is not None and result_ref is not None
+        if success and adapter_result is not None
         else None
     )
     return (
@@ -1060,7 +976,7 @@ def _runtime_sample_groups(
 ) -> tuple[tuple[_RuntimeJobState, ...], ...]:
     grouped: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
-        sample_id = state.job.sample.identity.sample_identity_id
+        sample_id = state.job.sample.identity.sample_key
         grouped.setdefault(sample_id, []).append(state)
     groups = tuple(tuple(group) for group in grouped.values())
     for group in groups:

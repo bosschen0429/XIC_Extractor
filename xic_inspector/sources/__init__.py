@@ -34,8 +34,9 @@ def open_source(path, *, query_only=False):
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 
     summary = read_summary(path)
-    revision = summary.get("query_index_version")
-    if revision == 2 or (revision == 1 and query_only):
+    from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
+
+    if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
         return IndexedCidNlSource(path, summary)
     return CidNlSource(path, query_only=query_only)
 

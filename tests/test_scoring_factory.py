@@ -396,7 +396,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         injection_order_source=None,
-        config_hash="abcd1234",
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})
 

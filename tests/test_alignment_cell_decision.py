@@ -48,7 +48,6 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
@@ -96,28 +95,14 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     )
     projection = project_target_pre_cell(alignment)
 
-    basis_calls: list[tuple[object, object, object]] = []
-    original_basis = decision_owner._decision_basis
-
-    def count_basis_calls(
-        *, subject: object, evidence: object, payload: object
-    ) -> bytes:
-        basis_calls.append((subject, evidence, payload))
-        return original_basis(subject=subject, evidence=evidence, payload=payload)
-
-    with monkeypatch.context() as counted:
-        counted.setattr(decision_owner, "_decision_basis", count_basis_calls)
-        decisions = decide_target_cell_population(projection)
-    assert len(basis_calls) == len(decisions) == len(projection.subjects)
+    decisions = decide_target_cell_population(projection)
     reordered = decide_target_cell_population(
         projection,
         subjects=tuple(reversed(projection.subjects)),
     )
 
     assert len(decisions) == len(projection.subjects) == 2
-    assert tuple(item.decision_id for item in reordered) == tuple(
-        item.decision_id for item in decisions
-    )
+    assert reordered == decisions
     assert {item.variant for item in decisions} == {
         "numeric",
         "searched_no_observation",
@@ -215,15 +200,13 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
 ):
     _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
     answers = decide_group_cell_population(alignment)
-    assert set(answers) == {
-        item.cell_observation_id for item in alignment.cell_observations
-    }
+    assert set(answers) == {item.key for item in alignment.cell_observations}
     assert {payload.variant for payload, _ in answers.values()} == {
         "not_quantifiable",
         "not_searched",
     }
     for observation in alignment.cell_observations:
-        payload, integration = answers[observation.cell_observation_id]
+        payload, integration = answers[observation.key]
         if observation.evidence_state == "direct_observation":
             assert payload.variant == "not_quantifiable"
             assert integration is observation.integrations[0]
@@ -264,8 +247,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         decision_owner._decide_group(
             observation,
             is_member=any(
-                member.canonical_sample_identity_id
-                == observation.canonical_sample_identity_id
+                member.sample_key == observation.sample_key
                 for member in observation.group.member_subjects
             ),
         )
@@ -304,13 +286,12 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     source = next(
         item
         for item in spine.cells
-        if item.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
+        if item.content.sample_key == sample.identity.sample_key
     )
     negative_cell = mint_cell_observation_ref(
         processing_owners=fixture.owners,
@@ -388,16 +369,9 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         target=fixture.target,
         sample_assessments=((samples[1], assessments[1]),),
     )
-    left = validate_cross_sample_peak_group_identity(
-        left_spine.group,
-        require_canonical=True,
-    )
-    right = validate_cross_sample_peak_group_identity(
-        right_spine.group,
-        require_canonical=True,
-    )
+    left = left_spine.group.membership
+    right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
-        processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
     # CID-NL composition gives each spine a cell only for its searched sample.
@@ -462,16 +436,11 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         target=fixture.target,
         sample_assessments=tuple(zip(samples, assessments, strict=True)),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    predecessor = spine.group.membership
     left = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(predecessor.member_subjects[0],),
     )
     right = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(predecessor.member_subjects[1],),
     )
     coverage = _coverage_for_groups(
@@ -620,7 +589,6 @@ def _censored_peak(
     assert prepared.prepared is not None
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=f"censored-cluster-{sample_stem}",
         query_rt_min=apex_rt,
     )
     trace = Trace.from_arrays(

@@ -14,9 +14,6 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.output.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-)
 from xic_extractor.output.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     AlignmentOutputLevel,
@@ -36,7 +33,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class UntargetedPublicationPolicy:
-    """Public Matrix artifacts and optional explanation/fingerprint projections."""
+    """Public Matrix artifacts and optional explanation projections."""
 
     output_level: AlignmentOutputLevel = "production"
     emit_alignment_cells: bool = False
@@ -45,7 +42,6 @@ class UntargetedPublicationPolicy:
     explanation_full_audit: bool = False
     explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = ()
     emit_alignment_backfill_seed_audit: bool = False
-    capture_artifact_fingerprints: bool = False
 
     def output_paths(self, output_dir: Path) -> AlignmentRunOutputs:
         return output_paths(
@@ -73,7 +69,6 @@ def publish_untargeted_outputs(
         _ensure_output_publication_not_cancelled(should_cancel)
         metadata = {
             **metadata,
-            "processing_request_id": completed.processing_request_id,
             "processing_attempt_id": completed.processing_attempt_id,
         }
         inputs = completed.publication_inputs
@@ -117,32 +112,19 @@ def publish_untargeted_outputs(
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
-        writer_row_count, artifact_fingerprint_batch = (
-            write_completed_untargeted_outputs_atomic(
-                outputs,
-                completed.application_result,
-                metadata=metadata,
-                alignment_config=inputs.alignment_config,
-                timing_recorder=timing_recorder,
-                consume_child=_explanation_sink(explanation),
-                ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
-                membership_risks_by_owner=membership_risks,
-                before_write=lambda: _ensure_output_publication_not_cancelled(
-                    should_cancel
-                ),
-                capture_artifact_fingerprints=policy.capture_artifact_fingerprints,
-            )
+        writer_row_count = write_completed_untargeted_outputs_atomic(
+            outputs,
+            completed.application_result,
+            metadata=metadata,
+            alignment_config=inputs.alignment_config,
+            timing_recorder=timing_recorder,
+            consume_child=_explanation_sink(explanation),
+            ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
+            membership_risks_by_owner=membership_risks,
+            before_write=lambda: _ensure_output_publication_not_cancelled(
+                should_cancel
+            ),
         )
-        if policy.capture_artifact_fingerprints:
-            if not isinstance(
-                artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
-            ):
-                raise TypeError(
-                    "Alignment writer must return an owner-minted fingerprint batch"
-                )
-            outputs = replace(
-                outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
-            )
         db_path: Path | None = None
         if explanation is not None:
             assert matrix_path is not None
@@ -161,7 +143,6 @@ def publish_untargeted_outputs(
                 report_path=db_path,
                 matrix_path=outputs.matrix_tsv,
                 matrix_sha256=matrix_sha256,
-                processing_request_id=completed.processing_request_id,
                 processing_attempt_id=completed.processing_attempt_id,
                 schema_version="alignment_explanation"
                 if policy.explanation_full_audit

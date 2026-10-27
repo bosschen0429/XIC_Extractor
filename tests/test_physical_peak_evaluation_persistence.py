@@ -56,7 +56,6 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
     raw += height * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
     prepared = prepare_physical_signal(rt, raw)
     question = dict(
-        selection_subject_id="backfill-background-contrast",
         query_rt_min=1.0,
         search_rt_window=(0.85, 1.15),
     )
@@ -68,7 +67,6 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
     assert detected.state == expected
     reference = evaluate_physical_peak(
         prepared,
-        selection_subject_id="known-reference-contrast",
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_REFERENCE_POLICY,
     )
@@ -106,7 +104,6 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
     prepared = prepare_physical_signal(rt, raw)
     window = (query_rt - 0.05, query_rt + 0.05)
     question = dict(
-        selection_subject_id="query-inside-complete-peak",
         query_rt_min=query_rt,
         search_rt_window=window,
     )
@@ -128,13 +125,12 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
     assert backfill.facts.left_rt_min < query_rt < backfill.facts.right_rt_min
     centered = evaluate_physical_peak(
         prepared,
-        selection_subject_id="query-inside-complete-peak",
         query_rt_min=1.0,
         search_rt_window=(0.95, 1.05),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
     assert centered.facts is not None
-    assert backfill.facts.physical_segment_id == centered.facts.physical_segment_id
+    assert backfill.answer.selected_segment == centered.answer.selected_segment
     assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
     assert backfill.facts.left_rt_min == centered.facts.left_rt_min
     assert backfill.facts.right_rt_min == centered.facts.right_rt_min
@@ -152,7 +148,6 @@ def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> N
     raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="missing-peak-with-neighbor",
         query_rt_min=1.0,
         search_rt_window=(0.8, 1.2),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
@@ -169,7 +164,6 @@ def test_backfill_window_overlap_without_query_containment_is_not_enough() -> No
     raw = 1000.0 * np.exp(-0.5 * ((rt - 1.0) / 0.12) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="neighbor-tail-overlaps-window",
         query_rt_min=1.5,
         search_rt_window=(1.2, 1.7),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
@@ -187,12 +181,11 @@ def test_backfill_does_not_choose_between_two_query_containing_segments() -> Non
     )
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="forecast-on-shared-valley",
         query_rt_min=1.25,
         search_rt_window=(1.2, 1.3),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
-    assert len(result.question.admissible_segment_ids) == 2
+    assert len(result.question.admissible_segments) == 2
     assert result.reason == "ambiguous_segment_candidates"
     assert result.state == "unavailable" and result.facts is None
 
@@ -203,12 +196,11 @@ def test_backfill_query_containment_does_not_bypass_background_qualification() -
     raw += 5.0 * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="weak-query-containing-segment",
         query_rt_min=0.95,
         search_rt_window=(0.93, 0.97),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
-    assert len(result.question.admissible_segment_ids) == 1
+    assert len(result.question.admissible_segments) == 1
     assert result.reason == "insufficient_backfill_peak_contrast"
     assert result.state == "unavailable" and result.facts is None
 
@@ -218,12 +210,11 @@ def test_backfill_query_containment_does_not_accept_a_clipped_peak() -> None:
     raw = 1000.0 * np.exp(-0.5 * ((rt - 0.1) / 0.12) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="clipped-query-containing-segment",
         query_rt_min=0.3,
         search_rt_window=(0.28, 0.32),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
-    assert len(result.question.admissible_segment_ids) == 1
+    assert len(result.question.admissible_segments) == 1
     assert result.reason == "incomplete_peak_context"
     assert result.state == "unavailable" and result.facts is None
 
@@ -234,7 +225,6 @@ def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -
     raw[[29, 31]] = (1000.0, 1100.0)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="two-censored-observations",
         query_rt_min=1.5,
         search_rt_window=(1.2, 1.8),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
@@ -250,7 +240,6 @@ def test_unreliable_location_evaluates_unique_acquired_peak() -> None:
     raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="unreliable-localization",
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     )
@@ -416,7 +405,6 @@ def test_supported_short_peak_survives_noise_hits_and_persistence(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="supported-short-peak",
         query_rt_min=rt[apex_index],
         selection_policy_version=policy,
     )
@@ -440,15 +428,10 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
     rt, raw = _context_sensitive_trace()
     full_signal = prepare_physical_signal(rt, raw)
     cropped_signal = prepare_physical_signal(rt[:-1], raw[:-1])
-    full = evaluate_physical_peak(
-        full_signal, selection_subject_id="exterior-context", query_rt_min=rt[23]
-    )
+    full = evaluate_physical_peak(full_signal, query_rt_min=rt[23])
     assert full.state == "available" and full.facts is not None
-    selected = next(
-        s
-        for s in full.segment_universe.segments
-        if s.physical_segment_id == full.facts.physical_segment_id
-    )
+    selected = full.answer.selected_segment
+    assert selected is not None
     assert selected.end_index + 7 <= len(rt) - 1
     assert full_signal.prepared is not None and cropped_signal.prepared is not None
     assert (
@@ -456,9 +439,7 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
         == cropped_signal.prepared.smoothed[selected.start_index : selected.end_index]
     )
 
-    cropped = evaluate_physical_peak(
-        cropped_signal, selection_subject_id="exterior-context", query_rt_min=rt[23]
-    )
+    cropped = evaluate_physical_peak(cropped_signal, query_rt_min=rt[23])
     assert cropped.state == "available"
     assert cropped.facts is not None and cropped.integration is not None
     assert cropped.facts.apex_rt_min == full.facts.apex_rt_min
@@ -480,9 +461,7 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
     rt = np.linspace(0.0, 1.0, 31)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 1.05) / 0.18) ** 2)
     prepared = prepare_physical_signal(rt, raw)
-    result = evaluate_physical_peak(
-        prepared, selection_subject_id="truncated-peak", query_rt_min=0.9
-    )
+    result = evaluate_physical_peak(prepared, query_rt_min=0.9)
 
     assert result.state == "unavailable"
     assert result.reason == "incomplete_peak_context"
@@ -498,7 +477,6 @@ def test_search_window_does_not_admit_context_only_peak(target_present: bool) ->
         raw += 1000.0 * np.exp(-0.5 * ((rt - 2.3) / 0.22) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="bounded-search",
         query_rt_min=1.3,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         search_rt_window=(1.0, 3.0),
@@ -518,7 +496,6 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="complete-bounded-peak",
         query_rt_min=3.0,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         search_rt_window=(2.8, 3.2),
@@ -532,13 +509,6 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
         rt, raw, profile=prepared.prepared.profile, evaluation=result
     )
     assert deserialize_physical_peak_evaluation(payload)[-1] == result
-    tampered = json.loads(payload)
-    tampered["evaluation"]["question"]["search_rt_window"] = [
-        (0.0).hex(),
-        (6.0).hex(),
-    ]
-    with pytest.raises(ValueError, match="physical_question_id"):
-        deserialize_physical_peak_evaluation(json.dumps(tampered))
 
 
 def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None:
@@ -549,12 +519,11 @@ def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None
     )
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="ambiguous-bounded-search",
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         search_rt_window=(1.0, 3.5),
     )
-    assert len(result.question.admissible_segment_ids) == 2
+    assert len(result.question.admissible_segments) == 2
     assert result.state == "unavailable" and result.facts is None
     assert result.integration is None
 
@@ -594,7 +563,6 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
     )  # No containing segment is not proof of insufficient raw support.
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="original-sampling-support",
         query_rt_min=1.5,
         selection_policy_version=policy,
     )
@@ -605,7 +573,7 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
         if positive_points == 1
         else "insufficient_local_peak_contrast"
     )
-    assert result.answer.physical_segment_id is None
+    assert result.answer.selected_segment is None
     assert result.facts is None and result.integration is None
 
 
@@ -626,13 +594,12 @@ def test_discontinuous_original_points_cannot_mint_fresh_physical_facts(
     prepared = prepare_physical_signal(rt, raw)
     fresh = evaluate_physical_peak(
         prepared,
-        selection_subject_id="isolated-acquired-impulses",
         query_rt_min=query_rt,
         selection_policy_version=policy,
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_continuity"
-    assert fresh.answer.physical_segment_id is None
+    assert fresh.answer.selected_segment is None
     assert fresh.facts is None and fresh.integration is None
 
 
@@ -647,7 +614,6 @@ def test_adjacent_pair_with_an_isolated_point_still_requires_contrast(
     raw[[14, 15, 17]] = 1000.0
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="pair-with-a-sampling-gap",
         query_rt_min=1.5,
         selection_policy_version=policy,
     )
@@ -677,7 +643,6 @@ def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     fresh = evaluate_physical_peak(
         prepared,
-        selection_subject_id="fragmented-envelope",
         query_rt_min=query_rt,
         selection_policy_version=policy,
     )
@@ -740,7 +705,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
     profile = SignalProcessingProfile()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="censored-cluster",
         query_rt_min=2.0,
         selection_policy_version=policy,
     )
@@ -752,7 +716,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
     assert "near_detection_limit" in result.integration.boundary_sources
     other = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="censored-cluster",
         query_rt_min=2.0,
         selection_policy_version=(
             DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
@@ -761,7 +724,7 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         ),
     )
     assert other.state == result.state
-    assert other.answer.physical_segment_id == result.answer.physical_segment_id
+    assert other.answer.selected_segment == result.answer.selected_segment
     assert other.integration == result.integration
     payload = serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=result
@@ -780,7 +743,6 @@ def test_stationary_sparse_hits_do_not_establish_a_censored_peak(policy) -> None
     raw[199] = 200.0
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="stationary-hits",
         query_rt_min=2.0,
         selection_policy_version=policy,
     )
@@ -801,7 +763,6 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="strong-peak-with-sparse-tail",
         query_rt_min=2.0,
         request_context_rt_start_min=0.5,
         request_context_rt_end_min=3.5,
@@ -809,11 +770,8 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
     )
     assert result.state == "available" and result.reason == ""
     assert result.facts is not None and result.integration is not None
-    selected = next(
-        segment
-        for segment in result.segment_universe.segments
-        if segment.physical_segment_id == result.facts.physical_segment_id
-    )
+    selected = result.answer.selected_segment
+    assert selected is not None
     # The continuous Gaussian returns to baseline before the sparse tail.
     # Envelope/baseline revisions may change ordinary boundaries, but density
     # must not absorb the sparse tail beginning at 2.42 min.
@@ -868,7 +826,6 @@ def test_compact_continuous_doublet_keeps_component_areas(
     for height, center in components:
         result = evaluate_physical_peak(
             prepared,
-            selection_subject_id="compact-doublet",
             query_rt_min=center,
             selection_policy_version=policy,
         )
@@ -889,7 +846,6 @@ def test_compact_continuous_doublet_keeps_component_areas(
         assert "near_detection_limit" not in result.integration.boundary_sources
         focused = evaluate_physical_peak(
             focused_prepared,
-            selection_subject_id="compact-doublet",
             query_rt_min=center,
             selection_policy_version=policy,
         )
@@ -907,7 +863,6 @@ def test_compact_continuous_doublet_keeps_component_areas(
         )
         assert deserialize_physical_peak_evaluation(payload)[-1] == result
         selected.append(facts)
-    assert selected[0].physical_segment_id != selected[1].physical_segment_id
     assert selected[0].right_rt_min <= selected[1].left_rt_min
 
 
@@ -928,7 +883,6 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="ordinary-peak-with-dropouts",
         query_rt_min=4.0,
         selection_policy_version=policy,
     )
@@ -939,11 +893,8 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     assert "near_detection_limit" not in result.integration.boundary_sources
     assert "local_hit_density_enrichment" not in result.integration.boundary_sources
     assert prepared.prepared is not None
-    segment = next(
-        s
-        for s in result.segment_universe.segments
-        if s.physical_segment_id == result.facts.physical_segment_id
-    )
+    segment = result.answer.selected_segment
+    assert segment is not None
     interval = slice(segment.start_index, segment.end_index)
     assert result.facts.area_counts_seconds == pytest.approx(
         np.trapezoid(
@@ -970,7 +921,6 @@ def test_tail_dropout_can_merge_an_otherwise_resolved_doublet() -> None:
             acquired[568:573] = 0.0
         result = evaluate_physical_peak(
             prepare_physical_signal(rt, acquired),
-            selection_subject_id="two-lobes-with-tail-dropout",
             query_rt_min=2.0,
         )
         assert result.state == "available" and result.facts is not None
@@ -1025,7 +975,6 @@ def test_peak_top_requires_adjacent_acquired_support(apex_scan_count: int) -> No
     raw[50 : 50 + apex_scan_count] += 3000.0
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="acquired-peak-top",
         query_rt_min=2.0,
     )
     # Low acquired neighbors on the broad background cannot support a smoothed
@@ -1088,7 +1037,6 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     answers = [
         evaluate_physical_peak(
             prepared,
-            selection_subject_id="shared-whole-trend",
             query_rt_min=5.0,
             selection_policy_version=policy,
         )
@@ -1102,9 +1050,7 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
         observed_area = float(np.trapezoid(raw, rt)) * 60
         assert answer.facts.area_counts_seconds > 0.85 * observed_area
     assert answers[0].integration == answers[1].integration
-    assert answers[0].answer.physical_segment_id == (
-        answers[1].answer.physical_segment_id
-    )
+    assert answers[0].answer.selected_segment == (answers[1].answer.selected_segment)
 
 
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
@@ -1134,7 +1080,6 @@ def test_sparse_stationary_background_is_not_a_peak(
         raw = np.random.default_rng(493).uniform(100.0, 1000.0, len(rt)) * mask
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="stationary-background",
         query_rt_min=5.0,
         selection_policy_version=policy,
     )
@@ -1160,7 +1105,6 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="supported-original-peak",
         query_rt_min=5.0,
         selection_policy_version=policy,
     )
@@ -1205,7 +1149,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     targeted, discovery = (
         evaluate_physical_peak(
             prepared,
-            selection_subject_id="overlapping-middle-component",
             query_rt_min=5.0,
             selection_policy_version=policy,
         )
@@ -1280,7 +1223,6 @@ def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
     prepared = prepare_physical_signal(rt, raw)
     fresh = evaluate_physical_peak(
         prepared,
-        selection_subject_id="background-fluctuation",
         query_rt_min=1.7,
     )
     assert fresh.state == "unavailable"
@@ -1301,7 +1243,6 @@ def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
     raw[15] += 1000.0
     fresh = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="impulse-on-background",
         query_rt_min=1.5,
         selection_policy_version=policy,
     )
@@ -1328,7 +1269,6 @@ def test_resolved_peak_on_background_keeps_its_canonical_integration(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
-        selection_subject_id="resolved-peak",
         query_rt_min=5.0,
         selection_policy_version=policy,
     )
@@ -1347,12 +1287,10 @@ def test_sparse_isolated_peak_has_the_same_contrast_limit_in_both_policies(
     prepared = prepare_physical_signal(rt, raw)
     old = evaluate_physical_peak(
         prepared,
-        selection_subject_id="sparse-peak",
         query_rt_min=1.5,
     )
     new = evaluate_physical_peak(
         prepared,
-        selection_subject_id="sparse-peak",
         query_rt_min=1.5,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
@@ -1384,7 +1322,6 @@ def test_current_discovery_qualification_persists_exactly(
     for policy in (PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY):
         answer = evaluate_physical_peak(
             prepared,
-            selection_subject_id="policy-replay",
             query_rt_min=query,
             selection_policy_version=policy,
         )
@@ -1453,7 +1390,6 @@ def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
     raw[58:63] = [100.0, 600.0, 1000.0, 600.0, 100.0]
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="two-local-peaks",
         query_rt_min=2.0,
         selection_policy_version=policy,
     )
@@ -1477,7 +1413,6 @@ def test_wide_peak_with_shallow_nearest_valleys_exposes_local_contrast_limit() -
 
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="wide-gaussian-with-ripple",
         query_rt_min=center,
     )
 
@@ -1502,12 +1437,9 @@ def test_clear_doublet_closes_at_relative_return_before_the_deeper_valley() -> N
     prepared = prepare_physical_signal(rt, raw)
     valley_rt = (left_center + right_center) / 2.0
 
-    left = evaluate_physical_peak(
-        prepared, selection_subject_id="resolved-doublet-left", query_rt_min=left_center
-    )
+    left = evaluate_physical_peak(prepared, query_rt_min=left_center)
     right = evaluate_physical_peak(
         prepared,
-        selection_subject_id="resolved-doublet-right",
         query_rt_min=right_center,
     )
 
@@ -1524,7 +1456,7 @@ def test_clear_doublet_closes_at_relative_return_before_the_deeper_valley() -> N
     assert right.facts.left_rt_min == pytest.approx(
         right_center - sigma * np.sqrt(2.0 * np.log(10.0)), abs=0.04
     )
-    assert left.facts.physical_segment_id != right.facts.physical_segment_id
+    assert left.answer.selected_segment != right.answer.selected_segment
 
 
 @pytest.mark.parametrize("query_rt", [1.525, 2.475, 1.542])
@@ -1535,16 +1467,12 @@ def test_tail_beyond_relative_return_does_not_select_the_peak(
     raw = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.16) ** 2)
     prepared = prepare_physical_signal(rt, raw)
 
-    result = evaluate_physical_peak(
-        prepared, selection_subject_id="isolated-peak-tail", query_rt_min=query_rt
-    )
+    result = evaluate_physical_peak(prepared, query_rt_min=query_rt)
 
     assert result.state == "unavailable"
     assert result.reason == "no_selection"
     assert result.facts is None
-    peak = evaluate_physical_peak(
-        prepared, selection_subject_id="peak-apex", query_rt_min=2.0
-    )
+    peak = evaluate_physical_peak(prepared, query_rt_min=2.0)
     assert peak.state == "available" and peak.facts is not None
     assert peak.facts.apex_rt_min == pytest.approx(2.0)
 
@@ -1562,7 +1490,6 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
     left, right = int(above[0]) - 1, int(above[-1]) + 1
     peak = evaluate_physical_peak(
         prepared,
-        selection_subject_id="canonical-tenth-height",
         query_rt_min=2.0,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
@@ -1574,7 +1501,6 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
     )
     tail = evaluate_physical_peak(
         prepared,
-        selection_subject_id="outside-canonical-tenth-height",
         query_rt_min=float(rt[right + 1]),
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
@@ -1603,7 +1529,6 @@ def test_group_window_selects_only_one_complete_peak(
         raw += 10000.0 * np.exp(-0.5 * ((rt - center) / 0.12) ** 2)
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="bounded-group-window",
         query_rt_min=query_rt,
         request_context_rt_start_min=0.0,
         request_context_rt_end_min=4.0,
@@ -1769,7 +1694,6 @@ def test_shared_owner_closes_observed_tail_at_measurement_noise(
     rt, raw = _hmdc_tail_noise_trace()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="hmdc-tail-noise",
         query_rt_min=8.96988,
         request_context_rt_start_min=7.96988,
         request_context_rt_end_min=9.96988,
@@ -1799,7 +1723,6 @@ def test_group_window_prefers_the_one_peak_containing_the_group_rt(
     )
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="minor-neighbour",
         query_rt_min=2.0,
         request_context_rt_start_min=0.0,
         request_context_rt_end_min=4.0,
@@ -1823,12 +1746,9 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
     else:
         raw = np.zeros(len(rt))
     prepared = prepare_physical_signal(rt, raw, profile=profile)
-    ordinary = evaluate_physical_peak(
-        prepared, selection_subject_id="selection-state", query_rt_min=0.8
-    )
+    ordinary = evaluate_physical_peak(prepared, query_rt_min=0.8)
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="selection-state",
         query_rt_min=0.8,
         selection_policy_version=PHYSICAL_PEAK_NO_SELECTION_POLICY,
     )
@@ -1836,8 +1756,8 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
     assert evaluation.prepared == ordinary.prepared
     assert evaluation.segment_universe == ordinary.segment_universe
     assert evaluation.question.query_rt_min == 0.8
-    assert evaluation.question.segment_ids == ordinary.question.segment_ids
-    assert evaluation.question.admissible_segment_ids == ()
+    assert evaluation.question.universe.segments == ordinary.question.universe.segments
+    assert evaluation.question.admissible_segments == ()
     assert evaluation.state == "unavailable"
     assert evaluation.facts is None
     assert evaluation.integration is None
@@ -1884,7 +1804,6 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=f"persisted-{terminal}",
         query_rt_min=query_rt,
         request_context_rt_start_min=context[0],
         request_context_rt_end_min=context[1],
@@ -1902,7 +1821,14 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     )
 
     assert rehydrated_profile == profile
-    assert rehydrated == evaluation
+    if terminal == "failed":
+        np.testing.assert_array_equal(rehydrated.prepared.rt, rt)
+        np.testing.assert_array_equal(rehydrated.prepared.raw, raw)
+        assert rehydrated.reason == evaluation.reason
+        assert rehydrated.segment_universe.segments == ()
+        assert rehydrated.facts is None
+    else:
+        assert rehydrated == evaluation
     assert rehydrated.state == terminal
     with pytest.raises(ValueError, match="not canonical"):
         deserialize_physical_peak_evaluation(payload + b" ")
@@ -1912,13 +1838,12 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     "mutate",
     [
         lambda value: value["evaluation"]["answer"].__setitem__(
-            "physical_answer_id", "physical-answer:" + "0" * 64
+            "selected_segment_index", -1
         ),
         lambda value: value["trace"]["rt"].__setitem__(0, "-0x0.0p+0"),
         lambda value: value["trace"]["rt"].__setitem__(0, "0x0p+0"),
-        lambda value: value["trace"].__setitem__("trace_content_id", "wrong-trace"),
-        lambda value: value["profile"].__setitem__("profile_hash", "0" * 64),
-        lambda value: value["profile"]["content"].__setitem__("window_points", 3.0),
+        lambda value: value["trace"]["raw"].__setitem__(0, (11.0).hex()),
+        lambda value: value["profile"].__setitem__("window_points", 3.0),
         lambda value: value.__setitem__(
             "profile", dict(reversed(tuple(value["profile"].items())))
         ),
@@ -1937,7 +1862,6 @@ def test_physical_evaluation_persistence_rejects_resealed_owner_tamper(mutate) -
     raw[7:10] += [30.0, 100.0, 30.0]
     evaluation = evaluate_physical_peak(
         prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id="persisted-tamper",
         query_rt_min=0.8,
     )
     value = json.loads(
@@ -2016,7 +1940,6 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
     answers = [
         evaluate_physical_peak(
             prepared,
-            selection_subject_id="middle-overlapping-component",
             query_rt_min=10.9,
             selection_policy_version=policy,
         )
@@ -2032,9 +1955,7 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         assert answer.facts.right_rt_min > 13.0
         assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
-    assert answers[0].answer.physical_segment_id == (
-        answers[1].answer.physical_segment_id
-    )
+    assert answers[0].answer.selected_segment == (answers[1].answer.selected_segment)
 
 
 @pytest.mark.parametrize("point_count", [301, 1801])
@@ -2048,7 +1969,6 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
     prepared = prepare_physical_signal(rt, raw)
     answer = evaluate_physical_peak(
         prepared,
-        selection_subject_id="brief-observed-dropout",
         query_rt_min=5.0,
     )
     assert answer.state == "available"
@@ -2077,7 +1997,6 @@ def test_optional_quality_round_trip_and_old_payload_rehydration():
     profile = SignalProcessingProfile()
     current = evaluate_physical_peak(
         prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id="quality",
         query_rt_min=1.0,
     )
     assert current.integration is not None

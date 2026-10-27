@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import shutil
 import threading
 from collections.abc import Callable, Mapping, Sequence
@@ -20,10 +19,6 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.evidence_artifacts import (
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
     RuntimeResourceReservation,
@@ -33,7 +28,6 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution.attempt import (
-    RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
     execute_runtime_attempt,
@@ -88,24 +82,6 @@ from xic_extractor.untargeted_execution.partition_composition import (
     prepare_untargeted_partition_grouping,
 )
 
-_PARTITION_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
-    semantic_role="closed_scientific_partition",
-    schema_version="cid_nl_scientific_partition",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
-
-_BOOTSTRAP_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
-    semantic_role="rt_calibration_bootstrap_input",
-    schema_version="cid_nl_rt_calibration_bootstrap",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
-
 
 @dataclass(frozen=True, slots=True)
 class _GroupingInputs:
@@ -125,25 +101,6 @@ class _GroupingPartition:
     initial_groups: tuple[()] = ()
     initial_edges: tuple[()] = ()
     capture_evidence: tuple[()] = ()
-
-
-_GLOBAL_CLOSURE_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
-    semantic_role="closed_application_result",
-    schema_version="cid_nl_global_closure",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
-
-_GROUPING_CLOSURE_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
-    semantic_role="frozen_grouping_snapshot",
-    schema_version="grouping_snapshot_closure",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
 
 
 def _initialize_sample_process(dll_dir: Path) -> None:
@@ -404,11 +361,11 @@ class UntargetedPartitionPipelineAdapter:
                         partition_key=partition_key,
                         payload=subjects,
                         work_unit_keys=tuple(
-                            f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            f"{partition_key}:{sample.identity.sample_key}:{phase}"
                             for sample in context.samples
                         ),
                         resource_keys=tuple(
-                            f"acquisition-session:{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            f"acquisition-session:{partition_key}:{sample.identity.sample_key}:{phase}"
                             for sample in context.samples
                         ),
                     )
@@ -452,9 +409,7 @@ class UntargetedPartitionPipelineAdapter:
                     shared_objects=shared_objects,
                 ),
             )
-        self._global_closure_work_unit_key = (
-            f"global-closure:{self._owners.request.processing_request_id}"
-        )
+        self._global_closure_work_unit_key = "global-closure"
         self._work_unit_keys = (
             *(
                 key
@@ -470,7 +425,7 @@ class UntargetedPartitionPipelineAdapter:
                 resource_key=resource_key,
                 worker_key=(
                     f"inline-acquisition:{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:"
+                    f"{sample.identity.sample_key}:"
                     f"{'initial' if self._is_bootstrap(partition) else 'backfill'}"
                 ),
                 source_reference=resolve_request_acquisition_source(
@@ -484,9 +439,7 @@ class UntargetedPartitionPipelineAdapter:
                 context.samples, partition.resource_keys, strict=True
             )
         )
-        self._owner_completeness_attestation = (
-            f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
-        )
+        self._owner_completeness_attestation = "cid-nl-partitioned"
 
     @property
     def partitions(
@@ -785,54 +738,19 @@ class UntargetedPartitionPipelineAdapter:
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
-    def create_partition_artifacts(
+    def settle_partition(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
         composition_output: PartitionCompositionOutput[PersistedUntargetedPartition],
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]:
-        sealed = composition_output.sealed
-        artifacts: list[RuntimeArtifactRegistrationReceipt] = []
-        settlements: list[WorkUnitSettlement] = []
-        for key in partition.work_unit_keys:
-            artifact = mint_evidence_artifact_ref(
-                producer_processing_request_id=(
-                    self._owners.request.processing_request_id
-                ),
-                producer_processing_attempt_id=(
-                    self._owners.attempt.processing_attempt_id
-                ),
-                semantic_contract=(
-                    _BOOTSTRAP_CONTRACT
-                    if self._is_bootstrap(partition)
-                    else _PARTITION_CONTRACT
-                ),
-                payload_bytes=(
-                    json.dumps(
-                        {
-                            "work_unit_key": key,
-                            "partition_sha256": sealed.sha256,
-                            "partition_bytes": sealed.size_bytes,
-                        },
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    )
-                    + "\n"
-                ).encode("utf-8"),
-                upstream_artifacts=(),
+    ) -> Sequence[WorkUnitSettlement]:
+        return tuple(
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
             )
-            artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
-            settlements.append(
-                mint_work_unit_settlement(
-                    attempt=self._owners.attempt,
-                    work_unit_key=key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=artifact,
-                )
-            )
-        return tuple(artifacts), tuple(settlements)
+            for key in partition.work_unit_keys
+        )
 
     def finalize_application(
         self,
@@ -870,48 +788,18 @@ class UntargetedPartitionPipelineAdapter:
     def global_closure_work_unit_key(self) -> str:
         return self._global_closure_work_unit_key
 
-    def create_global_closure_artifacts(
+    def settle_global_closure(
         self,
         application_result: FinalizedUntargetBatchApplicationResult
         | PreparedGroupingExperiment,
-    ) -> tuple[
-        Sequence[RuntimeArtifactRegistrationReceipt],
-        Sequence[WorkUnitSettlement],
-    ]:
-        key = self._global_closure_work_unit_key
-        snapshot = isinstance(application_result, PreparedGroupingExperiment)
-        result_counts = (
-            {"group_count": len(application_result.groups)}
-            if isinstance(application_result, PreparedGroupingExperiment)
-            else {"completed_children_count": len(application_result.children)}
-        )
-        artifact = mint_evidence_artifact_ref(
-            producer_processing_request_id=(self._owners.request.processing_request_id),
-            producer_processing_attempt_id=(self._owners.attempt.processing_attempt_id),
-            semantic_contract=(
-                _GROUPING_CLOSURE_CONTRACT if snapshot else _GLOBAL_CLOSURE_CONTRACT
+    ) -> Sequence[WorkUnitSettlement]:
+        return (
+            mint_work_unit_settlement(
+                attempt=self._owners.attempt,
+                work_unit_key=self._global_closure_work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
             ),
-            payload_bytes=(
-                json.dumps(
-                    {
-                        "work_unit_key": key,
-                        **result_counts,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                + "\n"
-            ).encode("utf-8"),
-            upstream_artifacts=(),
         )
-        receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
-        settlement = mint_work_unit_settlement(
-            attempt=self._owners.attempt,
-            work_unit_key=key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
-        )
-        return (receipt,), (settlement,)
 
     def build_workflow_result(
         self,

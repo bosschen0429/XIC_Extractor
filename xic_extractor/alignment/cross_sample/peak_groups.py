@@ -4,7 +4,7 @@ This module groups SampleLocalMS1Owner instances using shared physical rules
 and explicitly supplied method evidence. The output
 ``CrossSamplePeakGroupHypothesis`` is the primary cross-sample identity unit.
 
-``public_family_id`` is a *display label* preserved for output compatibility.
+``feature_id`` is the shared output label.
 It is NOT an identity anchor; use ``group_hypothesis_id`` for identity
 decisions within the pipeline.
 """
@@ -22,7 +22,6 @@ from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
-    CrossSampleIdentityBasisRegistry,
     CrossSampleInitialEdgeContext,
     CrossSampleNeighborhoodStatus,
     group_member_subject_from_peak_hypothesis,
@@ -63,19 +62,14 @@ class CrossSamplePeakGroupHypothesis:
 
     Identity semantics:
     - ``group_hypothesis_id``: primary identity key for pipeline decisions.
-    - ``public_family_id``: display label for output compatibility.
+    - ``feature_id``: shared output label.
       It is intentionally independent of ``group_hypothesis_id``.
-    - ``feature_family_id`` property: legacy output alias for ``public_family_id``.
     """
 
-    group_hypothesis_id: str
-    public_family_id: str
+    membership: CrossSampleGroupIdentity
+    feature_id: str
     owner_ids: tuple[str, ...]
     event_member_count: int
-    processing_request_id: str = ""
-    member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
-    identity_basis_bytes: bytes = b""
-    disposition: CrossSampleGroupDisposition = "established"
     source: str = "owner_aligned_feature_shadow"
     neutral_loss_tag: str = ""
     group_center_mz: float | None = None
@@ -96,8 +90,20 @@ class CrossSamplePeakGroupHypothesis:
     inference_decisions: tuple[SparseFeatureDecision, ...] = ()
 
     @property
+    def group_hypothesis_id(self) -> str:
+        return self.membership.group_hypothesis_id
+
+    @property
+    def member_subjects(self) -> tuple[CrossSampleGroupMemberSubject, ...]:
+        return self.membership.member_subjects
+
+    @property
+    def disposition(self) -> CrossSampleGroupDisposition:
+        return self.membership.disposition
+
+    @property
     def cluster_id(self) -> str:
-        return self.public_family_id
+        return self.feature_id
 
     @property
     def family_center_mz(self) -> float:
@@ -120,44 +126,6 @@ class CrossSamplePeakGroupHypothesis:
         return self.owner_ids
 
 
-def validate_cross_sample_peak_group_identity(
-    group: CrossSamplePeakGroupHypothesis,
-    *,
-    require_canonical: bool = False,
-) -> CrossSampleGroupIdentity | None:
-    """Replay the canonical identity retained by a scientific group carrier."""
-
-    if not isinstance(group, CrossSamplePeakGroupHypothesis):
-        raise CrossSampleContractError("group must be a CrossSample hypothesis")
-    has_identity = bool(
-        group.processing_request_id
-        or group.member_subjects
-        or group.identity_basis_bytes
-    )
-    if not has_identity:
-        if require_canonical:
-            raise CrossSampleContractError(
-                "scientific CrossSample carrier is missing canonical identity"
-            )
-        return None
-    if not (
-        group.processing_request_id
-        and group.member_subjects
-        and group.identity_basis_bytes
-    ):
-        raise CrossSampleContractError(
-            "canonical CrossSample carrier has incomplete identity fields"
-        )
-    identity = CrossSampleGroupIdentity(
-        group_hypothesis_id=group.group_hypothesis_id,
-        processing_request_id=group.processing_request_id,
-        member_subjects=group.member_subjects,
-        basis_bytes=group.identity_basis_bytes,
-        disposition=group.disposition,
-    )
-    return identity
-
-
 def construct_cross_sample_peak_group_hypotheses(
     owners: tuple[SampleLocalMS1Owner, ...] | list[SampleLocalMS1Owner],
     *,
@@ -166,7 +134,6 @@ def construct_cross_sample_peak_group_hypotheses(
     sample_universe: frozenset[str] | None = None,
     rt_frame: RtFrame,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
-    processing_request_id: str | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
@@ -186,14 +153,6 @@ def construct_cross_sample_peak_group_hypotheses(
         raise CrossSampleContractError(
             "every owner requires an exact member subject before grouping"
         )
-    request_ids = {
-        subject.processing_request_id for subject in subjects if subject is not None
-    }
-    if len(request_ids) != 1:
-        raise CrossSampleContractError("owners crossed processing requests")
-    request_id = next(iter(request_ids))
-    if processing_request_id is not None and processing_request_id != request_id:
-        raise CrossSampleContractError("explicit request crossed owner subjects")
     if sample_universe is not None and any(
         owner.sample_stem not in sample_universe for owner in owners
     ):
@@ -227,13 +186,12 @@ def construct_cross_sample_peak_group_hypotheses(
         unresolved = basis.disposition == "undecided"
         group_identity = _identity_from_owners(
             group,
-            processing_request_id=request_id,
             disposition="unresolved" if unresolved else None,
         )
         hypothesis = _hypothesis_from_owner_group(
             group,
             group_identity=group_identity,
-            public_family_id=f"FAM{index:06d}",
+            feature_id=f"F{index:06d}",
             evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
             identity_conflict=not (
                 accept_competition and not bootstrap and basis.disposition == "assigned"
@@ -259,7 +217,7 @@ def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
     group_identity: CrossSampleGroupIdentity,
-    public_family_id: str,
+    feature_id: str,
     evidence: str,
     identity_conflict: bool = False,
     review_only: bool = False,
@@ -290,14 +248,10 @@ def _hypothesis_from_owner_group(
         else evidence
     )
     return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_identity.group_hypothesis_id,
-        public_family_id=public_family_id,
+        membership=group_identity,
+        feature_id=feature_id,
         owner_ids=tuple(owner.owner_id for owner in group),
         event_member_count=sum(len(owner.all_events) for owner in group),
-        processing_request_id=group_identity.processing_request_id,
-        member_subjects=group_identity.member_subjects,
-        identity_basis_bytes=group_identity.basis_bytes,
-        disposition=group_identity.disposition,
         source="cross_sample_peak_group_successor_constructor",
         neutral_loss_tag=group[0].neutral_loss_tag,
         group_center_mz=center_mz,
@@ -316,14 +270,12 @@ def _hypothesis_from_owner_group(
 def _identity_from_owners(
     owners: Sequence[SampleLocalMS1Owner],
     *,
-    processing_request_id: str,
     disposition: CrossSampleGroupDisposition | None = None,
 ) -> CrossSampleGroupIdentity:
     subjects = tuple(owner.cross_sample_member_subject for owner in owners)
     if any(subject is None for subject in subjects):
         raise CrossSampleContractError("owner is missing a CrossSample member subject")
     return mint_cross_sample_group_identity(
-        processing_request_id=processing_request_id,
         member_subjects=cast(tuple[CrossSampleGroupMemberSubject, ...], subjects),
         disposition=disposition,
     )
@@ -335,7 +287,6 @@ __all__ = (
     "CrossSampleGroupDisposition",
     "CrossSampleGroupIdentity",
     "CrossSampleGroupMemberSubject",
-    "CrossSampleIdentityBasisRegistry",
     "CrossSampleInitialEdgeContext",
     "CrossSampleLineageEdge",
     "CrossSampleNeighborhoodEdge",
@@ -348,5 +299,4 @@ __all__ = (
     "construct_cross_sample_peak_group_hypotheses",
     "group_member_subject_from_peak_hypothesis",
     "mint_cross_sample_group_identity",
-    "validate_cross_sample_peak_group_identity",
 )

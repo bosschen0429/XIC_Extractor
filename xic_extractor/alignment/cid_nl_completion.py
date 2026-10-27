@@ -48,10 +48,15 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
+    index_physical_peaks,
+)
 from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -84,7 +89,9 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
-    physical_peak_views: Mapping[str, PhysicalPeakView] = field(default_factory=dict)
+    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,7 +213,7 @@ def _complete_cell_observations(
     )
     members_by_group = {
         group.group_hypothesis_id: frozenset(
-            member.canonical_sample_identity_id for member in group.member_subjects
+            member.sample_key for member in group.member_subjects
         )
         for group in grouping_scope.groups
     }
@@ -215,26 +222,25 @@ def _complete_cell_observations(
         for key, pair in evidence.group_backfills.items()
         if key[1] not in members_by_group[key[0]]
     }
-    retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
+    retained_cell_hypotheses: dict[
+        CidNlMethodAssessmentContent, list[PeakHypothesis]
+    ] = {}
     for candidate in grouping.retained_candidates:
         assessment = candidate.direct_support_assessment
         if assessment is None:
             continue
         retained_cell_hypotheses.setdefault(
-            (
-                candidate.canonical_sample_identity_id,
-                assessment.artifact.content_identity.artifact_content_id,
-            ),
+            assessment.content,
             [],
         ).append(candidate.peak_hypothesis)
     retained_hypotheses = {
         key: tuple(values) for key, values in retained_cell_hypotheses.items()
     }
-    member_observations = {
-        peak.content.peak_observation_content_id: peak
+    member_observations = index_physical_peaks(
+        peak
         for candidate in grouping.retained_candidates
         for peak in candidate.peak_hypothesis.peak_observation_refs
-    }
+    )
     (
         grouping_result,
         backfilled_groups,
@@ -318,31 +324,29 @@ def _prepare_cell_coverage(
     cells_by_group: dict[str, list[CellObservationRef]] = {}
     for predecessor_cell in predecessor_cells:
         group_id = predecessor_cell.content.group_hypothesis_id
-        sample_id = predecessor_cell.content.canonical_sample_identity_id
+        sample_id = predecessor_cell.content.sample_key
         cell_by_key[(group_id, sample_id)] = predecessor_cell
         cells_by_group.setdefault(group_id, []).append(predecessor_cell)
     ordered_samples = tuple(
-        sorted(samples, key=lambda sample: sample.identity.sample_identity_id)
+        sorted(samples, key=lambda sample: sample.identity.sample_key)
     )
     if not backfill_enabled:
         return _CellCoveragePlan(cell_by_key, (), False)
     conservative_positions = []
     for group in grouping_result.initial_population:
         group_cells = tuple(cells_by_group[group.group_hypothesis_id])
-        searched_sample_ids = {
-            cell.content.canonical_sample_identity_id for cell in group_cells
-        }
+        searched_sample_ids = {cell.content.sample_key for cell in group_cells}
         facts = assess_conservative_backfill_group(
             group_cells,
             sample_population=samples,
             unsearched_sample_ids=tuple(
-                sample.identity.sample_identity_id
+                sample.identity.sample_key
                 for sample in ordered_samples
-                if sample.identity.sample_identity_id not in searched_sample_ids
+                if sample.identity.sample_key not in searched_sample_ids
             ),
         )
         for sample in samples:
-            key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
+            key = (group.group_hypothesis_id, sample.identity.sample_key)
             cell = cell_by_key.get(key)
             if cell is None or key in backfilled_positions:
                 continue
@@ -408,7 +412,7 @@ def _close_cell_coverage(
     completions = {
         (
             item.group_identity.group_hypothesis_id,
-            item.sample.identity.sample_identity_id,
+            item.sample.identity.sample_key,
             item.backfill_assessment.content.method_subject.method_subject_id,
         ): item
         for item in completed_empty_backfills
@@ -416,7 +420,7 @@ def _close_cell_coverage(
     no_request_decisions = {}
     for sample, facts in plan.conservative_positions:
         group = facts.group_context.group_identity
-        key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
+        key = (group.group_hypothesis_id, sample.identity.sample_key)
         completion = None
         universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
         if facts.may_attempt_backfill:
@@ -448,13 +452,11 @@ def _close_cell_coverage(
         for group in repair_groups
         for sample in samples
         for cell in (
-            cell_by_key.get(
-                (group.group_hypothesis_id, sample.identity.sample_identity_id)
-            ),
+            cell_by_key.get((group.group_hypothesis_id, sample.identity.sample_key)),
         )
         for no_request in (
             no_request_decisions.get(
-                (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                (group.group_hypothesis_id, sample.identity.sample_key)
             ),
         )
     )

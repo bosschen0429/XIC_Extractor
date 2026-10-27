@@ -10,6 +10,7 @@ from typing import Literal, TypeAlias, cast
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
+from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
 )
@@ -26,9 +27,6 @@ from xic_extractor.alignment.result import (
     SearchedNoObservationSubject,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.processing_identity import (
-    mint_typed_identity,
-)
 
 
 class CellDecisionContractError(ValueError):
@@ -48,8 +46,6 @@ CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
 )
 
-_DECISION_PREFIX = "xic.production-cell-decision:"
-_DECISION_SCHEMA_VERSION = "production_cell_decision"
 _NO_WRITE_STATES = frozenset(
     {
         "not_searched",
@@ -95,12 +91,9 @@ CellDecisionPayload: TypeAlias = NumericCellDecision | NoWriteCellDecision
 class ProductionCellDecision:
     """One owner-sealed decision bound to one exact subject and evidence closure."""
 
-    decision_id: str
     subject: CellSubject
     evidence: CellEvidence
     payload: CellDecisionPayload
-    # The factory derives the basis and ID from these exact inputs.
-    basis_bytes: bytes
     # Retain the chosen observation even when its area is not quantifiable.
     selected_integration: IntegrationResult | None
 
@@ -175,7 +168,10 @@ def decide_target_cell_population(
 
 def decide_group_cell_population(
     finalized_alignment: FinalizedScientificAlignment,
-) -> dict[str, tuple[CellDecisionPayload, IntegrationResult | None]]:
+) -> dict[
+    tuple[CrossSampleGroupIdentity, str],
+    tuple[CellDecisionPayload, IntegrationResult | None],
+]:
     """Complete values/blank reasons keyed by the authoritative cell observation.
 
     Scientific completion already closed the group/sample population and its
@@ -185,14 +181,14 @@ def decide_group_cell_population(
 
     member_samples = {
         group.group_hypothesis_id: {
-            member.canonical_sample_identity_id for member in group.member_subjects
+            member.sample_key for member in group.member_subjects
         }
         for group in finalized_alignment.final_population
     }
     return {
-        observation.cell_observation_id: _decide_group(
+        observation.key: _decide_group(
             observation,
-            is_member=observation.canonical_sample_identity_id
+            is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
         )
         for observation in finalized_alignment.cell_observations
@@ -218,8 +214,7 @@ def _decide_sealed_subject(
         payload, integration = _decide_group(
             evidence,
             is_member=any(
-                member.canonical_sample_identity_id
-                == evidence.canonical_sample_identity_id
+                member.sample_key == evidence.sample_key
                 for member in evidence.group.member_subjects
             ),
         )
@@ -227,7 +222,7 @@ def _decide_sealed_subject(
         raise CellDecisionContractError(
             "cell decision requires an exact TargetCellSubject or GroupCellSubject"
         )
-    return _mint_decision(
+    return ProductionCellDecision(
         subject=subject,
         evidence=evidence,
         payload=payload,
@@ -239,8 +234,8 @@ def _decide_target(
     subject: TargetCellSubject,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     terminal = subject.terminal_subject
-    sample_id = subject.canonical_sample.identity.sample_identity_id
-    if terminal.canonical_sample_identity_id != sample_id:
+    sample_id = subject.canonical_sample.identity.sample_key
+    if terminal.sample_key != sample_id:
         raise CellDecisionContractError(
             "Target terminal crossed the exact canonical sample"
         )
@@ -355,136 +350,18 @@ def _bind_complete_subject_population(
     return requested
 
 
-def _mint_decision(
-    *,
-    subject: CellSubject,
-    evidence: CellEvidence,
-    payload: CellDecisionPayload,
-    selected_integration: IntegrationResult | None,
-) -> ProductionCellDecision:
-    identity, basis = mint_typed_identity(
-        _DECISION_PREFIX,
-        _decision_basis(subject=subject, evidence=evidence, payload=payload),
-    )
-    return ProductionCellDecision(
-        decision_id=identity,
-        subject=subject,
-        evidence=evidence,
-        payload=payload,
-        basis_bytes=basis,
-        selected_integration=selected_integration,
-    )
-
-
-def _decision_basis(
-    *,
-    subject: CellSubject,
-    evidence: CellEvidence,
-    payload: CellDecisionPayload,
-) -> dict[str, object]:
-    if type(subject) is TargetCellSubject:
-        evidence_identity: dict[str, object]
-        subject_kind = "target"
-        subject_identity: dict[str, object] = {
-            "target_definition_id": subject.target.definition.target_definition_id,
-            "target_key_id": subject.target.definition.target_key.target_key_id,
-            "row_binding_variant": subject.row_binding.variant,
-            "eligible_group_ids": tuple(
-                group.group_hypothesis_id
-                for group in subject.row_binding.eligible_groups
-            ),
-        }
-        if type(evidence) is ObservedSearchSubject:
-            evidence_identity = {
-                "variant": evidence.variant,
-                "candidate_id": evidence.candidate_id,
-                "trace_group_id": evidence.trace_group_id,
-                "hypothesis_id": evidence.hypothesis.hypothesis_id,
-                "integration": _integration_identity(evidence.hypothesis.integration),
-            }
-        elif type(evidence) is SearchedNoObservationSubject:
-            evidence_identity = {
-                "variant": evidence.variant,
-                "candidate_id": evidence.candidate_id,
-                "trace_group_id": evidence.trace_group_id,
-                "detection_status": evidence.detection_status,
-            }
-        else:
-            raise CellDecisionContractError(
-                "Target decision basis requires its exact terminal subject"
-            )
-        request_id = subject.processing_request.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_identity_id
-    elif type(subject) is GroupCellSubject:
-        if type(evidence) is not FinalGroupCellObservation:
-            raise CellDecisionContractError(
-                "Group decision basis requires its exact final cell observation"
-            )
-        subject_kind = "group"
-        subject_identity = {
-            "group_cell_subject_id": subject.subject_id,
-            "untarget_row_key_id": subject.row_key.untarget_row_key_id,
-            "group_hypothesis_id": subject.group_hypothesis_id,
-            "member_subject_id": (
-                None
-                if subject.member_subject is None
-                else subject.member_subject.member_subject_id
-            ),
-        }
-        evidence_identity = {
-            "cell_observation_id": evidence.cell_observation_id,
-            "evidence_states": evidence.evidence_states,
-            "position_keys": evidence.position_keys,
-            "source_cell_artifact_ids": evidence.source_cell_artifact_ids,
-            "integrations": tuple(
-                _integration_identity(item) for item in evidence.integrations
-            ),
-        }
-        request_id = subject.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_identity_id
-    else:
-        raise CellDecisionContractError(
-            "decision basis requires an exact owner subject"
-        )
-    payload_identity: dict[str, object] = {"variant": payload.variant}
-    if type(payload) is NumericCellDecision:
-        payload_identity.update(value=payload.value, source=payload.source)
-    return {
-        "schema_version": _DECISION_SCHEMA_VERSION,
-        "subject_kind": subject_kind,
-        "processing_request_id": request_id,
-        "canonical_sample_identity_id": sample_id,
-        "subject": subject_identity,
-        "evidence": evidence_identity,
-        "payload": payload_identity,
-    }
-
-
-def _integration_identity(integration: IntegrationResult) -> dict[str, object]:
-    if type(integration) is not IntegrationResult:
-        raise CellDecisionContractError(
-            "decision basis requires an exact IntegrationResult"
-        )
-    # Advisory measurement quality does not mint a different quantitative decision.
-    return {
-        item.name: getattr(integration, item.name)
-        for item in fields(integration)
-        if item.name != "signal_quality"
-    }
-
-
 def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
     subject = decision.subject
     if type(subject) is TargetCellSubject:
         return (
             "target",
-            subject.target.definition.target_definition_id,
-            subject.canonical_sample.identity.sample_identity_id,
+            subject.target.lookup_label,
+            subject.canonical_sample.identity.sample_key,
         )
     if type(subject) is GroupCellSubject:
         return (
             "untarget",
             subject.group_hypothesis_id,
-            subject.canonical_sample.identity.sample_identity_id,
+            subject.canonical_sample.identity.sample_key,
         )
     raise CellDecisionContractError("decision contains an unsupported subject")

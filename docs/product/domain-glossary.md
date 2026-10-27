@@ -95,7 +95,7 @@ Use these terms consistently:
   an LC-MS `Trace` and not analytical evidence.
 - `AuditTrail`: reproducible record of how evidence became a decision.
 - `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
-  cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
+  cross-sample owner/group identity, identified by its member subjects. It
   does not own per-peak integration truth or product projection.
 - `CrossSampleGroupingResult`: one immutable request-bound result containing
   the exact processing owners, accepted complete-partition transition, and
@@ -142,9 +142,9 @@ Use these terms consistently:
   inclusion/count/reason and Review Queue/archive routing. Target binds its fixed
   row before cell decisions; Untarget projects completed Feature × Sample
   answers once. Neither projection selects the cell value.
-- `UntargetRowKey`: Untargeted projection-owned row identity derived from one
-  finalized canonical group. It is distinct from `group_hypothesis_id` and
-  from legacy `FAM...` display labels.
+- `feature_id`: report-scoped `F000001` label of one published cross-sample
+  group, shared by the Untargeted report tables and SQLite. It does not carry
+  identity across reports.
 - `final Matrix`: the immutable, canonical grid produced only after cell and
   row-inclusion decisions close. Pre-final observations or owner matrices must
   use a different typed name and must not cross the final Matrix interface.
@@ -381,7 +381,7 @@ stable because they identify existing data or public interfaces.
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |
 | `revisit` | one context-directed Backfill attempt, represented by the retained `ObservationRevisit*` receipt types | a repair of a previously observed peak |
-| `recovery` | resuming or closing a run after a runtime failure (`recover_after_coordinator_loss`, `recovery_marker`) | Backfill; candidate search; oracle recall |
+| `recovery` | resuming or closing a run after a runtime failure | Backfill; candidate search; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
 | `recall` | the fraction of oracle reference compounds a run finds | — |
 

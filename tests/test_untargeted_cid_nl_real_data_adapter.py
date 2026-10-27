@@ -199,7 +199,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -217,7 +216,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                     record.acquired_trace.trace.intensity,
                     profile=profile,
                 ),
-                selection_subject_id=record.evaluation.question.selection_subject_id,
                 query_rt_min=record.evaluation.question.query_rt_min,
                 request_context_rt_start_min=(
                     record.evaluation.question.context_rt_start_min
@@ -243,13 +241,12 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {r.candidate_id: r.evaluation for r in legacy_records},
             )
         },
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -317,7 +314,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             prepare_physical_signal(
                 acquired.trace.rt, acquired.trace.intensity, profile=profile
             ),
-            selection_subject_id=record.evaluation.question.selection_subject_id,
             query_rt_min=record.evaluation.question.query_rt_min,
             request_context_rt_start_min=acquired.coordinate.request.rt_min,
             request_context_rt_end_min=acquired.coordinate.request.rt_max,
@@ -341,10 +337,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             == "baseline_peak_contains_query"
         )
         assert binding.acquisition_source_id == source.acquisition_source_id
-        assert (
-            binding.sample_identity_id
-            == fixture.sample("S1").identity.sample_identity_id
-        )
+        assert binding.sample_key == fixture.sample("S1").identity.sample_key
         states.append(expected.state)
         replay_binding = replace(
             binding,
@@ -367,7 +360,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             scope=replay_scope,
             candidate_id=record.candidate_id,
             trace=trace_from_xic_request(
-                sample_name=binding.sample_name,
+                sample_name=binding.sample_key,
                 request=record.acquired_trace.coordinate.request,
                 xic_trace=record.acquired_trace.trace,
                 source="retained-discovery-physical",
@@ -455,7 +448,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert recovery.assessment.content.method_result == "SUPPORT"
         assert len(recovery.assessment.candidate_peaks) == 1
         assert len(recovery.assessment.evidence_refs) == 2
-    with pytest.raises(ValueError, match="trace_content_id"):
+    with pytest.raises(ValueError, match="physical capture data"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,
             candidate_id=capture.candidate_id,
@@ -563,7 +556,6 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
             settings=settings,
         ),
         acquisition_source=fixture.owners.request.acquisition_sources[0],
-        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -596,14 +588,12 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
         | {
             REQUEST_INPUT_KEY: pinned.request_payload(),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile, {record.candidate_id: record.evaluation}
-            ),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
         },
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -684,14 +674,14 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
 
     assessment = result.assessment_input.assessment
     assert assessment.content.method_subject.subject_kind == "untargeted_precursor"
-    assert assessment.content.target_definition_id is None
+    assert assessment.content.method_subject.target is None
     assert assessment.content.method_result == "SUPPORT"
     assert tuple(
         sorted(
             evidence.observation.scan_number for evidence in assessment.evidence_refs
         )
     ) == tuple(sorted(candidates[0].seed_scan_ids))
-    assert len(result.assessment_input.discovery_projections) == 2
+    assert len(result.assessment_input.assessment.evidence_refs) == 2
     assert result.acquisition is not None
     assert result.acquisition.logical_xic_request_count == 1
     assert result.acquisition.xic_batch_count == 1
@@ -699,7 +689,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
-def test_adapter_retains_completed_relation_before_later_evidence_failure(
+def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     physical_records = {}
@@ -721,7 +711,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
     fixture = replace(
         fixture, owners=bind_physical_capture(fixture.owners, physical_records)
     )
-    observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
+    observer = cid_nl_acquisition._PartitionAcquisitionObserver()
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
 
@@ -753,17 +743,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
 
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
-    retained = observer.artifact_closure()
-    retained_ids = {artifact.evidence_artifact_id for artifact in retained}
-    assert support.artifact in retained
-    assert set(support.artifact.upstream_artifact_ids).issubset(retained_ids)
-    assert all(
-        artifact.producer_processing_request_id
-        == fixture.owners.request.processing_request_id
-        and artifact.producer_processing_attempt_id
-        == fixture.owners.attempt.processing_attempt_id
-        for artifact in retained
-    )
+    assert support.content.evidence.scan_number in candidates[0].seed_scan_ids
     assert observer.initial_acquisition is not None
 
 
@@ -977,7 +957,6 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
             "no_search_eligible_discovery_input",
         )
         assert assessment.content.evaluation_receipt.search_completed is False
-        assert assessment.content.evaluation_receipt.scanned_event_count == 0
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
         assert result.acquisition is None
@@ -1071,7 +1050,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
             method_subject=subject,
             owners=compose_processing_owner_references(
                 request=request,
-                attempt=issue_processing_attempt(request),
+                attempt=issue_processing_attempt(),
                 sample_snapshot=fixture.owners.sample_snapshot,
                 sample_resolutions=fixture.samples,
             ),
@@ -1708,11 +1687,11 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         processing_algorithm_version=original.processing_algorithm_version,
         processing_contract_version=original.processing_contract_version,
         scientific_inputs=json.loads(original.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -1987,7 +1966,7 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     assert assessment.content.method_result == "REJECT"
     assert assessment.candidate_peaks == ()
     assert len(assessment.evidence_refs) == 1
-    assert len(result.assessment_input.discovery_projections) == 1
+    assert len(result.assessment_input.assessment.evidence_refs) == 1
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -2025,8 +2004,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assert assessment.content.method_result is None
     assert assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
     assert assessment.content.evaluation_receipt.search_completed is False
-    assert assessment.content.evaluation_receipt.scanned_event_count == 0
-    assert result.assessment_input.discovery_projections == ()
+    assert result.assessment_input.assessment.evidence_refs == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -2052,7 +2030,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     receipt = assessment.content.evaluation_receipt
     assert assessment.content.technical_state == "not_evaluated"
     assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
-    assert receipt.search_completed is False and receipt.scanned_event_count == 0
+    assert receipt.search_completed is False
     assert result.acquisition is None and not result.captures
 
 
@@ -2136,7 +2114,7 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     }
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
-    assert len(result.assessment_input.discovery_projections) == 2
+    assert len(result.assessment_input.assessment.evidence_refs) == 2
 
 
 def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
@@ -2176,7 +2154,7 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
     assert result.assessment_input.assessment.content.technical_state == (
         "not_evaluated"
     )
-    assert result.assessment_input.discovery_projections == ()
+    assert result.assessment_input.assessment.evidence_refs == ()
     assert result.captures == ()
 
 
@@ -2275,7 +2253,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=fixture.owners.request.acquisition_sources[0],
-        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
@@ -2292,13 +2269,12 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {r.candidate_id: r.evaluation for r in discovery.physical_evaluations},
             )
         },
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2324,11 +2300,11 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     assert assessment.content.method_result == "SUPPORT"
     assert assessment.set_relation_refs == ()
     assert {
-        support.content.peak_observation_content_id
+        support.content.peak_observation.physical_peak_key
         for support in assessment.individual_support_refs
     } == {
-        left.content.peak_observation_content_id,
-        right.content.peak_observation_content_id,
+        left.content.physical_peak_key,
+        right.content.physical_peak_key,
     }
 
 
@@ -2475,12 +2451,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
     physical_mz_offset: float,
 ) -> None:
-    import json
-
-    from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        canonical_cid_nl_method_assessment_bytes,
-    )
-
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2517,12 +2487,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.assessment.content.evaluation_receipt.physical_query_mz == (
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
-    payload = json.loads(
-        canonical_cid_nl_method_assessment_bytes(result.assessment.content)
-    )
-    assert payload["content"]["evaluation_receipt"]["physical_query_mz"] == (
-        fixture.method_subject.precursor_mz + physical_mz_offset
-    )
     assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
@@ -2531,7 +2495,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     )
     assert result.assessment.content.method_result == "HOLD"
     assert result.assessment.content.evaluation_receipt.search_completed is True
-    assert result.assessment.content.evaluation_receipt.scanned_event_count == 0
     assert len(result.assessment.candidate_peaks) == 1
     assert result.assessment.evidence_refs == ()
     assert result.backfill_input is not None
@@ -2630,11 +2593,11 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2714,11 +2677,11 @@ def test_physical_backfill_context_is_not_search_permission(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2829,7 +2792,6 @@ def test_physical_backfill_context_is_not_search_permission(
             assert trace.rt_min == 7.5 and trace.rt_max == 8.5
             original = evaluate_physical_peak(
                 prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
-                selection_subject_id=fixture.method_subject.method_subject_id,
                 query_rt_min=8.0,
                 selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
             )
@@ -2891,7 +2853,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -3087,11 +3049,11 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -3138,7 +3100,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         ),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=0,
         reason_code=None,
     )
     kwargs = dict(

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from statistics import median
@@ -23,6 +23,9 @@ from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 Partition = tuple[tuple[str, ...], ...]
+# A recorded owner is located by its sample, measured m/z and native apex RT.
+OwnerFacts = tuple[str, float, float]
+OwnerPartition = tuple[tuple[OwnerFacts, ...], ...]
 _RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
@@ -32,9 +35,9 @@ _RT_POPULATION_RANGE_RATIO = 2.0
 class AcceptedMembershipRisk:
     status: str
     phase: str
-    selected_owner_ids: tuple[str, ...]
-    alternative_partition: Partition | None
-    equivalent_alternatives: tuple[Partition, ...]
+    selected_owners: tuple[OwnerFacts, ...]
+    alternative_partition: OwnerPartition | None
+    equivalent_alternatives: tuple[OwnerPartition, ...]
     selected_cost: float
     alternative_cost: float | None
     cost_gap: float | None
@@ -73,6 +76,27 @@ def measured_owner_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
 
 def canonical_partition(groups: Sequence[Sequence[str]]) -> Partition:
     return tuple(sorted(tuple(sorted(group)) for group in groups if group))
+
+
+def owner_facts(
+    owners: Mapping[str, SampleLocalMS1Owner], owner_ids: Sequence[str]
+) -> tuple[OwnerFacts, ...]:
+    """Measured facts that locate recorded owners without their in-process keys."""
+    facts = []
+    for owner_id in owner_ids:
+        owner = owners[owner_id]
+        member = owner.cross_sample_member_subject
+        sample = owner.sample_stem if member is None else member.sample_key
+        facts.append((sample, owner.precursor_mz, owner.owner_apex_rt))
+    if len(set(facts)) != len(facts):
+        raise ValueError("distinct recorded owners share sample, m/z and apex RT")
+    return tuple(sorted(facts))
+
+
+def owner_partition_facts(
+    owners: Mapping[str, SampleLocalMS1Owner], partition: Partition
+) -> OwnerPartition:
+    return tuple(sorted(owner_facts(owners, group) for group in partition))
 
 
 class MembershipComparison:
@@ -601,9 +625,14 @@ class MembershipComparison:
                     if alternative
                     else "no_feasible_alternative",
                     "initial",
-                    group,
-                    alternative,
-                    equivalents,
+                    owner_facts(self.owners, group),
+                    None
+                    if alternative is None
+                    else owner_partition_facts(self.owners, alternative),
+                    tuple(
+                        owner_partition_facts(self.owners, value)
+                        for value in equivalents
+                    ),
                     selected_cost,
                     alternative_cost,
                     gap,

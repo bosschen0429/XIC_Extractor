@@ -21,7 +21,6 @@ def test_reexport_identity() -> None:
         "RuntimeAcquisitionMetrics",
         "RuntimeAcquisitionReceipt",
         "RuntimeArtifactIoSample",
-        "RuntimeArtifactRegistrationReceipt",
         "RuntimeCancellationRequest",
         "RuntimeExecutionPhase",
         "RuntimeExecutionPhaseError",
@@ -89,4 +88,4 @@ def test_runtime_artifact_io_sample() -> None:
 def test_raw_open_metrics_derivation() -> None:
     metrics = derive_runtime_raw_open_metrics(None, ())
     assert metrics.raw_open_count is None
-    assert "carries no owner session capability" in metrics.unavailable_reason
+    assert "has no bound acquisition source" in metrics.unavailable_reason

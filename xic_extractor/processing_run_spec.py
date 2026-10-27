@@ -1,4 +1,4 @@
-"""Canonical immutable run identity for CID-NL Discovery."""
+"""Canonical immutable run specification for CID-NL Discovery."""
 
 from __future__ import annotations
 
@@ -53,9 +53,7 @@ from xic_extractor.validation_primitives import (
 
 PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec"
 PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope"
-PROCESSING_RUN_SPEC_ID_PREFIX = "processing-run:"
 CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method"
-CID_NL_DISCOVERY_METHOD_ID_PREFIX = "cid-nl-discovery-method:"
 
 _RUN_CONTENT_KEYS = (
     "schema_version",
@@ -65,8 +63,6 @@ _RUN_CONTENT_KEYS = (
 )
 _RUN_ENVELOPE_KEYS = (
     "schema_version",
-    "run_spec_hash",
-    "run_spec_id",
     "content",
 )
 _ACQUISITION_INPUT_KEYS = (
@@ -76,16 +72,10 @@ _ACQUISITION_INPUT_KEYS = (
     "acquisition_source",
 )
 _ACQUISITION_SOURCE_KEYS = (
-    "acquisition_source_id",
     "content_sha256",
     "byte_size",
     "acquisition_format",
     "observation_namespace",
-)
-_METHOD_ENVELOPE_KEYS = (
-    "method_hash",
-    "method_id",
-    "content",
 )
 _METHOD_CONTENT_KEYS = (
     "schema_version",
@@ -149,7 +139,6 @@ _THRESHOLD_KEYS = (
     "scan_support_target",
     *_THRESHOLD_FLOAT_KEYS[9:],
 )
-_PROFILE_ENVELOPE_KEYS = ("profile_hash", "profile_id", "content")
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +181,7 @@ class ProcessingAcquisitionInput:
 
 @runtime_checkable
 class DiscoveryMethodSpec(Protocol):
-    """Protocol for any method and Discovery settings identity."""
+    """Protocol for any method and its Discovery settings."""
 
     @property
     def settings(self) -> Any: ...
@@ -203,16 +192,10 @@ class DiscoveryMethodSpec(Protocol):
     @property
     def schema_version(self) -> str: ...
 
-    @property
-    def method_hash(self) -> str: ...
-
-    @property
-    def method_id(self) -> str: ...
-
 
 @dataclass(frozen=True, slots=True)
 class CidNlDiscoveryMethodSpec:
-    """Complete CID-NL method and Discovery settings identity."""
+    """Complete CID-NL method and Discovery settings."""
 
     settings: DiscoverySettings
     method: str = "cid_nl"
@@ -225,18 +208,10 @@ class CidNlDiscoveryMethodSpec:
             raise ValueError("Discovery method must be 'cid_nl'")
         _validate_discovery_settings(self.settings)
 
-    @property
-    def method_hash(self) -> str:
-        return hashlib.sha256(canonical_cid_nl_method_bytes(self)).hexdigest()
-
-    @property
-    def method_id(self) -> str:
-        return f"{CID_NL_DISCOVERY_METHOD_ID_PREFIX}{self.method_hash}"
-
 
 @dataclass(frozen=True, slots=True)
 class ProcessingRunSpec:
-    """One immutable run identity compiled before any RAW handle is opened."""
+    """One immutable run specification compiled before any RAW handle is opened."""
 
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...]
     discovery_method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec
@@ -285,9 +260,9 @@ class ProcessingRunSpec:
                 (CidNlDiscoveryMethodSpec, DiscoveryMethodSpec),
             )
             or (
-                hasattr(self.discovery_method, "method_hash")
-                and hasattr(self.discovery_method, "method_id")
+                hasattr(self.discovery_method, "settings")
                 and hasattr(self.discovery_method, "method")
+                and hasattr(self.discovery_method, "schema_version")
             )
         ):
             raise TypeError("discovery_method must be a DiscoveryMethodSpec")
@@ -302,22 +277,6 @@ class ProcessingRunSpec:
                 "signal_processing_profile must be a SignalProcessingProfile"
             )
 
-    @property
-    def canonical_bytes(self) -> bytes:
-        return canonical_processing_run_spec_bytes(self)
-
-    @property
-    def run_spec_hash(self) -> str:
-        return hashlib.sha256(self.canonical_bytes).hexdigest()
-
-    @property
-    def run_spec_id(self) -> str:
-        return f"{PROCESSING_RUN_SPEC_ID_PREFIX}{self.run_spec_hash}"
-
-    @property
-    def profile_id(self) -> str:
-        return self.signal_processing_profile.profile_id
-
 
 def compile_processing_run_spec(
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...],
@@ -328,7 +287,7 @@ def compile_processing_run_spec(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> ProcessingRunSpec:
-    """Compile already-identified ordered inputs into one run identity."""
+    """Compile already-identified ordered inputs into one run specification."""
 
     if discovery_method is not None:
         method = discovery_method
@@ -366,36 +325,18 @@ def serialize_processing_run_spec(spec: ProcessingRunSpec) -> bytes:
     return _canonical_json_bytes(
         {
             "schema_version": PROCESSING_RUN_SPEC_ENVELOPE_VERSION,
-            "run_spec_hash": spec.run_spec_hash,
-            "run_spec_id": spec.run_spec_id,
             "content": _run_content(spec),
         }
     )
 
 
-def deserialize_processing_run_spec(
-    payload: bytes | str,
-    *,
-    expected_run_spec_hash: str | None = None,
-    expected_run_spec_id: str | None = None,
-) -> ProcessingRunSpec:
+def deserialize_processing_run_spec(payload: bytes | str) -> ProcessingRunSpec:
     raw, content = _decode_json_object(payload, label="ProcessingRunSpec")
     _require_keys(content, _RUN_ENVELOPE_KEYS, label="ProcessingRunSpec envelope")
     if content["schema_version"] != PROCESSING_RUN_SPEC_ENVELOPE_VERSION:
         raise ValueError("unsupported ProcessingRunSpec envelope schema_version")
     run_content = _mapping(content["content"], label="ProcessingRunSpec content")
     spec = _run_spec_from_content(run_content)
-    if content["run_spec_hash"] != spec.run_spec_hash:
-        raise ValueError("run_spec_hash does not match canonical content")
-    if content["run_spec_id"] != spec.run_spec_id:
-        raise ValueError("run_spec_id does not match canonical content")
-    if (
-        expected_run_spec_hash is not None
-        and spec.run_spec_hash != expected_run_spec_hash
-    ):
-        raise ValueError("run_spec_hash does not match expected run")
-    if expected_run_spec_id is not None and spec.run_spec_id != expected_run_spec_id:
-        raise ValueError("run_spec_id does not match expected run")
     if serialize_processing_run_spec(spec) != raw:
         raise ValueError("ProcessingRunSpec payload is not canonical")
     return spec
@@ -410,9 +351,6 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
                 "adapter_input_key": item.adapter_input_key,
                 "sample_stem": item.sample_stem,
                 "acquisition_source": {
-                    "acquisition_source_id": (
-                        item.acquisition_source.acquisition_source_id
-                    ),
                     "content_sha256": item.acquisition_source.content_sha256,
                     "byte_size": item.acquisition_source.byte_size,
                     "acquisition_format": item.acquisition_source.acquisition_format,
@@ -424,20 +362,10 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
             }
             for item in spec.acquisition_inputs
         ],
-        "discovery_method": {
-            "method_hash": spec.discovery_method.method_hash,
-            "method_id": spec.discovery_method.method_id,
-            "content": _method_content(spec.discovery_method),
-        },
-        "signal_processing_profile": {
-            "profile_hash": spec.signal_processing_profile.profile_hash,
-            "profile_id": spec.signal_processing_profile.profile_id,
-            "content": json.loads(
-                canonical_signal_processing_profile_bytes(
-                    spec.signal_processing_profile
-                ).decode("utf-8")
-            ),
-        },
+        "discovery_method": _method_content(spec.discovery_method),
+        "signal_processing_profile": json.loads(
+            canonical_signal_processing_profile_bytes(spec.signal_processing_profile)
+        ),
     }
 
 
@@ -553,7 +481,7 @@ class GenericMethodSettings(Mapping[str, Any]):
 
 @dataclass(frozen=True, slots=True)
 class GenericDiscoveryMethodSpec:
-    """Generic Discovery method identity for non-CID-NL or composite methods."""
+    """Generic Discovery method for non-CID-NL or composite methods."""
 
     settings: Any
     method: str
@@ -563,18 +491,6 @@ class GenericDiscoveryMethodSpec:
         object.__setattr__(
             self, "settings", normalize_generic_method_settings(self.settings)
         )
-
-    @property
-    def canonical_bytes(self) -> bytes:
-        return _canonical_json_bytes(_method_content(self))
-
-    @property
-    def method_hash(self) -> str:
-        return hashlib.sha256(self.canonical_bytes).hexdigest()
-
-    @property
-    def method_id(self) -> str:
-        return f"{self.method}-discovery-method:{self.method_hash}"
 
 
 DiscoveryMethodDecoder = Callable[[Mapping[str, object]], DiscoveryMethodSpec]
@@ -663,8 +579,7 @@ def _method_content(
                 "blank_fold_change_threshold": _float_text(
                     settings.blank_fold_change_threshold
                 ),
-                # Absent means the vendor masses were used unchanged; this keeps
-                # every legacy vendor-mass method identity stable.
+                # Absent means the vendor masses were used unchanged.
                 **(
                     {"mass_recalibration": settings.mass_recalibration.value}
                     if settings.mass_recalibration is not MassRecalibration.NONE
@@ -723,10 +638,6 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
                 ),
                 sample_stem=_text(item["sample_stem"], field="sample_stem"),
                 acquisition_source=AcquisitionSourceIdentity(
-                    acquisition_source_id=_text(
-                        source_value["acquisition_source_id"],
-                        field="acquisition_source_id",
-                    ),
                     content_sha256=_text(
                         source_value["content_sha256"], field="content_sha256"
                     ),
@@ -746,31 +657,14 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
                 ),
             )
         )
-    method_envelope = _mapping(content["discovery_method"], label="discovery_method")
-    _require_keys(method_envelope, _METHOD_ENVELOPE_KEYS, label="discovery_method")
-    method_content = _mapping(
-        method_envelope["content"], label="discovery method content"
-    )
-    method = _method_from_content(method_content)
-    if method_envelope["method_hash"] != method.method_hash:
-        raise ValueError("method_hash does not match canonical method content")
-    if method_envelope["method_id"] != method.method_id:
-        raise ValueError("method_id does not match canonical method content")
-    profile_envelope = _mapping(
-        content["signal_processing_profile"], label="signal_processing_profile"
-    )
-    _require_keys(
-        profile_envelope, _PROFILE_ENVELOPE_KEYS, label="signal_processing_profile"
+    method = _method_from_content(
+        _mapping(content["discovery_method"], label="discovery method content")
     )
     profile_content = _mapping(
-        profile_envelope["content"], label="signal processing profile content"
+        content["signal_processing_profile"], label="signal_processing_profile"
     )
     profile = deserialize_signal_processing_profile(
-        _canonical_json_bytes(profile_content),
-        expected_profile_hash=_text(
-            profile_envelope["profile_hash"], field="profile_hash"
-        ),
-        expected_profile_id=_text(profile_envelope["profile_id"], field="profile_id"),
+        _canonical_json_bytes(profile_content)
     )
     return ProcessingRunSpec(
         acquisition_inputs=tuple(inputs),
@@ -1113,10 +1007,8 @@ def _integer(value: object, *, field: str) -> int:
 
 
 __all__ = [
-    "CID_NL_DISCOVERY_METHOD_ID_PREFIX",
     "CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION",
     "PROCESSING_RUN_SPEC_ENVELOPE_VERSION",
-    "PROCESSING_RUN_SPEC_ID_PREFIX",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
     "DiscoveryMethodDecoder",

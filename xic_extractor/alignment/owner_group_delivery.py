@@ -7,7 +7,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 class OwnerGroupDeliveryFeature(Protocol):
     @property
-    def feature_family_id(self) -> str: ...
+    def feature_id(self) -> str: ...
 
     @property
     def cluster_id(self) -> str: ...
@@ -55,9 +55,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     def group_hypothesis_id(self) -> str: ...
 
     @property
-    def public_family_id(self) -> str: ...
-
-    @property
     def group_construction_role(self) -> str: ...
 
     @property
@@ -71,24 +68,18 @@ OwnerGroupDeliveryFeatures: TypeAlias = tuple[OwnerGroupDeliveryFeature, ...]
 
 
 class GroupProjection(TypedDict):
-    group_hypothesis_id: str
-    public_family_id: str
     group_construction_role: str
     group_delivery_role: str
     group_membership_source: str
 
 
 GROUP_REVIEW_PROJECTION_COLUMNS = (
-    "group_hypothesis_id",
-    "public_family_id",
     "group_construction_role",
     "group_delivery_role",
     "group_membership_source",
 )
 
 CROSS_SAMPLE_GROUP_CELL_COLUMNS = (
-    "group_hypothesis_id",
-    "public_family_id",
     "group_construction_role",
     "group_delivery_role",
     "group_membership_source",
@@ -98,8 +89,6 @@ CROSS_SAMPLE_GROUP_CELL_COLUMNS = (
 )
 
 GROUP_BACKFILL_SEED_AUDIT_COLUMNS = (
-    "group_hypothesis_id",
-    "public_family_id",
     "group_construction_role",
     "group_delivery_role",
     "group_membership_source",
@@ -112,17 +101,13 @@ GROUP_BACKFILL_SEED_AUDIT_COLUMNS = (
 def delivery_group_hypothesis_id(feature: object) -> str:
     return (
         _string_attr(feature, "group_hypothesis_id")
-        or _string_attr(feature, "feature_family_id")
+        or _string_attr(feature, "feature_id")
         or _string_attr(feature, "cluster_id")
     )
 
 
-def delivery_public_family_id(feature: object) -> str:
-    return (
-        _string_attr(feature, "public_family_id")
-        or _string_attr(feature, "feature_family_id")
-        or _string_attr(feature, "cluster_id")
-    )
+def delivery_feature_id(feature: object) -> str:
+    return _string_attr(feature, "feature_id") or _string_attr(feature, "cluster_id")
 
 
 def delivery_group_construction_role(feature: object) -> str:
@@ -143,8 +128,6 @@ def delivery_group_membership_source(feature: object) -> str:
 
 def delivery_group_projection(feature: object) -> GroupProjection:
     return {
-        "group_hypothesis_id": delivery_group_hypothesis_id(feature),
-        "public_family_id": delivery_public_family_id(feature),
         "group_construction_role": delivery_group_construction_role(feature),
         "group_delivery_role": delivery_group_delivery_role(feature),
         "group_membership_source": delivery_group_membership_source(feature),

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
-import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
@@ -28,6 +27,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
@@ -221,7 +221,7 @@ def _assert_partition_composition_parity(
         ).matrix
     )
     assert result.excluded_candidates == original.excluded_candidates
-    assert result.physical_observation_ids == original.physical_observation_ids
+    assert result.physical_peak_keys == original.physical_peak_keys
     assert all(
         child.processing_request is original.processing_request
         for child in result.children
@@ -252,7 +252,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     context = batch.context
     memberships = dict(batch.subject_batch.candidate_memberships)
     candidate_keys = {
-        (sample.identity.sample_identity_id, memberships[candidate.candidate_id])
+        (sample.identity.sample_key, memberships[candidate.candidate_id])
         for sample in context.samples
         for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
         if candidate.candidate_id in memberships
@@ -293,8 +293,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         for sample in context.samples
         for subject in batch.subject_batch.subjects
         if not batch.sample_job_templates
-        or (sample.identity.sample_identity_id, subject.method_subject_id)
-        in candidate_keys
+        or (sample.identity.sample_key, subject.method_subject_id) in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -378,18 +377,6 @@ def test_alignment_runtime_telemetry_preserves_process_memory_peak(
     assert samples.process_tree_peak_rss.reason == expected_reason
 
 
-def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
-    facts = {"physical-1": (500.0, 8.0)}
-
-    with pytest.raises(ValueError, match="duplicate physical identity"):
-        finalized_matrix._add_presentation_fact(
-            facts,
-            physical_id="physical-1",
-            mz=500.0,
-            rt=8.0,
-        )
-
-
 def _expected_retained_curve(
     *,
     kind,
@@ -397,7 +384,6 @@ def _expected_retained_curve(
     candidate_id,
     trace,
     evaluation,
-    request_id,
     attempt_id,
     observation=None,
     method_subject_id=None,
@@ -406,22 +392,18 @@ def _expected_retained_curve(
     # result or a re-executed signal-processing calculation.
     signal = evaluation.retained_prepared_signal if evaluation is not None else None
     provenance = {
-        "processing_request_id": request_id,
         "processing_attempt_id": attempt_id,
     }
     if method_subject_id is not None:
         provenance["method_subject_id"] = method_subject_id
     if evaluation is not None:
         provenance.update(
-            trace_content_id=evaluation.question.trace_content_id,
-            prepared_signal_id=evaluation.prepared.prepared_signal_id,
-            profile_id=evaluation.prepared.profile_id,
+            profile=asdict(evaluation.prepared.profile),
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
         )
     if signal is not None:
         provenance.update(
-            profile_id=signal.profile.profile_id,
             profile_version=signal.profile.schema_version,
             profile=asdict(signal.profile),
         )
@@ -429,16 +411,11 @@ def _expected_retained_curve(
     if observation is not None:
         generation = observation.generation_provenance
         for name in (
-            "full_trace_sha256",
-            "selection_trace_sha256",
             "selected_trace_indices",
             "resolver_mode",
             "proposal_sources",
         ):
             provenance[name] = getattr(generation, name)
-        provenance["observation_artifact_id"] = (
-            observation.artifact.evidence_artifact_id
-        )
     integration = (
         observation.content.integration
         if observation is not None
@@ -449,7 +426,7 @@ def _expected_retained_curve(
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "peak_observation_content_id": observation.content.peak_observation_content_id
+        "physical_peak_key": observation.content.physical_peak_key
         if observation is not None
         else None,
         "trace_coordinate": {
@@ -466,7 +443,23 @@ def _expected_retained_curve(
             "positive": list(signal.positive_signal) if signal is not None else None,
         },
         "integration": asdict(integration) if integration is not None else None,
-        "provenance": provenance,
+        "provenance": {
+            **dict.fromkeys(
+                (
+                    "profile_version",
+                    "acquisition_source_id",
+                    "processing_attempt_id",
+                    "selected_trace_indices",
+                    "resolver_mode",
+                    "proposal_sources",
+                    "method_subject_id",
+                    "profile",
+                    "physical_state",
+                    "physical_reason",
+                )
+            ),
+            **provenance,
+        },
     }
     return json.loads(json.dumps(value))
 
@@ -476,11 +469,10 @@ def _expected_capture_curve(evidence):
         kind="backfill_observation"
         if evidence.capture_stage == "method_backfill"
         else evidence.capture_stage,
-        sample_id=evidence.canonical_sample_identity_id,
+        sample_id=evidence.sample_key,
         candidate_id=evidence.candidate_id,
         trace=evidence.trace,
         evaluation=evidence.physical_evaluation,
-        request_id=evidence.processing_request_id,
         attempt_id=evidence.processing_attempt_id,
         observation=evidence.observation_ref,
         method_subject_id=evidence.method_subject_id,
@@ -728,7 +720,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 discovery_raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,
-                run_spec_id=spec.run_spec_id,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,
@@ -756,10 +747,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 discovery_candidate_state="review_only_orphan_nl",
             )
             persisted_candidates = (*persisted_candidates, audit)
-        receipts.update(
-            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
-        )
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
@@ -767,6 +754,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             work_manifest=discovery.physical_work_manifest,
             records=discovery.physical_evaluations,
         )
+        receipts.update(
+            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
+        )
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = tuple(
             candidate
             for candidate in read_owner_bound_discovery_candidates_csv(
@@ -807,7 +798,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for record in discovery.physical_evaluations:
                 family_evaluations[record.candidate_id] = evaluate_physical_peak(
                     prepared,
-                    selection_subject_id=record.evaluation.question.selection_subject_id,
                     query_rt_min=record.evaluation.question.query_rt_min,
                     request_context_rt_start_min=rt_min,
                     request_context_rt_end_min=rt_max,
@@ -815,9 +805,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert (
                 len(
                     {
-                        family_evaluations[
-                            record.candidate_id
-                        ].facts.physical_segment_id
+                        family_evaluations[record.candidate_id].answer.selected_segment
                         for record in discovery.physical_evaluations
                         if family_evaluations[record.candidate_id].facts is not None
                     }
@@ -1029,8 +1017,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             hypothesis_universe_compositions.append(
                 (
                     owner_name,
-                    kwargs["sample"].identity.sample_identity_id,
-                    assessment.artifact.content_identity.artifact_content_id,
+                    kwargs["sample"].identity.sample_key,
+                    assessment.content,
                 )
             )
             return compose_hypothesis_universe(**kwargs)
@@ -1271,9 +1259,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         sample: tuple(candidate.candidate_id for candidate in sample_candidates)
         for sample, sample_candidates in candidates.items()
     }
-    assert completed.processing_request_id == (
-        completed.application_result.processing_request.processing_request_id
-    )
     assert completed.processing_attempt_id == (
         completed.application_result.processing_attempt.processing_attempt_id
     )
@@ -1339,9 +1324,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for retained, source in zip(
         persisted_capture_evidence, runtime_captures, strict=True
     ):
-        assert (
-            retained.canonical_sample_identity_id == source.canonical_sample_identity_id
-        )
+        assert retained.sample_key == source.sample_key
         assert retained.candidate_id == source.candidate_id
         assert retained.capture_stage == source.capture_stage
         assert retained.physical_evaluation is not None
@@ -1378,10 +1361,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         expected = _expected_retained_curve(
             kind="discovery_physical",
             candidate_id=record.candidate_id,
-            sample_id=samples_by_stem[work.sample_stem].identity.sample_identity_id,
+            sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
             trace=source_trace,
             evaluation=record.evaluation,
-            request_id=application.processing_request.processing_request_id,
             attempt_id=application.processing_attempt.processing_attempt_id,
         )
         expected_curves.append(expected)
@@ -1412,14 +1394,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "alignment" / ".cid_nl_runtime.json",
         "untargeted-cid-nl-alignment",
     ).read_optional()
-    assert marker is not None and marker.observability_ledger_bytes is not None
-    persisted_ledger = json.loads(marker.observability_ledger_bytes)
-    assert persisted_ledger["schema_version"] == (
-        "execution_runtime_observability_ledger"
-    )
-    assert all(
-        event["monotonic_offset_ns"] is None for event in persisted_ledger["events"]
-    )
+    assert marker is not None
+    assert marker.processing_attempt_id == completed.processing_attempt_id
+    assert marker.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    runtime_ledger = completed.runtime_receipt.observability_ledger
+    assert all(event.monotonic_offset_ns is None for event in runtime_ledger.events)
     unavailable_metric_names = {
         "artifact_read_count",
         "artifact_read_bytes",
@@ -1431,26 +1410,24 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     }
     unavailable_metrics = tuple(
         metric
-        for metric in persisted_ledger["metrics"]
-        if metric["name"] in unavailable_metric_names
+        for metric in runtime_ledger.metrics
+        if metric.name in unavailable_metric_names
     )
-    assert {metric["name"] for metric in unavailable_metrics} == (
-        unavailable_metric_names
-    )
+    assert {metric.name for metric in unavailable_metrics} == unavailable_metric_names
     assert all(
-        metric["availability"] == "unsupported"
-        and metric["value"] is None
-        and metric["reason"] == "not_collected_by_alignment_foreground_runner"
+        metric.availability is RuntimeMetricAvailability.UNSUPPORTED
+        and metric.value is None
+        and metric.reason == "not_collected_by_alignment_foreground_runner"
         for metric in unavailable_metrics
     )
     rss = [
         metric
-        for metric in persisted_ledger["metrics"]
-        if metric["name"] == "process_tree_peak_rss_bytes"
+        for metric in runtime_ledger.metrics
+        if metric.name == "process_tree_peak_rss_bytes"
     ]
     assert len(rss) == 1
-    assert rss[0]["availability"] == "measured"
-    assert rss[0]["value"] == 123456
+    assert rss[0].availability is RuntimeMetricAvailability.MEASURED
+    assert rss[0].value == 123456
     _assert_jobs_match_direct_construction(captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
@@ -1545,7 +1522,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
             ) == [1, 2]
             sample_id_by_stem = {
-                sample.metadata.raw_stem: sample.identity.sample_identity_id
+                sample.metadata.raw_stem: sample.identity.sample_key
                 for sample in child.scientific_core.canonical_samples
             }
             joint_group = next(
@@ -1553,21 +1530,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
                 if len(group.member_subjects) == 2
             )
-            assert {
-                member.canonical_sample_identity_id
-                for member in joint_group.member_subjects
-            } == {sample_id_by_stem["S2"], sample_id_by_stem["S3"]}
+            assert {member.sample_key for member in joint_group.member_subjects} == {
+                sample_id_by_stem["S2"],
+                sample_id_by_stem["S3"],
+            }
             joint_final_cell = next(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.canonical_sample_identity_id == sample_id_by_stem["S3"]
+                and cell.sample_key == sample_id_by_stem["S3"]
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
             assert any(
                 support.assessment is joint_cell.method_assessment
-                and support.sample.identity.sample_identity_id
-                == sample_id_by_stem["S3"]
+                and support.sample.identity.sample_key == sample_id_by_stem["S3"]
                 for support in joint_cell.group_context.supports
             )
             assert all(
@@ -1587,7 +1563,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.canonical_sample_identity_id == sample_id_by_stem["S4"]
+                and cell.sample_key == sample_id_by_stem["S4"]
             )
             assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
             assert matrix_row["S4"]
@@ -1653,7 +1629,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert cell.selected_integration.area_raw_counts_seconds != cell.area
         assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
         assert cell.selected_integration.height_smoothed == facts.height
-        assert facts.physical_segment_id in cell.selected_integration.boundary_sources
     expected_row_count = sum(size > 1 for size in group_sizes)
     assert len(matrix_rows) == expected_row_count
     for sample_stem, facts in physical_facts.items():
@@ -1664,7 +1639,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             [facts.area_counts_seconds] if expected_row_count else []
         )
     if nearby:
-        assert len({facts.fact_content_id for facts in physical_facts.values()}) == 2
         assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
         assert len(matrix_rows) == 1
         close_and_verify_persisted_curves()
@@ -1748,25 +1722,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with pytest.raises(capture_owner.SampleLocalCaptureError):
         bind_capture(changed_source, **binding_args)
-    from xic_extractor.peak_detection.search_scope import SearchScopeContractError
-
-    changed_answer = evaluate_physical_peak(
-        prepared,
-        selection_subject_id="substituted-selection-subject",
-        query_rt_min=evaluation.question.query_rt_min,
-        request_context_rt_start_min=capture.trace.rt_min,
-        request_context_rt_end_min=capture.trace.rt_max,
-    )
-    with pytest.raises(SearchScopeContractError, match="answer is not bound"):
-        replace(
-            capture.scope,
-            capture_bindings=tuple(
-                replace(binding, physical_evaluation=changed_answer)
-                if binding.candidate_id == capture.candidate_id
-                else binding
-                for binding in capture.scope.capture_bindings
-            ),
-        )
     batch = captured_batches[0]
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
@@ -1928,26 +1883,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _emit_curve_payload(
                 sink,
                 evidence.observation_ref,
-                evidence.canonical_sample_identity_id,
+                evidence.sample_key,
                 kind="backfill_observation",
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,
                 provenance={
-                    "processing_request_id": evidence.processing_request_id,
                     "processing_attempt_id": evidence.processing_attempt_id,
                     "method_subject_id": evidence.method_subject_id,
                 },
             )
         sink.finalize(
-            {
-                "processing_request_id": (
-                    job.processing_owners.request.processing_request_id
-                ),
-                "processing_attempt_id": (
-                    job.processing_owners.attempt.processing_attempt_id
-                ),
-                "matrix_path": str(matrix_path),
-            }
+            _summary_fixture(
+                {
+                    "processing_attempt_id": (
+                        job.processing_owners.attempt.processing_attempt_id
+                    ),
+                    "matrix_path": str(matrix_path),
+                },
+                review_only=sink.review_only,
+            )
         )
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
@@ -2003,28 +1957,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 physical_records_by_candidate=wrong_records,
             )
     close_and_verify_persisted_curves()
-
-
-@pytest.mark.parametrize(
-    ("mz", "rt"),
-    (
-        (float("nan"), 8.0),
-        (500.0, float("inf")),
-        (True, 8.0),
-        (500.0, False),
-    ),
-)
-def test_writer_projection_rejects_invalid_presentation_coordinates(
-    mz: float,
-    rt: float,
-) -> None:
-    with pytest.raises(ValueError, match="finite owner-backed"):
-        finalized_matrix._add_presentation_fact(
-            {},
-            physical_id="physical-1",
-            mz=mz,
-            rt=rt,
-        )
 
 
 def _subject_proof_record(
@@ -3216,15 +3148,18 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert writer_inputs.matrix.sample_order == ("S1",)
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
-    assert tuple(row.public_family_id for row in writer_inputs.matrix.clusters) == (
-        "FAM000001",
-        "FAM000002",
+    assert tuple(row.feature_id for row in writer_inputs.matrix.clusters) == (
+        "F000001",
+        "F000002",
     )
+    feature_by_group = {
+        row.group_hypothesis_id: row.feature_id for row in writer_inputs.matrix.clusters
+    }
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
         candidate_by_hypothesis = {
             (
-                subject.canonical_sample_identity_id,
+                subject.sample_key,
                 subject.hypothesis.hypothesis_id,
             ): subject.candidate_id
             for subject in child.scientific_core.terminal_subjects
@@ -3235,12 +3170,12 @@ def test_production_batch_executes_one_atomic_sample_phase(
                 hypothesis = decision.evidence.direct_hypotheses[0]
                 expected_source_ids[
                     (
-                        projected.row_key.untarget_row_key_id,
+                        feature_by_group[projected.group.group_hypothesis_id],
                         decision.subject.canonical_sample.metadata.raw_stem,
                     )
                 ] = candidate_by_hypothesis[
                     (
-                        decision.subject.canonical_sample.identity.sample_identity_id,
+                        decision.subject.canonical_sample.identity.sample_key,
                         hypothesis.hypothesis_id,
                     )
                 ]
@@ -3284,7 +3219,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
-        "alignment_matrix_identity.tsv",
+        "alignment_run_metadata.json",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     }
@@ -3894,11 +3829,7 @@ def _assert_conservative_completion_projection(
     import json
     from copy import copy
 
-    from xic_extractor.alignment.cell_observation.observations import (
-        canonical_cell_observation_bytes,
-    )
     from xic_extractor.untargeted_execution.partition.models import (
-        canonical_sample_result_bytes,
         project_completed_backfill,
     )
 
@@ -3907,12 +3838,6 @@ def _assert_conservative_completion_projection(
     assert position.planning_reason == proof.planning_reason
     assert final_cell.canonical_sample is position.sample
     assert any(item.position is position for item in handoff.position_associations)
-    assert (
-        json.loads(
-            canonical_cell_observation_bytes(proof.decision.target_cell.content)
-        )["schema_version"]
-        == "cell_observation"
-    )
 
     def canonical(value):
         return json.dumps(
@@ -3929,7 +3854,7 @@ def _assert_conservative_completion_projection(
         if item.job.sample is position.sample
     )
     context = proof.decision.group_facts.group_context
-    original_result_bytes = canonical_sample_result_bytes(result.result_ref)
+    original_result = result.effective_assessments
     with pytest.raises(ValueError, match="not a backfill"):
         project_completed_backfill(
             replace(result, backfill_attempts=()), group_context=context
@@ -3954,9 +3879,6 @@ def _assert_conservative_completion_projection(
         for traces in ((), recovery.acquisition.traces * 2):
             wrong_acquisition = copy(recovery.acquisition)
             object.__setattr__(wrong_acquisition, "traces", traces)
-            # The exact-coordinate check rejects both shapes before the outer
-            # seal comparison is reached. That seal is covered directly in
-            # test_cid_nl_multi_group_recovery.
             with pytest.raises(
                 ValueError, match="backfill crossed its exact request coordinates"
             ):
@@ -3969,7 +3891,7 @@ def _assert_conservative_completion_projection(
                     ),
                     group_context=context,
                 )
-    assert canonical_sample_result_bytes(result.result_ref) == original_result_bytes
+    assert result.effective_assessments == original_result
 
 
 @pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))
@@ -4123,7 +4045,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
     assert cells_by_sample["Hold"].source_candidate_id is None
     row = writer_inputs.matrix.clusters[0]
-    assert row.public_family_id == "FAM000001"
+    assert row.feature_id == "F000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
@@ -4132,12 +4054,12 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             group = next(
                 group
                 for group in child.scientific_core.final_population
-                if group.group_hypothesis_id == projected.row_key.group_hypothesis_id
+                if group.group_hypothesis_id == projected.group.group_hypothesis_id
             )
             member_ids = {
-                physical_id
+                peak.physical_peak_key
                 for member in group.member_subjects
-                for physical_id in member.physical_observation_ids
+                for peak in member.physical_peaks
             }
             for decision in projected.decisions:
                 direct_observations = decision.evidence.direct_observations
@@ -4147,7 +4069,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         decision.subject.canonical_sample.metadata.raw_stem
                     ] = direct_observations[0].content.integration.rt_apex_min
                 for direct in decision.evidence.direct_observations:
-                    physical_id = direct.content.peak_observation_content_id
+                    physical_id = direct.content.physical_peak_key
                     if physical_id not in member_ids:
                         assert decision.subject.canonical_sample.metadata.raw_stem == (
                             "Hold"
@@ -4166,9 +4088,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         direct.content.integration.rt_apex_min,
                     )
     assert len(diagnostic_observation_ids) == 1
-    assert not diagnostic_observation_ids & set(row.physical_observation_ids)
+    assert not diagnostic_observation_ids & set(row.physical_peak_keys)
     assert len(expected_presentation_facts) == len(sample_stems) - 1
-    assert row.physical_observation_ids == tuple(sorted(expected_presentation_facts))
+    assert set(row.physical_peak_keys) == set(expected_presentation_facts)
     assert row.family_center_mz == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)
@@ -4290,12 +4212,14 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             matrix_row = next(csv.DictReader(handle, delimiter="\t"))
         assert float(matrix_row["RT"]) == pytest.approx(row.family_center_rt)
 
-        assert outputs.matrix_identity_tsv is not None
-        with outputs.matrix_identity_tsv.open(encoding="utf-8", newline="") as handle:
-            identity_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(identity_row["RT"]) == pytest.approx(row.family_center_rt)
-        assert identity_row["center_rt_basis"] == row.center_rt_basis
-        assert identity_row["center_weight_basis"] == row.center_weight_basis
+        assert outputs.review_tsv is not None
+        with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
+            review_row = next(csv.DictReader(handle, delimiter="\t"))
+        assert float(review_row["matrix_rt"]) == pytest.approx(row.family_center_rt)
+        assert outputs.run_metadata_json is not None
+        metadata = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
+        assert metadata["matrix_center_rt_basis"] == row.center_rt_basis
+        assert metadata["matrix_center_weight_basis"] == row.center_weight_basis
 
 
 def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(

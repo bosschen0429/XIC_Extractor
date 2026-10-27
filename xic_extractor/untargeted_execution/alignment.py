@@ -29,6 +29,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
+    validate_discovery_physical_facts_artifact,
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
@@ -89,6 +90,7 @@ class _DiscoveryEvidencePartition:
 @dataclass(frozen=True, slots=True)
 class _PhysicalIndexJob:
     path: Path
+    receipt: DiscoveryCandidateUniverseReceipt
     expected_run_spec: ProcessingRunSpec
     expected_acquisition_input: ProcessingAcquisitionInput
     candidate_ids: frozenset[str]
@@ -111,6 +113,7 @@ class _PhysicalIndexBatchResult:
 def _index_discovery_physical_source(
     job: _PhysicalIndexJob,
 ) -> _PhysicalIndexWorkerResult:
+    validate_discovery_physical_facts_artifact(job.receipt, job.path)
     indexed = IndexedDiscoveryPhysicalFacts(
         job.path,
         expected_run_spec=job.expected_run_spec,
@@ -154,6 +157,7 @@ def _index_discovery_physical_sources(
         sources[result.sample_stem] = IndexedDiscoveryPhysicalFacts.from_detached(
             result.transfer,
             expected_run_spec=job.expected_run_spec,
+            expected_acquisition_input=job.expected_acquisition_input,
         )
         worker_pids.append(result.worker_pid)
         if progress_callback is not None:
@@ -358,6 +362,9 @@ def prepare_untargeted_alignment_inputs(
                         ].parent
                         / "discovery_physical_facts.json"
                     ),
+                    receipt=discovery_batch.candidate_receipts[
+                        acquisition_input.sample_stem
+                    ],
                     expected_run_spec=spec,
                     expected_acquisition_input=acquisition_input,
                     candidate_ids=frozenset(feature_ids),
@@ -639,9 +646,15 @@ def _load_physical_replay_inputs(
         tuple[DiscoveryPhysicalFactRecord, ...],
     ]:
         stem = acquisition_input.sample_stem
-        records = read_discovery_physical_fact_records(
+        physical_facts_json = (
             discovery_batch.candidate_csvs[stem].parent
-            / "discovery_physical_facts.json",
+            / "discovery_physical_facts.json"
+        )
+        validate_discovery_physical_facts_artifact(
+            discovery_batch.candidate_receipts[stem], physical_facts_json
+        )
+        records = read_discovery_physical_fact_records(
+            physical_facts_json,
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )

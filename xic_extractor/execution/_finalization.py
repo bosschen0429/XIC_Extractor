@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import Counter
 from collections.abc import (
-    Collection,
     Iterable,
 )
 from dataclasses import (
@@ -15,13 +12,10 @@ from dataclasses import (
 )
 from enum import Enum
 
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._lifecycle import (
     AttemptLifecycleEventKind,
     AttemptRuntime,
     AttemptTerminalOutcome,
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
@@ -30,11 +24,8 @@ from xic_extractor.execution._observability import (
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 from xic_extractor.validation_primitives import (
-    canonical_json_bytes,
-    require_lower_sha256,
     require_owner_normalized_text,
     require_tuple_of,
-    sha256_hexdigest,
 )
 
 
@@ -67,21 +58,12 @@ class RuntimeResourceKind(str, Enum):
     PROCESS_WORKER = "process_worker"
 
 
-class RuntimeArtifactDisposition(str, Enum):
-    """Runtime-only artifact states; none grants delivery or writer authority."""
-
-    RUNTIME_TEMPORARY = "runtime_temporary"
-    QUARANTINED_DIAGNOSTIC = "quarantined_diagnostic"
-    OFFERED_TO_OWNER = "offered_to_owner"
-
-
 class RuntimeLifecycleFailureKind(str, Enum):
     """Fail-closed integrity violations retained at the attempt boundary."""
 
     UNREGISTERED_RESOURCE = "unregistered_resource"
     CONFLICTING_RESOURCE_RESERVATION = "conflicting_resource_reservation"
     CONFLICTING_RESOURCE_REPORT = "conflicting_resource_report"
-    CONFLICTING_ARTIFACT_REGISTRATION = "conflicting_artifact_registration"
 
 
 class RuntimeLifecycleEventKind(str, Enum):
@@ -100,7 +82,6 @@ class RuntimeLifecycleEventKind(str, Enum):
     RESOURCE_CLEANUP_UNKNOWN_AFTER_WORKER_LOSS = (
         "resource_cleanup_unknown_after_worker_loss"
     )
-    ARTIFACT_REGISTERED = "artifact_registered"
     TERMINAL_PROPOSAL = "terminal_proposal"
 
 
@@ -108,8 +89,6 @@ class SupervisorFinalizationEventKind(str, Enum):
     """Atomic supervisor event batch following a coordinator proposal."""
 
     TERMINAL_ACKNOWLEDGED = "terminal_acknowledged"
-    ARTIFACT_OFFERED_TO_OWNER = "artifact_offered_to_owner"
-    ARTIFACT_QUARANTINED_DIAGNOSTIC = "artifact_quarantined_diagnostic"
     TERMINAL_OUTCOME = "terminal_outcome"
 
 
@@ -165,28 +144,6 @@ class RuntimeResourceRecord:
         if self.cleanup_outcome is not None and self.open_outcome is None:
             raise RuntimeFinalizationContractError(
                 "resource cleanup requires an open outcome"
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeArtifactRecord:
-    """One current-attempt artifact registered before terminal disposition."""
-
-    work_unit_key: str
-    artifact: EvidenceArtifactRef
-    proposed_disposition: RuntimeArtifactDisposition = (
-        RuntimeArtifactDisposition.RUNTIME_TEMPORARY
-    )
-
-    def __post_init__(self) -> None:
-        _required_text(self.work_unit_key, field="work_unit_key")
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise RuntimeFinalizationContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if not isinstance(self.proposed_disposition, RuntimeArtifactDisposition):
-            raise RuntimeFinalizationContractError(
-                "proposed_disposition must be a RuntimeArtifactDisposition"
             )
 
 
@@ -252,7 +209,6 @@ class AttemptFinalizationState:
 
     runtime: AttemptRuntime
     resources: tuple[RuntimeResourceRecord, ...] = ()
-    artifacts: tuple[RuntimeArtifactRecord, ...] = ()
     events: tuple[RuntimeLifecycleEvent, ...] = ()
     failures: tuple[RuntimeLifecycleFailure, ...] = ()
 
@@ -269,11 +225,10 @@ class AttemptFinalizationState:
 
 @dataclass(frozen=True, slots=True)
 class CoordinatorTerminalRecord:
-    """Immutable coordinator proposal through work/resource/artifact closure."""
+    """Immutable coordinator proposal through work/resource closure."""
 
     state: AttemptFinalizationState
     proposed_outcome: AttemptTerminalOutcome
-    coordinator_event_digest: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, AttemptFinalizationState):
@@ -297,10 +252,6 @@ class CoordinatorTerminalRecord:
             raise RuntimeFinalizationContractError(
                 "coordinator outcome must match the terminal event"
             )
-        if self.coordinator_event_digest != _coordinator_event_digest(self.state):
-            raise RuntimeFinalizationContractError(
-                "coordinator_event_digest does not bind the event ledger"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,31 +260,23 @@ class SupervisorFinalizationEvent:
 
     sequence: int
     kind: SupervisorFinalizationEventKind
-    artifact_id: str | None = None
     terminal_outcome: AttemptTerminalOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class SupervisorFinalizationRecord:
-    """Content-bound acknowledgement candidate for owner-supplied persistence."""
+    """Terminal acknowledgement facts for owner-supplied persistence."""
 
     attempt: ProcessingAttemptIdentity
-    coordinator_record_sha256: str
     terminal_outcome: AttemptTerminalOutcome
-    artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...]
     events: tuple[SupervisorFinalizationEvent, ...]
     observability_ledger: RuntimeObservabilityLedger
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
-        _require_sha256(self.coordinator_record_sha256)
         if not isinstance(self.terminal_outcome, AttemptTerminalOutcome):
             raise RuntimeFinalizationContractError(
                 "terminal_outcome must be an AttemptTerminalOutcome"
-            )
-        if not isinstance(self.artifact_dispositions, tuple):
-            raise RuntimeFinalizationContractError(
-                "artifact_dispositions must be a tuple"
             )
         if not isinstance(self.events, tuple) or any(
             not isinstance(event, SupervisorFinalizationEvent) for event in self.events
@@ -351,33 +294,6 @@ class SupervisorFinalizationRecord:
             )
 
 
-def _coordinator_event_digest(state: AttemptFinalizationState) -> str:
-    payload = {
-        "attempt_events": [
-            {
-                "sequence": item.sequence,
-                "kind": item.kind.value,
-                "proposed_outcome": (
-                    item.proposed_outcome.value if item.proposed_outcome else None
-                ),
-            }
-            for item in state.runtime.history.events
-        ],
-        "lifecycle_events": [
-            {
-                "sequence": item.sequence,
-                "kind": item.kind.value,
-                "subject_key": item.subject_key,
-                "proposed_outcome": (
-                    item.proposed_outcome.value if item.proposed_outcome else None
-                ),
-            }
-            for item in state.events
-        ],
-    }
-    return sha256_hexdigest(canonical_json_bytes(payload))
-
-
 def _require_attempt(value: object) -> ProcessingAttemptIdentity:
     if not isinstance(value, ProcessingAttemptIdentity):
         raise RuntimeFinalizationContractError(
@@ -391,16 +307,6 @@ def _required_text(value: object, *, field: str) -> str:
         value,
         field=field,
         error_factory=RuntimeFinalizationContractError,
-    )
-
-
-def _require_sha256(value: object) -> str:
-    return require_lower_sha256(
-        value,
-        field="coordinator_record_sha256",
-        error_factory=lambda _: RuntimeFinalizationContractError(
-            "coordinator_record_sha256 must be a lower-case SHA-256 digest"
-        ),
     )
 
 
@@ -591,85 +497,6 @@ def _record_runtime_resource_cleanups(
     )
 
 
-def _register_runtime_artifacts(
-    state: AttemptFinalizationState,
-    registrations: Iterable[tuple[str, EvidenceArtifactRef]],
-) -> AttemptFinalizationState:
-    """Admit ordered artifact registrations into the next coordinator state."""
-
-    artifacts_by_id = {
-        item.artifact.evidence_artifact_id: item for item in state.artifacts
-    }
-    manifest_keys = set(state.runtime.manifest.work_unit_keys)
-    artifacts = list(state.artifacts)
-    events: list[RuntimeLifecycleEvent] = []
-    failures = list(state.failures)
-    accepted_failures = set(state.failures)
-    for work_unit_key, artifact in registrations:
-        record = _runtime_artifact_registration(
-            state,
-            work_unit_key=work_unit_key,
-            artifact=artifact,
-            manifest_keys=manifest_keys,
-        )
-        artifact_id = artifact.evidence_artifact_id
-        existing = artifacts_by_id.get(artifact_id)
-        if existing is not None:
-            if existing != record:
-                failure = RuntimeLifecycleFailure(
-                    RuntimeLifecycleFailureKind.CONFLICTING_ARTIFACT_REGISTRATION,
-                    artifact_id,
-                    "artifact was registered against a different work unit",
-                )
-                if failure not in accepted_failures:
-                    failures.append(failure)
-                    accepted_failures.add(failure)
-            continue
-        artifacts_by_id[artifact_id] = record
-        artifacts.append(record)
-        events.append(
-            _event(
-                state,
-                RuntimeLifecycleEventKind.ARTIFACT_REGISTERED,
-                artifact_id,
-                offset=len(events),
-            )
-        )
-    if not events and len(failures) == len(state.failures):
-        return state
-    return replace(
-        state,
-        artifacts=tuple(artifacts),
-        events=(*state.events, *events),
-        failures=tuple(failures),
-    )
-
-
-def _runtime_artifact_registration(
-    state: AttemptFinalizationState,
-    *,
-    work_unit_key: str,
-    artifact: EvidenceArtifactRef,
-    manifest_keys: Collection[str],
-) -> RuntimeArtifactRecord:
-    _require_mutable_state(state)
-    record = RuntimeArtifactRecord(work_unit_key=work_unit_key, artifact=artifact)
-    if (
-        artifact.producer_processing_request_id
-        != state.runtime.manifest.attempt.processing_request_id
-        or artifact.producer_processing_attempt_id
-        != state.runtime.manifest.attempt.processing_attempt_id
-    ):
-        raise RuntimeFinalizationContractError(
-            "runtime artifact must bind the runtime request and attempt"
-        )
-    if record.work_unit_key not in manifest_keys:
-        raise RuntimeFinalizationContractError(
-            "runtime artifact must bind a declared manifest work unit"
-        )
-    return record
-
-
 def propose_attempt_terminal(
     state: AttemptFinalizationState,
 ) -> CoordinatorTerminalRecord:
@@ -680,14 +507,13 @@ def propose_attempt_terminal(
             "state must be an AttemptFinalizationState"
         )
     if state.runtime.manifest_preflight_failed:
-        if state.resources or state.artifacts or state.events or state.failures:
+        if state.resources or state.events or state.failures:
             raise RuntimeFinalizationContractError(
                 "preflight-terminalized attempt must have empty runtime registries"
             )
         return CoordinatorTerminalRecord(
             state=state,
             proposed_outcome=AttemptTerminalOutcome.FAILED,
-            coordinator_event_digest=_coordinator_event_digest(state),
         )
     _require_mutable_state(state)
     if not state.runtime.all_manifest_work_settled:
@@ -703,38 +529,9 @@ def propose_attempt_terminal(
         raise RuntimeFinalizationContractError(
             f"terminal proposal requires resource cleanup: {incomplete_resources!r}"
         )
-    registered_artifacts = {
-        (record.work_unit_key, record.artifact.evidence_artifact_id)
-        for record in state.artifacts
-    }
-    missing_artifacts = tuple(
-        (settlement.work_unit_key, settlement.owner_result_ref.evidence_artifact_id)
-        for settlement in state.runtime.settlements
-        if settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
-        and settlement.owner_result_ref is not None
-        and (
-            settlement.work_unit_key,
-            settlement.owner_result_ref.evidence_artifact_id,
-        )
-        not in registered_artifacts
-    )
-    if missing_artifacts:
-        raise RuntimeFinalizationContractError(
-            "successful result artifacts must be registered to the same work unit: "
-            f"{missing_artifacts!r}"
-        )
     outcome = _proposed_outcome(state)
-    disposition = (
-        RuntimeArtifactDisposition.OFFERED_TO_OWNER
-        if outcome is AttemptTerminalOutcome.SUCCEEDED
-        else RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
-    )
-    artifacts = tuple(
-        replace(record, proposed_disposition=disposition) for record in state.artifacts
-    )
     proposed = replace(
         state,
-        artifacts=artifacts,
         events=(
             *state.events,
             _event(
@@ -747,7 +544,6 @@ def propose_attempt_terminal(
     return CoordinatorTerminalRecord(
         state=proposed,
         proposed_outcome=outcome,
-        coordinator_event_digest=_coordinator_event_digest(proposed),
     )
 
 
@@ -756,7 +552,7 @@ def mint_supervisor_finalization(
     *,
     observability_ledger: RuntimeObservabilityLedger,
 ) -> SupervisorFinalizationRecord:
-    """Mint the exact atomic acknowledgement batch for a coordinator record."""
+    """Close the acknowledgement batch for a coordinator's terminal proposal."""
 
     if not isinstance(coordinator, CoordinatorTerminalRecord):
         raise RuntimeFinalizationContractError(
@@ -784,28 +580,12 @@ def mint_supervisor_finalization(
         + len(coordinator.state.events)
         + 1
     )
-    dispositions = tuple(
-        (record.artifact.evidence_artifact_id, record.proposed_disposition)
-        for record in coordinator.state.artifacts
-    )
     events: list[SupervisorFinalizationEvent] = [
         SupervisorFinalizationEvent(
             sequence=start,
             kind=SupervisorFinalizationEventKind.TERMINAL_ACKNOWLEDGED,
         )
     ]
-    for artifact_id, disposition in dispositions:
-        events.append(
-            SupervisorFinalizationEvent(
-                sequence=start + len(events),
-                kind=(
-                    SupervisorFinalizationEventKind.ARTIFACT_OFFERED_TO_OWNER
-                    if disposition is RuntimeArtifactDisposition.OFFERED_TO_OWNER
-                    else SupervisorFinalizationEventKind.ARTIFACT_QUARANTINED_DIAGNOSTIC
-                ),
-                artifact_id=artifact_id,
-            )
-        )
     events.append(
         SupervisorFinalizationEvent(
             sequence=start + len(events),
@@ -815,11 +595,7 @@ def mint_supervisor_finalization(
     )
     return SupervisorFinalizationRecord(
         attempt=attempt,
-        coordinator_record_sha256=hashlib.sha256(
-            canonical_coordinator_terminal_record_bytes(coordinator)
-        ).hexdigest(),
         terminal_outcome=coordinator.proposed_outcome,
-        artifact_dispositions=dispositions,
         events=tuple(events),
         observability_ledger=observability_ledger,
     )
@@ -852,9 +628,6 @@ def _validate_observability_against_coordinator(
         if lifecycle_event.kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL:
             subject = RuntimeObservationSubject.ATTEMPT
             subject_key = "attempt"
-        elif lifecycle_event.kind is RuntimeLifecycleEventKind.ARTIFACT_REGISTERED:
-            subject = RuntimeObservationSubject.ARTIFACT
-            subject_key = lifecycle_event.subject_key
         else:
             subject = RuntimeObservationSubject.RESOURCE
             subject_key = lifecycle_event.subject_key
@@ -870,20 +643,6 @@ def _validate_observability_against_coordinator(
             "attempt",
         )
     ] += 1
-    for artifact in state.artifacts:
-        disposition_kind = (
-            "artifact_offered_to_owner"
-            if artifact.proposed_disposition
-            is RuntimeArtifactDisposition.OFFERED_TO_OWNER
-            else "artifact_quarantined_diagnostic"
-        )
-        expected[
-            (
-                disposition_kind,
-                RuntimeObservationSubject.ARTIFACT,
-                artifact.artifact.evidence_artifact_id,
-            )
-        ] += 1
     expected[
         (
             "terminal_outcome",
@@ -919,107 +678,6 @@ def _validate_observability_against_coordinator(
             "observability ledger raw_open_count conflicts with finalized "
             "runtime resources"
         )
-
-
-def canonical_coordinator_terminal_record_bytes(
-    coordinator: CoordinatorTerminalRecord,
-) -> bytes:
-    """Return deterministic recovery-record bytes without product payloads."""
-
-    state = coordinator.state
-    integrity_failure = state.runtime.integrity_failure
-    payload = {
-        "schema_version": "execution_runtime_coordinator_terminal",
-        "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
-        "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
-        "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
-        "work_settlements": [
-            _work_unit_settlement_payload(item) for item in state.runtime.settlements
-        ],
-        "settlement_integrity_failure": (
-            None
-            if integrity_failure is None
-            else {
-                "work_unit_key": integrity_failure.work_unit_key,
-                "kind": integrity_failure.kind.value,
-                "submitted_settlement": _work_unit_settlement_payload(
-                    integrity_failure.submitted_settlement
-                ),
-                "accepted_settlement": (
-                    None
-                    if integrity_failure.accepted_settlement is None
-                    else _work_unit_settlement_payload(
-                        integrity_failure.accepted_settlement
-                    )
-                ),
-            }
-        ),
-        "resources": [
-            {
-                "resource_kind": item.reservation.kind.value,
-                "resource_key": item.reservation.resource_key,
-                "worker_key": item.reservation.worker_key,
-                "source_reference": item.reservation.source_reference,
-                "compatibility_token": item.reservation.compatibility_token,
-                "owner_conditional": item.reservation.owner_conditional,
-                "open_outcome": item.open_outcome.value if item.open_outcome else None,
-                "cleanup_outcome": (
-                    item.cleanup_outcome.value if item.cleanup_outcome else None
-                ),
-            }
-            for item in state.resources
-        ],
-        "artifacts": [
-            {
-                "work_unit_key": item.work_unit_key,
-                "evidence_artifact_id": item.artifact.evidence_artifact_id,
-                "proposed_disposition": item.proposed_disposition.value,
-            }
-            for item in state.artifacts
-        ],
-        "failures": [
-            {
-                "kind": item.kind.value,
-                "subject_key": item.subject_key,
-                "message": item.message,
-            }
-            for item in state.failures
-        ],
-        "proposed_outcome": coordinator.proposed_outcome.value,
-        "coordinator_event_digest": coordinator.coordinator_event_digest,
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-
-
-def _work_unit_settlement_payload(
-    settlement: WorkUnitSettlement,
-) -> dict[str, object]:
-    failure_detail = settlement.failure_detail
-    return {
-        "failure_detail": (
-            None
-            if failure_detail is None
-            else {
-                "category": failure_detail.category.value,
-                "message": failure_detail.message,
-                "source_reference": failure_detail.source_reference,
-                "stage": failure_detail.stage,
-            }
-        ),
-        "work_unit_key": settlement.work_unit_key,
-        "outcome": settlement.outcome.value,
-        "owner_result_artifact_id": (
-            None
-            if settlement.owner_result_ref is None
-            else settlement.owner_result_ref.evidence_artifact_id
-        ),
-    }
 
 
 def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome:
@@ -1135,7 +793,6 @@ def _require_mutable_state(state: AttemptFinalizationState) -> None:
 
 
 __all__ = (
-    "RuntimeArtifactDisposition",
     "RuntimeFinalizationContractError",
     "RuntimeLifecycleEventKind",
     "RuntimeLifecycleFailureKind",
@@ -1144,5 +801,4 @@ __all__ = (
     "RuntimeResourceOpenOutcome",
     "RuntimeResourceReservation",
     "SupervisorFinalizationEventKind",
-    "canonical_coordinator_terminal_record_bytes",
 )

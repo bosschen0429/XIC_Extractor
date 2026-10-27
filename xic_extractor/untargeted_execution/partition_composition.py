@@ -435,7 +435,7 @@ def prepare_untargeted_partition_grouping(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.identity.sample_identity_id)
+        results.sort(key=lambda result: result.job.sample.identity.sample_key)
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
     candidate_by_id = {
         candidate.candidate_id: candidate
@@ -475,9 +475,9 @@ def prepare_untargeted_partition_grouping(
         UntargetedCandidateExclusion(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
-            canonical_sample_identity_id=batch.context.sample(
+            sample_key=batch.context.sample(
                 candidate_by_id[candidate_id].sample_stem
-            ).identity.sample_identity_id,
+            ).identity.sample_key,
             discovery_candidate_state=(
                 candidate_by_id[candidate_id].discovery_candidate_state
             ),
@@ -551,7 +551,7 @@ def prepare_untargeted_partition_grouping(
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
     sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in batch.context.samples
+        sample.identity.sample_key: sample for sample in batch.context.samples
     }
     sample_universe = frozenset(
         sample.metadata.raw_stem
@@ -610,13 +610,13 @@ def prepare_untargeted_partition_grouping(
             for assessment in result.effective_assessments
         )
         assessments = tuple(
-            sorted(assessments, key=lambda pair: pair[0].identity.sample_identity_id)
+            sorted(assessments, key=lambda pair: pair[0].identity.sample_key)
         )
         capture_inputs_list = []
         captures_list = []
         assessment_by_sample_subject = {
             (
-                result.job.sample.identity.sample_identity_id,
+                result.job.sample.identity.sample_key,
                 subject.method_subject_id,
             ): result.adapter_result.assessment_input.assessment
             for subject in subject_workset
@@ -629,21 +629,16 @@ def prepare_untargeted_partition_grouping(
                 assessment=assessment_by_sample_subject[key],
             )
             for key in dict.fromkeys(
-                (binding.sample_identity_id, binding.method_subject_id)
+                (binding.sample_key, binding.method_subject_id)
                 for binding in child_bindings
             )
         }
         retained_hypotheses_by_assessment = {
-            (
-                key[0],
-                assessment_by_sample_subject[
-                    key
-                ].artifact.content_identity.artifact_content_id,
-            ): hypotheses
+            assessment_by_sample_subject[key].content: hypotheses
             for key, hypotheses in hypotheses_by_sample_subject.items()
         }
         for binding in child_bindings:
-            sample = sample_by_id[binding.sample_identity_id]
+            sample = sample_by_id[binding.sample_key]
             trace = capture_by_candidate[binding.candidate_id].trace
             captured = rebind_untargeted_capture_scope(
                 capture_by_candidate[binding.candidate_id],
@@ -664,7 +659,7 @@ def prepare_untargeted_partition_grouping(
                 sample=sample,
             )
             hypotheses = hypotheses_by_sample_subject[
-                (binding.sample_identity_id, binding.method_subject_id)
+                (binding.sample_key, binding.method_subject_id)
             ]
             matches = tuple(
                 hypothesis
@@ -860,7 +855,7 @@ def _build_production_composition_inputs(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.identity.sample_identity_id)
+        results.sort(key=lambda result: result.job.sample.identity.sample_key)
     final_method_assessments = [
         assessment
         for result in sample_results
@@ -900,7 +895,7 @@ def _build_production_composition_inputs(
             sorted(
                 assessments,
                 key=lambda pair: (
-                    pair[0].identity.sample_identity_id,
+                    pair[0].identity.sample_key,
                     subject_order[pair[1].content.method_subject.method_subject_id],
                 ),
             )
@@ -915,7 +910,7 @@ def _build_production_composition_inputs(
         group_backfills = {
             (
                 group.group_hypothesis_id,
-                sample_result.job.sample.identity.sample_identity_id,
+                sample_result.job.sample.identity.sample_key,
                 sample_result.job.method_subject.method_subject_id,
             ): (sample_result.job.sample, backfill.assessment)
             for subject in subject_workset

@@ -194,8 +194,7 @@ def _workspace(tmp_path, *, settings=None):
     return config_dir
 
 
-def test_prepared_method_receipt_binds_hash_and_survives_source_edits(tmp_path):
-    from xic_extractor.configuration.hashing import compute_config_hash
+def test_prepared_method_receipt_survives_source_edits(tmp_path):
     from xic_extractor.configuration.loader import (
         load_config_snapshot,
         prepare_targeted_config,
@@ -210,14 +209,11 @@ def test_prepared_method_receipt_binds_hash_and_survives_source_edits(tmp_path):
     assert prepared.config.signal_processing_method == "gaussian"
     assert prepared.config.data_dir == tmp_path / "raw"
     assert prepared.config.dll_dir == tmp_path / "dll"
-    assert prepared.config.config_hash == compute_config_hash(
-        receipt / "targets.csv", receipt / "settings.csv"
-    )
     method_dir.write_text("changed", encoding="utf-8")
     (config_dir / "workspace.json").write_text("changed", encoding="utf-8")
     output_dir = prepared.config.output_csv.parent
     reloaded, targets = load_config_snapshot(receipt, output_dir=output_dir)
-    assert reloaded.config_hash == prepared.config.config_hash
+    assert reloaded.target_config_hash == prepared.config.target_config_hash
     assert tuple(targets) == prepared.targets
     prepared.cleanup()
     assert not receipt.exists()

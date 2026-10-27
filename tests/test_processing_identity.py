@@ -1,7 +1,5 @@
 import ast
-import hashlib
 import json
-from collections.abc import Iterator, Mapping
 from dataclasses import fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,86 +47,8 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_raw_headers(monkeypatch)
 
 
-def test_typed_identity_reuse_preserves_prefix_and_byte_content() -> None:
-    digest = processing_identity_module.typed_identity_digest
-    basis = b'{"value":1}'
-    first = digest("first:", basis)
-
-    assert digest("first:", bytes(bytearray(basis))) == first
-    assert digest("second:", basis) == "second:" + first.removeprefix("first:")
-    assert digest("first:", b'{"value":2}') != first
-    with pytest.raises(IdentityContractError, match="prefix"):
-        digest("missing-colon", basis)
-
-
-def test_mint_typed_identity_has_independent_canonical_bytes_and_digest() -> None:
-    expected_bytes = b'{"a":"\xc3\xa9","z":[2,1]}'
-    expected_id = "minted:" + hashlib.sha256(expected_bytes).hexdigest()
-
-    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
-        "minted:",
-        {"z": [2, 1], "a": "é"},
-    )
-
-    assert basis_bytes == expected_bytes
-    assert identity_id == expected_id
-
-
-class _MappingSubclass(Mapping[str, object]):
-    def __init__(self, values: dict[str, object]) -> None:
-        self._values = values
-
-    def __getitem__(self, key: str) -> object:
-        return self._values[key]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._values)
-
-    def __len__(self) -> int:
-        return len(self._values)
-
-
-class _ListSubclass(list[object]):
-    pass
-
-
-def test_mint_typed_identity_preserves_mapping_and_list_subclass_contract() -> None:
-    expected_bytes = b'{"nested":[1,"x"]}'
-
-    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
-        "subclass:",
-        _MappingSubclass({"nested": _ListSubclass([1, "x"])}),
-    )
-
-    assert basis_bytes == expected_bytes
-    assert identity_id == "subclass:" + hashlib.sha256(expected_bytes).hexdigest()
-
-
-@pytest.mark.parametrize(
-    "basis",
-    [
-        b'{ "value":1}',
-        b'{"value":1.0}',
-        b'{"value":1,"value":1}',
-        b'{"value":1e0}',
-    ],
-)
-def test_typed_identity_reuse_does_not_normalize_distinct_bytes(basis) -> None:
-    digest = processing_identity_module.typed_identity_digest
-    integer_id = digest("typed:", b'{"value":1}')
-    if basis == b'{"value":1.0}':
-        assert digest("typed:", basis) != integer_id
-    else:
-        with pytest.raises(IdentityContractError, match="not canonical JSON"):
-            digest("typed:", basis)
-
-
-def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
+def test_request_differs_by_algorithm_and_attempt_uses_uuid4(monkeypatch) -> None:
     source = AcquisitionSourceIdentity(
-        acquisition_source_id=(
-            "xic.acquisition-source:"
-            "a856331f7d6fc3e3ccc62044a371f1f5c2a38655b1451c6fa88915fb649c6955"
-        ),
         content_sha256=(
             "551ebcc397ca84390e53746bbf4c3b1a30c31f3ed35065dc724c40a8bbb89fc4"
         ),
@@ -150,10 +70,6 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
         processing_contract_version="golden_contract",
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
-    assert request.processing_request_id == (
-        "xic.processing-request:"
-        "7ea38cb865a270184b34af1cd97982ce1be31cc742497e55c2f17a992df1fe79"
-    )
 
     changed_algorithm = build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,
@@ -163,17 +79,14 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
         processing_contract_version=request.processing_contract_version,
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
-    assert changed_algorithm.processing_request_id != request.processing_request_id
+    assert changed_algorithm != request
 
     monkeypatch.setattr(
         "xic_extractor.processing_identity.uuid.uuid4",
         lambda: UUID("00112233-4455-6677-8899-aabbccddeeff"),
     )
-    attempt = issue_processing_attempt(request)
-    assert attempt.processing_attempt_id == (
-        "xic.processing-attempt:"
-        "bf45e9a3c70e068fcd9503a6246c9c699e5232c1b8fda88d3d98bf84ad3cd4aa"
-    )
+    attempt = issue_processing_attempt()
+    assert attempt.processing_attempt_id == "00112233-4455-6677-8899-aabbccddeeff"
 
 
 def test_acquisition_source_identity_is_content_bound_not_path_bound(
@@ -191,7 +104,7 @@ def test_acquisition_source_identity_is_content_bound_not_path_bound(
     assert str(first) not in first_identity.acquisition_source_id
 
 
-def test_acquisition_source_identity_changes_on_substitution_or_namespace(
+def test_acquisition_source_identity_changes_on_substitution(
     tmp_path: Path,
 ) -> None:
     path = _raw(tmp_path / "sample.raw", b"first-content")
@@ -199,15 +112,9 @@ def test_acquisition_source_identity_changes_on_substitution_or_namespace(
 
     path.write_bytes(b"mutated-content")
     mutated = _source_identity(path)
-    other_namespace = build_acquisition_source_identity(
-        path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:2",
-    )
 
     assert mutated.acquisition_source_id != first.acquisition_source_id
     assert mutated.content_sha256 != first.content_sha256
-    assert other_namespace.acquisition_source_id != mutated.acquisition_source_id
 
 
 def test_fingerprint_observer_reports_measured_calls_bytes_and_time(
@@ -452,7 +359,7 @@ def test_semantic_injection_order_reorder_changes_request(tmp_path: Path) -> Non
         ),
     )
 
-    assert reversed_order.processing_request_id != forward.processing_request_id
+    assert reversed_order != forward
 
 
 def test_real_data_discovery_settings_change_processing_request_identity(
@@ -484,7 +391,7 @@ def test_real_data_discovery_settings_change_processing_request_identity(
         current_discovery_settings=changed_settings,
     )
 
-    assert changed.processing_request_id != first.processing_request_id
+    assert changed != first
     request_inputs = json.loads(first.normalized_scientific_inputs_json)
     snapshot = request_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY]
     assert snapshot["settings"]["product_search_ppm"] == 50.0
@@ -515,7 +422,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     )
 
     assert original.acquisition_sources == renamed.acquisition_sources
-    assert original.processing_request_id != renamed.processing_request_id
+    assert original != renamed
 
 
 def test_targeted_request_uses_local_revision_without_reading_raw_content(
@@ -571,11 +478,11 @@ def test_request_invalidates_changed_source_or_target_window(
     )
 
     changed_ids = {
-        substituted.processing_request_id,
-        target_changed.processing_request_id,
-        rt_changed.processing_request_id,
+        substituted,
+        target_changed,
+        rt_changed,
     }
-    assert baseline.processing_request_id not in changed_ids
+    assert baseline not in changed_ids
     assert len(changed_ids) == 3
 
 
@@ -601,7 +508,7 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
         targets=(second_target, first_target),
     )
 
-    assert reordered.processing_request_id != forward.processing_request_id
+    assert reordered != forward
     assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
 
 
@@ -638,12 +545,12 @@ def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     config = _config(tmp_path)
     inputs = _resolved_inputs()
     request = _request(config, paths, resolved=inputs)
-    original_id = request.processing_request_id
+    original_id = request
 
     inputs.injection_order["sample_a"] = 9
 
-    assert request.processing_request_id == original_id
-    assert _request(config, paths, resolved=inputs).processing_request_id != original_id
+    assert request == original_id
+    assert _request(config, paths, resolved=inputs) != original_id
 
 
 def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None:
@@ -684,10 +591,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
     with pytest.raises(IdentityContractError, match="unable to hash"):
         _source_identity(tmp_path / "missing.raw")
 
-    source = _source_identity(first)
-    with pytest.raises(IdentityContractError, match="rebind"):
-        replace(source, byte_size=source.byte_size + 1)
-
     request = _request(
         config,
         [first],
@@ -695,8 +598,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
             injection_order={"sample_a": 1},
         ),
     )
-    with pytest.raises(IdentityContractError, match="rebind"):
-        replace(request, normalized_scientific_inputs_json='{"changed":true}')
 
 
 def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
@@ -889,34 +790,17 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
             injection_order={"sample_a": 1},
         ),
     )
-    first_attempt = issue_processing_attempt(request)
-    retry = issue_processing_attempt(request, retry_of=first_attempt)
+    first_attempt = issue_processing_attempt()
+    retry = issue_processing_attempt(retry_of=first_attempt)
 
     assert retry.processing_attempt_id != first_attempt.processing_attempt_id
-    assert retry.processing_request_id == first_attempt.processing_request_id
     assert retry.retry_of_attempt_id == first_attempt.processing_attempt_id
     assert retry.retry_of is first_attempt
     assert first_attempt.retry_of_attempt_id is None
     assert {field.name for field in fields(first_attempt)} == {
         "processing_attempt_id",
-        "processing_request_id",
-        "attempt_token",
         "retry_of",
     }
-
-    changed_request = _request(
-        replace(_config(tmp_path), nl_min_intensity_ratio=0.02),
-        [path],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"sample_a": 1},
-        ),
-    )
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        issue_processing_attempt(changed_request, retry_of=first_attempt)
-
-    foreign_attempt = issue_processing_attempt(changed_request)
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        replace(retry, retry_of=foreign_attempt)
 
     assert request.processing_algorithm_version == (
         TARGETED_PROCESSING_ALGORITHM_VERSION
@@ -1046,9 +930,7 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
     monkeypatch.setattr(
         targeted_strategy, "TARGETED_PRECURSOR_REFERENCE", "independent_mass"
     )
-    assert (
-        _request(config, paths).processing_request_id != baseline.processing_request_id
-    )
+    assert _request(config, paths) != baseline
     monkeypatch.undo()
     original = targeted_strategy.targeted_tag_profile
     monkeypatch.setattr(
@@ -1056,6 +938,4 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
         "targeted_tag_profile",
         lambda tag: replace(original(tag), product_search_ppm=51.0),
     )
-    assert (
-        _request(config, paths).processing_request_id != baseline.processing_request_id
-    )
+    assert _request(config, paths) != baseline

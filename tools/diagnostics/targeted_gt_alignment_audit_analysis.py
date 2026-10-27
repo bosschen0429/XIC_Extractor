@@ -46,21 +46,17 @@ def _classify_sample(
         "gt_target_confidence": target.target_confidence,
         "gt_peak_start_min": _format_float(target.target_peak_start_min, 4),
         "gt_peak_end_min": _format_float(target.target_peak_end_min, 4),
-        "family_count_total": len({cell["feature_family_id"] for cell in cells}),
-        "family_ids_all": _join_ids(cell["feature_family_id"] for cell in cells),
-        "production_family_ids": _join_ids(
-            cell["feature_family_id"] for cell in production
-        ),
-        "duplicate_family_ids": _join_ids(
-            cell["feature_family_id"] for cell in duplicates
-        ),
+        "family_count_total": len({cell["feature_id"] for cell in cells}),
+        "family_ids_all": _join_ids(cell["feature_id"] for cell in cells),
+        "production_family_ids": _join_ids(cell["feature_id"] for cell in production),
+        "duplicate_family_ids": _join_ids(cell["feature_id"] for cell in duplicates),
         "production_family_count_in_gt_window": len(
-            {cell["feature_family_id"] for cell in production_in_window}
+            {cell["feature_id"] for cell in production_in_window}
         ),
         "production_family_ids_in_gt_window": _join_ids(
-            cell["feature_family_id"] for cell in production_in_window
+            cell["feature_id"] for cell in production_in_window
         ),
-        "closest_family_id": closest.get("feature_family_id", "")
+        "closest_family_id": closest.get("feature_id", "")
         if closest is not None
         else "",
         "closest_family_mz": closest.get("family_center_mz", "")
@@ -117,7 +113,7 @@ def _failure_mode(
         return MISS_MODE
     if production:
         if abs(closest_delta_sec) <= config.pass_rt_sec:
-            if len({cell["feature_family_id"] for cell in production_in_window}) > 1:
+            if len({cell["feature_id"] for cell in production_in_window}) > 1:
                 return SPLIT_MODE
             return PASS_MODE
         if abs(closest_delta_sec) <= config.drift_rt_sec:

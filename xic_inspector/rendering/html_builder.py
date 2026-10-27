@@ -34,7 +34,6 @@ def build_report_html(
     title: str,
     evidence_capability: str,
     strategy: str,
-    request_id: str,
     run_total: int,
     eligible_count: int,
     selected_count: int,
@@ -48,7 +47,6 @@ def build_report_html(
             "title": title,
             "evidence_capability": evidence_capability,
             "strategy": strategy,
-            "request_id": request_id,
             "run_total": run_total,
             "eligible_count": eligible_count,
             "selected_count": selected_count,
@@ -60,7 +58,6 @@ def build_report_html(
     replacements = {
         "__REPORT_TITLE__": html.escape(title),
         "__EVIDENCE_CAPABILITY__": html.escape(evidence_capability),
-        "__REQUEST_ID__": html.escape(request_id),
         "__SOURCE_DB_NAME__": html.escape(source_db_name),
         "__INSPECTOR_DATA_JSON__": data_json,
         "__INSPECTOR_METADATA_JSON__": metadata_json,

@@ -86,8 +86,8 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     assert right.evaluation.facts.area_counts_seconds == pytest.approx(
         2000 * 0.05 * np.sqrt(2 * np.pi) * 60, rel=0.06
     )
-    assert left.evaluation.answer.physical_segment_id != (
-        right.evaluation.answer.physical_segment_id
+    assert left.evaluation.answer.selected_segment != (
+        right.evaluation.answer.selected_segment
     )
     assert left.evaluation.segment_universe == right.evaluation.segment_universe
     assert (
@@ -99,8 +99,8 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     assert repeated.work_ordinal == left.work_ordinal
     replay = capture.reselect(left, selection_subject_id="left-copy", query_rt_min=4.8)
     assert (
-        replay.evaluation.answer.physical_segment_id
-        == left.evaluation.answer.physical_segment_id
+        replay.evaluation.answer.selected_segment
+        == left.evaluation.answer.selected_segment
     )
     assert (
         replay.evaluation.facts.area_counts_seconds
@@ -195,7 +195,6 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             raw,
             groups,
             acquisition_source=raw.acquisition_source,
-            run_spec_id="processing-run:" + "0" * 64,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,

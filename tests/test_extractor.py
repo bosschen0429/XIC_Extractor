@@ -289,7 +289,6 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
         rejected_question = mint_physical_peak_question(
             prepared.projection,
             universe,
-            selection_subject_id=question.selection_subject_id,
             query_rt_min=universe.context_rt_start_min,
             selection_policy_version=PHYSICAL_PEAK_NO_SELECTION_POLICY,
         )
@@ -409,11 +408,9 @@ def test_target_selection_window_uses_one_wide_physical_context(
     with_nl = output.file_results[0].results["WithNL"].physical_evaluation
     assert no_nl is not None and no_nl.facts is not None
     assert with_nl is not None and with_nl.facts is not None
-    assert no_nl.prepared.profile_id == with_nl.prepared.profile_id
-    assert no_nl.prepared.trace_content_id == with_nl.prepared.trace_content_id
-    assert no_nl.segment_universe.segment_universe_id == (
-        with_nl.segment_universe.segment_universe_id
-    )
+    assert no_nl.prepared.profile == with_nl.prepared.profile
+    assert no_nl.prepared == with_nl.prepared
+    assert no_nl.segment_universe == (with_nl.segment_universe)
     assert no_nl.facts.apex_rt_min == pytest.approx(9.6, abs=0.03)
     assert no_nl.facts.right_rt_min > 10.0
     assert no_nl.facts.apex_rt_min < 10.0
@@ -575,7 +572,6 @@ def test_run_loads_scoring_inputs_from_config_paths(
         **{
             **config.__dict__,
             "injection_order_source": tmp_path / "sample_info.csv",
-            "config_hash": "abcd1234",
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")

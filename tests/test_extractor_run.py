@@ -332,7 +332,6 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         **{
             **config.__dict__,
             "injection_order_source": tmp_path / "sample_info.csv",
-            "config_hash": "abcd1234",
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
