@@ -27,6 +27,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
     PeakObservationContractError,
     PeakObservationRef,
     validate_peak_observation_binding,
@@ -42,7 +43,6 @@ SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "supports_one_or_more_of"
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",
@@ -64,8 +64,8 @@ class DdaCidNlCandidateSetRelationContent:
 
     sample_key: str
     cid_nl_evidence_content_id: str
-    candidate_peak_content_ids: tuple[str, ...]
-    matched_candidate_content_ids: tuple[str, ...]
+    candidate_peaks: tuple[PeakObservationContent, ...]
+    matched_candidates: tuple[PeakObservationContent, ...]
     acquisition_mode: str
     dda_scan_number: int
     scan_rt_min: float
@@ -78,18 +78,6 @@ class DdaCidNlCandidateSetRelationContent:
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,
             field="cid_nl_evidence_content_id",
         )
-        candidate_ids = _canonical_peak_ids(
-            self.candidate_peak_content_ids,
-            field="candidate_peak_content_ids",
-        )
-        matched_ids = _canonical_peak_ids(
-            self.matched_candidate_content_ids,
-            field="matched_candidate_content_ids",
-        )
-        if not set(matched_ids).issubset(candidate_ids):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "matched candidate IDs must be a subset of the declared universe"
-            )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise DdaCidNlCandidateSetRelationContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -161,12 +149,8 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         cid_nl_evidence_content_id=(
             canonical_evidence.artifact.content_identity.artifact_content_id
         ),
-        candidate_peak_content_ids=tuple(
-            peak.content.peak_observation_content_id for peak in candidates
-        ),
-        matched_candidate_content_ids=tuple(
-            peak.content.peak_observation_content_id for peak in matched
-        ),
+        candidate_peaks=tuple(peak.content for peak in candidates),
+        matched_candidates=tuple(peak.content for peak in matched),
         acquisition_mode=canonical_evidence.observation.acquisition_mode,
         dda_scan_number=canonical_evidence.observation.scan_number,
         scan_rt_min=canonical_evidence.observation.scan_rt_min,
@@ -222,7 +206,21 @@ def canonical_dda_cid_nl_candidate_set_relation_bytes(
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
-        "content": asdict(content),
+        "content": {
+            "sample_key": content.sample_key,
+            "cid_nl_evidence_content_id": content.cid_nl_evidence_content_id,
+            "candidate_peak_content_ids": tuple(
+                peak.peak_observation_content_id for peak in content.candidate_peaks
+            ),
+            "matched_candidate_content_ids": tuple(
+                peak.peak_observation_content_id for peak in content.matched_candidates
+            ),
+            "acquisition_mode": content.acquisition_mode,
+            "dda_scan_number": content.dda_scan_number,
+            "scan_rt_min": content.scan_rt_min,
+            "policy": asdict(content.policy),
+            "relationship": content.relationship,
+        },
     }
     try:
         serialized = json.dumps(
@@ -386,22 +384,6 @@ def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
 
 def _candidate_sort_key(peak: PeakObservationRef) -> str:
     return peak.content.peak_observation_content_id
-
-
-def _canonical_peak_ids(value: object, *, field: str) -> tuple[str, ...]:
-    if not isinstance(value, tuple) or not value:
-        raise DdaCidNlCandidateSetRelationContractError(
-            f"{field} must be a non-empty tuple"
-        )
-    ids = tuple(
-        _validate_typed_digest_id(item, prefix=_PEAK_CONTENT_ID_PREFIX, field=field)
-        for item in value
-    )
-    if ids != tuple(sorted(set(ids))):
-        raise DdaCidNlCandidateSetRelationContractError(
-            f"{field} must be unique and canonical-sorted"
-        )
-    return ids
 
 
 def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:

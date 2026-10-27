@@ -47,6 +47,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     validate_dda_cid_nl_peak_support_binding,
 )
 from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
     PeakObservationContractError,
     PeakObservationRef,
     validate_peak_observation_binding,
@@ -78,7 +79,6 @@ CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
@@ -264,7 +264,7 @@ class CidNlMethodAssessmentContent:
     method_version: str
     method_subject: CidNlMethodSubject
     detector_invocation_id: str
-    candidate_peak_content_ids: tuple[str, ...]
+    candidate_peaks: tuple[PeakObservationContent, ...]
     evaluation_receipt: CidNlEvaluationReceipt
     evidence_artifact_content_ids: tuple[str, ...]
     individual_relation_artifact_content_ids: tuple[str, ...]
@@ -299,12 +299,6 @@ class CidNlMethodAssessmentContent:
                 f"method_version must be {CID_NL_METHOD_VERSION!r}"
             )
         _required_text(self.detector_invocation_id, field="detector_invocation_id")
-        _canonical_digest_ids(
-            self.candidate_peak_content_ids,
-            prefix=_PEAK_CONTENT_ID_PREFIX,
-            field="candidate_peak_content_ids",
-            allow_empty=True,
-        )
         if not isinstance(self.evaluation_receipt, CidNlEvaluationReceipt):
             raise CidNlMethodAssessmentContractError(
                 "evaluation_receipt must be owner-normalized"
@@ -525,9 +519,7 @@ def mint_cid_nl_method_assessment_ref(
         method_version=CID_NL_METHOD_VERSION,
         method_subject=subject,
         detector_invocation_id=detector_invocation_id,
-        candidate_peak_content_ids=tuple(
-            peak.content.peak_observation_content_id for peak in candidates
-        ),
+        candidate_peaks=tuple(peak.content for peak in candidates),
         evaluation_receipt=evaluation_receipt,
         evidence_artifact_content_ids=tuple(
             ref.artifact.content_identity.artifact_content_id for ref in evidence
@@ -623,8 +615,13 @@ def canonical_cid_nl_method_assessment_bytes(
             "canonical serialization requires method assessment content"
         )
     content_payload = {
-        item.name: getattr(content, item.name) for item in fields(content)
+        item.name: getattr(content, item.name)
+        for item in fields(content)
+        if item.name != "candidate_peaks"
     }
+    content_payload["candidate_peak_content_ids"] = tuple(
+        peak.peak_observation_content_id for peak in content.candidate_peaks
+    )
     content_payload["method_subject"] = asdict(content.method_subject)
     content_payload["evaluation_receipt"] = asdict(content.evaluation_receipt)
     payload = {
@@ -862,9 +859,6 @@ def _validate_upstream_bindings(
         raise CidNlMethodAssessmentContractError(
             "duplicate acquisition scan evidence cannot multiply one method event"
         )
-    candidate_ids = tuple(
-        peak.content.peak_observation_content_id for peak in candidate_peaks
-    )
     candidate_contents = tuple(peak.content for peak in candidate_peaks)
     support_policy = evaluation_receipt.support_policy
     individual_evidence_ids: set[str] = set()
@@ -905,7 +899,7 @@ def _validate_upstream_bindings(
         individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
     set_relation_evidence_ids: set[str] = set()
     for relation in set_relation_refs:
-        if relation.content.candidate_peak_content_ids != candidate_ids:
+        if relation.content.candidate_peaks != candidate_contents:
             raise CidNlMethodAssessmentContractError(
                 "set relation references a different candidate universe"
             )

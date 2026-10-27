@@ -510,7 +510,7 @@ def prepare_alignment_explanation(
                 for relation in assessment.individual_support_refs:
                     physical_candidates[
                         content.sample_key,
-                        relation.content.peak_observation_content_id,
+                        relation.content.peak_observation.peak_observation_content_id,
                     ].update(related)
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
@@ -536,10 +536,13 @@ def prepare_alignment_explanation(
                         "technical_state",
                         "method_result",
                         "reason_codes",
-                        "candidate_peak_content_ids",
                         "evidence_artifact_content_ids",
                         "individual_relation_artifact_content_ids",
                         "set_relation_artifact_content_ids",
+                    ),
+                    "candidate_peak_content_ids": tuple(
+                        peak.content.peak_observation_content_id
+                        for peak in assessment.candidate_peaks
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
                     **(

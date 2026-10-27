@@ -477,14 +477,7 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
 
     assert forward == reverse
     assert forward.content.relationship == "supports_one_or_more_of"
-    assert forward.content.matched_candidate_content_ids == tuple(
-        sorted(
-            (
-                left.content.peak_observation_content_id,
-                right.content.peak_observation_content_id,
-            )
-        )
-    )
+    assert set(forward.content.matched_candidates) == {left.content, right.content}
     assert not hasattr(forward, "individual_support_votes")
 
 
@@ -515,9 +508,7 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         set_relation_refs=(relation,),
     )
 
-    assert relation.content.matched_candidate_content_ids == (
-        peak.content.peak_observation_content_id,
-    )
+    assert relation.content.matched_candidates == (peak.content,)
     assert assessment.content.method_result == "HOLD"
     assert assessment.individual_support_refs == ()
 
@@ -676,9 +667,9 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
                 )
         else:
             assert assessment.individual_support_refs == ()
-            assert set_refs[0].content.matched_candidate_content_ids == tuple(
-                sorted(peak.content.peak_observation_content_id for peak in peaks)
-            )
+            assert set(set_refs[0].content.matched_candidates) == {
+                peak.content for peak in peaks
+            }
 
 
 @pytest.mark.parametrize(
@@ -1003,9 +994,9 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     ) == ((individual,), (set_relation,))
-    assert set_relation.content.matched_candidate_content_ids == tuple(
-        sorted(item.content.peak_observation_content_id for item in peaks)
-    )
+    assert set(set_relation.content.matched_candidates) == {
+        item.content for item in peaks
+    }
 
 
 def test_cell_identity_binds_full_provisional_group_membership(

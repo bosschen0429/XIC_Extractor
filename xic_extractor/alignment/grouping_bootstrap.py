@@ -254,7 +254,7 @@ def bootstrap_cid_nl_initial_population(
         and assessment.content.technical_state == "evaluated"
         and assessment.content.evaluation_receipt.acquisition_supported
         and assessment.content.evaluation_receipt.search_completed
-        and not assessment.content.candidate_peak_content_ids
+        and not assessment.candidate_peaks
         for _, assessment in sample_assessments
     )
     if not owners and not searched_no_observation:
