@@ -81,13 +81,7 @@ def _content_from_supports(
         sorted(
             (
                 DdaCidNlScanSupportMember(
-                    dda_scan_number=support.content.dda_scan_number,
-                    cid_nl_evidence_content_id=(
-                        support.content.cid_nl_evidence_content_id
-                    ),
-                    dda_peak_support_content_id=(
-                        support.artifact.content_identity.artifact_content_id
-                    ),
+                    support=support.content,
                     configured_neutral_loss_da=loss_by_id.get(
                         support.content.cid_nl_evidence_content_id
                     ),
@@ -99,14 +93,14 @@ def _content_from_supports(
     )
     return CidNlChromatographicSupportContent(
         sample_key=sample.identity.sample_key,
-        peak_observation_content_id=first.peak_observation.peak_observation_content_id,
-        candidate_peak_content_ids=tuple(
-            peak.peak_observation_content_id for peak in first.candidate_peaks
-        ),
+        peak_observation=first.peak_observation,
+        candidate_peaks=first.candidate_peaks,
         acquisition_mode=first.acquisition_mode,
         policy=first.policy,
         scan_supports=members,
-        strict_nl_scan_count=len({member.dda_scan_number for member in members}),
+        strict_nl_scan_count=len(
+            {member.support.dda_scan_number for member in members}
+        ),
         chromatographic_support_event_count=1,
         relationship=RELATIONSHIP,
     )
@@ -165,7 +159,6 @@ def _validated_scan_supports(
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different sample"
             )
-    artifact_ids = tuple(support.artifact.evidence_artifact_id for support in supports)
     scan_numbers = tuple(
         (
             support.content.dda_scan_number,
@@ -173,9 +166,7 @@ def _validated_scan_supports(
         )
         for support in supports
     )
-    if len(set(artifact_ids)) != len(artifact_ids) or len(set(scan_numbers)) != len(
-        scan_numbers
-    ):
+    if len(set(scan_numbers)) != len(scan_numbers):
         raise CidNlChromatographicSupportContractError(
             "duplicate DDA scan support cannot multiply one event"
         )
@@ -208,7 +199,7 @@ def _validated_scan_supports(
             supports,
             key=lambda support: (
                 support.content.dda_scan_number,
-                support.artifact.content_identity.artifact_content_id,
+                loss_by_id.get(support.content.cid_nl_evidence_content_id) or 0.0,
             ),
         )
     )

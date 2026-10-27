@@ -223,10 +223,7 @@ def _validate_reference_content_pair(
         raise PeakHypothesisContractError(
             "peak observation and chromatographic support reference different samples"
         )
-    if (
-        chromatographic_support.content.peak_observation_content_id
-        != peak_observation.content.peak_observation_content_id
-    ):
+    if chromatographic_support.content.peak_observation != peak_observation.content:
         raise PeakHypothesisContractError(
             "chromatographic support references a different physical MS1 peak"
         )

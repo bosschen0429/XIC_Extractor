@@ -493,19 +493,12 @@ def _assessment_hypothesis_components(
         raise HypothesisOwnerAdapterError(
             "hypothesis does not match an assessment individual support subset"
         )
-    assessment_relation_content_ids = tuple(
-        sorted(
-            relation.artifact.content_identity.artifact_content_id
-            for relation in selected_relations
-        )
+    hypothesis_relations = tuple(
+        member.support for member in support.content.scan_supports
     )
-    hypothesis_relation_content_ids = tuple(
-        sorted(
-            member.dda_peak_support_content_id
-            for member in support.content.scan_supports
-        )
-    )
-    if assessment_relation_content_ids != hypothesis_relation_content_ids:
+    if len(selected_relations) != len(hypothesis_relations) or any(
+        relation.content not in hypothesis_relations for relation in selected_relations
+    ):
         raise HypothesisOwnerAdapterError(
             "hypothesis support does not close the assessment relations"
         )
@@ -515,7 +508,7 @@ def _assessment_hypothesis_components(
     }
     support_evidence: list[CidNlEvidenceRef] = []
     for member in support.content.scan_supports:
-        evidence = evidence_by_content_id.get(member.cid_nl_evidence_content_id)
+        evidence = evidence_by_content_id.get(member.support.cid_nl_evidence_content_id)
         if evidence is None:
             raise HypothesisOwnerAdapterError(
                 "hypothesis support evidence is missing from the assessment"

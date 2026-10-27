@@ -467,7 +467,7 @@ def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
 
     assert forward == reverse
     assert tuple(
-        member.dda_scan_number for member in forward.content.scan_supports
+        member.support.dda_scan_number for member in forward.content.scan_supports
     ) == (
         42,
         43,
