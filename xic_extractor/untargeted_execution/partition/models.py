@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
-    mint_backfill_completion_projection,
 )
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupContext
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
@@ -570,9 +569,7 @@ def _project_completed_backfill(
     ):
         raise UntargetedPartitionError("backfill crossed its exact request coordinates")
     (acquired,) = exact
-    digest = result.result_ref.acquisition_sha256
-    assert digest is not None
-    return mint_backfill_completion_projection(
+    return BackfillCompletionProjection(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,
@@ -580,11 +577,8 @@ def _project_completed_backfill(
         group_center_rt=center,
         query_rt=query_rt,
         query_rt_basis=backfill.query_rt_basis,
-        source_result_artifact=result.result_ref.artifact,
-        initial_assessment_artifact=initial.artifact,
         backfill_assessment=assessment,
         trace_coordinate=acquired.coordinate,
-        acquisition_sha256=digest,
     )
 
 
