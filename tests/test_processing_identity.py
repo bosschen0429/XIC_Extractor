@@ -1,7 +1,5 @@
 import ast
-import hashlib
 import json
-from collections.abc import Iterator, Mapping
 from dataclasses import fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,81 +47,7 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_raw_headers(monkeypatch)
 
 
-def test_typed_identity_reuse_preserves_prefix_and_byte_content() -> None:
-    digest = processing_identity_module.typed_identity_digest
-    basis = b'{"value":1}'
-    first = digest("first:", basis)
-
-    assert digest("first:", bytes(bytearray(basis))) == first
-    assert digest("second:", basis) == "second:" + first.removeprefix("first:")
-    assert digest("first:", b'{"value":2}') != first
-    with pytest.raises(IdentityContractError, match="prefix"):
-        digest("missing-colon", basis)
-
-
-def test_mint_typed_identity_has_independent_canonical_bytes_and_digest() -> None:
-    expected_bytes = b'{"a":"\xc3\xa9","z":[2,1]}'
-    expected_id = "minted:" + hashlib.sha256(expected_bytes).hexdigest()
-
-    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
-        "minted:",
-        {"z": [2, 1], "a": "é"},
-    )
-
-    assert basis_bytes == expected_bytes
-    assert identity_id == expected_id
-
-
-class _MappingSubclass(Mapping[str, object]):
-    def __init__(self, values: dict[str, object]) -> None:
-        self._values = values
-
-    def __getitem__(self, key: str) -> object:
-        return self._values[key]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._values)
-
-    def __len__(self) -> int:
-        return len(self._values)
-
-
-class _ListSubclass(list[object]):
-    pass
-
-
-def test_mint_typed_identity_preserves_mapping_and_list_subclass_contract() -> None:
-    expected_bytes = b'{"nested":[1,"x"]}'
-
-    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
-        "subclass:",
-        _MappingSubclass({"nested": _ListSubclass([1, "x"])}),
-    )
-
-    assert basis_bytes == expected_bytes
-    assert identity_id == "subclass:" + hashlib.sha256(expected_bytes).hexdigest()
-
-
-@pytest.mark.parametrize(
-    "basis",
-    [
-        b'{ "value":1}',
-        b'{"value":1.0}',
-        b'{"value":1,"value":1}',
-        b'{"value":1e0}',
-    ],
-)
-def test_typed_identity_reuse_does_not_normalize_distinct_bytes(basis) -> None:
-    digest = processing_identity_module.typed_identity_digest
-    integer_id = digest("typed:", b'{"value":1}')
-    if basis == b'{"value":1.0}':
-        assert digest("typed:", basis) != integer_id
-    else:
-        with pytest.raises(IdentityContractError, match="not canonical JSON"):
-            digest("typed:", basis)
-
-
-def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
+def test_request_differs_by_algorithm_and_attempt_uses_uuid4(monkeypatch) -> None:
     source = AcquisitionSourceIdentity(
         content_sha256=(
             "551ebcc397ca84390e53746bbf4c3b1a30c31f3ed35065dc724c40a8bbb89fc4"

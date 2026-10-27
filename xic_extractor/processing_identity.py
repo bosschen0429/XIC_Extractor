@@ -10,7 +10,6 @@ import stat
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
@@ -34,8 +33,6 @@ class FingerprintCancelledError(IdentityContractError):
     """Raised when a caller cancels an in-progress content fingerprint."""
 
 
-_PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
-PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -52,74 +49,6 @@ def _canonical_json(value: Any) -> str:
         )
     except (TypeError, ValueError) as exc:
         raise IdentityContractError("identity payload is not canonical JSON") from exc
-
-
-def canonical_identity_basis_bytes(value: Mapping[str, object]) -> bytes:
-    """Return canonical UTF-8 JSON bytes for a closed typed identity basis."""
-
-    if not isinstance(value, Mapping):
-        raise IdentityContractError("identity basis must be a JSON object")
-    _validate_json_object_keys(value)
-    return _canonical_json(dict(value)).encode("utf-8")
-
-
-def mint_typed_identity(prefix: str, basis: Mapping[str, object]) -> tuple[str, bytes]:
-    """Encode an owner-built basis once and return its identity and exact bytes."""
-
-    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
-        raise IdentityContractError(
-            "typed identity prefix must be non-empty and end in ':'"
-        )
-    basis_bytes = canonical_identity_basis_bytes(basis)
-    return f"{prefix}{hashlib.sha256(basis_bytes).hexdigest()}", basis_bytes
-
-
-def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
-    """Mint a typed SHA-256 identity from exact canonical basis bytes."""
-
-    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
-        raise IdentityContractError(
-            "typed identity prefix must be non-empty and end in ':'"
-        )
-    if not isinstance(basis_bytes, bytes) or not basis_bytes:
-        raise IdentityContractError("identity basis must be non-empty UTF-8 bytes")
-    # Repeated owner checks rebuild equal immutable basis bytes. Reuse only
-    # their canonical-byte proof; callers still rebuild and compare live bases.
-    # The entry/size limits retain at most 16 MiB of basis payloads. Subclasses
-    # keep the original path because they may override decode or equality.
-    if type(basis_bytes) is bytes and len(basis_bytes) <= 4096:
-        digest = _cached_canonical_basis_digest(basis_bytes)
-    else:
-        digest = _canonical_basis_digest(basis_bytes)
-    return f"{prefix}{digest}"
-
-
-def _canonical_basis_digest(basis_bytes: bytes) -> str:
-    try:
-        parsed = json.loads(basis_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise IdentityContractError(
-            "identity basis must be canonical UTF-8 JSON"
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise IdentityContractError("identity basis must be a JSON object")
-    if canonical_identity_basis_bytes(parsed) != basis_bytes:
-        raise IdentityContractError("identity basis bytes are not canonical JSON")
-    return hashlib.sha256(basis_bytes).hexdigest()
-
-
-_cached_canonical_basis_digest = lru_cache(maxsize=4096)(_canonical_basis_digest)
-
-
-def validate_typed_identity_id(
-    identity_id: object,
-    *,
-    prefix: str,
-    field: str,
-) -> str:
-    """Validate a typed identity whose authoritative basis is external."""
-
-    return _validate_typed_id(identity_id, prefix=prefix, field=field)
 
 
 def _canonical_object_json(value: Mapping[str, object]) -> str:
@@ -154,18 +83,6 @@ def _validate_digest(value: object, *, field: str) -> str:
     if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
         raise IdentityContractError(f"{field} must be a lower-case SHA-256 hex digest")
     return value
-
-
-def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise IdentityContractError(f"{field} must use the {prefix!r} identity prefix")
-    digest = value[len(prefix) :]
-    _validate_digest(digest, field=field)
-    return value
-
-
-def _typed_digest(prefix: str, basis: Mapping[str, object]) -> str:
-    return mint_typed_identity(prefix, basis)[0]
 
 
 def _require_nonempty_text(value: object, *, field: str) -> str:
@@ -859,20 +776,15 @@ __all__ = [
     "AcquisitionSourceIdentity",
     "FileContentFingerprint",
     "IdentityContractError",
-    "PROCESSING_REQUEST_ID_PREFIX",
     "ProcessingAttemptIdentity",
     "ProcessingOwnerReferences",
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
     "build_local_acquisition_source_identity",
     "build_processing_request_identity",
-    "canonical_identity_basis_bytes",
-    "mint_typed_identity",
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
     "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
-    "typed_identity_digest",
-    "validate_typed_identity_id",
 ]

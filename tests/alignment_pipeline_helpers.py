@@ -299,9 +299,6 @@ def owner_edge_evidence() -> OwnerEdgeEvidence:
     )
 
 
-_TEST_PROCESSING_REQUEST_ID = "xic.processing-request:" + "0" * 64
-
-
 def _integration(apex_rt: float) -> IntegrationResult:
     return IntegrationResult(
         rt_left_min=apex_rt - 0.05,
