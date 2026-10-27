@@ -480,7 +480,7 @@
     const risks=row.membership_risks;
     if(Array.isArray(risks)){
       if(!risks.length)notices.push({kind:'membership',label:'配對風險未記錄',short:'風險未記錄'});
-      else if(risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))))notices.push({kind:'membership',label:risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))&&r.selected_owner_ids?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
+      else if(risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))))notices.push({kind:'membership',label:risks.some(r=>(r.risk_flags?.includes('accepted_competition')||r.risk_flags?.includes('backfill_competition'))&&r.selected_owners?.length>1)?'已配對，有其他合理候選':'保持分開，有其他合理候選',short:'配對競爭'});
       if(risks?.some(r=>r.risk_flags?.includes('accepted_contradiction')))notices.push({kind:'membership',label:'已接受含矛盾證據的配對',short:'含矛盾證據'});
       if(risks?.some(r=>(r.risk_flags?.includes('low_rt_support')||r.risk_flags?.includes('backfill_low_localization_confidence'))))notices.push({kind:'membership',label:'RT 支援較弱',short:'弱 RT 支援'});
       if(risks?.some(r=>r.risk_flags?.includes('weak_identity')))notices.push({kind:'membership',label:'身分證據較弱',short:'弱身分證據'});

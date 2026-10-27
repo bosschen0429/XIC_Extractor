@@ -827,8 +827,11 @@ def _competition_review_report(
     risk = {
         "status": "evaluated_alternative",
         "phase": phase,
-        "selected_owner_ids": ["a", "b"],
-        "alternative_partition": [["a"], ["b", "c"]],
+        "selected_owners": [["S1", 500.0, 1.0], ["S2", 500.0, 1.1]],
+        "alternative_partition": [
+            [["S1", 500.0, 1.0]],
+            [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
+        ],
         "equivalent_alternatives": [],
         "selected_cost": 1.2,
         "alternative_cost": 1.23,
@@ -868,7 +871,10 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
     assert rows["S1"]["membership_risks"] == []
     risk = rows["S2"]["membership_risks"][0]
     assert risk["cost_gap"] == 0.03
-    assert risk["alternative_partition"] == [["a"], ["b", "c"]]
+    assert risk["alternative_partition"] == [
+        [["S1", 500.0, 1.0]],
+        [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
+    ]
     assert risk["rt_estimate"]["method"] == "median_shift"
     assert rows["S1"]["quantitative_value"] == 1000.0
     assert rows["S2"]["quantitative_value"] == 2000.0

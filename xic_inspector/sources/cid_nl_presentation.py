@@ -363,7 +363,7 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
         if not risks:
             fields.append({"label": "配對風險", "value": "未記錄"})
         for risk in risks or ():
-            selected = "已配對" if len(risk["selected_owner_ids"]) > 1 else "保持分開"
+            selected = "已配對" if len(risk["selected_owners"]) > 1 else "保持分開"
             fields.append(
                 {
                     "label": "配對風險",
@@ -381,7 +381,7 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
             )
             for label, key in (
                 ("決策階段", "phase"),
-                ("選擇的成員", "selected_owner_ids"),
+                ("選擇的成員", "selected_owners"),
                 ("替代評估狀態", "status"),
                 ("風險標記", "risk_flags"),
                 ("接受的矛盾", "soft_contradictions"),

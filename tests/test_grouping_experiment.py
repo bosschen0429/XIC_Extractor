@@ -267,9 +267,7 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
         if d["accepted_risk_json"]
     ]
     assert risks
-    assert all(
-        risk["phase"] == "initial" and risk["selected_owner_ids"] for risk in risks
-    )
+    assert all(risk["phase"] == "initial" and risk["selected_owners"] for risk in risks)
     assert (
         '"changed_observation_count": 0'
         in (tmp_path / "replay" / "summary.json").read_text()

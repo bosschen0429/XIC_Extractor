@@ -35,20 +35,37 @@ def validate_membership_risks(risks: object) -> None:
     def strings(value: object) -> bool:
         return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
+    def owner(value: object) -> bool:
+        return (
+            isinstance(value, list)
+            and len(value) == 3
+            and isinstance(value[0], str)
+            and all(
+                isinstance(item, (int, float)) and not isinstance(item, bool)
+                for item in value[1:]
+            )
+        )
+
+    def owners(value: object) -> bool:
+        return isinstance(value, list) and all(owner(item) for item in value)
+
     def partition(value: object) -> bool:
-        return isinstance(value, list) and all(strings(group) for group in value)
+        return isinstance(value, list) and all(owners(group) for group in value)
 
     if not isinstance(risks, list):
         raise ValueError("membership risks must be a list")
     for risk in risks:
         if not isinstance(risk, dict):
             raise ValueError("membership risk must be an object")
-        valid = all(
-            isinstance(risk.get(key), str)
-            for key in ("status", "phase", "rt_basis", "evidence_basis")
-        ) and all(
-            strings(risk.get(key))
-            for key in ("selected_owner_ids", "soft_contradictions", "risk_flags")
+        valid = (
+            all(
+                isinstance(risk.get(key), str)
+                for key in ("status", "phase", "rt_basis", "evidence_basis")
+            )
+            and owners(risk.get("selected_owners"))
+            and all(
+                strings(risk.get(key)) for key in ("soft_contradictions", "risk_flags")
+            )
         )
         alternative = risk.get("alternative_partition")
         equivalents = risk.get("equivalent_alternatives")
