@@ -59,13 +59,10 @@ class CellObservationContent:
     group_owner_ids: tuple[str, ...]
     group_method_subject_id: str
     group_target_label: str | None
-    group_support_assessment_artifact_content_ids: tuple[str, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     peak_observation_content_id: str | None
     peak_hypothesis_id: str | None
-    method_assessment_artifact_content_id: str
-    evidence_artifact_ids: tuple[str, ...]
     reason_codes: tuple[str, ...]
     outside_group: OutsideGroupCellRelation | None = None
     unassigned_support: bool = False
@@ -220,8 +217,7 @@ def mint_cell_observation_ref(
     if method_assessment.content.sample_key != (sample.identity.sample_key):
         raise CellObservationContractError("assessment references a different sample")
     support_binding = any(
-        support.assessment.artifact.evidence_artifact_id
-        == method_assessment.artifact.evidence_artifact_id
+        support.assessment.content == method_assessment.content
         and support.sample.identity.sample_key == sample.identity.sample_key
         for support in group_context.supports
     )
@@ -233,8 +229,7 @@ def mint_cell_observation_ref(
         )
     if peak_hypothesis is not None and not any(
         support.hypothesis.hypothesis_id == peak_hypothesis.hypothesis_id
-        and support.assessment.artifact.evidence_artifact_id
-        == method_assessment.artifact.evidence_artifact_id
+        and support.assessment.content == method_assessment.content
         for support in group_context.supports
     ):
         raise CellObservationContractError(
@@ -245,21 +240,12 @@ def mint_cell_observation_ref(
         method_assessment=method_assessment,
         outside_group_context=outside_group_context,
     )
-    evidence_artifact_ids = tuple(
-        sorted(
-            evidence.artifact.evidence_artifact_id
-            for evidence in method_assessment.evidence_refs
-        )
-    )
     content = CellObservationContent(
         sample_key=sample.identity.sample_key,
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
         group_target_label=group_context.target_label,
-        group_support_assessment_artifact_content_ids=(
-            group_context.support_assessment_artifact_content_ids
-        ),
         technical_state=method_assessment.content.technical_state,
         method_result=method_result,
         peak_observation_content_id=(
@@ -270,10 +256,6 @@ def mint_cell_observation_ref(
         peak_hypothesis_id=(
             None if peak_hypothesis is None else peak_hypothesis.hypothesis_id
         ),
-        method_assessment_artifact_content_id=(
-            method_assessment.artifact.content_identity.artifact_content_id
-        ),
-        evidence_artifact_ids=evidence_artifact_ids,
         reason_codes=method_assessment.content.reason_codes,
         outside_group=outside_group,
         unassigned_support=unassigned_support,
@@ -307,11 +289,7 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
         raise CellObservationContractError(
             "canonical serialization requires CellObservation content"
         )
-    # JSON reads immutable tuples directly; copying every group-support ID for
-    # every sample adds a second population traversal without changing bytes.
     values = {item.name: getattr(content, item.name) for item in fields(content)}
-    # This null slot is part of the persisted content/identity encoding.
-    values["human_disposition_ref_id"] = None
     if content.outside_group is not None:
         values["outside_group"] = asdict(content.outside_group)
     payload = {

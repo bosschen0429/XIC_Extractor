@@ -65,19 +65,11 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
         "group_owner_ids": list(content.group_owner_ids),
         "group_method_subject_id": content.group_method_subject_id,
         "group_target_label": content.group_target_label,
-        "group_support_assessment_artifact_content_ids": list(
-            content.group_support_assessment_artifact_content_ids
-        ),
         "technical_state": content.technical_state,
         "method_result": content.method_result,
         "peak_observation_content_id": content.peak_observation_content_id,
         "peak_hypothesis_id": content.peak_hypothesis_id,
-        "method_assessment_artifact_content_id": (
-            content.method_assessment_artifact_content_id
-        ),
-        "evidence_artifact_ids": list(content.evidence_artifact_ids),
         "reason_codes": list(content.reason_codes),
-        "human_disposition_ref_id": None,
         "outside_group": (
             asdict(content.outside_group) if content.outside_group is not None else None
         ),

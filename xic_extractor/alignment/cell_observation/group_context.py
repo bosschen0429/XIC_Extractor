@@ -96,7 +96,6 @@ class CidNlCellGroupContext:
     )
     _method_subject: CidNlMethodSubject = field(init=False, repr=False, compare=False)
     _owner_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
-    _support_content_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
     _support_artifacts: tuple[EvidenceArtifactRef, ...] = field(
         init=False, repr=False, compare=False
     )
@@ -121,18 +120,6 @@ class CidNlCellGroupContext:
         )
         object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
         object.__setattr__(
-            self,
-            "_support_content_ids",
-            tuple(
-                sorted(
-                    (
-                        support.assessment.artifact.content_identity.artifact_content_id
-                        for support in self.supports
-                    )
-                )
-            ),
-        )
-        object.__setattr__(
             self, "_support_artifacts", _group_support_artifacts(self.supports)
         )
 
@@ -156,10 +143,6 @@ class CidNlCellGroupContext:
     def target_label(self) -> str | None:
         target = self.method_subject.target
         return None if target is None else target.lookup_label
-
-    @property
-    def support_assessment_artifact_content_ids(self) -> tuple[str, ...]:
-        return self._support_content_ids
 
     @property
     def sorted_owner_ids(self) -> tuple[str, ...]:
