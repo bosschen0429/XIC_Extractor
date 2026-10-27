@@ -341,8 +341,8 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["records"][0]["physical_evaluation"]["profile"].__setitem__(
             "window_points", 8
         ),
-        lambda value: value["run_spec"].__setitem__(
-            "run_spec_id", "processing-run:" + "0" * 64
+        lambda value: value["run_spec"]["content"]["acquisition_inputs"][0].__setitem__(
+            "sample_stem", "other"
         ),
     ],
 )
@@ -542,7 +542,7 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
         window_points=spec.signal_processing_profile.window_points + 2,
     )
     other_spec = replace(spec, signal_processing_profile=other_profile)
-    with pytest.raises(ValueError, match="run_spec_hash does not match expected run"):
+    with pytest.raises(ValueError, match="crosses expected run spec"):
         read_discovery_physical_fact_records(
             sidecar_path,
             expected_run_spec=other_spec,

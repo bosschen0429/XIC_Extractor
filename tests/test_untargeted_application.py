@@ -237,8 +237,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
         "effective_owner_build_xic_backend": None,
         "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
     }
     metadata = captured_write["metadata"]
     assert isinstance(metadata, dict)

@@ -75,16 +75,9 @@ def test_run_spec_roundtrip_closes_content_hash_profile_and_order(
     spec = _compile_paths(raw_paths)
     payload = serialize_processing_run_spec(spec)
 
-    assert (
-        deserialize_processing_run_spec(
-            payload,
-            expected_run_spec_hash=spec.run_spec_hash,
-            expected_run_spec_id=spec.run_spec_id,
-        )
-        == spec
-    )
+    assert deserialize_processing_run_spec(payload) == spec
     reversed_spec = _compile_paths(tuple(reversed(raw_paths)))
-    assert reversed_spec.run_spec_id != spec.run_spec_id
+    assert reversed_spec != spec
 
 
 @pytest.mark.parametrize(
@@ -97,19 +90,14 @@ def test_run_spec_preserves_auto_or_explicit_crop_intent(
     settings = replace(_settings(), rt_min=rt_min, rt_max=rt_max)
     spec = _compile_paths(paths, settings=settings)
     payload = serialize_processing_run_spec(spec)
-    saved_settings = json.loads(payload)["content"]["discovery_method"]["content"][
-        "settings"
-    ]
+    saved_settings = json.loads(payload)["content"]["discovery_method"]["settings"]
     for field, value in (("rt_min", rt_min), ("rt_max", rt_max)):
         assert saved_settings[field] == (None if value is None else value.hex())
     assert (
         deserialize_processing_run_spec(payload).discovery_method.settings == settings
     )
     if rt_min is not None or rt_max is not None:
-        assert (
-            spec.discovery_method.method_hash
-            != _compile_paths(paths).discovery_method.method_hash
-        )
+        assert spec.discovery_method != _compile_paths(paths).discovery_method
 
 
 def test_parallel_fingerprints_preserve_identity_order_and_overlap(
@@ -202,17 +190,11 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
     "mutation",
     [
         lambda value: value.update({"unknown": True}),
-        lambda value: value.pop("run_spec_id"),
-        lambda value: value.__setitem__("run_spec_hash", "0" * 64),
-        lambda value: value["content"]["discovery_method"].__setitem__(
-            "method_hash", "0" * 64
-        ),
+        lambda value: value.pop("content"),
+        lambda value: value["content"]["discovery_method"].__setitem__("unknown", True),
         lambda value: value["content"]["signal_processing_profile"].__setitem__(
             "window_points", 8
         ),
-        lambda value: value["content"]["acquisition_inputs"][0][
-            "acquisition_source"
-        ].__setitem__("content_sha256", "0" * 64),
     ],
 )
 def test_run_spec_rejects_unknown_partial_tampered_and_cross_content(
@@ -225,9 +207,25 @@ def test_run_spec_rejects_unknown_partial_tampered_and_cross_content(
 
     with pytest.raises((TypeError, ValueError)):
         deserialize_processing_run_spec(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":")),
-            expected_run_spec_id=spec.run_spec_id,
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         )
+
+
+def test_run_spec_with_changed_source_content_no_longer_equals_original(
+    tmp_path: Path,
+) -> None:
+    spec = _compile_paths(_raws(tmp_path))
+    value = json.loads(serialize_processing_run_spec(spec))
+    value["content"]["acquisition_inputs"][0]["acquisition_source"][
+        "content_sha256"
+    ] = "0" * 64
+
+    changed = deserialize_processing_run_spec(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    )
+
+    assert changed.acquisition_inputs[0].acquisition_source.content_sha256 == "0" * 64
+    assert changed != spec
 
 
 def test_run_spec_rejects_duplicate_and_reordered_json_fields(tmp_path: Path) -> None:
@@ -242,10 +240,8 @@ def test_run_spec_rejects_duplicate_and_reordered_json_fields(tmp_path: Path) ->
     value = json.loads(payload)
     reordered = json.dumps(
         {
-            "run_spec_hash": value["run_spec_hash"],
-            "schema_version": value["schema_version"],
-            "run_spec_id": value["run_spec_id"],
             "content": value["content"],
+            "schema_version": value["schema_version"],
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -515,7 +511,6 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
         discovery_settings=settings,
     )
 
-    assert spec.run_spec_id.startswith("processing-run:")
     assert spec.discovery_method.settings == settings
 
 
@@ -534,11 +529,12 @@ def test_signal_profile_changes_run_identity_not_legacy_vendor_method(
     )
 
     assert spec.discovery_method.settings.ms2_precursor_tol_da == 0.8
-    assert spec.discovery_method.method_hash == (
-        "bf4ead9a642a24b163ec108c9ca1005ef58339855af2af09ca0b853b5e8f26f0"
-    )
+    saved_settings = json.loads(serialize_processing_run_spec(spec))["content"][
+        "discovery_method"
+    ]["settings"]
+    assert "mass_recalibration" not in saved_settings
     assert spec.discovery_method == wider.discovery_method
-    assert spec.run_spec_id != wider.run_spec_id
+    assert spec != wider
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -604,8 +600,8 @@ def test_run_identity_binds_selected_blank_content(
     first = _compile_paths(raw_paths, settings=settings)
     _write_bound_library(library_path, 1.0)
     second = _compile_paths(raw_paths, settings=settings)
-    assert first.run_spec_id != second.run_spec_id
-    assert first.discovery_method.method_id == second.discovery_method.method_id
+    assert first != second
+    assert first.discovery_method == second.discovery_method
 
 
 def test_run_identity_does_not_inherit_packaged_blank_library(
@@ -633,7 +629,7 @@ def test_run_identity_does_not_inherit_packaged_blank_library(
     monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     second = _compile_paths(raw_paths, settings=settings)
     assert all(item.blank_library_sha256 is None for item in first.acquisition_inputs)
-    assert first.run_spec_id == second.run_spec_id
+    assert first == second
 
 
 def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(

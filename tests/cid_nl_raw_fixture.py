@@ -67,7 +67,6 @@ def _current_candidates(
         raw,
         groups,
         acquisition_source=source,
-        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
         ms1_centroid_mz=lambda *_: None,

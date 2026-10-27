@@ -110,8 +110,8 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         alignment_args = run_alignment._parse_args(plan["commands"]["alignment"][3:])
         discovery_settings = run_discovery._discovery_settings(discovery_args)
         _, recipe = run_alignment._resolve_preset(alignment_args)
-        assert CidNlDiscoveryMethodSpec(settings=discovery_settings).method_hash == (
-            CidNlDiscoveryMethodSpec(settings=recipe.discovery_settings).method_hash
+        assert CidNlDiscoveryMethodSpec(settings=discovery_settings) == (
+            CidNlDiscoveryMethodSpec(settings=recipe.discovery_settings)
         )
 
     assert executed == []

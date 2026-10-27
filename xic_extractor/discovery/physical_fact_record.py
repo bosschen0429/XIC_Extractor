@@ -85,7 +85,6 @@ class DiscoveryPhysicalFactRecord:
 class DiscoveryCandidatePhysicalBinding:
     """Discovery-owned in-memory binding from a final candidate to peak facts."""
 
-    run_spec_id: str
     acquisition_source: AcquisitionSourceIdentity
     final_ordinal: int
     candidate: DiscoveryCandidate
@@ -134,8 +133,6 @@ def validate_discovery_candidate_physical_binding(
 
     if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
         raise TypeError("binding must be a DiscoveryCandidatePhysicalBinding")
-    if not isinstance(binding.run_spec_id, str) or not binding.run_spec_id.strip():
-        raise ValueError("run_spec_id must be non-empty text")
     if not isinstance(binding.acquisition_source, AcquisitionSourceIdentity):
         raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
     if binding.final_ordinal < 0:

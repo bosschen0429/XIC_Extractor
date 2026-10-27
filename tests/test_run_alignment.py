@@ -625,7 +625,7 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
     assert "Configured owner-build XIC backend: raw_superwindow" in stdout
     assert "Effective owner-build route: retained_untargeted_cid_nl_batch" in stdout
     assert "Effective route validation: owner_validated" in stdout
-    assert "ProcessingRunSpec identity: <none" in stdout
+    assert "ProcessingRunSpec" not in stdout
     assert "Preset readiness authority: not_evaluated" in stdout
 
 

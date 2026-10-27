@@ -109,9 +109,9 @@ def test_method_spec_roundtrip_and_rejects_explicit_none(tmp_path, policy):
     assert deserialize_processing_run_spec(payload) == spec
     if policy is MassRecalibration.NONE:
         content = json.loads(payload)
-        content["content"]["discovery_method"]["content"]["settings"][
-            "mass_recalibration"
-        ] = "none"
+        content["content"]["discovery_method"]["settings"]["mass_recalibration"] = (
+            "none"
+        )
         with pytest.raises(ValueError, match="none is recorded by omission"):
             deserialize_processing_run_spec(json.dumps(content))
 

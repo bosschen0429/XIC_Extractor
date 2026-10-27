@@ -265,8 +265,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
         "effective_owner_build_xic_backend": None,
         "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
     }
 
 

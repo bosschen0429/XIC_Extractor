@@ -464,7 +464,6 @@ def _acquire_discovery_sample(
                 raw_file=raw_path,
                 method=method,
                 acquisition_source=acquisition_input.acquisition_source,
-                run_spec_id=run_spec.run_spec_id,
                 signal_processing_profile=run_spec.signal_processing_profile,
                 timing_recorder=timing_recorder,
                 measurement_observer=_capture_acquired_measurements,

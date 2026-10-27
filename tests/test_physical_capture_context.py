@@ -195,7 +195,6 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             raw,
             groups,
             acquisition_source=raw.acquisition_source,
-            run_spec_id="processing-run:" + "0" * 64,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,

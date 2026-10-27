@@ -720,7 +720,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 discovery_raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,
-                run_spec_id=spec.run_spec_id,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,

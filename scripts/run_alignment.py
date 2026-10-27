@@ -845,18 +845,12 @@ def _print_owner_build_route_receipt(receipt: OwnerBuildRouteReceipt) -> None:
             f"{receipt.effective_owner_build_xic_backend}"
         )
     print("Effective route validation: owner_validated")
-    if receipt.processing_run_spec_id is None:
-        print("ProcessingRunSpec identity: <none; CID-NL Alignment CLI is align-only>")
-    else:
-        print(f"ProcessingRunSpec id: {receipt.processing_run_spec_id}")
-        print(f"ProcessingRunSpec hash: {receipt.processing_run_spec_hash}")
 
 
 def _print_owner_build_route_preflight(owner_build_xic_backend: str) -> None:
     print(f"Configured owner-build XIC backend: {owner_build_xic_backend}")
     print("Effective owner-build route: <not executed>")
     print("Effective route validation: not_executed")
-    print("ProcessingRunSpec identity: <none; CID-NL Alignment CLI is align-only>")
 
 
 def _mz_range(value: str) -> tuple[float, float]:

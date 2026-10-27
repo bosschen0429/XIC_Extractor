@@ -72,8 +72,6 @@ _SAMPLE_KEYS = (
 )
 _WORK_KEYS = (
     "work_ordinal",
-    "acquisition_source_id",
-    "sample_stem",
     "best_ms2_scan_id",
     "precursor_mz",
     "product_mz",
@@ -327,6 +325,7 @@ class IndexedDiscoveryPhysicalFacts:
     ) -> None:
         _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
         self.run_spec = expected_run_spec
+        self.acquisition_input = expected_acquisition_input
         self.candidate_ordinals: dict[str, int] = {}
         self.precursor_mz: dict[str, float] = {}
         self.physical_apices: dict[str, float] = {}
@@ -336,14 +335,9 @@ class IndexedDiscoveryPhysicalFacts:
         questions: set[tuple[object, ...]] = set()
 
         def manifest_visitor(index: int, value: dict) -> None:
-            item = _work_from_content(value)
-            if (
-                item.work_ordinal != index
-                or item.sample_stem != expected_acquisition_input.sample_stem
-                or item.acquisition_source_id
-                != expected_acquisition_input.acquisition_source.acquisition_source_id
-            ):
-                raise ValueError("Discovery physical work crosses sample or order")
+            item = _work_from_content(value, expected_acquisition_input)
+            if item.work_ordinal != index:
+                raise ValueError("Discovery physical work order changed")
             question = (
                 item.acquisition_source_id,
                 item.selection_subject_id,
@@ -425,7 +419,9 @@ class IndexedDiscoveryPhysicalFacts:
 
     def read_record(self, index: int) -> DiscoveryPhysicalFactRecord:
         return restore_discovery_physical_fact_record(
-            _work_from_content(self.source.read_manifest(index)),
+            _work_from_content(
+                self.source.read_manifest(index), self.acquisition_input
+            ),
             self.source.read_record(index),
             expected_run_spec=self.run_spec,
         )
@@ -457,6 +453,7 @@ class IndexedDiscoveryPhysicalFacts:
         transfer: DetachedIndexedDiscoveryPhysicalFacts,
         *,
         expected_run_spec: ProcessingRunSpec,
+        expected_acquisition_input: ProcessingAcquisitionInput,
     ) -> IndexedDiscoveryPhysicalFacts:
         """Adopt a validated worker index without hydrating physical graphs."""
 
@@ -464,6 +461,7 @@ class IndexedDiscoveryPhysicalFacts:
             raise TypeError("indexed physical transfer has the wrong owner type")
         value = object.__new__(cls)
         value.run_spec = expected_run_spec
+        value.acquisition_input = expected_acquisition_input
         value.candidate_ordinals = transfer.candidate_ordinals
         value.precursor_mz = transfer.precursor_mz
         value.physical_apices = transfer.physical_apices
@@ -506,7 +504,7 @@ def read_discovery_physical_fact_records(
     root = _mapping(value, label="Discovery physical sidecar")
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     manifest = tuple(
-        _work_from_content(item)
+        _work_from_content(item, expected_acquisition_input)
         for item in _list(root["work_manifest"], label="work_manifest")
     )
     return _read_discovery_physical_fact_records_direct(
@@ -534,9 +532,7 @@ def _read_discovery_physical_fact_records_direct(
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
-        _canonical_json_bytes(run_spec_value),
-        expected_run_spec_hash=expected_run_spec.run_spec_hash,
-        expected_run_spec_id=expected_run_spec.run_spec_id,
+        _canonical_json_bytes(run_spec_value)
     )
     if persisted_spec != expected_run_spec:
         raise ValueError("Discovery physical sidecar crosses expected run spec")
@@ -546,7 +542,7 @@ def _read_discovery_physical_fact_records_direct(
         raise ValueError("Discovery physical sidecar crosses sample input binding")
 
     persisted_manifest = tuple(
-        _work_from_content(raw_item)
+        _work_from_content(raw_item, expected_acquisition_input)
         for raw_item in _list(root["work_manifest"], label="work_manifest")
     )
     _validate_manifest(
@@ -686,9 +682,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
-        _canonical_json_bytes(run_spec_value),
-        expected_run_spec_hash=expected_run_spec.run_spec_hash,
-        expected_run_spec_id=expected_run_spec.run_spec_id,
+        _canonical_json_bytes(run_spec_value)
     )
     if persisted_spec != expected_run_spec:
         raise ValueError("Discovery physical sidecar crosses expected run spec")
@@ -698,7 +692,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         raise ValueError("Discovery physical sidecar crosses sample input binding")
 
     persisted_manifest = tuple(
-        _work_from_content(raw_item)
+        _work_from_content(raw_item, expected_acquisition_input)
         for raw_item in _list(root["work_manifest"], label="work_manifest")
     )
     _validate_manifest(
@@ -833,8 +827,6 @@ def _sample_content(acquisition_input: ProcessingAcquisitionInput) -> dict[str, 
 def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
     return {
         "work_ordinal": item.work_ordinal,
-        "acquisition_source_id": item.acquisition_source_id,
-        "sample_stem": item.sample_stem,
         "best_ms2_scan_id": item.best_ms2_scan_id,
         "precursor_mz": _float_text(item.precursor_mz),
         "product_mz": _float_text(item.product_mz),
@@ -850,15 +842,19 @@ def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
     }
 
 
-def _work_from_content(value: object) -> DiscoveryPhysicalWorkItem:
+def _work_from_content(
+    value: object, acquisition_input: ProcessingAcquisitionInput
+) -> DiscoveryPhysicalWorkItem:
+    """Restore one work item; its sample binding is stored once per sidecar."""
+
     content = _mapping(value, label="physical work item")
     _require_keys(content, _WORK_KEYS, label="physical work item")
     item = DiscoveryPhysicalWorkItem(
         work_ordinal=_integer(content["work_ordinal"], field="work_ordinal"),
-        acquisition_source_id=_text(
-            content["acquisition_source_id"], field="acquisition_source_id"
+        acquisition_source_id=(
+            acquisition_input.acquisition_source.acquisition_source_id
         ),
-        sample_stem=_text(content["sample_stem"], field="sample_stem"),
+        sample_stem=acquisition_input.sample_stem,
         best_ms2_scan_id=_integer(
             content["best_ms2_scan_id"], field="best_ms2_scan_id"
         ),

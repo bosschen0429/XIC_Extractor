@@ -1808,7 +1808,6 @@ def _with_source(handle: Any, source: Any) -> Any:
 
 def _job_identity(job: Any) -> dict[str, str]:
     return {
-        "run_spec_id": job.run_spec.run_spec_id,
         "signal_processing_profile": job.run_spec.signal_processing_profile,
         "acquisition_source_id": job.acquisition_source.acquisition_source_id,
     }

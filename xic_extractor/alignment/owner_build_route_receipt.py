@@ -26,8 +26,6 @@ class OwnerBuildRouteReceipt:
     configured_owner_build_xic_backend: OwnerBuildXicBackend
     effective_owner_build_route: EffectiveOwnerBuildRoute
     effective_owner_build_xic_backend: OwnerBuildXicBackend | None
-    processing_run_spec_id: str | None
-    processing_run_spec_hash: str | None
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("OwnerBuildRouteReceipt is final")
@@ -42,8 +40,6 @@ class OwnerBuildRouteReceipt:
                 self.effective_owner_build_xic_backend
             ),
             "effective_route_validation": "owner_validated",
-            "processing_run_spec_id": self.processing_run_spec_id,
-            "processing_run_spec_hash": self.processing_run_spec_hash,
         }
 
 
@@ -57,8 +53,6 @@ def _mint_retained_untargeted_cid_nl_route_receipt(
         ),
         effective_owner_build_route="retained_untargeted_cid_nl_batch",
         effective_owner_build_xic_backend=None,
-        processing_run_spec_id=None,
-        processing_run_spec_hash=None,
     )
 
 

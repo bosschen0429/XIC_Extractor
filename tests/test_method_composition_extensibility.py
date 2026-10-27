@@ -53,21 +53,12 @@ class MockDeltaMassDiscoveryMethodSpec:
     method: str = "delta_mass"
     schema_version: str = "1.0.0"
 
-    @property
-    def method_hash(self) -> str:
-        return "mock_delta_mass_hash_123"
-
-    @property
-    def method_id(self) -> str:
-        return "mock_delta_mass"
-
 
 def test_custom_discovery_method_spec_satisfies_protocol():
     spec = MockDeltaMassDiscoveryMethodSpec()
     assert isinstance(spec, DiscoveryMethodSpec)
     assert spec.method == "delta_mass"
     assert spec.schema_version == "1.0.0"
-    assert spec.method_id == "mock_delta_mass"
 
 
 def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path):
@@ -88,15 +79,11 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
     )
 
     assert run_spec.discovery_method.method == "delta_mass"
-    assert run_spec.run_spec_hash is not None
-    assert len(run_spec.run_spec_hash) == 64
-    assert run_spec.run_spec_id.startswith("processing-run:")
 
     # Serialization and deserialization roundtrip preserves spec equality
     # and attribute access
     serialized = serialize_processing_run_spec(run_spec)
     deserialized = deserialize_processing_run_spec(serialized)
-    assert deserialized.run_spec_hash == run_spec.run_spec_hash
     assert deserialized.discovery_method.method == "delta_mass"
     assert deserialized == run_spec
     assert isinstance(deserialized.discovery_method.settings, GenericMethodSettings)
@@ -149,7 +136,6 @@ def test_registered_discovery_method_codec_roundtrip(tmp_path: Path):
         assert isinstance(
             deserialized.discovery_method, MockDeltaMassDiscoveryMethodSpec
         )
-        assert deserialized.discovery_method.method_id == "mock_delta_mass"
         assert (
             deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
         )

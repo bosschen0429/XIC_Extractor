@@ -154,6 +154,7 @@ def _index_discovery_physical_sources(
         sources[result.sample_stem] = IndexedDiscoveryPhysicalFacts.from_detached(
             result.transfer,
             expected_run_spec=job.expected_run_spec,
+            expected_acquisition_input=job.expected_acquisition_input,
         )
         worker_pids.append(result.worker_pid)
         if progress_callback is not None:

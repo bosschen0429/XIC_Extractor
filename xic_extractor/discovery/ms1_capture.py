@@ -146,7 +146,6 @@ def capture_ms1_candidates(
     groups: Iterable[DiscoverySeedGroup],
     *,
     acquisition_source: AcquisitionSourceIdentity,
-    run_spec_id: str,
     settings: DiscoverySettings,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
     signal_processing_profile: SignalProcessingProfile,
@@ -154,8 +153,6 @@ def capture_ms1_candidates(
 ) -> _DiscoveryMs1AcquisitionResult:
     """Resolve CID-NL hits against shared physical capture, then project evidence."""
 
-    if not run_spec_id:
-        raise ValueError("canonical physical bindings require run_spec_id")
     group_tuple = tuple(groups)
     plans = _discovery_ms1_request_plan(
         group_tuple,
@@ -345,7 +342,6 @@ def capture_ms1_candidates(
     physical_indices = [retained_ordinals[index] for index in physical_indices]
     physical_bindings = tuple(
         DiscoveryCandidatePhysicalBinding(
-            run_spec_id=run_spec_id,
             acquisition_source=acquisition_source,
             final_ordinal=binding.final_ordinal,
             candidate=replace(

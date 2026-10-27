@@ -86,7 +86,6 @@ def test_representative_change_closes_only_centroid_proven_duplicate_views(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,
-        run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,

@@ -63,7 +63,6 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         _OwnerBoundBatchRaw(source),
         groups,
         acquisition_source=source,
-        run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
