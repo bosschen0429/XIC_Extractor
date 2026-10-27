@@ -200,7 +200,6 @@ def _emit_curve_payload(
     }
     # One envelope per actual content/binding; candidate associations are links.
     payload_id = sink.add_curve_payload(
-        payload_id=None,
         sample_id=sample_id,
         kind=kind,
         record_id=record_id,

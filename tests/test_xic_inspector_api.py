@@ -162,7 +162,6 @@ def _create_mock_db(
             },
         }
         writer.add_curve_payload(
-            payload_id="S1:initial_capture:C1",
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-01",
@@ -857,9 +856,9 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
         blob = connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
         original = json.loads(zlib.decompress(blob))
         captures = [
-            ("first", "initial_capture", "obs-earlier", "obs-earlier"),
-            ("second", "reacquired_capture", "obs-01", "obs-01"),
-            ("nopeak", "reacquired_capture", None, "C1"),
+            (2, "initial_capture", "obs-earlier", "obs-earlier"),
+            (3, "reacquired_capture", "obs-01", "obs-01"),
+            (4, "reacquired_capture", None, "C1"),
         ]
         for pid, kind, observation_id, record_id in captures:
             payload = {
@@ -898,12 +897,12 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     generate_report(report, SelectionRequest(), output)
     curves = _report_data(output)["items"][0]["curves"]
     assert len(curves) == 4
-    assert {c["evidence_ref"] for c in curves} >= {"first", "second", "nopeak"}
+    assert {c["evidence_ref"] for c in curves} >= {2, 3, 4}
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
         # The terminal obs still has its initial payload; losing a distinct
         # reacquisition of that same observation must still fail completion.
-        connection.execute("DELETE FROM curve_payloads WHERE payload_id='second'")
+        connection.execute("DELETE FROM curve_payloads WHERE payload_id=3")
     with pytest.raises(InspectorError) as caught:
         generate_report(report, SelectionRequest(), output)
     assert caught.value.code == 4
@@ -952,7 +951,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
         connection.execute(
             "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
             (
-                "recovery-curve",
+                2,
                 "S1",
                 capture_kind,
                 "obs-01",
@@ -964,10 +963,10 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             "INSERT INTO records VALUES (?, ?, ?)",
             (
                 "capture_evidence",
-                "recovery-curve",
+                2,
                 json.dumps(
                     {
-                        "payload_id": "recovery-curve",
+                        "payload_id": 2,
                         "sample_id": "S1",
                         "candidate_id": "C1",
                         "peak_observation_content_id": "obs-01",
@@ -993,7 +992,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ),
         )
         for kind, ref in (
-            ("capture_evidence", "recovery-curve"),
+            ("capture_evidence", 2),
             ("method_assessments", "recovery-method"),
         ):
             _insert_link(connection, ("C1", "S1", kind, ref))
@@ -1008,7 +1007,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
         "kind": expected_kind,
         "label": expected_label,
         "method_refs": ["recovery-method"],
-        "capture_refs": ["recovery-curve"],
+        "capture_refs": ["2"],
         "observation_refs": ["obs-01"],
     }
 
@@ -1085,7 +1084,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         connection.execute(
             "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
             (
-                "recovery-curve",
+                2,
                 "S1",
                 "backfill_observation",
                 "obs-01",
@@ -1098,9 +1097,9 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         for kind, ref, facts in (
             (
                 "capture_evidence",
-                "recovery-curve",
+                2,
                 {
-                    "payload_id": "recovery-curve",
+                    "payload_id": 2,
                     "sample_id": "S1",
                     "candidate_id": "C1",
                     "peak_observation_content_id": "obs-01",
@@ -1136,7 +1135,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         "kind": "backfill_support",
         "label": "Backfill（回填）支持",
         "method_refs": ["recovery-method"],
-        "capture_refs": ["recovery-curve"],
+        "capture_refs": ["2"],
         "observation_refs": ["obs-01"],
     }
 
@@ -1236,7 +1235,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             connection.execute(
                 "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    f"curve-{candidate_id}",
+                    int(candidate_id[1:]),
                     "S1",
                     "initial_capture",
                     observation_id,
@@ -1704,7 +1703,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
 
     curve = item["curves"][0]
     curve_record = readable[curve["evidence_ref"]]
-    assert curve_record["ref"] == "S1:initial_capture:C1"
+    assert curve_record["ref"] == 1
     assert curve_record["sample_ids"] == ["S1"]
     assert curve_record["candidate_ids"] == ["C1"]
     curve_fields = {field["label"]: field["value"] for field in curve_record["fields"]}
@@ -1722,7 +1721,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     assert (
         curve_refs.items()
         >= {
-            "曲線 evidence ref": "S1:initial_capture:C1",
+            "曲線 evidence ref": 1,
             "觀察 ID": "obs-01",
             "處理 request ID": "req-01",
             "處理 attempt ID": "att-01",

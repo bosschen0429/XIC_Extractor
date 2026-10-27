@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 import tempfile
@@ -74,7 +73,6 @@ def test_curve_payload_write_and_read() -> None:
                 "provenance": {},
             }
             writer.add_curve_payload(
-                payload_id="S1:initial_capture:C1",
                 sample_id="S1",
                 kind="initial_capture",
                 record_id="C1",
@@ -105,7 +103,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
             # Undeclared kind
             with pytest.raises(ExplanationError, match="undeclared curve kind"):
                 writer.add_curve_payload(
-                    payload_id="p1",
                     sample_id="S1",
                     kind="fraudulent_curve_kind",
                     record_id="C1",
@@ -115,7 +112,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
             # Undeclared key
             with pytest.raises(ExplanationError, match="undeclared curve payload keys"):
                 writer.add_curve_payload(
-                    payload_id="p1",
                     sample_id="S1",
                     kind="initial_capture",
                     record_id="C1",
@@ -193,7 +189,7 @@ def _bound_curve_payload():
     }
 
 
-def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_payload(
+def test_curve_rowid_preserves_exact_payload_across_reopen(
     tmp_path,
 ):
     payload = _bound_curve_payload()
@@ -204,11 +200,10 @@ def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_pa
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    expected_payload_id = "xic.inspector-curve:" + hashlib.sha256(canonical).hexdigest()
+    expected_payload_id = 1
 
     with ExplanationReportWriter(tmp_path / "automatic-id.sqlite") as writer:
         payload_id = writer.add_curve_payload(
-            payload_id=None,
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-1",
@@ -235,27 +230,25 @@ def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_pa
     ]
 
 
-def test_shared_curve_is_reused_and_conflicting_same_identity_rejected(tmp_path):
+def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
     payload = _bound_curve_payload()
     with ExplanationReportWriter(tmp_path / "dedup.sqlite") as writer:
-        binding = dict(
-            payload_id="p1", sample_id="S1", kind="initial_capture", record_id="obs-1"
-        )
+        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
         writer.add_curve_payload(**binding, payload=payload)
         writer._flush_curve_payloads()
         writer.add_curve_payload(**binding, payload=deepcopy(payload))
         changed = deepcopy(payload)
         changed["curves"]["raw"][1] = 8.0
-        with pytest.raises(ExplanationError, match="conflict"):
-            writer.add_curve_payload(**binding, payload=changed)
+        distinct = writer.add_curve_payload(**binding, payload=changed)
+        assert distinct == 2
         report = writer.finalize({"samples": []})
     with sqlite3.connect(report) as connection:
         assert (
-            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 1
+            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 2
         )
     assert read_cid_nl_curves(report, record_ids=["obs-1"])[0] == {
         **payload,
-        "payload_id": "p1",
+        "payload_id": 1,
     }
 
 
@@ -277,7 +270,6 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
     payload = _bound_curve_payload()
     with ExplanationReportWriter(tmp_path / "corrupt.sqlite") as writer:
         writer.add_curve_payload(
-            payload_id="p1",
             sample_id="S1",
             kind="initial_capture",
             record_id="obs-1",
@@ -321,7 +313,6 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
     payload["provenance"]["physical_state"] = "unavailable"
     with ExplanationReportWriter(tmp_path / "empty.sqlite") as writer:
         writer.add_curve_payload(
-            payload_id="empty",
             sample_id="S1",
             kind="initial_capture",
             record_id=payload["candidate_id"],
@@ -330,11 +321,10 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
         invented = {**payload, "peak_observation_content_id": "obs-1"}
         with pytest.raises(ExplanationError, match="empty acquisition"):
             writer.add_curve_payload(
-                payload_id="invalid",
                 sample_id="S1",
                 kind="initial_capture",
                 record_id="obs-1",
                 payload=invented,
             )
         report = writer.finalize({"samples": []})
-    assert read_cid_nl_curves(report) == [{**payload, "payload_id": "empty"}]
+    assert read_cid_nl_curves(report) == [{**payload, "payload_id": 1}]

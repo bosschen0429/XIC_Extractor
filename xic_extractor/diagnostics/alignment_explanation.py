@@ -205,13 +205,13 @@ class ExplanationReportWriter:
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        self._record_hashes: dict[tuple[str, str], bytes] = {}
-        self._buffered_records: list[tuple[str, str, str | bytes]] = []
+        self._record_hashes: dict[tuple[str, str | int], bytes] = {}
+        self._buffered_records: list[tuple[str, str | int, str | bytes]] = []
         self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
         self._buffered_link_members: list[tuple[int, str, str]] = []
-        self._buffered_record_links: list[tuple[int, str, str]] = []
-        self._buffered_curve_payloads: list[tuple[str, str, str, str, str, bytes]] = []
-        self._curve_hashes: dict[str, bytes] = {}
+        self._buffered_record_links: list[tuple[int, str, str | int]] = []
+        self._buffered_curve_payloads: list[tuple[int, str, str, str, str, bytes]] = []
+        self._curve_rowids: dict[tuple[str, str, str, bytes], int] = {}
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -246,7 +246,7 @@ class ExplanationReportWriter:
                 "CREATE VIEW links AS SELECT DISTINCT m.candidate_id, m.sample_id, "
                 "r.kind, r.record_id FROM link_members m "
                 "JOIN record_links r USING(set_id);"
-                "CREATE TABLE curve_payloads (payload_id TEXT PRIMARY KEY, "
+                "CREATE TABLE curve_payloads (payload_id INTEGER PRIMARY KEY, "
                 "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
                 "codec TEXT NOT NULL, payload BLOB NOT NULL);"
                 "CREATE INDEX idx_curve_payloads_sample_record "
@@ -292,7 +292,7 @@ class ExplanationReportWriter:
     def add_record(
         self,
         kind: str,
-        identity: str,
+        identity: str | int,
         payload: Mapping[str, Any],
         related: Iterable[tuple[str, str]],
     ) -> bool:
@@ -346,7 +346,7 @@ class ExplanationReportWriter:
         ) + len(cells)
 
     def _link_record(
-        self, kind: str, identity: str, related: Iterable[tuple[str, str]]
+        self, kind: str, identity: str | int, related: Iterable[tuple[str, str]]
     ) -> None:
         # Sample cells share their group's candidate set. Store the set once;
         # the logical links view expands it only for a reader's selected scope.
@@ -366,14 +366,13 @@ class ExplanationReportWriter:
 
     def add_curve_payload(
         self,
-        payload_id: str | None,
         sample_id: str,
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
         codec: str = "zlib-json-utf8",
-    ) -> str:
-        """Encode once for storage and, when absent, the content-derived ID."""
+    ) -> int:
+        """Store exact curve data once and return its database-local rowid."""
         _validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
@@ -386,28 +385,13 @@ class ExplanationReportWriter:
             separators=(",", ":"),
             allow_nan=False,
         ).encode("utf-8")
-        if payload_id is None:
-            payload_id = (
-                "xic.inspector-curve:" + hashlib.sha256(encoded_json).hexdigest()
-            )
-        binding = _json(
-            {
-                "sample_id": sample_id,
-                "kind": kind,
-                "record_id": record_id,
-                "codec": codec,
-            }
-        ).encode("utf-8")
-        digest = hashlib.sha256(binding + b"\0" + encoded_json).digest()
-        previous = self._curve_hashes.get(payload_id)
-        if previous is not None:
-            if previous != digest:
-                raise ExplanationError(
-                    f"conflicting curve payload identity: {payload_id}"
-                )
-            return payload_id
-        self._curve_hashes[payload_id] = digest
         compressed = zlib.compress(encoded_json, level=1)
+        key = (sample_id, kind, record_id, compressed)
+        existing = self._curve_rowids.get(key)
+        if existing is not None:
+            return existing
+        payload_id = len(self._curve_rowids) + 1
+        self._curve_rowids[key] = payload_id
         self._buffered_curve_payloads.append(
             (payload_id, sample_id, kind, record_id, codec, compressed)
         )
@@ -491,7 +475,7 @@ class ExplanationReportWriter:
                         else SCHEMA_VERSION,
                         plot_evidence_capability=(
                             "retained_curves"
-                            if not self.review_only or self._curve_hashes
+                            if not self.review_only or self._curve_rowids
                             else "metadata_only"
                         ),
                         diagnostic_only=True,
@@ -525,7 +509,7 @@ class ExplanationReportWriter:
         self._buffered_link_members.clear()
         self._buffered_record_links.clear()
         self._buffered_curve_payloads.clear()
-        self._curve_hashes.clear()
+        self._curve_rowids.clear()
         self.temporary.unlink(missing_ok=True)
 
 
