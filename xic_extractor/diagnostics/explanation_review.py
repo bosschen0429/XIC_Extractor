@@ -225,11 +225,26 @@ def unpack_cells(
 ) -> dict[str, dict[str, Any]]:
     """Diagnostic row positions identify display facts, not scientific decisions."""
     values = json.loads(zlib.decompress(payload))
+    if not isinstance(values, list):
+        raise ValueError("review cells must be an array; rerun Alignment")
     result = {}
     for position, cell in enumerate(values):
-        sample, variant, value, source, states, reasons, origin, observations = cell[:8]
-        quality = cell[8] if len(cell) > 8 else []
-        risks = cell[9] if len(cell) > 9 else []
+        if not isinstance(cell, list) or len(cell) != 10:
+            raise ValueError(
+                "review cell fields do not match the schema; rerun Alignment"
+            )
+        (
+            sample,
+            variant,
+            value,
+            source,
+            states,
+            reasons,
+            origin,
+            observations,
+            quality,
+            risks,
+        ) = cell
         validate_membership_risks(risks)
         if (
             isinstance(sample, bool)

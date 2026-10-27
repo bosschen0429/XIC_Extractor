@@ -799,23 +799,32 @@ def test_signal_quality_survives_review_storage_without_changing_results(tmp_pat
     assert matrix.read_bytes() == original
 
 
-def test_old_review_cell_encoding_keeps_quality_not_recorded():
+@pytest.mark.parametrize("field_count", [8, 9, 11])
+def test_review_cell_encoding_rejects_missing_or_extra_fields(field_count):
     import zlib
 
     from xic_extractor.diagnostics.explanation_review import unpack_cells
 
-    old = [
-        [0, "quantified", 123.0, "raw_trapezoid", [], [], "discovery_support", ["obs"]]
-    ]
-    decoded = unpack_cells(
-        zlib.compress(json.dumps(old).encode()),
-        row_id="r",
-        group_id="g",
-        sample_ids=("S1",),
-    )
-    assert decoded["review-cell:r:0"]["value"] == 123.0
-    assert decoded["review-cell:r:0"]["signal_quality"] == []
-    assert decoded["review-cell:r:0"]["membership_risks"] == []
+    cell = [
+        0,
+        "quantified",
+        123.0,
+        "raw_trapezoid",
+        [],
+        [],
+        "discovery_support",
+        ["obs"],
+        [],
+        [],
+        "unexpected",
+    ][:field_count]
+    with pytest.raises(ValueError, match="rerun Alignment"):
+        unpack_cells(
+            zlib.compress(json.dumps([cell]).encode()),
+            row_id="r",
+            group_id="g",
+            sample_ids=("S1",),
+        )
 
 
 def _competition_review_report(
