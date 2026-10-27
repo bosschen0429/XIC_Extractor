@@ -487,3 +487,18 @@ def test_distinct_trace_roles_read_as_channels_of_one_sample(tmp_path):
         "base",
         "plus_1",
     ]
+
+
+@pytest.mark.parametrize("change", ("missing", "extra"))
+def test_saved_bundle_requires_complete_trace_fields(tmp_path, change):
+    path = tmp_path / "bundle.json"
+    write_curve_bundle(_fixture_bundle(), path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    trace = payload["transitions"][0]["traces"][0]
+    if change == "missing":
+        del trace["integration"]
+    else:
+        trace["unknown_field"] = None
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(bundle_source.CurveBundleError, match="rerun"):
+        read_curve_bundle(path)

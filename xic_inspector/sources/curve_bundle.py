@@ -106,15 +106,21 @@ class CurveBundleLocator:
 
 
 def _fail(where: str, message: str) -> CurveBundleError:
-    return CurveBundleError(f"Invalid curve bundle {where}: {message}")
+    return CurveBundleError(
+        f"Invalid curve bundle {where}: {message}; rerun the producer to regenerate it"
+    )
 
 
 def _mapping(value: object, where: str, fields: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise _fail(where, "expected object")
     unknown = set(value) - fields
-    if unknown:
-        raise _fail(where, f"unknown fields: {sorted(unknown)}")
+    missing = fields - set(value)
+    if unknown or missing:
+        raise _fail(
+            where,
+            f"unknown fields: {sorted(unknown)}; missing fields: {sorted(missing)}",
+        )
     return value
 
 
