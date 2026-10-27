@@ -826,7 +826,10 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     )
     worksets = cid_nl_alignment_subject_worksets(subjects)
     assert tuple(len(workset) for workset in worksets) == (2, 2)
-    assert tuple(subject for workset in worksets for subject in workset) != subjects
+    interleaved_subjects = tuple(
+        subject for pair in zip(*worksets, strict=True) for subject in pair
+    )
+    assert cid_nl_alignment_subject_worksets(interleaved_subjects) == worksets
     memberships = tuple(
         (f"candidate-{index}", subject.method_subject_id)
         for index, subject in enumerate(subjects)
