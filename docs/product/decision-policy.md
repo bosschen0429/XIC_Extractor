@@ -36,9 +36,9 @@ questions:
 ## Current Transition State
 
 The codebase is not fully `PeakHypothesis`-native yet. Legacy selectors,
-confidence fields, `raw_score`, `evidence_score`, `feature_family_id`,
-`public_family_id`, and string evidence fields still exist because they are
-public compatibility surfaces or migration adapters.
+confidence fields, `raw_score`, `evidence_score`, `feature_family_id`, and
+string evidence fields still exist because they are public compatibility
+surfaces or migration adapters.
 
 Treat those surfaces as compatibility or audit signals unless another owner
 promotes them through typed evidence semantics, workflow projection, parity
@@ -230,9 +230,8 @@ Untargeted-specific rules to keep explicit:
 - MS2/NL, MS1 pattern, QC reference, sample-matrix RT drift, and shape or region audit
   are typed facts. They strengthen or block decisions only through Backfill
   projection and authority fields.
-- `feature_family_id` and `public_family_id` remain compatibility/display
-  labels. `group_hypothesis_id` and `peak_hypothesis_id` are the
-  authority-ready identity handles when available.
+- `feature_family_id` and `feature_id` are display labels. The group and
+  hypothesis objects are the authority-ready identity handles when available.
 - Broad Backfill remains gated. Diagnostic sidecars and visual overlay
   evidence are not production readiness by themselves.
 
@@ -285,7 +284,7 @@ reconstruct the policy:
 
 | Field class | Examples |
 | --- | --- |
-| Unit identity | `target_label`, sample, `peak_hypothesis_id`, `group_hypothesis_id`, matrix row/cell identity |
+| Unit identity | `target_label`, `sample_key`, `feature_id`, `(feature_id, sample)` cell position |
 | Required evidence status | present/missing/inconclusive typed facts and source artifact hashes |
 | Blockers | conflict, ambiguity, stale source, unsupported projection, missing activation |
 | Support | RT, shape, MS2/NL, standard/library, paired-context, group/coherence support |

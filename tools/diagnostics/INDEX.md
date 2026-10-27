@@ -68,8 +68,8 @@ classify each row pair as complementary split, distinct peaks sharing a
 Backfill, or duplicate view.
 **Topic group**: `duplicate_quantification.py` + package-owned
 `xic_extractor.diagnostics.duplicate_quantification`
-**Status**: diagnostic_only. Reads `alignment_matrix_identity.tsv`,
-the compact `alignment_backfill_cell_evidence.tsv` (or `alignment_cells.tsv`
+**Status**: diagnostic_only. Reads the Matrix projection of
+`alignment_review.tsv`, the compact `alignment_backfill_cell_evidence.tsv` (or `alignment_cells.tsv`
 for `validation`/`debug`) and `cid_nl_explanation.sqlite` from a
 `validation-minimal` or richer output. Does not open RAW or change Matrix values;
 a screening count, not chemical identity.
@@ -165,8 +165,8 @@ families.
 **Topic group**: `alignment_health_packet.py` (single-file)
 **Status note**: Writes `alignment_health_summary.json`,
 `alignment_health_summary.tsv`, and `alignment_health_family_sentinels.tsv`.
-It reads `alignment_review.tsv`, `alignment_matrix.tsv`,
-`alignment_matrix_identity.tsv`, optional `alignment_backfill_cell_evidence.tsv`
+It reads `alignment_review.tsv` (including its Matrix projection),
+`alignment_matrix.tsv`, optional `alignment_backfill_cell_evidence.tsv`
 or `alignment_cells.tsv`, and optional `alignment_owner_backfill_seed_audit.tsv`.
 It is `diagnostic_only`: it does not read RAW, recompute evidence, change
 selected peaks/areas/counting, alter matrix identity, or grant product
@@ -316,7 +316,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 **Topic group**: `targeted_istd_benchmark.py` + `_loaders`, `_matching`, `_models`, `_stats`, `_summary`, `_writers` (7 files; largest group)
 **Originating spec**: `retired-provenance:53a763b9ec7a`
 **Recent doc**: `retired-provenance:5162156a9766`
-**Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices with `alignment_matrix_identity.tsv` provenance; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
+**Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices bound through the `matrix_row_index` projection of `alignment_review.tsv`; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
 
 ---
 

@@ -130,9 +130,8 @@ observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
 reading changes only the reported value, not grouping, traces, Backfill or
 cell values.
 
-Legacy `feature_family_id` / `public_family_id` are public row labels, not
-canonical group identity. Existing public Matrix, decision and identity TSVs
-may key by those labels for compatibility. A change to public keys, filenames,
+`feature_id` is a report-scoped group label, not canonical group identity;
+the Matrix itself carries no ID column. A change to public keys, filenames,
 ordering, columns or schema versions is a public-contract change, with the
 existing expected-diff and downstream checks. Review tokens and diagnostic
 risk flags do not independently authorize a value or row.

@@ -2,10 +2,9 @@
 
 Column-level reference for all untargeted discovery and alignment output files.
 
-This page documents the current public schemas. Internal `group_hypothesis_id`
-and projection-owned `UntargetRowKey` do not replace `feature_family_id` or change
-these files without a separately versioned public cutover that passes
-expected-diff, schema, downstream-consumer, and rollback gates. The reserved
+This page documents the current public schemas. Changing them is a public
+cutover that passes expected-diff, schema, downstream-consumer, and rollback
+gates. The reserved
 [Untargeted delivery contract](../product/processing-lineage.md#workflow-specific-delivery)
 is separate from these public schemas; it does not introduce per-cell delivery
 identities.
@@ -200,7 +199,7 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| feature_family_id | string | Stable public row/display label for the cross-sample group |
+| feature_id | string | Report-scoped group label (`F000001`) shared by the report tables |
 | neutral_loss_tag | string | NL identifier |
 | family_center_mz | float | Center m/z: mean of direct members' Discovery `ms1_apex_mz` when any member has one (`center_mz_basis = discovery_ms1_apex_mean`), otherwise the mean of observed m/z |
 | family_center_rt | float | Center RT (min) |

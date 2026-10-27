@@ -158,7 +158,7 @@ Producing a library alone does not enable qualification.
   selected library's content digest, and execution consumes the bound immutable
   snapshot. Reading a saved run for execution verifies the selected library
   against that digest. Historical saved settings and run specs keep their stored
-  enabled/disabled value, bytes, and identity; changing the default does not
+  enabled/disabled value and bytes; changing the default does not
   retroactively change qualification when they are read or replayed. An enabled
   run without a library binding must be recompiled before execution. The CLI's
   explicit `--no-blank-qualification` opts out and takes precedence over

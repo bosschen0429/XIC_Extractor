@@ -15,14 +15,14 @@ accepted design boundary, not a claim that product sealing exists.
 | Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
 | Targeted delivery lineage | Per-cell Targeted revisions, stages, and seals | Planned; no current implementation or product publication authority |
-| Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/identity.py` |
+| Untargeted group label (`feature_id`) | A report-scoped `F000001` label for one published cross-sample group | Implemented in `alignment/untargeted_finalized_matrix.py` |
 | Untargeted per-cell delivery lineage | A retained revision/evidence bundle for each Matrix cell | Not planned; see [Untargeted delivery decision](#workflow-specific-delivery) |
 | Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |
 
 Current entry points are
 [processing identity](../../xic_extractor/processing_identity.py),
 [target identity](../../xic_extractor/configuration/target_identity.py), and
-[Untarget row identity](../../xic_extractor/alignment/projection/untarget/identity.py).
+the [feature_id label](../../xic_extractor/alignment/untargeted_finalized_matrix.py).
 Executable identity does not establish a production artifact registry or
 delivery seal.
 
@@ -31,7 +31,7 @@ delivery seal.
 This page owns:
 
 - workflow-neutral processing-request and attempt identity;
-- immutable evidence-artifact identity and lineage edges;
+- file-boundary fingerprints that bind written evidence to its sources;
 - the relationship between kernel decisions and projection-owned delivery
   cells;
 - the reserved two-phase staging and sealing contract;
@@ -65,8 +65,8 @@ These are internal lineage concepts, not additional user-visible review tags.
 | `TargetListSnapshot` | One immutable ordered set of owner-minted target definitions used by a processing request | `target_config_hash`, a path, or a caller-owned mutable list |
 | `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or UI session |
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
-| `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
-| `UntargetRowKey` | Untargeted projection-owned row identity derived from one finalized canonical group | `group_hypothesis_id`, `FAM...`, m/z/RT display text, or row order |
+| `EvidenceLocator` | A completed evidence report path plus the Matrix file SHA-256, attempt UUID, and schema version it belongs to | A digest of in-memory facts or an authority decision |
+| `feature_id` | Report-scoped `F000001` label of one published cross-sample group, numbered in raw measured member order | A cross-run identity, chemical identity, or Matrix row number |
 
 Do not introduce a generic `run_id` as a substitute for these identities.
 Existing diagnostic `run_id` / `source_run_id` fields remain local compatibility
@@ -74,24 +74,24 @@ labels until an adapter binds them to the contract above.
 
 ## Identity Contract
 
-| Identity | Required basis | Forbidden basis |
+| Key | Basis | Forbidden basis |
 | --- | --- | --- |
-| `acquisition_source_id` | Capability-validated content identity or stable source fingerprint, acquisition format, and observation namespace | Path, mtime, file order, or display name alone |
-| `target_key_id` | Target-list-owner namespace + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
-| `target_definition_id` | Owner-minted target key + every normalized effective `Target` field | Target label or raw CSV bytes alone |
-| `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
-| `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
-| `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
-| `canonical_sample_identity` | Owner-minted identity under the [Sample Metadata contract](sample-metadata-qc.md#contract) | Reconstructing sample identity from acquisition sources or display/projection fields |
-| `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
-| owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
-| kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
-| `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to an owner-backed hypothesis identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, or an untagged wrapper identity |
-| `untarget_row_key` | Untarget projection schema + finalized canonical group identity | Group/display label alone, center coordinates, current Matrix row number, or cross-request inference |
+| `acquisition_source_id` | `sha256:<full-file content digest>` for content-bound sources, or `local:<device>:<file id>:<size>:<mtime>:<ctime>` for a local file revision; format and observation namespace stay on the source object | Path, file order, or display name alone |
+| `TargetKey` | Target-list-owner namespace + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
+| `TargetListSnapshot`, `ProcessingRequest` | Compared by their complete content; no scalar ID | A path, config hash, or digest standing in for the content |
+| `processing_attempt_id` | A fresh UUID4 per execution; a retry links its predecessor through `retry_of` | Request content alone or a reused timestamp |
+| `sample_key` | The sample-metadata `sample_name`, unchanged, under the [Sample Metadata contract](sample-metadata-qc.md#contract) | Reconstructing sample identity from acquisition sources or display/projection fields |
+| `method_subject_id` | `target\|<label>` or `precursor\|<m/z>\|<ppm>\|<losses>` | A digest of the subject |
+| Peak hypothesis key (in process) | Sample, method, measured m/z, apex RT, apex height, trace RT bounds and point count; DDA support appends its scan/loss facts | Target label, selection status, attempt token, or output position |
+| `physical_peak_key` (written reports) | Sample, m/z, trace RT bounds and point count, apex RT, apex height; a key collision inside one report is an error | A content digest or a key reused across reports |
+| Cross-sample group (in process) | The group object and its member subjects; members join in sample order | An ID persisted beyond the run |
+| `feature_id` | Report-scoped `F000001` ordinal over published groups, in partition order and raw measured member order | Group centers, scores, hashes, worker order, or cross-report continuity |
 
-The `processing_identity` owner defines typed IDs
-as SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
-numbers), with a type/version prefix. Its current content boundary is:
+Identifiers are allocated only where a reference crosses a file, table, or
+human-facing boundary and no natural key suffices
+([Change Locality](../architecture-contract.md#change-locality)). In-process
+objects are compared by content and ordered by raw measured facts.
+Its current content boundary is:
 
 - normal Targeted acquisition binds the local filesystem revision (device,
   file identity, byte size, modification and creation/change timestamps),
@@ -101,8 +101,7 @@ numbers), with a type/version prefix. Its current content boundary is:
   finalization. This identifies a local file revision, not portable byte
   equality: copies are distinct sources and no full-content digest is claimed;
 - persisted Discovery sources and explicit content fingerprinting bind the
-  full-file SHA-256, byte size, acquisition format, and observation namespace.
-  Their existing identities and persisted formats are unchanged;
+  full-file SHA-256, byte size, acquisition format, and observation namespace;
 - target keys, exact definitions, and ordered snapshots come from the
   [target-list owner](../../xic_extractor/configuration/target_identity.py);
   changing a definition or order creates a new snapshot, not a mutation of the
@@ -119,19 +118,16 @@ numbers), with a type/version prefix. Its current content boundary is:
   Targeted request. The adapter key is part of current execution semantics but
   is not a canonical sample identity and cannot be reused as a delivery-cell
   key;
-- a processing attempt binds one request, a fresh opaque 128-bit token, and an
-  optional predecessor attempt. Retry always issues a new attempt. Terminal
+- a processing attempt binds one request, a fresh UUID4, and an optional
+  predecessor attempt. Retry always issues a new attempt. Terminal
   outcome and cancellation/failure events remain append-only facts owned by the
   execution-runtime contract and never rewrite identity.
-- artifact content binds exact payload bytes through SHA-256, byte size, media
-  type, and an owner-fixed serialization format. An artifact instance separately
-  binds one producer request/attempt, the producer-owned semantic role/schema
-  contract, that content identity, and a canonical set of upstream artifact
-  references. Equal bytes across attempts preserve content equality but never
-  collapse artifact-instance identity;
+- a written evidence report is located by its path, the Matrix path and file
+  SHA-256, the attempt UUID, and the schema version; there is no separate
+  artifact-instance identity;
 - Delta Mass runs detection, matching, and trace confirmation in one pass.
-  Its diagnostic CSV/sidecar outputs do not create artifact-envelope or
-  processing-attempt authority;
+  Its diagnostic CSV/sidecar outputs do not create processing-attempt
+  authority;
 - canonical samples come from [Sample Metadata](sample-metadata-qc.md).
   Lineage composes owner-resolved references and snapshots rather than deriving
   IDs from display labels.
@@ -148,18 +144,14 @@ This freezes the acquisition-source -> processing-request ->
 processing-attempt boundary plus the sample and target-list owner APIs.
 `ProcessingOwnerReferences` composes a complete request and attempt,
 owner-resolved sample bindings whose exact lookup tokens cover every request
-acquisition input and share one metadata snapshot, the request-pinned target-list
-snapshot, and a same-request/same-attempt artifact closure with no missing
-upstream dependency. Lineage does not mint sample, target, or artifact IDs.
-It rejects mixed sample snapshots, target/request substitution, artifact
-content/role/schema substitution, missing dependencies, and cross-attempt mixing.
+acquisition input and share one metadata snapshot, and the request-pinned
+target-list snapshot. Lineage does not mint sample or target IDs. It rejects
+mixed sample snapshots and target/request substitution.
 
 Production workflows and diagnostic tracers consume this owner-reference
 closure; it is not a production artifact registry. The processing-identity owner
-derives the complete same-request predecessor chain from `ProcessingAttempt.retry_of`.
-Reusable artifact closure accepts an owner-issued producer attempt, not a
-caller-authored allowlist; siblings are not implicit dependencies. Cross-attempt
-runtime dependency reuse remains unimplemented, as described in
+derives the complete predecessor chain from `ProcessingAttempt.retry_of`.
+Cross-attempt runtime dependency reuse remains unimplemented, as described in
 [Execution Runtime](execution-runtime.md#retry-and-resume).
 
 The [Evidence Spine](evidence-spine.md#cell-observation-reference) owns the
@@ -183,8 +175,8 @@ filename, display label, or row order.
 
 [Group Boundary](family-hypothesis-boundary.md) owns canonical group membership,
 successor identity, and the distinction between owner-backed observations and
-legacy display labels. The Untarget projection derives `UntargetRowKey` from the
-finalized canonical group; it is not an ordinal label or a chemical identity.
+legacy display labels. Untargeted reports label each published group with a
+report-scoped `feature_id`; it is not a cross-run or chemical identity.
 Automatic cross-request same/split/merge continuity is not implemented.
 
 
@@ -197,8 +189,6 @@ Automatic cross-request same/split/merge continuity is not implemented.
   `build_targeted_processing_request_identity`. Its normal output is the
   workbook described by [Run Provenance](run-provenance.md), not a persisted
   delivery revision or seal.
-- Pt and Targeted MS1-shape adapters bind diagnostic artifacts to exact bytes,
-  roles, schemas, requests, and attempts. This does not grant publication.
 - Current Untargeted output retains `alignment_cells.tsv` for per-cell tracing.
   Optional Backfill Parquet is a diagnostic shadow, not a shared production
   archive or a required future cutover.

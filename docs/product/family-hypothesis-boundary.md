@@ -31,8 +31,8 @@ to regrouping and Backfill planning.
   claim.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
   membership, feature inference evidence, identity constraints, review-only
-  records, and group delivery metadata. `group_hypothesis_id` is the identity
-  key.
+  records, and group delivery metadata. In process the group object is the
+  identity; written reports label each published group with `feature_id`.
 - CrossSample grouping also owns the mutually exclusive group disposition and
   every membership/split/merge lineage edge.
 - The CrossSample grouping workflow returns one immutable
@@ -51,23 +51,23 @@ to regrouping and Backfill planning.
 
 ### Group identity and disposition
 
-- `group_hypothesis_id` is a typed digest over the group identity schema, exact
-  `processing_request_id`, and canonical-sorted identity-bearing members. Each
-  member combines canonical sample identity with an owner-backed
-  `PeakHypothesis` identity and the physical observations it binds; the
-  `peak_hypothesis` kind tag remains in the identity basis. Equivalent
-  hypothesis wrappers over the same physical observation canonicalize to the
-  same member subject.
-- Ordinal `FAM...`, row order, sample stem, m/z/RT display coordinates, and
-  area are compatibility/display facts, not identity bases.
+- A group is identified by its identity-bearing members. Each member combines
+  the sample key with an owner-backed `PeakHypothesis` and the physical
+  observations it binds. Equivalent hypothesis wrappers over the same physical
+  observation resolve to the same member subject. `group_hypothesis_id` joins
+  the member subjects in sample order for in-process lookup and is not written.
+- `feature_id` (`F000001`) numbers the published groups of one report in
+  partition order and raw measured member order. It, row order, sample stem,
+  m/z/RT display coordinates, and area are report/display facts, not identity
+  bases.
 - A group contains at most one identity-bearing member per canonical sample.
   Same-sample distinguishable peaks remain separate; unresolved ambiguity does
   not choose an arbitrary winner.
 - Any accepted initial membership change or split/merge appears in the one
-  complete before/after `CrossSamplePartitionTransition`, mints the resulting
-  group identity and immutable lineage, and closes before bounded Backfill. A
-  new processing request creates new group identity; this contract does not
-  infer cross-request continuity.
+  complete before/after `CrossSamplePartitionTransition`, creates the resulting
+  group and immutable lineage, and closes before bounded Backfill. A new
+  processing request creates new groups; this contract does not infer
+  cross-request continuity.
 - `CrossSampleGroupDisposition` is exactly one of `established`, `provisional`,
   `unresolved`, or `rejected`. Established requires accepted identity-bearing
   members from at least two distinct canonical samples under the applicable
@@ -98,41 +98,34 @@ standalone product truth.
 | Concept | Owns | Must not own |
 | --- | --- | --- |
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
-| Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
+| Alignment `feature_id` (`F000001`) | Report-scoped label joining one published group across Review, Cells, Status, Seed audit, and SQLite | Cross-report identity, same-peak proof, or a Matrix column |
 | Internal `InitialGroupingScope` | m/z/RT evidence bounds and exact initial groups for the bootstrap-to-regroup handoff | Standalone identity, persistence, chemical identity, public row identity, or same-peak truth |
 | `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill or selected values |
-| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth or Backfill |
+| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage through its member subjects | Per-peak integration truth or Backfill |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
 | ObservationRevisit | Retained typed receipt for a bounded local revisit result or no-result | Membership, selected value, group origin, or recursive support |
 | Cell decision / ProductionCellDecision | Selects value or typed no-write from a Target subject or completed group/sample evidence; packages the answer for output | RAW access, grouping, or rendering; output identity cannot be a prerequisite for Untarget value selection |
 | Product projection / ProductWriter | Target fixed-row binding; Untarget row/cell identity after completed Feature × Sample answers; inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, Backfill, or value recomputation |
 
-## Migration Rule
+## Output Labels
 
-The codebase is in a compatibility transition. Discovery outputs still expose
-`feature_family_id` for per-sample peak anchors. Alignment outputs still
-expose `public_family_id` or legacy `feature_family_id` as cross-sample group
-display labels. These legacy labels form an adapter state with these rules:
+Discovery outputs expose `feature_family_id` for per-sample peak anchors.
+Alignment outputs expose one report-scoped `feature_id` per published group;
+in-process group keys are not written. These labels follow these rules:
 
-1. A legacy ID that is a public output contract must be preserved.
-   The persisted matrix identity field `source_feature_family_ids` keeps its
-   current name and source-lineage meaning. `source_feature_family_ids` is not
-   a grouping-scope identity.
-2. A successor ID must be added alongside the legacy ID when identity semantics
-   become product-relevant.
-3. Successor alignment identity decisions use `group_hypothesis_id` after a
-   workflow has promoted `group_hypothesis_id` as the decision key. Before that
-   promotion, public matrix/projection maps can still key by legacy row labels.
-   Those maps must describe that compatibility state.
-4. Multiple source peak anchors or cross-sample groups must not collapse into
+1. Discovery `feature_family_id` is a public output contract. It is not a
+   grouping-scope identity.
+2. A new written identifier needs a boundary that the object itself cannot
+   cross and no sufficient natural key
+   ([Change Locality](../architecture-contract.md#change-locality)).
+3. Multiple source peak anchors or cross-sample groups must not collapse into
    one product row. Only an explicit split/consolidation contract and its
    tests together can approve a collapse.
-5. Review-only group context must stay out of ProductWriter authority. The
+4. Review-only group context must stay out of ProductWriter authority. The
    exception is context that is converted into typed same-peak or
    group-hypothesis evidence.
-6. Projection-owned `UntargetRowKey` must be introduced separately from canonical
-   group identity. `group_hypothesis_id` itself must not become the public
-   Matrix row key. Row identity must not derive from m/z/RT/display order.
+5. `feature_id` order derives from raw measured member facts, never from m/z/RT
+   centers, scores, or display order.
 
 ## Design Red Lines
 
@@ -140,8 +133,8 @@ display labels. These legacy labels form an adapter state with these rules:
   evidence facts, selected hypothesis, and workflow projection that own the
   decision.
 - Do not use Discovery peak-anchor membership as cross-sample identity proof.
-  Cross-sample identity belongs to `CrossSamplePeakGroupHypothesis` and
-  `group_hypothesis_id`.
+  Cross-sample identity belongs to `CrossSamplePeakGroupHypothesis` and its
+  member subjects.
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
 - Do not treat a Family as a same-peak or chemical-identity claim. Two
@@ -170,9 +163,9 @@ before refactor or promotion:
 
 - A peak-anchor assignment function writes `evidence_score`, `evidence_tier`,
   confidence, or product-like status.
-- A cross-sample alignment path keys product behavior only by
-  `feature_family_id` or `public_family_id` when `group_hypothesis_id` or
-  `peak_hypothesis_id` is available.
+- A cross-sample alignment path keys product behavior only by a display label
+  (`feature_family_id` or `feature_id`) when the group or hypothesis object is
+  available.
 - A diagnostic sidecar exposes supportive labels without product-authority
   provenance.
 - A new helper extracts shared code by moving discovery/alignment policy into

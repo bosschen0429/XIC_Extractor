@@ -43,8 +43,8 @@ workflow owns those decisions.
     subtrace, smoothed height against the exact selection trace, and any
     declared AsLS/Gaussian15 facts against the deterministic existing helpers.
   - Semantically equal present integer/float numeric inputs receive one
-    canonical representation before identity hashing. Existing null semantics
-    remain unchanged.
+    canonical representation before content comparison. Existing null
+    semantics remain unchanged.
   - The exact request-bound acquisition source, full raw/selection-trace,
     query, and resolver provenance, and producer request/attempt remain
     explicit. These fields do not become physical-content identity.
@@ -79,8 +79,8 @@ workflow owns those decisions.
 - Legacy family IDs are review and compatibility containers. Group identity
   belongs to `CrossSamplePeakGroupHypothesis`. Legacy candidate and
   `build_peak_hypotheses` IDs remain workflow-local working identities; the
-  bounded owner-backed CID-NL branch instead uses a typed content ID without
-  turning it into physical-observation identity. Product authority belongs to
+  bounded owner-backed CID-NL branch instead uses an in-process measured
+  hypothesis key without turning it into physical-observation identity. Product authority belongs to
   workflow projection.
 
 ## Observation / Hypothesis / Evidence decomposition
@@ -110,28 +110,25 @@ closes the following bounded rules:
 
 1. Physical content identity includes canonical sample identity, m/z, the
    contiguous selected RT/intensity points, peak bounds/apex, and all
-   signal-validated `IntegrationResult` facts. A typed value or content hash is
-   not proof that independently assembled integration numbers came from the
-   trace: minting first verifies the raw apex/height/area, exact selection-trace
+   signal-validated `IntegrationResult` facts. A typed value is not proof that
+   independently assembled integration numbers came from the trace: the owner
+   first verifies the raw apex/height/area, exact selection-trace
    apex/height, and any declared AsLS/Gaussian15 facts. Numeric representation
    alone cannot split content identity, and normalization does not turn a null
    into a numeric observation.
-2. Request-bound acquisition-source identity, full raw- and selection-trace
-   digests, query RT/ppm, trace source, source-relative indices, resolver mode,
-   and proposal sources are generation provenance. Changing
-   them does not re-mint physical content when the selected signal and
-   integration are unchanged, but it does change the exact artifact payload.
-3. Processing request/attempt identify the produced artifact instance. A retry
-   of the same exact payload preserves content identity and receives a distinct
-   artifact identity.
+2. Request-bound acquisition source, full raw and selection traces, query
+   RT/ppm, trace source, source-relative indices, resolver mode, and proposal
+   sources are generation provenance. Changing them does not change the
+   physical content when the selected signal and integration are unchanged.
+3. Processing request/attempt record which execution produced the observation.
+   A retry that reproduces the same content yields equal physical content.
 4. Target label, Targeted/Untargeted role, ISTD policy, CID-NL status, and Pt
    membership are not physical-observation content. They belong to evidence
    applicability or later hypothesis composition.
-5. Selected raw-signal mutation invalidates a stale integration before identity
-   minting; a re-integrated signal receives new physical content identity.
+5. Selected raw-signal mutation invalidates a stale integration before the
+   observation is built; a re-integrated signal is new physical content.
    Selection-transform mutation with unchanged physical facts preserves
-   physical content but changes generation provenance and exact artifact
-   identity. Missing, gapped, reordered, or duplicate selected indices and
+   physical content but changes generation provenance. Missing, gapped, reordered, or duplicate selected indices and
    sample/request/attempt substitution fail closed.
 6. Mint and binding consume an already validated `ProcessingOwnerReferences`
    closure. The chosen sample must belong to that request, `Trace.sample_name`
@@ -149,7 +146,7 @@ strict neutral-loss evidence, a unique integration-bounds RT/m/z match, and the
 complete candidate tuple supplied to it. Selected trace padding is provenance,
 not physical peak scope. Reordering that tuple is identity-neutral;
 mutation, substitution, missing candidates, no match, or multiple matches fail
-closed. The artifact depends on both the CID-NL evidence and every supplied
+closed. The relation depends on both the CID-NL evidence and every supplied
 candidate peak, so a caller cannot hide a non-selected candidate during later
 validation.
 
@@ -167,24 +164,21 @@ no independent support votes.
 The owner-backed CID-NL hypothesis branch closes the handoff from
 `CidNlChromatographicSupportRef` to `PeakHypothesis` under these bounded rules:
 
-1. Hypothesis content identity includes the method, canonical sample, physical
-   peak content ID, and chromatographic-support artifact content ID. Scan or
-   peak mutation therefore invalidates the hypothesis.
-2. Exact artifact content additionally records the peak-observation artifact
-   content ID, so generation-provenance changes invalidate the exact artifact
-   without pretending the physical peak changed.
-3. Retry with identical content preserves `hypothesis_id` and exact artifact
-   content identity, but a new attempt receives a distinct artifact identity
-   and exact upstream closure.
-4. Target label, role, ISTD pairing, trace-group identity, decision semantics,
+1. The in-process hypothesis key is the method plus the measured selected MS1
+   peak: sample, m/z, apex RT and height, trace RT bounds, and point count.
+   DDA support appends its scan and loss facts, so two support events on one
+   physical peak stay distinct. Scan or peak mutation therefore changes the
+   hypothesis.
+2. Retry with identical content yields an equal hypothesis key.
+3. Target label, role, ISTD pairing, trace-group identity, decision semantics,
    selection audit, counting, and workflow projection are prohibited on this
    branch. Selection-decision, `ExtractionResult`, and Targeted result-assembly
    boundaries reject this diagnostic branch before it
    can expose RT/area or produce a counted projection. The legacy Targeted
    constructor remains unchanged.
-5. Missing refs, physical-peak/event mismatch, request/attempt/sample
-   substitution, stale cross-attempt applicability, event substitution, and
-   identity tamper fail closed.
+4. Missing refs, physical-peak/event mismatch, request/attempt/sample
+   substitution, stale cross-attempt applicability, and event substitution
+   fail closed.
 
 ### Method subject
 
@@ -369,8 +363,8 @@ completes with an empty canonical Matrix and preserves its assessment evidence.
 The CellObservationRef reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
 Untargeted diagnostic adapters receive the same exact group and cell objects;
-they do not remint equal-looking DTOs. Cell artifact identity binds both the
-group label and its complete canonical hypothesis membership, method subject,
+they do not remint equal-looking DTOs. A cell binds both the group and its
+complete canonical hypothesis membership, method subject,
 optional Targeted compatibility identity, and the exact SUPPORT assessment
 closure that formed the group. Every SUPPORT,
 HOLD, REJECT, or technical cell must consume that owner-validated group context;
@@ -413,7 +407,7 @@ unlabeled tuple must not be guessed into method semantics.
 | `CidNlMethodSubject` | Workflow-neutral CID-NL precursor/loss subject; Targeted retains exact configured-target identity while Untargeted is request-pinned without a fake Target |
 | `CidNlMethodAssessmentRef` | Complete method-subject-bound CID-NL attempt with a policy-bound completed-search receipt, unique measured-event keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
-| `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
+| `peak_hypothesis_identity` | In-process measured hypothesis key and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `CellObservationRef` | Minimal sample × existing-group closure over exact method-subject group/SUPPORT membership plus optional Targeted compatibility identity, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
 | CID-NL Targeted/Untargeted reference projections | Two internal views that retain the same exact group/cell refs and explicitly carry no product authority |

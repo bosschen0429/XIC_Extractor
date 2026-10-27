@@ -237,7 +237,7 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    while mass, identity, measurement and physical uniqueness remain constraints.
 7. Direct observations and Backfill observations use the shared
    [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
-   Different bounds, content IDs or context-dependent apices do not establish
+   Different bounds or context-dependent apices do not establish
    different peaks. A Matrix row's Direct member keeps its existing value;
    another row cannot Backfill the same measured peak. Competing Backfills have
    one selected feasible assignment, whether they carry SUPPORT or MS1-only

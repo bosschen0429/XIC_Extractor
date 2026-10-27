@@ -21,11 +21,10 @@ interpretation, and future activation gates.
   must not be a path, timestamp, or output location.
 - Renaming `sample_name` creates a new identity. Changing only a projection
   field does not create a new identity.
-- Resolution requires an immutable, content-digested
-  `SampleMetadataSnapshot`.
-- Snapshot identity includes the namespace and all normalized metadata rows.
-  Snapshot identity is row-order neutral.
-- Snapshot identity changes on an alias or projection mutation, even when a
+- Resolution requires an immutable `SampleMetadataSnapshot`, compared by its
+  namespace and all normalized metadata rows. Snapshot equality is row-order
+  neutral.
+- An alias or projection mutation produces an unequal snapshot, even when a
   canonical sample identity remains stable.
 - Resolution accepts only an exact primary key or an unambiguous current
   `raw_stem` alias.
@@ -72,7 +71,7 @@ identities merely because its files were measured on different dates.
 | Surface | Role |
 | --- | --- |
 | `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, `matrix_type`, group, exclusion schema |
-| `SampleMetadataSnapshot` | Owner-minted content identity for one complete normalized metadata snapshot and stable identity namespace |
+| `SampleMetadataSnapshot` | Owner-minted immutable value for one complete normalized metadata snapshot and stable identity namespace |
 | `mint_canonical_sample_identity` / `resolve_canonical_sample_identity` | Owner-only namespaced identity minting and self-validating fail-closed lookup resolution |
 | `injection_order_source` | Optional sequence annotations; RAW chronology owns resolved injection order |
 | Instrument-QC sidecars | QC context and trend evidence |
