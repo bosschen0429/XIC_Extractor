@@ -7,7 +7,6 @@ from typing import Literal
 import numpy as np
 
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     asls_baseline,
@@ -141,27 +140,16 @@ class PeakHypothesis:
     audit: AuditTrail
     hypothesis_method: str = ""
     peak_observation_refs: tuple[PeakObservationRef, ...] = ()
-    artifact: EvidenceArtifactRef | None = None
 
     @property
     def is_owner_backed(self) -> bool:
         return bool(
             self.hypothesis_method
             or self.peak_observation_refs
-            or self.artifact is not None
             or self.evidence.cid_nl_chromatographic_support_ref is not None
             or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
             or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
         )
-
-    def __post_init__(self) -> None:
-        if not self.is_owner_backed:
-            return
-        from xic_extractor.peak_detection.peak_hypothesis_identity import (
-            validate_owner_backed_peak_hypothesis_instance,
-        )
-
-        validate_owner_backed_peak_hypothesis_instance(self)
 
 
 def validate_peak_hypothesis_selection_authority(

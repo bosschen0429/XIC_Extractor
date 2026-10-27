@@ -99,11 +99,6 @@ def group_member_subject_from_peak_hypothesis(
         processing_owners=processing_owners,
         processing_request_id=processing_request_id,
     )
-    if (
-        hypothesis.artifact is None
-        or hypothesis.artifact.producer_processing_request_id != request_id
-    ):
-        raise CrossSampleContractError("peak hypothesis crossed processing request")
     sample_id = sample.identity.sample_key
     physical_ids = tuple(
         sorted(

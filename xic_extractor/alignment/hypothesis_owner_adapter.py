@@ -142,7 +142,6 @@ def compose_peak_hypotheses_from_assessment_universe(
     """Preserve direct and observation-only physical peaks without relabeling."""
 
     retained_by_peak_id = _bind_retained_assessment_hypotheses(
-        processing_owners=processing_owners,
         sample=sample,
         assessment=assessment,
         retained_hypotheses=retained_hypotheses,
@@ -182,7 +181,6 @@ def bind_retained_peak_hypotheses_to_assessment_universe(
     """Bind a complete earlier owner result to the same assessment universe."""
 
     retained_by_peak_id = _bind_retained_assessment_hypotheses(
-        processing_owners=processing_owners,
         sample=sample,
         assessment=assessment,
         retained_hypotheses=retained_hypotheses,
@@ -200,7 +198,6 @@ def bind_retained_peak_hypotheses_to_assessment_universe(
 
 def _bind_retained_assessment_hypotheses(
     *,
-    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
     retained_hypotheses: tuple[PeakHypothesis, ...],
@@ -221,11 +218,6 @@ def _bind_retained_assessment_hypotheses(
         if (
             not isinstance(hypothesis, PeakHypothesis)
             or not hypothesis.is_owner_backed
-            or hypothesis.artifact is None
-            or hypothesis.artifact.producer_processing_request_id
-            != processing_owners.request.processing_request_id
-            or hypothesis.artifact.producer_processing_attempt_id
-            != processing_owners.attempt.processing_attempt_id
             or len(hypothesis.peak_observation_refs) != 1
         ):
             raise HypothesisOwnerAdapterError(

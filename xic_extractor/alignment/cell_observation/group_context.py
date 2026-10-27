@@ -176,11 +176,6 @@ def _group_support_artifacts(
     artifacts: list[EvidenceArtifactRef] = []
     for support in supports:
         artifacts.append(support.assessment.artifact)
-        if support.hypothesis.artifact is None:
-            raise CellObservationContractError(
-                "group SUPPORT hypothesis is missing its immutable artifact"
-            )
-        artifacts.append(support.hypothesis.artifact)
     artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
     return tuple(
         artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)

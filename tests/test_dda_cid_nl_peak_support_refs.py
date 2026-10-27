@@ -26,7 +26,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     validate_dda_cid_nl_peak_support_binding,
 )
 from xic_extractor.peak_detection.hypotheses import (
-    EvidenceVector,
     IntegrationResult,
     PeakHypothesis,
     PeakHypothesisAuthorityError,
@@ -776,56 +775,6 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     assert hypothesis.istd_pair == ""
     assert hypothesis.analysis_mode == "workflow_neutral"
     assert hypothesis.audit.selected is False
-    assert hypothesis.artifact is not None
-    assert hypothesis.artifact.upstream_artifact_ids == tuple(
-        sorted(
-            (
-                peak.artifact.evidence_artifact_id,
-                event.artifact.evidence_artifact_id,
-            )
-        )
-    )
-
-
-def test_cid_nl_hypothesis_retry_preserves_content_not_exact_artifact(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-
-    first_peak = _peak(fixture.owners, fixture.sample)
-    first_event = _event(
-        fixture.owners,
-        fixture.sample,
-        first_peak,
-        scan_numbers=(42, 43),
-    )
-    retry_peak = _peak(retry_owners, fixture.sample)
-    retry_event = _event(
-        retry_owners,
-        fixture.sample,
-        retry_peak,
-        scan_numbers=(43, 42),
-    )
-    first = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
-        sample=fixture.sample,
-        peak_observation=first_peak,
-        chromatographic_support=first_event,
-    )
-    retried = compose_cid_nl_peak_hypothesis(
-        processing_owners=retry_owners,
-        sample=fixture.sample,
-        peak_observation=retry_peak,
-        chromatographic_support=retry_event,
-    )
-
-    assert first.hypothesis_id == retried.hypothesis_id
-    assert first.artifact is not None
-    assert retried.artifact is not None
-    assert first.artifact.content_identity == retried.artifact.content_identity
-    assert first.artifact.evidence_artifact_id != retried.artifact.evidence_artifact_id
 
 
 def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
@@ -891,33 +840,6 @@ def test_cid_nl_hypothesis_missing_and_stale_applicability_fail_closed(
             sample=fixture.sample,
             peak_observation=retry_peak,
             chromatographic_support=event,
-        )
-
-
-def test_owner_backed_hypothesis_rejects_legacy_context_and_identity_tamper(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
-    event = _event(fixture.owners, fixture.sample, peak)
-    hypothesis = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
-        sample=fixture.sample,
-        peak_observation=peak,
-        chromatographic_support=event,
-    )
-
-    with pytest.raises(PeakHypothesisContractError, match="Targeted context"):
-        replace(hypothesis, target_label="control")
-    with pytest.raises(PeakHypothesisContractError, match="hypothesis_id"):
-        replace(hypothesis, hypothesis_id=f"xic.peak-hypothesis:{'0' * 64}")
-    with pytest.raises(PeakHypothesisContractError, match="hypothesis_method"):
-        replace(
-            hypothesis,
-            hypothesis_method="",
-            peak_observation_refs=(),
-            artifact=None,
-            evidence=EvidenceVector(),
         )
 
 

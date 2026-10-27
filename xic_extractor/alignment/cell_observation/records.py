@@ -117,9 +117,6 @@ def _direct_member_integration(
         if (
             member.subject_kind != "peak_hypothesis"
             or member.subject_id != direct_hypothesis.hypothesis_id
-            or direct_hypothesis.artifact is None
-            or direct_hypothesis.artifact.producer_processing_request_id
-            != processing_request_id
             or any(
                 observation.content.sample_key != sample_key
                 for observation in direct_hypothesis.peak_observation_refs
@@ -285,7 +282,6 @@ def mint_cell_observation_ref(
         group_context=group_context,
         method_assessment=method_assessment,
         peak_observation=peak_observation,
-        peak_hypothesis=peak_hypothesis,
         outside_group_context=outside_group_context,
     )
     artifact = mint_evidence_artifact_ref(
@@ -344,7 +340,6 @@ def _cell_upstream_artifacts(
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessmentRef,
     peak_observation: PeakObservationRef | None,
-    peak_hypothesis: PeakHypothesis | None,
     outside_group_context: CidNlCellGroupContext | None = None,
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = [method_assessment.artifact]
@@ -353,12 +348,6 @@ def _cell_upstream_artifacts(
     artifacts.extend(group_context.support_artifacts)
     if peak_observation is not None:
         artifacts.append(peak_observation.artifact)
-    if peak_hypothesis is not None:
-        if peak_hypothesis.artifact is None:
-            raise CellObservationContractError(
-                "owner-backed hypothesis is missing its immutable artifact"
-            )
-        artifacts.append(peak_hypothesis.artifact)
     artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
     return tuple(
         artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)
