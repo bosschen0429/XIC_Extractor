@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="sample_ids",
         default=[],
-        help="Filter by canonical sample identity ID (repeatable).",
+        help="Filter by canonical sample key (repeatable).",
     )
     parser.add_argument(
         "--candidate-id",
@@ -91,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="group_ids",
         default=[],
-        help="Filter by group hypothesis ID (query strategy only, repeatable).",
+        help="Filter by report feature_id (query strategy only, repeatable).",
     )
     parser.add_argument(
         "--mz-min",
