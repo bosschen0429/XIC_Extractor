@@ -96,7 +96,6 @@ def _review_batch(tmp_path, sample_count=2):
             writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
             writer.add_row_cells(
                 rid,
-                rid,
                 [
                     {
                         "sample_key": sid,
@@ -175,7 +174,6 @@ def _nearest_review_batch(tmp_path):
             )
             writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
             writer.add_row_cells(
-                rid,
                 rid,
                 [
                     {

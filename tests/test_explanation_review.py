@@ -133,7 +133,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 )
                 writer.add_row_cells(
                     rid,
-                    gid,
                     [
                         {
                             "sample_key": sid,
@@ -763,7 +762,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
         writer.add_record(
             "rows", "row-1", {"row_key_id": "row-1", "group_hypothesis_id": "G1"}, keys
         )
-        writer.add_row_cells("row-1", "G1", cells, {"S1": 0, "S2": 1})
+        writer.add_row_cells("row-1", cells, {"S1": 0, "S2": 1})
         writer.finalize(
             _summary_fixture(
                 {

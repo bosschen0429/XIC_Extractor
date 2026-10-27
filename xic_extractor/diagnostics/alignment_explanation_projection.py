@@ -798,7 +798,6 @@ def prepare_alignment_explanation(
                 )
                 if not full_audit:
                     sink.add_row_cells(
-                        row.group.group_hypothesis_id,
                         group_id,
                         cells,
                         sample_ordinals,

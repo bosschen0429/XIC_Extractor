@@ -2315,7 +2315,6 @@ def _create_nearest_mz_db(directory, rows):
             writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
             writer.add_row_cells(
                 rid,
-                rid,
                 [
                     {
                         "sample_key": sid,

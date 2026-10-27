@@ -99,7 +99,6 @@ def compact_explanation(
                 "ORDER BY json_extract(d.payload,'$.row_key_id'), d.record_id"
             )
             current_row = None
-            current_group = ""
             cells = []
             cell_count = 0
             for decision_payload, observation_payload in rows:
@@ -107,10 +106,9 @@ def compact_explanation(
                 observation = _object(observation_payload)
                 row_id = decision["row_key_id"]
                 if current_row is not None and row_id != current_row:
-                    writer.add_row_cells(current_row, current_group, cells, samples)
+                    writer.add_row_cells(current_row, cells, samples)
                     cells = []
                 current_row = row_id
-                current_group = decision["group_hypothesis_id"]
                 effective = (
                     [observation["backfill_cell"]]
                     if observation.get("backfill_cell") is not None
@@ -160,7 +158,7 @@ def compact_explanation(
                 if progress and cell_count % 100000 == 0:
                     progress(f"Packed {cell_count} cells")
             if current_row is not None:
-                writer.add_row_cells(current_row, current_group, cells, samples)
+                writer.add_row_cells(current_row, cells, samples)
             summary.update(
                 matrix_path=str(matrix.resolve()),
                 retention="review",

@@ -281,8 +281,9 @@ class ExplanationReportWriter:
             )
             if self.review_only:
                 self.connection.execute(
-                    "CREATE TABLE row_cells (row_key_id TEXT PRIMARY KEY, "
-                    "group_id TEXT NOT NULL, payload BLOB NOT NULL, "
+                    "CREATE TABLE row_cells (row_record_id INTEGER PRIMARY KEY "
+                    "REFERENCES records(id) DEFERRABLE INITIALLY DEFERRED, "
+                    "payload BLOB NOT NULL, "
                     "sample_mask BLOB NOT NULL)"
                 )
         except BaseException:
@@ -353,15 +354,13 @@ class ExplanationReportWriter:
     def add_row_cells(
         self,
         row_id: str,
-        group_id: str,
         cells: Sequence[Mapping[str, Any]],
         samples: Mapping[str, int],
     ) -> None:
         self._connection().execute(
-            "INSERT INTO row_cells VALUES (?, ?, ?, ?)",
+            "INSERT INTO row_cells VALUES (?, ?, ?)",
             (
-                row_id,
-                group_id,
+                self._record_rowids["rows", row_id],
                 pack_cells(cells, samples),
                 sum(
                     1 << ordinal
@@ -679,7 +678,7 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError("malformed explanation: invalid completion summary")
     if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
         query_tables = {
-            "row_cells": ("row_key_id", "group_id", "payload", "sample_mask"),
+            "row_cells": ("row_record_id", "payload", "sample_mask"),
             "query_samples": ("id", "sample_id"),
             "query_candidates": ("id", "candidate_id", "sample", "mz", "sample_stem"),
             "query_items": ("id", "kind", "identifier", "group_id", "sort_key"),
@@ -717,20 +716,24 @@ def _read_review_cells(
 ) -> dict[str, dict[str, Any]]:
     sample_ids = [sample["sample_key"] for sample in summary["samples"]]
     result: dict[str, dict[str, Any]] = {}
-    rows: Iterable[tuple[str, str, bytes]]
+    query = (
+        "SELECT r.record_id, r.payload, c.payload FROM row_cells c "
+        "JOIN records r ON r.id=c.row_record_id"
+    )
+    rows: Iterable[tuple[str, str | bytes, bytes]]
     if row_ids is None:
-        rows = connection.execute("SELECT row_key_id, group_id, payload FROM row_cells")
+        rows = connection.execute(query)
     else:
         rows = (
             row
             for row_id in row_ids
             for row in connection.execute(
-                "SELECT row_key_id, group_id, payload FROM row_cells "
-                "WHERE row_key_id=?",
+                query + " WHERE r.record_id=?",
                 (row_id,),
             )
         )
-    for row_id, group_id, payload in rows:
+    for row_id, record, payload in rows:
+        group_id = _object(record)["group_hypothesis_id"]
         result.update(
             unpack_cells(
                 payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
@@ -763,13 +766,16 @@ def open_review_population(
                 "row": _object(record),
                 "cells": list(
                     unpack_cells(
-                        payload, row_id=row_id, group_id=group_id, sample_ids=samples
+                        payload,
+                        row_id=row_id,
+                        group_id=_object(record)["group_hypothesis_id"],
+                        sample_ids=samples,
                     ).values()
                 ),
             }
-            for row_id, group_id, payload, record in db.execute(
-                "SELECT c.row_key_id,c.group_id,c.payload,r.payload FROM row_cells c "
-                "JOIN records r ON r.kind='rows' AND r.record_id=c.row_key_id"
+            for row_id, payload, record in db.execute(
+                "SELECT r.record_id,c.payload,r.payload FROM row_cells c "
+                "JOIN records r ON r.id=c.row_record_id"
             )
         )
 
@@ -782,7 +788,10 @@ def read_review_row_samples(
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         cohorts: dict[bytes, frozenset[str]] = {}
         rows = {}
-        for row_id, mask in db.execute("SELECT row_key_id, sample_mask FROM row_cells"):
+        for row_id, mask in db.execute(
+            "SELECT r.record_id, c.sample_mask FROM row_cells c "
+            "JOIN records r ON r.id=c.row_record_id"
+        ):
             if mask not in cohorts:
                 bits = int.from_bytes(mask, "little")
                 cohorts[mask] = frozenset(
