@@ -134,21 +134,6 @@ default runs.
 CLI reports and audits over alignment outputs (cells, families, owner
 decisions, RT calibration, matrix identity).
 
-### `row_completion_confidence.py`
-
-**Purpose**: Build the daily artifact-lane row-completion confidence packet from
-existing alignment health and matrix artifacts.
-**Topic group**: `row_completion_confidence.py` + package-owned
-`xic_extractor.diagnostics.row_completion_confidence`
-**Originating spec/plan**:
-`docs/product/quant-matrix.md`; retired row-completion confidence benchmark
-design provenance `retired-provenance:6f1e25e036cf`
-**Status**: diagnostic_only. Builds manifest-bound row-completion confidence
-outputs from existing alignment health and matrix artifacts. Does not open RAW,
-recompute evidence, run mature tools, alter matrix authority, or change
-selected values/counting.
-
----
 
 ### `targeted_gt_alignment_audit.py`
 
@@ -285,23 +270,6 @@ remains unavailable.
 
 ---
 
-### `dna_dr_product_ready_fast_mode_expected_diff.py`
-
-**Purpose**: Compare explicit fast-mode candidate outputs against an exact
-`dna_dr_product_ready` output and write an expected-diff packet.
-**Topic group**: `scripts.run_alignment` fast-mode backend candidates,
-`validate_ms1_scan_index_xic.py`
-**Status note**: Writes
-`dna_dr_product_ready_fast_mode_expected_diff.json/tsv` with public artifact
-hash parity, matrix/key coverage, selected cell/status/numeric drift,
-matrix-identity drift, timing deltas, and optional MS1-index audit summaries.
-It can classify a candidate as `fast_mode_candidate` only when the candidate is
-explicitly supplied and the packet supports that decision; otherwise results
-remain `diagnostic_only_do_not_wire_to_default`. This tool never mutates exact
-outputs and cannot promote an approximate backend into the default preset by
-itself.
-
----
 
 ### `backfill_peakhypothesis_transfer_readiness.py`
 
