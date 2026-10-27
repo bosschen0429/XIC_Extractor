@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import zlib
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_cid_nl_explanation,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def test_cid_nl_evidence_locator_immutability() -> None:
@@ -60,18 +62,19 @@ def test_curve_payload_write_and_read() -> None:
                     "smoothed": None,
                     "positive": None,
                 },
-                "integration": {
-                    "apex_rt_min": 1.5,
-                    "raw_apex_rt_min": 1.5,
-                    "rt_left_min": 1.1,
-                    "rt_right_min": 1.9,
-                    "height_raw": 5000.0,
-                    "area_raw_counts_seconds": 12000.0,
-                    "area_profile_selected": None,
-                    "integration_method": "raw_trapezoid",
-                    "boundary_source": "candidate_interval",
-                },
-                "provenance": {},
+                "integration": asdict(
+                    IntegrationResult(
+                        rt_left_min=1.1,
+                        rt_apex_min=1.5,
+                        rt_right_min=1.9,
+                        raw_apex_rt_min=1.5,
+                        rt_width_min=0.7999999999999998,
+                        height_raw=5000.0,
+                        height_smoothed=5000.0,
+                        area_raw_counts_seconds=12000.0,
+                    )
+                ),
+                "provenance": _curve_provenance(),
             }
             writer.add_curve_payload(
                 sample_id="S1",
@@ -173,6 +176,22 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     assert actual == expected
 
 
+def _curve_provenance():
+    return {
+        "profile_version": None,
+        "acquisition_source_id": None,
+        "processing_request_id": None,
+        "processing_attempt_id": None,
+        "selected_trace_indices": None,
+        "resolver_mode": None,
+        "proposal_sources": None,
+        "method_subject_id": None,
+        "profile": None,
+        "physical_state": None,
+        "physical_reason": None,
+    }
+
+
 def _bound_curve_payload():
     return {
         "schema_version": "curve_payload",
@@ -189,7 +208,7 @@ def _bound_curve_payload():
             "positive": None,
         },
         "integration": None,
-        "provenance": {},
+        "provenance": _curve_provenance(),
     }
 
 
@@ -340,3 +359,53 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
             _summary_fixture({"samples": []}, review_only=writer.review_only)
         )
     assert read_cid_nl_curves(report) == [{**payload, "payload_id": 1}]
+
+
+@pytest.mark.parametrize("section", ["provenance", "integration", "signal_quality"])
+@pytest.mark.parametrize("change", ["missing", "extra"])
+def test_curve_reader_requires_complete_nested_fields(tmp_path, section, change):
+    from dataclasses import asdict
+
+    from xic_extractor.peak_detection.integration_result import IntegrationResult
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    payload = _bound_curve_payload()
+    payload["integration"] = asdict(
+        IntegrationResult(
+            rt_left_min=1.0,
+            rt_apex_min=1.5,
+            rt_right_min=2.0,
+            raw_apex_rt_min=1.5,
+            rt_width_min=1.0,
+            height_raw=9.0,
+            height_smoothed=9.0,
+            area_raw_counts_seconds=270.0,
+            signal_quality=SignalQuality(
+                status="available",
+                noise_sigma=1.0,
+                signal_to_noise=9.0,
+                low_signal_to_noise=True,
+            ),
+        )
+    )
+    with ExplanationReportWriter(tmp_path / "nested.sqlite") as writer:
+        writer.add_curve_payload(
+            sample_id="S1", kind="initial_capture", record_id="obs-1", payload=payload
+        )
+        report = writer.finalize(_summary_fixture({"samples": []}, review_only=False))
+    nested = (
+        payload["integration"]["signal_quality"]
+        if section == "signal_quality"
+        else payload[section]
+    )
+    if change == "missing":
+        nested.pop(next(iter(nested)))
+    else:
+        nested["unexpected"] = None
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "UPDATE curve_payloads SET payload=?",
+            (zlib.compress(json.dumps(payload).encode()),),
+        )
+    with pytest.raises(ExplanationError, match="rerun"):
+        read_cid_nl_curves(report, record_ids=["obs-1"])

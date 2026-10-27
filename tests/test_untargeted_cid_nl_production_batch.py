@@ -458,7 +458,24 @@ def _expected_retained_curve(
             "positive": list(signal.positive_signal) if signal is not None else None,
         },
         "integration": asdict(integration) if integration is not None else None,
-        "provenance": provenance,
+        "provenance": {
+            **dict.fromkeys(
+                (
+                    "profile_version",
+                    "acquisition_source_id",
+                    "processing_request_id",
+                    "processing_attempt_id",
+                    "selected_trace_indices",
+                    "resolver_mode",
+                    "proposal_sources",
+                    "method_subject_id",
+                    "profile",
+                    "physical_state",
+                    "physical_reason",
+                )
+            ),
+            **provenance,
+        },
     }
     return json.loads(json.dumps(value))
 

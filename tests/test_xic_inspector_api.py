@@ -7,12 +7,15 @@ import json
 import re
 import sqlite3
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
 from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_cid_nl_explanation_curves import _curve_provenance
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -153,18 +156,20 @@ def _create_mock_db(
                 "smoothed": None,
                 "positive": None,
             },
-            "integration": {
-                "apex_rt_min": 1.0,
-                "raw_apex_rt_min": 1.0,
-                "rt_left_min": 0.9,
-                "rt_right_min": 1.1,
-                "height_raw": 1000.0,
-                "area_raw_counts_seconds": 2500.0,
-                "area_profile_selected": None,
-                "integration_method": "raw_trapezoid",
-                "boundary_source": "candidate_interval",
-            },
+            "integration": asdict(
+                IntegrationResult(
+                    rt_left_min=0.9,
+                    rt_apex_min=1.0,
+                    rt_right_min=1.1,
+                    raw_apex_rt_min=1.0,
+                    rt_width_min=0.20000000000000007,
+                    height_raw=1000.0,
+                    height_smoothed=1000.0,
+                    area_raw_counts_seconds=2500.0,
+                )
+            ),
             "provenance": {
+                **_curve_provenance(),
                 "processing_request_id": request_id,
                 "processing_attempt_id": attempt_id,
             },
@@ -2131,7 +2136,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
             "SELECT payload_id,payload FROM curve_payloads"
         ).fetchone()
         payload = json.loads(zlib.decompress(blob))
-        payload["integration"]["apex_rt_min"] = apex_rt
+        payload["integration"]["rt_apex_min"] = apex_rt
         payload["integration"]["raw_apex_rt_min"] = apex_rt
         payload["integration"]["area_raw_counts_seconds"] = area
         connection.execute(

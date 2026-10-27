@@ -134,7 +134,20 @@ def _emit_curve_payload(
     if trace is None and content is None:
         return
     generation = ref.generation_provenance if ref is not None else None
-    actual = dict(provenance or {})
+    actual = {
+        "profile_version": None,
+        "acquisition_source_id": None,
+        "processing_request_id": None,
+        "processing_attempt_id": None,
+        "selected_trace_indices": None,
+        "resolver_mode": None,
+        "proposal_sources": None,
+        "method_subject_id": None,
+        "profile": None,
+        "physical_state": None,
+        "physical_reason": None,
+        **(provenance or {}),
+    }
     if evaluation is not None:
         actual.update(
             profile=asdict(evaluation.prepared.profile),

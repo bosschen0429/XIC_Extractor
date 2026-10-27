@@ -24,6 +24,7 @@ from xic_extractor.diagnostics.explanation_review import (
     validate_membership_risks,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
@@ -67,11 +68,8 @@ class CandidateNotFoundError(ExplanationError):
 _CURVE_KEYS = frozenset({"rt", "raw", "baseline", "smoothed", "positive"})
 _COORDINATE_KEYS = frozenset({"mz", "rt_min", "rt_max", "ppm_tol"})
 _PROFILE_KEYS = frozenset(field.name for field in fields(SignalProcessingProfile))
-_INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult)) | {
-    "apex_rt_min",
-    "area_profile_selected",
-    "boundary_source",
-}
+_INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult))
+_SIGNAL_QUALITY_KEYS = frozenset(field.name for field in fields(SignalQuality))
 _PROVENANCE_KEYS = frozenset(
     {
         "profile_version",
@@ -117,13 +115,15 @@ def _validate_curve_payload(
     if not isinstance(sample_id, str) or not sample_id or not record_id:
         raise ExplanationError("curve payload missing sample or record identity")
     provenance = payload["provenance"]
-    if not isinstance(provenance, Mapping) or set(provenance) - _PROVENANCE_KEYS:
-        raise ExplanationError("undeclared provenance fields")
+    if not isinstance(provenance, Mapping) or set(provenance) != _PROVENANCE_KEYS:
+        raise ExplanationError(
+            "undeclared or missing provenance fields; rerun Alignment"
+        )
     profile = provenance.get("profile")
     if profile is not None and (
         not isinstance(profile, Mapping) or set(profile) != _PROFILE_KEYS
     ):
-        raise ExplanationError("undeclared or missing profile fields")
+        raise ExplanationError("undeclared or missing profile fields; rerun Alignment")
     if record_id not in (
         payload["peak_observation_content_id"],
         payload["candidate_id"],
@@ -133,7 +133,9 @@ def _validate_curve_payload(
 
     curves = payload["curves"]
     if not isinstance(curves, Mapping) or set(curves) != _CURVE_KEYS:
-        raise ExplanationError("undeclared or missing curve array fields")
+        raise ExplanationError(
+            "undeclared or missing curve array fields; rerun Alignment"
+        )
     rt = curves["rt"]
     if not isinstance(rt, (list, tuple)):
         raise ExplanationError("curve RT must be an array")
@@ -165,7 +167,9 @@ def _validate_curve_payload(
 
     coordinate = payload["trace_coordinate"]
     if not isinstance(coordinate, Mapping) or set(coordinate) != _COORDINATE_KEYS:
-        raise ExplanationError("undeclared or missing trace coordinate fields")
+        raise ExplanationError(
+            "undeclared or missing trace coordinate fields; rerun Alignment"
+        )
     for name, value in coordinate.items():
         if value is None and name == "ppm_tol":
             continue
@@ -182,8 +186,20 @@ def _validate_curve_payload(
 
     integration = payload["integration"]
     if integration is not None:
-        if not isinstance(integration, Mapping) or set(integration) - _INTEGRATION_KEYS:
-            raise ExplanationError("undeclared integration fields")
+        if (
+            not isinstance(integration, Mapping)
+            or set(integration) != _INTEGRATION_KEYS
+        ):
+            raise ExplanationError(
+                "undeclared or missing integration fields; rerun Alignment"
+            )
+        quality = integration["signal_quality"]
+        if quality is not None and (
+            not isinstance(quality, Mapping) or set(quality) != _SIGNAL_QUALITY_KEYS
+        ):
+            raise ExplanationError(
+                "undeclared or missing signal quality fields; rerun Alignment"
+            )
         for name, value in integration.items():
             if isinstance(value, float) and not math.isfinite(value):
                 raise ExplanationError(f"nonfinite integration value: {name}")
