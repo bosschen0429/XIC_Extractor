@@ -27,6 +27,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
+    FileContentFingerprint,
     IdentityContractError,
     ProcessingRequestIdentity,
     fingerprint_file_content,
@@ -50,6 +51,8 @@ DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "candidate_artifact_sha256",
     "candidate_artifact_byte_size",
     "candidate_payload_sha256",
+    "physical_facts_sha256",
+    "physical_facts_byte_size",
     "acquisition_content_sha256",
     "acquisition_byte_size",
     "acquisition_format",
@@ -68,6 +71,8 @@ class DiscoveryCandidateUniverseReceipt:
     candidate_artifact_sha256: str
     candidate_artifact_byte_size: int
     candidate_payload_sha256: str
+    physical_facts_sha256: str
+    physical_facts_byte_size: int
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
     def __post_init__(self) -> None:
@@ -107,6 +112,18 @@ class DiscoveryCandidateUniverseReceipt:
             self.candidate_payload_sha256,
             field="candidate_payload_sha256",
         )
+        _validate_digest(
+            self.physical_facts_sha256,
+            field="physical_facts_sha256",
+        )
+        if (
+            isinstance(self.physical_facts_byte_size, bool)
+            or not isinstance(self.physical_facts_byte_size, int)
+            or self.physical_facts_byte_size < 0
+        ):
+            raise IdentityContractError(
+                "physical_facts_byte_size must be a non-negative integer"
+            )
 
 
 def mint_discovery_candidate_universe_receipt(
@@ -115,11 +132,17 @@ def mint_discovery_candidate_universe_receipt(
     acquisition_source: AcquisitionSourceIdentity,
     candidate_csv: Path,
     candidates: Sequence[DiscoveryCandidate],
+    physical_facts: FileContentFingerprint | None,
     mass_recalibration_result: MassRecalibrationResult = (
         VENDOR_MASS_RECALIBRATION_RESULT
     ),
 ) -> DiscoveryCandidateUniverseReceipt:
-    """Mint a receipt after the Discovery candidate writer has committed bytes."""
+    """Mint a receipt after the Discovery writers have committed bytes."""
+
+    if not isinstance(physical_facts, FileContentFingerprint):
+        raise IdentityContractError(
+            "Discovery receipt requires the published physical-facts fingerprint"
+        )
 
     stem = _required_text(sample_stem, field="sample_stem")
     if not isinstance(acquisition_source, AcquisitionSourceIdentity):
@@ -137,6 +160,8 @@ def mint_discovery_candidate_universe_receipt(
         candidate_artifact_sha256=artifact.content_sha256,
         candidate_artifact_byte_size=artifact.byte_size,
         candidate_payload_sha256=payload_sha256,
+        physical_facts_sha256=physical_facts.content_sha256,
+        physical_facts_byte_size=physical_facts.byte_size,
         mass_recalibration_result=mass_recalibration_result,
     )
 
@@ -155,6 +180,23 @@ def validate_discovery_candidate_artifact(
     ):
         raise IdentityContractError(
             "candidate CSV bytes do not match the Discovery receipt"
+        )
+
+
+def validate_discovery_physical_facts_artifact(
+    receipt: DiscoveryCandidateUniverseReceipt,
+    physical_facts_json: Path,
+) -> None:
+    """Reject physical-facts bytes that do not match the Discovery receipt."""
+
+    _require_receipt(receipt)
+    fingerprint = fingerprint_file_content(physical_facts_json)
+    if (
+        fingerprint.content_sha256 != receipt.physical_facts_sha256
+        or fingerprint.byte_size != receipt.physical_facts_byte_size
+    ):
+        raise IdentityContractError(
+            "physical-facts bytes do not match the Discovery receipt"
         )
 
 
@@ -229,6 +271,8 @@ def discovery_receipt_index_fields(
         "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
         "candidate_artifact_byte_size": str(receipt.candidate_artifact_byte_size),
         "candidate_payload_sha256": receipt.candidate_payload_sha256,
+        "physical_facts_sha256": receipt.physical_facts_sha256,
+        "physical_facts_byte_size": str(receipt.physical_facts_byte_size),
         "acquisition_content_sha256": source.content_sha256,
         "acquisition_byte_size": str(source.byte_size),
         "acquisition_format": source.acquisition_format,
@@ -276,6 +320,11 @@ def discovery_receipt_from_index_fields(
                 field="candidate_artifact_byte_size",
             ),
             candidate_payload_sha256=row["candidate_payload_sha256"],
+            physical_facts_sha256=row["physical_facts_sha256"],
+            physical_facts_byte_size=_nonnegative_int(
+                row["physical_facts_byte_size"],
+                field="physical_facts_byte_size",
+            ),
             mass_recalibration_result=deserialize_mass_recalibration_result(
                 row.get("mass_recalibration", "")
             ),
@@ -508,6 +557,7 @@ __all__ = (
     "discovery_receipt_index_fields",
     "mint_discovery_candidate_universe_receipt",
     "validate_discovery_candidate_artifact",
+    "validate_discovery_physical_facts_artifact",
     "canonical_sample_stems",
     "candidate_sample_stems_from_request",
     "validate_alignment_feature_selection",

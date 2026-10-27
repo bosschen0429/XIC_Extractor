@@ -1,4 +1,5 @@
 import csv
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,8 +34,21 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
+    FileContentFingerprint,
     build_acquisition_source_identity,
+    fingerprint_file_content,
 )
+
+
+def physical_facts_fingerprint_beside(candidates_csv: Path) -> FileContentFingerprint:
+    """Fingerprint the sample's physical-facts sidecar, or empty bytes if absent."""
+
+    path = candidates_csv.with_name("discovery_physical_facts.json")
+    if path.exists():
+        return fingerprint_file_content(path)
+    return FileContentFingerprint(
+        content_sha256=hashlib.sha256(b"").hexdigest(), byte_size=0
+    )
 
 
 def resolved_elution_context(
@@ -120,6 +134,7 @@ def _owner_closed_receipt_fields(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
         candidate_csv=candidates_csv,
+        physical_facts=physical_facts_fingerprint_beside(candidates_csv),
         candidates=candidates,
     )
     return {

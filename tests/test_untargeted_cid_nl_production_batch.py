@@ -747,10 +747,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 discovery_candidate_state="review_only_orphan_nl",
             )
             persisted_candidates = (*persisted_candidates, audit)
-        receipts.update(
-            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
-        )
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
@@ -758,6 +754,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             work_manifest=discovery.physical_work_manifest,
             records=discovery.physical_evaluations,
         )
+        receipts.update(
+            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
+        )
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = tuple(
             candidate
             for candidate in read_owner_bound_discovery_candidates_csv(

@@ -138,6 +138,7 @@ One row per sample. Links each sample to its output files.
 
 | Column | Type | Description |
 | --- | --- | --- |
+| schema_version | string | `discovery_batch_index` |
 | sample_stem | string | Sample name |
 | raw_file | string | RAW file path |
 | candidate_csv | string | Path to `discovery_candidates.csv` |
@@ -146,6 +147,20 @@ One row per sample. Links each sample to its output files.
 | high_count | int | HIGH priority count |
 | medium_count | int | MEDIUM priority count |
 | low_count | int | LOW priority count |
+| candidate_artifact_schema_version | string | Candidate CSV format |
+| candidate_artifact_sha256 | string | SHA-256 of the candidate CSV bytes |
+| candidate_artifact_byte_size | int | Candidate CSV byte size |
+| candidate_payload_sha256 | string | Path-independent SHA-256 of the complete candidate facts |
+| physical_facts_sha256 | string | SHA-256 of the sample's `discovery_physical_facts.json` bytes |
+| physical_facts_byte_size | int | `discovery_physical_facts.json` byte size |
+| acquisition_content_sha256 | string | SHA-256 of the RAW file content |
+| acquisition_byte_size | int | RAW file byte size |
+| acquisition_format | string | Acquisition format, for example `thermo_raw` |
+| observation_namespace | string | Adapter-readable observation namespace |
+| mass_recalibration | string | Recalibration result; omitted when vendor masses were used unchanged |
+
+Alignment rejects a candidate CSV or physical-facts file whose bytes no longer
+match these fingerprints.
 
 ---
 

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.discovery.models import discovery_settings_identity_fields
 from xic_extractor.presets import apply_to_discovery, load_preset
@@ -73,6 +74,7 @@ def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
                 raw, acquisition_format="thermo_raw", observation_namespace="test"
             ),
             candidate_csv=csv,
+            physical_facts=physical_facts_fingerprint_beside(csv),
             candidates=(),
             mass_recalibration_result=result,
         )

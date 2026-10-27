@@ -10,6 +10,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.processing_identity import FileContentFingerprint
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
@@ -23,16 +24,13 @@ def stage_discovery_physical_fact_sidecar(
     acquisition_input: ProcessingAcquisitionInput,
     work_manifest: Sequence[DiscoveryPhysicalWorkItem],
     records: Sequence[DiscoveryPhysicalFactRecord],
-) -> Path:
+) -> FileContentFingerprint:
     """Encode and verify a sidecar at a caller-owned transaction stage path."""
 
-    staged = write_discovery_physical_fact_sidecar(
+    return write_discovery_physical_fact_sidecar(
         path,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
         work_manifest=work_manifest,
         records=records,
     )
-    if staged != path:
-        raise ValueError("Discovery physical sidecar staged at an unexpected path")
-    return staged

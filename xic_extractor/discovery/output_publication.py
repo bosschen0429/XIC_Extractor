@@ -113,6 +113,7 @@ def publish_discovery_batch_sample(
         acquisition_source=acquisition_source,
         candidate_csv=outputs.candidates_csv,
         candidates=candidates,
+        physical_facts=outputs.physical_facts_fingerprint,
         mass_recalibration_result=mass_recalibration_result,
     )
     return PublishedDiscoverySample(
@@ -275,7 +276,7 @@ def _write_persisted_candidate_outputs(
                 "record_count": len(physical_evaluations),
             },
         ) as stage:
-            write_discovery_physical_fact_sidecar(
+            physical_facts_fingerprint = write_discovery_physical_fact_sidecar(
                 physical_tmp,
                 run_spec=run_spec,
                 acquisition_input=acquisition_input,
@@ -336,6 +337,7 @@ def _write_persisted_candidate_outputs(
         review_csv=review_path,
         physical_facts_json=physical_facts_path,
         physical_bindings=physical_bindings,
+        physical_facts_fingerprint=physical_facts_fingerprint,
     )
 
 

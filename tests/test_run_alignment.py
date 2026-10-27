@@ -10,7 +10,11 @@ from typing import Any
 import pytest
 
 from scripts import run_alignment
-from tests.alignment_pipeline_helpers import _owner_closed_receipt_fields, write_csv
+from tests.alignment_pipeline_helpers import (
+    _owner_closed_receipt_fields,
+    physical_facts_fingerprint_beside,
+    write_csv,
+)
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
@@ -1369,6 +1373,7 @@ def _write_owner_closed_preflight_batch(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
             candidate_csv=candidate_csv,
+            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             candidates=(),
         )
         rows.append(

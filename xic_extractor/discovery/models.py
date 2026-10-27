@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from xic_extractor.discovery.physical_fact_record import (
         DiscoveryCandidatePhysicalBinding,
     )
+    from xic_extractor.processing_identity import FileContentFingerprint
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
 GroupPrecursorMzBasis = Literal[
@@ -595,6 +596,7 @@ class DiscoveryRunOutputs:
     physical_facts_json: Path
     batch_index_csv: Path | None = None
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
+    physical_facts_fingerprint: "FileContentFingerprint | None" = None
 
 
 @dataclass(frozen=True)

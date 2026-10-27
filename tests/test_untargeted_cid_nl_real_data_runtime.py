@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -2014,6 +2015,7 @@ def _discovery_receipts(
             sample_stem=raw_path.stem,
             acquisition_source=source,
             candidate_csv=candidate_csv,
+            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             candidates=candidates,
         )
     return receipts

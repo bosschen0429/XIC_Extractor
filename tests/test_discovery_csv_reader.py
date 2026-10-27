@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.alignment_pipeline_helpers import _owner_closed_receipt_fields
+from tests.alignment_pipeline_helpers import (
+    _owner_closed_receipt_fields,
+    physical_facts_fingerprint_beside,
+)
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_RECEIPT_COLUMNS
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 
@@ -60,6 +63,7 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
         sample_stem="Sample_1",
         acquisition_source=source,
         candidate_csv=path,
+        physical_facts=physical_facts_fingerprint_beside(path),
         candidates=(candidate,),
     )
     (restored,) = read_owner_bound_discovery_candidates_csv(path, receipt=receipt)
@@ -958,6 +962,7 @@ def _discovery_input_batch(
             sample_stem=stem,
             acquisition_source=source,
             candidate_csv=path,
+            physical_facts=physical_facts_fingerprint_beside(path),
             candidates=candidates,
         )
     order = tuple(rows_by_sample)

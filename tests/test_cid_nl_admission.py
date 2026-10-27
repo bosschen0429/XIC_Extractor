@@ -108,8 +108,6 @@ def test_review_rows_never_become_alignment_roots(
             )
         folder = tmp_path / path.stem
         folder.mkdir()
-        receipts.update(_discovery_receipts(folder, (path,), {path.stem: (candidate,)}))
-        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
@@ -119,6 +117,8 @@ def test_review_rows_never_become_alignment_roots(
             else (),
             records=capture.physical_evaluations if candidate.ms1_peak_found else (),
         )
+        receipts.update(_discovery_receipts(folder, (path,), {path.stem: (candidate,)}))
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
             csvs[path.stem], receipt=receipts[path.stem]
         )

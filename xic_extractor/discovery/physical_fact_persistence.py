@@ -36,6 +36,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PreparedSignal,
 )
+from xic_extractor.processing_identity import FileContentFingerprint
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
@@ -205,8 +206,11 @@ def write_discovery_physical_fact_sidecar(
     acquisition_input: ProcessingAcquisitionInput,
     work_manifest: Sequence[DiscoveryPhysicalWorkItem],
     records: Sequence[DiscoveryPhysicalFactRecord],
-) -> Path:
-    """Purely encode, byte-verify, and atomically publish one sample sidecar."""
+) -> FileContentFingerprint:
+    """Encode, byte-verify, and atomically publish one sample sidecar.
+
+    Returns the fingerprint of the published bytes for the batch index.
+    """
 
     if not isinstance(path, Path):
         raise TypeError("sidecar path must be a Path")
@@ -243,7 +247,7 @@ def write_discovery_physical_fact_sidecar(
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-    return path
+    return FileContentFingerprint(content_sha256=expected.hex(), byte_size=len(payload))
 
 
 def serialize_discovery_physical_fact_sidecar(

@@ -40,6 +40,10 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
+from xic_extractor.processing_identity import (
+    IdentityContractError,
+    fingerprint_file_content,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -184,6 +188,10 @@ def _population(spec, acquisition_input):
 
 
 def _physical_index_jobs(tmp_path: Path, *, count: int):
+    from xic_extractor.discovery.batch_contract import (
+        DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
+        DiscoveryCandidateUniverseReceipt,
+    )
     from xic_extractor.untargeted_execution.alignment import _PhysicalIndexJob
 
     raw_paths = tuple(tmp_path / f"sample_{index}.raw" for index in range(count))
@@ -203,7 +211,7 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
         sidecar = (
             tmp_path / acquisition_input.sample_stem / "discovery_physical_facts.json"
         )
-        write_discovery_physical_fact_sidecar(
+        fingerprint = write_discovery_physical_fact_sidecar(
             sidecar,
             run_spec=spec,
             acquisition_input=acquisition_input,
@@ -212,9 +220,23 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
         )
         candidate_ids = tuple(record.candidate_id for record in records)
         expected[acquisition_input.sample_stem] = candidate_ids
+        receipt = DiscoveryCandidateUniverseReceipt(
+            sample_stem=acquisition_input.sample_stem,
+            acquisition_source=acquisition_input.acquisition_source,
+            candidate_count=0,
+            candidate_artifact_schema_version=(
+                DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+            ),
+            candidate_artifact_sha256="0" * 64,
+            candidate_artifact_byte_size=0,
+            candidate_payload_sha256="0" * 64,
+            physical_facts_sha256=fingerprint.content_sha256,
+            physical_facts_byte_size=fingerprint.byte_size,
+        )
         jobs.append(
             _PhysicalIndexJob(
                 path=sidecar,
+                receipt=receipt,
                 expected_run_spec=spec,
                 expected_acquisition_input=acquisition_input,
                 candidate_ids=frozenset(candidate_ids),
@@ -232,16 +254,13 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
     manifest, records = _population(spec, acquisition_input)
     path = tmp_path / "out" / "discovery_physical_facts.json"
 
-    assert (
-        write_discovery_physical_fact_sidecar(
-            path,
-            run_spec=spec,
-            acquisition_input=acquisition_input,
-            work_manifest=manifest,
-            records=records,
-        )
-        == path
-    )
+    assert write_discovery_physical_fact_sidecar(
+        path,
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    ) == fingerprint_file_content(path)
     rehydrated = read_discovery_physical_fact_sidecar(
         path,
         expected_run_spec=spec,
@@ -834,6 +853,23 @@ def test_parallel_physical_indexing_is_deterministic_and_transfers_spool_ownersh
             source.close()
 
     assert not tuple(spool_dir.iterdir())
+
+
+def test_physical_indexing_rejects_sidecar_bytes_changed_after_publication(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.untargeted_execution.alignment import (
+        _index_discovery_physical_source,
+    )
+
+    (job,), _expected, _spool_dir = _physical_index_jobs(tmp_path, count=1)
+    payload = job.path.read_bytes()
+    # Same size, one changed byte inside a quoted value: still parseable JSON.
+    index = payload.index(b'"sample_0"') + 2
+    job.path.write_bytes(payload[:index] + b"X" + payload[index + 1 :])
+
+    with pytest.raises(IdentityContractError, match="physical-facts bytes"):
+        _index_discovery_physical_source(job)
 
 
 def test_threaded_physical_indexing_bounds_active_jobs(

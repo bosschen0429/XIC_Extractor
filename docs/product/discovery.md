@@ -366,8 +366,10 @@ that observation cannot resurrect a rejected candidate or create a new root.
   missing legacy fields.
 - Batch discovery handoff uses `discovery_batch_index`. For every sample,
   the Discovery owner binds the exact candidate CSV SHA-256/byte size, complete
-  path-independent candidate payload/count, and content-bound acquisition
-  source into one `DiscoveryCandidateUniverseReceipt`. A downstream real-data replay
+  path-independent candidate payload/count, the physical-facts file
+  SHA-256/byte size computed by its writer, and content-bound acquisition
+  source into one `DiscoveryCandidateUniverseReceipt`. Alignment checks the
+  physical-facts fingerprint once before reading that file. A downstream real-data replay
   must reject truncated/substituted candidate bytes and a same-stem RAW whose
   content identity differs. Candidate and RAW paths remain locators rather than
   identity. The current producer writes candidate/review locators relative to
