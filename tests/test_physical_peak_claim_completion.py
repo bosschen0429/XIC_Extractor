@@ -203,7 +203,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             processing_owners=fixture.owners, sample=sample, assessment=assessment
         )
         owners[stem] = owner_from_cid_nl_assessment_support(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
             hypothesis=hypothesis,

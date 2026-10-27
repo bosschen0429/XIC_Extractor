@@ -168,7 +168,6 @@ def _untarget_projection_inputs(
         else:
             successors = (
                 mint_cross_sample_group_identity(
-                    processing_request_id=request.processing_request_id,
                     member_subjects=tuple(
                         sorted(
                             (
@@ -184,7 +183,6 @@ def _untarget_projection_inputs(
     if disposition is not None:
         successors = tuple(
             mint_cross_sample_group_identity(
-                processing_request_id=group.processing_request_id,
                 member_subjects=group.member_subjects,
                 disposition=disposition,  # type: ignore[arg-type]
             )

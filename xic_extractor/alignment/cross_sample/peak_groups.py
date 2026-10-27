@@ -94,10 +94,6 @@ class CrossSamplePeakGroupHypothesis:
         return self.membership.group_hypothesis_id
 
     @property
-    def processing_request_id(self) -> str:
-        return self.membership.processing_request_id
-
-    @property
     def member_subjects(self) -> tuple[CrossSampleGroupMemberSubject, ...]:
         return self.membership.member_subjects
 
@@ -138,7 +134,6 @@ def construct_cross_sample_peak_group_hypotheses(
     sample_universe: frozenset[str] | None = None,
     rt_frame: RtFrame,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
-    processing_request_id: str | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
@@ -158,14 +153,6 @@ def construct_cross_sample_peak_group_hypotheses(
         raise CrossSampleContractError(
             "every owner requires an exact member subject before grouping"
         )
-    request_ids = {
-        subject.processing_request_id for subject in subjects if subject is not None
-    }
-    if len(request_ids) != 1:
-        raise CrossSampleContractError("owners crossed processing requests")
-    request_id = next(iter(request_ids))
-    if processing_request_id is not None and processing_request_id != request_id:
-        raise CrossSampleContractError("explicit request crossed owner subjects")
     if sample_universe is not None and any(
         owner.sample_stem not in sample_universe for owner in owners
     ):
@@ -199,7 +186,6 @@ def construct_cross_sample_peak_group_hypotheses(
         unresolved = basis.disposition == "undecided"
         group_identity = _identity_from_owners(
             group,
-            processing_request_id=request_id,
             disposition="unresolved" if unresolved else None,
         )
         hypothesis = _hypothesis_from_owner_group(
@@ -284,14 +270,12 @@ def _hypothesis_from_owner_group(
 def _identity_from_owners(
     owners: Sequence[SampleLocalMS1Owner],
     *,
-    processing_request_id: str,
     disposition: CrossSampleGroupDisposition | None = None,
 ) -> CrossSampleGroupIdentity:
     subjects = tuple(owner.cross_sample_member_subject for owner in owners)
     if any(subject is None for subject in subjects):
         raise CrossSampleContractError("owner is missing a CrossSample member subject")
     return mint_cross_sample_group_identity(
-        processing_request_id=processing_request_id,
         member_subjects=cast(tuple[CrossSampleGroupMemberSubject, ...], subjects),
         disposition=disposition,
     )

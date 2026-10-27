@@ -249,7 +249,7 @@ class ReviewWorkspace:
     def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
         # Translate source-owned identifiers and coordinates; never infer a group.
         source = item.get("details", {}).get("source", {})
-        group_id = source.get("group_hypothesis_id")
+        group_id = source.get("feature_id")
         candidate_id = (
             source.get("candidate_id") if item["kind"] == "candidate" else None
         )

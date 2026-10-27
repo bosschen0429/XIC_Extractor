@@ -961,11 +961,11 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
             row, group = f"row-{index:02}", f"G{index:02}"
             groups[row] = group
             for kind, identity, payload in (
-                ("rows", row, {"row_key_id": row, "group_hypothesis_id": group}),
+                ("rows", row, {"feature_id": group}),
                 (
                     "final_groups",
                     group,
-                    {"group_hypothesis_id": group, "disposition": "completed"},
+                    {"feature_id": group, "disposition": "completed"},
                 ),
             ):
                 connection.execute(

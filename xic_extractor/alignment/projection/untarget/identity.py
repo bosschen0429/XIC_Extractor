@@ -27,9 +27,5 @@ class GroupCellSubject:
     member_subject: CrossSampleGroupMemberSubject | None
 
     @property
-    def processing_request_id(self) -> str:
-        return self.group.processing_request_id
-
-    @property
     def group_hypothesis_id(self) -> str:
         return self.group.group_hypothesis_id

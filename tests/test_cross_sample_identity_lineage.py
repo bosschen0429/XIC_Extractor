@@ -26,7 +26,6 @@ def _member(fixture, sample_stem: str, **peak_kwargs):
         peak_observation=cid_nl_peak(fixture, sample_stem, **peak_kwargs),
     )
     return group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         hypothesis=hypothesis,
     )
@@ -46,7 +45,6 @@ def _mint_group_in_process(processing_request_id, members):
     )
 
     group = mint_cross_sample_group_identity(
-        processing_request_id=processing_request_id,
         member_subjects=members,
     )
     return group
@@ -67,7 +65,6 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(
-            processing_request_id=fixture.request.processing_request_id,
             member_subjects=(first, second),
         )
 
@@ -111,32 +108,15 @@ def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
         peak_observation=observation,
     )
     wrapped_a = group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
         hypothesis=hypothesis_a,
     )
     wrapped_b = group_member_subject_from_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
         hypothesis=hypothesis_b,
     )
 
     assert wrapped_a == wrapped_b
-
-
-def test_group_mint_rejects_crossed_processing_request(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleContractError,
-        mint_cross_sample_group_identity,
-    )
-
-    fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
-    other, _ = _subjects(tmp_path, "sample-c")
-    with pytest.raises(CrossSampleContractError, match="crossed processing request"):
-        mint_cross_sample_group_identity(
-            processing_request_id=other.request.processing_request_id,
-            member_subjects=(members[0],),
-        )
 
 
 def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> None:

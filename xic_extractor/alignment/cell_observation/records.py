@@ -144,8 +144,6 @@ def _outside_group_relation(
         method_assessment.content.method_result != "SUPPORT"
         or outside_group_context.processing_attempt != group_context.processing_attempt
         or outside_group_context.config != group_context.config
-        or outside_group_context.group.processing_request_id
-        != group_context.group.processing_request_id
         or outside_group_context.group.group_hypothesis_id
         == group_context.group.group_hypothesis_id
     ):

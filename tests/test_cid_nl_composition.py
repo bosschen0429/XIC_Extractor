@@ -315,7 +315,6 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         )
         owners.append(
             owner_from_cid_nl_assessment_support(
-                processing_owners=batch.context.processing_owners,
                 sample=result.job.sample,
                 assessment=assessment,
                 hypothesis=hypothesis,

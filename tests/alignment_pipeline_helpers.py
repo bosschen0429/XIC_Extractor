@@ -371,7 +371,6 @@ def _owner(
         assignment_reason="owner_exact_apex_match",
         selected_integration=_integration(apex_rt),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
-            processing_request_id=_TEST_PROCESSING_REQUEST_ID,
             sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,

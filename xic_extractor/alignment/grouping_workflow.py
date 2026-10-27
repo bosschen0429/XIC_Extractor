@@ -119,7 +119,6 @@ def build_targeted_cross_sample_groups(
                     "Targeted CID-NL selection lacks its method assessment"
                 )
             owner = owner_from_cid_nl_assessment_support(
-                processing_owners=processing_owners,
                 sample=sample,
                 assessment=assessment,
                 hypothesis=selected,
@@ -127,14 +126,12 @@ def build_targeted_cross_sample_groups(
         elif selected.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
             owner = (
                 owner_from_cid_nl_assessment_observation(
-                    processing_owners=processing_owners,
                     sample=sample,
                     assessment=assessment,
                     hypothesis=selected,
                 )
                 if assessment is not None
                 else owner_from_ms1_observation_hypothesis(
-                    processing_owners=processing_owners,
                     sample=sample,
                     hypothesis=selected,
                 )
@@ -351,14 +348,12 @@ def admit_cid_nl_group_backfills(
         hypothesis = hypotheses[0]
         owner = (
             owner_from_cid_nl_assessment_support(
-                processing_owners=result.processing_owners,
                 sample=sample,
                 assessment=assessment,
                 hypothesis=hypothesis,
             )
             if assessment.content.method_result == "SUPPORT"
             else owner_from_cid_nl_assessment_observation(
-                processing_owners=result.processing_owners,
                 sample=sample,
                 assessment=assessment,
                 hypothesis=hypothesis,
@@ -488,7 +483,6 @@ def admit_cid_nl_group_backfills(
             )
             identity = _identity_from_owners(
                 combined,
-                processing_request_id=result.processing_request_id,
                 disposition=group.disposition,
             )
             successor = replace(

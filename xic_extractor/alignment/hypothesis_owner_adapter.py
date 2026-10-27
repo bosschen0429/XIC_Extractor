@@ -233,7 +233,6 @@ def _bind_retained_assessment_hypotheses(
 
 def owner_from_cid_nl_assessment_support(
     *,
-    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
     hypothesis: PeakHypothesis,
@@ -302,7 +301,6 @@ def owner_from_cid_nl_assessment_support(
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            processing_owners=processing_owners,
             sample=sample,
             hypothesis=hypothesis,
         ),
@@ -311,7 +309,6 @@ def owner_from_cid_nl_assessment_support(
 
 def owner_from_cid_nl_assessment_observation(
     *,
-    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
     hypothesis: PeakHypothesis,
@@ -374,7 +371,6 @@ def owner_from_cid_nl_assessment_observation(
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            processing_owners=processing_owners,
             sample=sample,
             hypothesis=hypothesis,
         ),
@@ -383,7 +379,6 @@ def owner_from_cid_nl_assessment_observation(
 
 def owner_from_ms1_observation_hypothesis(
     *,
-    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     hypothesis: PeakHypothesis,
 ) -> SampleLocalMS1Owner:
@@ -420,7 +415,6 @@ def owner_from_ms1_observation_hypothesis(
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            processing_owners=processing_owners,
             sample=sample,
             hypothesis=hypothesis,
         ),

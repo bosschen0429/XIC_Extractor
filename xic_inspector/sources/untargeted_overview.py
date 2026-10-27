@@ -15,7 +15,7 @@ def review_overview(path, summary):
             numeric = {c["sample_key"] for c in cells if c["variant"] == "numeric"}
             unresolved = sum(c["variant"] == "unresolved" for c in cells)
             destination = row["route"]["destination"]
-            rows[row["row_key_id"]] = {
+            rows[row["feature_id"]] = {
                 "destination": destination,
                 "numeric_count": len(numeric),
                 "unresolved_count": unresolved,

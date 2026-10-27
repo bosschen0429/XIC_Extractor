@@ -227,7 +227,6 @@ def test_rejected_disposition_is_retained(
     fixture = _fixture(tmp_path, sample_stems=("sample-a",))
     predecessor = _group(fixture, ("sample-a",))
     rejected = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=predecessor.member_subjects,
         disposition="rejected",
     )
@@ -408,13 +407,11 @@ def _coverage_context(
 
 def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
     fixture = _Fixture(_coverage_context(tmp_path, sample_order=sample_stems))
-    request_id = fixture.context.processing_owners.request.processing_request_id
     for sample_stem, sample in fixture.samples.items():
         original = _owner(sample_stem, f"association-{sample_stem}")
         member = original.cross_sample_member_subject
         assert member is not None
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            processing_request_id=request_id,
             sample_key=sample.identity.sample_key,
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
@@ -428,9 +425,6 @@ def _group(
     sample_stems: tuple[str, ...],
 ) -> CrossSampleGroupIdentity:
     return mint_cross_sample_group_identity(
-        processing_request_id=(
-            fixture.context.processing_owners.request.processing_request_id
-        ),
         member_subjects=tuple(fixture.members[sample] for sample in sample_stems),
     )
 

@@ -162,9 +162,9 @@ def selection_sample_facts(
                 sid,
             ):
                 continue
-            if fact.get("group_hypothesis_id") not in (None, gid):
+            if fact.get("feature_id") not in (None, gid):
                 continue
-            if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+            if kind == "row" and fact.get("feature_id") not in (None, identifier):
                 continue
             if attention_reason(record_kind, fact) is not None:
                 flags[sid] |= ATTENTION
@@ -258,8 +258,7 @@ def unpack_cells(
                 "duplicate review cell for group and sample; rerun Alignment"
             )
         result[key] = {
-            "row_key_id": row_id,
-            "group_hypothesis_id": group_id,
+            "feature_id": group_id,
             "sample_key": sample_ids[sample],
             "variant": variant,
             "value": value,

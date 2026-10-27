@@ -87,13 +87,12 @@ def _review_batch(tmp_path, sample_count=2):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {"destination": route, "reason": "recorded"},
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
                 rid,
                 [
@@ -166,13 +165,12 @@ def _nearest_review_batch(tmp_path):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {"destination": "matrix", "reason": "recorded"},
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
                 rid,
                 [

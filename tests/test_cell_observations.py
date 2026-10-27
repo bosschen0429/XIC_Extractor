@@ -107,7 +107,6 @@ def _outside_group_fixture(
         assessments.append((fixture.sample(stem), assessment))
     owners = tuple(
         owner_from_cid_nl_assessment_support(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
             hypothesis=hypothesis,
@@ -659,7 +658,6 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     left = left_spine.group.membership
     right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
-        processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
     if outside_support:
@@ -766,11 +764,9 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         member.sample_key: member for member in predecessor.member_subjects
     }
     left = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(members_by_sample[samples[0].identity.sample_key],),
     )
     right = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(members_by_sample[samples[1].identity.sample_key],),
     )
     coverage = _coverage_for_groups(

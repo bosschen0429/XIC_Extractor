@@ -106,7 +106,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
     grouped = set()
     row_groups = set()
     for rid, row in records.get("rows", {}).items():
-        gid = row.get("group_hypothesis_id")
+        gid = row.get("feature_id")
         row_groups.add(gid)
         keys = record_keys["rows", rid]
         grouped.update(keys)

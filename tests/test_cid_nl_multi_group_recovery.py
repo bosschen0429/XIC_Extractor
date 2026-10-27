@@ -167,7 +167,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             assessment=assessment,
         )
         owners[name] = owner_from_cid_nl_assessment_support(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
             hypothesis=hypothesis,
@@ -1611,9 +1610,7 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     assert published[0]["sample_key"] == accepted[0]["sample_key"]
     payload = prepare_report(
         report,
-        SelectionRequest(
-            strategy="query", group_ids=(accepted[0]["group_hypothesis_id"],)
-        ),
+        SelectionRequest(strategy="query", group_ids=(accepted[0]["feature_id"],)),
     ).payload
     samples = [sample for item in payload["items"] for sample in item["samples"]]
     observed = [

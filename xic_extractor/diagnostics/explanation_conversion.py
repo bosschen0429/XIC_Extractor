@@ -96,7 +96,7 @@ def compact_explanation(
                 "SELECT d.payload, json_extract(d.payload, '$.observation') "
                 "FROM records d "
                 "WHERE d.kind='cell_decisions' "
-                "ORDER BY json_extract(d.payload,'$.row_key_id'), d.record_id"
+                "ORDER BY json_extract(d.payload,'$.feature_id'), d.record_id"
             )
             current_row = None
             cells = []
@@ -104,7 +104,7 @@ def compact_explanation(
             for decision_payload, observation_payload in rows:
                 decision = _object(decision_payload)
                 observation = _object(observation_payload)
-                row_id = decision["row_key_id"]
+                row_id = decision["feature_id"]
                 if current_row is not None and row_id != current_row:
                     writer.add_row_cells(current_row, cells, samples)
                     cells = []

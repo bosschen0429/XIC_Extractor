@@ -407,7 +407,6 @@ def _finalized_case(
             members.extend(predecessor.member_subjects)
         groups.append(
             mint_cross_sample_group_identity(
-                processing_request_id=fixture.request.processing_request_id,
                 member_subjects=tuple(members),
                 disposition=disposition,
             )

@@ -49,7 +49,6 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     return {
         "sample_key": content.sample_key,
-        "group_hypothesis_id": content.group_hypothesis_id,
         "group_owner_ids": list(content.group_owner_ids),
         "group_method_subject_id": content.group_method_subject_id,
         "group_target_label": content.group_target_label,
@@ -66,12 +65,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
 
 def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
     return {
-        **_fields(
-            observation,
-            "processing_request_id",
-            "evidence_states",
-        ),
-        "group_hypothesis_id": observation.group.group_hypothesis_id,
+        "evidence_states": observation.evidence_states,
         "sample_key": (observation.canonical_sample.identity.sample_key),
         "predecessor_cells": [
             {"content": _cell_observation_content_payload(ref.content)}
@@ -591,7 +585,9 @@ def prepare_alignment_explanation(
             for assessment in refs:
                 emit_assessment(assessment)
 
-        def emit_group(stage: str, group: Any, methods: set[str]) -> None:
+        def emit_group(
+            stage: str, group: Any, methods: set[str], feature_id: str | None = None
+        ) -> None:
             related = set()
             if stage == "initial_groups":
                 methods = {
@@ -602,8 +598,6 @@ def prepare_alignment_explanation(
                     ]
                 }
             for member in group.member_subjects:
-                if member.processing_request_id != request_id:
-                    raise ValueError("diagnostic group crossed processing request")
                 sid = member.sample_key
                 keys = (
                     hypothesis_candidates[sid, member.subject_id]
@@ -620,12 +614,8 @@ def prepare_alignment_explanation(
             if stage == "final_groups":
                 group_candidates[group.group_hypothesis_id].update(related)
             group_payload = {
-                **_fields(
-                    group,
-                    "group_hypothesis_id",
-                    "processing_request_id",
-                    "disposition",
-                ),
+                **({} if feature_id is None else {"feature_id": feature_id}),
+                "disposition": group.disposition,
                 "member_subjects": [
                     {
                         **_fields(member, "sample_key", "subject_kind", "subject_id"),
@@ -642,12 +632,8 @@ def prepare_alignment_explanation(
                 group_payload["inference_decisions"] = [
                     asdict(decision) for decision in group.inference_decisions
                 ]
-            add(
-                stage,
-                group.group_hypothesis_id,
-                group_payload,
-                related,
-            )
+            # A published group is located by its feature_id; others by rowid.
+            add(stage, feature_id, group_payload, related)
 
         child_count = 0
         row_count = 0
@@ -702,8 +688,18 @@ def prepare_alignment_explanation(
             methods = {
                 provider.method_subject_id for provider in core.scope.evidence_providers
             }
+            # Same child and row order as the TSV writer that labels rows.
+            feature_ids = {}
+            for row in child.completed_projection.rows:
+                row_count += 1
+                feature_ids[row.group.group_hypothesis_id] = feature_id_label(row_count)
             for group in core.final_population:
-                emit_group("final_groups", group, methods)
+                emit_group(
+                    "final_groups",
+                    group,
+                    methods,
+                    feature_ids.get(group.group_hypothesis_id),
+                )
             risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = (
                 defaultdict(list)
             )
@@ -724,9 +720,7 @@ def prepare_alignment_explanation(
 
             for row in child.completed_projection.rows:
                 group_id = row.group.group_hypothesis_id
-                # Same child and row order as the TSV writer that labels rows.
-                row_count += 1
-                feature_id = feature_id_label(row_count)
+                feature_id = feature_ids[group_id]
                 related = group_candidates[group_id]
                 cells = [
                     {
@@ -743,11 +737,9 @@ def prepare_alignment_explanation(
                 ]
                 add(
                     "rows",
-                    row.group.group_hypothesis_id,
+                    feature_id,
                     {
-                        "row_key_id": row.group.group_hypothesis_id,
                         "feature_id": feature_id,
-                        "group_hypothesis_id": group_id,
                         "route": {
                             "destination": row.route.destination,
                             "reason": row.route.reason,
@@ -765,7 +757,7 @@ def prepare_alignment_explanation(
                 )
                 if not full_audit:
                     sink.add_row_cells(
-                        group_id,
+                        feature_id,
                         cells,
                         sample_ordinals,
                     )
@@ -778,8 +770,7 @@ def prepare_alignment_explanation(
                             **_fields(decision, "variant", "value", "source"),
                             "signal_quality": review_cell(decision)["signal_quality"],
                             "membership_risks": cell["membership_risks"],
-                            "row_key_id": row.group.group_hypothesis_id,
-                            "group_hypothesis_id": group_id,
+                            "feature_id": feature_id,
                             "sample_key": (
                                 decision.subject.canonical_sample.identity.sample_key
                             ),

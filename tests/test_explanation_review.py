@@ -116,7 +116,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             ("G3", 'row-"z', [("C5", "S1")]),
             ("G4", "empty", []),
         ):
-            group = {"group_hypothesis_id": gid}
+            group = {"feature_id": gid}
             if gid == "G3":
                 group["member_subjects"] = [
                     {
@@ -126,9 +126,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 ]
             writer.add_record("final_groups", gid, group, keys)
             if rid is not None:
-                writer.add_record(
-                    "rows", rid, {"row_key_id": rid, "group_hypothesis_id": gid}, keys
-                )
+                writer.add_record("rows", rid, {"feature_id": gid}, keys)
                 writer.add_row_cells(
                     rid,
                     [
@@ -341,7 +339,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
         def values(detail):
             return sorted(
                 (
-                    row["group_hypothesis_id"],
+                    row["feature_id"],
                     row["sample_key"],
                     row["variant"],
                     row.get("value"),
@@ -433,7 +431,7 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
     detail = read_cid_nl_explanation(
         review, candidate_id=candidates["S1"][0].candidate_id
     )
-    group_id = detail["records"]["final_groups"][0]["group_hypothesis_id"]
+    group_id = detail["records"]["final_groups"][0]["feature_id"]
     for stem in sample_ids:
         (tmp_path / f"{stem}.raw").write_bytes(stem.encode())
     return review, group_id, sample_ids, candidates
@@ -754,13 +752,11 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
         writer.add_record(
             "final_groups",
             "G1",
-            {"group_hypothesis_id": "G1", "disposition": "completed"},
+            {"feature_id": "G1", "disposition": "completed"},
             keys,
         )
-        writer.add_record(
-            "rows", "row-1", {"row_key_id": "row-1", "group_hypothesis_id": "G1"}, keys
-        )
-        writer.add_row_cells("row-1", cells, {"S1": 0, "S2": 1})
+        writer.add_record("rows", "G1", {"feature_id": "G1"}, keys)
+        writer.add_row_cells("G1", cells, {"S1": 0, "S2": 1})
         writer.finalize(
             _summary_fixture(
                 {

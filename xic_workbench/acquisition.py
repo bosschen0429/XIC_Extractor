@@ -98,7 +98,7 @@ def export_explanation_curves(
                 allowed = {
                     oid
                     for group in detail["records"].get("final_groups", [])
-                    if group["group_hypothesis_id"] == group_id
+                    if group["feature_id"] == group_id
                     for member in group["member_subjects"]
                     if member["sample_key"] == sid
                     for oid in member["physical_peak_keys"]

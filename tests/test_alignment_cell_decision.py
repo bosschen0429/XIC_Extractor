@@ -372,7 +372,6 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     left = left_spine.group.membership
     right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
-        processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
     # CID-NL composition gives each spine a cell only for its searched sample.
@@ -439,11 +438,9 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     )
     predecessor = spine.group.membership
     left = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(predecessor.member_subjects[0],),
     )
     right = mint_cross_sample_group_identity(
-        processing_request_id=predecessor.processing_request_id,
         member_subjects=(predecessor.member_subjects[1],),
     )
     coverage = _coverage_for_groups(

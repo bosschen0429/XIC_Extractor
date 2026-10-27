@@ -57,8 +57,7 @@ _TECHNICAL_LABELS = {
     "sample_id": "樣本 ID",
     "sample_key": "樣本 ID",
     "candidate_id": "候選 ID",
-    "row_key_id": "結果列 ID",
-    "group_hypothesis_id": "分組 ID",
+    "feature_id": "分組 ID",
     "physical_peak_key": "觀察 ID",
     "processing_request_id": "處理 request ID",
     "processing_attempt_id": "處理 attempt ID",
@@ -108,8 +107,7 @@ def related_group(
     curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
     source = item.details["source"]
-    group_id = source.get("group_hypothesis_id")
-    row_key_id = source.get("row_key_id") if item.kind == "row" else None
+    group_id = source.get("feature_id")
     route = source.get("route", {})
     reason = route.get(
         "reason", source.get("reason", source.get("disposition", "unavailable"))
@@ -118,7 +116,6 @@ def related_group(
         "id": item.serialized_ref,
         "label": f"相關分組 {group_id or item.identifier}",
         "group_id": group_id or item.identifier,
-        "row_key_id": row_key_id,
         "edge_refs": list(edge_refs),
         "reason": reason,
         "sample_ids": list(item.sample_ids),
@@ -551,8 +548,7 @@ def _record_links(
 ) -> list[dict[str, str]]:
     links = []
     for key, label in (
-        ("row_key_id", "查看結果列"),
-        ("group_hypothesis_id", "查看分組紀錄"),
+        ("feature_id", "查看分組紀錄"),
         ("payload_id", "查看曲線來源"),
         ("record_id", "查看所指紀錄"),
     ):

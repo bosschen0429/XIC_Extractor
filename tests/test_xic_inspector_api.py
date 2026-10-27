@@ -106,10 +106,9 @@ def _create_mock_db(
         )
         writer.add_record(
             "rows",
-            "row-01",
+            "G1",
             {
-                "row_key_id": "row-01",
-                "group_hypothesis_id": "G1",
+                "feature_id": "G1",
                 "reason": "Passed alignment",
             },
             [("C1", "S1")],
@@ -117,13 +116,13 @@ def _create_mock_db(
         writer.add_record(
             "final_groups",
             "G1",
-            {"group_hypothesis_id": "G1", "disposition": "completed"},
+            {"feature_id": "G1", "disposition": "completed"},
             [("C1", "S1")],
         )
         writer.add_record(
             "cell_decisions",
             "cd-01",
-            {"row_key_id": "row-01", "sample_id": "S1", "quantitative_value": 1000.0},
+            {"feature_id": "G1", "sample_id": "S1", "quantitative_value": 1000.0},
             [("C1", "S1")],
         )
         writer.add_record(
@@ -225,7 +224,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
 
     assert result.selected_count == 1
     item = _report_data(output)["items"][0]
-    assert json.loads(item["id"])[-1] == "row-01"
+    assert json.loads(item["id"])[-1] == "G1"
     assert item["details"]["readable_records"]
     assert {"rows", "final_groups", "cell_decisions"}.issubset(detail["records"])
 
@@ -272,8 +271,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     stored_cell = {
         "cell_observation_id": "cell-observation-02",
         "decision_id": "decision-02",
-        "group_hypothesis_id": "G1",
-        "row_key_id": "row-01",
+        "feature_id": "G1",
         "sample_key": "S2",
         "source": "",
         "value": None,
@@ -281,7 +279,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     }
     stored_observation = {
         "cell_observation_id": "cell-observation-02",
-        "group_hypothesis_id": "G1",
+        "feature_id": "G1",
         "sample_key": "S2",
         "processing_request_id": "req-01",
         "evidence_states": [],
@@ -294,7 +292,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
             (
                 "cell_decisions",
                 "wrong-row",
-                {**stored_cell, "decision_id": "wrong-row", "row_key_id": "row-02"},
+                {**stored_cell, "decision_id": "wrong-row", "feature_id": "row-02"},
             ),
             (
                 "cell_decisions",
@@ -302,7 +300,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 {
                     **stored_cell,
                     "decision_id": "wrong-group",
-                    "group_hypothesis_id": "G2",
+                    "feature_id": "G2",
                 },
             ),
             (
@@ -599,7 +597,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                 (
                     "rows",
                     rid,
-                    json.dumps({"row_key_id": rid, "group_hypothesis_id": "G1"}),
+                    json.dumps({"feature_id": "G1"}),
                 ),
             )
             _insert_link(
@@ -633,8 +631,8 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     record_property("selected_items", result.selected_count)
     assert result.selected_count == row_count
     items = _report_data(output)["items"]
-    assert {json.loads(item["id"])[-1] for item in items} == {
-        f"row-{index:02d}" for index in range(1, row_count + 1)
+    assert {json.loads(item["id"])[-1] for item in items} == {"G1"} | {
+        f"row-{index:02d}" for index in range(2, row_count + 1)
     }
     assert all(
         item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
@@ -728,7 +726,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
         for kind, rid in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-01"),
         ):
@@ -740,8 +738,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
-                        "group_hypothesis_id": "G1",
+                        "feature_id": "G1",
                         "sample_key": "S2",
                         "value": None,
                         "variant": "missing",
@@ -1071,13 +1068,13 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 json.dumps(
                     {
                         "cell_observation_id": "cell-observation-01",
-                        "group_hypothesis_id": "G1",
+                        "feature_id": "G1",
                         "sample_key": "S1",
                         "predecessor_cells": [
                             {
                                 "content": {
                                     "sample_key": "S1",
-                                    "group_hypothesis_id": "G1",
+                                    "feature_id": "G1",
                                     "physical_peak_key": "obs-01",
                                     "method_result": "SUPPORT",
                                 }
@@ -1207,12 +1204,12 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 (
                     "rows",
                     row_id,
-                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                    {"feature_id": group_id},
                 ),
                 (
                     "final_groups",
                     group_id,
-                    {"group_hypothesis_id": group_id, "disposition": "provisional"},
+                    {"feature_id": group_id, "disposition": "provisional"},
                 ),
                 (
                     "terminal_subjects",
@@ -1348,7 +1345,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 ),
             )
         for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
-            for kind, ref in (("rows", "row-01"), ("final_groups", "G1")):
+            for kind, ref in (("rows", "G1"), ("final_groups", "G1")):
                 _insert_link(
                     connection,
                     (candidate_id, sample_id, kind, ref),
@@ -1358,7 +1355,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             (
                 json.dumps(
                     {
-                        "group_hypothesis_id": "G1",
+                        "feature_id": "G1",
                         "disposition": "completed",
                         "member_subjects": [
                             {
@@ -1378,13 +1375,13 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             (
                 "rows",
                 "row-02",
-                {"row_key_id": "row-02", "group_hypothesis_id": "G2"},
+                {"feature_id": "G2"},
             ),
             (
                 "final_groups",
                 "G2",
                 {
-                    "group_hypothesis_id": "G2",
+                    "feature_id": "G2",
                     "disposition": "completed",
                     "member_subjects": [
                         {
@@ -1533,12 +1530,12 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                 (
                     "rows",
                     row_id,
-                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                    {"feature_id": group_id},
                 ),
                 (
                     "final_groups",
                     group_id,
-                    {"group_hypothesis_id": group_id, "disposition": "completed"},
+                    {"feature_id": group_id, "disposition": "completed"},
                 ),
             ):
                 connection.execute(
@@ -1577,7 +1574,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
     items = _report_data(output)["items"]
 
     assert result.selected_count == 2
-    assert {item["details"]["source"]["group_hypothesis_id"] for item in items} == {
+    assert {item["details"]["source"]["feature_id"] for item in items} == {
         "G1",
         "G4",
     }
@@ -1686,7 +1683,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     item = _report_data(output)["items"][0]
     records = item["details"]["records"]
     assert next(r for r in records if r["ref"] == "cd-01")["facts"] == {
-        "row_key_id": "row-01",
+        "feature_id": "G1",
         "sample_id": "S1",
         "quantitative_value": 1000.0,
     }
@@ -1695,7 +1692,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     decision = readable["cd-01"]
     assert decision["sample_ids"] == ["S1"]
     assert decision["candidate_ids"] == ["C1"]
-    assert decision["links"] == [{"ref": "row-01", "label": "查看結果列"}]
+    assert decision["links"] == [{"ref": "G1", "label": "查看分組紀錄"}]
     assert {field["label"]: field["value"] for field in decision["fields"]}[
         "正式定量值"
     ] == "1,000"
@@ -1705,7 +1702,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
         >= {
             "來源紀錄 ID": "cd-01",
             "樣本 ID": "S1",
-            "結果列 ID": "row-01",
+            "分組 ID": "G1",
         }.items()
     )
 
@@ -1752,7 +1749,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": None,
                     }
@@ -1770,7 +1767,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S2",
                         "quantitative_value": 0,
                     }
@@ -1778,7 +1775,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ),
         )
         for kind, ref in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
@@ -1822,7 +1819,7 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
                 "cd-extra",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": 2000.0,
                     }
@@ -1858,8 +1855,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                 "cd-02",
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
-                        "group_hypothesis_id": "G1",
+                        "feature_id": "G1",
                         "sample_key": "S2",
                         "value": 700.0,
                         "variant": "numeric",
@@ -1868,7 +1864,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ),
         )
         for kind, ref in (
-            ("rows", "row-01"),
+            ("rows", "G1"),
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
@@ -2072,7 +2068,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": area,
                     }
@@ -2130,8 +2126,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     source_code = "trapezoid_counts_seconds_on_canonical_signal"
     with sqlite3.connect(report) as connection:
         row = {
-            "row_key_id": "row-01",
-            "group_hypothesis_id": "G1",
+            "feature_id": "G1",
             "route": {"destination": destination, "reason": state},
         }
         connection.execute(
@@ -2139,14 +2134,14 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='final_groups'",
-            (json.dumps({"group_hypothesis_id": "G1", "disposition": state}),),
+            (json.dumps({"feature_id": "G1", "disposition": state}),),
         )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='cell_decisions'",
             (
                 json.dumps(
                     {
-                        "row_key_id": "row-01",
+                        "feature_id": "G1",
                         "sample_id": "S1",
                         "quantitative_value": 1000.0,
                         "variant": "numeric",
@@ -2175,7 +2170,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                     "cd-02",
                     json.dumps(
                         {
-                            "row_key_id": "row-01",
+                            "feature_id": "G1",
                             "sample_id": "S2",
                             "quantitative_value": 700.0,
                             "variant": "numeric",
@@ -2186,7 +2181,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ),
             )
             for kind, rid in (
-                ("rows", "row-01"),
+                ("rows", "G1"),
                 ("final_groups", "G1"),
                 ("cell_decisions", "cd-02"),
             ):
@@ -2209,7 +2204,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     labels = item["title"] + item["reason_label"] + item["route_label"]
     assert not any(
         token in labels
-        for token in ("row-01", "G1", "一致", "成功", "有效", "信心", "原始理由")
+        for token in ("G1", "G1", "一致", "成功", "有效", "信心", "原始理由")
     )
     assert item["reason"] == state and item["route"] == row["route"]
     assert item["samples"][0]["decision_reason"] == (
@@ -2250,8 +2245,7 @@ def _create_nearest_mz_db(directory, rows):
                 "rows",
                 rid,
                 {
-                    "row_key_id": rid,
-                    "group_hypothesis_id": rid,
+                    "feature_id": rid,
                     "route": {
                         "destination": row.get("route", "matrix"),
                         "reason": "recorded",
@@ -2259,7 +2253,7 @@ def _create_nearest_mz_db(directory, rows):
                 },
                 keys,
             )
-            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
             writer.add_row_cells(
                 rid,
                 [
@@ -2349,7 +2343,7 @@ def test_nearest_mz_ranks_unrounded_display_mz_not_closest_witness(tmp_path):
         ),
     )
     items = prepared.payload["items"]
-    assert [i["details"]["source"]["row_key_id"] for i in items] == [
+    assert [i["details"]["source"]["feature_id"] for i in items] == [
         "round-b",
         "round-a",
         "near",
@@ -2438,7 +2432,7 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
         )
         assert prepared.matched_count == 33
         pages.extend(
-            i["details"]["source"]["row_key_id"] for i in prepared.payload["items"]
+            i["details"]["source"]["feature_id"] for i in prepared.payload["items"]
         )
     assert pages == expected
     assert len(set(pages)) == 33
@@ -2465,7 +2459,7 @@ def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_pa
         report,
         SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=123.4),
     )
-    assert [i["details"]["source"]["row_key_id"] for i in matrix.payload["items"]] == [
+    assert [i["details"]["source"]["feature_id"] for i in matrix.payload["items"]] == [
         "resolved",
         "valid",
     ]

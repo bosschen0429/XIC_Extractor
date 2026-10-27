@@ -242,15 +242,17 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     else:
         terminal = records["terminal_subjects"][0]
         assert terminal["physical_peak_keys"]
-        assert terminal["trace_group_id"] not in {
-            g["group_hypothesis_id"] for g in records["initial_groups"]
-        }
         assert "initial_edges" not in records
         source_groups = {
-            group.group_hypothesis_id: group for group in completed.initial_groups
+            tuple(member.subject_id for member in group.member_subjects): group
+            for group in completed.initial_groups
         }
         for retained_group in records["initial_groups"]:
-            source_group = source_groups[retained_group["group_hypothesis_id"]]
+            source_group = source_groups[
+                tuple(
+                    member["subject_id"] for member in retained_group["member_subjects"]
+                )
+            ]
             assert retained_group["inference_basis"] == json.loads(
                 json.dumps(asdict(source_group.inference_basis))
             )
@@ -684,9 +686,9 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
             ("b", "s2", {"candidate_id": "b"}),
         ),
         records={
-            ("initial_groups", "shared"): {"group_hypothesis_id": "shared"},
-            ("initial_groups", "second"): {"group_hypothesis_id": "second"},
-            ("final_groups", "shared"): {"group_hypothesis_id": "shared"},
+            ("initial_groups", "shared"): {"feature_id": "shared"},
+            ("initial_groups", "second"): {"feature_id": "second"},
+            ("final_groups", "shared"): {"feature_id": "shared"},
             ("exclusions", "unrelated"): {"reason_code": "unrelated"},
         },
         links=(

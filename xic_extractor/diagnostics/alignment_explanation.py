@@ -738,7 +738,7 @@ def _read_review_cells(
             )
         )
     for row_id, record, payload in rows:
-        group_id = _object(record)["group_hypothesis_id"]
+        group_id = _object(record)["feature_id"]
         result.update(
             unpack_cells(
                 payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
@@ -773,7 +773,7 @@ def open_review_population(
                     unpack_cells(
                         payload,
                         row_id=row_id,
-                        group_id=_object(record)["group_hypothesis_id"],
+                        group_id=_object(record)["feature_id"],
                         sample_ids=samples,
                     ).values()
                 ),
@@ -904,7 +904,7 @@ def read_explanation_selection(
                 raise ExplanationError("Selected review links to a missing record")
             records.setdefault(kind, {})[rid] = _object(row[0])
         for payload in records.get("rows", {}).values():
-            gid = payload.get("group_hypothesis_id")
+            gid = payload.get("feature_id")
             if gid is None or gid in records.get("final_groups", {}):
                 continue
             row = connection.execute(
@@ -953,7 +953,7 @@ def read_cid_nl_explanation(
         ):
             records.setdefault(kind, []).append(_object(payload))
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
-            row_ids = [row["row_key_id"] for row in records.get("rows", [])]
+            row_ids = [row["feature_id"] for row in records.get("rows", [])]
             records["cell_decisions"] = list(
                 _read_review_cells(connection, summary, row_ids).values()
             )

@@ -112,8 +112,8 @@ class CidNlSource:
                         cast(str, edge_ref)
                     )
         for rid, fact in self.records.get("cell_decisions", {}).items():
-            group_id = fact.get("group_hypothesis_id")
-            row_key_id = fact.get("row_key_id")
+            group_id = fact.get("feature_id")
+            row_key_id = fact.get("feature_id")
             if isinstance(group_id, str) and isinstance(row_key_id, str):
                 self.row_cell_decisions.setdefault((group_id, row_key_id), {})[rid] = (
                     fact
@@ -144,7 +144,7 @@ class CidNlSource:
         grouped = set()
         # Construct the run population before applying sample scope.
         for rid, payload in self.records.get("rows", {}).items():
-            gid = payload.get("group_hypothesis_id")
+            gid = payload.get("feature_id")
             row_groups.add(gid)
             keys = self._linked("rows", rid)
             grouped.update(keys)
@@ -451,9 +451,9 @@ class CidNlSource:
                 fact_sid = fact.get("sample_key", fact.get("sample_id"))
                 if fact_sid is not None and fact_sid != sid:
                     continue
-                if fact.get("group_hypothesis_id") not in (None, gid):
+                if fact.get("feature_id") not in (None, gid):
                     continue
-                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+                if kind == "row" and fact.get("feature_id") not in (None, identifier):
                     continue
                 facts[record_kind, rid] = fact
                 fact_samples.setdefault((record_kind, rid), set()).add(sid)
@@ -478,9 +478,9 @@ class CidNlSource:
                     "sample_key", observation.get("sample_id")
                 )
                 if (
-                    observation.get("group_hypothesis_id") != gid
+                    observation.get("feature_id") != gid
                     or observation_sid != sid
-                    or observation.get("row_key_id") not in (None, identifier)
+                    or observation.get("feature_id") not in (None, identifier)
                 ):
                     continue
                 facts["cell_observations", observation_id] = observation
@@ -643,7 +643,7 @@ class CidNlSource:
                 content = predecessor.get("content", {})
                 if (
                     content.get("sample_key") == sample_id
-                    and content.get("group_hypothesis_id") == group_id
+                    and content.get("feature_id") == group_id
                     and isinstance(content.get("physical_peak_key"), str)
                 ):
                     observation_refs.add(content["physical_peak_key"])
@@ -903,7 +903,7 @@ class CidNlSource:
         return rendered
 
     def _relationship_members(self, item: CanonicalItem) -> list[dict[str, Any]]:
-        group_id = item.details["source"].get("group_hypothesis_id")
+        group_id = item.details["source"].get("feature_id")
         group = self.records.get("final_groups", {}).get(group_id, {})
         return [
             {
@@ -917,7 +917,7 @@ class CidNlSource:
 
     def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
         source = item.details["source"]
-        group_id = source.get("group_hypothesis_id")
+        group_id = source.get("feature_id")
         group = self.records.get("final_groups", {}).get(group_id, {})
         members = group.get("member_subjects")
         if not isinstance(members, list):

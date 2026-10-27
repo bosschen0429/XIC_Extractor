@@ -160,11 +160,8 @@ def _eligible_groups(
     terminals: dict[str, TerminalSearchObservation],
 ) -> tuple[CrossSampleGroupIdentity, ...]:
     groups = finalized_alignment.final_population
-    request_id = finalized_alignment.processing_request_id
     members_by_sample = {
-        sample_id: _member_from_terminal(
-            terminal=terminals[sample_id], sample=sample, request_id=request_id
-        )
+        sample_id: _member_from_terminal(terminal=terminals[sample_id], sample=sample)
         for sample_id, sample in sample_by_id.items()
         if type(terminals[sample_id]) is ObservedSearchSubject
     }
@@ -191,7 +188,6 @@ def _member_from_terminal(
     *,
     terminal: TerminalSearchObservation,
     sample: ResolvedCanonicalSampleIdentity,
-    request_id: str,
 ) -> CrossSampleGroupMemberSubject:
     if type(terminal) is not ObservedSearchSubject:
         raise TargetProjectionContractError(
@@ -201,7 +197,6 @@ def _member_from_terminal(
         return group_member_subject_from_peak_hypothesis(
             sample=sample,
             hypothesis=terminal.hypothesis,
-            processing_request_id=request_id,
         )
     except Exception as exc:
         raise TargetProjectionContractError(
