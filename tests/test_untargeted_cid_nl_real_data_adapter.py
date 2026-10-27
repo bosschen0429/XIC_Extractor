@@ -713,7 +713,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     fixture = replace(
         fixture, owners=bind_physical_capture(fixture.owners, physical_records)
     )
-    observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
+    observer = cid_nl_acquisition._PartitionAcquisitionObserver()
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
 
@@ -745,16 +745,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
 
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
-    retained = observer.artifact_closure()
     assert support.content.evidence.scan_number in candidates[0].seed_scan_ids
-    assert retained
-    assert all(
-        artifact.producer_processing_request_id
-        == fixture.owners.request.processing_request_id
-        and artifact.producer_processing_attempt_id
-        == fixture.owners.attempt.processing_attempt_id
-        for artifact in retained
-    )
     assert observer.initial_acquisition is not None
 
 

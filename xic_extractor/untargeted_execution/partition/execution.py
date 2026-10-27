@@ -37,7 +37,6 @@ from xic_extractor.execution._observability import (
 )
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
-    RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
     RuntimeResourceSettlementReceipt,
     RuntimeTelemetryProvider,
@@ -48,13 +47,12 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.processing_identity import (
-    canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     _has_recorded_precursor_reference,
-    _PartitionWorkObserver,
+    _PartitionAcquisitionObserver,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
@@ -419,7 +417,7 @@ def _prepare_runtime_work(
                 job=job,
                 resource_key=resource_key,
                 initial_requires_raw=initial_requires_raw,
-                observer=_PartitionWorkObserver(job.processing_owners),
+                observer=_PartitionAcquisitionObserver(),
                 error=error,
             )
         )
@@ -431,8 +429,6 @@ def _prepare_runtime_work(
         }
         for state in states:
             state.adapter_result = seeded[state.job.work_unit_key]
-            for artifact in state.adapter_result.lineage_artifacts:
-                state.observer.record_artifact(artifact)
 
     sample_groups = _runtime_sample_groups(states)
     initial_groups_by_sample = {
@@ -515,7 +511,6 @@ def _prepare_runtime_work(
     def provide_worker_batch(_aggregate: object) -> RuntimeWorkerBatchReceipt:
         settlements: list[WorkUnitSettlement] = []
         resource_settlements: list[RuntimeResourceSettlementReceipt] = []
-        artifact_registrations: list[RuntimeArtifactRegistrationReceipt] = []
         acquisitions: list[RuntimeAcquisitionReceipt] = []
         worker_pool = pool or WorkerAdmissionPool(
             max_workers=raw_workers,
@@ -773,7 +768,6 @@ def _prepare_runtime_work(
             )
             settlements.extend(batch.settlements)
             resource_settlements.extend(batch.resource_settlements)
-            artifact_registrations.extend(batch.artifact_registrations)
             acquisitions.extend(batch.acquisitions)
             if sample_result is not None:
                 observed_results.append(sample_result)
@@ -819,7 +813,6 @@ def _prepare_runtime_work(
         return RuntimeWorkerBatchReceipt(
             settlements=tuple(settlements),
             resource_settlements=tuple(resource_settlements),
-            artifact_registrations=tuple(artifact_registrations),
             acquisitions=tuple(acquisitions),
         )
 
@@ -904,40 +897,6 @@ def _finalize_job_state(
     adapter_result = state.adapter_result
     acquisition = state.observer.acquisition
 
-    try:
-        observed_artifacts = state.observer.artifact_closure()
-    except Exception as exc:
-        observed_artifacts = state.observer.observed_artifacts()
-        if state.error is None:
-            state.error = exc
-
-    if adapter_result is not None:
-        try:
-            # Backfill may reuse exact measured evidence from the initial result.
-            # Equal artifacts are one lineage node; conflicting identities still fail.
-            expected_lineage = canonical_current_attempt_artifact_closure(
-                producer_attempt=job.processing_owners.attempt,
-                artifacts=tuple(
-                    dict.fromkeys(
-                        (
-                            *adapter_result.lineage_artifacts,
-                            *(
-                                artifact
-                                for backfill in state.backfill_attempts
-                                for artifact in backfill.lineage_artifacts
-                            ),
-                        )
-                    )
-                ),
-            )
-            if observed_artifacts != expected_lineage:
-                raise UntargetedPartitionError(
-                    "worker observer does not close the exact adapter/backfill result"
-                )
-        except Exception as exc:
-            if state.error is None:
-                state.error = exc
-
     success = state.error is None and adapter_result is not None
     if not success and state.error is None:
         state.error = UntargetedPartitionError(
@@ -984,13 +943,6 @@ def _finalize_job_state(
     batch = RuntimeWorkerBatchReceipt(
         settlements=(settlement,),
         resource_settlements=resource_receipts,
-        artifact_registrations=tuple(
-            RuntimeArtifactRegistrationReceipt(
-                work_unit_key=job.work_unit_key,
-                artifact=artifact,
-            )
-            for artifact in observed_artifacts
-        ),
         acquisitions=(
             (
                 RuntimeAcquisitionReceipt(
