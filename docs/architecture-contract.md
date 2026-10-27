@@ -108,11 +108,13 @@ internal-defense changes:
    bypass at its owner or caller; uncertainty alone does not justify another
    defense.
 3. Identity and ordering:
-   - Allocate an identifier only when a reference must cross a boundary that
-     the object itself cannot cross (a file, table, or human-facing output),
-     and no existing natural key is sufficient. Name the consumer, boundary,
-     missing natural key, and scope. Reuse objects within a process and pass
-     actual data across worker handoffs.
+   - Allocate a public or persisted identifier only when a reference must cross
+     a boundary that the object itself cannot cross (a file, table, or
+     human-facing output), and no existing natural key is sufficient. Name the
+     consumer, boundary, missing natural key, and scope. Within a process, reuse
+     objects or domain keys that serve actual lookup and association; do not
+     build a second identity or proof graph around them. Worker handoffs carry
+     the necessary data and association facts, not self-verifying identities.
    - Use raw measured domain facts for deterministic ordering and tie-breaking,
      not aggregate centers, scores, hashes, or execution order. If distinct
      competing facts still share the complete key, report the ambiguity
