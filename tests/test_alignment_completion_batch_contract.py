@@ -133,7 +133,6 @@ def _candidate_universe_payload(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_payload_sha256": "0" * 64,
-                "discovery_receipt_id": ("xic.discovery-candidate-universe:test"),
                 "candidate_artifact_schema_version": "discovery_candidates_csv",
                 "candidate_artifact_sha256": "0" * 64,
                 "candidate_artifact_byte_size": 0,
@@ -549,11 +548,10 @@ def _universe_entry(**overrides: object) -> dict[str, object]:
         "candidate_count": 1,
         "candidate_ids": ["c1"],
         "candidate_payload_sha256": "a" * 64,
-        "discovery_receipt_id": "xic.discovery-candidate-universe:test",
         "candidate_artifact_schema_version": "discovery_candidates_csv",
         "candidate_artifact_sha256": "b" * 64,
         "candidate_artifact_byte_size": 0,
-        "acquisition_source_id": "xic.acquisition-source:test",
+        "acquisition_source_id": "sha256:" + "c" * 64,
     }
     entry.update(overrides)
     return entry

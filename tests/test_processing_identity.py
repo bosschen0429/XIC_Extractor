@@ -125,10 +125,6 @@ def test_typed_identity_reuse_does_not_normalize_distinct_bytes(basis) -> None:
 
 def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
     source = AcquisitionSourceIdentity(
-        acquisition_source_id=(
-            "xic.acquisition-source:"
-            "a856331f7d6fc3e3ccc62044a371f1f5c2a38655b1451c6fa88915fb649c6955"
-        ),
         content_sha256=(
             "551ebcc397ca84390e53746bbf4c3b1a30c31f3ed35065dc724c40a8bbb89fc4"
         ),
@@ -152,7 +148,7 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
     )
     assert request.processing_request_id == (
         "xic.processing-request:"
-        "7ea38cb865a270184b34af1cd97982ce1be31cc742497e55c2f17a992df1fe79"
+        "0e72426ca2d554e64d699c239ebbe47b089ff65ec05945d65aea87d4eec8af09"
     )
 
     changed_algorithm = build_processing_request_identity(
@@ -188,7 +184,7 @@ def test_acquisition_source_identity_is_content_bound_not_path_bound(
     assert str(first) not in first_identity.acquisition_source_id
 
 
-def test_acquisition_source_identity_changes_on_substitution_or_namespace(
+def test_acquisition_source_identity_changes_on_substitution(
     tmp_path: Path,
 ) -> None:
     path = _raw(tmp_path / "sample.raw", b"first-content")
@@ -196,15 +192,9 @@ def test_acquisition_source_identity_changes_on_substitution_or_namespace(
 
     path.write_bytes(b"mutated-content")
     mutated = _source_identity(path)
-    other_namespace = build_acquisition_source_identity(
-        path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:2",
-    )
 
     assert mutated.acquisition_source_id != first.acquisition_source_id
     assert mutated.content_sha256 != first.content_sha256
-    assert other_namespace.acquisition_source_id != mutated.acquisition_source_id
 
 
 def test_fingerprint_observer_reports_measured_calls_bytes_and_time(
@@ -680,10 +670,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
 
     with pytest.raises(IdentityContractError, match="unable to hash"):
         _source_identity(tmp_path / "missing.raw")
-
-    source = _source_identity(first)
-    with pytest.raises(IdentityContractError, match="rebind"):
-        replace(source, byte_size=source.byte_size + 1)
 
     request = _request(
         config,

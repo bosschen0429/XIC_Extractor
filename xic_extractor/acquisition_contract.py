@@ -439,7 +439,6 @@ def _capability_from_payload(value: object) -> TraceAcquisitionCapability:
     _require_keys(
         source,
         (
-            "acquisition_source_id",
             "content_sha256",
             "byte_size",
             "acquisition_format",
@@ -467,9 +466,6 @@ def _capability_from_payload(value: object) -> TraceAcquisitionCapability:
         )
     content_sha256 = source["content_sha256"]
     acquisition_source = AcquisitionSourceIdentity(
-        acquisition_source_id=_required_text(
-            source["acquisition_source_id"], "acquisition_source_id"
-        ),
         content_sha256=None
         if content_sha256 is None
         else _required_text(content_sha256, "content_sha256"),

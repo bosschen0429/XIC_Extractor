@@ -8,7 +8,6 @@ selection, and delivery authority remain in their respective adapters.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
@@ -29,9 +28,6 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 ACQUISITION_MODE = "dda_ddms2"
-
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CidNlEvidenceContractError(ValueError):
@@ -93,11 +89,6 @@ class CidNlEvidenceObservation:
         )
 
     def __post_init__(self) -> None:
-        _validate_typed_id(
-            self.acquisition_source_id,
-            prefix=_ACQUISITION_SOURCE_ID_PREFIX,
-            field="acquisition_source_id",
-        )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise CidNlEvidenceContractError(
                 f"acquisition_mode must be {ACQUISITION_MODE!r}"
@@ -393,14 +384,6 @@ def _finite_float(value: float, *, field: str) -> float:
     if not math.isfinite(normalized):
         raise CidNlEvidenceContractError(f"{field} must be a finite number")
     return 0.0 if normalized == 0.0 else normalized
-
-
-def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise CidNlEvidenceContractError(f"{field} must use the {prefix!r} prefix")
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise CidNlEvidenceContractError(f"{field} must contain a SHA-256 digest")
-    return value
 
 
 __all__ = [

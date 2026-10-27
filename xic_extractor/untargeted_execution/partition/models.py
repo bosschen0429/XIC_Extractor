@@ -760,7 +760,6 @@ def _validate_partition_candidates(
     _validate_sample_candidates(job.support_candidates, job=job, label="support")
     receipt = job.discovery_receipt
     expected_receipt_values = (
-        ("discovery_receipt_id", receipt.discovery_receipt_id),
         ("candidate_payload_sha256", receipt.candidate_payload_sha256),
         (
             "candidate_artifact_schema_version",

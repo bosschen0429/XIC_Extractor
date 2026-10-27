@@ -76,7 +76,6 @@ _ACQUISITION_INPUT_KEYS = (
     "acquisition_source",
 )
 _ACQUISITION_SOURCE_KEYS = (
-    "acquisition_source_id",
     "content_sha256",
     "byte_size",
     "acquisition_format",
@@ -405,9 +404,6 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
                 "adapter_input_key": item.adapter_input_key,
                 "sample_stem": item.sample_stem,
                 "acquisition_source": {
-                    "acquisition_source_id": (
-                        item.acquisition_source.acquisition_source_id
-                    ),
                     "content_sha256": item.acquisition_source.content_sha256,
                     "byte_size": item.acquisition_source.byte_size,
                     "acquisition_format": item.acquisition_source.acquisition_format,
@@ -712,10 +708,6 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
                 ),
                 sample_stem=_text(item["sample_stem"], field="sample_stem"),
                 acquisition_source=AcquisitionSourceIdentity(
-                    acquisition_source_id=_text(
-                        source_value["acquisition_source_id"],
-                        field="acquisition_source_id",
-                    ),
                     content_sha256=_text(
                         source_value["content_sha256"], field="content_sha256"
                     ),

@@ -486,11 +486,11 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
     )
     assert set(result["acquisition_sources"]) == set(sample_ids.values())
     assert all(
-        source_id.startswith("xic.acquisition-source:")
+        source_id.startswith("sha256:")
         for source_id in result["acquisition_sources"].values()
     )
     assert {name for name, _ in opened} == {"S1.raw", "S2.raw"}
-    assert all(identity.startswith("xic.acquisition-source:") for _, identity in opened)
+    assert all(identity.startswith("sha256:") for _, identity in opened)
     assert progress == [
         (index, 2, sid)
         for index, sid in enumerate(sorted(sample_ids.values()), start=1)
@@ -514,7 +514,7 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
     )
     assert all(
         curve["stage_label"] == "diagnostic_reacquisition"
-        and curve["provenance"]["raw_identity"].startswith("xic.acquisition-source:")
+        and curve["provenance"]["raw_identity"].startswith("sha256:")
         for curve in inspector_curves
     )
 

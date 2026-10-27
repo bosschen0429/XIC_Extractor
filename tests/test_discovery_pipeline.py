@@ -473,10 +473,8 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
     assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index"}
-    assert all(
-        row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe:")
-        for row in index_rows
-    )
+    assert "discovery_receipt_id" not in index_rows[0]
+    assert "acquisition_source_id" not in index_rows[0]
     assert [row["medium_count"] for row in index_rows] == ["0", "1"]
     assert [row["low_count"] for row in index_rows] == ["1", "0"]
     assert [row["candidate_csv"] for row in index_rows] == [

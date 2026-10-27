@@ -473,7 +473,6 @@ def _candidate_universe_entry(
         "candidate_count": len(ordered),
         "candidate_ids": list(candidate_ids),
         "candidate_payload_sha256": receipt.candidate_payload_sha256,
-        "discovery_receipt_id": receipt.discovery_receipt_id,
         "candidate_artifact_schema_version": (
             receipt.candidate_artifact_schema_version
         ),

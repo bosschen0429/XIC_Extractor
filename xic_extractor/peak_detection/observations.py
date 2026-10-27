@@ -9,7 +9,6 @@ authority.
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
@@ -45,9 +44,6 @@ from xic_extractor.processing_identity import (
     resolve_request_acquisition_source,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class PeakObservationContractError(ValueError):
@@ -138,11 +134,6 @@ class PeakObservationGenerationProvenance:
     proposal_sources: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.acquisition_source_id,
-            prefix=_ACQUISITION_SOURCE_ID_PREFIX,
-            field="acquisition_source_id",
-        )
         rt_min = _finite_float(self.query_rt_min, field="query_rt_min")
         rt_max = _finite_float(self.query_rt_max, field="query_rt_max")
         ppm_tol = _finite_float(self.query_ppm_tol, field="query_ppm_tol")
@@ -1013,21 +1004,6 @@ def _required_text(value: object, *, field: str) -> str:
         raise PeakObservationContractError(
             f"{field} must be non-empty owner-normalized text"
         )
-    return value
-
-
-def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise PeakObservationContractError(
-            f"{field} must be a lower-case SHA-256 digest"
-        )
-    return value
-
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise PeakObservationContractError(f"{field} must use the {prefix!r} prefix")
-    _validate_sha256(value[len(prefix) :], field=field)
     return value
 
 

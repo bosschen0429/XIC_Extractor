@@ -8,7 +8,6 @@ searches, HOLD, and REJECT do not need fake ``PeakHypothesis`` objects.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
@@ -66,8 +65,6 @@ CidNlTechnicalState: TypeAlias = Literal[
 ]
 CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
 
@@ -252,14 +249,6 @@ class CidNlMethodAssessmentContent:
     reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        for value, prefix, field_name in (
-            (
-                self.acquisition_source_id,
-                _ACQUISITION_SOURCE_ID_PREFIX,
-                "acquisition_source_id",
-            ),
-        ):
-            _validate_typed_digest_id(value, prefix=prefix, field=field_name)
         if not isinstance(self.method_subject, CidNlMethodSubject):
             raise CidNlMethodAssessmentContractError(
                 "method_subject must be owner-normalized"
@@ -1100,18 +1089,6 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
 def _require_unique_refs(values: tuple[str, ...], *, field: str) -> None:
     if len(set(values)) != len(values):
         raise CidNlMethodAssessmentContractError(f"duplicate {field} refs")
-
-
-def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise CidNlMethodAssessmentContractError(
-            f"{field} must contain a SHA-256 digest"
-        )
-    return value
 
 
 def _finite_float(value: object, *, field: str) -> float:

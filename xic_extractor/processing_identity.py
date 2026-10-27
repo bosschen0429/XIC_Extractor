@@ -34,7 +34,6 @@ class FingerprintCancelledError(IdentityContractError):
     """Raised when a caller cancels an in-progress content fingerprint."""
 
 
-_ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source:"
 _PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
 PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -196,7 +195,6 @@ class FileContentFingerprint:
 class AcquisitionSourceIdentity:
     """One source bound either to exact content or a local filesystem revision."""
 
-    acquisition_source_id: str
     content_sha256: str | None
     byte_size: int
     acquisition_format: str
@@ -204,33 +202,18 @@ class AcquisitionSourceIdentity:
     local_file_revision: tuple[int, int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
-        source_id = _validate_typed_id(
-            self.acquisition_source_id,
-            prefix=_ACQUISITION_SOURCE_PREFIX,
-            field="acquisition_source_id",
-        )
         if (
             isinstance(self.byte_size, bool)
             or not isinstance(self.byte_size, int)
             or self.byte_size < 0
         ):
             raise IdentityContractError("byte_size must be a non-negative integer")
-        acquisition_format = _require_nonempty_text(
-            self.acquisition_format, field="acquisition_format"
-        )
-        observation_namespace = _require_nonempty_text(
+        _require_nonempty_text(self.acquisition_format, field="acquisition_format")
+        _require_nonempty_text(
             self.observation_namespace, field="observation_namespace"
         )
         if self.local_file_revision is None:
-            basis = {
-                "schema": "acquisition_source_identity",
-                "content_sha256": _validate_digest(
-                    self.content_sha256, field="content_sha256"
-                ),
-                "byte_size": self.byte_size,
-                "acquisition_format": acquisition_format,
-                "observation_namespace": observation_namespace,
-            }
+            _validate_digest(self.content_sha256, field="content_sha256")
         else:
             revision = self.local_file_revision
             if (
@@ -244,14 +227,14 @@ class AcquisitionSourceIdentity:
                 or revision[2] != self.byte_size
             ):
                 raise IdentityContractError("invalid local acquisition file revision")
-            basis = _local_acquisition_source_basis(
-                revision, acquisition_format, observation_namespace
-            )
-        expected_id = _typed_digest(_ACQUISITION_SOURCE_PREFIX, basis)
-        if source_id != expected_id:
-            raise IdentityContractError(
-                "acquisition_source_id rebind mismatches source identity"
-            )
+
+    @property
+    def acquisition_source_id(self) -> str:
+        """The source's file fingerprint: content digest or local file revision."""
+
+        if self.local_file_revision is None:
+            return f"sha256:{self.content_sha256}"
+        return "local:" + ":".join(str(value) for value in self.local_file_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -625,19 +608,6 @@ def _validate_request_target_snapshot(
         )
 
 
-def _local_acquisition_source_basis(
-    revision: tuple[int, int, int, int, int],
-    acquisition_format: str,
-    observation_namespace: str,
-) -> dict[str, object]:
-    return {
-        "schema": "local_acquisition_file_revision",
-        "local_file_revision": revision,
-        "acquisition_format": acquisition_format,
-        "observation_namespace": observation_namespace,
-    }
-
-
 def build_local_acquisition_source_identity(
     path: str | Path,
     *,
@@ -659,12 +629,6 @@ def build_local_acquisition_source_identity(
         state.st_ctime_ns,
     )
     return AcquisitionSourceIdentity(
-        acquisition_source_id=_typed_digest(
-            _ACQUISITION_SOURCE_PREFIX,
-            _local_acquisition_source_basis(
-                revision, acquisition_format, observation_namespace
-            ),
-        ),
         content_sha256=None,
         byte_size=state.st_size,
         acquisition_format=acquisition_format,
@@ -826,18 +790,7 @@ def _build_acquisition_source_identity(
         observation_namespace,
         field="observation_namespace",
     )
-    source_id = _typed_digest(
-        _ACQUISITION_SOURCE_PREFIX,
-        {
-            "schema": "acquisition_source_identity",
-            "content_sha256": content_sha256,
-            "byte_size": byte_size,
-            "acquisition_format": acquisition_format,
-            "observation_namespace": observation_namespace,
-        },
-    )
     return AcquisitionSourceIdentity(
-        acquisition_source_id=source_id,
         content_sha256=content_sha256,
         byte_size=byte_size,
         acquisition_format=acquisition_format,

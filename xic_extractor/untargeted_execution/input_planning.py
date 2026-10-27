@@ -565,7 +565,6 @@ def prepare_indexed_untargeted_plan(
                 "candidate_count": receipt.candidate_count,
                 "candidate_ids": list(source.candidate_ids(stem)),
                 "candidate_payload_sha256": receipt.candidate_payload_sha256,
-                "discovery_receipt_id": receipt.discovery_receipt_id,
                 "candidate_artifact_schema_version": (
                     receipt.candidate_artifact_schema_version
                 ),
