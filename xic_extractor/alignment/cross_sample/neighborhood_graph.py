@@ -29,8 +29,6 @@ UNLISTED_PAIR_DISPOSITION: Literal["not_evaluated"] = "not_evaluated"
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleNeighborhoodEdge:
-    left_member_subject_id: str
-    right_member_subject_id: str
     disposition: CrossSampleEdgeDisposition
     initial_evidence: OwnerEdgeEvidence
     initial_context: CrossSampleInitialEdgeContext

@@ -1037,7 +1037,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         )
         final_group["member_subjects"] = [
             {
-                "member_subject_id": "member-01",
                 "sample_key": "S1",
                 "subject_kind": "peak_hypothesis",
                 "subject_id": "hypothesis-01",
@@ -1362,11 +1361,11 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                         "disposition": "completed",
                         "member_subjects": [
                             {
-                                "member_subject_id": "member-1",
+                                "subject_id": "member-1",
                                 "sample_key": "S1",
                             },
                             {
-                                "member_subject_id": "member-2",
+                                "subject_id": "member-2",
                                 "sample_key": "S2",
                             },
                         ],
@@ -1388,7 +1387,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     "disposition": "completed",
                     "member_subjects": [
                         {
-                            "member_subject_id": "member-3",
+                            "subject_id": "member-3",
                             "sample_key": "S3",
                         }
                     ],
@@ -1450,8 +1449,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     ref,
                     json.dumps(
                         {
-                            "left_member_subject_id": left_id,
-                            "right_member_subject_id": right_id,
+                            "left_subject_id": left_id,
+                            "right_subject_id": right_id,
                             "disposition": disposition,
                             "initial_evidence": evidence,
                         }
@@ -1475,8 +1474,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     assert item["internal_pair_support"] == [
         {
             "edge_ref": "edge-direct-three-links",
-            "left_member_subject_id": "member-1",
-            "right_member_subject_id": "member-2",
+            "left_subject_id": "member-1",
+            "right_subject_id": "member-2",
             "left_sample_label": "sample one",
             "right_sample_label": "sample two",
             "support_kind": "direct",
@@ -1490,8 +1489,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         },
         {
             "edge_ref": "edge-review",
-            "left_member_subject_id": "member-1",
-            "right_member_subject_id": "member-2",
+            "left_subject_id": "member-1",
+            "right_subject_id": "member-2",
             "left_sample_label": "sample one",
             "right_sample_label": "sample two",
             "support_kind": "review_only",

@@ -17,7 +17,6 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.validation_primitives import require_owner_normalized_text
 
-_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group:"
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
@@ -53,7 +52,6 @@ def _required_text(value: object, *, field: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleGroupMemberSubject:
-    member_subject_id: str
     processing_request_id: str
     sample_key: str
     subject_kind: Literal["peak_hypothesis"]
@@ -115,17 +113,7 @@ def group_member_subject_from_peak_hypothesis(
         )
     ):
         raise CrossSampleContractError("peak hypothesis crossed physical observation")
-    basis = canonical_identity_basis_bytes(
-        {
-            "schema_version": "group_member_subject",
-            "processing_request_id": request_id,
-            "sample_key": sample_id,
-            "subject": {"kind": "peak_hypothesis", "id": hypothesis.hypothesis_id},
-            "physical_observation_ids": list(physical_ids),
-        }
-    )
     return CrossSampleGroupMemberSubject(
-        member_subject_id=typed_identity_digest(_GROUP_MEMBER_SUBJECT_PREFIX, basis),
         processing_request_id=request_id,
         sample_key=sample_id,
         subject_kind="peak_hypothesis",
@@ -158,7 +146,7 @@ def _canonical_members(
         samples.add(member.sample_key)
         physical.update(member.physical_observation_ids)
         members.append(member)
-    return tuple(sorted(members, key=lambda item: item.member_subject_id))
+    return tuple(sorted(members, key=lambda item: item.sample_key))
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +176,14 @@ def mint_cross_sample_group_identity(
         {
             "schema_version": "cross_sample_group",
             "processing_request_id": request_id,
-            "member_subject_ids": [item.member_subject_id for item in members],
+            "members": [
+                {
+                    "sample_key": item.sample_key,
+                    "subject_id": item.subject_id,
+                    "physical_observation_ids": item.physical_observation_ids,
+                }
+                for item in members
+            ],
         }
     )
     return CrossSampleGroupIdentity(
@@ -208,7 +203,6 @@ __all__ = (
     "CrossSampleInitialEdgeContext",
     "CrossSampleNeighborhoodStatus",
     "_CROSS_SAMPLE_GROUP_PREFIX",
-    "_GROUP_MEMBER_SUBJECT_PREFIX",
     "_canonical_members",
     "_request_id",
     "_required_text",

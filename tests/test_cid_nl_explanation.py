@@ -261,7 +261,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
                 json.dumps(
                     [
                         {
-                            "member_subject_id": member.member_subject_id,
                             "sample_key": (member.sample_key),
                             "subject_kind": member.subject_kind,
                             "subject_id": member.subject_id,

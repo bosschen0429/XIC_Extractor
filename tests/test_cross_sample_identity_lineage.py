@@ -63,7 +63,7 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
     )
     first = _member(fixture, "sample-a", apex_rt=8.0)
     second = _member(fixture, "sample-a", apex_rt=8.03)
-    assert first.member_subject_id != second.member_subject_id
+    assert first != second
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(

@@ -635,7 +635,7 @@ def prepare_alignment_explanation(
                 for pid in member.physical_observation_ids:
                     keys = keys | physical_candidates[sid, pid]
                 keys = {key for key in keys if memberships[key[0]] in methods}
-                member_candidates[member.member_subject_id].update(keys)
+                member_candidates[member.subject_id].update(keys)
                 related.update(keys)
             if stage == "final_groups":
                 group_candidates[group.group_hypothesis_id].update(related)
@@ -649,7 +649,6 @@ def prepare_alignment_explanation(
                 "member_subjects": [
                     _fields(
                         member,
-                        "member_subject_id",
                         "sample_key",
                         "subject_kind",
                         "subject_id",
@@ -827,19 +826,16 @@ def prepare_alignment_explanation(
 
             for edge in phase_items("initial_edges", completed.initial_edges):
                 related = (
-                    member_candidates[edge.left_member_subject_id]
-                    | member_candidates[edge.right_member_subject_id]
+                    member_candidates[edge.left_owner.owner_id]
+                    | member_candidates[edge.right_owner.owner_id]
                 )
                 add(
                     "initial_edges",
-                    _key(edge.left_member_subject_id, edge.right_member_subject_id),
+                    _key(edge.left_owner.owner_id, edge.right_owner.owner_id),
                     {
-                        **_fields(
-                            edge,
-                            "left_member_subject_id",
-                            "right_member_subject_id",
-                            "disposition",
-                        ),
+                        "left_subject_id": edge.left_owner.owner_id,
+                        "right_subject_id": edge.right_owner.owner_id,
+                        "disposition": edge.disposition,
                         "initial_evidence": asdict(edge.initial_evidence),
                         "initial_context": edge.initial_context,
                         "alignment_config": asdict(edge.config),

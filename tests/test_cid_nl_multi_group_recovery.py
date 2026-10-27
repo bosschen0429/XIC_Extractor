@@ -978,12 +978,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                         sorted(
                             (
                                 group.group_hypothesis_id,
-                                tuple(
-                                    sorted(
-                                        member.member_subject_id
-                                        for member in group.member_subjects
-                                    )
-                                ),
+                                frozenset(group.member_subjects),
                             )
                             for group in groups
                         )
@@ -1003,12 +998,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                             for key, values in hypotheses.items()
                         )
                     ),
-                    tuple(
-                        sorted(
-                            member.member_subject_id
-                            for member in grouping.partition_transition.admitted_members
-                        )
-                    ),
+                    frozenset(grouping.partition_transition.admitted_members),
                 )
 
             assert normalized_admission(forward) == normalized_admission(reverse)

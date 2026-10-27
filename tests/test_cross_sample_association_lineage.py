@@ -36,10 +36,8 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     build_acquisition_source_identity,
     build_processing_request_identity,
-    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
-    typed_identity_digest,
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
@@ -415,20 +413,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
         original = _owner(sample_stem, f"association-{sample_stem}")
         member = original.cross_sample_member_subject
         assert member is not None
-        basis = canonical_identity_basis_bytes(
-            {
-                "schema_version": "group_member_subject",
-                "processing_request_id": request_id,
-                "sample_key": sample.identity.sample_key,
-                "subject": {
-                    "kind": member.subject_kind,
-                    "id": member.subject_id,
-                },
-                "physical_observation_ids": list(member.physical_observation_ids),
-            }
-        )
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            member_subject_id=typed_identity_digest("xic.group-member-subject:", basis),
             processing_request_id=request_id,
             sample_key=sample.identity.sample_key,
             subject_kind=member.subject_kind,

@@ -100,7 +100,7 @@ class CidNlSource:
             if isinstance(sample_stem, str) and sample_stem:
                 self.sample_labels.setdefault(sid, sample_stem)
         for edge_ref, edge in self.records.get("initial_edges", {}).items():
-            for field in ("left_member_subject_id", "right_member_subject_id"):
+            for field in ("left_subject_id", "right_subject_id"):
                 member_id = edge.get(field)
                 if isinstance(member_id, str):
                     self.initial_edge_refs_by_member.setdefault(member_id, set()).add(
@@ -563,15 +563,14 @@ class CidNlSource:
             for sid in sorted(item_sample_ids)
         }
         initial_member_ids = {
-            member.get("member_subject_id")
+            member.get("subject_id")
             for initial_ref, fact in self.records.get("initial_groups", {}).items()
             if any(
                 ("initial_groups", initial_ref) in self.links.get(key, set())
                 for key in scoped
             )
             for member in fact.get("member_subjects", [])
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         }
         final_members = group.get("member_subjects")
         review_summary = {
@@ -900,15 +899,12 @@ class CidNlSource:
         group = self.records.get("final_groups", {}).get(group_id, {})
         return [
             {
-                "member_subject_id": member["member_subject_id"],
+                "subject_id": member["subject_id"],
                 "sample_id": member.get("sample_key"),
-                "sample_label": self._member_sample_label(
-                    member["member_subject_id"], member
-                ),
+                "sample_label": self._member_sample_label(member["subject_id"], member),
             }
             for member in group.get("member_subjects", [])
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         ]
 
     def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
@@ -919,10 +915,9 @@ class CidNlSource:
         if not isinstance(members, list):
             return []
         members_by_id = {
-            member["member_subject_id"]: member
+            member["subject_id"]: member
             for member in members
-            if isinstance(member, dict)
-            and isinstance(member.get("member_subject_id"), str)
+            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
         }
         edge_refs = {
             edge_ref
@@ -932,8 +927,8 @@ class CidNlSource:
         projected = []
         for edge_ref in sorted(edge_refs):
             edge = self.records.get("initial_edges", {}).get(edge_ref, {})
-            left_id = edge.get("left_member_subject_id")
-            right_id = edge.get("right_member_subject_id")
+            left_id = edge.get("left_subject_id")
+            right_id = edge.get("right_subject_id")
             if left_id not in members_by_id or right_id not in members_by_id:
                 continue
             # Membership above admits only the string IDs collected from members.
@@ -947,8 +942,8 @@ class CidNlSource:
             projected.append(
                 {
                     "edge_ref": edge_ref,
-                    "left_member_subject_id": left_id,
-                    "right_member_subject_id": right_id,
+                    "left_subject_id": left_id,
+                    "right_subject_id": right_id,
                     "left_sample_label": self._member_sample_label(
                         left_id, members_by_id[left_id]
                     ),

@@ -235,8 +235,8 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
                 "internal_pair_support": [
                     {
                         "edge_ref": "edge-direct",
-                        "left_member_subject_id": "member-a",
-                        "right_member_subject_id": "member-b",
+                        "left_subject_id": "member-a",
+                        "right_subject_id": "member-b",
                         "left_sample_label": "Sample A",
                         "right_sample_label": "Sample B",
                         "support_kind": "direct",
@@ -244,8 +244,8 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
                     },
                     {
                         "edge_ref": "edge-review",
-                        "left_member_subject_id": "member-a",
-                        "right_member_subject_id": "member-c",
+                        "left_subject_id": "member-a",
+                        "right_subject_id": "member-c",
                         "left_sample_label": "Sample A",
                         "right_sample_label": "Sample C",
                         "support_kind": "review_only",
@@ -463,7 +463,7 @@ def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_p
     item["relationship_availability"] = "recorded"
     item["relationship_members"] = [
         {
-            "member_subject_id": f"M{i}",
+            "subject_id": f"M{i}",
             "sample_id": f"S{i}",
             "sample_label": f"Sample {i}",
         }
@@ -472,8 +472,8 @@ def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_p
     item["internal_pair_support"] = [
         {
             "edge_ref": "edge-01",
-            "left_member_subject_id": "M0",
-            "right_member_subject_id": "M1",
+            "left_subject_id": "M0",
+            "right_subject_id": "M1",
             "support_kind": "direct",
         }
     ]

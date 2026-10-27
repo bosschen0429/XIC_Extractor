@@ -184,7 +184,7 @@ def _untarget_projection_inputs(
                                 for group in predecessor_groups
                                 for member in group.member_subjects
                             ),
-                            key=lambda member: member.member_subject_id,
+                            key=lambda member: member.sample_key,
                         )
                     ),
                 ),

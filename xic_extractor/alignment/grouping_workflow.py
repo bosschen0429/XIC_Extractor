@@ -541,9 +541,7 @@ def admit_cid_nl_group_backfills(
             predecessors=result.initial_population, successors=identities
         ),
         reason="membership_changed",
-        admitted_members=tuple(
-            sorted(admitted, key=lambda member: member.member_subject_id)
-        ),
+        admitted_members=tuple(admitted),
     )
     return (
         replace(result, partition_transition=partition),

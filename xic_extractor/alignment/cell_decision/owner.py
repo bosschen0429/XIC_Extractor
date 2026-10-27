@@ -426,11 +426,6 @@ def _decision_basis(
         subject_kind = "group"
         subject_identity = {
             "group_hypothesis_id": subject.group_hypothesis_id,
-            "member_subject_id": (
-                None
-                if subject.member_subject is None
-                else subject.member_subject.member_subject_id
-            ),
         }
         evidence_identity = {
             "evidence_states": evidence.evidence_states,

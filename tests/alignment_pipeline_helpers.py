@@ -354,15 +354,6 @@ def _owner(
         "xic.peak-hypothesis:",
         canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
     )
-    member_basis = canonical_identity_basis_bytes(
-        {
-            "schema_version": "group_member_subject",
-            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
-            "sample_key": f"test-sample:{sample_stem}",
-            "subject": {"kind": "peak_hypothesis", "id": hypothesis_id},
-            "physical_observation_ids": [physical_id],
-        }
-    )
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
         sample_stem=sample_stem,
@@ -379,9 +370,6 @@ def _owner(
         assignment_reason="owner_exact_apex_match",
         selected_integration=_integration(apex_rt),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
-            member_subject_id=typed_identity_digest(
-                "xic.group-member-subject:", member_basis
-            ),
             processing_request_id=_TEST_PROCESSING_REQUEST_ID,
             sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
