@@ -339,7 +339,6 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
     evaluations = tuple(
         evaluate_physical_peak(
             prepared,
-            selection_subject_id=f"peak-{query_rt}",
             query_rt_min=query_rt,
             request_context_rt_start_min=0.0,
             request_context_rt_end_min=2.0,
@@ -350,7 +349,7 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
     assert (
         len(
             {
-                evaluation.facts.physical_segment_id
+                evaluation.answer.selected_segment
                 for evaluation in evaluations
                 if evaluation.facts is not None
             }
@@ -372,9 +371,7 @@ def test_clear_valley_classification_uses_one_signal_scale() -> None:
     )
     prepared = prepare_physical_signal(rt, raw)
     for center in (0.885, 1.115):
-        answer = evaluate_physical_peak(
-            prepared, selection_subject_id="resolved-doublet", query_rt_min=center
-        )
+        answer = evaluate_physical_peak(prepared, query_rt_min=center)
         assert answer.state == "available"
         assert len(answer.segment_universe.segments) == 2
         # The analytical valley is ~22% of either apex, below the 30%
@@ -401,7 +398,6 @@ def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> N
     query = 0.9 if reverse else 1.1
     answer = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="asymmetric-separated-doublet",
         query_rt_min=query,
     )
 

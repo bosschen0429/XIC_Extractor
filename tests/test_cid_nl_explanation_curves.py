@@ -40,9 +40,7 @@ def test_curve_payload_write_and_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.sqlite"
         with ExplanationReportWriter(db_path) as writer:
-            writer.add_candidate(
-                "C1", "S1", {"candidate_id": "C1", "canonical_sample_identity_id": "S1"}
-            )
+            writer.add_candidate("C1", "S1", {"candidate_id": "C1", "sample_key": "S1"})
             curve_envelope = {
                 "schema_version": "curve_payload.v2",
                 "kind": "initial_capture",
@@ -73,7 +71,7 @@ def test_curve_payload_write_and_read() -> None:
                     "integration_method": "raw_trapezoid",
                     "boundary_source": "candidate_interval",
                 },
-                "provenance": {"profile_id": None, "trace_content_id": None},
+                "provenance": {},
             }
             writer.add_curve_payload(
                 payload_id="S1:initial_capture:C1",
@@ -86,9 +84,7 @@ def test_curve_payload_write_and_read() -> None:
                 {
                     "processing_request_id": "req-1",
                     "processing_attempt_id": "att-1",
-                    "samples": [
-                        {"sample_stem": "s1", "canonical_sample_identity_id": "S1"}
-                    ],
+                    "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
                 }
             )
 
@@ -146,9 +142,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         for terminal in child.scientific_core.terminal_subjects:
             hypothesis = getattr(terminal, "hypothesis", None)
             if hypothesis is not None:
-                expected[
-                    (terminal.candidate_id, terminal.canonical_sample_identity_id)
-                ] = [
+                expected[(terminal.candidate_id, terminal.sample_key)] = [
                     {
                         "peak_observation_content_id": (
                             ref.content.peak_observation_content_id
@@ -170,9 +164,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     completed.close()
     with sqlite3.connect(report) as connection:
         actual = {
-            (record["candidate_id"], record["canonical_sample_identity_id"]): record[
-                "observations"
-            ]
+            (record["candidate_id"], record["sample_key"]): record["observations"]
             for (raw,) in connection.execute(
                 "SELECT payload FROM records WHERE kind='terminal_subjects'"
             )
@@ -197,7 +189,7 @@ def _bound_curve_payload():
             "positive": None,
         },
         "integration": None,
-        "provenance": {"profile_id": None, "trace_content_id": None},
+        "provenance": {},
     }
 
 

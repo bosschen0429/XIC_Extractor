@@ -79,8 +79,8 @@ def _create_mock_db(
 
     if samples is None:
         samples = [
-            {"sample_stem": "s1", "canonical_sample_identity_id": "S1"},
-            {"sample_stem": "s2", "canonical_sample_identity_id": "S2"},
+            {"sample_stem": "s1", "sample_key": "S1"},
+            {"sample_stem": "s2", "sample_key": "S2"},
         ]
 
     with ExplanationReportWriter(db_path) as writer:
@@ -89,7 +89,7 @@ def _create_mock_db(
             "S1",
             {
                 "candidate_id": "C1",
-                "canonical_sample_identity_id": "S1",
+                "sample_key": "S1",
                 "precursor_mz": 500.0,
             },
         )
@@ -157,8 +157,6 @@ def _create_mock_db(
                 "boundary_source": "candidate_interval",
             },
             "provenance": {
-                "profile_id": None,
-                "trace_content_id": None,
                 "processing_request_id": request_id,
                 "processing_attempt_id": attempt_id,
             },
@@ -265,7 +263,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         "decision_id": "decision-02",
         "group_hypothesis_id": "G1",
         "row_key_id": "row-01",
-        "canonical_sample_identity_id": "S2",
+        "sample_key": "S2",
         "source": "",
         "value": None,
         "variant": "not_searched",
@@ -273,7 +271,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     stored_observation = {
         "cell_observation_id": "cell-observation-02",
         "group_hypothesis_id": "G1",
-        "canonical_sample_identity_id": "S2",
+        "sample_key": "S2",
         "processing_request_id": "req-01",
         "evidence_states": [],
         "predecessor_cells": [],
@@ -302,14 +300,14 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 {
                     **stored_cell,
                     "decision_id": "wrong-sample",
-                    "canonical_sample_identity_id": "S3",
+                    "sample_key": "S3",
                 },
             ),
             (
                 "method_assessments",
                 "assessment-hold",
                 {
-                    "canonical_sample_identity_id": "S1",
+                    "sample_key": "S1",
                     "method_result": "HOLD",
                     "reason_codes": [
                         "insufficient_method_evidence",
@@ -349,9 +347,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert readable["cell-observation-02"]["sample_ids"] == ["S2"]
     assert readable["cell-observation-02"]["candidate_ids"] == []
     assert not {"wrong-row", "wrong-group", "wrong-sample"} & readable.keys()
-    assert {
-        witness["canonical_sample_identity_id"] for witness in item["witnesses"]
-    } == {"S1"}
+    assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
     assert "s1" in item["reason_label"]
@@ -487,8 +483,8 @@ def test_normalized_sample_scope_semantics() -> None:
         db_path, _, _ = _create_mock_db(
             tmp,
             samples=[
-                {"sample_stem": "b_sample", "canonical_sample_identity_id": "S_B"},
-                {"sample_stem": "a_sample", "canonical_sample_identity_id": "S_A"},
+                {"sample_stem": "b_sample", "sample_key": "S_B"},
+                {"sample_stem": "a_sample", "sample_key": "S_A"},
             ],
         )
         out_html = tmp / "report.html"
@@ -608,10 +604,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         return result
 
     monkeypatch.setattr(cid_nl, "read_cid_nl_curves", read)
-    assert (
-        read_evidence_summary(report)["samples"][0]["canonical_sample_identity_id"]
-        == "S1"
-    )
+    assert read_evidence_summary(report)["samples"][0]["sample_key"] == "S1"
     assert reads == []
     output = tmp_path / "shared.html"
     import time
@@ -713,7 +706,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     item = _report_data(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
-    assert [w["canonical_sample_identity_id"] for w in item["witnesses"]] == ["S1"]
+    assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
@@ -738,7 +731,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
                     {
                         "row_key_id": "row-01",
                         "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S2",
+                        "sample_key": "S2",
                         "value": None,
                         "variant": "missing",
                     }
@@ -764,7 +757,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
     assert all(
-        c.get("canonical_sample_identity_id", c.get("sample_id")) == "S1"
+        c.get("sample_key", c.get("sample_id")) == "S1"
         for c in item["details"]["cells"]
     )
 
@@ -991,7 +984,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                 "recovery-method",
                 json.dumps(
                     {
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "candidate_peak_content_ids": ["obs-01"],
                         "detector_invocation_id": invocation,
                         "method_result": "SUPPORT",
@@ -1035,7 +1028,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         final_group["member_subjects"] = [
             {
                 "member_subject_id": "member-01",
-                "canonical_sample_identity_id": "S1",
+                "sample_key": "S1",
                 "subject_kind": "peak_hypothesis",
                 "subject_id": "hypothesis-01",
                 "physical_observation_ids": ["obs-01"],
@@ -1069,11 +1062,11 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                     {
                         "cell_observation_id": "cell-observation-01",
                         "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "predecessor_cells": [
                             {
                                 "content": {
-                                    "canonical_sample_identity_id": "S1",
+                                    "sample_key": "S1",
                                     "group_hypothesis_id": "G1",
                                     "peak_observation_content_id": "obs-01",
                                     "method_result": "SUPPORT",
@@ -1119,7 +1112,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "method_assessments",
                 "recovery-method",
                 {
-                    "canonical_sample_identity_id": "S1",
+                    "sample_key": "S1",
                     "candidate_peak_content_ids": ["obs-01"],
                     "detector_invocation_id": "untargeted-cid-nl-backfill",
                     "method_result": "SUPPORT",
@@ -1197,7 +1190,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S1",
+                            "sample_key": "S1",
                             "precursor_mz": 501.0,
                         }
                     ),
@@ -1322,9 +1315,9 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     report, _, _ = _create_mock_db(
         tmp_path,
         samples=[
-            {"sample_stem": "sample one", "canonical_sample_identity_id": "S1"},
-            {"sample_stem": "sample two", "canonical_sample_identity_id": "S2"},
-            {"sample_stem": "sample three", "canonical_sample_identity_id": "S3"},
+            {"sample_stem": "sample one", "sample_key": "S1"},
+            {"sample_stem": "sample two", "sample_key": "S2"},
+            {"sample_stem": "sample three", "sample_key": "S3"},
         ],
     )
     with sqlite3.connect(report) as connection:
@@ -1341,7 +1334,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": sample_id,
+                            "sample_key": sample_id,
                             "precursor_mz": 500.0,
                         }
                     ),
@@ -1363,11 +1356,11 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                         "member_subjects": [
                             {
                                 "member_subject_id": "member-1",
-                                "canonical_sample_identity_id": "S1",
+                                "sample_key": "S1",
                             },
                             {
                                 "member_subject_id": "member-2",
-                                "canonical_sample_identity_id": "S2",
+                                "sample_key": "S2",
                             },
                         ],
                     }
@@ -1389,7 +1382,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     "member_subjects": [
                         {
                             "member_subject_id": "member-3",
-                            "canonical_sample_identity_id": "S3",
+                            "sample_key": "S3",
                         }
                     ],
                 },
@@ -1519,7 +1512,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                 json.dumps(
                     {
                         "candidate_id": "C2",
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "precursor_mz": 501.0,
                     }
                 ),
@@ -1909,7 +1902,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                     {
                         "row_key_id": "row-01",
                         "group_hypothesis_id": "G1",
-                        "canonical_sample_identity_id": "S2",
+                        "sample_key": "S2",
                         "value": 700.0,
                         "variant": "numeric",
                     }
@@ -1937,7 +1930,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                     ref,
                     json.dumps(
                         {
-                            "canonical_sample_identity_id": sample_id,
+                            "sample_key": sample_id,
                             "method_result": "SUPPORT",
                             "reason_codes": [reason_code],
                             "technical_state": "evaluated",
@@ -2021,7 +2014,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S2",
+                            "sample_key": "S2",
                             "precursor_mz": 510.0,
                             "discovery_candidate_state": (
                                 "review_only_ambiguous_coisolation"
@@ -2038,7 +2031,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                     json.dumps(
                         {
                             "candidate_id": candidate_id,
-                            "canonical_sample_identity_id": "S2",
+                            "sample_key": "S2",
                             "discovery_candidate_state": (
                                 "review_only_ambiguous_coisolation"
                             ),
@@ -2290,7 +2283,7 @@ def _create_nearest_mz_db(directory, rows):
                     sid,
                     {
                         "candidate_id": cid,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "precursor_mz": mz,
                         "rt_apex_min": rt,
                     },
@@ -2314,7 +2307,7 @@ def _create_nearest_mz_db(directory, rows):
                 rid,
                 [
                     {
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "variant": "unresolved" if row.get("unresolved") else "numeric",
                         "value": None if row.get("unresolved") else 10,
                     }
@@ -2329,8 +2322,7 @@ def _create_nearest_mz_db(directory, rows):
                 "matrix_path": str(matrix),
                 "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                 "samples": [
-                    {"canonical_sample_identity_id": sid, "sample_stem": sid}
-                    for sid in ("S1", "S2")
+                    {"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")
                 ],
                 "selection_evidence_capability": "recorded_decisions",
             }
@@ -2434,7 +2426,7 @@ def test_nearest_mz_applies_rt_eligibility_without_replacing_display_witness(tmp
     assert multi["precursor_mz"] == 140
     assert multi["rt_apex_min"] == 20
     assert multi["mz_distance"] == pytest.approx(16.6)
-    assert [w["canonical_sample_identity_id"] for w in multi["matched_refs"]] == ["S2"]
+    assert [w["sample_key"] for w in multi["matched_refs"]] == ["S2"]
     assert prepared.missing_rt_count == 1
     scoped = prepare_report(
         report,

@@ -219,12 +219,10 @@ class CachedUntargetedRaw:
             try:
                 acquired = deserialize_acquired_trace(
                     payload,
-                    expected_acquisition_source_id=(
-                        capability.acquisition_source.acquisition_source_id
-                    ),
+                    expected_acquisition_source=capability.acquisition_source,
                 )
                 if (
-                    acquired.coordinate.capability_id != capability.capability_id
+                    acquired.coordinate.capability != capability
                     or acquired.coordinate.request != request
                     or acquired.coordinate.coordinate_kind
                     is not capability.coordinate_kind
@@ -449,7 +447,7 @@ class _FactCache:
 def _trace_key(capability: TraceAcquisitionCapability, request: XICRequest) -> bytes:
     return _key_bytes(
         "xic",
-        capability.capability_id,
+        capability.adapter_namespace,
         capability.coordinate_kind.value,
         _float_text(request.mz),
         _float_text(request.rt_min),

@@ -1243,17 +1243,14 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         sample_population=fixture.samples,
         alignment_config=config,
         rt_frame=frame,
-        half_windows_by_sample={
-            s.identity.sample_identity_id: 1.0 for s in fixture.samples
-        },
+        half_windows_by_sample={s.identity.sample_key: 1.0 for s in fixture.samples},
     )
-    by_id = {q.sample_identity_id: q for q in questions}
+    by_id = {q.sample_key: q for q in questions}
     assert set(by_id) == {
-        fixture.sample(name).identity.sample_identity_id
-        for name in ("BC1116", "independent")
+        fixture.sample(name).identity.sample_key for name in ("BC1116", "independent")
     }
-    bad = by_id[fixture.sample("BC1116").identity.sample_identity_id].localization
-    good = by_id[fixture.sample("independent").identity.sample_identity_id].localization
+    bad = by_id[fixture.sample("BC1116").identity.sample_key].localization
+    good = by_id[fixture.sample("independent").identity.sample_key].localization
     assert not bad.location.observed and not bad.reliable
     assert bad.location.basis == "trajectory_reference"
     assert bad.location.query_rt == pytest.approx(32.988294154916666)

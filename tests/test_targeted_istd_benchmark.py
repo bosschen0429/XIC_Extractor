@@ -394,7 +394,7 @@ def test_alignment_matrix_normalizes_sample_columns_once(
             _matrix_row("FAM003", (30.0, 300.0), samples=("QC_1", "S2")),
         ],
         (
-            "feature_family_id",
+            "feature_id",
             "neutral_loss_tag",
             "family_center_mz",
             "family_center_rt",
@@ -824,17 +824,25 @@ def _write_alignment_run(
     cell_rows: list[dict[str, object]],
     samples: tuple[str, ...] = ("S1", "S2", "S3", "S4"),
 ) -> None:
-    path.mkdir(parents=True)
-    _write_tsv(path / "alignment_review.tsv", review_rows, REVIEW_COLUMNS)
-    matrix_columns = (
-        "feature_family_id",
-        "neutral_loss_tag",
-        "family_center_mz",
-        "family_center_rt",
-        *samples,
+    projected = [
+        {"feature_id": row["feature_id"], "matrix_row_index": index}
+        for index, row in enumerate(matrix_rows, start=1)
+    ]
+    _write_clean_alignment_run(
+        path,
+        review_rows=review_rows,
+        identity_rows=projected,
+        matrix_rows=[
+            {
+                "Mz": row["family_center_mz"],
+                "RT": row["family_center_rt"],
+                **{sample: row.get(sample, "") for sample in samples},
+            }
+            for row in matrix_rows
+        ],
+        cell_rows=cell_rows,
+        samples=samples,
     )
-    _write_tsv(path / "alignment_matrix.tsv", matrix_rows, matrix_columns)
-    _write_tsv(path / "alignment_cells.tsv", cell_rows, CELL_COLUMNS)
 
 
 def _write_clean_alignment_run(
@@ -847,18 +855,18 @@ def _write_clean_alignment_run(
     samples: tuple[str, ...] = ("S1", "S2", "S3", "S4"),
 ) -> None:
     path.mkdir(parents=True)
-    _write_tsv(path / "alignment_review.tsv", review_rows, REVIEW_COLUMNS)
-    _write_tsv(path / "alignment_matrix.tsv", matrix_rows, ("Mz", "RT", *samples))
+    projected = {row["feature_id"]: row for row in identity_rows}
     _write_tsv(
-        path / "alignment_matrix_identity.tsv",
-        identity_rows,
-        IDENTITY_COLUMNS,
+        path / "alignment_review.tsv",
+        [{**row, **projected.get(row["feature_id"], {})} for row in review_rows],
+        (*REVIEW_COLUMNS, "matrix_row_index"),
     )
+    _write_tsv(path / "alignment_matrix.tsv", matrix_rows, ("Mz", "RT", *samples))
     _write_tsv(path / "alignment_cells.tsv", cell_rows, CELL_COLUMNS)
 
 
 REVIEW_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
@@ -869,31 +877,11 @@ REVIEW_COLUMNS = (
 )
 
 CELL_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "sample_stem",
     "status",
     "area",
     "apex_rt",
-)
-
-
-IDENTITY_COLUMNS = (
-    "identity_schema_version",
-    "matrix_row_index",
-    "Mz",
-    "RT",
-    "peak_hypothesis_id",
-    "row_identity_basis",
-    "split_evaluation_status",
-    "projection_status",
-    "source_feature_family_ids",
-    "source_feature_family_count",
-    "center_mz_basis",
-    "center_rt_basis",
-    "center_weight_basis",
-    "accepted_cell_count",
-    "accepted_sample_count",
-    "evidence_status",
 )
 
 
@@ -906,7 +894,7 @@ def _review_row(
     primary: bool,
 ) -> dict[str, object]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": mz,
         "family_center_rt": rt,
@@ -922,24 +910,7 @@ def _identity_row(
     mz: float,
     rt: float,
 ) -> dict[str, object]:
-    return {
-        "identity_schema_version": ("untargeted_peak_hypothesis_matrix_identity"),
-        "matrix_row_index": matrix_row_index,
-        "Mz": mz,
-        "RT": rt,
-        "peak_hypothesis_id": f"PH_{family_id}",
-        "row_identity_basis": "no_split_peak_hypothesis",
-        "split_evaluation_status": "complete_no_product_ready_split",
-        "projection_status": "not_projection",
-        "source_feature_family_ids": family_id,
-        "source_feature_family_count": 1,
-        "center_mz_basis": "accepted_cells",
-        "center_rt_basis": "accepted_cells",
-        "center_weight_basis": "accepted_cell_area",
-        "accepted_cell_count": 4,
-        "accepted_sample_count": 4,
-        "evidence_status": "product_matrix_identity_complete",
-    }
+    return {"feature_id": family_id, "matrix_row_index": matrix_row_index}
 
 
 def _matrix_row(
@@ -949,7 +920,7 @@ def _matrix_row(
     samples: tuple[str, ...] = ("S1", "S2", "S3", "S4"),
 ) -> dict[str, object]:
     row: dict[str, object] = {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "",
         "family_center_rt": "",
@@ -966,7 +937,7 @@ def _cell_row(
     area: float,
 ) -> dict[str, object]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "sample_stem": sample,
         "status": "detected",
         "area": area,

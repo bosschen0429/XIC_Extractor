@@ -92,7 +92,7 @@ def project_target_pre_cell(
 
     scope = cast(TargetSearchScope, finalized_alignment.scope)
     samples = _canonical_samples(scope.samples)
-    sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
+    sample_by_id = {sample.identity.sample_key: sample for sample in samples}
     terminals = _terminals_by_sample(
         finalized_alignment,
         scope=scope,
@@ -114,7 +114,7 @@ def project_target_pre_cell(
             processing_request=scope.request,
             canonical_sample=sample,
             row_binding=row_binding,
-            terminal_subject=terminals[sample.identity.sample_identity_id],
+            terminal_subject=terminals[sample.identity.sample_key],
         )
         for sample in samples
     )
@@ -129,7 +129,7 @@ def project_target_pre_cell(
 def _canonical_samples(
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-    return tuple(sorted(samples, key=lambda sample: sample.identity.sample_identity_id))
+    return tuple(sorted(samples, key=lambda sample: sample.identity.sample_key))
 
 
 def _terminals_by_sample(
@@ -140,7 +140,7 @@ def _terminals_by_sample(
 ) -> dict[str, TerminalSearchObservation]:
     terminals = {}
     for terminal in finalized_alignment.terminal_subjects:
-        sample_id = terminal.canonical_sample_identity_id
+        sample_id = terminal.sample_key
         if sample_id in terminals:
             raise TargetProjectionContractError(
                 "finalized terminal population contains duplicate canonical samples"
@@ -217,7 +217,7 @@ def _mint_row_binding(
 ) -> TargetRowBinding:
     count = len(eligible_groups)
     sample_ids = tuple(
-        member.canonical_sample_identity_id
+        member.sample_key
         for group in eligible_groups
         for member in group.member_subjects
     )

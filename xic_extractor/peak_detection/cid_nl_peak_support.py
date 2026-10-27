@@ -206,7 +206,7 @@ def _support_content(
     assert precursor.reference_mz is not None
     assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         cid_nl_evidence_content_id=(
             canonical_evidence.artifact.content_identity.artifact_content_id
         ),

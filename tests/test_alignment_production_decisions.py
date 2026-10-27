@@ -525,7 +525,7 @@ def _matrix(
 
 
 def _feature(
-    feature_family_id: str,
+    feature_id: str,
     *,
     evidence: str,
     has_anchor: bool = True,
@@ -534,7 +534,7 @@ def _feature(
     return cast(
         AlignmentRowLike,
         SimpleNamespace(
-            feature_family_id=feature_family_id,
+            feature_id=feature_id,
             neutral_loss_tag="DNA_dR",
             family_center_mz=500.123,
             family_center_rt=8.49,

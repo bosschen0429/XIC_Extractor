@@ -50,7 +50,9 @@ def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
 
     assert workbench_spec == cli_spec
     assert workbench_spec.run_spec_id == cli_spec.run_spec_id
-    assert workbench_spec.profile_id == cli_spec.profile_id
+    assert (
+        workbench_spec.signal_processing_profile == cli_spec.signal_processing_profile
+    )
     assert canonical_processing_run_spec_bytes(workbench_spec) == (
         canonical_processing_run_spec_bytes(cli_spec)
     )
@@ -150,7 +152,10 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         for spec in specs
     } == {0.35}
     assert len({cast(ProcessingRunSpec, spec).run_spec_id for spec in specs}) == 1
-    assert len({cast(ProcessingRunSpec, spec).profile_id for spec in specs}) == 1
+    assert (
+        len({cast(ProcessingRunSpec, spec).signal_processing_profile for spec in specs})
+        == 1
+    )
     assert (
         len(
             {

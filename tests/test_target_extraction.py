@@ -23,7 +23,6 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
-    answer_selected_physical_candidate,
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -117,7 +116,7 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 region_duration_min=2.0,
                 region_edge_ratio=3.0 / 65.0,
                 region_trace_continuity=1.0,
-                proposal_sources=("physical_segment:segment:later",),
+                proposal_sources=("physical_segment",),
                 physical_segment=universe.segments[0],
             ),
             PeakCandidate(
@@ -133,7 +132,7 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 region_duration_min=2.0,
                 region_edge_ratio=3.0 / 35.0,
                 region_trace_continuity=1.0,
-                proposal_sources=("physical_segment:segment:earlier",),
+                proposal_sources=("physical_segment",),
                 physical_segment=universe.segments[1],
             ),
         ),
@@ -177,33 +176,6 @@ def test_physical_candidate_projection_preserves_empty_universe(
     result = physical_candidates_result(prepared, replace(universe, segments=()))
 
     assert result == PeakCandidatesResult("PEAK_NOT_FOUND", (), 11, 75.0, 0)
-
-
-@pytest.mark.parametrize("missing", [True, False])
-def test_selected_physical_answer_rejects_unbound_candidate(
-    physical_candidate_input,
-    missing,
-) -> None:
-    prepared, universe = physical_candidate_input
-    candidate = physical_candidates_result(prepared, universe).candidates[0]
-    segment = (
-        None
-        if missing
-        else replace(universe.segments[0], physical_segment_id="another_universe")
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="^selected Targeted candidate must carry its physical segment$",
-    ):
-        answer_selected_physical_candidate(
-            prepared,
-            universe,
-            replace(candidate, physical_segment=segment),
-            selection_subject_id="target",
-            acquisition_rt_window=(0.0, 4.0),
-            selection_rt_window=(0.0, 4.0),
-        )
 
 
 @pytest.mark.parametrize("neutral_loss", [None, 116.0474])
@@ -253,10 +225,9 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
     profile = DEFAULT_SIGNAL_PROCESSING_PROFILE
     projection = PreparedSignalProjection(
         schema_version="prepared_signal",
-        trace_content_id="trace:test",
-        profile_id=profile.profile_id,
-        prepared_signal_id="prepared:test",
-        trace_point_count=11,
+        profile=profile,
+        rt=(-1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0),
+        raw=(10.0, 11.0, 45.0, 60.0, 45.0, 21.0, 60.0, 90.0, 60.0, 14.0, 10.0),
         state="available",
         reason="available",
     )
@@ -272,7 +243,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
     )
     segments = (
         PhysicalSegment(
-            physical_segment_id="segment:later",
             start_index=5,
             end_index=10,
             apex_index=7,
@@ -287,7 +257,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
             evidence_sources=("owner_segment",),
         ),
         PhysicalSegment(
-            physical_segment_id="segment:earlier",
             start_index=1,
             end_index=6,
             apex_index=3,
@@ -306,13 +275,12 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         PreparedSignalResult(projection, prepared, ("trace_evaluation",)),
         PhysicalSegmentUniverse(
             schema_version="physical_segment_universe",
-            prepared_signal_id=projection.prepared_signal_id,
+            prepared=projection,
             context_rt_start_min=-1.0,
             context_rt_end_min=5.0,
             state="available",
             reason="available",
             segments=segments,
-            segment_universe_id="universe:test",
         ),
     )
 

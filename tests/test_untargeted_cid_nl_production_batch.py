@@ -252,7 +252,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     context = batch.context
     memberships = dict(batch.subject_batch.candidate_memberships)
     candidate_keys = {
-        (sample.identity.sample_identity_id, memberships[candidate.candidate_id])
+        (sample.identity.sample_key, memberships[candidate.candidate_id])
         for sample in context.samples
         for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
         if candidate.candidate_id in memberships
@@ -293,8 +293,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         for sample in context.samples
         for subject in batch.subject_batch.subjects
         if not batch.sample_job_templates
-        or (sample.identity.sample_identity_id, subject.method_subject_id)
-        in candidate_keys
+        or (sample.identity.sample_key, subject.method_subject_id) in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -413,15 +412,12 @@ def _expected_retained_curve(
         provenance["method_subject_id"] = method_subject_id
     if evaluation is not None:
         provenance.update(
-            trace_content_id=evaluation.question.trace_content_id,
-            prepared_signal_id=evaluation.prepared.prepared_signal_id,
-            profile_id=evaluation.prepared.profile_id,
+            profile=asdict(evaluation.prepared.profile),
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
         )
     if signal is not None:
         provenance.update(
-            profile_id=signal.profile.profile_id,
             profile_version=signal.profile.schema_version,
             profile=asdict(signal.profile),
         )
@@ -474,7 +470,7 @@ def _expected_capture_curve(evidence):
         kind="backfill_observation"
         if evidence.capture_stage == "method_backfill"
         else evidence.capture_stage,
-        sample_id=evidence.canonical_sample_identity_id,
+        sample_id=evidence.sample_key,
         candidate_id=evidence.candidate_id,
         trace=evidence.trace,
         evaluation=evidence.physical_evaluation,
@@ -805,7 +801,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for record in discovery.physical_evaluations:
                 family_evaluations[record.candidate_id] = evaluate_physical_peak(
                     prepared,
-                    selection_subject_id=record.evaluation.question.selection_subject_id,
                     query_rt_min=record.evaluation.question.query_rt_min,
                     request_context_rt_start_min=rt_min,
                     request_context_rt_end_min=rt_max,
@@ -813,9 +808,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert (
                 len(
                     {
-                        family_evaluations[
-                            record.candidate_id
-                        ].facts.physical_segment_id
+                        family_evaluations[record.candidate_id].answer.selected_segment
                         for record in discovery.physical_evaluations
                         if family_evaluations[record.candidate_id].facts is not None
                     }
@@ -1027,7 +1020,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             hypothesis_universe_compositions.append(
                 (
                     owner_name,
-                    kwargs["sample"].identity.sample_identity_id,
+                    kwargs["sample"].identity.sample_key,
                     assessment.artifact.content_identity.artifact_content_id,
                 )
             )
@@ -1337,9 +1330,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for retained, source in zip(
         persisted_capture_evidence, runtime_captures, strict=True
     ):
-        assert (
-            retained.canonical_sample_identity_id == source.canonical_sample_identity_id
-        )
+        assert retained.sample_key == source.sample_key
         assert retained.candidate_id == source.candidate_id
         assert retained.capture_stage == source.capture_stage
         assert retained.physical_evaluation is not None
@@ -1376,7 +1367,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         expected = _expected_retained_curve(
             kind="discovery_physical",
             candidate_id=record.candidate_id,
-            sample_id=samples_by_stem[work.sample_stem].identity.sample_identity_id,
+            sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
             trace=source_trace,
             evaluation=record.evaluation,
             request_id=application.processing_request.processing_request_id,
@@ -1538,7 +1529,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
             ) == [1, 2]
             sample_id_by_stem = {
-                sample.metadata.raw_stem: sample.identity.sample_identity_id
+                sample.metadata.raw_stem: sample.identity.sample_key
                 for sample in child.scientific_core.canonical_samples
             }
             joint_group = next(
@@ -1546,21 +1537,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
                 if len(group.member_subjects) == 2
             )
-            assert {
-                member.canonical_sample_identity_id
-                for member in joint_group.member_subjects
-            } == {sample_id_by_stem["S2"], sample_id_by_stem["S3"]}
+            assert {member.sample_key for member in joint_group.member_subjects} == {
+                sample_id_by_stem["S2"],
+                sample_id_by_stem["S3"],
+            }
             joint_final_cell = next(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.canonical_sample_identity_id == sample_id_by_stem["S3"]
+                and cell.sample_key == sample_id_by_stem["S3"]
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
             assert any(
                 support.assessment is joint_cell.method_assessment
-                and support.sample.identity.sample_identity_id
-                == sample_id_by_stem["S3"]
+                and support.sample.identity.sample_key == sample_id_by_stem["S3"]
                 for support in joint_cell.group_context.supports
             )
             assert all(
@@ -1580,7 +1570,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 cell
                 for cell in child.scientific_core.cell_observations
                 if cell.group_hypothesis_id == joint_group.group_hypothesis_id
-                and cell.canonical_sample_identity_id == sample_id_by_stem["S4"]
+                and cell.sample_key == sample_id_by_stem["S4"]
             )
             assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
             assert matrix_row["S4"]
@@ -1646,7 +1636,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert cell.selected_integration.area_raw_counts_seconds != cell.area
         assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
         assert cell.selected_integration.height_smoothed == facts.height
-        assert facts.physical_segment_id in cell.selected_integration.boundary_sources
     expected_row_count = sum(size > 1 for size in group_sizes)
     assert len(matrix_rows) == expected_row_count
     for sample_stem, facts in physical_facts.items():
@@ -1657,7 +1646,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             [facts.area_counts_seconds] if expected_row_count else []
         )
     if nearby:
-        assert len({facts.fact_content_id for facts in physical_facts.values()}) == 2
         assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
         assert len(matrix_rows) == 1
         close_and_verify_persisted_curves()
@@ -1741,25 +1729,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with pytest.raises(capture_owner.SampleLocalCaptureError):
         bind_capture(changed_source, **binding_args)
-    from xic_extractor.peak_detection.search_scope import SearchScopeContractError
-
-    changed_answer = evaluate_physical_peak(
-        prepared,
-        selection_subject_id="substituted-selection-subject",
-        query_rt_min=evaluation.question.query_rt_min,
-        request_context_rt_start_min=capture.trace.rt_min,
-        request_context_rt_end_min=capture.trace.rt_max,
-    )
-    with pytest.raises(SearchScopeContractError, match="answer is not bound"):
-        replace(
-            capture.scope,
-            capture_bindings=tuple(
-                replace(binding, physical_evaluation=changed_answer)
-                if binding.candidate_id == capture.candidate_id
-                else binding
-                for binding in capture.scope.capture_bindings
-            ),
-        )
     batch = captured_batches[0]
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
@@ -1921,7 +1890,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _emit_curve_payload(
                 sink,
                 evidence.observation_ref,
-                evidence.canonical_sample_identity_id,
+                evidence.sample_key,
                 kind="backfill_observation",
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,
@@ -3210,14 +3179,14 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
     assert tuple(row.public_family_id for row in writer_inputs.matrix.clusters) == (
-        "FAM000001",
-        "FAM000002",
+        "F000001",
+        "F000002",
     )
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
         candidate_by_hypothesis = {
             (
-                subject.canonical_sample_identity_id,
+                subject.sample_key,
                 subject.hypothesis.hypothesis_id,
             ): subject.candidate_id
             for subject in child.scientific_core.terminal_subjects
@@ -3233,7 +3202,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
                     )
                 ] = candidate_by_hypothesis[
                     (
-                        decision.subject.canonical_sample.identity.sample_identity_id,
+                        decision.subject.canonical_sample.identity.sample_key,
                         hypothesis.hypothesis_id,
                     )
                 ]
@@ -3277,7 +3246,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
-        "alignment_matrix_identity.tsv",
+        "alignment_run_metadata.json",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     }
@@ -4116,7 +4085,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
     assert cells_by_sample["Hold"].source_candidate_id is None
     row = writer_inputs.matrix.clusters[0]
-    assert row.public_family_id == "FAM000001"
+    assert row.public_family_id == "F000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
@@ -4283,12 +4252,14 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             matrix_row = next(csv.DictReader(handle, delimiter="\t"))
         assert float(matrix_row["RT"]) == pytest.approx(row.family_center_rt)
 
-        assert outputs.matrix_identity_tsv is not None
-        with outputs.matrix_identity_tsv.open(encoding="utf-8", newline="") as handle:
-            identity_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(identity_row["RT"]) == pytest.approx(row.family_center_rt)
-        assert identity_row["center_rt_basis"] == row.center_rt_basis
-        assert identity_row["center_weight_basis"] == row.center_weight_basis
+        assert outputs.review_tsv is not None
+        with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
+            review_row = next(csv.DictReader(handle, delimiter="\t"))
+        assert float(review_row["matrix_rt"]) == pytest.approx(row.family_center_rt)
+        assert outputs.run_metadata_json is not None
+        metadata = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
+        assert metadata["matrix_center_rt_basis"] == row.center_rt_basis
+        assert metadata["matrix_center_weight_basis"] == row.center_weight_basis
 
 
 def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(

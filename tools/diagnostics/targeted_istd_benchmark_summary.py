@@ -48,7 +48,7 @@ def _summarize_target(
         match for match in matches if match.include_in_primary_matrix
     )
     selected = primary_matches[0] if len(primary_matches) == 1 else None
-    selected_family = selected.feature_family_id if selected else ""
+    selected_family = selected.feature_id if selected else ""
     selected_matrix = matrix.get(selected_family, {})
     active_tag = _is_active_tag(target, thresholds)
     paired_logs: list[tuple[float, float]] = []
@@ -112,7 +112,7 @@ def _summarize_target(
         targeted_mean_rt=targeted_mean_rt,
         candidate_match_count=len(matches),
         primary_match_count=len(primary_matches),
-        primary_feature_ids=tuple(match.feature_family_id for match in primary_matches),
+        primary_feature_ids=tuple(match.feature_id for match in primary_matches),
         selected_feature_id=selected_family,
         untargeted_positive_count=len(selected_matrix),
         coverage_minimum=coverage_minimum,

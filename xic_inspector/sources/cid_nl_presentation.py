@@ -52,16 +52,13 @@ _TECHNICAL_LABELS = {
     "record_id": "所指紀錄 ID",
     "payload_id": "曲線 evidence ref",
     "sample_id": "樣本 ID",
-    "canonical_sample_identity_id": "樣本 ID",
+    "sample_key": "樣本 ID",
     "candidate_id": "候選 ID",
     "row_key_id": "結果列 ID",
     "group_hypothesis_id": "分組 ID",
     "peak_observation_content_id": "觀察 ID",
     "processing_request_id": "處理 request ID",
     "processing_attempt_id": "處理 attempt ID",
-    "profile_id": "訊號處理 profile ID",
-    "prepared_signal_id": "處理訊號 ID",
-    "trace_content_id": "訊號內容 ID",
     "acquisition_source_id": "擷取來源 ID",
     "observation_artifact_id": "觀察 artifact ID",
     "method_subject_id": "方法對象 ID",
@@ -182,7 +179,7 @@ def _sample_name(item: CanonicalItem, sample_id: str) -> str:
         (
             witness.sample_stem
             for witness in item.witnesses
-            if witness.canonical_sample_identity_id == sample_id and witness.sample_stem
+            if witness.sample_key == sample_id and witness.sample_stem
         ),
         sample_id,
     )
@@ -877,7 +874,7 @@ def build_sample(
     cells = [
         c
         for c in item.details["cells"]
-        if c.get("canonical_sample_identity_id", c.get("sample_id")) == sid
+        if c.get("sample_key", c.get("sample_id")) == sid
     ]
     values = [c["quantitative_value"] for c in cells]
     return {
@@ -886,7 +883,7 @@ def build_sample(
             (
                 w.sample_stem
                 for w in item.witnesses
-                if w.canonical_sample_identity_id == sid and w.sample_stem
+                if w.sample_key == sid and w.sample_stem
             ),
             fallback_sample_label,
         ),

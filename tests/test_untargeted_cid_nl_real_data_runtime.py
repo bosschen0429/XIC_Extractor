@@ -2181,7 +2181,7 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
             == expected.result_ref.backfill_query_bounds
         )
     expected_keys = {
-        f"part-1:{job.sample.identity.sample_identity_id}:{phase}"
+        f"part-1:{job.sample.identity.sample_key}:{phase}"
         for job in jobs
         for phase in ("initial", "backfill")
     }

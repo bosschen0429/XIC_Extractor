@@ -57,7 +57,7 @@ def _write_report(
     for review_row in review_rows:
         lines.append(
             "| "
-            f"{review_row.get('feature_family_id', '')} | "
+            f"{review_row.get('feature_id', '')} | "
             f"{review_row.get('family_center_mz', '')} | "
             f"{review_row.get('family_center_rt', '')} | "
             f"{review_row.get('has_anchor', '')} | "

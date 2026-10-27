@@ -12,11 +12,7 @@ def review_overview(path, summary):
     with open_review_population(path, summary) as population:
         for record in population:
             row, cells = record["row"], record["cells"]
-            numeric = {
-                c["canonical_sample_identity_id"]
-                for c in cells
-                if c["variant"] == "numeric"
-            }
+            numeric = {c["sample_key"] for c in cells if c["variant"] == "numeric"}
             unresolved = sum(c["variant"] == "unresolved" for c in cells)
             destination = row["route"]["destination"]
             rows[row["row_key_id"]] = {
@@ -39,9 +35,9 @@ def review_overview(path, summary):
         ),
         "samples": [
             {
-                "id": s["canonical_sample_identity_id"],
+                "id": s["sample_key"],
                 "label": s.get("sample_stem"),
-                "numeric_count": coverage[s["canonical_sample_identity_id"]],
+                "numeric_count": coverage[s["sample_key"]],
             }
             for s in summary["samples"]
         ],

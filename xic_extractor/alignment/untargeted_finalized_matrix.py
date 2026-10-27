@@ -50,7 +50,7 @@ APEX_READING_CENTER_MZ_BASIS = "discovery_ms1_apex_mean"
 class FinalizedUntargetMatrixRow:
     """Reduced writer row that keeps finalized identity and presentation facts."""
 
-    feature_family_id: str
+    feature_id: str
     group_hypothesis_id: str
     public_family_id: str
     destination: Literal["matrix", "archive"]
@@ -75,8 +75,8 @@ class FinalizedUntargetMatrixRow:
     membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
 
     @property
-    def source_feature_family_ids(self) -> tuple[str, ...]:
-        return (self.feature_family_id,)
+    def source_feature_ids(self) -> tuple[str, ...]:
+        return (self.feature_id,)
 
     @property
     def event_cluster_ids(self) -> tuple[str, ...]:
@@ -253,9 +253,9 @@ def iter_completed_untarget_batch_writer_inputs(
                 has_anchor,
             ) = _group_facts(typed_observations)
             row = FinalizedUntargetMatrixRow(
-                feature_family_id=row_id,
+                feature_id=row_id,
                 group_hypothesis_id=group_id,
-                public_family_id=f"FAM{len(seen_row_ids):06d}",
+                public_family_id=f"F{len(seen_row_ids):06d}",
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
@@ -266,7 +266,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 neutral_loss_tag=neutral_loss_tag,
                 has_anchor=has_anchor,
                 membership_risks=tuple(
-                    (member.canonical_sample_identity_id, risk)
+                    (member.sample_key, risk)
                     for member in typed_observations[0].group.member_subjects
                     if (
                         risk := (membership_risks_by_owner or {}).get(member.subject_id)
@@ -316,7 +316,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 ),
                 production_decisions=ProductionDecisionSet(
                     cells={
-                        (decision.feature_family_id, decision.sample_stem): decision
+                        (decision.feature_id, decision.sample_stem): decision
                         for decision in writer_cell_decisions
                     },
                     rows={row_id: row_decision},
@@ -363,8 +363,7 @@ def _presentation_facts(
         member_physical_ids = {
             physical_id
             for member in observation.group.member_subjects
-            if member.canonical_sample_identity_id
-            == observation.canonical_sample_identity_id
+            if member.sample_key == observation.sample_key
             for physical_id in member.physical_observation_ids
         }
         for direct in observation.direct_observations:
@@ -439,7 +438,7 @@ def _aligned_cell(
     request_rt = query_bounds.pop() if len(query_bounds) == 1 else (None, None)
     return AlignedCell(
         sample_stem=owner_decision.subject.canonical_sample.metadata.raw_stem,
-        cluster_id=row.feature_family_id,
+        cluster_id=row.feature_id,
         status=status,
         area=owner_decision.value,
         apex_rt=(
@@ -499,7 +498,7 @@ def _selected_cell_source(
             "direct writer cell requires one source PeakHypothesis identity"
         )
     key = (
-        decision.subject.canonical_sample.identity.sample_identity_id,
+        decision.subject.canonical_sample.identity.sample_key,
         hypothesis_ids[0],
     )
     # Recovery provenance is already closed by the observation/hypothesis owners.
@@ -519,7 +518,7 @@ def _direct_candidate_ids(
         if type(subject) is not ObservedSearchSubject:
             continue
         key = (
-            subject.canonical_sample_identity_id,
+            subject.sample_key,
             subject.hypothesis.hypothesis_id,
         )
         previous = observed_subjects.get(key)
@@ -602,7 +601,7 @@ def _writer_cell_decision(
         production_status = "blank"
         backfill_tier = ""
     return ProductionCellDecision(
-        feature_family_id=row_id,
+        feature_id=row_id,
         sample_stem=cell.sample_stem,
         raw_status=cell.status,
         production_status=production_status,
@@ -629,7 +628,7 @@ def _writer_row_decision(
         item.production_status == "accepted_backfill" for item in decisions
     )
     return ProductionRowDecision(
-        feature_family_id=row.feature_family_id,
+        feature_id=row.feature_id,
         include_in_primary_matrix=row.destination == "matrix",
         identity_decision=(
             "finalized_matrix" if row.destination == "matrix" else "finalized_archive"

@@ -454,7 +454,7 @@ class CurveBundleSource:
             "processing_request_id": "curve-bundle",
             "processing_attempt_id": "v1",
             "samples": [
-                {"canonical_sample_identity_id": sid, "sample_stem": label}
+                {"sample_key": sid, "sample_stem": label}
                 for sid, label in sorted(labels.items())
             ],
         }
@@ -466,7 +466,7 @@ class CurveBundleSource:
             _, ref = build_canonical_ref("group", "curve-bundle", "v1", transition.key)
             witnesses = tuple(
                 Witness(
-                    canonical_sample_identity_id=trace.sample_id,
+                    sample_key=trace.sample_id,
                     candidate_id=trace.trace_id,
                     group_hypothesis_id=transition.key,
                     precursor_mz=trace.mz,

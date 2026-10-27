@@ -13,7 +13,7 @@ ItemKind = Literal["row", "group", "candidate", "target"]
 class Witness:
     """A witness chain linking an item to an actual candidate/sample observation."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     candidate_id: str
     group_hypothesis_id: str | None = None
     row_key_id: str | None = None

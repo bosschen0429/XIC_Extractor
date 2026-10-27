@@ -266,7 +266,7 @@ def _validate_finalized_result_population(
         result.processing_request.processing_request_id for result in results
     }
     sample_populations = {
-        tuple(sample.identity.sample_identity_id for sample in result.canonical_samples)
+        tuple(sample.identity.sample_key for sample in result.canonical_samples)
         for result in results
     }
     if len(request_ids) != 1 or len(sample_populations) != 1:
@@ -274,15 +274,12 @@ def _validate_finalized_result_population(
             "finalized Target results crossed request or sample populations"
         )
     expected_sample_population = tuple(
-        sorted(sample.identity.sample_identity_id for sample in expected_samples)
+        sorted(sample.identity.sample_key for sample in expected_samples)
     )
     if any(
         result.processing_request != expected_processing_request
         or tuple(
-            sorted(
-                sample.identity.sample_identity_id
-                for sample in result.canonical_samples
-            )
+            sorted(sample.identity.sample_key for sample in result.canonical_samples)
         )
         != expected_sample_population
         for result in results
@@ -318,7 +315,7 @@ def _build_publication_output(
 ) -> RunOutput:
     expected_samples = finalized_results[0].canonical_samples
     expected_sample_ids = tuple(
-        sample.identity.sample_identity_id for sample in expected_samples
+        sample.identity.sample_key for sample in expected_samples
     )
     samples_by_raw_stem = {
         sample.metadata.raw_stem: sample for sample in expected_samples
@@ -344,11 +341,11 @@ def _build_publication_output(
         target_ids_by_label[target_label] = target_id
         targets_by_label[target_label] = target.target
         for backfill in result.scientific_core.targeted_backfill_decisions:
-            sample_id = backfill.target_cell.content.canonical_sample_identity_id
+            sample_id = backfill.target_cell.content.sample_key
             backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
-            sample_id = subject.sample.identity.sample_identity_id
+            sample_id = subject.sample.identity.sample_key
             if sample_id not in expected_sample_ids:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decision crossed the canonical "
@@ -371,7 +368,7 @@ def _build_publication_output(
             raise TargetedOutputBoundaryError(
                 "acquisition evidence does not resolve to a canonical sample identity"
             )
-        sample_id = sample.identity.sample_identity_id
+        sample_id = sample.identity.sample_key
         if sample_id in consumed_sample_ids:
             raise TargetedOutputBoundaryError(
                 "acquisition evidence contains duplicate canonical samples"
@@ -706,8 +703,8 @@ def _same_physical_peak(
         and reported is not None
         and captured.facts is not None
         and reported.facts is not None
-        and captured.facts.prepared_signal_id == reported.facts.prepared_signal_id
-        and captured.facts.physical_segment_id == reported.facts.physical_segment_id
+        and captured.prepared == reported.prepared
+        and captured.answer.selected_segment == reported.answer.selected_segment
     )
 
 
@@ -869,14 +866,13 @@ def _prepare_targeted_production_workflow(
                         evaluation
                     )
     if any(
-        evaluation.prepared.profile_id != profile.profile_id
+        evaluation.prepared.profile != profile
         for evaluation in physical_evaluations.values()
     ):
         raise RuntimeError("Targeted acquisition crossed its configured signal profile")
     processing_request = bind_targeted_physical_capture_request(
         current_inputs.processing_request,
         profile=profile,
-        evaluations=physical_evaluations,
     )
     attempt = issue_processing_attempt(processing_request)
     owners = compose_processing_owner_references(
@@ -1055,7 +1051,7 @@ def _execute_target(
     assessment_tuple = tuple(
         sorted(
             assessments,
-            key=lambda item: item[0].identity.sample_identity_id,
+            key=lambda item: item[0].identity.sample_key,
         )
     )
     capture_inputs = population.capture_inputs

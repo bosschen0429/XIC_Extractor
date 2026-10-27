@@ -62,8 +62,8 @@ def compose_cid_nl_predecessor_cells(
     backfills = backfill_assessments_by_group or {}
     for (_, sample_id, subject_id), (sample, assessment) in backfills.items():
         if (
-            sample.identity.sample_identity_id != sample_id
-            or assessment.content.canonical_sample_identity_id != sample_id
+            sample.identity.sample_key != sample_id
+            or assessment.content.sample_key != sample_id
             or assessment.content.method_subject.method_subject_id != subject_id
         ):
             raise CellObservationContractError(
@@ -77,14 +77,14 @@ def compose_cid_nl_predecessor_cells(
     ] = {}
     for sample, assessment in (*sample_assessments, *backfills.values()):
         key = (
-            sample.identity.sample_identity_id,
+            sample.identity.sample_key,
             assessment.artifact.evidence_artifact_id,
         )
         unique_assessments.setdefault(key, (sample, assessment))
     sample_assessments = tuple(
         sorted(
             unique_assessments.values(),
-            key=lambda pair: pair[0].identity.sample_identity_id,
+            key=lambda pair: pair[0].identity.sample_key,
         )
     )
     retained_hypothesis_ids = frozenset(
@@ -95,7 +95,7 @@ def compose_cid_nl_predecessor_cells(
     supports_list: list[CidNlCellGroupSupport] = []
     for sample, assessment in sample_assessments:
         retained_key = (
-            sample.identity.sample_identity_id,
+            sample.identity.sample_key,
             assessment.artifact.content_identity.artifact_content_id,
         )
         retained_hypotheses = retained_by_assessment.get(retained_key, ())
@@ -124,11 +124,11 @@ def compose_cid_nl_predecessor_cells(
             for member in group.member_subjects:
                 if member.subject_id in missing_owner_ids:
                     missing_member_observations_by_sample.setdefault(
-                        member.canonical_sample_identity_id,
+                        member.sample_key,
                         set(),
                     ).update(member.physical_observation_ids)
         for sample, assessment in sample_assessments:
-            sample_id = sample.identity.sample_identity_id
+            sample_id = sample.identity.sample_key
             missing_observation_ids = missing_member_observations_by_sample.get(
                 sample_id,
                 set(),
@@ -169,7 +169,7 @@ def compose_cid_nl_predecessor_cells(
                         for owner_id in group.owner_ids
                         if owner_id in supports_by_hypothesis_id
                     ),
-                    key=lambda support: support.sample.identity.sample_identity_id,
+                    key=lambda support: support.sample.identity.sample_key,
                 )
             ),
             config=alignment_config,
@@ -184,7 +184,7 @@ def compose_cid_nl_predecessor_cells(
     ] = {}
     samples = {}
     for sample, assessment in sample_assessments:
-        sample_id = sample.identity.sample_identity_id
+        sample_id = sample.identity.sample_key
         samples[sample_id] = sample
         if id(assessment) in initial_assessment_objects:
             assessments_by_sample_subject.setdefault(
@@ -195,7 +195,7 @@ def compose_cid_nl_predecessor_cells(
         for support in context.supports:
             support_contexts.setdefault(
                 (
-                    support.sample.identity.sample_identity_id,
+                    support.sample.identity.sample_key,
                     id(support.assessment),
                 ),
                 [],
@@ -204,8 +204,7 @@ def compose_cid_nl_predecessor_cells(
     for context in contexts:
         method_subject_id = context.method_subject_id
         context_support_by_sample_id = {
-            support.sample.identity.sample_identity_id: support
-            for support in context.supports
+            support.sample.identity.sample_key: support for support in context.supports
         }
         for sample_id in samples:
             if (

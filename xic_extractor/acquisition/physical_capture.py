@@ -32,9 +32,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     mint_physical_peak_question,
     prepare_physical_signal,
 )
-from xic_extractor.peak_detection.physical_peak_identity import (
-    mint_physical_trace_content_id,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
@@ -89,7 +86,10 @@ class PhysicalPeakCapture:
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         self._profile = profile
-        self._prepared: dict[tuple[str, str], PreparedSignalResult] = {}
+        self._prepared: dict[
+            tuple[tuple[float, ...], tuple[float, ...], SignalProcessingProfile],
+            PreparedSignalResult,
+        ] = {}
         self._populations: dict[
             XICRequest, tuple[PreparedSignalResult, PhysicalSegmentUniverse]
         ] = {}
@@ -203,14 +203,16 @@ class PhysicalPeakCapture:
         rt, intensity = acquired.trace.rt, acquired.trace.intensity
         population = self._populations.get(search.request)
         if population is None:
-            trace_content_id = mint_physical_trace_content_id(rt, intensity)
-            cache_key = (trace_content_id, self._profile.profile_id)
+            cache_key = (
+                tuple(map(float, rt)),
+                tuple(map(float, intensity)),
+                self._profile,
+            )
             prepared = self._prepared.get(cache_key)
             if prepared is None:
                 prepared = prepare_physical_signal(
                     rt,
                     intensity,
-                    trace_content_id=trace_content_id,
                     profile=self._profile,
                 )
                 self._prepared[cache_key] = prepared
@@ -226,7 +228,6 @@ class PhysicalPeakCapture:
         question = mint_physical_peak_question(
             prepared.projection,
             universe,
-            selection_subject_id=search.selection_subject_id,
             query_rt_min=search.query_rt_min,
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )
@@ -333,7 +334,7 @@ def _trace_quality(
         return "physical_shoulder_overlap"
     if evaluation.state == "available":
         for segment in evaluation.segment_universe.segments:
-            if segment.physical_segment_id == evaluation.answer.physical_segment_id:
+            if segment == evaluation.answer.selected_segment:
                 raw_seg = np.asarray(
                     intensity[segment.start_index : segment.end_index], dtype=float
                 )

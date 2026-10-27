@@ -10,6 +10,7 @@ from typing import Any
 from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     TraceAcquisitionBatch,
+    TraceAcquisitionCapability,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
@@ -147,21 +148,24 @@ class RuntimeAcquisitionReceipt:
 
     work_unit_key: str
     acquisition: TraceAcquisitionBatch | RuntimeAcquisitionMetrics
-    acquisition_capability_id: str | None = field(default=None, kw_only=True)
+    acquisition_capability: TraceAcquisitionCapability | None = field(
+        default=None, kw_only=True
+    )
 
     def __post_init__(self) -> None:
         _required_text(self.work_unit_key, field="work_unit_key")
         if isinstance(self.acquisition, TraceAcquisitionBatch):
-            capability_id = self.acquisition.capability.capability_id
-            if self.acquisition_capability_id not in (None, capability_id):
+            capability = self.acquisition.capability
+            if self.acquisition_capability not in (None, capability):
                 raise RuntimeFinalizationContractError(
                     "acquisition receipt capability does not match its batch"
                 )
-            object.__setattr__(self, "acquisition_capability_id", capability_id)
+            object.__setattr__(self, "acquisition_capability", capability)
         elif isinstance(self.acquisition, RuntimeAcquisitionMetrics):
-            _required_text(
-                self.acquisition_capability_id, field="acquisition_capability_id"
-            )
+            if not isinstance(self.acquisition_capability, TraceAcquisitionCapability):
+                raise RuntimeFinalizationContractError(
+                    "compacted acquisition requires its capability"
+                )
         else:
             raise RuntimeFinalizationContractError(
                 "acquisition must be an owner-produced TraceAcquisitionBatch or metrics"
@@ -213,7 +217,7 @@ def compact_runtime_acquisition_receipt(
     return RuntimeAcquisitionReceipt(
         work_unit_key=receipt.work_unit_key,
         acquisition=derive_runtime_acquisition_metrics((receipt.acquisition,)),
-        acquisition_capability_id=receipt.acquisition_capability_id,
+        acquisition_capability=receipt.acquisition_capability,
     )
 
 
@@ -541,7 +545,7 @@ def _acquisition_receipts_match(
 
     return (
         first.work_unit_key == second.work_unit_key
-        and first.acquisition_capability_id == second.acquisition_capability_id
+        and first.acquisition_capability == second.acquisition_capability
         and derive_runtime_acquisition_metrics((first.acquisition,))
         == derive_runtime_acquisition_metrics((second.acquisition,))
     )

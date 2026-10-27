@@ -319,9 +319,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
                     UntargetedCandidateExclusion(
                         candidate_id=candidate_id,
                         method_subject_id=fixture.method_subject.method_subject_id,
-                        canonical_sample_identity_id=(
-                            sample_b.identity.sample_identity_id
-                        ),
+                        sample_key=(sample_b.identity.sample_key),
                         discovery_candidate_state="review_only_orphan_nl",
                     ),
                 ),
@@ -372,7 +370,7 @@ def test_batch_application_result_requires_owner_candidate_universe(
                 UntargetedCandidateExclusion(
                     candidate_id=candidate_id,
                     method_subject_id=fixture.method_subject.method_subject_id,
-                    canonical_sample_identity_id=sample.identity.sample_identity_id,
+                    sample_key=sample.identity.sample_key,
                     discovery_candidate_state="review_only_orphan_nl",
                 ),
             ),

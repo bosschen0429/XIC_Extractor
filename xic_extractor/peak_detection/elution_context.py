@@ -17,7 +17,10 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     unique_physical_segment_at_rt,
 )
-from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResult
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalSegment,
+    PreparedSignalResult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +30,7 @@ class ElutionLandmark:
     width: float
     # Unique point ownership in this context's formal physical universe.
     # Missing ownership is not evidence that this is a separate peak.
-    physical_segment_id: str | None = None
+    physical_segment: PhysicalSegment | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -53,8 +56,8 @@ class SampleElutionContext:
     rt_start: float
     rt_end: float
     landmarks: tuple[ElutionLandmark, ...]
-    trace_content_id: str = ""
-    profile_id: str = ""
+    rt: tuple[float, ...] = ()
+    raw: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -131,6 +134,6 @@ def project_elution_context(
         rt_start=float(rt[0]),
         rt_end=float(rt[-1]),
         landmarks=landmarks,
-        trace_content_id=prepared_result.projection.trace_content_id,
-        profile_id=prepared_result.projection.profile_id,
+        rt=prepared.rt,
+        raw=prepared.raw,
     )

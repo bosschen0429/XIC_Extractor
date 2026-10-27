@@ -137,7 +137,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 {
                     "candidate_id": cid,
                     "precursor_mz": mz,
-                    "canonical_sample_identity_id": sid,
+                    "sample_key": sid,
                     "rt_apex_min": rt,
                 },
             )
@@ -161,7 +161,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             if gid == "G3":
                 group["member_subjects"] = [
                     {
-                        "canonical_sample_identity_id": "S1",
+                        "sample_key": "S1",
                         "physical_observation_ids": ["C5-obs"],
                     }
                 ]
@@ -175,7 +175,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                     gid,
                     [
                         {
-                            "canonical_sample_identity_id": sid,
+                            "sample_key": sid,
                             "variant": "unresolved",
                             "value": None,
                         }
@@ -193,9 +193,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             {
                 "matrix_path": str(matrix),
                 "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                "samples": [
-                    {"canonical_sample_identity_id": sid} for sid in ("S1", "S2")
-                ],
+                "samples": [{"sample_key": sid} for sid in ("S1", "S2")],
                 "selection_evidence_capability": "recorded_decisions",
             }
         )
@@ -254,7 +252,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     assert all("artifact" not in row for row in records["method_assessments"])
     expected = sorted(
         (
-            decision.subject.canonical_sample.identity.sample_identity_id,
+            decision.subject.canonical_sample.identity.sample_key,
             decision.variant,
             getattr(decision, "value", None),
         )
@@ -263,7 +261,7 @@ def test_default_review_keeps_values_and_query_without_curves(
         for decision in row.decisions
     )
     actual = sorted(
-        (row["canonical_sample_identity_id"], row["variant"], row["value"])
+        (row["sample_key"], row["variant"], row["value"])
         for row in read_explanation_metadata(report)
         .records.get("cell_decisions", {})
         .values()
@@ -383,7 +381,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
             return sorted(
                 (
                     row["group_hypothesis_id"],
-                    row["canonical_sample_identity_id"],
+                    row["sample_key"],
                     row["variant"],
                     row.get("value"),
                 )
@@ -469,8 +467,7 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
     )
     summary = read_cid_nl_explanation(review)
     sample_ids = {
-        sample["sample_stem"]: sample["canonical_sample_identity_id"]
-        for sample in summary["samples"]
+        sample["sample_stem"]: sample["sample_key"] for sample in summary["samples"]
     }
     detail = read_cid_nl_explanation(
         review, candidate_id=candidates["S1"][0].candidate_id
@@ -771,7 +768,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
             ),
         )
         decision = NS(
-            subject=NS(canonical_sample=NS(identity=NS(sample_identity_id=sid))),
+            subject=NS(canonical_sample=NS(identity=NS(sample_key=sid))),
             evidence=NS(effective_cells=(cell,), evidence_states=()),
             variant="quantified",
             value=value,
@@ -788,7 +785,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
                 sid,
                 {
                     "candidate_id": cid,
-                    "canonical_sample_identity_id": sid,
+                    "sample_key": sid,
                     "precursor_mz": 500.0,
                     "rt_apex_min": 1.0,
                 },
@@ -810,8 +807,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
                 "matrix_path": str(matrix),
                 "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                 "samples": [
-                    {"sample_stem": sid, "canonical_sample_identity_id": sid}
-                    for sid in ("S1", "S2")
+                    {"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")
                 ],
             }
         )
@@ -972,9 +968,7 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
                 owner.owner_apex_rt - (0.1 if owner.sample_stem == "S2" else 0)
             )
     expected = {
-        member.canonical_sample_identity_id: json.loads(
-            json.dumps(asdict(risks[member.subject_id]))
-        )
+        member.sample_key: json.loads(json.dumps(asdict(risks[member.subject_id])))
         for group in completed.initial_groups
         for member in group.member_subjects
     }
@@ -993,8 +987,7 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     )
     cells = read_explanation_metadata(report).records["cell_decisions"].values()
     assert {
-        cell["canonical_sample_identity_id"]: cell["membership_risks"][0]
-        for cell in cells
+        cell["sample_key"]: cell["membership_risks"][0] for cell in cells
     } == expected
     review = tmp_path / "review.tsv"
     write_alignment_review_tsv(
@@ -1009,7 +1002,7 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     for row in rows:
         assert row["membership_risk_status"] == "recorded"
         for risk in json.loads(row["membership_risks_json"]):
-            actual[risk.pop("canonical_sample_identity_id")] = risk
+            actual[risk.pop("sample_key")] = risk
     assert actual == expected
     assert matrix.read_bytes() == original
 

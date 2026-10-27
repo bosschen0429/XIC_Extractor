@@ -1,3 +1,4 @@
+import csv
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -8,7 +9,15 @@ import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_modul
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.backfill.peak_fact_provenance import (
+    BackfillPeakFactProvenanceBatch,
+    run_profile_row,
+)
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    deserialize_signal_processing_profile,
+)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -33,7 +42,7 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
         metadata["cross_sample_peak_group_policy"]
         == "cross_sample_peak_group_hypothesis"
     )
-    assert metadata["public_family_id_policy"] == "fam_compatibility_id"
+    assert metadata["feature_id_policy"] == "report_scoped_measured_member_order"
     assert (
         metadata["group_delivery_policy"] == "owner_group_delivery_successor_projection"
     )
@@ -53,14 +62,11 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     assert metadata["output_scope"] == "full-audit"
     assert metadata["selected_family_source"] == ""
     assert metadata["scope_warning"] == ""
-    assert metadata["signal_processing_profile_schema_version"] == (
-        "signal_processing_profile"
-    )
-    assert metadata["signal_processing_profile_id"].startswith("signal-profile:")
-    assert len(metadata["signal_processing_profile_hash"]) == 64
-    assert metadata["signal_processing_method"] == "gaussian"
-    assert metadata["signal_processing_window_points"] == "9"
-    assert metadata["physical_signal_formula"] == (
+    profile = json.loads(metadata["signal_processing_profile_json"])
+    assert profile["schema_version"] == "signal_processing_profile"
+    assert profile["method"] == "gaussian"
+    assert profile["window_points"] == 9
+    assert profile["physical_signal_formula"] == (
         "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
@@ -165,7 +171,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
-    assert outputs.matrix_identity_tsv == tmp_path / "alignment_matrix_identity.tsv"
     assert outputs.review_tsv == tmp_path / "alignment_review.tsv"
     assert outputs.backfill_cell_evidence_tsv == (
         tmp_path / "alignment_backfill_cell_evidence.tsv"
@@ -175,7 +180,7 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     )
     assert outputs.cells_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert outputs.run_metadata_json is None
+    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
 
 
 def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
@@ -472,6 +477,7 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
     config = AlignmentConfig()
+    profile = SignalProcessingProfile(window_points=21)
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
@@ -479,20 +485,23 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         metadata={},
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
+        backfill_peak_fact_provenance=BackfillPeakFactProvenanceBatch(
+            (run_profile_row(profile),)
+        ),
     )
 
     assert outputs.run_metadata_json is not None
     persisted = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
     assert persisted["owner_backfill_peak_fact_provenance_row_count"] == "1"
     assert outputs.owner_backfill_peak_fact_provenance_tsv is not None
-    assert (
-        len(
-            outputs.owner_backfill_peak_fact_provenance_tsv.read_text(
-                encoding="utf-8"
-            ).splitlines()
-        )
-        == 2
-    )
+    with outputs.owner_backfill_peak_fact_provenance_tsv.open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        assert reader.fieldnames == ["row_kind", "schema_version", "profile_json"]
+        (row,) = reader
+    assert row["row_kind"] == "run_profile"
+    assert deserialize_signal_processing_profile(row["profile_json"]) == profile
 
 
 def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(

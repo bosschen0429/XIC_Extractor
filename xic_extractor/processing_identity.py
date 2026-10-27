@@ -626,8 +626,7 @@ class ProcessingOwnerReferences:
                     "sample metadata injection_order must match request binding"
                 )
         sample_ids = tuple(
-            resolution.identity.sample_identity_id
-            for resolution in self.sample_resolutions
+            resolution.identity.sample_key for resolution in self.sample_resolutions
         )
         if len(set(sample_ids)) != len(sample_ids):
             raise IdentityContractError(

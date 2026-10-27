@@ -391,15 +391,15 @@ def _apply_backfill_questions(
 ) -> None:
     by_key = {
         (
-            state.job.sample.identity.sample_identity_id,
+            state.job.sample.identity.sample_key,
             state.job.method_subject.method_subject_id,
         ): state
         for state in states
     }
     for question in questions:
-        key = (question.sample_identity_id, question.method_subject.method_subject_id)
+        key = (question.sample_key, question.method_subject.method_subject_id)
         if key not in by_key:
-            job = copy(templates[question.sample_identity_id])
+            job = copy(templates[question.sample_key])
             object.__setattr__(job, "method_subject", question.method_subject)
             object.__setattr__(
                 job,
@@ -431,7 +431,7 @@ def _prepare_group_authorized_backfills(
     sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     templates = {
-        job.sample.identity.sample_identity_id: job
+        job.sample.identity.sample_key: job
         for job in sample_templates or tuple(state.job for state in states)
     }
     questions = plan_grouped_cid_nl_backfills(
@@ -480,7 +480,7 @@ def _prepare_subject_authorized_backfills(
     ):
         return ()
     templates = {
-        job.sample.identity.sample_identity_id: job
+        job.sample.identity.sample_key: job
         for job in sample_templates or tuple(state.job for state in states)
     }
     questions = plan_subject_cid_nl_backfills(
@@ -802,7 +802,7 @@ def assess_initial_sample_jobs(
         _SampleInitialWorkerRequest(
             jobs=jobs,
             initial_resource_key=(
-                f"grouping-experiment:{jobs[0].sample.identity.sample_identity_id}"
+                f"grouping-experiment:{jobs[0].sample.identity.sample_key}"
             ),
             partition_candidates=True,
         )

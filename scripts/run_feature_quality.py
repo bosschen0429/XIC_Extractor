@@ -16,10 +16,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--matrix", type=Path, required=True, help="Finalized alignment_matrix.tsv"
     )
     parser.add_argument(
-        "--identity",
+        "--review",
         type=Path,
         required=True,
-        help="Bound alignment_matrix_identity.tsv",
+        help="Bound alignment_review.tsv",
     )
     parser.add_argument(
         "--sample-metadata",
@@ -42,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         required=True,
         help=(
-            "New directory for full and selected matrices, identity mapping, "
+            "New directory for full and selected matrices, feature mapping, "
             "metrics, and manifest"
         ),
     )
@@ -50,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         manifest = export_feature_quality(
             matrix_path=args.matrix,
-            identity_path=args.identity,
+            review_path=args.review,
             sample_metadata_path=args.sample_metadata,
             output_dir=args.output_dir,
             min_finite_fraction=args.min_finite_fraction,

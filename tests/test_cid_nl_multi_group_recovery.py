@@ -217,7 +217,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         backfills[
             (
                 group.group_hypothesis_id,
-                fixture.sample(name).identity.sample_identity_id,
+                fixture.sample(name).identity.sample_key,
                 assessments[name].content.method_subject.method_subject_id,
             )
         ] = (fixture.sample(name), assessments[name])
@@ -250,7 +250,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     }
     assert set(retained) == {
         (
-            fixture.sample(name).identity.sample_identity_id,
+            fixture.sample(name).identity.sample_key,
             assessments[name].artifact.content_identity.artifact_content_id,
         )
         for name in accepted
@@ -935,8 +935,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         ):
             assert len(transition.admitted_members) == 2
             assert all(
-                member.canonical_sample_identity_id
-                == missing.job.sample.identity.sample_identity_id
+                member.sample_key == missing.job.sample.identity.sample_key
                 for member in transition.admitted_members
             )
         missing_cells = tuple(
@@ -984,7 +983,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             bound_recoveries = {
                 (
                     group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.sample.identity.sample_key,
                     missing.job.method_subject.method_subject_id,
                 ): (
                     missing.job.sample,
@@ -1065,12 +1064,12 @@ def test_runtime_recovers_every_authorized_rt_group(
             ambiguous = {
                 (
                     first_group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.sample.identity.sample_key,
                     missing.job.method_subject.method_subject_id,
                 ): shared_recovery,
                 (
                     second_group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.sample.identity.sample_key,
                     missing.job.method_subject.method_subject_id,
                 ): shared_recovery,
             }
@@ -1685,10 +1684,7 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
             if risk["phase"] == "backfill"
         ]
     assert len(published) == 1
-    assert (
-        published[0]["canonical_sample_identity_id"]
-        == accepted[0]["canonical_sample_identity_id"]
-    )
+    assert published[0]["sample_key"] == accepted[0]["sample_key"]
     payload = prepare_report(
         report,
         SelectionRequest(

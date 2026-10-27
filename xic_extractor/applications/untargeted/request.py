@@ -22,7 +22,7 @@ from xic_extractor.configuration.execution_profile import (
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
@@ -116,7 +116,7 @@ def validate_retained_processing_profile(profile: SignalProcessingProfile) -> No
     Request/config conflicts are resolved by the application entry before this
     capability check; the CLI's canonical profile is already bound to its flags.
     """
-    if profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID:
+    if profile != DEFAULT_SIGNAL_PROCESSING_PROFILE:
         raise ValueError(
             "pure CID-NL retained route does not support legacy Alignment "
             "options: signal_processing_profile"

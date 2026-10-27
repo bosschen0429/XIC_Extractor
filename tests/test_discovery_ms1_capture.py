@@ -73,7 +73,7 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     assert facts.area_counts_seconds == pytest.approx(
         1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
     )
-    assert first.evaluation.question.selection_subject_id == search.selection_subject_id
+    assert first.evaluation.question.query_rt_min == search.query_rt_min
     assert first.trace_quality == "clean"
 
 

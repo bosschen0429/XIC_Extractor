@@ -58,7 +58,7 @@ def _assign_peak_anchors(
         for candidate in group:
             assigned_by_candidate_id[candidate.candidate_id] = replace(
                 candidate,
-                feature_family_id=anchor_id,
+                feature_id=anchor_id,
                 feature_family_size=group_size,
             )
 

@@ -18,8 +18,13 @@ from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 REVIEW_COLUMNS = [
-    "feature_family_id",
+    "feature_id",
     *GROUP_REVIEW_PROJECTION_COLUMNS,
+    "matrix_row_index",
+    "matrix_mz",
+    "matrix_rt",
+    "center_mz_basis",
+    "matrix_row_binding_sha256",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
@@ -78,13 +83,22 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
     rows = _read_tsv(path)
 
     assert list(rows[0]) == REVIEW_COLUMNS
-    assert rows[0] == {
+    assert {
+        key: value
+        for key, value in rows[0].items()
+        if key
+        not in {
+            "matrix_row_index",
+            "matrix_mz",
+            "matrix_rt",
+            "center_mz_basis",
+            "matrix_row_binding_sha256",
+        }
+    } == {
         "membership_risk_status": "not_recorded",
         "membership_risk_flags": "",
         "membership_risks_json": "[]",
-        "feature_family_id": "ALN000001",
-        "group_hypothesis_id": "ALN000001",
-        "public_family_id": "ALN000001",
+        "feature_id": "ALN000001",
         "group_construction_role": "successor_constructor",
         "group_delivery_role": "owner_aligned_feature_compatibility_facade",
         "group_membership_source": "owner_aligned_feature_successor_projection",
@@ -401,10 +415,9 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.output.alignment.matrix_output_contract import (
-        validate_matrix_identity_rows,
+        matrix_review_rows,
     )
     from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
         write_alignment_review_tsv,
     )
@@ -431,8 +444,8 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
         )
     )[0]
     identity_row = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
@@ -446,13 +459,13 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     )[0]
 
     assert matrix_row["Mz"] == "500.1235"
-    assert identity_row["Mz"] == "500.123456"
+    assert identity_row["matrix_mz"] == "500.123456"
     assert review_row["family_center_mz"] == "500.123456"
-    validate_matrix_identity_rows(
+    matrix_review_rows(
         matrix_header=tuple(matrix_row),
         matrix_rows=(matrix_row,),
-        identity_columns=tuple(identity_row),
-        identity_rows=(identity_row,),
+        review_columns=tuple(identity_row),
+        review_rows=(identity_row,),
     )
 
 
@@ -460,8 +473,8 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -486,23 +499,23 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
         )
     )[0]
     identity_row = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
     )[0]
 
     assert matrix_row["Mz"] == "5.1235"
-    assert identity_row["Mz"] == "5.123456"
+    assert identity_row["matrix_mz"] == "5.123456"
 
 
 def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = _display_collision_matrix()
@@ -515,19 +528,19 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         )
     )
     identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
     )
 
     assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
-    assert [row["Mz"] for row in identity_rows] == [
+    assert [row["matrix_mz"] for row in identity_rows] == [
         "500.123441",
         "500.123449",
     ]
-    assert [row["peak_hypothesis_id"] for row in identity_rows] == [
+    assert [row["feature_id"] for row in identity_rows] == [
         "ALN000001",
         "ALN000002",
     ]
@@ -539,7 +552,6 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         "duplicate",
         "missing",
         "extra",
-        "reordered",
         "matrix_swap",
         "cross_bound",
         "missing_column",
@@ -551,11 +563,11 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
     mutation: str,
 ) -> None:
     from xic_extractor.output.alignment.matrix_output_contract import (
-        validate_matrix_identity_rows,
+        matrix_review_rows,
     )
     from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = _display_collision_matrix()
@@ -567,8 +579,8 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
         )
     )
     identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
@@ -576,11 +588,11 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
     matrix_header = tuple(matrix_rows[0])
     identity_columns = tuple(identity_rows[0])
 
-    validate_matrix_identity_rows(
+    matrix_review_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
-        identity_columns=identity_columns,
-        identity_rows=identity_rows,
+        review_columns=identity_columns,
+        review_rows=identity_rows,
     )
 
     if mutation == "duplicate":
@@ -595,73 +607,57 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
         matrix_rows.reverse()
     elif mutation == "missing_column":
         identity_columns = tuple(
-            column for column in identity_columns if column != "evidence_status"
+            column for column in identity_columns if column != "center_mz_basis"
         )
     elif mutation == "unknown_column":
         identity_columns = (*identity_columns, "unknown_identity_field")
     else:
-        first_id = identity_rows[0]["peak_hypothesis_id"]
-        identity_rows[0]["peak_hypothesis_id"] = identity_rows[1]["peak_hypothesis_id"]
-        identity_rows[1]["peak_hypothesis_id"] = first_id
+        first_id = identity_rows[0]["feature_id"]
+        identity_rows[0]["feature_id"] = identity_rows[1]["feature_id"]
+        identity_rows[1]["feature_id"] = first_id
 
-    with pytest.raises(ValueError, match="identity"):
-        validate_matrix_identity_rows(
+    with pytest.raises(ValueError, match="Review"):
+        matrix_review_rows(
             matrix_header=matrix_header,
             matrix_rows=matrix_rows,
-            identity_columns=identity_columns,
-            identity_rows=identity_rows,
+            review_columns=identity_columns,
+            review_rows=identity_rows,
         )
 
 
 def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None:
-    from tests.matrix_identity_fixtures import current_matrix_identity_row
+    from tests.matrix_review_fixtures import current_matrix_review_row
     from xic_extractor.output.alignment.matrix_output_contract import (
-        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        MATRIX_REVIEW_COLUMNS,
         MATRIX_ROW_BINDING_COLUMN,
-        validate_matrix_identity_rows,
+        matrix_review_rows,
     )
 
     matrix_header = ("Mz", "RT", "sample-a")
     matrix_rows = ({"Mz": "500.1230", "RT": "8.49", "sample-a": "100"},)
-    identity = current_matrix_identity_row(
+    identity = current_matrix_review_row(
         index=1,
         mz="500.123",
         rt="8.49",
-        peak_hypothesis_id="ALN000001",
+        feature_id="ALN000001",
         sample_values={"sample-a": "100"},
     )
-    validate_matrix_identity_rows(
+    matrix_review_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
-        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-        identity_rows=(identity,),
+        review_columns=MATRIX_REVIEW_COLUMNS,
+        review_rows=(identity,),
     )
-    for schema in (
-        "",
-        "unknown_identity_schema",
-        "unsupported_matrix_identity",
-    ):
-        with pytest.raises(ValueError, match="identity schema"):
-            validate_matrix_identity_rows(
-                matrix_header=matrix_header,
-                matrix_rows=matrix_rows,
-                identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-                identity_rows=({**identity, "identity_schema_version": schema},),
-            )
     for columns in (
-        tuple(
-            c
-            for c in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
-            if c != MATRIX_ROW_BINDING_COLUMN
-        ),
-        (*ALIGNMENT_MATRIX_IDENTITY_COLUMNS, "unknown_identity_field"),
+        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != MATRIX_ROW_BINDING_COLUMN),
+        (*MATRIX_REVIEW_COLUMNS, "unknown_identity_field"),
     ):
-        with pytest.raises(ValueError, match="identity columns"):
-            validate_matrix_identity_rows(
+        with pytest.raises(ValueError, match="Review.*fields|row fields"):
+            matrix_review_rows(
                 matrix_header=matrix_header,
                 matrix_rows=matrix_rows,
-                identity_columns=columns,
-                identity_rows=(identity,),
+                review_columns=columns,
+                review_rows=(identity,),
             )
 
 
@@ -679,10 +675,10 @@ def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None
 def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     mutation: str,
 ) -> None:
-    from tests.matrix_identity_fixtures import current_matrix_identity_row
+    from tests.matrix_review_fixtures import current_matrix_review_row
     from xic_extractor.output.alignment.matrix_output_contract import (
-        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-        validate_matrix_identity_rows,
+        MATRIX_REVIEW_COLUMNS,
+        matrix_review_rows,
     )
 
     matrix_header = ("Mz", "RT", "sample-a")
@@ -691,19 +687,19 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
         "RT": "8.49",
         "sample-a": "100",
     }
-    identity_row: dict[object, object] = current_matrix_identity_row(
+    identity_row: dict[object, object] = current_matrix_review_row(
         index=1,
         mz="500.123",
         rt="8.49",
-        peak_hypothesis_id="ALN000001",
+        feature_id="ALN000001",
         sample_values={"sample-a": "100"},
     )
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
     elif mutation == "identity_missing_key":
-        identity_row.pop("evidence_status")
+        identity_row.pop("center_mz_basis")
     elif mutation == "identity_truncated":
-        identity_row["evidence_status"] = None
+        identity_row["center_mz_basis"] = None
     elif mutation == "matrix_overflow":
         matrix_row[None] = ["overflow"]
     elif mutation == "matrix_missing_key":
@@ -712,11 +708,11 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
         matrix_row["sample-a"] = None
 
     with pytest.raises(ValueError, match="row fields|missing cells"):
-        validate_matrix_identity_rows(
+        matrix_review_rows(
             matrix_header=matrix_header,
             matrix_rows=(matrix_row,),
-            identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-            identity_rows=(identity_row,),
+            review_columns=MATRIX_REVIEW_COLUMNS,
+            review_rows=(identity_row,),
         )
 
 
@@ -724,11 +720,11 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.output.alignment.matrix_output_contract import (
-        validate_matrix_identity_rows,
+        matrix_review_rows,
     )
     from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -749,7 +745,7 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         matrix,
         production_decisions=_production_decisions(matrix),
     )
-    identity_path = write_alignment_matrix_identity_tsv(
+    identity_path = write_alignment_review_tsv(
         tmp_path / "identity.tsv",
         matrix,
         production_decisions=_production_decisions(matrix),
@@ -765,12 +761,12 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         identity_rows = list(identity_reader)
 
     assert matrix_header == ("Mz", "RT", "'+sample", "safe")
-    assert matrix_rows[0]["RT"] == identity_rows[0]["RT"] == "8.49123"
-    validate_matrix_identity_rows(
+    assert matrix_rows[0]["RT"] == identity_rows[0]["matrix_rt"] == "8.49123"
+    matrix_review_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
-        identity_columns=identity_header,
-        identity_rows=identity_rows,
+        review_columns=identity_header,
+        review_rows=identity_rows,
     )
 
 
@@ -1008,13 +1004,13 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
     assert rows[0]["sample-b"] == "1.10000e+02"
 
 
-def test_write_alignment_matrix_identity_tsv_maps_product_rows(
+def test_write_alignment_review_tsv_maps_product_rows(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.output.alignment.tsv_writer import (
-        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-        write_alignment_matrix_identity_tsv,
+        MATRIX_REVIEW_COLUMNS,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -1034,375 +1030,30 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
         )
     )
     identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
     )
 
-    assert list(identity_rows[0]) == list(ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
+    assert list(identity_rows[0]) == REVIEW_COLUMNS
     assert len(identity_rows) == len(matrix_rows) == 1
     row_binding = identity_rows[0]["matrix_row_binding_sha256"]
     assert len(row_binding) == 64
     assert set(row_binding) <= set("0123456789abcdef")
     assert {
-        key: value
-        for key, value in identity_rows[0].items()
+        key: identity_rows[0][key]
+        for key in MATRIX_REVIEW_COLUMNS
         if key != "matrix_row_binding_sha256"
     } == {
-        "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity",
+        "feature_id": "ALN000001",
         "matrix_row_index": "1",
-        "Mz": "500.123",
-        "RT": matrix_rows[0]["RT"],
-        "peak_hypothesis_id": "ALN000001",
-        "row_identity_basis": "no_split_peak_hypothesis",
-        "split_evaluation_status": "complete_no_product_ready_split",
-        "projection_status": "not_projection",
-        "source_feature_family_ids": "ALN000001",
-        "source_feature_family_count": "1",
+        "matrix_mz": "500.123",
+        "matrix_rt": matrix_rows[0]["RT"],
         "center_mz_basis": "source_family_center_mz",
-        "center_rt_basis": "accepted_cell_area_weighted_apex_rt",
-        "center_weight_basis": "primary_matrix_area",
         "accepted_cell_count": "2",
-        "accepted_sample_count": "2",
-        "evidence_status": "product_matrix_identity_complete",
     }
-
-
-def test_write_alignment_matrix_rejects_family_projection_identity(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            SimpleNamespace(
-                feature_family_id="ALN000001",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=500.123,
-                family_center_rt=8.49,
-                family_product_mz=384.076,
-                family_observed_neutral_loss_da=116.047,
-                has_anchor=True,
-                event_cluster_ids=("ALN000001",),
-                event_member_count=1,
-                evidence="owner_complete_link;owner_count=2",
-                row_identity_basis="family_projection_no_split_evidence",
-                split_evaluation_status="incomplete_scope",
-                projection_status="family_projection",
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "detected", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    with pytest.raises(ValueError, match="family_projection_no_split_evidence"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            SimpleNamespace(
-                feature_family_id="PH_SPLIT_A",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=500.123,
-                family_center_rt=8.49,
-                family_product_mz=384.076,
-                family_observed_neutral_loss_da=116.047,
-                has_anchor=True,
-                event_cluster_ids=("PH_SPLIT_A",),
-                event_member_count=1,
-                evidence="owner_complete_link;owner_count=2",
-                peak_hypothesis_id="PH_SPLIT_A",
-                row_identity_basis="split_peak_hypothesis",
-                split_evaluation_status="complete_product_ready_split",
-                projection_status="not_projection",
-                source_feature_family_ids=("FAM_PARENT",),
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="PH_SPLIT_A", area=100.0),
-            _cell("sample-b", "detected", cluster_id="PH_SPLIT_A", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["peak_hypothesis_id"] == "PH_SPLIT_A"
-    assert rows[0]["row_identity_basis"] == "split_peak_hypothesis"
-    assert rows[0]["split_evaluation_status"] == "complete_product_ready_split"
-    assert rows[0]["source_feature_family_ids"] == "FAM_PARENT"
-
-
-def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_identity_tsv,
-        write_alignment_matrix_tsv,
-    )
-
-    parent = SimpleNamespace(
-        feature_family_id="FAM_PARENT",
-        neutral_loss_tag="DNA_dR",
-        family_center_mz=500.123,
-        family_center_rt=8.49,
-        family_product_mz=384.076,
-        family_observed_neutral_loss_da=116.047,
-        has_anchor=True,
-        event_cluster_ids=("FAM_PARENT",),
-        event_member_count=2,
-        evidence="owner_complete_link;owner_count=2",
-        peak_hypotheses=(
-            SimpleNamespace(
-                peak_hypothesis_id="FAM_PARENT::early",
-                row_identity_basis="split_peak_hypothesis",
-                split_evaluation_status="complete_product_ready_split",
-                projection_status="not_projection",
-                source_feature_family_ids=("FAM_PARENT",),
-                sample_stems=("sample-a",),
-                center_mz_basis="peak_hypothesis_accepted_cells",
-                center_rt_basis="peak_hypothesis_accepted_cells",
-            ),
-            SimpleNamespace(
-                peak_hypothesis_id="FAM_PARENT::late",
-                row_identity_basis="split_peak_hypothesis",
-                split_evaluation_status="complete_product_ready_split",
-                projection_status="not_projection",
-                source_feature_family_ids=("FAM_PARENT",),
-                sample_stems=("sample-b",),
-                center_mz_basis="peak_hypothesis_accepted_cells",
-                center_rt_basis="peak_hypothesis_accepted_cells",
-            ),
-        ),
-    )
-    matrix = AlignmentMatrix(
-        clusters=(parent,),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="FAM_PARENT", area=100.0),
-            _cell("sample-b", "detected", cluster_id="FAM_PARENT", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-    identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert list(matrix_rows[0]) == ["Mz", "RT", "sample-a", "sample-b"]
-    assert [(row["sample-a"], row["sample-b"]) for row in matrix_rows] == [
-        ("1.00000e+02", ""),
-        ("", "1.10000e+02"),
-    ]
-    assert [row["peak_hypothesis_id"] for row in identity_rows] == [
-        "FAM_PARENT::early",
-        "FAM_PARENT::late",
-    ]
-    assert [row["row_identity_basis"] for row in identity_rows] == [
-        "split_peak_hypothesis",
-        "split_peak_hypothesis",
-    ]
-    assert {row["source_feature_family_ids"] for row in identity_rows} == {
-        "FAM_PARENT",
-    }
-
-
-def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    parent = SimpleNamespace(
-        feature_family_id="FAM_PARENT",
-        neutral_loss_tag="DNA_dR",
-        family_center_mz=500.123,
-        family_center_rt=8.49,
-        family_product_mz=384.076,
-        family_observed_neutral_loss_da=116.047,
-        has_anchor=True,
-        event_cluster_ids=("FAM_PARENT",),
-        event_member_count=2,
-        evidence="owner_complete_link;owner_count=2",
-        peak_hypotheses=(
-            SimpleNamespace(
-                peak_hypothesis_id="",
-                row_identity_basis="split_peak_hypothesis",
-                split_evaluation_status="complete_product_ready_split",
-                projection_status="not_projection",
-                source_feature_family_ids=("FAM_PARENT",),
-                sample_stems=("sample-a",),
-            ),
-        ),
-    )
-    matrix = AlignmentMatrix(
-        clusters=(parent,),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="FAM_PARENT", area=100.0),
-            _cell("sample-b", "detected", cluster_id="FAM_PARENT", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    with pytest.raises(ValueError, match="requires peak_hypothesis_id"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_rejects_duplicate_split_hypothesis_id(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = _split_writer_matrix(
-        (
-            _split_hypothesis("FAM_PARENT::same", ("sample-a",)),
-            _split_hypothesis("FAM_PARENT::same", ("sample-b",)),
-        )
-    )
-
-    with pytest.raises(ValueError, match="duplicate product peak_hypothesis_id"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_rejects_overlapping_split_sample_claims(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = _split_writer_matrix(
-        (
-            _split_hypothesis("FAM_PARENT::early", ("sample-a",)),
-            _split_hypothesis("FAM_PARENT::late", ("sample-a", "sample-b")),
-        )
-    )
-
-    with pytest.raises(ValueError, match="claimed by multiple peak_hypothesis_id"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = _split_writer_matrix(
-        (_split_hypothesis("FAM_PARENT::early", ("sample-a",)),)
-    )
-
-    with pytest.raises(ValueError, match="not assigned to split hypothesis"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_rejects_split_hypothesis_missing_source_family(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = _split_writer_matrix(
-        (
-            _split_hypothesis(
-                "FAM_PARENT::early",
-                ("sample-a",),
-                source_feature_family_ids=None,
-            ),
-            _split_hypothesis(
-                "FAM_PARENT::late",
-                ("sample-b",),
-                source_feature_family_ids=None,
-            ),
-        )
-    )
-
-    with pytest.raises(ValueError, match="requires source_feature_family_ids"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-
-
-def test_write_alignment_matrix_rejects_multi_family_product_identity(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            SimpleNamespace(
-                feature_family_id="PH_COLLAPSED",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=500.123,
-                family_center_rt=8.49,
-                family_product_mz=384.076,
-                family_observed_neutral_loss_da=116.047,
-                has_anchor=True,
-                event_cluster_ids=("PH_COLLAPSED",),
-                event_member_count=2,
-                evidence="owner_complete_link;owner_count=2",
-                source_feature_family_ids=("FAM_A", "FAM_B"),
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="PH_COLLAPSED", area=100.0),
-            _cell("sample-b", "detected", cluster_id="PH_COLLAPSED", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    with pytest.raises(ValueError, match="exactly one source_feature_family_id"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
 
 
 def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
@@ -1653,7 +1304,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     rows = _read_tsv(evidence_path)
 
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
-    assert {row["feature_family_id"] for row in rows} == {"ALN000001"}
+    assert {row["feature_id"] for row in rows} == {"ALN000001"}
     assert {row["sample_stem"] for row in rows} == {"sample-a", "sample-b"}
     backfilled = next(row for row in rows if row["status"] == "backfilled")
     assert backfilled["production_cell_status"] in {
@@ -1667,20 +1318,19 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
 
     result = lookup_backfill_evidence_tsv(
         evidence_path,
-        feature_family_id="ALN000001",
+        feature_id="ALN000001",
         sample_stem="sample-a",
         owner_bindings=BackfillEvidenceOwnerBindings(
-            known_group_ids=frozenset(),
+            known_feature_ids=frozenset({"ALN000001"}),
             known_sample_stems=frozenset({"sample-a", "sample-b"}),
             candidate_samples={"sample-a#1": "sample-a"},
         ),
     )
     assert len(result.records) == 1
-    assert result.records[0].group_hypothesis_id == ""
-    assert result.records[0].public_family_id == ""
+    assert result.records[0].feature_id == "ALN000001"
     assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
     assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
+        EvidenceClaimState.OWNER_REHYDRATED
     )
 
 
@@ -1743,7 +1393,7 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
     assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
     assert list(audit[0]) == list(ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS)
     assert len(audit) == 1
-    assert audit[0]["feature_family_id"] == "ALN000001"
+    assert audit[0]["feature_id"] == "ALN000001"
     assert audit[0]["sample_stem"] == "sample-a"
     assert audit[0]["status"] == "backfilled"
     assert audit[0]["neutral_loss_tag"] == "DNA_dR"
@@ -1802,7 +1452,7 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
         )
     )
 
-    assert review[0]["feature_family_id"] == "'=cluster"
+    assert review[0]["feature_id"] == "'=cluster"
     assert review[0]["neutral_loss_tag"] == "'+NL"
     assert review[0]["representative_samples"] == "'=sample;+sample-2"
     assert "'=sample" in matrix_rows[0]
@@ -1917,7 +1567,7 @@ def _split_writer_matrix(
     peak_hypotheses: tuple[SimpleNamespace, ...],
 ) -> AlignmentMatrix:
     parent = SimpleNamespace(
-        feature_family_id="FAM_PARENT",
+        feature_id="FAM_PARENT",
         neutral_loss_tag="DNA_dR",
         family_center_mz=500.123,
         family_center_rt=8.49,
@@ -1943,7 +1593,7 @@ def _split_hypothesis(
     peak_hypothesis_id: str,
     sample_stems: tuple[str, ...],
     *,
-    source_feature_family_ids: tuple[str, ...] | None = ("FAM_PARENT",),
+    source_feature_ids: tuple[str, ...] | None = ("FAM_PARENT",),
 ) -> SimpleNamespace:
     values: dict[str, object] = {
         "peak_hypothesis_id": peak_hypothesis_id,
@@ -1952,8 +1602,8 @@ def _split_hypothesis(
         "projection_status": "not_projection",
         "sample_stems": sample_stems,
     }
-    if source_feature_family_ids is not None:
-        values["source_feature_family_ids"] = source_feature_family_ids
+    if source_feature_ids is not None:
+        values["source_feature_ids"] = source_feature_ids
     return SimpleNamespace(**values)
 
 

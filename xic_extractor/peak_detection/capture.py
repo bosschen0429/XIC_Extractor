@@ -47,9 +47,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
-from xic_extractor.peak_detection.physical_peak_identity import (
-    mint_physical_trace_content_id,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
@@ -303,16 +300,12 @@ def _capture_physical_peak(
             "physical capture m/z differs from the retained owner query"
         )
     retained = expected.retained_prepared_signal
-    matches_trace = (
-        np.array_equal(trace.rt, retained.rt)
-        and np.array_equal(trace.intensity, retained.raw)
-        if retained is not None
-        else mint_physical_trace_content_id(trace.rt, trace.intensity)
-        == expected.prepared.trace_content_id
+    matches_trace = np.array_equal(trace.rt, expected.prepared.rt) and np.array_equal(
+        trace.intensity, expected.prepared.raw
     )
     if not matches_trace:
         raise SampleLocalCaptureError(
-            "physical capture trace_content_id differs from the retained owner trace"
+            "physical capture data differs from the retained owner trace"
         )
     if expected.state == "available" and (
         retained is None or retained.projection != expected.prepared
@@ -382,7 +375,6 @@ def capture_reacquired_physical_peak(
     prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=source_evaluation.question.selection_subject_id,
         query_rt_min=binding.preferred_rt,
         request_context_rt_start_min=binding.query_rt_min,
         request_context_rt_end_min=binding.query_rt_max,
@@ -430,7 +422,7 @@ def _project_physical_capture(
             raise SampleLocalCaptureError("available physical capture lost owner facts")
         selection_intensity = prepared.prepared.positive_signal
         selected = PeakHypothesis(
-            hypothesis_id=f"physical-capture:{facts.fact_content_id}",
+            hypothesis_id=binding.candidate_id,
             trace_group_id=trace_group.trace_group_id,
             target_label=trace_group.context_id,
             role=trace_group.role,
@@ -446,7 +438,7 @@ def _project_physical_capture(
             ),
         )
         observation_content, observation_provenance = _project_peak_observation_values(
-            canonical_sample_identity_id=binding.sample_identity_id,
+            sample_key=binding.sample_key,
             trace=trace,
             integration=selected.integration,
             selected_indices=selected.integration.raw_scan_indices,
@@ -547,7 +539,6 @@ def capture_physical_backfill_observation(
     prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=method_subject.method_subject_id,
         query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
@@ -636,10 +627,10 @@ def mint_captured_peak_observation(
             trace=capture.trace,
             integration=selected.integration,
         )
-        canonical_sample_identity_id, content, provenance = (
-            _project_captured_physical_observation(capture, selected)
+        sample_key, content, provenance = _project_captured_physical_observation(
+            capture, selected
         )
-        if canonical_sample_identity_id != sample.identity.sample_identity_id:
+        if sample_key != sample.identity.sample_key:
             raise PeakObservationContractError(
                 "capture observation references a different sample"
             )
@@ -702,7 +693,7 @@ def _project_captured_physical_observation(
         raise PeakObservationContractError(
             "physical observation requires the capture owner projection"
         )
-    return binding.sample_identity_id, content, provenance
+    return binding.sample_key, content, provenance
 
 
 def bind_owner_backed_capture_hypothesis(
@@ -736,7 +727,7 @@ def bind_owner_backed_capture_hypothesis(
             binding = require_capture_binding(capture.scope, capture.candidate_id)
             validate_peak_observation_trace_binding(
                 observation,
-                canonical_sample_identity_id=binding.sample_identity_id,
+                sample_key=binding.sample_key,
                 trace=capture.trace,
                 integration=selected.integration,
                 selection_intensity=_captured_selection_intensity(capture),
@@ -745,8 +736,8 @@ def bind_owner_backed_capture_hypothesis(
                 signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
             )
         else:
-            _canonical_sample_identity_id, content, provenance = (
-                _project_captured_physical_observation(capture, selected)
+            _sample_key, content, provenance = _project_captured_physical_observation(
+                capture, selected
             )
             if (
                 observation.content != content

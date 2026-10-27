@@ -60,7 +60,7 @@ def _artifact(value: Any) -> dict[str, Any]:
 
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     return {
-        "canonical_sample_identity_id": content.canonical_sample_identity_id,
+        "sample_key": content.sample_key,
         "group_hypothesis_id": content.group_hypothesis_id,
         "group_owner_ids": list(content.group_owner_ids),
         "group_method_subject_id": content.group_method_subject_id,
@@ -116,15 +116,12 @@ def _emit_curve_payload(
     actual = dict(provenance or {})
     if evaluation is not None:
         actual.update(
-            trace_content_id=evaluation.question.trace_content_id,
-            prepared_signal_id=evaluation.prepared.prepared_signal_id,
-            profile_id=evaluation.prepared.profile_id,
+            profile=asdict(evaluation.prepared.profile),
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
         )
     if prepared is not None:
         actual.update(
-            profile_id=prepared.profile.profile_id,
             profile_version=prepared.profile.schema_version,
             profile=asdict(prepared.profile),
         )
@@ -278,7 +275,7 @@ def prepare_alignment_explanation(
             sample.metadata.raw_stem: sample for sample in application.canonical_samples
         }
         sample_ordinals = {
-            sample.identity.sample_identity_id: index
+            sample.identity.sample_key: index
             for index, sample in enumerate(samples.values())
         }
         reasons: Counter[str] = Counter()
@@ -344,7 +341,7 @@ def prepare_alignment_explanation(
                     reasons.update((payload["route"]["reason"],))
 
         for stem, declared in candidates_by_sample.items():
-            sid = samples[stem].identity.sample_identity_id
+            sid = samples[stem].identity.sample_key
             for candidate in phase_items("candidates", declared):
                 key = candidate.candidate_id, sid
                 subject_id = memberships[candidate.candidate_id]
@@ -362,7 +359,7 @@ def prepare_alignment_explanation(
                             "neutral_loss_tag",
                         ),
                         "sample_stem": stem,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "method_subject_id": subject_id,
                         "availability": {
                             "method_assessments": "unavailable",
@@ -382,7 +379,7 @@ def prepare_alignment_explanation(
             ),
         ):
             work = record.work_item
-            sid = samples[work.sample_stem].identity.sample_identity_id
+            sid = samples[work.sample_stem].identity.sample_key
             related = {(link.candidate_id, sid) for link in record.candidate_links}
             if not related:
                 related = {(record.candidate_id, sid)}
@@ -391,7 +388,7 @@ def prepare_alignment_explanation(
                     sid,
                     {
                         "candidate_id": record.candidate_id,
-                        "canonical_sample_identity_id": sid,
+                        "sample_key": sid,
                         "sample_stem": work.sample_stem,
                         "precursor_mz": work.precursor_mz,
                         "physical_state": record.evaluation.state,
@@ -435,7 +432,7 @@ def prepare_alignment_explanation(
             "capture_evidence",
             capture_evidence if full_audit or curve_mz_ranges else (),
         ):
-            sid = evidence.canonical_sample_identity_id
+            sid = evidence.sample_key
             related = (
                 {(evidence.candidate_id, sid)}
                 if evidence.candidate_id is not None
@@ -507,7 +504,7 @@ def prepare_alignment_explanation(
             content = assessment.content
             related = method_candidates[
                 content.method_subject.method_subject_id,
-                content.canonical_sample_identity_id,
+                content.sample_key,
             ]
             if (
                 content.detector_invocation_id == "untargeted-cid-nl-backfill"
@@ -517,7 +514,7 @@ def prepare_alignment_explanation(
                 # support links so the original candidate can explain the cell.
                 for relation in assessment.individual_support_refs:
                     physical_candidates[
-                        content.canonical_sample_identity_id,
+                        content.sample_key,
                         relation.content.peak_observation_content_id,
                     ].update(related)
                 if not capture_evidence:
@@ -525,7 +522,7 @@ def prepare_alignment_explanation(
                         _emit_curve_payload(
                             sink,
                             peak,
-                            content.canonical_sample_identity_id,
+                            content.sample_key,
                             kind="backfill_observation",
                             related=related,
                         )
@@ -535,7 +532,7 @@ def prepare_alignment_explanation(
                 {
                     **_fields(
                         content,
-                        "canonical_sample_identity_id",
+                        "sample_key",
                         "acquisition_source_id",
                         "provider_id",
                         "method_id",
@@ -575,7 +572,7 @@ def prepare_alignment_explanation(
             emit_assessment(assessment)
 
         for excluded in phase_items("exclusions", application.excluded_candidates):
-            key = excluded.candidate_id, excluded.canonical_sample_identity_id
+            key = excluded.candidate_id, excluded.sample_key
             refs = (*excluded.method_assessments, *excluded.composite_assessments)
             add(
                 "exclusions",
@@ -584,7 +581,7 @@ def prepare_alignment_explanation(
                     **_fields(
                         excluded,
                         "candidate_id",
-                        "canonical_sample_identity_id",
+                        "sample_key",
                         "method_subject_id",
                         "discovery_candidate_state",
                         "reason_code",
@@ -606,13 +603,13 @@ def prepare_alignment_explanation(
                     memberships[key[0]]
                     for member in group.member_subjects
                     for key in hypothesis_candidates[
-                        member.canonical_sample_identity_id, member.subject_id
+                        member.sample_key, member.subject_id
                     ]
                 }
             for member in group.member_subjects:
                 if member.processing_request_id != request_id:
                     raise ValueError("diagnostic group crossed processing request")
-                sid = member.canonical_sample_identity_id
+                sid = member.sample_key
                 keys = (
                     hypothesis_candidates[sid, member.subject_id]
                     if member.subject_kind == "peak_hypothesis"
@@ -638,7 +635,7 @@ def prepare_alignment_explanation(
                     _fields(
                         member,
                         "member_subject_id",
-                        "canonical_sample_identity_id",
+                        "sample_key",
                         "subject_kind",
                         "subject_id",
                         "physical_observation_ids",
@@ -666,11 +663,11 @@ def prepare_alignment_explanation(
             nonlocal child_count
             core = child.scientific_core
             for terminal in core.terminal_subjects:
-                key = terminal.candidate_id, terminal.canonical_sample_identity_id
+                key = terminal.candidate_id, terminal.sample_key
                 payload = _fields(
                     terminal,
                     "candidate_id",
-                    "canonical_sample_identity_id",
+                    "sample_key",
                     "trace_group_id",
                     "variant",
                 )
@@ -725,7 +722,7 @@ def prepare_alignment_explanation(
                     if risk := membership_risks.get(member.subject_id):
                         risks_by_group_sample[
                             group.group_hypothesis_id,
-                            member.canonical_sample_identity_id,
+                            member.sample_key,
                         ].append(risk)
 
             for (
@@ -750,8 +747,8 @@ def prepare_alignment_explanation(
                             "evidence_states",
                         ),
                         "group_hypothesis_id": observation.group.group_hypothesis_id,
-                        "canonical_sample_identity_id": (
-                            observation.canonical_sample.identity.sample_identity_id
+                        "sample_key": (
+                            observation.canonical_sample.identity.sample_key
                         ),
                         "predecessor_cells": [
                             {
@@ -786,7 +783,7 @@ def prepare_alignment_explanation(
                         "membership_risks": risks_by_group_sample.get(
                             (
                                 group_id,
-                                decision.subject.canonical_sample.identity.sample_identity_id,
+                                decision.subject.canonical_sample.identity.sample_key,
                             ),
                             [],
                         ),
@@ -834,8 +831,8 @@ def prepare_alignment_explanation(
                             "membership_risks": cell["membership_risks"],
                             "row_key_id": row.row_key.untarget_row_key_id,
                             "group_hypothesis_id": group_id,
-                            "canonical_sample_identity_id": (
-                                decision.subject.canonical_sample.identity.sample_identity_id
+                            "sample_key": (
+                                decision.subject.canonical_sample.identity.sample_key
                             ),
                             **_fields(decision.evidence, "cell_observation_id"),
                         },
@@ -901,9 +898,7 @@ def prepare_alignment_explanation(
                 "samples": [
                     {
                         "sample_stem": stem,
-                        "canonical_sample_identity_id": (
-                            sample.identity.sample_identity_id
-                        ),
+                        "sample_key": (sample.identity.sample_key),
                     }
                     for stem, sample in samples.items()
                 ],

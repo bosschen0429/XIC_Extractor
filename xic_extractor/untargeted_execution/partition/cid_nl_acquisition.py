@@ -182,7 +182,7 @@ class UntargetedCidNlBackfillAttemptResult:
 class UntargetedCidNlSampleTraceBatch:
     """One sample-local XIC batch keyed by exact Discovery candidate identity."""
 
-    sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     candidate_ids: tuple[str, ...]
     acquisition: TraceAcquisitionBatch
@@ -191,10 +191,7 @@ class UntargetedCidNlSampleTraceBatch:
     elution_contexts: tuple[SampleElutionContext, ...] = ()
 
     def __post_init__(self) -> None:
-        if (
-            not self.sample_identity_id.strip()
-            or not self.acquisition_source_id.strip()
-        ):
+        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
             raise CidNlAcquisitionError("sample trace batch requires owner identities")
         if type(self.candidate_ids) is not tuple or not self.candidate_ids:
             raise CidNlAcquisitionError(
@@ -317,7 +314,7 @@ class UntargetedCidNlBackfillTarget:
 class UntargetedCidNlBackfillTraceBatch:
     """One sample-local backfill phase with exact group-to-trace attribution."""
 
-    sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     targets: tuple[UntargetedCidNlBackfillTarget, ...]
     requests: tuple[XICRequest, ...]
@@ -331,10 +328,7 @@ class UntargetedCidNlBackfillTraceBatch:
         return tuple(target.group_hypothesis_id for target in self.targets)
 
     def __post_init__(self) -> None:
-        if (
-            not self.sample_identity_id.strip()
-            or not self.acquisition_source_id.strip()
-        ):
+        if not self.sample_key.strip() or not self.acquisition_source_id.strip():
             raise CidNlAcquisitionError(
                 "backfill trace batch requires owner identities"
             )
@@ -626,7 +620,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         if context is not None:
             contexts.append(context)
     return UntargetedCidNlSampleTraceBatch(
-        sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
         candidate_ids=tuple(candidate.candidate_id for candidate in capture_candidates),
         acquisition=acquisition,
@@ -781,7 +775,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         acquire_untargeted_trace_batch(capability, tuple(unique), bound_raw)
     )
     return UntargetedCidNlBackfillTraceBatch(
-        sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
         targets=targets,
         requests=requests,
@@ -1224,7 +1218,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 "preacquired backfill requires exact group identity"
             )
         if (
-            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            _preacquired_traces.sample_key != sample.identity.sample_key
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -1416,7 +1410,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         query_rt_basis=query_rt_basis,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
-                canonical_sample_identity_id=sample.identity.sample_identity_id,
+                sample_key=sample.identity.sample_key,
                 processing_request_id=processing_owners.request.processing_request_id,
                 processing_attempt_id=processing_owners.attempt.processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
@@ -1552,7 +1546,7 @@ def _reacquire_peak_observations(
         acquired_traces = tuple(acquisition.traces[index] for index in indices)
     else:
         if (
-            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            _preacquired_traces.sample_key != sample.identity.sample_key
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -1617,7 +1611,7 @@ def _reacquire_peak_observations(
             )
         captures.append(capture)
         retained = RetainedCaptureEvidence(
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            sample_key=sample.identity.sample_key,
             processing_request_id=processing_owners.request.processing_request_id,
             processing_attempt_id=processing_owners.attempt.processing_attempt_id,
             method_subject_id=binding.method_subject_id,
@@ -1855,8 +1849,7 @@ def _untargeted_search_scope(
                 CaptureCandidateBinding(
                     candidate_id=item.candidate_id,
                     method_subject_id=method_subject.method_subject_id,
-                    sample_identity_id=sample.identity.sample_identity_id,
-                    sample_name=sample.metadata.sample_name,
+                    sample_key=sample.identity.sample_key,
                     acquisition_source_id=acquisition_source_id,
                     query_mz=item.physical_mz,
                     query_rt_min=item.ms1_search_rt_min,

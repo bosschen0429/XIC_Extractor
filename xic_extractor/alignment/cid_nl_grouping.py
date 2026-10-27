@@ -243,8 +243,7 @@ def compatible_composite_owners(
             or member.subject_id != owner.owner_id
             or member.processing_request_id
             != assessment.artifact.producer_processing_request_id
-            or member.canonical_sample_identity_id
-            != assessment.content.canonical_sample_identity_id
+            or member.sample_key != assessment.content.sample_key
         ):
             return False
         if len(member.physical_observation_ids) != 1 or not set(

@@ -23,57 +23,11 @@ def rehydrate_backfill_evidence_bindings(
     record: BackfillEvidenceRecord,
     bindings: BackfillEvidenceOwnerBindings,
 ) -> BackfillEvidenceOwnerResult:
-    group_hypothesis_id = _resolve_owner_identity(
-        record.group_hypothesis_id,
-        known_values=bindings.known_group_ids,
-        field="group_hypothesis_id",
+    feature_id = _resolve_owner_identity(
+        record.feature_id, known_values=bindings.known_feature_ids, field="feature_id"
     )
-    if group_hypothesis_id and group_hypothesis_id not in bindings.known_group_ids:
-        raise ValueError(f"unknown group_hypothesis_id {group_hypothesis_id!r}")
-
-    expected_feature_family_id = bindings.group_feature_family_ids.get(
-        group_hypothesis_id
-    )
-    feature_family_id = _resolve_owner_identity(
-        record.feature_family_id,
-        known_values=(
-            frozenset({expected_feature_family_id})
-            if expected_feature_family_id is not None
-            else frozenset()
-        ),
-        field="feature_family_id",
-    )
-    if (
-        expected_feature_family_id is not None
-        and feature_family_id != expected_feature_family_id
-    ):
-        raise ValueError(
-            f"group_hypothesis_id {group_hypothesis_id!r} belongs to "
-            f"feature_family_id {expected_feature_family_id!r}, not "
-            f"{feature_family_id!r}"
-        )
-
-    expected_public_family_id = bindings.group_public_family_ids.get(
-        group_hypothesis_id
-    )
-    public_family_id = _resolve_owner_identity(
-        record.public_family_id,
-        known_values=(
-            frozenset({expected_public_family_id})
-            if expected_public_family_id
-            else frozenset()
-        ),
-        field="public_family_id",
-    )
-    if (
-        expected_public_family_id is not None
-        and public_family_id
-        and public_family_id != expected_public_family_id
-    ):
-        raise ValueError(
-            f"group_hypothesis_id {group_hypothesis_id!r} has public_family_id "
-            f"{expected_public_family_id!r}, not {public_family_id!r}"
-        )
+    if feature_id not in bindings.known_feature_ids:
+        raise ValueError(f"unknown feature_id {feature_id!r}")
 
     sample_stem = _resolve_owner_identity(
         record.sample_stem,
@@ -100,42 +54,23 @@ def rehydrate_backfill_evidence_bindings(
 
     canonical_record = replace(
         record,
-        feature_family_id=feature_family_id,
-        group_hypothesis_id=group_hypothesis_id,
-        public_family_id=public_family_id,
+        feature_id=feature_id,
         sample_stem=sample_stem,
         source_candidate_id=source_candidate_id,
     )
-    group_assignment_binding = (
-        EvidenceClaimState.OWNER_REHYDRATED
-        if group_hypothesis_id and expected_feature_family_id is not None
-        else EvidenceClaimState.UNAVAILABLE
-    )
-    public_family_binding = (
-        EvidenceClaimState.OWNER_REHYDRATED
-        if (
-            group_assignment_binding is EvidenceClaimState.OWNER_REHYDRATED
-            and public_family_id
-            and expected_public_family_id is not None
-        )
-        else EvidenceClaimState.UNAVAILABLE
-    )
+    group_assignment_binding = EvidenceClaimState.OWNER_REHYDRATED
     candidate_assignment = (
         BackfillEvidenceCandidateAssignment(
             sample_stem=sample_stem,
             source_candidate_id=source_candidate_id,
-            group_hypothesis_id=group_hypothesis_id,
+            feature_id=feature_id,
         )
-        if (
-            source_candidate_id
-            and group_assignment_binding is EvidenceClaimState.OWNER_REHYDRATED
-        )
+        if source_candidate_id
         else None
     )
     return BackfillEvidenceOwnerResult(
         record=canonical_record,
         group_assignment_binding=group_assignment_binding,
-        public_family_binding=public_family_binding,
         candidate_assignment=candidate_assignment,
     )
 
@@ -144,8 +79,8 @@ def validate_skipped_evidence_bindings(
     record: SkippedEvidenceRecord,
     bindings: SkippedEvidenceOwnerBindings,
 ) -> None:
-    if record.feature_family_id not in bindings.known_feature_family_ids:
-        raise ValueError(f"unknown feature_family_id {record.feature_family_id!r}")
+    if record.feature_id not in bindings.known_feature_ids:
+        raise ValueError(f"unknown feature_id {record.feature_id!r}")
     if record.sample_stem not in bindings.known_sample_stems:
         raise ValueError(f"unknown sample_stem {record.sample_stem!r}")
     if record.backfill_scope != bindings.expected_backfill_scope:
@@ -173,10 +108,6 @@ def backfill_evidence_query_claims(
     group_assignment_bound = _all_backfill_owner_results(
         owner_results,
         field="group_assignment_binding",
-    )
-    public_family_bound = _all_backfill_owner_results(
-        owner_results,
-        field="public_family_binding",
     )
     cross_artifact_bound = False
     if owner_results:
@@ -207,26 +138,11 @@ def backfill_evidence_query_claims(
                 else EvidenceClaimState.UNAVAILABLE
             ),
             reason=(
-                "feature, canonical group, sample, and optional candidate "
+                "feature, sample, and optional candidate "
                 "relations passed Alignment owner validation"
                 if found and group_assignment_bound
-                else "the canonical group assignment was omitted, incomplete, "
+                else "the feature assignment was omitted, incomplete, "
                 "or not owner-validated"
-            ),
-        ),
-        EvidenceClaim(
-            subject="public_family_binding",
-            state=(
-                EvidenceClaimState.OWNER_REHYDRATED
-                if found and public_family_bound
-                else EvidenceClaimState.UNAVAILABLE
-            ),
-            reason=(
-                "the compatibility label matches the owner-supplied canonical "
-                "group relation; it is not canonical identity proof"
-                if found and public_family_bound
-                else "the public compatibility label relation was omitted or "
-                "not owner-validated"
             ),
         ),
         EvidenceClaim(
@@ -237,10 +153,9 @@ def backfill_evidence_query_claims(
                 else EvidenceClaimState.UNAVAILABLE
             ),
             reason=(
-                "canonical group/sample/candidate relations and the public "
-                "compatibility-label relation passed owner validation"
+                "feature/sample/candidate relations passed owner validation"
                 if found and cross_artifact_bound
-                else "one or more canonical or compatibility-label relations "
+                else "one or more feature/sample/candidate relations "
                 "were omitted, unavailable, or no record matched"
             ),
         ),

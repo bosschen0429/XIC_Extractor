@@ -208,7 +208,7 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
             "method_hash", "0" * 64
         ),
         lambda value: value["content"]["signal_processing_profile"].__setitem__(
-            "profile_id", "signal-profile:" + "0" * 64
+            "window_points", 8
         ),
         lambda value: value["content"]["acquisition_inputs"][0][
             "acquisition_source"

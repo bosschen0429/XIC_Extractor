@@ -253,7 +253,7 @@ def test_collects_build_owner_and_backfill_requests_from_artifacts(
         review_tsv,
         (
             {
-                "feature_family_id": "FAM000001",
+                "feature_id": "FAM000001",
                 "family_center_mz": "300.0",
                 "family_center_rt": "8.0",
             },
@@ -264,7 +264,7 @@ def test_collects_build_owner_and_backfill_requests_from_artifacts(
         cells_tsv,
         (
             {
-                "feature_family_id": "FAM000001",
+                "feature_id": "FAM000001",
                 "sample_stem": "sample-a",
                 "status": "detected",
             },

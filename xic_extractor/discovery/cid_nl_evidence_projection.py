@@ -45,7 +45,7 @@ class UntargetedCidNlProjectionError(ValueError):
 class UntargetedCidNlProjectionRef:
     """No-write Untargeted context bound to one canonical evidence artifact."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     neutral_loss_tag: str
     canonical_evidence_artifact_id: str
     artifact: EvidenceArtifactRef
@@ -185,7 +185,7 @@ def mint_untargeted_cid_nl_projection_ref(
         )
 
     projection = UntargetedCidNlProjectionRef(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         neutral_loss_tag=discovery_seed.neutral_loss_tag,
         canonical_evidence_artifact_id=(
             canonical_evidence.artifact.evidence_artifact_id
@@ -199,7 +199,7 @@ def mint_untargeted_cid_nl_projection_ref(
             ),
             semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
             payload_bytes=_untargeted_projection_bytes(
-                canonical_sample_identity_id=sample.identity.sample_identity_id,
+                sample_key=sample.identity.sample_key,
                 neutral_loss_tag=discovery_seed.neutral_loss_tag,
                 canonical_evidence_artifact_id=(
                     canonical_evidence.artifact.evidence_artifact_id
@@ -221,7 +221,7 @@ def canonical_untargeted_cid_nl_projection_bytes(
             "canonical serialization requires UntargetedCidNlProjectionRef"
         )
     return _untargeted_projection_bytes(
-        canonical_sample_identity_id=reference.canonical_sample_identity_id,
+        sample_key=reference.sample_key,
         neutral_loss_tag=reference.neutral_loss_tag,
         canonical_evidence_artifact_id=reference.canonical_evidence_artifact_id,
     )
@@ -229,7 +229,7 @@ def canonical_untargeted_cid_nl_projection_bytes(
 
 def _untargeted_projection_bytes(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     neutral_loss_tag: str,
     canonical_evidence_artifact_id: str,
 ) -> bytes:
@@ -237,7 +237,7 @@ def _untargeted_projection_bytes(
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "projection_policy": "untargeted_observation_reference_only",
-        "canonical_sample_identity_id": canonical_sample_identity_id,
+        "sample_key": sample_key,
         "neutral_loss_tag": neutral_loss_tag,
         "canonical_evidence_artifact_id": canonical_evidence_artifact_id,
     }

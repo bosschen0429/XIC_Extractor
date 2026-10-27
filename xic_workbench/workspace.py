@@ -109,9 +109,7 @@ class ReviewWorkspace:
         with self._lock:
             self._require_idle()
             summary = read_evidence_summary(path)
-            sample_ids = tuple(
-                sample["canonical_sample_identity_id"] for sample in summary["samples"]
-            )
+            sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
             page = prepare_report(
@@ -168,7 +166,7 @@ class ReviewWorkspace:
                 sample_ids=(sample_id,)
                 if sample_id
                 else tuple(
-                    sample["canonical_sample_identity_id"]
+                    sample["sample_key"]
                     for sample in self._page.payload["summary"]["samples"]
                 ),
                 group_ids=(group_id.strip(),) if group_id.strip() else (),
@@ -222,10 +220,8 @@ class ReviewWorkspace:
             "review_scope": page.payload["selection"].get("review_scope", "all"),
             "all_samples": [
                 {
-                    "id": row["canonical_sample_identity_id"],
-                    "label": row.get(
-                        "sample_stem", row["canonical_sample_identity_id"]
-                    ),
+                    "id": row["sample_key"],
+                    "label": row.get("sample_stem", row["sample_key"]),
                 }
                 for row in page.payload["summary"]["samples"]
             ],
@@ -258,7 +254,7 @@ class ReviewWorkspace:
         )
         observed = sorted(
             {
-                witness["canonical_sample_identity_id"]
+                witness["sample_key"]
                 for witness in item.get("witnesses", [])
                 if witness.get("rt_apex_min") is not None
                 and witness.get("precursor_mz") is not None

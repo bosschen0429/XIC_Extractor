@@ -72,8 +72,7 @@ def export_explanation_curves(
     summary = read_cid_nl_explanation(report)
     mass_policies = _review_mass_policies(report, summary)
     sample_labels = {
-        row["canonical_sample_identity_id"]: row["sample_stem"]
-        for row in summary["samples"]
+        row["sample_key"]: row["sample_stem"] for row in summary["samples"]
     }
     requested_samples = set(sample_ids)
     unknown_samples = requested_samples - sample_labels.keys()
@@ -88,12 +87,11 @@ def export_explanation_curves(
     for cid in candidate_ids:
         detail = read_cid_nl_explanation(report, candidate_id=cid)
         for candidate in detail["candidates"]:
-            sid = candidate["canonical_sample_identity_id"]
+            sid = candidate["sample_key"]
             terminals = [
                 terminal
                 for terminal in detail["records"].get("terminal_subjects", [])
-                if terminal["canonical_sample_identity_id"] == sid
-                and terminal["candidate_id"] == cid
+                if terminal["sample_key"] == sid and terminal["candidate_id"] == cid
             ]
             allowed = None
             if group_id is not None:
@@ -102,7 +100,7 @@ def export_explanation_curves(
                     for group in detail["records"].get("final_groups", [])
                     if group["group_hypothesis_id"] == group_id
                     for member in group["member_subjects"]
-                    if member["canonical_sample_identity_id"] == sid
+                    if member["sample_key"] == sid
                     for oid in member["physical_observation_ids"]
                 }
             for terminal in terminals:

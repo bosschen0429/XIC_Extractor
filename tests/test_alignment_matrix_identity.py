@@ -802,7 +802,7 @@ def _matrix(feature: object, cells: tuple[AlignedCell, ...]) -> AlignmentMatrix:
 
 
 def _feature(
-    feature_family_id: str,
+    feature_id: str,
     *,
     evidence: str,
     review_only: bool = False,
@@ -811,7 +811,7 @@ def _feature(
     **extra: object,
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        feature_family_id=feature_family_id,
+        feature_id=feature_id,
         neutral_loss_tag=neutral_loss_tag,
         family_center_mz=500.123,
         family_center_rt=8.49,

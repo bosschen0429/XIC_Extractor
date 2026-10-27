@@ -63,7 +63,6 @@ def test_physical_unavailability_keeps_owner_reason_in_diagnostics(
             [8.0 + index * 0.1 for index in range(point_count)],
             [0.0] * point_count,
         ),
-        selection_subject_id="WithNL",
         query_rt_min=9.0,
         request_context_rt_start_min=8.0,
         request_context_rt_end_min=10.0,

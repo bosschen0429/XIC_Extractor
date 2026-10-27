@@ -72,7 +72,7 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     assert result.canonical_samples == tuple(
         sorted(
             scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
+            key=lambda sample: sample.identity.sample_key,
         )
     )
     assert result.grouping_result is receipt
@@ -189,7 +189,7 @@ def test_finalizer_rejects_inconclusive_capture_as_no_observation(
     )
     binding = scope.capture_bindings[0]
     empty_trace = Trace.from_arrays(
-        sample_name=binding.sample_name,
+        sample_name=binding.sample_key,
         mz=binding.query_mz,
         rt=np.asarray((), dtype=float),
         intensity=np.asarray((), dtype=float),

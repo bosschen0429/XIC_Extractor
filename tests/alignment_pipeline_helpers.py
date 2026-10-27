@@ -53,8 +53,8 @@ def resolved_elution_context(
     )
     assert context is not None
     assert tuple(p.apex_rt for p in context.landmarks) == tuple(sorted(apices))
-    assert len({p.physical_segment_id for p in context.landmarks}) == len(peaks)
-    assert all(p.physical_segment_id is not None for p in context.landmarks)
+    assert len({p.physical_segment for p in context.landmarks}) == len(peaks)
+    assert all(p.physical_segment is not None for p in context.landmarks)
     return context
 
 
@@ -155,7 +155,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "discovery_candidate_state": "ms1_feature_nl_supported",
         "ms1_feature_row_id": f"{sample_stem}|DNA_dR|500|8.5",
         "candidate_id": candidate_id(sample_stem),
-        "feature_family_id": f"{sample_stem}@F0001",
+        "feature_id": f"{sample_stem}@F0001",
         "feature_family_size": "1",
         "precursor_mz": "500.0",
         "product_mz": "384.0",
@@ -358,7 +358,7 @@ def _owner(
         {
             "schema_version": "group_member_subject",
             "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
-            "canonical_sample_identity_id": f"test-sample:{sample_stem}",
+            "sample_key": f"test-sample:{sample_stem}",
             "subject": {"kind": "peak_hypothesis", "id": hypothesis_id},
             "physical_observation_ids": [physical_id],
         }
@@ -383,7 +383,7 @@ def _owner(
                 "xic.group-member-subject:", member_basis
             ),
             processing_request_id=_TEST_PROCESSING_REQUEST_ID,
-            canonical_sample_identity_id=f"test-sample:{sample_stem}",
+            sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
             physical_observation_ids=(physical_id,),

@@ -249,9 +249,7 @@ def test_persisted_content_verifies_supported_claims_and_rejects_stale_id(
     assert verified.peak_observation_content_id == (
         reference.content.peak_observation_content_id
     )
-    assert verified.canonical_sample_identity_id == (
-        reference.content.canonical_sample_identity_id
-    )
+    assert verified.sample_key == (reference.content.sample_key)
     assert verified.raw_apex_rt_min == reference.content.integration.raw_apex_rt_min
     assert verified.height_raw == reference.content.integration.height_raw
     assert math.isclose(
@@ -299,7 +297,7 @@ def test_persisted_content_rejects_resealed_signal_derived_claim(
     )
     payload["integration"] = json.loads(json.dumps(asdict(integration)))
     payload["peak_observation_content_id"] = observation_owner._content_id(
-        canonical_sample_identity_id=reference.content.canonical_sample_identity_id,
+        sample_key=reference.content.sample_key,
         mz=reference.content.mz,
         rt=reference.content.rt,
         intensity=reference.content.intensity,
@@ -1001,7 +999,6 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
     evaluations = tuple(
         evaluate_physical_peak(
             prepared,
-            selection_subject_id="Analyte",
             query_rt_min=query,
             request_context_rt_start_min=trace.rt_min,
             request_context_rt_end_min=trace.rt_max,

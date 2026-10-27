@@ -92,6 +92,6 @@ def cells_by_cluster(matrix: AlignmentMatrix) -> dict[str, tuple[AlignedCell, ..
 
 
 def row_id(row: Any) -> str:
-    if hasattr(row, "feature_family_id"):
-        return str(row.feature_family_id)
+    if hasattr(row, "feature_id"):
+        return str(row.feature_id)
     return str(row.cluster_id)

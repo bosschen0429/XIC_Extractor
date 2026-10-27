@@ -83,12 +83,10 @@ def resolve_istd_anchored_backfill(
     """
 
     assessment_by_sample = {
-        sample.identity.sample_identity_id: assessment
+        sample.identity.sample_key: assessment
         for sample, assessment in sample_assessments
     }
-    sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in sample_population
-    }
+    sample_by_id = {sample.identity.sample_key: sample for sample in sample_population}
     owners = tuple(
         owner_from_cid_nl_assessment_support(
             sample=support.sample,
@@ -122,7 +120,7 @@ def resolve_istd_anchored_backfill(
     paired_observations = tuple(paired_istd_observations()) if plans else ()
     pair_rts = {
         sample_by_id[
-            peak.content.canonical_sample_identity_id
+            peak.content.sample_key
         ].metadata.raw_stem: peak.content.integration.rt_apex_min
         for peak in paired_observations
     }
@@ -133,7 +131,7 @@ def resolve_istd_anchored_backfill(
             supports=tuple(
                 sorted(
                     direct_supports,
-                    key=lambda support: support.sample.identity.sample_identity_id,
+                    key=lambda support: support.sample.identity.sample_key,
                 )
             ),
             config=alignment_config,
@@ -141,8 +139,7 @@ def resolve_istd_anchored_backfill(
             processing_attempt=processing_owners.attempt,
         )
         direct_by_sample = {
-            support.sample.identity.sample_identity_id: support
-            for support in direct_supports
+            support.sample.identity.sample_key: support for support in direct_supports
         }
         cells = tuple(
             mint_cell_observation_ref(
@@ -153,19 +150,19 @@ def resolve_istd_anchored_backfill(
                 method_assessment=assessment,
                 peak_observation=(
                     direct_by_sample[
-                        sample.identity.sample_identity_id
+                        sample.identity.sample_key
                     ].hypothesis.peak_observation_refs[0]
-                    if sample.identity.sample_identity_id in direct_by_sample
+                    if sample.identity.sample_key in direct_by_sample
                     else None
                 ),
                 peak_hypothesis=(
-                    direct_by_sample[sample.identity.sample_identity_id].hypothesis
-                    if sample.identity.sample_identity_id in direct_by_sample
+                    direct_by_sample[sample.identity.sample_key].hypothesis
+                    if sample.identity.sample_key in direct_by_sample
                     else None
                 ),
                 unassigned_support=(
                     assessment.content.method_result == "SUPPORT"
-                    and sample.identity.sample_identity_id not in direct_by_sample
+                    and sample.identity.sample_key not in direct_by_sample
                 ),
             )
             for sample, assessment in sample_assessments
@@ -225,7 +222,7 @@ def resolve_istd_anchored_backfill(
                 )
             )
     recovery_observations = {
-        decision.target_cell.content.canonical_sample_identity_id: (
+        decision.target_cell.content.sample_key: (
             decision.matched_candidate.peak_observation
         )
         for decision in decisions

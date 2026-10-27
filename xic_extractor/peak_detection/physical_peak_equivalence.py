@@ -222,16 +222,18 @@ def _compare_measured_lobes(
     universe = enumerate_physical_segment_universe(prepared)
     qualified = (
         {
-            s.physical_segment_id
-            for s in qualified_physical_segments(prepared.prepared, universe.segments)
+            segment
+            for segment in qualified_physical_segments(
+                prepared.prepared, universe.segments
+            )
         }
         if require_qualified and prepared.prepared is not None
         else set()
     )
     selected = []
     for apex in apices:
-        segment_id = unique_physical_segment_at_rt(universe, apex)
-        if segment_id is None or (require_qualified and segment_id not in qualified):
+        segment = unique_physical_segment_at_rt(universe, apex)
+        if segment is None or (require_qualified and segment not in qualified):
             return "unresolved"
-        selected.append(segment_id)
+        selected.append(segment)
     return "same" if selected[0] == selected[1] else "distinct"

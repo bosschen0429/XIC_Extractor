@@ -168,7 +168,7 @@ class TargetedWorkbookSource:
             "overview": asdict(overview),
             "samples": [
                 {
-                    "canonical_sample_identity_id": name,
+                    "sample_key": name,
                     "sample_stem": name,
                     "group": str(group or ""),
                 }

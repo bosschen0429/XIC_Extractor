@@ -120,7 +120,7 @@ def test_projects_closed_row_binding_and_complete_cell_population(
     )
     assert len(projection.subjects) == len(scope.samples)
     assert tuple(subject.sample for subject in projection.subjects) == tuple(
-        sorted(scope.samples, key=lambda sample: sample.identity.sample_identity_id)
+        sorted(scope.samples, key=lambda sample: sample.identity.sample_key)
     )
     assert all(subject.target is scope.target for subject in projection.subjects)
     assert all(
@@ -131,8 +131,7 @@ def test_projects_closed_row_binding_and_complete_cell_population(
         subject.row_binding is projection.binding for subject in projection.subjects
     )
     assert all(
-        subject.terminal_subject.canonical_sample_identity_id
-        == subject.sample.identity.sample_identity_id
+        subject.terminal_subject.sample_key == subject.sample.identity.sample_key
         for subject in projection.subjects
     )
 
@@ -174,10 +173,8 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
             subject
             for subject in result.terminal_subjects
             if isinstance(subject, ObservedSearchSubject)
-            and subject.canonical_sample_identity_id
-            == hypotheses[stem]
-            .peak_observation_refs[0]
-            .content.canonical_sample_identity_id
+            and subject.sample_key
+            == hypotheses[stem].peak_observation_refs[0].content.sample_key
         )
         object.__setattr__(observed, "hypothesis", altered)
         object.__setattr__(observed, "trace_group_id", altered.trace_group_id)
@@ -201,10 +198,8 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
 
     assert projection.binding.variant == "bound"
     assert tuple(
-        subject.sample.identity.sample_identity_id for subject in projection.subjects
-    ) == tuple(
-        sample.identity.sample_identity_id for sample in result.canonical_samples
-    )
+        subject.sample.identity.sample_key for subject in projection.subjects
+    ) == tuple(sample.identity.sample_key for sample in result.canonical_samples)
     subjects_by_sample = {
         subject.sample.lookup_token: subject for subject in projection.subjects
     }
@@ -254,7 +249,7 @@ def test_projector_rejects_terminal_population_shape_errors(
         terminal = result.terminal_subjects[0]
         object.__setattr__(
             terminal,
-            "canonical_sample_identity_id",
+            "sample_key",
             "xic.canonical-sample:extra",
         )
     else:
@@ -393,7 +388,7 @@ def _finalized_case(
         sample.lookup_token: next(
             member
             for member in predecessor.member_subjects
-            if member.canonical_sample_identity_id == sample.identity.sample_identity_id
+            if member.sample_key == sample.identity.sample_key
         )
         for sample in fixture.samples
     }
@@ -447,7 +442,7 @@ def _finalized_case(
             terminals.append(
                 ObservedSearchSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=(sample.identity.sample_identity_id),
+                    sample_key=(sample.identity.sample_key),
                     trace_group_id=hypothesis.trace_group_id,
                     hypothesis=hypothesis,
                 )
@@ -456,7 +451,7 @@ def _finalized_case(
             terminals.append(
                 SearchedNoObservationSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=(sample.identity.sample_identity_id),
+                    sample_key=(sample.identity.sample_key),
                     trace_group_id=f"trace-{sample.lookup_token}",
                     detection_status="not_detected",
                 )
@@ -471,7 +466,7 @@ def _finalized_case(
         canonical_samples=tuple(
             sorted(
                 scope.samples,
-                key=lambda sample: sample.identity.sample_identity_id,
+                key=lambda sample: sample.identity.sample_key,
             )
         ),
         terminal_subjects=tuple(

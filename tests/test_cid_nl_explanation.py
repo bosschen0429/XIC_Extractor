@@ -185,8 +185,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assessment = next(
         item
         for item in completed.method_assessments
-        if item.content.canonical_sample_identity_id
-        == detail["candidates"][0]["canonical_sample_identity_id"]
+        if item.content.sample_key == detail["candidates"][0]["sample_key"]
     )
     retained = records["method_assessments"][0]
     assert retained["reason_codes"] == list(assessment.content.reason_codes)
@@ -229,9 +228,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
                     [
                         {
                             "member_subject_id": member.member_subject_id,
-                            "canonical_sample_identity_id": (
-                                member.canonical_sample_identity_id
-                            ),
+                            "sample_key": (member.sample_key),
                             "subject_kind": member.subject_kind,
                             "subject_id": member.subject_id,
                             "physical_observation_ids": (

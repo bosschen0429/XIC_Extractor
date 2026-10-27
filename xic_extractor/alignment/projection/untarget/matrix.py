@@ -186,8 +186,7 @@ def project_untarget_matrix(
             "Group decision population is missing, extra, or crossed"
         )
     by_position = {
-        (item.group_hypothesis_id, item.canonical_sample_identity_id): item
-        for item in observations
+        (item.group_hypothesis_id, item.sample_key): item for item in observations
     }
     row_keys = tuple(
         _mint_untarget_row_key(group)
@@ -199,12 +198,11 @@ def project_untarget_matrix(
     rows = []
     for row_key in row_keys:
         members = {
-            member.canonical_sample_identity_id: member
-            for member in row_key.group.member_subjects
+            member.sample_key: member for member in row_key.group.member_subjects
         }
         projected = []
         for sample in finalized_alignment.canonical_samples:
-            sample_id = sample.identity.sample_identity_id
+            sample_id = sample.identity.sample_key
             observation = by_position[row_key.group_hypothesis_id, sample_id]
             payload, integration = decisions[observation.cell_observation_id]
             projected.append(

@@ -157,7 +157,7 @@ def selection_sample_facts(
             if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
                 continue
             fact = records.get(record_kind, {}).get(rid, {})
-            if fact.get("canonical_sample_identity_id", fact.get("sample_id")) not in (
+            if fact.get("sample_key", fact.get("sample_id")) not in (
                 None,
                 sid,
             ):
@@ -171,7 +171,7 @@ def selection_sample_facts(
             if record_kind == "exclusions":
                 flags[sid] |= EXCLUDED
     for cell in cells:
-        sid = cell["canonical_sample_identity_id"]
+        sid = cell["sample_key"]
         flag = flags.setdefault(sid, initial)
         value = cell.get("value")
         flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
@@ -185,7 +185,7 @@ def selection_sample_facts(
         flags[sid] = flag
     observed = set(observed)
     observed.update(
-        member["canonical_sample_identity_id"]
+        member["sample_key"]
         for member in group.get("member_subjects", [])
         if member.get("physical_observation_ids")
     )
@@ -198,7 +198,7 @@ def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -
     """Store a row's values once, with sample ordinals and shared field names."""
     values = [
         [
-            samples[cell["canonical_sample_identity_id"]],
+            samples[cell["sample_key"]],
             cell["variant"],
             cell.get("value"),
             cell.get("source"),
@@ -242,7 +242,7 @@ def unpack_cells(
             "review_cell_id": identity,
             "row_key_id": row_id,
             "group_hypothesis_id": group_id,
-            "canonical_sample_identity_id": sample_ids[sample],
+            "sample_key": sample_ids[sample],
             "variant": variant,
             "value": value,
             "source": source,
@@ -286,9 +286,7 @@ def review_cell(decision: Any) -> dict[str, Any]:
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
         }
     return {
-        "canonical_sample_identity_id": (
-            decision.subject.canonical_sample.identity.sample_identity_id
-        ),
+        "sample_key": (decision.subject.canonical_sample.identity.sample_key),
         "variant": decision.variant,
         "value": getattr(decision, "value", None),
         "source": getattr(decision, "source", None),
@@ -312,7 +310,7 @@ def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """The retained review facts also define conversion of existing full reports."""
     if kind == "method_assessments":
         names = (
-            "canonical_sample_identity_id",
+            "sample_key",
             "provider_id",
             "method_id",
             "method_version",

@@ -217,7 +217,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                     record.acquired_trace.trace.intensity,
                     profile=profile,
                 ),
-                selection_subject_id=record.evaluation.question.selection_subject_id,
                 query_rt_min=record.evaluation.question.query_rt_min,
                 request_context_rt_start_min=(
                     record.evaluation.question.context_rt_start_min
@@ -243,7 +242,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {r.candidate_id: r.evaluation for r in legacy_records},
             )
         },
     )
@@ -317,7 +315,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             prepare_physical_signal(
                 acquired.trace.rt, acquired.trace.intensity, profile=profile
             ),
-            selection_subject_id=record.evaluation.question.selection_subject_id,
             query_rt_min=record.evaluation.question.query_rt_min,
             request_context_rt_start_min=acquired.coordinate.request.rt_min,
             request_context_rt_end_min=acquired.coordinate.request.rt_max,
@@ -341,10 +338,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             == "baseline_peak_contains_query"
         )
         assert binding.acquisition_source_id == source.acquisition_source_id
-        assert (
-            binding.sample_identity_id
-            == fixture.sample("S1").identity.sample_identity_id
-        )
+        assert binding.sample_key == fixture.sample("S1").identity.sample_key
         states.append(expected.state)
         replay_binding = replace(
             binding,
@@ -367,7 +361,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             scope=replay_scope,
             candidate_id=record.candidate_id,
             trace=trace_from_xic_request(
-                sample_name=binding.sample_name,
+                sample_name=binding.sample_key,
                 request=record.acquired_trace.coordinate.request,
                 xic_trace=record.acquired_trace.trace,
                 source="retained-discovery-physical",
@@ -455,7 +449,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert recovery.assessment.content.method_result == "SUPPORT"
         assert len(recovery.assessment.candidate_peaks) == 1
         assert len(recovery.assessment.evidence_refs) == 2
-    with pytest.raises(ValueError, match="trace_content_id"):
+    with pytest.raises(ValueError, match="physical capture data"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,
             candidate_id=capture.candidate_id,
@@ -596,9 +590,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
         | {
             REQUEST_INPUT_KEY: pinned.request_payload(),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile, {record.candidate_id: record.evaluation}
-            ),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
         },
     )
     owners = compose_processing_owner_references(
@@ -1707,7 +1699,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         processing_algorithm_version=original.processing_algorithm_version,
         processing_contract_version=original.processing_contract_version,
         scientific_inputs=json.loads(original.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
@@ -2290,7 +2282,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {r.candidate_id: r.evaluation for r in discovery.physical_evaluations},
             )
         },
     )
@@ -2627,7 +2618,7 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
@@ -2711,7 +2702,7 @@ def test_physical_backfill_context_is_not_search_permission(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,
@@ -2826,7 +2817,6 @@ def test_physical_backfill_context_is_not_search_permission(
             assert trace.rt_min == 7.5 and trace.rt_max == 8.5
             original = evaluate_physical_peak(
                 prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
-                selection_subject_id=fixture.method_subject.method_subject_id,
                 query_rt_min=8.0,
                 selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
             )
@@ -3084,7 +3074,7 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         processing_algorithm_version=old.processing_algorithm_version,
         processing_contract_version=old.processing_contract_version,
         scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
     )
     owners = compose_processing_owner_references(
         request=request,

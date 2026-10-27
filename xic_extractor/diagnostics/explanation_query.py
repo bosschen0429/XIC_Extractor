@@ -67,10 +67,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         ) WITHOUT ROWID;
         CREATE TABLE query_review (item INTEGER PRIMARY KEY, sample_facts BLOB);
     """)
-    samples = {
-        sample["canonical_sample_identity_id"]: i
-        for i, sample in enumerate(summary["samples"])
-    }
+    samples = {sample["sample_key"]: i for i, sample in enumerate(summary["samples"])}
     db.executemany(
         "INSERT INTO query_samples VALUES (?,?)", ((i, s) for s, i in samples.items())
     )
@@ -150,7 +147,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         for member in (
             records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
         ):
-            members[member.get("canonical_sample_identity_id")].update(
+            members[member.get("sample_key")].update(
                 member.get("physical_observation_ids", [])
             )
         ordinal = 0

@@ -208,7 +208,7 @@ def _review_row(
     flags: str = "",
 ) -> dict[str, str]:
     return {
-        "feature_family_id": "FAM001",
+        "feature_id": "FAM001",
         "include_in_primary_matrix": include,
         "identity_decision": decision,
         "identity_confidence": confidence,
@@ -272,7 +272,7 @@ def _cell_row(
     rt_delta_sec: str = "0.0",
 ) -> dict[str, str]:
     row = {
-        "feature_family_id": "FAM001",
+        "feature_id": "FAM001",
         "sample_stem": f"S{index + 1:03d}",
         "status": status,
         "area": area,

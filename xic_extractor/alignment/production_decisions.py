@@ -44,7 +44,7 @@ BackfillTier = Literal["", "accepted_backfill", "review_backfill", "rejected_bac
 
 @dataclass(frozen=True)
 class ProductionCellDecision:
-    feature_family_id: str
+    feature_id: str
     sample_stem: str
     raw_status: str
     production_status: ProductionStatus
@@ -60,7 +60,7 @@ class ProductionCellDecision:
 
 @dataclass(frozen=True)
 class ProductionRowDecision:
-    feature_family_id: str
+    feature_id: str
     include_in_primary_matrix: bool
     identity_decision: str
     identity_confidence: str
@@ -82,11 +82,11 @@ class ProductionDecisionSet:
     cells: dict[tuple[str, str], ProductionCellDecision]
     rows: dict[str, ProductionRowDecision]
 
-    def cell(self, feature_family_id: str, sample_stem: str) -> ProductionCellDecision:
-        return self.cells[(feature_family_id, sample_stem)]
+    def cell(self, feature_id: str, sample_stem: str) -> ProductionCellDecision:
+        return self.cells[(feature_id, sample_stem)]
 
-    def row(self, feature_family_id: str) -> ProductionRowDecision:
-        return self.rows[feature_family_id]
+    def row(self, feature_id: str) -> ProductionRowDecision:
+        return self.rows[feature_id]
 
 
 def production_cell_decision_record(
@@ -115,7 +115,7 @@ def production_cell_decision_record(
     )
     return DecisionRecord(
         workflow="alignment_production_cell",
-        unit_id=f"{decision.feature_family_id}:{decision.sample_stem}",
+        unit_id=f"{decision.feature_id}:{decision.sample_stem}",
         required_evidence=(
             "production_cell_decision",
             "cell_quality_decision",
@@ -240,7 +240,7 @@ def _cell_decision(
         if not identity_row.include_in_primary_matrix:
             return _blank(cell, "blank", "", "missing_row_identity_support")
         return ProductionCellDecision(
-            feature_family_id=cell.cluster_id,
+            feature_id=cell.cluster_id,
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
             production_status="detected",
@@ -267,7 +267,7 @@ def _cell_decision(
                     _backfill_cell_blank_reason(backfill_evidence),
                 )
         return ProductionCellDecision(
-            feature_family_id=cell.cluster_id,
+            feature_id=cell.cluster_id,
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
             production_status="accepted_backfill",
@@ -335,7 +335,7 @@ def _row_decision(
         flags.append("rescue_only_review")
 
     return ProductionRowDecision(
-        feature_family_id=cluster_id,
+        feature_id=cluster_id,
         include_in_primary_matrix=(
             identity_row.include_in_primary_matrix and accepted_cell_count > 0
         ),
@@ -362,7 +362,7 @@ def _blank(
     blank_reason: str,
 ) -> ProductionCellDecision:
     return ProductionCellDecision(
-        feature_family_id=cell.cluster_id,
+        feature_id=cell.cluster_id,
         sample_stem=cell.sample_stem,
         raw_status=cell.status,
         production_status=production_status,

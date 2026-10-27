@@ -14,7 +14,6 @@ from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     TraceCoordinateKind,
     acquire_trace_batch,
-    acquired_trace_content_id,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.configuration.signal_processing_profile import (
@@ -90,8 +89,6 @@ def _work(
         query_rt_min=query,
         context_rt_start_min=context[0],
         context_rt_end_min=context[1],
-        trace_coordinate_id=acquired_trace.coordinate.trace_coordinate_id,
-        acquired_trace_content_id=acquired_trace_content_id(acquired_trace),
         xic_mz=acquired_trace.coordinate.request.mz,
         xic_rt_min=acquired_trace.coordinate.request.rt_min,
         xic_rt_max=acquired_trace.coordinate.request.rt_max,
@@ -110,7 +107,6 @@ def _record(
     raw = acquired_trace.trace.intensity
     evaluation = evaluate_physical_peak(
         prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id=work_item.selection_subject_id,
         query_rt_min=work_item.query_rt_min,
         request_context_rt_start_min=work_item.context_rt_start_min,
         request_context_rt_end_min=work_item.context_rt_end_min,
@@ -307,13 +303,6 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
             "acquisition_source_id", "cross-acquisition"
         ),
         lambda value: value["work_manifest"][0].__setitem__(
-            "trace_coordinate_id", "xic.trace-coordinate:" + "0" * 64
-        ),
-        lambda value: value["work_manifest"][0].__setitem__(
-            "acquired_trace_content_id",
-            "xic.acquired-trace-content:" + "0" * 64,
-        ),
-        lambda value: value["work_manifest"][0].__setitem__(
             "xic_mz", float(999.0).hex()
         ),
         lambda value: value["records"][0].__setitem__(
@@ -322,34 +311,24 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["records"][0].__setitem__(
             "selection_subject_id", value["records"][1]["selection_subject_id"]
         ),
-        lambda value: value["records"][0]["acquired_trace"]["coordinate"].__setitem__(
-            "acquisition_source_id", "cross-acquisition"
-        ),
+        lambda value: value["records"][0]["acquired_trace"]["coordinate"]["capability"][
+            "acquisition_source"
+        ].__setitem__("acquisition_source_id", "cross-acquisition"),
         lambda value: value["records"][0]["acquired_trace"]["coordinate"][
             "request"
         ].__setitem__("mz", float(999.0).hex()),
-        lambda value: value["records"][0]["acquired_trace"]["coordinate"].__setitem__(
-            "trace_coordinate_id", "xic.trace-coordinate:" + "0" * 64
-        ),
         lambda value: value["records"][0]["acquired_trace"]["coordinate"].__setitem__(
             "trace_point_count", 1
         ),
         lambda value: value["records"][0]["acquired_trace"]["trace"][
             "intensity"
         ].__setitem__(0, float(999.0).hex()),
-        lambda value: value["records"][0]["acquired_trace"].__setitem__(
-            "acquired_trace_content_id",
-            "xic.acquired-trace-content:" + "0" * 64,
-        ),
         lambda value: value["records"][0]["physical_evaluation"]["trace"][
             "raw"
         ].__setitem__(0, float(999.0).hex()),
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "question"
         ].__setitem__("query_rt_min", float(1.1).hex()),
-        lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
-            "answer"
-        ].__setitem__("physical_answer_id", "physical-answer:" + "0" * 64),
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "facts"
         ].__setitem__("area_counts_seconds", float(1.0).hex()),
@@ -359,11 +338,8 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["records"][0]["physical_evaluation"][
             "evaluation"
         ].__setitem__("state", "failed"),
-        lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
-            "prepared"
-        ].__setitem__("prepared_signal_id", "prepared-signal:" + "0" * 64),
         lambda value: value["records"][0]["physical_evaluation"]["profile"].__setitem__(
-            "profile_id", "signal-profile:" + "0" * 64
+            "window_points", 8
         ),
         lambda value: value["run_spec"].__setitem__(
             "run_spec_id", "processing-run:" + "0" * 64
@@ -477,54 +453,6 @@ def test_discovery_sidecar_rejects_fully_resealed_different_run(tmp_path: Path) 
         )
 
 
-def test_discovery_sidecar_rejects_fully_resealed_replacement_trace_record(
-    tmp_path: Path,
-) -> None:
-    _, spec, acquisition_input = _spec(tmp_path)
-    manifest, records = _population(spec, acquisition_input)
-    original = json.loads(
-        serialize_discovery_physical_fact_sidecar(
-            run_spec=spec,
-            acquisition_input=acquisition_input,
-            work_manifest=manifest,
-            records=records,
-        )
-    )
-    changed_trace = _acquired_trace(
-        acquisition_input,
-        terminal="available",
-        ordinal=0,
-    )
-    changed_trace.trace.intensity[0] = 999.0
-    changed_work = replace(
-        manifest[0],
-        acquired_trace_content_id=acquired_trace_content_id(changed_trace),
-    )
-    changed_record = _record(
-        changed_work,
-        terminal="available",
-        profile=spec.signal_processing_profile,
-        acquired_trace=changed_trace,
-    )
-    resealed = json.loads(
-        serialize_discovery_physical_fact_sidecar(
-            run_spec=spec,
-            acquisition_input=acquisition_input,
-            work_manifest=(changed_work, *manifest[1:]),
-            records=(changed_record, *records[1:]),
-        )
-    )
-    original["records"][0] = resealed["records"][0]
-
-    with pytest.raises(ValueError):
-        deserialize_discovery_physical_fact_sidecar(
-            json.dumps(original, ensure_ascii=False, separators=(",", ":")),
-            expected_run_spec=spec,
-            expected_acquisition_input=acquisition_input,
-            expected_work_manifest=manifest,
-        )
-
-
 def test_discovery_sidecar_writer_detects_a_temp_file_that_does_not_match(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -623,13 +551,13 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
 
     # Tampered profile in sidecar record
     data = json.loads(payload_str)
-    data["records"][0]["physical_evaluation"]["profile"]["profile_id"] = (
-        "different-profile-id"
+    data["records"][0]["physical_evaluation"]["profile"]["window_points"] = (
+        other_profile.window_points
     )
     tampered_path = tmp_path / "tampered.json"
     tampered_path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(
-        ValueError, match="Discovery physical sidecar crosses profile identity"
+        ValueError, match="Discovery physical sidecar crosses run profile"
     ):
         read_discovery_physical_fact_records(
             tampered_path,

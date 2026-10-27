@@ -1031,7 +1031,7 @@ def _local_patterns(
     owner_nodes = {}
     physical_order: set[tuple[int, int]] = set()
     shared_segments: set[tuple[int, int]] = set()
-    retained: dict[tuple[str, float, str], SampleElutionContext] = {}
+    retained: set[SampleElutionContext] = set()
 
     def add_pattern(
         context: SampleElutionContext, start: int, end: int
@@ -1071,11 +1071,11 @@ def _local_patterns(
         for position, (first, left) in enumerate(selected):
             for second, right in selected[position + 1 :]:
                 if first == second or None in (
-                    left.physical_segment_id,
-                    right.physical_segment_id,
+                    left.physical_segment,
+                    right.physical_segment,
                 ):
                     continue
-                if left.physical_segment_id == right.physical_segment_id:
+                if left.physical_segment == right.physical_segment:
                     shared_segments.add((min(first, second), max(first, second)))
                 else:
                     physical_order.add((first, second))
@@ -1104,11 +1104,12 @@ def _local_patterns(
             key=lambda item: (
                 -(item.rt_end - item.rt_start),
                 absolute_ppm_error(owner.precursor_mz, item.mz),
-                item.trace_content_id,
+                item.rt,
+                item.raw,
             ),
         )
         peaks = context.landmarks
-        retained[(context.sample_stem, context.mz, context.trace_content_id)] = context
+        retained.add(context)
         selected = min(
             range(len(peaks)),
             key=lambda index: abs(peaks[index].apex_rt - owner.owner_apex_rt),
@@ -1140,11 +1141,11 @@ def _local_patterns(
             item.sample_stem,
             -(item.rt_end - item.rt_start),
             item.mz,
-            item.trace_content_id,
+            item.rt,
+            item.raw,
         ),
     ):
-        context_key = (context.sample_stem, context.mz, context.trace_content_id)
-        if not context.landmarks or context_key in retained:
+        if not context.landmarks or context in retained:
             continue
         compatible = [
             index
@@ -1172,7 +1173,7 @@ def _local_patterns(
                 for index in compatible
             ):
                 add_pattern(context, start, end)
-                retained[context_key] = context
+                retained.add(context)
             start = end
     return (
         nodes,

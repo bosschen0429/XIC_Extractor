@@ -48,7 +48,7 @@ RecommendedAction = Literal[
 
 RETAINED_BACKFILL_EVIDENCE_GATE_COLUMNS = (
     "schema_version",
-    "feature_family_id",
+    "feature_id",
     "seed_group_id",
     "seed_group_basis",
     "seed_mz",
@@ -88,7 +88,7 @@ RETAINED_BACKFILL_EVIDENCE_GATE_COLUMNS = (
 )
 MISSING_OVERLAY_QUEUE_COLUMNS = (
     "rank",
-    "feature_family_id",
+    "feature_id",
     "seed_group_id",
     "family_center_mz",
     "family_center_rt",
@@ -115,7 +115,7 @@ MISSING_OVERLAY_QUEUE_COLUMNS = (
 )
 
 REVIEW_REQUIRED_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "family_center_mz",
     "family_center_rt",
     "include_in_primary_matrix",
@@ -129,7 +129,7 @@ REVIEW_REQUIRED_COLUMNS = (
     "row_flags",
 )
 CELL_REQUIRED_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "sample_stem",
     "status",
     "primary_matrix_area",
@@ -140,7 +140,7 @@ CELL_REQUIRED_COLUMNS = (
     "reason",
 )
 SEED_AUDIT_REQUIRED_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "sample_stem",
     "status",
     "backfill_seed_mz",
@@ -150,7 +150,7 @@ SEED_AUDIT_REQUIRED_COLUMNS = (
     "backfill_request_ppm",
 )
 OVERLAY_REQUIRED_COLUMNS = (
-    "feature_family_id",
+    "feature_id",
     "family_verdict",
     "png_path",
 )
@@ -173,7 +173,7 @@ class RetainedBackfillGateSourceContext:
 
 @dataclass(frozen=True)
 class RetainedBackfillGateRow:
-    feature_family_id: str
+    feature_id: str
     seed_group_id: str
     seed_group_basis: str
     seed_mz: str
@@ -314,7 +314,7 @@ def build_retained_backfill_gate_index(
 
     gate_rows: list[RetainedBackfillGateRow] = []
     for review in reviews:
-        family_id = text_value(review.get("feature_family_id"))
+        family_id = text_value(review.get("feature_id"))
         if not family_id:
             continue
         family_cells = tuple(cells_by_family.get(family_id, ()))
@@ -406,7 +406,7 @@ def _evaluate_group(
     overlay_rows: Sequence[Mapping[str, str]],
     source_context: RetainedBackfillGateSourceContext,
 ) -> RetainedBackfillGateRow:
-    family_id = text_value(review.get("feature_family_id"))
+    family_id = text_value(review.get("feature_id"))
     selected_overlay = _selected_overlay_row(
         overlay_rows,
         seed_group_id=seed_group.seed_group_id,
@@ -444,7 +444,7 @@ def _evaluate_group(
         missing_evidence=missing_evidence,
     )
     return RetainedBackfillGateRow(
-        feature_family_id=family_id,
+        feature_id=family_id,
         seed_group_id=seed_group.seed_group_id,
         seed_group_basis=seed_group.seed_group_basis,
         seed_mz=seed_group.seed_mz,
@@ -639,7 +639,7 @@ def _seed_groups_by_family(
     basis_by_group: dict[str, str] = {}
     key_by_group: dict[str, dict[str, str]] = {}
     for row in rows:
-        family_id = text_value(row.get("feature_family_id"))
+        family_id = text_value(row.get("feature_id"))
         if not family_id:
             continue
         seed_group_id = _seed_group_id(row)
@@ -676,7 +676,7 @@ def _seed_groups_by_family(
 
 
 def _seed_group_id(row: Mapping[str, str]) -> str:
-    family_id = text_value(row.get("feature_family_id"))
+    family_id = text_value(row.get("feature_id"))
     seed_mz = text_value(row.get("backfill_seed_mz")) or "unknown"
     seed_rt = text_value(row.get("backfill_seed_rt")) or "unknown"
     rt_start = text_value(row.get("backfill_request_rt_min")) or "unknown"
@@ -711,7 +711,7 @@ def _selected_overlay_row(
 def _group_by_family(
     rows: Iterable[Mapping[str, str]],
 ) -> dict[str, tuple[Mapping[str, str], ...]]:
-    return rows_by_text_field(rows, "feature_family_id")
+    return rows_by_text_field(rows, "feature_id")
 
 
 def _summary(
@@ -723,7 +723,7 @@ def _summary(
 ) -> dict[str, object]:
     status_counts = Counter(row.evidence_gate_status for row in rows)
     action_counts = Counter(row.recommended_action for row in rows)
-    family_ids = {row.feature_family_id for row in rows}
+    family_ids = {row.feature_id for row in rows}
     return {
         "schema_version": SCHEMA_VERSION,
         "readiness_label": "diagnostic_only",
@@ -759,7 +759,7 @@ def _row_as_mapping(row: RetainedBackfillGateRow) -> dict[str, object]:
     source = row.source_context
     return {
         "schema_version": SCHEMA_VERSION,
-        "feature_family_id": row.feature_family_id,
+        "feature_id": row.feature_id,
         "seed_group_id": row.seed_group_id,
         "seed_group_basis": row.seed_group_basis,
         "seed_mz": row.seed_mz,
@@ -817,7 +817,7 @@ def _review_overlay_queue_rows(
 ) -> list[dict[str, object]]:
     by_family: dict[str, RetainedBackfillGateRow] = {}
     for row in queue_candidates:
-        by_family.setdefault(row.feature_family_id, row)
+        by_family.setdefault(row.feature_id, row)
     return [
         _missing_overlay_queue_row(row, rank=rank)
         for rank, row in enumerate(by_family.values(), start=1)
@@ -849,7 +849,7 @@ def _missing_overlay_queue_row(
     output_prefix = _overlay_output_prefix(row, rank)
     ppm = row.ppm or "10"
     args = (
-        f"--family-id {row.feature_family_id} "
+        f"--family-id {row.feature_id} "
         f"--mz {row.seed_mz or row.family_center_mz} "
         f"--rt-min {row.suggested_rt_min} "
         f"--rt-max {row.suggested_rt_max} "
@@ -858,7 +858,7 @@ def _missing_overlay_queue_row(
     )
     return {
         "rank": rank,
-        "feature_family_id": row.feature_family_id,
+        "feature_id": row.feature_id,
         "seed_group_id": row.seed_group_id,
         "family_center_mz": row.family_center_mz,
         "family_center_rt": row.family_center_rt,
@@ -891,12 +891,12 @@ def _overlay_queue_sort_key(row: RetainedBackfillGateRow) -> tuple[int, int, int
         review_only,
         -row.review_backfill_count,
         -row.backfilled_cell_count,
-        row.feature_family_id,
+        row.feature_id,
     )
 
 
 def _overlay_output_prefix(row: RetainedBackfillGateRow, rank: int) -> str:
-    family = _safe_slug(row.feature_family_id.lower())
+    family = _safe_slug(row.feature_id.lower())
     return f"{rank:03d}_{family}_retained_backfill_missing_overlay"
 
 
@@ -914,7 +914,7 @@ def _row_sort_key(row: RetainedBackfillGateRow) -> tuple[int, str, str]:
     }
     return (
         status_priority.get(row.evidence_gate_status, 9),
-        row.feature_family_id,
+        row.feature_id,
         row.seed_group_id,
     )
 

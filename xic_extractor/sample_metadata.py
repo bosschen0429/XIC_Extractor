@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import csv
-import hashlib
-import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -48,7 +46,6 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
         "unknown",
     }
 )
-_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample:"
 _SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
     "order": frozenset(
         {"id", "no", "index", "order", "injection order", "序號", "編號", "項次"}
@@ -149,7 +146,6 @@ class SampleMetadataSnapshot:
 class CanonicalSampleIdentity:
     """Owner-minted sample identity; aliases and projections are not its basis."""
 
-    sample_identity_id: str
     sample_metadata_schema_version: str
     identity_namespace: str
     sample_key: str
@@ -159,19 +155,8 @@ class CanonicalSampleIdentity:
             raise SampleMetadataError(
                 "sample identity schema does not match sample_metadata"
             )
-        namespace = _owner_normalized_text(
-            self.identity_namespace,
-            field="identity_namespace",
-        )
-        sample_key = _canonical_sample_key(self.sample_key)
-        expected_id = _canonical_sample_identity_id(
-            sample_key,
-            identity_namespace=namespace,
-        )
-        if self.sample_identity_id != expected_id:
-            raise SampleMetadataError(
-                "sample_identity_id mismatches the owner-minted sample key"
-            )
+        _owner_normalized_text(self.identity_namespace, field="identity_namespace")
+        _canonical_sample_key(self.sample_key)
 
 
 @dataclass(frozen=True, slots=True)
@@ -925,10 +910,6 @@ def mint_canonical_sample_identity(
     )
     sample_key = _canonical_sample_key(row.sample_name)
     return CanonicalSampleIdentity(
-        sample_identity_id=_canonical_sample_identity_id(
-            sample_key,
-            identity_namespace=namespace,
-        ),
         sample_metadata_schema_version=SAMPLE_METADATA_SCHEMA_VERSION,
         identity_namespace=namespace,
         sample_key=sample_key,
@@ -1200,22 +1181,6 @@ def _owner_normalized_text(value: object, *, field: str) -> str:
     return value
 
 
-def _canonical_sample_identity_id(
-    sample_key: str,
-    *,
-    identity_namespace: str,
-) -> str:
-    digest = _canonical_json_sha256(
-        {
-            "identity_namespace": identity_namespace,
-            "sample_key": sample_key,
-            "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-            "schema": "canonical_sample_identity",
-        }
-    )
-    return f"{_CANONICAL_SAMPLE_ID_PREFIX}{digest}"
-
-
 def _validated_snapshot_rows(
     rows: tuple[SampleMetadata, ...],
 ) -> tuple[SampleMetadata, ...]:
@@ -1256,19 +1221,3 @@ def _validated_snapshot_rows(
             "sample metadata snapshot rows must be owner-normalized"
         )
     return canonical_parsed
-
-
-def _canonical_json_sha256(value: Mapping[str, object]) -> str:
-    try:
-        payload = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise SampleMetadataError(
-            "sample identity content must be canonical JSON"
-        ) from exc
-    return hashlib.sha256(payload).hexdigest()

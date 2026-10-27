@@ -43,7 +43,6 @@ RELATIONSHIP = "supports_one_or_more_of"
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",
@@ -63,7 +62,7 @@ class DdaCidNlCandidateSetRelationContractError(ValueError):
 class DdaCidNlCandidateSetRelationContent:
     """Immutable set-level relation; it carries no individual vote."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     cid_nl_evidence_content_id: str
     candidate_peak_content_ids: tuple[str, ...]
     matched_candidate_content_ids: tuple[str, ...]
@@ -74,11 +73,6 @@ class DdaCidNlCandidateSetRelationContent:
     relationship: str = RELATIONSHIP
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
         _validate_typed_digest_id(
             self.cid_nl_evidence_content_id,
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,
@@ -163,7 +157,7 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         policy=policy,
     )
     content = DdaCidNlCandidateSetRelationContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         cid_nl_evidence_content_id=(
             canonical_evidence.artifact.content_identity.artifact_content_id
         ),

@@ -54,7 +54,7 @@ class OutsideGroupCellRelation:
 class CellObservationContent:
     """Orthogonal axes only; no value, writer, fill, or product authority."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     group_hypothesis_id: str
     group_owner_ids: tuple[str, ...]
     group_method_subject_id: str
@@ -98,7 +98,7 @@ def _direct_member_integration(
 ) -> IntegrationResult | None:
     if member is None:
         return None
-    canonical_sample_identity_id = canonical_sample.identity.sample_identity_id
+    sample_key = canonical_sample.identity.sample_key
     direct_hypothesis = peak_hypothesis
     if direct_hypothesis is None and (
         terminal_variant == "observed"
@@ -121,8 +121,7 @@ def _direct_member_integration(
             or direct_hypothesis.artifact.producer_processing_request_id
             != processing_request_id
             or any(
-                observation.content.canonical_sample_identity_id
-                != canonical_sample_identity_id
+                observation.content.sample_key != sample_key
                 for observation in direct_hypothesis.peak_observation_refs
             )
         ):
@@ -175,8 +174,7 @@ def _outside_group_relation(
         support
         for support in outside_group_context.supports
         if support.assessment is method_assessment
-        and support.sample.identity.sample_identity_id
-        == method_assessment.content.canonical_sample_identity_id
+        and support.sample.identity.sample_key == method_assessment.content.sample_key
     )
     if len(supports) != 1:
         raise CellObservationContractError(
@@ -222,15 +220,12 @@ def mint_cell_observation_ref(
         )
     group = group_context.group
     method_result = method_assessment.content.method_result
-    if method_assessment.content.canonical_sample_identity_id != (
-        sample.identity.sample_identity_id
-    ):
+    if method_assessment.content.sample_key != (sample.identity.sample_key):
         raise CellObservationContractError("assessment references a different sample")
     support_binding = any(
         support.assessment.artifact.evidence_artifact_id
         == method_assessment.artifact.evidence_artifact_id
-        and support.sample.identity.sample_identity_id
-        == sample.identity.sample_identity_id
+        and support.sample.identity.sample_key == sample.identity.sample_key
         for support in group_context.supports
     )
     if method_assessment.content.method_subject != group_context.method_subject and (
@@ -260,7 +255,7 @@ def mint_cell_observation_ref(
         )
     )
     content = CellObservationContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,

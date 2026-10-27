@@ -257,10 +257,8 @@ def test_targeted_grouping_keeps_each_sample_selected_value(
     groups = result.scientific_core.final_population
     assert groups == result.scientific_core.grouping_result.initial_population
     assert {
-        member.canonical_sample_identity_id
-        for group in groups
-        for member in group.member_subjects
-    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
+        member.sample_key for group in groups for member in group.member_subjects
+    } == {sample.identity.sample_key for sample in result.canonical_samples}
 
 
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
@@ -385,10 +383,10 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         output.file_results[1].results[target.label].reported_peak_area,
     )
     assert {
-        member.canonical_sample_identity_id
+        member.sample_key
         for group in result.scientific_core.final_population
         for member in group.member_subjects
-    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
+    } == {sample.identity.sample_key for sample in result.canonical_samples}
 
 
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
@@ -1116,7 +1114,6 @@ def production_case(
         )
         physical_evaluation = evaluate_physical_peak(
             prepare_physical_signal(rt, intensity, profile=profile),
-            selection_subject_id=target.label,
             query_rt_min=selected.integration.rt_apex_min,
             request_context_rt_start_min=trace.rt_min,
             request_context_rt_end_min=trace.rt_max,
@@ -1324,7 +1321,6 @@ def _physical_evaluation(
     )
     return evaluate_physical_peak(
         prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
-        selection_subject_id="Analyte",
         query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
@@ -1516,7 +1512,6 @@ def test_reported_peak_quality_replaces_only_peak_local_reasons(
     rt = np.linspace(0.0, 10.0, 1001)
     captured = evaluate_physical_peak(
         prepare_physical_signal(rt, 100 + 1000 * np.exp(-(((rt - 3.0) / 0.2) ** 2))),
-        selection_subject_id="replaced",
         query_rt_min=3.0,
     )
     raw = 100 + (
@@ -1529,7 +1524,6 @@ def test_reported_peak_quality_replaces_only_peak_local_reasons(
     )
     reported = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="reported",
         query_rt_min=5.0,
     )
     assert reported.state == "available"

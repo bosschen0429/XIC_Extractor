@@ -280,7 +280,7 @@ class AnalysisJobs:
 
             quality_result = export_feature_quality(
                 matrix_path=Path(values["matrix_path"]),
-                identity_path=Path(values["identity_path"]),
+                review_path=Path(values["review_path"]),
                 sample_metadata_path=Path(values["sample_metadata_path"]),
                 output_dir=Path(values["output_dir"]),
                 min_finite_fraction=float(values["min_finite_fraction"]),

@@ -333,7 +333,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
         alignment.final_population, key=lambda group: group.group_hypothesis_id
     )
     observations = {
-        (item.group_hypothesis_id, item.canonical_sample_identity_id): item
+        (item.group_hypothesis_id, item.sample_key): item
         for item in alignment.cell_observations
     }
     assert len(projection.decisions) == len(observations)
@@ -347,7 +347,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             subject = decision.subject
             evidence = observations[
                 subject.group_hypothesis_id,
-                subject.canonical_sample.identity.sample_identity_id,
+                subject.canonical_sample.identity.sample_key,
             ]
             assert decision.evidence is evidence
             assert subject.row_key is row.row_key

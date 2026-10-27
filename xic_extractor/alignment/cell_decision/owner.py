@@ -185,14 +185,14 @@ def decide_group_cell_population(
 
     member_samples = {
         group.group_hypothesis_id: {
-            member.canonical_sample_identity_id for member in group.member_subjects
+            member.sample_key for member in group.member_subjects
         }
         for group in finalized_alignment.final_population
     }
     return {
         observation.cell_observation_id: _decide_group(
             observation,
-            is_member=observation.canonical_sample_identity_id
+            is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
         )
         for observation in finalized_alignment.cell_observations
@@ -218,8 +218,7 @@ def _decide_sealed_subject(
         payload, integration = _decide_group(
             evidence,
             is_member=any(
-                member.canonical_sample_identity_id
-                == evidence.canonical_sample_identity_id
+                member.sample_key == evidence.sample_key
                 for member in evidence.group.member_subjects
             ),
         )
@@ -239,8 +238,8 @@ def _decide_target(
     subject: TargetCellSubject,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     terminal = subject.terminal_subject
-    sample_id = subject.canonical_sample.identity.sample_identity_id
-    if terminal.canonical_sample_identity_id != sample_id:
+    sample_id = subject.canonical_sample.identity.sample_key
+    if terminal.sample_key != sample_id:
         raise CellDecisionContractError(
             "Target terminal crossed the exact canonical sample"
         )
@@ -414,7 +413,7 @@ def _decision_basis(
                 "Target decision basis requires its exact terminal subject"
             )
         request_id = subject.processing_request.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_identity_id
+        sample_id = subject.canonical_sample.identity.sample_key
     elif type(subject) is GroupCellSubject:
         if type(evidence) is not FinalGroupCellObservation:
             raise CellDecisionContractError(
@@ -441,7 +440,7 @@ def _decision_basis(
             ),
         }
         request_id = subject.processing_request_id
-        sample_id = subject.canonical_sample.identity.sample_identity_id
+        sample_id = subject.canonical_sample.identity.sample_key
     else:
         raise CellDecisionContractError(
             "decision basis requires an exact owner subject"
@@ -453,7 +452,7 @@ def _decision_basis(
         "schema_version": _DECISION_SCHEMA_VERSION,
         "subject_kind": subject_kind,
         "processing_request_id": request_id,
-        "canonical_sample_identity_id": sample_id,
+        "sample_key": sample_id,
         "subject": subject_identity,
         "evidence": evidence_identity,
         "payload": payload_identity,
@@ -479,12 +478,12 @@ def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
         return (
             "target",
             subject.target.lookup_label,
-            subject.canonical_sample.identity.sample_identity_id,
+            subject.canonical_sample.identity.sample_key,
         )
     if type(subject) is GroupCellSubject:
         return (
             "untarget",
             subject.group_hypothesis_id,
-            subject.canonical_sample.identity.sample_identity_id,
+            subject.canonical_sample.identity.sample_key,
         )
     raise CellDecisionContractError("decision contains an unsupported subject")

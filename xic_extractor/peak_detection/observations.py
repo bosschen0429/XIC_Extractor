@@ -62,13 +62,12 @@ MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
 _CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTENT_PAYLOAD_FIELDS = frozenset(
     {
         "peak_observation_content_id",
-        "canonical_sample_identity_id",
+        "sample_key",
         "mz",
         "rt",
         "intensity",
@@ -107,7 +106,7 @@ class PeakObservationContent:
     """Exact sample-local selected MS1 signal and integration content."""
 
     peak_observation_content_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     mz: float
     rt: tuple[float, ...]
     intensity: tuple[float, ...]
@@ -118,11 +117,6 @@ class PeakObservationContent:
             self.peak_observation_content_id,
             prefix=_CONTENT_ID_PREFIX,
             field="peak_observation_content_id",
-        )
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
         )
         mz = _finite_float(self.mz, field="mz")
         if mz <= 0.0:
@@ -150,7 +144,7 @@ class PeakObservationContent:
         object.__setattr__(self, "rt", rt)
         object.__setattr__(self, "intensity", intensity)
         expected_id = _content_id(
-            canonical_sample_identity_id=self.canonical_sample_identity_id,
+            sample_key=self.sample_key,
             mz=mz,
             rt=rt,
             intensity=intensity,
@@ -167,7 +161,7 @@ class _VerifiedPersistedPeakObservationClaims:
     """Raw-signal claims that the persisted selected subtrace can prove."""
 
     peak_observation_content_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     mz: float
     raw_apex_rt_min: float
     height_raw: float
@@ -232,13 +226,8 @@ def verify_persisted_peak_observation_claims(
             field="peak_observation_content_id",
         )
         sample_id = _required_text(
-            content["canonical_sample_identity_id"],
-            field="canonical_sample_identity_id",
-        )
-        _validate_typed_digest_id(
-            sample_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
+            content["sample_key"],
+            field="sample_key",
         )
         mz = _finite_float(content["mz"], field="mz")
         if mz <= 0.0:
@@ -265,7 +254,7 @@ def verify_persisted_peak_observation_claims(
             )
         _validate_integration(integration, selected_rt=rt)
         expected_id = _content_id(
-            canonical_sample_identity_id=sample_id,
+            sample_key=sample_id,
             mz=mz,
             rt=rt,
             intensity=intensity,
@@ -298,7 +287,7 @@ def verify_persisted_peak_observation_claims(
         )
         return _VerifiedPersistedPeakObservationClaims(
             peak_observation_content_id=content_id,
-            canonical_sample_identity_id=sample_id,
+            sample_key=sample_id,
             mz=mz,
             raw_apex_rt_min=raw_apex_rt_min,
             height_raw=height_raw,
@@ -386,7 +375,7 @@ class PeakObservationRef:
 class RetainedCaptureEvidence:
     """Actual capture inputs and output, with no scientific decision authority."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     processing_request_id: str
     processing_attempt_id: str
     method_subject_id: str
@@ -428,7 +417,7 @@ def mint_peak_observation_ref(
     )
 
     content, generation_provenance = _peak_observation_values(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         trace=trace,
         integration=integration,
         selection_intensity=selection_intensity,
@@ -516,7 +505,7 @@ def mint_physical_peak_observations(
                 integration=integration,
             )
         content, provenance = _project_peak_observation_values(
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            sample_key=sample.identity.sample_key,
             trace=trace,
             integration=integration,
             selected_indices=integration.raw_scan_indices,
@@ -598,7 +587,7 @@ def _mint_peak_observation_artifact(
 def validate_peak_observation_trace_binding(
     reference: PeakObservationRef,
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
     selection_intensity: object | None = None,
@@ -614,7 +603,7 @@ def validate_peak_observation_trace_binding(
             "reference must be an owner-minted PeakObservationRef"
         )
     expected_content, expected_provenance = _peak_observation_values(
-        canonical_sample_identity_id=canonical_sample_identity_id,
+        sample_key=sample_key,
         trace=trace,
         integration=integration,
         selection_intensity=selection_intensity,
@@ -634,7 +623,7 @@ def validate_peak_observation_trace_binding(
 
 def _peak_observation_values(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
     selection_intensity: object | None,
@@ -665,7 +654,7 @@ def _peak_observation_values(
         signal_processing_profile=signal_processing_profile,
     )
     return _project_peak_observation_values(
-        canonical_sample_identity_id=canonical_sample_identity_id,
+        sample_key=sample_key,
         trace=trace,
         integration=integration,
         selected_indices=selected_indices,
@@ -676,7 +665,7 @@ def _peak_observation_values(
 
 def _project_peak_observation_values(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     trace: Trace,
     integration: IntegrationResult,
     selected_indices: tuple[int, ...],
@@ -699,7 +688,7 @@ def _project_peak_observation_values(
     )
     return (
         _owner_minted_peak_observation_content(
-            canonical_sample_identity_id=canonical_sample_identity_id,
+            sample_key=sample_key,
             mz=float(trace.mz),
             rt=selected_rt,
             intensity=selected_intensity,
@@ -750,7 +739,7 @@ def prepare_peak_observation_provenance(
 
 def _owner_minted_peak_observation_content(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
@@ -763,7 +752,7 @@ def _owner_minted_peak_observation_content(
         content,
         "peak_observation_content_id",
         _content_id(
-            canonical_sample_identity_id=canonical_sample_identity_id,
+            sample_key=sample_key,
             mz=mz,
             rt=rt,
             intensity=intensity,
@@ -772,8 +761,8 @@ def _owner_minted_peak_observation_content(
     )
     object.__setattr__(
         content,
-        "canonical_sample_identity_id",
-        canonical_sample_identity_id,
+        "sample_key",
+        sample_key,
     )
     object.__setattr__(content, "mz", mz)
     object.__setattr__(content, "rt", rt)
@@ -836,10 +825,7 @@ def validate_peak_observation_binding(
         raise PeakObservationContractError(
             "peak observation references a different processing attempt"
         )
-    if (
-        reference.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
-    ):
+    if reference.content.sample_key != sample.identity.sample_key:
         raise PeakObservationContractError(
             "peak observation references a different sample"
         )
@@ -854,7 +840,7 @@ def validate_peak_observation_binding(
 
 def _content_id(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
@@ -863,7 +849,7 @@ def _content_id(
     return _typed_digest(
         _CONTENT_ID_PREFIX,
         _physical_content_basis(
-            canonical_sample_identity_id=canonical_sample_identity_id,
+            sample_key=sample_key,
             mz=mz,
             rt=rt,
             intensity=intensity,
@@ -874,7 +860,7 @@ def _content_id(
 
 def _physical_content_basis(
     *,
-    canonical_sample_identity_id: str,
+    sample_key: str,
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
@@ -885,7 +871,7 @@ def _physical_content_basis(
     integration_basis.pop("signal_quality")
     return {
         "schema": "ms1_peak_observation_content",
-        "canonical_sample_identity_id": canonical_sample_identity_id,
+        "sample_key": sample_key,
         "mz": mz,
         "rt": list(rt),
         "intensity": list(intensity),
@@ -896,7 +882,7 @@ def _physical_content_basis(
 def _content_payload(content: PeakObservationContent) -> dict[str, object]:
     return {
         "peak_observation_content_id": content.peak_observation_content_id,
-        "canonical_sample_identity_id": content.canonical_sample_identity_id,
+        "sample_key": content.sample_key,
         "mz": content.mz,
         "rt": list(content.rt),
         "intensity": list(content.intensity),
@@ -1118,16 +1104,12 @@ def physical_peak_observation_integration(
         raise PeakObservationContractError(
             "physical observation requires available facts"
         )
-    segment = next(
-        segment
-        for segment in evaluation.segment_universe.segments
-        if segment.physical_segment_id == facts.physical_segment_id
-    )
+    segment = evaluation.answer.selected_segment
+    assert segment is not None
     return replace(
         integration,
         height_smoothed=facts.height,
         raw_scan_indices=tuple(range(segment.start_index, segment.end_index)),
-        boundary_sources=(*integration.boundary_sources, facts.physical_segment_id),
     )
 
 
@@ -1147,11 +1129,9 @@ def _validate_physical_integration_facts(
         trace.rt,
         trace.intensity,
         profile=profile,
-        trace_content_id=physical_evaluation.prepared.trace_content_id,
     )
     actual = evaluate_physical_peak(
         prepared,
-        selection_subject_id=physical_evaluation.question.selection_subject_id,
         query_rt_min=physical_evaluation.question.query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,

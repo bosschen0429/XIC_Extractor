@@ -149,12 +149,12 @@ def collect_owner_backfill_requests(
     for row in _read_delimited_rows(alignment_cells, delimiter="\t"):
         sample_stem = row.get("sample_stem", "")
         if row.get("status") == "detected" and sample_stem:
-            detected_by_feature[row.get("feature_family_id", "")].add(sample_stem)
+            detected_by_feature[row.get("feature_id", "")].add(sample_stem)
 
     rt_window_min = max_rt_sec / 60.0
     records: list[RequestRecord] = []
     for row in _read_delimited_rows(alignment_review, delimiter="\t"):
-        feature_id = row.get("feature_family_id", "")
+        feature_id = row.get("feature_id", "")
         detected_samples = detected_by_feature.get(feature_id, set())
         if len(detected_samples) < owner_backfill_min_detected_samples:
             continue

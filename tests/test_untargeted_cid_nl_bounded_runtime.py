@@ -1854,12 +1854,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         )
 
         expected_initial_sample_ids = {
-            sample.identity.sample_identity_id
+            sample.identity.sample_key
             for sample in plan.context.samples
             if plan.context.candidates_by_sample[sample.metadata.raw_stem]
         }
         assert {
-            job.sample.identity.sample_identity_id for job in batch.jobs
+            job.sample.identity.sample_key for job in batch.jobs
         } == expected_initial_sample_ids
         assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
@@ -2133,11 +2133,11 @@ def test_sample_worker_transport_references_global_request_owners(
             on_completed=lambda _done, _total, _job, result: transported.append(result),
         )
     assert all(pid != os.getpid() for pid, _job in transported)
-    expected = {job.sample.identity.sample_identity_id: job for job in batch.jobs}
+    expected = {job.sample.identity.sample_key: job for job in batch.jobs}
     assert len(expected) == 2
     assert len(transported) == len(batch.jobs)
     for _pid, job in transported:
-        original = expected[job.sample.identity.sample_identity_id]
+        original = expected[job.sample.identity.sample_key]
         assert job.processing_owners is original.processing_owners
         assert job._request_subjects is original._request_subjects
         assert job.sample == original.sample
@@ -2243,7 +2243,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     assert serial.succeeded and process.succeeded
     serial_results = tuple(
         (
-            result.job.sample.identity.sample_identity_id,
+            result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
             result.result_ref,
         )
@@ -2251,7 +2251,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     )
     process_results = tuple(
         (
-            result.job.sample.identity.sample_identity_id,
+            result.job.sample.identity.sample_key,
             result.job.method_subject.method_subject_id,
             result.result_ref,
         )
@@ -2321,9 +2321,9 @@ def test_sparse_partition_materializes_only_samples_with_request_candidates(
     assert len(batch.sample_job_templates) == len(plan.context.samples)
     assert batch.jobs
     assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {job.sample.identity.sample_identity_id for job in batch.jobs}
+    initial_sample_ids = {job.sample.identity.sample_key for job in batch.jobs}
     assert len(initial_sample_ids) >= 2
-    missing_sample_id = plan.context.samples[-1].identity.sample_identity_id
+    missing_sample_id = plan.context.samples[-1].identity.sample_key
     assert missing_sample_id not in initial_sample_ids
 
 

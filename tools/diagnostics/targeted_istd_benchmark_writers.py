@@ -47,7 +47,7 @@ SUMMARY_COLUMNS = (
 
 MATCH_COLUMNS = (
     "target_label",
-    "feature_family_id",
+    "feature_id",
     "include_in_primary_matrix",
     "family_center_mz",
     "family_center_rt",

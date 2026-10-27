@@ -196,9 +196,9 @@ def mint_conservative_backfill_candidate_universe(
     facts = _canonical_backfill_group_facts(group_facts)
     population = _processing_owner_sample_population(processing_owners)
     # The cohort sets S/K; do not silently admit a truncated study at this join.
-    population_ids = tuple(item.identity.sample_identity_id for item in population)
+    population_ids = tuple(item.identity.sample_key for item in population)
     if any(
-        tuple(item.identity.sample_identity_id for item in fact.sample_population)
+        tuple(item.identity.sample_key for item in fact.sample_population)
         != population_ids
         for fact in facts
     ):
@@ -206,8 +206,7 @@ def mint_conservative_backfill_candidate_universe(
             "backfill group population must close the full processing request"
         )
     if (
-        candidate_assessment.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
+        candidate_assessment.content.sample_key != sample.identity.sample_key
         or candidate_assessment.content.method_subject.method_subject_id
         != _group_method_subject_id(facts[0])
     ):
@@ -311,9 +310,9 @@ def _backfill_universe_bytes(
         "product_authority": PRODUCT_AUTHORITY,
         "processing_request_id": processing_attempt.processing_request_id,
         "processing_attempt_id": processing_attempt.processing_attempt_id,
-        "canonical_sample_identity_id": sample.identity.sample_identity_id,
+        "sample_key": sample.identity.sample_key,
         "request_sample_population_ids": [
-            member.identity.sample_identity_id for member in request_sample_population
+            member.identity.sample_key for member in request_sample_population
         ],
         "method_subject_id": group_facts[0].group_context.method_subject_id,
         "candidate_assessment_artifact_id": (
@@ -369,7 +368,7 @@ def plan_conservative_backfill_targets(
     rejected group is no row, so it searches no missing sample.
     """
     eligible_ids = frozenset(
-        sample.identity.sample_identity_id
+        sample.identity.sample_key
         for sample in sample_population
         if _sample_is_activation_eligible(sample)
     )
@@ -378,9 +377,7 @@ def plan_conservative_backfill_targets(
     for group in groups:
         if group.disposition == "rejected":
             continue
-        support_ids = frozenset(
-            member.canonical_sample_identity_id for member in group.member_subjects
-        )
+        support_ids = frozenset(member.sample_key for member in group.member_subjects)
         if len(support_ids & eligible_ids) < minimum_support:
             continue
         targets = eligible_ids - support_ids
@@ -402,24 +399,24 @@ def assess_conservative_backfill_group(
             "Backfill assessment requires an existing CellObservation group"
         )
     ordered_cells = tuple(
-        sorted(source_cells, key=lambda cell: cell.content.canonical_sample_identity_id)
+        sorted(source_cells, key=lambda cell: cell.content.sample_key)
     )
     ordered_samples = tuple(
         sorted(
             sample_population,
-            key=lambda sample: sample.identity.sample_identity_id,
+            key=lambda sample: sample.identity.sample_key,
         )
     )
     group_context = ordered_cells[0].group_context
     cells = _canonical_cells(ordered_cells, group_context=group_context)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
-        sample.identity.sample_identity_id
+        sample.identity.sample_key
         for sample in samples
         if _sample_is_activation_eligible(sample)
     )
     direct_support_ids = tuple(
-        support.sample.identity.sample_identity_id for support in group_context.supports
+        support.sample.identity.sample_key for support in group_context.supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
@@ -428,8 +425,8 @@ def assess_conservative_backfill_group(
         _support_trace(support.hypothesis.peak_observation_refs)
         for support in group_context.supports
     )
-    cell_sample_ids = tuple(cell.content.canonical_sample_identity_id for cell in cells)
-    sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
+    cell_sample_ids = tuple(cell.content.sample_key for cell in cells)
+    sample_ids = tuple(sample.identity.sample_key for sample in samples)
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
     support_count = len(eligible_support_ids)
@@ -541,7 +538,7 @@ def map_conservative_backfill_candidates(
         raise ConservativeBackfillContractError(
             "mapping requires typed immutable backfill universe receipts"
         )
-    sample_id = sample.identity.sample_identity_id
+    sample_id = sample.identity.sample_key
     method_subject_ids = tuple(
         universe.method_subject_id for universe in candidate_universes
     )
@@ -766,7 +763,6 @@ def _localized_backfill_candidates(
     question = mint_physical_peak_question(
         evaluation.prepared,
         evaluation.segment_universe,
-        selection_subject_id=universe.method_subject_id,
         query_rt_min=query_rt,
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
         search_rt_window=(max(0.0, query_rt - half_window), query_rt + half_window),
@@ -784,8 +780,8 @@ def _localized_backfill_candidates(
         candidate
         for candidate in candidates
         if candidate.peak_observation.physical_evaluation is not None
-        and candidate.peak_observation.physical_evaluation.answer.physical_segment_id
-        == answer.answer.physical_segment_id
+        and candidate.peak_observation.physical_evaluation.answer.selected_segment
+        == answer.answer.selected_segment
     )
 
 
@@ -802,7 +798,7 @@ def _canonical_cells(
         raise ConservativeBackfillContractError(
             "Backfill facts require immutable canonical CellObservation references"
         )
-    sample_ids = tuple(cell.content.canonical_sample_identity_id for cell in cells)
+    sample_ids = tuple(cell.content.sample_key for cell in cells)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "CellObservation references must be unique and canonical-sorted by sample"
@@ -853,7 +849,7 @@ def _processing_owner_sample_population(
         tuple(
             sorted(
                 processing_owners.sample_resolutions,
-                key=lambda member: member.identity.sample_identity_id,
+                key=lambda member: member.identity.sample_key,
             )
         )
     )
@@ -900,7 +896,7 @@ def _canonical_samples(
         raise ConservativeBackfillContractError(
             "sample_population must contain owner-resolved run samples"
         )
-    sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
+    sample_ids = tuple(sample.identity.sample_key for sample in samples)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "sample_population must be unique and canonical-sorted"
@@ -951,9 +947,7 @@ def _target_cell(
     sample_id: str,
 ) -> CellObservationRef:
     cells = tuple(
-        cell
-        for cell in facts.source_cells
-        if cell.content.canonical_sample_identity_id == sample_id
+        cell for cell in facts.source_cells if cell.content.sample_key == sample_id
     )
     if len(cells) != 1:
         raise ConservativeBackfillContractError(

@@ -128,7 +128,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     ) == (
         (
             spine.group,
-            frozenset({fixture.sample("pooled").identity.sample_identity_id}),
+            frozenset({fixture.sample("pooled").identity.sample_key}),
         ),
     )
 
@@ -145,7 +145,7 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
         (spine.group,), sample_population=fixture.samples
     )
     assert established == (
-        (spine.group, frozenset({fixture.sample("s3").identity.sample_identity_id})),
+        (spine.group, frozenset({fixture.sample("s3").identity.sample_key})),
     )
 
     rejected = replace(spine.group, disposition="rejected")
@@ -188,7 +188,7 @@ def test_large_run_backfill_preserves_population_threshold(
             (
                 spine.group,
                 frozenset(
-                    fixture.sample(f"s{i}").identity.sample_identity_id
+                    fixture.sample(f"s{i}").identity.sample_key
                     for i in range(support_count, 85)
                 ),
             ),
@@ -250,8 +250,7 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     retained_cells = tuple(
         cell
         for cell in spine.cells
-        if cell.content.canonical_sample_identity_id
-        != fixture.sample("s4").identity.sample_identity_id
+        if cell.content.sample_key != fixture.sample("s4").identity.sample_key
     )
     facts = assess_conservative_backfill_group(
         retained_cells,
@@ -330,8 +329,8 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     retained_cells = tuple(
         cell
         for cell in incomplete_spine.cells
-        if cell.content.canonical_sample_identity_id
-        != incomplete_fixture.sample("omitted").identity.sample_identity_id
+        if cell.content.sample_key
+        != incomplete_fixture.sample("omitted").identity.sample_key
     )
     incomplete = assess_conservative_backfill_group(
         retained_cells,
@@ -669,12 +668,10 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
     )
     truncated_population = fixture.samples[:3]
     truncated_sample_ids = {
-        sample.identity.sample_identity_id for sample in truncated_population
+        sample.identity.sample_key for sample in truncated_population
     }
     truncated_cells = tuple(
-        cell
-        for cell in spine.cells
-        if cell.content.canonical_sample_identity_id in truncated_sample_ids
+        cell for cell in spine.cells if cell.content.sample_key in truncated_sample_ids
     )
     facts = assess_conservative_backfill_group(
         truncated_cells,
@@ -715,7 +712,7 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
         )
     )
     assert payload["request_sample_population_ids"] == sorted(
-        sample.identity.sample_identity_id for sample in fixture.samples
+        sample.identity.sample_key for sample in fixture.samples
     )
 
 

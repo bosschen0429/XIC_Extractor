@@ -418,13 +418,12 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
     assert isinstance(result, DiscoverySampleProcessError)
     assert result.message == "ValueError: Discovery process job crosses method settings"
     assert result.run_spec_id == spec.run_spec_id
-    assert result.profile_id == spec.profile_id
+    assert result.signal_processing_profile == spec.signal_processing_profile
     assert result.acquisition_source_id == source.acquisition_source_id
     assert all(
         value.strip()
         for value in (
             result.run_spec_id,
-            result.profile_id,
             result.acquisition_source_id,
         )
     )
@@ -470,7 +469,7 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
 
     assert isinstance(failure, DiscoverySampleProcessError)
     assert failure.run_spec_id == spec.run_spec_id
-    assert failure.profile_id == spec.profile_id
+    assert failure.signal_processing_profile == spec.signal_processing_profile
     assert failure.acquisition_source_id == source.acquisition_source_id
     assert failure.message == "RuntimeError: owner boom"
     assert opener_requests == [raw_path]
@@ -485,6 +484,6 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
         crossed.message == "ValueError: Discovery process job crosses method settings"
     )
     assert crossed.run_spec_id == spec.run_spec_id
-    assert crossed.profile_id == spec.profile_id
+    assert crossed.signal_processing_profile == spec.signal_processing_profile
     assert crossed.acquisition_source_id == source.acquisition_source_id
     assert opener_requests == [raw_path]

@@ -455,7 +455,7 @@
   const color=id=>sample(id)?.group_color||colors[Math.max(0,samples.findIndex(s=>s.id===id))%colors.length];
   const itemRows=item=>Array.isArray(item.samples)?item.samples:[];
   const witnesses=item=>Array.isArray(item.witnesses)?item.witnesses:(Array.isArray(item.candidates)?item.candidates:[]);
-  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.canonical_sample_identity_id||w?.sample_id||'';
+  const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.sample_key||w?.sample_id||'';
   const records=item=>Array.isArray(item?.details?.readable_records)?item.details.readable_records:[];
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';

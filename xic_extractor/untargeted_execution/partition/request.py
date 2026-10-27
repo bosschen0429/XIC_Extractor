@@ -275,8 +275,7 @@ def build_partition_context(
             or work.query_rt_min != candidate.best_seed_rt
             or work.xic_rt_min != candidate.ms1_search_rt_min
             or work.xic_rt_max != candidate.ms1_search_rt_max
-            or record.evaluation.prepared.profile_id
-            != signal_processing_profile.profile_id
+            or record.evaluation.prepared.profile != signal_processing_profile
         ):
             raise IdentityContractError(
                 "physical replay crossed candidate, acquisition, or profile"
@@ -312,7 +311,6 @@ def build_partition_context(
         physical_capture=(
             physical_capture_input_payload(
                 signal_processing_profile,
-                {cid: record.evaluation for cid, record in physical_records.items()},
             )
         ),
     )

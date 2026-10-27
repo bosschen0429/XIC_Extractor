@@ -70,8 +70,7 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
         != processing_owners.request.processing_request_id
         or assessment.artifact.producer_processing_attempt_id
         != processing_owners.attempt.processing_attempt_id
-        or assessment.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
+        or assessment.content.sample_key != sample.identity.sample_key
     ):
         raise HypothesisOwnerAdapterError(
             "assessment belongs to a different processing owner or sample"
@@ -236,8 +235,7 @@ def _bind_retained_assessment_hypotheses(
         peak_id = observation.content.peak_observation_content_id
         if (
             candidate_by_peak_id.get(peak_id) is not observation
-            or observation.content.canonical_sample_identity_id
-            != sample.identity.sample_identity_id
+            or observation.content.sample_key != sample.identity.sample_key
             or peak_id in retained_by_peak_id
         ):
             raise HypothesisOwnerAdapterError(
@@ -351,10 +349,10 @@ def owner_from_cid_nl_assessment_observation(
         raise HypothesisOwnerAdapterError(
             "observation-only hypothesis is outside the assessment universe"
         )
-    sample_id = sample.identity.sample_identity_id
+    sample_id = sample.identity.sample_key
     if (
-        assessment.content.canonical_sample_identity_id != sample_id
-        or observation.content.canonical_sample_identity_id != sample_id
+        assessment.content.sample_key != sample_id
+        or observation.content.sample_key != sample_id
     ):
         raise HypothesisOwnerAdapterError(
             "assessment or observation references a different canonical sample"
@@ -482,9 +480,9 @@ def _assessment_hypothesis_components(
             "CID-NL hypothesis must reference exactly one physical peak"
         )
     observation = hypothesis.peak_observation_refs[0]
-    sample_id = sample.identity.sample_identity_id
-    if assessment.content.canonical_sample_identity_id != sample_id or (
-        observation.content.canonical_sample_identity_id != sample_id
+    sample_id = sample.identity.sample_key
+    if assessment.content.sample_key != sample_id or (
+        observation.content.sample_key != sample_id
     ):
         raise HypothesisOwnerAdapterError(
             "assessment or hypothesis references a different canonical sample"

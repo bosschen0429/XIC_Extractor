@@ -48,7 +48,7 @@ IdentityConfidence = Literal["high", "medium", "review", "none"]
 
 @dataclass(frozen=True)
 class MatrixIdentityRowDecision:
-    feature_family_id: str
+    feature_id: str
     include_in_primary_matrix: bool
     identity_decision: IdentityDecision
     identity_confidence: IdentityConfidence
@@ -71,8 +71,8 @@ class MatrixIdentityDecisionSet:
     rows: dict[str, MatrixIdentityRowDecision]
     cell_quality: dict[tuple[str, str], CellQualityDecision]
 
-    def row(self, feature_family_id: str) -> MatrixIdentityRowDecision:
-        return self.rows[feature_family_id]
+    def row(self, feature_id: str) -> MatrixIdentityRowDecision:
+        return self.rows[feature_id]
 
 
 def build_matrix_identity_decisions(
@@ -130,7 +130,7 @@ def matrix_identity_row_decision_record(
     )
     return DecisionRecord(
         workflow="alignment_matrix_identity_row",
-        unit_id=decision.feature_family_id,
+        unit_id=decision.feature_id,
         required_evidence=(
             "matrix_identity_row",
             "cell_quality_decisions",
@@ -252,7 +252,7 @@ def decide_matrix_identity_row(
         promotion_policy=promotion_policy,
     )
     return MatrixIdentityRowDecision(
-        feature_family_id=family_id,
+        feature_id=family_id,
         include_in_primary_matrix=include,
         identity_decision=identity_decision,
         identity_confidence=confidence,

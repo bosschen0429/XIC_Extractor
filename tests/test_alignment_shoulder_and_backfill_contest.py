@@ -270,7 +270,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
                 disposition="established",
                 member_subjects=(
                     SimpleNamespace(
-                        canonical_sample_identity_id="sample",
+                        sample_key="sample",
                         physical_observation_ids=("0",),
                     ),
                 ),
@@ -294,7 +294,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
 
 def _sample_id(owner: SampleLocalMS1Owner) -> str:
     assert owner.cross_sample_member_subject is not None
-    return owner.cross_sample_member_subject.canonical_sample_identity_id
+    return owner.cross_sample_member_subject.sample_key
 
 
 def _member_observations(group):

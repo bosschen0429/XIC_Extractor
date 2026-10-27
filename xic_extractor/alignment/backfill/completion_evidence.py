@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from xic_extractor.acquisition_contract import TraceCoordinate
 from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
@@ -125,7 +125,7 @@ def _completed_backfill_projection_bytes(
             "schema": "owner_backfill_completed_physical_query_projection",
             "processing_request_id": processing_owners.request.processing_request_id,
             "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
-            "sample_identity_id": sample.identity.sample_identity_id,
+            "sample_key": sample.identity.sample_key,
             "group_id": group_identity.group_hypothesis_id,
             "group_basis": group_identity.basis_bytes.hex(),
             "group_center_mz": group_center_mz,
@@ -139,7 +139,7 @@ def _completed_backfill_projection_bytes(
             "backfill_assessment_artifact_id": (
                 backfill_assessment.artifact.evidence_artifact_id
             ),
-            "trace_coordinate_id": trace_coordinate.trace_coordinate_id,
+            "trace_coordinate": asdict(trace_coordinate),
             "acquisition_sha256": acquisition_sha256,
         }
     )

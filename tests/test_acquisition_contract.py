@@ -1,17 +1,13 @@
 import json
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-import xic_extractor.acquisition_contract as acquisition_contract_module
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
-    TraceCoordinate,
     TraceCoordinateKind,
     acquire_trace_batch,
-    acquired_trace_content_id,
     deserialize_acquired_trace,
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
@@ -69,7 +65,7 @@ def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(
     assert batch.trace_point_count == 4
     assert [trace.coordinate.first_scan for trace in batch.traces] == [100, 100]
     assert all(
-        trace.coordinate.acquisition_source_id == source.acquisition_source_id
+        trace.coordinate.capability.acquisition_source == source
         for trace in batch.traces
     )
 
@@ -91,30 +87,28 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
 
     restored = deserialize_acquired_trace(
         payload,
-        expected_acquisition_source_id=source.acquisition_source_id,
-        expected_trace_coordinate_id=acquired.coordinate.trace_coordinate_id,
-        expected_trace_content_id=acquired_trace_content_id(acquired),
+        expected_acquisition_source=source,
     )
 
     assert restored.coordinate == acquired.coordinate
     assert np.array_equal(restored.trace.rt, acquired.trace.rt)
     assert np.array_equal(restored.trace.intensity, acquired.trace.intensity)
 
+    other_path = tmp_path / "different.fixture"
+    other_path.write_bytes(b"different acquired source")
+    other_source = build_acquisition_source_identity(
+        other_path,
+        acquisition_format="fixture",
+        observation_namespace=source.observation_namespace,
+    )
+    with pytest.raises(AcquisitionContractError, match="expected acquisition source"):
+        deserialize_acquired_trace(payload, expected_acquisition_source=other_source)
+
 
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda value: value["coordinate"].__setitem__(
-            "acquisition_source_id", "cross-source"
-        ),
-        lambda value: value["coordinate"]["request"].__setitem__(
-            "mz", float(999.0).hex()
-        ),
         lambda value: value["coordinate"].__setitem__("trace_point_count", 1),
-        lambda value: value["trace"]["rt"].__setitem__(0, float(9.0).hex()),
-        lambda value: value.__setitem__(
-            "acquired_trace_content_id", "xic.acquired-trace-content:" + "0" * 64
-        ),
         lambda value: value["trace"]["intensity"].__setitem__(0, "-0x0.0p+0"),
         lambda value: value["trace"]["intensity"].__setitem__(0, "0x0p+0"),
         lambda value: value["trace"]["intensity"].__setitem__(0, "nan"),
@@ -353,51 +347,6 @@ def test_batch_trace_contract_rejects_mismatched_or_multidimensional_arrays(
         )
 
 
-def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
-    tmp_path: Path,
-) -> None:
-    source = _source(tmp_path)
-    capability = mint_trace_acquisition_capability(
-        source,
-        adapter_namespace="tests.no_raw_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
-    )
-    request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
-    acquisition = acquire_trace_batch(capability, (request,), _NoRawBatchAdapter())
-    acquired = acquisition.traces[0]
-    other_path = tmp_path / "other.fixture"
-    other_path.write_bytes(b"no-raw-other-source")
-    other_source = build_acquisition_source_identity(
-        other_path,
-        acquisition_format="fixture",
-        observation_namespace="package0:no-raw",
-    )
-
-    wrong_source = _replace_coordinate(
-        acquired.coordinate,
-        acquisition_source_id=other_source.acquisition_source_id,
-    )
-    with pytest.raises(AcquisitionContractError, match="capability source"):
-        replace(
-            acquisition,
-            traces=(replace(acquired, coordinate=wrong_source),),
-            logical_xic_request_count=1,
-            trace_point_count=len(acquired.trace.rt),
-        )
-
-    wrong_kind = _replace_coordinate(
-        acquired.coordinate,
-        coordinate_kind=TraceCoordinateKind.CONVERSION_SCAN,
-    )
-    with pytest.raises(AcquisitionContractError, match="coordinate kind"):
-        replace(
-            acquisition,
-            traces=(replace(acquired, coordinate=wrong_kind),),
-            logical_xic_request_count=1,
-            trace_point_count=len(acquired.trace.rt),
-        )
-
-
 def _source(tmp_path: Path):
     path = tmp_path / "source.fixture"
     path.write_bytes(b"no-raw-source")
@@ -405,36 +354,4 @@ def _source(tmp_path: Path):
         path,
         acquisition_format="fixture",
         observation_namespace="package0:no-raw",
-    )
-
-
-def _replace_coordinate(
-    coordinate: TraceCoordinate,
-    *,
-    acquisition_source_id: str | None = None,
-    coordinate_kind: TraceCoordinateKind | None = None,
-) -> TraceCoordinate:
-    source_id = acquisition_source_id or coordinate.acquisition_source_id
-    kind = coordinate_kind or coordinate.coordinate_kind
-    basis = acquisition_contract_module._trace_coordinate_basis(
-        capability_id=coordinate.capability_id,
-        acquisition_source_id=source_id,
-        request=coordinate.request,
-        coordinate_kind=kind,
-        first_scan=coordinate.first_scan,
-        last_scan=coordinate.last_scan,
-        trace_point_count=coordinate.trace_point_count,
-    )
-    return TraceCoordinate(
-        trace_coordinate_id=acquisition_contract_module._typed_id(
-            "xic.trace-coordinate:",
-            basis,
-        ),
-        capability_id=coordinate.capability_id,
-        acquisition_source_id=source_id,
-        request=coordinate.request,
-        coordinate_kind=kind,
-        first_scan=coordinate.first_scan,
-        last_scan=coordinate.last_scan,
-        trace_point_count=coordinate.trace_point_count,
     )

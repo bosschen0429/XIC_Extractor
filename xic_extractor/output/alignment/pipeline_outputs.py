@@ -46,6 +46,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
+    serialize_signal_processing_profile,
 )
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.output_levels import (
@@ -56,7 +57,6 @@ from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_backfill_seed_audit_tsv,
     write_alignment_cells_tsv,
-    write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
     write_alignment_review_tsv,
     write_alignment_status_matrix_tsv,
@@ -69,7 +69,6 @@ from xic_extractor.processing_identity import fingerprint_file_content
 class AlignmentRunOutputs:
     review_tsv: Path | None = None
     matrix_tsv: Path | None = None
-    matrix_identity_tsv: Path | None = None
     owner_backfill_peak_fact_provenance_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
@@ -110,11 +109,6 @@ def output_paths(
             if "alignment_matrix.tsv" in artifacts
             else None
         ),
-        matrix_identity_tsv=(
-            output_dir / "alignment_matrix_identity.tsv"
-            if "alignment_matrix_identity.tsv" in artifacts
-            else None
-        ),
         owner_backfill_peak_fact_provenance_tsv=(
             output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
             if "alignment_owner_backfill_peak_fact_provenance.tsv" in artifacts
@@ -142,7 +136,7 @@ def output_paths(
         ),
         run_metadata_json=(
             output_dir / "alignment_run_metadata.json"
-            if emit_target_snapshot_metadata
+            if emit_target_snapshot_metadata or "alignment_review.tsv" in artifacts
             else None
         ),
     )
@@ -212,7 +206,11 @@ def alignment_metadata(
         "scope_warning": scope_warning,
         "skipped_evidence_predicate_version": skipped_evidence_predicate_version,
         "cross_sample_peak_group_policy": "cross_sample_peak_group_hypothesis",
-        "public_family_id_policy": "fam_compatibility_id",
+        "feature_id_policy": "report_scoped_measured_member_order",
+        "matrix_split_evaluation_status": "complete_no_product_ready_split",
+        "matrix_projection_status": "not_projection",
+        "matrix_center_rt_basis": "cross_sample_owner_arithmetic_mean",
+        "matrix_center_weight_basis": "unique_owner_observations_equal_weight",
         "group_delivery_policy": "owner_group_delivery_successor_projection",
         "gap_fill_policy": "missing_observation_gap_fill",
         "legacy_owner_backfill_role": ("owner_backfill_as_gap_fill_materialization"),
@@ -220,14 +218,9 @@ def alignment_metadata(
             "pre_backfill_successor_projection_required_when_enabled"
         ),
         "matrix_value_policy": "canonical_signal_profile_selected_area",
-        "signal_processing_profile_schema_version": (
-            signal_processing_profile.schema_version
-        ),
-        "signal_processing_profile_id": signal_processing_profile.profile_id,
-        "signal_processing_profile_hash": signal_processing_profile.profile_hash,
-        "signal_processing_method": signal_processing_profile.method,
-        "signal_processing_window_points": str(signal_processing_profile.window_points),
-        "physical_signal_formula": signal_processing_profile.physical_signal_formula,
+        "signal_processing_profile_json": serialize_signal_processing_profile(
+            signal_processing_profile
+        ).decode("utf-8"),
         "owner_backfill_peak_fact_provenance_schema_version": (
             BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
         ),
@@ -332,18 +325,6 @@ def write_outputs_atomic(
                 ),
             ),
         )
-    if outputs.matrix_identity_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.matrix_identity_tsv,
-                lambda path: write_alignment_matrix_identity_tsv(
-                    path,
-                    matrix,
-                    alignment_config=alignment_config,
-                    production_decisions=production_decisions,
-                ),
-            ),
-        )
     if outputs.review_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -439,7 +420,6 @@ def write_streamed_untargeted_outputs_atomic(
         name: path
         for name, path in (
             ("matrix", outputs.matrix_tsv),
-            ("identity", outputs.matrix_identity_tsv),
             ("review", outputs.review_tsv),
             ("backfill", outputs.backfill_cell_evidence_tsv),
             ("cells", outputs.cells_tsv),

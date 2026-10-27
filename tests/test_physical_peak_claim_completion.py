@@ -94,7 +94,6 @@ def _view(
 
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=stem,
         query_rt_min=query_rt,
         search_rt_window=(center - 0.2, center + 0.2) if unreliable else None,
         selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
@@ -257,7 +256,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills[
             (
                 group.group_hypothesis_id,
-                sample.identity.sample_identity_id,
+                sample.identity.sample_key,
                 assessment.content.method_subject.method_subject_id,
             )
         ] = (sample, assessment)
@@ -394,8 +393,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     sample_cells = [
         cell
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == fixture.sample("S").identity.sample_identity_id
+        if cell.content.sample_key == fixture.sample("S").identity.sample_key
     ]
     assert len(sample_cells) == 2
     numeric_sources = [

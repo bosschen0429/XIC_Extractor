@@ -7,58 +7,32 @@ profile used for Backfill physical peak facts.
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
-import json
 from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
+    serialize_signal_processing_profile,
 )
 
 BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (
     "alignment_owner_backfill_peak_fact_provenance"
 )
-BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row:"
 
 BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS = (
     "row_kind",
     "schema_version",
-    "profile_schema_version",
-    "profile_id",
-    "profile_hash",
-    "signal_processing_method",
-    "signal_processing_window_points",
-    "physical_signal_formula",
-    "projection_content_id",
+    "profile_json",
 )
 
 
 @dataclass(frozen=True, slots=True)
 class BackfillPeakFactProvenanceRow:
-    profile_schema_version: str
-    profile_id: str
-    profile_hash: str
-    signal_processing_method: str
-    signal_processing_window_points: int
-    physical_signal_formula: str
+    profile: SignalProcessingProfile
     row_kind: Literal["run_profile"] = "run_profile"
     schema_version: str = BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
-
-    @property
-    def projection_content_id(self) -> str:
-        payload = [
-            str(getattr(self, name))
-            for name in BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS[:-1]
-        ]
-        digest = hashlib.sha256(
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
-                "utf-8"
-            )
-        ).hexdigest()
-        return f"{BACKFILL_PROVENANCE_ROW_ID_PREFIX}{digest}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,14 +41,7 @@ class BackfillPeakFactProvenanceBatch:
 
 
 def run_profile_row(profile: SignalProcessingProfile) -> BackfillPeakFactProvenanceRow:
-    return BackfillPeakFactProvenanceRow(
-        profile_schema_version=profile.schema_version,
-        profile_id=profile.profile_id,
-        profile_hash=profile.profile_hash,
-        signal_processing_method=profile.method,
-        signal_processing_window_points=profile.window_points,
-        physical_signal_formula=profile.physical_signal_formula,
-    )
+    return BackfillPeakFactProvenanceRow(profile)
 
 
 def render_backfill_peak_fact_provenance_tsv(
@@ -93,8 +60,11 @@ def render_backfill_peak_fact_provenance_tsv(
     for row in batch.rows:
         writer.writerow(
             {
-                name: str(getattr(row, name))
-                for name in BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS
+                "row_kind": row.row_kind,
+                "schema_version": row.schema_version,
+                "profile_json": serialize_signal_processing_profile(row.profile).decode(
+                    "utf-8"
+                ),
             }
         )
     return buffer.getvalue().encode("utf-8")

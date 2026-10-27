@@ -102,9 +102,7 @@ def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
         processing_contract_version=original.processing_contract_version,
         scientific_inputs={
             **json.loads(original.normalized_scientific_inputs_json),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile, {key: record.evaluation for key, record in records.items()}
-            ),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
         },
     )
     return compose_processing_owner_references(

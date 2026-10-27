@@ -39,7 +39,7 @@ def test_blast_radius_reports_complete_identity_changes_and_benchmark_join(
 
     assert code == 0
     rows = _read_tsv(tmp_path / "blast" / "matrix_identity_blast_radius.tsv")
-    by_id = {row["feature_family_id"]: row for row in rows}
+    by_id = {row["feature_id"]: row for row in rows}
     assert by_id["FAM001"]["evidence_status"] == "complete"
     assert by_id["FAM001"]["would_change_to_audit"] == "TRUE"
     assert by_id["FAM001"]["identity_decision"] == "provisional_discovery"
@@ -99,7 +99,7 @@ def test_blast_radius_preserves_review_only_projection(
 
     assert code == 0
     rows = _read_tsv(tmp_path / "blast" / "matrix_identity_blast_radius.tsv")
-    by_id = {row["feature_family_id"]: row for row in rows}
+    by_id = {row["feature_id"]: row for row in rows}
 
     assert by_id["FAM_REVIEW"]["identity_reason"] == "review_only"
     assert by_id["FAM_REVIEW"]["matrix_role"] == "audit"
@@ -152,7 +152,7 @@ def test_blast_radius_missing_peak_columns_outputs_incomplete_summary(
         alignment_dir / "alignment_cells.tsv",
         [
             {
-                "feature_family_id": "FAM001",
+                "feature_id": "FAM001",
                 "sample_stem": "sample-a",
                 "status": "detected",
             },
@@ -160,7 +160,7 @@ def test_blast_radius_missing_peak_columns_outputs_incomplete_summary(
     )
     _write_tsv(
         alignment_dir / "alignment_matrix.tsv",
-        [{"feature_family_id": "FAM001", "sample-a": "100"}],
+        [{"feature_id": "FAM001", "sample-a": "100"}],
     )
     benchmark_dir = _write_benchmark_dir(tmp_path / "benchmark", "FAM001")
 
@@ -234,8 +234,8 @@ def test_blast_radius_joins_current_targeted_istd_benchmark_aliases(
     _write_tsv(
         benchmark_dir / "targeted_istd_benchmark_matches.tsv",
         [
-            {"target_label": "d3-5-medC", "feature_family_id": "FAM001"},
-            {"target_label": "d3-5-medC", "feature_family_id": "FAM002"},
+            {"target_label": "d3-5-medC", "feature_id": "FAM001"},
+            {"target_label": "d3-5-medC", "feature_id": "FAM002"},
         ],
     )
     _write_tsv(
@@ -269,7 +269,7 @@ def test_blast_radius_joins_current_targeted_istd_benchmark_aliases(
 
     assert code == 0
     rows = _read_tsv(tmp_path / "blast" / "matrix_identity_blast_radius.tsv")
-    by_family = {row["feature_family_id"]: row for row in rows}
+    by_family = {row["feature_id"]: row for row in rows}
     assert by_family["FAM001"]["targeted_target_name"] == "d3-5-medC"
     assert by_family["FAM001"]["targeted_role"] == "ISTD"
     assert by_family["FAM001"]["targeted_benchmark_class"] == "PASS"
@@ -292,7 +292,7 @@ def test_blast_radius_input_bundle_preserves_existing_order_contracts() -> None:
 
     inputs = blast._blast_radius_inputs_from_tsv(review_rows, cell_rows)
 
-    assert [cluster.feature_family_id for cluster in inputs.matrix.clusters] == [
+    assert [cluster.feature_id for cluster in inputs.matrix.clusters] == [
         "FAM_B",
         "FAM_A",
     ]
@@ -340,7 +340,7 @@ def _write_alignment_run(
     path.mkdir(parents=True)
     _write_tsv(path / "alignment_review.tsv", review_rows)
     _write_tsv(path / "alignment_cells.tsv", cell_rows)
-    _write_tsv(path / "alignment_matrix.tsv", [{"feature_family_id": "FAM001"}])
+    _write_tsv(path / "alignment_matrix.tsv", [{"feature_id": "FAM001"}])
     return path
 
 
@@ -353,7 +353,7 @@ def _review_row(
     row_flags: str = "",
 ) -> dict[str, object]:
     return {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "include_in_primary_matrix": include,
         "family_evidence": evidence,
         "identity_reason": identity_reason,
@@ -377,7 +377,7 @@ def _cell_row(
     reason: str | None = None,
 ) -> dict[str, object]:
     row: dict[str, object] = {
-        "feature_family_id": family_id,
+        "feature_id": family_id,
         "sample_stem": sample,
         "status": status,
         "area": area,
@@ -403,7 +403,7 @@ def _write_benchmark_dir(path: Path, family_id: str) -> Path:
             "target_name": "d3-5-medC",
             "role": "ISTD",
             "benchmark_class": "PASS",
-            "feature_family_id": family_id,
+            "feature_id": family_id,
             "active_dna_istd_candidate": "TRUE",
         },
     ]

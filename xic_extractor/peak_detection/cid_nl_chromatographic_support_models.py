@@ -28,7 +28,6 @@ RELATIONSHIP = "strict_nl_scans_within_one_physical_ms1_peak"
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace=("xic_extractor.peak_detection.cid_nl_chromatographic_support"),
@@ -87,7 +86,7 @@ class DdaCidNlScanSupportMember:
 class CidNlChromatographicSupportContent:
     """One physical MS1 support event backed by one or more exact DDA scans."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     peak_observation_content_id: str
     candidate_peak_content_ids: tuple[str, ...]
     acquisition_mode: str
@@ -98,11 +97,6 @@ class CidNlChromatographicSupportContent:
     relationship: str
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
         _validate_typed_digest_id(
             self.peak_observation_content_id,
             prefix=_PEAK_CONTENT_ID_PREFIX,

@@ -87,7 +87,7 @@ def compact_explanation(
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
             raise ExplanationError("Source is already a compact review")
         samples = {
-            sample["canonical_sample_identity_id"]: index
+            sample["sample_key"]: index
             for index, sample in enumerate(summary["samples"])
         }
         matrix = Path(summary["matrix_path"])
@@ -169,7 +169,7 @@ def compact_explanation(
                     else observation.get("predecessor_cells", [])
                 )
                 contents = [cell["content"] for cell in effective]
-                sid = decision["canonical_sample_identity_id"]
+                sid = decision["sample_key"]
                 observation_ids = sorted(
                     {
                         content["peak_observation_content_id"]

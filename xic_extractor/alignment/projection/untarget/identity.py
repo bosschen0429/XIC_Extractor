@@ -124,9 +124,7 @@ class GroupCellSubject:
             {
                 "schema_version": _GROUP_CELL_SUBJECT_SCHEMA_VERSION,
                 "untarget_row_key_id": self.row_key.untarget_row_key_id,
-                "canonical_sample_identity_id": (
-                    self.canonical_sample.identity.sample_identity_id
-                ),
+                "sample_key": (self.canonical_sample.identity.sample_key),
             },
         )
         return identity

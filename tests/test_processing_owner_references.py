@@ -63,9 +63,6 @@ def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None
         identity_namespace=snapshot.identity_namespace,
     )
 
-    assert identity.sample_identity_id == (
-        "xic.sample:e322e40f4137abbc784c2d9a004e703ff63aeb29fa16bec19038cf9905d8d7f6"
-    )
     assert identity.sample_key == "Sample A"
     assert identity.sample_metadata_schema_version == "sample_metadata"
     by_key = resolve_canonical_sample_identity(snapshot, "Sample A")
@@ -168,16 +165,6 @@ def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:
             (SampleMetadata(sample_name="Sample A", raw_stem="shared"),),
             "shared",
         )
-
-
-def test_sample_identity_rejects_forged_owner_binding() -> None:
-    identity = mint_canonical_sample_identity(
-        SampleMetadata(sample_name="Sample A", raw_stem="raw_a"),
-        identity_namespace="study:package-0-test",
-    )
-
-    with pytest.raises(SampleMetadataError, match="mismatches"):
-        replace(identity, sample_key="Sample B")
 
 
 def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> None:

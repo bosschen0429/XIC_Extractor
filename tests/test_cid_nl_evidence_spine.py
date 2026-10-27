@@ -391,23 +391,22 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
 
     monkeypatch.setattr(assessment_module, "_method_result", unexpected_reevaluation)
     by_sample = {
-        assessment.content.canonical_sample_identity_id: assessment
-        for assessment in assessments
+        assessment.content.sample_key: assessment for assessment in assessments
     }
 
     assert by_sample[
-        fixture.sample("s1").identity.sample_identity_id
+        fixture.sample("s1").identity.sample_key
     ].content.method_result == ("SUPPORT")
     assert by_sample[
-        fixture.sample("s2").identity.sample_identity_id
+        fixture.sample("s2").identity.sample_key
     ].content.method_result == ("HOLD")
     assert by_sample[
-        fixture.sample("s3").identity.sample_identity_id
+        fixture.sample("s3").identity.sample_key
     ].content.method_result == ("REJECT")
     assert by_sample[
-        fixture.sample("s4").identity.sample_identity_id
+        fixture.sample("s4").identity.sample_key
     ].content.method_result == ("HOLD")
-    s5 = by_sample[fixture.sample("s5").identity.sample_identity_id]
+    s5 = by_sample[fixture.sample("s5").identity.sample_key]
     assert s5.content.technical_state == "unsupported"
     assert s5.content.method_result is None
     assert all(not hasattr(assessment, "peak_hypothesis") for assessment in assessments)
@@ -419,8 +418,7 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
             sample=next(
                 sample
                 for sample in fixture.samples
-                if sample.identity.sample_identity_id
-                == assessment.content.canonical_sample_identity_id
+                if sample.identity.sample_key == assessment.content.sample_key
             ),
             target=fixture.target,
         )
@@ -801,13 +799,10 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
         assert targeted.validation_status == "diagnostic_only"
         assert untargeted.validation_status == "diagnostic_only"
 
-    by_sample = {
-        cell.content.canonical_sample_identity_id: cell for cell in spine.cells
-    }
-    assert by_sample[fixture.sample("s1").identity.sample_identity_id].peak_hypothesis
+    by_sample = {cell.content.sample_key: cell for cell in spine.cells}
+    assert by_sample[fixture.sample("s1").identity.sample_key].peak_hypothesis
     assert all(
-        by_sample[fixture.sample(stem).identity.sample_identity_id].peak_hypothesis
-        is None
+        by_sample[fixture.sample(stem).identity.sample_key].peak_hypothesis is None
         for stem in ("s2", "s3", "s4", "s5")
     )
 
@@ -1067,8 +1062,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
     combined_a = next(
         cell
         for cell in combined.cells
-        if cell.content.canonical_sample_identity_id
-        == sample_assessments[0][0].identity.sample_identity_id
+        if cell.content.sample_key == sample_assessments[0][0].identity.sample_key
     )
 
     assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
@@ -1627,7 +1621,7 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
             for field in fields(observed)
             if field.name
             not in {
-                "canonical_sample_identity_id",
+                "sample_key",
                 "acquisition_source_id",
                 "acquisition_mode",
                 "precursor_mz_basis",

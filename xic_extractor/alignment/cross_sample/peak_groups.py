@@ -65,7 +65,7 @@ class CrossSamplePeakGroupHypothesis:
     - ``group_hypothesis_id``: primary identity key for pipeline decisions.
     - ``public_family_id``: display label for output compatibility.
       It is intentionally independent of ``group_hypothesis_id``.
-    - ``feature_family_id`` property: legacy output alias for ``public_family_id``.
+    - ``feature_id`` property: legacy output alias for ``public_family_id``.
     """
 
     group_hypothesis_id: str
@@ -233,7 +233,7 @@ def construct_cross_sample_peak_group_hypotheses(
         hypothesis = _hypothesis_from_owner_group(
             group,
             group_identity=group_identity,
-            public_family_id=f"FAM{index:06d}",
+            public_family_id=f"F{index:06d}",
             evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
             identity_conflict=not (
                 accept_competition and not bootstrap and basis.disposition == "assigned"

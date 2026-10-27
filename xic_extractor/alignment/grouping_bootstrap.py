@@ -103,8 +103,8 @@ class RetainedGroupingCandidate:
     direct_support_assessment: CidNlMethodAssessmentRef | None
 
     @property
-    def canonical_sample_identity_id(self) -> str:
-        return self.sample.identity.sample_identity_id
+    def sample_key(self) -> str:
+        return self.sample.identity.sample_key
 
     @property
     def peak_hypothesis_id(self) -> str:
@@ -185,7 +185,7 @@ def bootstrap_cid_nl_initial_population(
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
     consumed_retained_assessment_ids: set[tuple[str, str]] = set()
     for sample, assessment in sample_assessments:
-        sample_id = sample.identity.sample_identity_id
+        sample_id = sample.identity.sample_key
         assessment_content_id = assessment.artifact.content_identity.artifact_content_id
         retained_key = (sample_id, assessment_content_id)
         retained_hypotheses = retained_by_assessment.get(retained_key, ())

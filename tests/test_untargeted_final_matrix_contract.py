@@ -9,8 +9,8 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
 )
 from xic_extractor.output.alignment.tsv_writer import (
-    write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
+    write_alignment_review_tsv,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
@@ -77,98 +77,18 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     )
 
     identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
             matrix,
             production_decisions=_production_decisions(matrix),
         )
     )
-    assert len(identity_rows) == len(tsv_rows)
-    assert identity_rows[0]["matrix_row_index"] == "1"
-    assert identity_rows[0]["peak_hypothesis_id"] == "FAM001"
-    assert identity_rows[0]["source_feature_family_ids"] == "FAM001"
-    assert identity_rows[0]["row_identity_basis"] == "no_split_peak_hypothesis"
-    assert (
-        identity_rows[0]["split_evaluation_status"] == "complete_no_product_ready_split"
-    )
-    assert identity_rows[0]["projection_status"] == "not_projection"
-
-
-def test_identity_sidecar_uses_group_hypothesis_as_product_identity(
-    tmp_path: Path,
-) -> None:
-    matrix = AlignmentMatrix(
-        clusters=(
-            _feature(
-                "FAM001",
-                evidence="owner_complete_link;owner_count=2",
-                group_hypothesis_id="PH001",
-                public_family_id="FAM001",
-            ),
-        ),
-        sample_order=("s1", "s2"),
-        cells=(
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 110.0),
-        ),
-    )
-
-    matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "alignment_matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        ),
-    )
-    identity_rows = _read_tsv(
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        ),
-    )
-
-    assert list(matrix_rows[0]) == ["Mz", "RT", "s1", "s2"]
-    assert "peak_hypothesis_id" not in matrix_rows[0]
-    assert identity_rows[0]["peak_hypothesis_id"] == "PH001"
-    assert identity_rows[0]["source_feature_family_ids"] == "FAM001"
-
-
-def test_product_writer_rejects_no_split_multi_family_hypothesis_collapse(
-    tmp_path: Path,
-) -> None:
-    matrix = AlignmentMatrix(
-        clusters=(
-            _feature(
-                "FAM001",
-                evidence="owner_complete_link;owner_count=2",
-                group_hypothesis_id="PH_SHARED",
-            ),
-            _feature(
-                "FAM002",
-                evidence="owner_complete_link;owner_count=2",
-                group_hypothesis_id="PH_SHARED",
-            ),
-        ),
-        sample_order=("s1", "s2", "s3", "s4"),
-        cells=(
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 110.0),
-            _cell("s3", "FAM002", "detected", 120.0),
-            _cell("s4", "FAM002", "detected", 130.0),
-        ),
-    )
-
-    try:
-        write_alignment_matrix_identity_tsv(
-            tmp_path / "alignment_matrix_identity.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    except ValueError as exc:
-        assert "cannot collapse multiple source families" in str(exc)
-    else:
-        raise AssertionError("expected multi-family PeakHypothesis collapse guard")
+    matrix_projection = [row for row in identity_rows if row["matrix_row_index"]]
+    assert len(matrix_projection) == len(tsv_rows)
+    assert matrix_projection[0]["matrix_row_index"] == "1"
+    assert matrix_projection[0]["feature_id"] == "FAM001"
+    assert matrix_projection[0]["matrix_row_binding_sha256"]
+    assert len(identity_rows) == len(matrix.clusters)
 
 
 def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
@@ -179,7 +99,7 @@ def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
 
 
 def _feature(
-    feature_family_id: str,
+    feature_id: str,
     *,
     evidence: str,
     has_anchor: bool = True,
@@ -187,7 +107,7 @@ def _feature(
     public_family_id: str = "",
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        feature_family_id=feature_family_id,
+        feature_id=feature_id,
         neutral_loss_tag="DNA_dR",
         family_center_mz=500.123,
         family_center_rt=8.49,
@@ -199,7 +119,7 @@ def _feature(
         evidence=evidence,
         review_only=False,
         group_hypothesis_id=group_hypothesis_id,
-        public_family_id=public_family_id or feature_family_id,
+        public_family_id=public_family_id or feature_id,
     )
 
 

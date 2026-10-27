@@ -161,11 +161,11 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         assert {
             (
                 cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
+                cell.content.sample_key,
             )
             for cell in cells
         } == {
-            (group.group_hypothesis_id, sample.identity.sample_identity_id)
+            (group.group_hypothesis_id, sample.identity.sample_key)
             for group in groups
             for sample, _assessment in assessments
         }
@@ -173,8 +173,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             sample_cells = tuple(
                 cell
                 for cell in cells
-                if cell.content.canonical_sample_identity_id
-                == sample.identity.sample_identity_id
+                if cell.content.sample_key == sample.identity.sample_key
             )
             assert all(cell.method_assessment is assessment for cell in sample_cells)
             direct = tuple(
@@ -197,7 +196,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         contents = {
             (
                 cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
+                cell.content.sample_key,
             ): cell.content
             for cell in cells
         }
@@ -208,8 +207,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     third_group = next(
         cell.group_context.group
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == fixture.sample("Third").identity.sample_identity_id
+        if cell.content.sample_key == fixture.sample("Third").identity.sample_key
         and cell.peak_observation is not None
     )
     with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
@@ -290,8 +288,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     groups = tuple(
         group
         for group in all_groups
-        if group.member_subjects[0].canonical_sample_identity_id
-        == initial_sample.identity.sample_identity_id
+        if group.member_subjects[0].sample_key == initial_sample.identity.sample_key
     )
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.family_center_rt)
@@ -312,7 +309,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         backfill_assessments_by_group={
             (
                 recovered_group.group_hypothesis_id,
-                recovered_sample.identity.sample_identity_id,
+                recovered_sample.identity.sample_key,
                 fixture.method_subject.method_subject_id,
             ): (recovered_sample, backfill_assessment)
         },
@@ -323,8 +320,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     recovered_cells = tuple(
         cell
         for cell in cells
-        if cell.content.canonical_sample_identity_id
-        == recovered_sample.identity.sample_identity_id
+        if cell.content.sample_key == recovered_sample.identity.sample_key
     )
     assert len(recovered_cells) == 1
     assert recovered_cells[0].content.group_hypothesis_id == (
@@ -451,7 +447,7 @@ def _coverage_for_groups(
     cells = {
         (
             cell.group_context.group_identity.group_hypothesis_id,
-            cell.content.canonical_sample_identity_id,
+            cell.content.sample_key,
         ): cell
         for cell in predecessor_cells
     }
@@ -460,7 +456,7 @@ def _coverage_for_groups(
         groups,
         samples,
         planning_reason=lambda group, sample: _cell_planning_reason(
-            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id)),
+            cells.get((group.group_hypothesis_id, sample.identity.sample_key)),
             backfill_enabled=backfill_enabled,
         ),
     )
@@ -552,10 +548,7 @@ def test_composer_distinguishes_completed_negative_search(
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell
-        if cell.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
-        else cell
+        negative_cell if cell.content.sample_key == sample.identity.sample_key else cell
         for cell in spine.cells
     )
     handoff = _owner_handoff_for_cells(
@@ -753,7 +746,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for item in forward
     )
     expected_positions_by_sample = {
-        item.canonical_sample.identity.sample_identity_id: {
+        item.canonical_sample.identity.sample_key: {
             association.position.key
             for association in handoff.position_associations
             if association.position.sample is item.canonical_sample
@@ -762,9 +755,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     }
     assert all(
         {association.position.key for association in item.position_associations}
-        == expected_positions_by_sample[
-            item.canonical_sample.identity.sample_identity_id
-        ]
+        == expected_positions_by_sample[item.canonical_sample.identity.sample_key]
         for item in forward
     )
 
@@ -806,16 +797,15 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         require_canonical=True,
     )
     members_by_sample = {
-        member.canonical_sample_identity_id: member
-        for member in predecessor.member_subjects
+        member.sample_key: member for member in predecessor.member_subjects
     }
     left = mint_cross_sample_group_identity(
         processing_request_id=predecessor.processing_request_id,
-        member_subjects=(members_by_sample[samples[0].identity.sample_identity_id],),
+        member_subjects=(members_by_sample[samples[0].identity.sample_key],),
     )
     right = mint_cross_sample_group_identity(
         processing_request_id=predecessor.processing_request_id,
-        member_subjects=(members_by_sample[samples[1].identity.sample_identity_id],),
+        member_subjects=(members_by_sample[samples[1].identity.sample_key],),
     )
     coverage = _coverage_for_groups(
         fixture,
@@ -859,8 +849,7 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
     source = next(
         cell
         for cell in spine.cells
-        if cell.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
+        if cell.content.sample_key == sample.identity.sample_key
     )
     invalid_source = mint_cell_observation_ref(
         processing_owners=fixture.owners,

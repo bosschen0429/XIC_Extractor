@@ -41,9 +41,7 @@ def _write_rows(
 def _backfill_row(**overrides: str) -> dict[str, str]:
     row = {
         "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-        "feature_family_id": "FAM000001",
-        "group_hypothesis_id": "FAM000001",
-        "public_family_id": "FAM000001",
+        "feature_id": "F000001",
         "sample_stem": "sample-a",
         "status": "detected",
         "production_cell_status": "detected",
@@ -79,7 +77,7 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
 
 def _skipped_row(**overrides: str) -> dict[str, str]:
     row = {
-        "feature_family_id": "FAM000001",
+        "feature_id": "F000001",
         "sample_stem": "sample-a",
         "family_center_mz": "242.1",
         "family_center_rt": "1.25",
@@ -101,26 +99,18 @@ def _skipped_row(**overrides: str) -> dict[str, str]:
 
 def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
     return BackfillEvidenceOwnerBindings(
-        known_group_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_feature_ids=frozenset({"F000001", "F000002"}),
         known_sample_stems=frozenset({"sample-a", "sample-b"}),
         candidate_samples={
             "sample-a#candidate-1": "sample-a",
             "sample-b#candidate-1": "sample-b",
-        },
-        group_feature_family_ids={
-            "FAM000001": "FAM000001",
-            "FAM000002": "FAM000002",
-        },
-        group_public_family_ids={
-            "FAM000001": "FAM000001",
-            "FAM000002": "FAM000002",
         },
     )
 
 
 def _skipped_bindings() -> SkippedEvidenceOwnerBindings:
     return SkippedEvidenceOwnerBindings(
-        known_feature_family_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_feature_ids=frozenset({"F000001", "F000002"}),
         known_sample_stems=frozenset({"sample-a", "sample-b"}),
         expected_backfill_scope="production-equivalent",
         expected_predicate_version=PREDICATE_VERSION,
@@ -139,14 +129,14 @@ def test_backfill_lookup_rehydrates_reduced_owner_record_and_claims(
 
     result = lookup_backfill_evidence_tsv(
         path,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_backfill_bindings(),
     )
 
     assert len(result.records) == 1
     record = result.records[0]
-    assert record.identity == ("FAM000001", "FAM000001", "sample-a")
+    assert record.identity == ("F000001", "sample-a")
     assert record.write_matrix_value is True
     assert record.row_flags == (
         "backfill_cell_evidence_required",
@@ -162,80 +152,11 @@ def test_backfill_lookup_rehydrates_reduced_owner_record_and_claims(
     assert result.claim("missing_key_absence").state is EvidenceClaimState.UNAVAILABLE
 
 
-@pytest.mark.parametrize(
-    "missing_owner_id",
-    ["group_hypothesis_id", "public_family_id"],
-)
-def test_backfill_lookup_keeps_missing_owner_id_structure_bound(
-    tmp_path: Path,
-    missing_owner_id: str,
-) -> None:
-    path = _write_rows(
-        tmp_path / "backfill.tsv",
-        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-        [_backfill_row(**{missing_owner_id: ""})],
-    )
-
-    result = lookup_backfill_evidence_tsv(
-        path,
-        feature_family_id="FAM000001",
-        sample_stem="sample-a",
-        owner_bindings=_backfill_bindings(),
-    )
-
-    assert len(result.records) == 1
-    assert getattr(result.records[0], missing_owner_id) == ""
-    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
-    expected_group_state = (
-        EvidenceClaimState.UNAVAILABLE
-        if missing_owner_id == "group_hypothesis_id"
-        else EvidenceClaimState.OWNER_REHYDRATED
-    )
-    assert result.claim("group_assignment_binding").state is expected_group_state
-    assert result.claim("public_family_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
-    assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
-
-
-def test_backfill_lookup_does_not_promote_unvalidated_public_family_binding(
-    tmp_path: Path,
-) -> None:
-    path = _write_rows(
-        tmp_path / "backfill.tsv",
-        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-        [_backfill_row(public_family_id="FOREIGN-PUBLIC-LABEL")],
-    )
-
-    result = lookup_backfill_evidence_tsv(
-        path,
-        feature_family_id="FAM000001",
-        sample_stem="sample-a",
-        owner_bindings=BackfillEvidenceOwnerBindings(
-            known_group_ids=frozenset({"FAM000001"}),
-            known_sample_stems=frozenset({"sample-a"}),
-            candidate_samples={"sample-a#candidate-1": "sample-a"},
-            group_feature_family_ids={"FAM000001": "FAM000001"},
-        ),
-    )
-
-    assert result.claim("public_family_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
-    assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
-
-
 def test_backfill_lookup_rehydrates_formula_escaped_machine_identities(
     tmp_path: Path,
 ) -> None:
     canonical = {
-        "feature_family_id": "=family",
-        "group_hypothesis_id": "=group",
-        "public_family_id": "=public",
+        "feature_id": "=family",
         "sample_stem": "=sample",
         "source_candidate_id": "=candidate",
     }
@@ -246,21 +167,14 @@ def test_backfill_lookup_rehydrates_formula_escaped_machine_identities(
         [_backfill_row(**persisted)],
     )
     bindings = BackfillEvidenceOwnerBindings(
-        known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
+        known_feature_ids=frozenset({canonical["feature_id"]}),
         known_sample_stems=frozenset({canonical["sample_stem"]}),
         candidate_samples={canonical["source_candidate_id"]: canonical["sample_stem"]},
-        group_feature_family_ids={
-            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
-        },
-        group_public_family_ids={
-            canonical["group_hypothesis_id"]: canonical["public_family_id"]
-        },
     )
 
     result = lookup_backfill_evidence_tsv(
         path,
-        feature_family_id=canonical["feature_family_id"],
-        group_hypothesis_id=canonical["group_hypothesis_id"],
+        feature_id=canonical["feature_id"],
         sample_stem=canonical["sample_stem"],
         owner_bindings=bindings,
     )
@@ -273,16 +187,14 @@ def test_backfill_lookup_rehydrates_formula_escaped_machine_identities(
 
 @pytest.mark.parametrize(
     "ambiguous_field",
-    ["group_hypothesis_id", "sample_stem", "source_candidate_id"],
+    ["feature_id", "sample_stem", "source_candidate_id"],
 )
 def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
     tmp_path: Path,
     ambiguous_field: str,
 ) -> None:
     canonical = {
-        "feature_family_id": "=family",
-        "group_hypothesis_id": "=group",
-        "public_family_id": "=public",
+        "feature_id": "=family",
         "sample_stem": "=sample",
         "source_candidate_id": "=candidate",
     }
@@ -292,25 +204,19 @@ def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         [_backfill_row(**persisted)],
     )
-    known_group_ids = {canonical["group_hypothesis_id"]}
+    known_feature_ids = {canonical["feature_id"]}
     known_sample_stems = {canonical["sample_stem"]}
     candidate_samples = {canonical["source_candidate_id"]: canonical["sample_stem"]}
-    if ambiguous_field == "group_hypothesis_id":
-        known_group_ids.add(persisted[ambiguous_field])
+    if ambiguous_field == "feature_id":
+        known_feature_ids.add(persisted[ambiguous_field])
     elif ambiguous_field == "sample_stem":
         known_sample_stems.add(persisted[ambiguous_field])
     else:
         candidate_samples[persisted[ambiguous_field]] = canonical["sample_stem"]
     bindings = BackfillEvidenceOwnerBindings(
-        known_group_ids=frozenset(known_group_ids),
+        known_feature_ids=frozenset(known_feature_ids),
         known_sample_stems=frozenset(known_sample_stems),
         candidate_samples=candidate_samples,
-        group_feature_family_ids={
-            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
-        },
-        group_public_family_ids={
-            canonical["group_hypothesis_id"]: canonical["public_family_id"]
-        },
     )
 
     with pytest.raises(
@@ -322,7 +228,7 @@ def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
 
 def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> None:
     source = SkippedEvidenceRecord(
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         family_center_mz=242.1,
         family_center_rt=1.25,
@@ -342,7 +248,7 @@ def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> N
 
     result = lookup_skipped_evidence_tsv(
         path,
-        feature_family_id="FAM000001",
+        feature_id="F000001",
         sample_stem="sample-a",
         owner_bindings=_skipped_bindings(),
     )
@@ -365,13 +271,13 @@ def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> N
             lookup_backfill_evidence_tsv,
             ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
             _backfill_row(),
-            {"feature_family_id": "missing", "sample_stem": "sample-a"},
+            {"feature_id": "missing", "sample_stem": "sample-a"},
         ),
         (
             lookup_skipped_evidence_tsv,
             SKIPPED_EVIDENCE_LEDGER_COLUMNS,
             _skipped_row(),
-            {"feature_family_id": "missing", "sample_stem": "sample-a"},
+            {"feature_id": "missing", "sample_stem": "sample-a"},
         ),
     ],
 )
@@ -457,9 +363,7 @@ def test_backfill_reader_rejects_malformed_or_inconsistent_owner_fields(
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"group_hypothesis_id": "FAM999999"}, "unknown group_hypothesis_id"),
-        ({"feature_family_id": "FAM999999"}, "belongs to feature_family_id"),
-        ({"public_family_id": "FAM999999"}, "has public_family_id"),
+        ({"feature_id": "F999999"}, "unknown feature_id"),
         ({"sample_stem": "sample-z"}, "unknown sample_stem"),
         (
             {"sample_stem": "sample-b", "source_candidate_id": "sample-a#candidate-1"},
@@ -497,7 +401,7 @@ def test_backfill_lookup_rejects_duplicate_composite_identity(tmp_path: Path) ->
     with pytest.raises(ValueError, match="duplicate composite identity"):
         lookup_backfill_evidence_tsv(
             path,
-            feature_family_id="FAM000001",
+            feature_id="F000001",
             sample_stem="sample-a",
         )
 
@@ -505,9 +409,7 @@ def test_backfill_lookup_rejects_duplicate_composite_identity(tmp_path: Path) ->
 def test_reordered_distinct_backfill_rows_preserve_source_order(tmp_path: Path) -> None:
     row_a = _backfill_row()
     row_b = _backfill_row(
-        feature_family_id="FAM000002",
-        group_hypothesis_id="FAM000002",
-        public_family_id="FAM000002",
+        feature_id="F000002",
         sample_stem="sample-b",
         source_candidate_id="sample-b#candidate-1",
     )
@@ -521,9 +423,9 @@ def test_reordered_distinct_backfill_rows_preserve_source_order(tmp_path: Path) 
         iter_backfill_evidence_tsv(path, owner_bindings=_backfill_bindings())
     )
 
-    assert [record.feature_family_id for record in records] == [
-        "FAM000002",
-        "FAM000001",
+    assert [record.feature_id for record in records] == [
+        "F000002",
+        "F000001",
     ]
 
 
@@ -571,6 +473,6 @@ def test_skipped_lookup_rejects_duplicate_composite_identity(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="duplicate composite identity"):
         lookup_skipped_evidence_tsv(
             path,
-            feature_family_id="FAM000001",
+            feature_id="F000001",
             sample_stem="sample-a",
         )

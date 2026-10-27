@@ -460,7 +460,6 @@ def prepare_indexed_untargeted_plan(
         if cid
         in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
     )
-    admitted_ids = frozenset(feature_ids)
     precursor_by_id = {
         cid: source.ms1_apex_mz_by_candidate.get(
             cid, source.locations[cid].precursor_mz
@@ -605,12 +604,6 @@ def prepare_indexed_untargeted_plan(
         physical_capture={
             "schema_version": "physical_capture_inputs",
             "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-            "candidates": {
-                cid: identity
-                for physical_source in physical_sources.values()
-                for cid, identity in physical_source.physical_identities.items()
-                if cid in admitted_ids
-            },
         },
         feature_candidate_ids=feature_ids,
     )

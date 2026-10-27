@@ -674,7 +674,6 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
             acquisition_trace=trace,
             physical_evaluation=evaluate_physical_peak(
                 prepare_physical_signal(rt, trace.intensity, profile=profile),
-                selection_subject_id=target.label,
                 query_rt_min=1.5,
                 request_context_rt_start_min=trace.rt_min,
                 request_context_rt_end_min=trace.rt_max,
@@ -1465,7 +1464,7 @@ def test_publisher_rejects_reordered_acquisition_after_completion(
 def test_service_accepts_raw_order_that_differs_from_canonical_order(
     tmp_path: Path,
 ) -> None:
-    sample_names = ("SampleA", "SampleB", "SampleC", "SampleD")
+    sample_names = ("SampleD", "SampleC", "SampleB", "SampleA")
     config, target, output = production_case(
         tmp_path,
         sample_names=sample_names,
@@ -1729,7 +1728,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             results_by_sample=tuple(
                 sorted(
                     context.results_by_sample,
-                    key=lambda item: item[0].identity.sample_identity_id,
+                    key=lambda item: item[0].identity.sample_key,
                     reverse=True,
                 )
             ),

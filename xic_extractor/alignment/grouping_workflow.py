@@ -89,11 +89,11 @@ def build_targeted_cross_sample_groups(
     """Close Targeted membership from the exact selected capture in each cell."""
 
     sample_by_id = {
-        sample.identity.sample_identity_id: sample
+        sample.identity.sample_key: sample
         for sample in processing_owners.sample_resolutions
     }
     assessment_by_id = {
-        sample.identity.sample_identity_id: assessment
+        sample.identity.sample_key: assessment
         for sample, assessment in sample_assessments
     }
     owners: list[SampleLocalMS1Owner] = []
@@ -103,7 +103,7 @@ def build_targeted_cross_sample_groups(
         if selected is None:
             continue
         observation = selected.peak_observation_refs[0]
-        sample_id = observation.content.canonical_sample_identity_id
+        sample_id = observation.content.sample_key
         sample = sample_by_id.get(sample_id)
         if sample is None or sample_id in selected_by_id:
             raise CrossSampleGroupingContractError(
@@ -340,7 +340,7 @@ def admit_cid_nl_group_backfills(
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
         if (
-            sample_id != sample.identity.sample_identity_id
+            sample_id != sample.identity.sample_key
             or subject_id != assessment.content.method_subject.method_subject_id
         ):
             raise CrossSampleGroupingContractError(
@@ -375,10 +375,7 @@ def admit_cid_nl_group_backfills(
             sample_id,
             hypothesis.peak_observation_refs[0].content.peak_observation_content_id,
         )
-        if any(
-            member.canonical_sample_identity_id == sample_id
-            for member in group.member_subjects
-        ):
+        if any(member.sample_key == sample_id for member in group.member_subjects):
             continue
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
     if not proposals:
@@ -676,7 +673,7 @@ def contested_backfill_peaks(
         if group.disposition != "established":
             continue
         for member in group.member_subjects:
-            sample_id = member.canonical_sample_identity_id
+            sample_id = member.sample_key
             for observation_id in member.physical_observation_ids:
                 occupied.add((sample_id, observation_id))
                 observation = member_observations[observation_id]

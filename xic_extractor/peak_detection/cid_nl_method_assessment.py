@@ -79,7 +79,6 @@ CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
@@ -258,7 +257,7 @@ class CidNlEvaluationReceipt:
 class CidNlMethodAssessmentContent:
     """Orthogonal technical and method-result axes for one attempt."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     provider_id: str
     method_id: str
@@ -276,11 +275,6 @@ class CidNlMethodAssessmentContent:
 
     def __post_init__(self) -> None:
         for value, prefix, field_name in (
-            (
-                self.canonical_sample_identity_id,
-                _SAMPLE_ID_PREFIX,
-                "canonical_sample_identity_id",
-            ),
             (
                 self.acquisition_source_id,
                 _ACQUISITION_SOURCE_ID_PREFIX,
@@ -524,7 +518,7 @@ def mint_cid_nl_method_assessment_ref(
         sample=sample,
     )
     content = CidNlMethodAssessmentContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         provider_id=CID_NL_PROVIDER_ID,
         method_id=CID_NL_METHOD_ID,
@@ -613,8 +607,7 @@ def validate_cid_nl_method_assessment_binding(
             "CID-NL method assessment references a different processing attempt"
         )
     if (
-        reference.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
+        reference.content.sample_key != sample.identity.sample_key
         or reference.content.acquisition_source_id != source.acquisition_source_id
         or reference.content.method_subject != subject
     ):

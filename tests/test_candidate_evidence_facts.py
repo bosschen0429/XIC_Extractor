@@ -1,5 +1,3 @@
-import hashlib
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -39,13 +37,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     mint_physical_peak_question,
     prepare_physical_signal,
     validate_bounded_physical_peak_evaluation,
-    validate_physical_peak_question_identity,
 )
-from xic_extractor.peak_detection.physical_peak_identity import (
-    canonical_physical_peak_question_bytes,
-    mint_physical_trace_content_id,
-)
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
 
@@ -243,22 +235,20 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
     )
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     universe = enumerate_physical_segment_universe(prepared)
-    assert len(universe.segment_ids) == 2
+    assert len(universe.segments) == 2
 
     zero = mint_physical_peak_question(
         prepared.projection,
         universe,
-        selection_subject_id="zero",
         query_rt_min=1.5,
     )
     one = mint_physical_peak_question(
         prepared.projection,
         universe,
-        selection_subject_id="one",
         query_rt_min=0.8,
     )
-    assert zero.admissible_segment_ids == ()
-    assert one.admissible_segment_ids == (universe.segment_ids[0],)
+    assert zero.admissible_segments == ()
+    assert one.admissible_segments == (universe.segments[0],)
     assert answer_physical_peak_question(prepared, universe, zero).reason == (
         "no_selection"
     )
@@ -277,16 +267,15 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
         profile=profile,
     )
     overlap_universe = enumerate_physical_segment_universe(overlap_prepared)
-    assert len(overlap_universe.segment_ids) == 2
+    assert len(overlap_universe.segments) == 2
     shared_boundary = overlap_universe.segments[0].right_rt_min
     assert shared_boundary == overlap_universe.segments[1].left_rt_min
     multiple = mint_physical_peak_question(
         overlap_prepared.projection,
         overlap_universe,
-        selection_subject_id="multiple",
         query_rt_min=shared_boundary,
     )
-    assert multiple.admissible_segment_ids == overlap_universe.segment_ids
+    assert multiple.admissible_segments == overlap_universe.segments
     multiple_answer = answer_physical_peak_question(
         overlap_prepared,
         overlap_universe,
@@ -297,36 +286,6 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
         "ambiguous_segment_candidates",
     )
 
-    adversarial = (
-        (
-            overlap_universe,
-            _reseal_question(
-                multiple,
-                admissible_segment_ids=(overlap_universe.segment_ids[0],),
-            ),
-        ),
-        (
-            universe,
-            _reseal_question(
-                one,
-                admissible_segment_ids=(universe.segment_ids[1],),
-            ),
-        ),
-        (
-            overlap_universe,
-            _reseal_question(
-                multiple,
-                admissible_segment_ids=tuple(reversed(multiple.admissible_segment_ids)),
-            ),
-        ),
-    )
-    for owner_universe, forged_question in adversarial:
-        with pytest.raises(ValueError, match="owner-admissible"):
-            validate_physical_peak_question_identity(
-                forged_question,
-                universe=owner_universe,
-            )
-
 
 def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     rt = np.linspace(0.0, 3.0, 31)
@@ -336,16 +295,13 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
         + 80.0 * np.exp(-0.5 * ((rt - 2.2) / 0.2) ** 2)
     )
     profile = SignalProcessingProfile(window_points=3)
-    trace_id = mint_physical_trace_content_id(rt, raw)
     prepared = prepare_physical_signal(
         rt,
         raw,
-        trace_content_id=trace_id,
         profile=profile,
     )
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="opaque-owner-backfill-work:1",
         query_rt_min=0.8,
         request_context_rt_start_min=0.7,
         request_context_rt_end_min=0.9,
@@ -355,17 +311,13 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     assert len(universe.segments) == 2
     assert universe.context_rt_start_min == 0.0
     assert universe.context_rt_end_min == 3.0
-    assert evaluation.question.admissible_segment_ids == (universe.segment_ids[0],)
+    assert evaluation.question.admissible_segments == (universe.segments[0],)
     assert evaluation.state == "available"
     assert evaluation.facts is not None
-    assert {
-        evaluation.prepared.prepared_signal_id,
-        universe.prepared_signal_id,
-        evaluation.question.prepared_signal_id,
-        evaluation.answer.prepared_signal_id,
-        evaluation.facts.prepared_signal_id,
-    } == {evaluation.prepared.prepared_signal_id}
-    assert evaluation.facts.physical_segment_id == universe.segment_ids[0]
+    assert universe.prepared == evaluation.prepared
+    assert evaluation.question.universe == universe
+    assert evaluation.answer.question == evaluation.question
+    assert evaluation.answer.selected_segment == universe.segments[0]
     assert evaluation.facts.area_counts_seconds > 0.0
     assert evaluation.integration is not None
     selected = universe.segments[0]
@@ -384,7 +336,6 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
         "gaussian_smoothing",
         "segment_enumeration",
         "integration",
-        "normalization",
         "raw_descriptor_projection",
     )
     assert not hasattr(evaluation, "rt")
@@ -397,12 +348,6 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
             expected=evaluation,
         )
         == evaluation
-    )
-
-
-def test_physical_trace_identity_normalizes_negative_zero() -> None:
-    assert mint_physical_trace_content_id([-0.0], [-0.0]) == (
-        mint_physical_trace_content_id([0.0], [0.0])
     )
 
 
@@ -420,13 +365,12 @@ def test_physical_owner_excludes_noncontaining_segments_from_admissibility() -> 
     )
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="opaque-subject",
         query_rt_min=0.8,
     )
     universe = evaluation.segment_universe
 
-    assert len(universe.segment_ids) == 2
-    assert evaluation.question.admissible_segment_ids == (universe.segment_ids[0],)
+    assert len(universe.segments) == 2
+    assert evaluation.question.admissible_segments == (universe.segments[0],)
     assert evaluation.state == "available"
 
 
@@ -438,7 +382,6 @@ def test_short_trace_is_unavailable_without_smoothing_or_silent_shrink() -> None
     )
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="opaque-short-trace",
         query_rt_min=3.0,
     )
 
@@ -459,7 +402,6 @@ def test_zero_point_trace_has_terminal_question_using_live_request_bounds() -> N
 
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="opaque-zero-trace",
         query_rt_min=1.5,
         request_context_rt_start_min=1.0,
         request_context_rt_end_min=2.0,
@@ -469,11 +411,7 @@ def test_zero_point_trace_has_terminal_question_using_live_request_bounds() -> N
     assert evaluation.reason == "no_signal_above_baseline"
     assert evaluation.segment_universe.context_rt_start_min == 1.0
     assert evaluation.segment_universe.context_rt_end_min == 2.0
-    assert evaluation.question.selection_subject_id == "opaque-zero-trace"
-    assert (
-        evaluation.answer.physical_question_id
-        == evaluation.question.physical_question_id
-    )
+    assert evaluation.answer.question == evaluation.question
     assert evaluation.operations == ("trace_evaluation",)
 
 
@@ -485,7 +423,6 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
 
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id="opaque-malformed-trace",
         query_rt_min=1.5,
         request_context_rt_start_min=1.0,
         request_context_rt_end_min=2.0,
@@ -497,17 +434,19 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
     assert evaluation.facts is None
     assert evaluation.integration is None
     assert evaluation.operations == ("trace_evaluation",)
-    assert (
-        rehydrate_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            expected=evaluation,
-            request_context_rt_start_min=1.0,
-            request_context_rt_end_min=2.0,
-        )
-        == evaluation
+    replay = rehydrate_physical_peak_evaluation(
+        rt,
+        raw,
+        profile=profile,
+        expected=evaluation,
+        request_context_rt_start_min=1.0,
+        request_context_rt_end_min=2.0,
     )
+    assert replay.state == "failed"
+    assert replay.reason == "nonfinite_trace"
+    np.testing.assert_array_equal(replay.prepared.rt, rt)
+    assert replay.prepared.raw == tuple(raw)
+    assert replay.facts is None
 
 
 def test_nonpositive_trace_is_unavailable_before_asls_or_smoothing() -> None:
@@ -832,23 +771,6 @@ def _twenty_percent_characterization(
         * 60.0
     )
     return apex_index, left_index, right_index, area
-
-
-def _reseal_question(
-    question: PhysicalPeakQuestion,
-    *,
-    admissible_segment_ids: tuple[str, ...],
-) -> PhysicalPeakQuestion:
-    mutated = replace(
-        question,
-        admissible_segment_ids=admissible_segment_ids,
-        physical_question_id="",
-    )
-    question_id = (
-        "physical-question:"
-        + hashlib.sha256(canonical_physical_peak_question_bytes(mutated)).hexdigest()
-    )
-    return replace(mutated, physical_question_id=question_id)
 
 
 def _legacy_peak_config() -> ExtractionConfig:

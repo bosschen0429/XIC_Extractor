@@ -419,7 +419,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
             {
                 "schema_version": "group_member_subject",
                 "processing_request_id": request_id,
-                "canonical_sample_identity_id": sample.identity.sample_identity_id,
+                "sample_key": sample.identity.sample_key,
                 "subject": {
                     "kind": member.subject_kind,
                     "id": member.subject_id,
@@ -430,7 +430,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
             member_subject_id=typed_identity_digest("xic.group-member-subject:", basis),
             processing_request_id=request_id,
-            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            sample_key=sample.identity.sample_key,
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
             physical_observation_ids=member.physical_observation_ids,

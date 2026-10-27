@@ -149,7 +149,6 @@ _THRESHOLD_KEYS = (
     "scan_support_target",
     *_THRESHOLD_FLOAT_KEYS[9:],
 )
-_PROFILE_ENVELOPE_KEYS = ("profile_hash", "profile_id", "content")
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,10 +313,6 @@ class ProcessingRunSpec:
     def run_spec_id(self) -> str:
         return f"{PROCESSING_RUN_SPEC_ID_PREFIX}{self.run_spec_hash}"
 
-    @property
-    def profile_id(self) -> str:
-        return self.signal_processing_profile.profile_id
-
 
 def compile_processing_run_spec(
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...],
@@ -429,15 +424,9 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
             "method_id": spec.discovery_method.method_id,
             "content": _method_content(spec.discovery_method),
         },
-        "signal_processing_profile": {
-            "profile_hash": spec.signal_processing_profile.profile_hash,
-            "profile_id": spec.signal_processing_profile.profile_id,
-            "content": json.loads(
-                canonical_signal_processing_profile_bytes(
-                    spec.signal_processing_profile
-                ).decode("utf-8")
-            ),
-        },
+        "signal_processing_profile": json.loads(
+            canonical_signal_processing_profile_bytes(spec.signal_processing_profile)
+        ),
     }
 
 
@@ -756,21 +745,11 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
         raise ValueError("method_hash does not match canonical method content")
     if method_envelope["method_id"] != method.method_id:
         raise ValueError("method_id does not match canonical method content")
-    profile_envelope = _mapping(
+    profile_content = _mapping(
         content["signal_processing_profile"], label="signal_processing_profile"
     )
-    _require_keys(
-        profile_envelope, _PROFILE_ENVELOPE_KEYS, label="signal_processing_profile"
-    )
-    profile_content = _mapping(
-        profile_envelope["content"], label="signal processing profile content"
-    )
     profile = deserialize_signal_processing_profile(
-        _canonical_json_bytes(profile_content),
-        expected_profile_hash=_text(
-            profile_envelope["profile_hash"], field="profile_hash"
-        ),
-        expected_profile_id=_text(profile_envelope["profile_id"], field="profile_id"),
+        _canonical_json_bytes(profile_content)
     )
     return ProcessingRunSpec(
         acquisition_inputs=tuple(inputs),

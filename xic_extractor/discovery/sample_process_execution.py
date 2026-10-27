@@ -18,6 +18,9 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
@@ -71,7 +74,7 @@ class DiscoverySampleProcessResult:
     ms1_measurements: _DiscoveryMs1Measurements | None = None
     raw_open_receipt: RawAcquisitionSessionReceipt | None = None
     run_spec_id: str = ""
-    profile_id: str = ""
+    signal_processing_profile: SignalProcessingProfile | None = None
     acquisition_source_id: str = ""
 
 
@@ -86,7 +89,7 @@ class DiscoverySampleProcessError:
     ms1_measurements: _DiscoveryMs1Measurements | None = None
     raw_open_receipt: RawAcquisitionSessionReceipt | None = None
     run_spec_id: str = ""
-    profile_id: str = ""
+    signal_processing_profile: SignalProcessingProfile | None = None
     acquisition_source_id: str = ""
 
 
@@ -111,7 +114,7 @@ class DiscoveryProcessExecutionError(RuntimeError):
         self.in_flight_job_count = in_flight_job_count
         self.unsubmitted_job_count = unsubmitted_job_count
         self.run_spec_id = first_failure.run_spec_id
-        self.profile_id = first_failure.profile_id
+        self.signal_processing_profile = first_failure.signal_processing_profile
         self.acquisition_source_id = first_failure.acquisition_source_id
         super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
 
@@ -237,7 +240,8 @@ def run_discovery_batch_process(
             )
         if (
             observed.run_spec_id != expected_job.run_spec.run_spec_id
-            or observed.profile_id != expected_job.run_spec.profile_id
+            or observed.signal_processing_profile
+            != expected_job.run_spec.signal_processing_profile
             or observed.acquisition_source_id
             != expected_job.acquisition_source.acquisition_source_id
         ):
@@ -434,7 +438,7 @@ def run_discovery_sample_process_job(
             ms1_measurements=discovery_result.ms1_measurements,
             raw_open_receipt=discovery_result.raw_open_receipt,
             run_spec_id=job.run_spec.run_spec_id,
-            profile_id=job.run_spec.profile_id,
+            signal_processing_profile=job.run_spec.signal_processing_profile,
             acquisition_source_id=job.acquisition_source.acquisition_source_id,
         )
     except Exception as exc:
@@ -481,6 +485,6 @@ def _discovery_process_error(
         ms1_measurements=ms1_measurements,
         raw_open_receipt=raw_open_receipt,
         run_spec_id=job.run_spec.run_spec_id,
-        profile_id=job.run_spec.profile_id,
+        signal_processing_profile=job.run_spec.signal_processing_profile,
         acquisition_source_id=job.acquisition_source.acquisition_source_id,
     )

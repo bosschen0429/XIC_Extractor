@@ -465,7 +465,7 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     detected["heldout"]["S01"] = 10.4
     detected["heldout"]["S09"] = 33.0  # outside S09's anchor span
     cells = tmp_path / "alignment_cells.tsv"
-    lines = ["feature_family_id\tsample_stem\tstatus\tapex_rt"]
+    lines = ["feature_id\tsample_stem\tstatus\tapex_rt"]
     for feature, rts in detected.items():
         status = "detected"
         lines += [f"{feature}\t{s}\t{status}\t{rt}" for s, rt in rts.items()]

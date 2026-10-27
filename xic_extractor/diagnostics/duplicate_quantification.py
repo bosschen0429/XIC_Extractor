@@ -34,34 +34,29 @@ class PublishedCell:
 
 def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
     """Published Matrix cells with the apex of the peak each one quantifies."""
-    identity = _read_tsv(alignment_dir / "alignment_matrix_identity.tsv")
+    identity = _read_tsv(alignment_dir / "alignment_review.tsv")
     rows = {
-        record["peak_hypothesis_id"]: (
+        record["feature_id"]: (
             int(record["matrix_row_index"]),
-            float(record["Mz"]),
+            float(record["matrix_mz"]),
         )
         for record in identity
-    }
-    group_by_family = {
-        record["source_feature_family_ids"]: record["peak_hypothesis_id"]
-        for record in identity
+        if record["matrix_row_index"]
     }
     cell_ledger = alignment_dir / "alignment_backfill_cell_evidence.tsv"
     if not cell_ledger.is_file():
         cell_ledger = alignment_dir / "alignment_cells.tsv"
     backfill_apex = {
-        (group_by_family[record["feature_family_id"]], record["sample_stem"]): float(
-            record["apex_rt"]
-        )
+        (record["feature_id"], record["sample_stem"]): float(record["apex_rt"])
         for record in _read_tsv(cell_ledger)
-        if record["apex_rt"] and record["feature_family_id"] in group_by_family
+        if record["apex_rt"] and record["feature_id"] in rows
     }
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
     metadata = read_explanation_metadata(
         explanation, selection_only=True, query_only=True
     )
     samples = {
-        sample["canonical_sample_identity_id"]: sample["sample_stem"]
+        sample["sample_key"]: sample["sample_stem"]
         for sample in metadata.summary["samples"]
     }
     observation_apex = {
@@ -72,14 +67,14 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
     cells = []
     with open_review_population(explanation, metadata.summary) as population:
         for entry in population:
-            group = entry["row"]["group_hypothesis_id"]
+            group = entry["row"]["feature_id"]
             if group not in rows:
                 continue
             row, row_mz = rows[group]
             for cell in entry["cells"]:
                 if cell["value"] is None:
                     continue
-                sample = samples[cell["canonical_sample_identity_id"]]
+                sample = samples[cell["sample_key"]]
                 apex = _cell_apex(cell, observation_apex, backfill_apex, group, sample)
                 if apex is not None:
                     cells.append(

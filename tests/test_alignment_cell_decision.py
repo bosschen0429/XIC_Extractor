@@ -264,8 +264,7 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         decision_owner._decide_group(
             observation,
             is_member=any(
-                member.canonical_sample_identity_id
-                == observation.canonical_sample_identity_id
+                member.sample_key == observation.sample_key
                 for member in observation.group.member_subjects
             ),
         )
@@ -309,8 +308,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     source = next(
         item
         for item in spine.cells
-        if item.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
+        if item.content.sample_key == sample.identity.sample_key
     )
     negative_cell = mint_cell_observation_ref(
         processing_owners=fixture.owners,
@@ -620,7 +618,6 @@ def _censored_peak(
     assert prepared.prepared is not None
     evaluation = evaluate_physical_peak(
         prepared,
-        selection_subject_id=f"censored-cluster-{sample_stem}",
         query_rt_min=apex_rt,
     )
     trace = Trace.from_arrays(

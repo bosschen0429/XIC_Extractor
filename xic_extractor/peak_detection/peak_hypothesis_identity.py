@@ -416,9 +416,7 @@ def _observation_hypothesis_content_basis(
     return {
         "schema": "peak_hypothesis_ms1_observation_content",
         "hypothesis_method": HYPOTHESIS_METHOD_MS1_OBSERVATION,
-        "canonical_sample_identity_id": (
-            peak_observation.content.canonical_sample_identity_id
-        ),
+        "sample_key": (peak_observation.content.sample_key),
         "peak_observation_content_ids": [
             peak_observation.content.peak_observation_content_id
         ],
@@ -476,10 +474,7 @@ def _validate_reference_pair(
         raise PeakHypothesisContractError(
             "chromatographic support references a different processing attempt"
         )
-    if (
-        chromatographic_support.content.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
-    ):
+    if chromatographic_support.content.sample_key != sample.identity.sample_key:
         raise PeakHypothesisContractError(
             "chromatographic support references a different sample"
         )
@@ -490,8 +485,8 @@ def _validate_reference_content_pair(
     chromatographic_support: CidNlChromatographicSupportRef,
 ) -> None:
     if (
-        peak_observation.content.canonical_sample_identity_id
-        != chromatographic_support.content.canonical_sample_identity_id
+        peak_observation.content.sample_key
+        != chromatographic_support.content.sample_key
     ):
         raise PeakHypothesisContractError(
             "peak observation and chromatographic support reference different samples"
@@ -580,9 +575,7 @@ def _hypothesis_content_basis(
     return {
         "schema": "peak_hypothesis_content",
         "hypothesis_method": HYPOTHESIS_METHOD_DDA_CID_NL,
-        "canonical_sample_identity_id": (
-            peak_observation.content.canonical_sample_identity_id
-        ),
+        "sample_key": (peak_observation.content.sample_key),
         "peak_observation_content_ids": [
             peak_observation.content.peak_observation_content_id
         ],

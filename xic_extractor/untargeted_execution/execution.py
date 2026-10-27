@@ -404,11 +404,11 @@ class UntargetedPartitionPipelineAdapter:
                         partition_key=partition_key,
                         payload=subjects,
                         work_unit_keys=tuple(
-                            f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            f"{partition_key}:{sample.identity.sample_key}:{phase}"
                             for sample in context.samples
                         ),
                         resource_keys=tuple(
-                            f"acquisition-session:{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            f"acquisition-session:{partition_key}:{sample.identity.sample_key}:{phase}"
                             for sample in context.samples
                         ),
                     )
@@ -470,7 +470,7 @@ class UntargetedPartitionPipelineAdapter:
                 resource_key=resource_key,
                 worker_key=(
                     f"inline-acquisition:{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:"
+                    f"{sample.identity.sample_key}:"
                     f"{'initial' if self._is_bootstrap(partition) else 'backfill'}"
                 ),
                 source_reference=resolve_request_acquisition_source(

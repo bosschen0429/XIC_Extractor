@@ -230,7 +230,6 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
             prepared,
             universe,
             selected,
-            selection_subject_id=target.label,
             acquisition_rt_window=(7.0, 10.5),
             selection_rt_window=(7.0, 10.5),
         )
@@ -389,19 +388,18 @@ def test_no_selected_candidate_preserves_window_and_unavailability(has_signal) -
         prepared,
         universe,
         None,
-        selection_subject_id="Analyte",
         acquisition_rt_window=(7.0, 10.5),
         selection_rt_window=(9.5, 10.5),
     )
 
     assert evaluation.question.query_rt_min == (10.0 if has_signal else 8.75)
-    assert evaluation.question.admissible_segment_ids == ()
+    assert evaluation.question.admissible_segments == ()
     assert evaluation.state == "unavailable"
     assert evaluation.reason == (
         "no_selection" if has_signal else "no_signal_above_baseline"
     )
     assert evaluation.integration is None
-    assert evaluation.answer.physical_segment_id is None
+    assert evaluation.answer.selected_segment is None
 
 
 def test_build_production_peak_hypotheses_uses_config_baseline_method(

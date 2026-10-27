@@ -74,10 +74,7 @@ _INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult))
 }
 _PROVENANCE_KEYS = frozenset(
     {
-        "profile_id",
         "profile_version",
-        "trace_content_id",
-        "prepared_signal_id",
         "acquisition_source_id",
         "processing_request_id",
         "processing_attempt_id",
@@ -341,9 +338,7 @@ class ExplanationReportWriter:
                 pack_cells(cells, samples),
                 sum(
                     1 << ordinal
-                    for ordinal in {
-                        samples[cell["canonical_sample_identity_id"]] for cell in cells
-                    }
+                    for ordinal in {samples[cell["sample_key"]] for cell in cells}
                 ).to_bytes((len(samples) + 7) // 8, "little"),
             ),
         )
@@ -647,9 +642,7 @@ def _read_review_cells(
     summary: Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    sample_ids = [
-        sample["canonical_sample_identity_id"] for sample in summary["samples"]
-    ]
+    sample_ids = [sample["sample_key"] for sample in summary["samples"]]
     result: dict[str, dict[str, Any]] = {}
     rows: Iterable[tuple[str, str, bytes]]
     if row_ids is None:
@@ -691,7 +684,7 @@ def open_review_population(
 ) -> Iterator[Iterator[dict[str, Any]]]:
     """Stream review rows and cells within one read-only connection lifetime."""
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        samples = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+        samples = [s["sample_key"] for s in summary["samples"]]
         yield (
             {
                 "row": _object(record),
@@ -712,7 +705,7 @@ def read_review_row_samples(
     path: Path, summary: Mapping[str, Any]
 ) -> dict[str, frozenset[str]]:
     """Read row membership without unpacking scalar values or evidence reasons."""
-    sample_ids = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+    sample_ids = [s["sample_key"] for s in summary["samples"]]
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(row_cells)")}
         if "sample_mask" in columns:
@@ -733,7 +726,7 @@ def read_review_row_samples(
         # Existing compact reports remain queryable without rewriting them.
         return {
             row_id: frozenset(
-                cell["canonical_sample_identity_id"]
+                cell["sample_key"]
                 for cell in unpack_cells(
                     payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
                 ).values()

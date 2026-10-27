@@ -94,7 +94,7 @@ class IndexedCidNlSource(CidNlSource):
         scope_mask = sum(
             1 << i
             for i, sample in enumerate(self.summary["samples"])
-            if sample["canonical_sample_identity_id"] in scope
+            if sample["sample_key"] in scope
         )
 
         def case_index(kind, packed):

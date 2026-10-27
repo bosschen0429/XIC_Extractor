@@ -361,9 +361,9 @@ def _apply_runtime_worker_batch(
         if replay_index is not None:
             existing_for_work[replay_index] = acquisition_receipt
             continue
-        acquisition_identity = acquisition_receipt.acquisition_capability_id
+        acquisition_identity = acquisition_receipt.acquisition_capability
         if any(
-            existing.acquisition_capability_id == acquisition_identity
+            existing.acquisition_capability == acquisition_identity
             for existing in existing_for_work
         ):
             raise RuntimeFinalizationContractError(

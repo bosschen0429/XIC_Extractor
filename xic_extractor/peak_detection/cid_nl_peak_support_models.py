@@ -27,7 +27,6 @@ RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
 
 _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
@@ -90,7 +89,7 @@ class DdaCidNlPeakSupportPolicy:
 class DdaCidNlPeakSupportContent:
     """Immutable method relation between one DDA event and one MS1 peak."""
 
-    canonical_sample_identity_id: str
+    sample_key: str
     cid_nl_evidence_content_id: str
     peak_observation_content_id: str
     candidate_peak_content_ids: tuple[str, ...]
@@ -111,11 +110,6 @@ class DdaCidNlPeakSupportContent:
     neutral_loss_window_da: float = field(init=False)
 
     def __post_init__(self) -> None:
-        _validate_typed_digest_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
         _validate_typed_digest_id(
             self.cid_nl_evidence_content_id,
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,

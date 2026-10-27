@@ -98,7 +98,7 @@ def _content_from_supports(
         )
     )
     return CidNlChromatographicSupportContent(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         peak_observation_content_id=first.peak_observation_content_id,
         candidate_peak_content_ids=first.candidate_peak_content_ids,
         acquisition_mode=first.acquisition_mode,
@@ -159,10 +159,7 @@ def _validated_scan_supports(
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different processing attempt"
             )
-        if (
-            support.content.canonical_sample_identity_id
-            != sample.identity.sample_identity_id
-        ):
+        if support.content.sample_key != sample.identity.sample_key:
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different sample"
             )

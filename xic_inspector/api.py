@@ -462,9 +462,7 @@ def prepare_report(
     # Colours span the whole source so a narrower selection keeps them.
     colors = group_colors(s["group"] for s in summary_samples if "group" in s)
     universe_sample_ids = {
-        s["canonical_sample_identity_id"]
-        for s in summary_samples
-        if "canonical_sample_identity_id" in s
+        s["sample_key"] for s in summary_samples if "sample_key" in s
     }
 
     if not selection.sample_ids:
@@ -612,8 +610,8 @@ def prepare_report(
         },
         "samples": [
             {
-                "id": s["canonical_sample_identity_id"],
-                "label": s.get("sample_stem", s["canonical_sample_identity_id"]),
+                "id": s["sample_key"],
+                "label": s.get("sample_stem", s["sample_key"]),
                 **(
                     {"group": s["group"], "group_color": colors[s["group"]]}
                     if "group" in s
@@ -621,7 +619,7 @@ def prepare_report(
                 ),
             }
             for s in summary_samples
-            if s.get("canonical_sample_identity_id") in normalized_set
+            if s.get("sample_key") in normalized_set
         ],
         "items": rendered_items,
     }

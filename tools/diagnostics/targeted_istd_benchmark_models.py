@@ -68,7 +68,7 @@ class TargetedReliabilityPoint:
 
 @dataclass(frozen=True)
 class AlignmentFeature:
-    feature_family_id: str
+    feature_id: str
     neutral_loss_tag: str
     family_center_mz: float
     family_center_rt: float
@@ -79,7 +79,7 @@ class AlignmentFeature:
 
 @dataclass(frozen=True)
 class AlignmentCell:
-    feature_family_id: str
+    feature_id: str
     sample_stem: str
     status: str
     area: float | None
@@ -95,7 +95,7 @@ class AlignmentMatrixData:
 @dataclass(frozen=True)
 class CandidateMatch:
     target_label: str
-    feature_family_id: str
+    feature_id: str
     include_in_primary_matrix: bool
     family_center_mz: float
     family_center_rt: float

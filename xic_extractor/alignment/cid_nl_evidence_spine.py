@@ -123,7 +123,7 @@ def build_cid_nl_reference_spine(
     if config is not None and not isinstance(config, AlignmentConfig):
         raise CidNlEvidenceSpineError("config must be AlignmentConfig")
     ordered = tuple(
-        sorted(sample_assessments, key=lambda item: item[0].identity.sample_identity_id)
+        sorted(sample_assessments, key=lambda item: item[0].identity.sample_key)
     )
     support_inputs: list[
         tuple[
@@ -234,12 +234,12 @@ def build_cid_nl_reference_spine(
     except CellObservationContractError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
     hypothesis_by_sample_id = {
-        sample.identity.sample_identity_id: (peak, hypothesis)
+        sample.identity.sample_key: (peak, hypothesis)
         for sample, _, peak, hypothesis in support_inputs
     }
     cells: list[CellObservationRef] = []
     for sample, assessment in ordered:
-        support_pair = hypothesis_by_sample_id.get(sample.identity.sample_identity_id)
+        support_pair = hypothesis_by_sample_id.get(sample.identity.sample_key)
         peak_observation = None
         peak_hypothesis = None
         if support_pair is not None:

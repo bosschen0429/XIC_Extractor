@@ -726,7 +726,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     assert (
         records[0].candidate_id == _read_csv(outputs.candidates_csv)[0]["candidate_id"]
     )
-    assert records[0].evaluation.prepared.profile_id == spec.profile_id
+    assert records[0].evaluation.prepared.profile == spec.signal_processing_profile
     assert physical_calls == {"prepare": 2, "evaluate": 2}
     assert raw.raw_chromatogram_call_count == 1
 
@@ -905,10 +905,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.state == physical_state
-    assert (
-        result.physical_evaluations[0].evaluation.prepared.profile_id
-        == profile.profile_id
-    )
+    assert result.physical_evaluations[0].evaluation.prepared.profile == profile
     candidate = result.candidates[0]
     if physical_state == "available":
         assert candidate.ms1_peak_found is True
@@ -961,7 +958,6 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     assert candidate.ms1_search_rt_max - candidate.ms1_peak_rt_end >= 0.04
     full_trace_evaluation = evaluate_physical_peak(
         prepare_physical_signal(full_rt, full_intensity, profile=profile),
-        selection_subject_id="full-trace-oracle",
         query_rt_min=12.063,
         request_context_rt_start_min=float(full_rt[0]),
         request_context_rt_end_min=float(full_rt[-1]),
@@ -1183,10 +1179,9 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     )
     assert preparation_count == 1
     assert len(result.physical_evaluations) == 2
-    assert {
-        record.evaluation.prepared.prepared_signal_id
-        for record in result.physical_evaluations
-    } == {result.physical_evaluations[0].evaluation.prepared.prepared_signal_id}
+    assert {record.evaluation.prepared for record in result.physical_evaluations} == {
+        result.physical_evaluations[0].evaluation.prepared
+    }
     assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1

@@ -51,7 +51,7 @@ class UntargetedCandidateExclusion:
 
     candidate_id: str
     method_subject_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     discovery_candidate_state: DiscoveryCandidateState
     reason_code: Literal[
         "discovery_candidate_not_search_eligible",
@@ -305,10 +305,7 @@ def _require_batch_population(
         request.processing_request, samples=request.scope.samples
     )
     for item in request.excluded_candidates:
-        if (
-            candidate_samples.get(item.candidate_id)
-            != item.canonical_sample_identity_id
-        ):
+        if candidate_samples.get(item.candidate_id) != item.sample_key:
             raise ApplicationResultContractError(
                 "Untarget batch exclusion crossed candidate, subject, or sample"
             )
@@ -384,8 +381,7 @@ def _sample_ids(
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> tuple[str, ...]:
     return tuple(
-        sample.identity.sample_identity_id
-        for sample in sorted(samples, key=_sample_sort_key)
+        sample.identity.sample_key for sample in sorted(samples, key=_sample_sort_key)
     )
 
 
@@ -405,8 +401,7 @@ def _candidate_sample_ids_from_request(
             f"{exc}"
         ) from exc
     sample_id_by_stem = {
-        sample.metadata.raw_stem: sample.identity.sample_identity_id
-        for sample in samples
+        sample.metadata.raw_stem: sample.identity.sample_key for sample in samples
     }
     if feature_ids is not None:
         subject_batch = cid_nl_method_subject_batch_from_request(request)
@@ -418,7 +413,7 @@ def _candidate_sample_ids_from_request(
 
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
-    return sample.identity.sample_identity_id
+    return sample.identity.sample_key
 
 
 __all__ = (

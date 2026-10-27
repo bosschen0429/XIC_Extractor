@@ -6,7 +6,7 @@ import copyreg
 import json
 from collections.abc import Callable, Mapping
 from copy import copy
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
@@ -373,7 +373,7 @@ def _sample_result_bytes(**values: object) -> bytes:
 @dataclass(frozen=True, slots=True)
 class UntargetedSampleResultRef:
     work_unit_key: str
-    canonical_sample_identity_id: str
+    sample_key: str
     method_subject_id: str
     discovery_receipt_id: str
     assessment_artifact_id: str
@@ -691,7 +691,7 @@ def _mint_sample_result_ref(
     )
     values = {
         "work_unit_key": job.work_unit_key,
-        "canonical_sample_identity_id": job.sample.identity.sample_identity_id,
+        "sample_key": job.sample.identity.sample_key,
         "method_subject_id": job.method_subject.method_subject_id,
         "discovery_receipt_id": job.discovery_receipt.discovery_receipt_id,
         "assessment_artifact_id": assessment.artifact.evidence_artifact_id,
@@ -751,7 +751,7 @@ def _mint_sample_result_ref(
     )
     return UntargetedSampleResultRef(
         work_unit_key=job.work_unit_key,
-        canonical_sample_identity_id=job.sample.identity.sample_identity_id,
+        sample_key=job.sample.identity.sample_key,
         method_subject_id=job.method_subject.method_subject_id,
         discovery_receipt_id=job.discovery_receipt.discovery_receipt_id,
         assessment_artifact_id=assessment.artifact.evidence_artifact_id,
@@ -790,7 +790,8 @@ def _mint_sample_result_ref(
 
 def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
     payload = {
-        "capability_id": acquisition.capability.capability_id,
+        "adapter_namespace": acquisition.capability.adapter_namespace,
+        "coordinate_kind": acquisition.capability.coordinate_kind.value,
         "acquisition_source_id": (
             acquisition.capability.acquisition_source.acquisition_source_id
         ),
@@ -802,7 +803,9 @@ def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
         "trace_point_count": acquisition.trace_point_count,
         "traces": [
             {
-                "trace_coordinate_id": item.coordinate.trace_coordinate_id,
+                "request": asdict(item.coordinate.request),
+                "first_scan": item.coordinate.first_scan,
+                "last_scan": item.coordinate.last_scan,
                 "rt": list(map(float, item.trace.rt)),
                 "intensity": list(map(float, item.trace.intensity)),
             }
@@ -832,7 +835,8 @@ def _exact_acquisition_traces(
         replace(acquired)
         for acquired in acquisition.traces
         if acquired.coordinate.request == request
-        and acquired.coordinate.acquisition_source_id == source_id
+        and acquired.coordinate.capability.acquisition_source.acquisition_source_id
+        == source_id
     )
 
 
@@ -873,22 +877,12 @@ def _validate_request_bound_inputs(
         raise UntargetedPartitionError("physical replay candidate coverage changed")
     expected_physical = physical_capture_input_payload(
         job.signal_processing_profile,
-        {candidate_id: record.evaluation for candidate_id, record in records.items()},
     )
     if (
         not isinstance(physical_payload, dict)
         or physical_payload.get("profile") != expected_physical["profile"]
-        or not isinstance(physical_payload.get("candidates"), dict)
     ):
         raise UntargetedPartitionError("physical replay profile is not request-bound")
-    expected_candidates = expected_physical["candidates"]
-    assert isinstance(expected_candidates, dict)
-    actual_candidates = physical_payload["candidates"]
-    if any(
-        actual_candidates.get(candidate_id) != value
-        for candidate_id, value in expected_candidates.items()
-    ):
-        raise UntargetedPartitionError("physical replay answer is not request-bound")
     try:
         pinned = cid_nl_method_subjects_from_request(request)
     except CidNlMethodSubjectContractError as exc:
@@ -1205,7 +1199,7 @@ class _SampleResultContext:
             for acquired in acquisition.traces:
                 key = (
                     acquired.coordinate.request,
-                    acquired.coordinate.acquisition_source_id,
+                    acquired.coordinate.capability.acquisition_source.acquisition_source_id,
                 )
                 grouped.setdefault(key, []).append(acquired)
             cached = (

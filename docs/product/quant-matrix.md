@@ -168,8 +168,8 @@ validation notes are not matrix authority by themselves.
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 | Productization status index / authority manifest | Current state and writer scope |
 
-Alignment additionally exposes `alignment_review.tsv` for review,
-`alignment_matrix_identity.tsv` for identity/owner traceability,
+Alignment additionally exposes `alignment_review.tsv` for group review and
+bound Matrix row references,
 `alignment_backfill_cell_evidence.tsv` for Backfill evidence, conditional
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.
 These are public schema surfaces, not independent scientific authority.

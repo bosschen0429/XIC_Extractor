@@ -55,7 +55,7 @@ def _required_text(value: object, *, field: str) -> str:
 class CrossSampleGroupMemberSubject:
     member_subject_id: str
     processing_request_id: str
-    canonical_sample_identity_id: str
+    sample_key: str
     subject_kind: Literal["peak_hypothesis"]
     subject_id: str
     physical_observation_ids: tuple[str, ...]
@@ -105,7 +105,7 @@ def group_member_subject_from_peak_hypothesis(
         or hypothesis.artifact.producer_processing_request_id != request_id
     ):
         raise CrossSampleContractError("peak hypothesis crossed processing request")
-    sample_id = sample.identity.sample_identity_id
+    sample_id = sample.identity.sample_key
     physical_ids = tuple(
         sorted(
             observation.content.peak_observation_content_id
@@ -116,7 +116,7 @@ def group_member_subject_from_peak_hypothesis(
         not physical_ids
         or len(set(physical_ids)) != len(physical_ids)
         or any(
-            observation.content.canonical_sample_identity_id != sample_id
+            observation.content.sample_key != sample_id
             or observation.artifact.producer_processing_request_id != request_id
             for observation in hypothesis.peak_observation_refs
         )
@@ -126,7 +126,7 @@ def group_member_subject_from_peak_hypothesis(
         {
             "schema_version": "group_member_subject",
             "processing_request_id": request_id,
-            "canonical_sample_identity_id": sample_id,
+            "sample_key": sample_id,
             "subject": {"kind": "peak_hypothesis", "id": hypothesis.hypothesis_id},
             "physical_observation_ids": list(physical_ids),
         }
@@ -134,7 +134,7 @@ def group_member_subject_from_peak_hypothesis(
     return CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(_GROUP_MEMBER_SUBJECT_PREFIX, basis),
         processing_request_id=request_id,
-        canonical_sample_identity_id=sample_id,
+        sample_key=sample_id,
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
         physical_observation_ids=physical_ids,
@@ -174,14 +174,14 @@ def _canonical_members(
             raise CrossSampleContractError("group member is not a typed subject")
         if member.processing_request_id != processing_request_id:
             raise CrossSampleContractError("group member crossed processing request")
-        if member.canonical_sample_identity_id in samples:
+        if member.sample_key in samples:
             raise CrossSampleContractError(
                 "group has two identity-bearing members for one canonical sample"
             )
         if physical.intersection(member.physical_observation_ids):
             raise CrossSampleContractError("group duplicates a physical observation")
         registry.register(member.member_subject_id, member.basis_bytes)
-        samples.add(member.canonical_sample_identity_id)
+        samples.add(member.sample_key)
         physical.update(member.physical_observation_ids)
         members.append(member)
     return tuple(sorted(members, key=lambda item: item.member_subject_id))

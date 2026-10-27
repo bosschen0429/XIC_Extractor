@@ -48,7 +48,7 @@ class CidNlBackfillQuestion:
     not choose a new group, query window or revisit policy.
     """
 
-    sample_identity_id: str
+    sample_key: str
     group: CrossSamplePeakGroupHypothesis
     method_subject: CidNlMethodSubject
     localization: BackfillPeakLocation | None = None
@@ -86,9 +86,7 @@ def plan_grouped_cid_nl_backfills(
     half_windows_by_sample: Mapping[str, float],
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Resolve subject, trajectory and window facts from frozen workset membership."""
-    samples = {
-        sample.identity.sample_identity_id: sample for sample in sample_population
-    }
+    samples = {sample.identity.sample_key: sample for sample in sample_population}
     rt_frame = rt_frame.for_sample_stems(
         frozenset(sample.metadata.raw_stem for sample in sample_population)
     )
@@ -137,7 +135,7 @@ def plan_grouped_cid_nl_backfills(
             )
             questions.extend(
                 CidNlBackfillQuestion(
-                    sample_identity_id=sample_id,
+                    sample_key=sample_id,
                     group=group,
                     method_subject=subject,
                     localization=locations[samples[sample_id].metadata.raw_stem],

@@ -42,7 +42,6 @@ MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 ACQUISITION_MODE = "dda_ddms2"
 
-_SAMPLE_ID_PREFIX = "xic.sample:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
@@ -67,7 +66,7 @@ class CidNlEvidenceObservation:
     ``scan_precursor_mz`` retains the actual selected scan value.
     """
 
-    canonical_sample_identity_id: str
+    sample_key: str
     acquisition_source_id: str
     acquisition_mode: str
     scan_number: int
@@ -114,11 +113,6 @@ class CidNlEvidenceObservation:
         )
 
     def __post_init__(self) -> None:
-        _validate_typed_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
         _validate_typed_id(
             self.acquisition_source_id,
             prefix=_ACQUISITION_SOURCE_ID_PREFIX,
@@ -343,7 +337,7 @@ def mint_cid_nl_evidence_ref(
             )
         scan_precursor_mz = precursor_mz
     observation = CidNlEvidenceObservation(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        sample_key=sample.identity.sample_key,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         acquisition_mode=ACQUISITION_MODE,
         scan_number=scan_number,
@@ -381,7 +375,7 @@ def canonical_cid_nl_evidence_bytes(
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
-        "canonical_sample_identity_id": observation.canonical_sample_identity_id,
+        "sample_key": observation.sample_key,
         "acquisition_source_id": observation.acquisition_source_id,
         "acquisition_mode": observation.acquisition_mode,
         "scan_number": observation.scan_number,
@@ -458,10 +452,7 @@ def validate_cid_nl_evidence_binding(
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different processing attempt"
         )
-    if (
-        reference.observation.canonical_sample_identity_id
-        != sample.identity.sample_identity_id
-    ):
+    if reference.observation.sample_key != sample.identity.sample_key:
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different sample"
         )

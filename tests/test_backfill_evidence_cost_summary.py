@@ -180,7 +180,7 @@ def test_backfill_evidence_cost_summary_rejects_malformed_ledger(
     _timing(optimized, owner_backfill_elapsed=40.0, owner_extract_xic_count=40)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=40)
-    ledger.write_text("feature_family_id\tsample_stem\nFAM001\tS2\n", encoding="utf-8")
+    ledger.write_text("feature_id\tsample_stem\nFAM001\tS2\n", encoding="utf-8")
 
     try:
         run_backfill_evidence_cost_summary(
@@ -465,7 +465,7 @@ def _write_ledger(
 ) -> None:
     records = tuple(
         SkippedEvidenceRecord(
-            feature_family_id=feature_family_id,
+            feature_id=feature_id,
             sample_stem=sample_stem,
             family_center_mz=200.0 + index,
             family_center_rt=5.0,
@@ -482,7 +482,7 @@ def _write_ledger(
             source_artifact="owner_backfill",
         )
         for index, (
-            feature_family_id,
+            feature_id,
             sample_stem,
             raw_xic_requests_skipped,
         ) in enumerate(rows)
