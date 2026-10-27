@@ -269,3 +269,17 @@ where that internal or sidecar identity is available.
 | family_evidence | string | Family fold evidence type |
 | warning | string | Warning flag (`no_anchor`, `high_unchecked`, `high_backfill_dependency`) |
 | reason | string | Comprehensive description |
+
+## Explanation format and reruns
+
+The SQLite explanation uses `alignment_explanation.v2` (full audit) or
+`alignment_explanation_review.v2` (compact review), with `curve_payload.v2`
+for retained curves. Curve provenance records query and selection context,
+not full-trace or selection-trace SHA-256 values. Scientific values and
+curve arrays are unchanged. Artifact and curve identifiers are internal links
+within the generated output and must be regenerated together.
+
+Inspector and Workbench require the current explanation format. Older
+explanations are rejected with a message to rerun Alignment; no conversion
+or compatibility reader is provided. This does not change the Matrix row ID
+format or its row-binding column.

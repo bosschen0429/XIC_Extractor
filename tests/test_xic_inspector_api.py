@@ -127,7 +127,7 @@ def _create_mock_db(
         )
         # Add a curve payload for C1
         curve_envelope = {
-            "schema_version": "curve_payload",
+            "schema_version": "curve_payload.v2",
             "kind": "initial_capture",
             "sample_id": "S1",
             "candidate_id": "C1",
@@ -2621,3 +2621,23 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
     with pytest.raises(InspectorError, match="Targeted XLSX") as exc:
         prepare_report(source, SelectionRequest(strategy="query", target_role="ISTD"))
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "old_schema", ["alignment_explanation", "alignment_explanation_review"]
+)
+def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
+    path, _matrix, _digest = _create_mock_db(tmp_path)
+    with sqlite3.connect(path) as connection:
+        payload = connection.execute(
+            "SELECT payload FROM metadata WHERE key='summary'"
+        ).fetchone()[0]
+        summary = json.loads(payload)
+        summary["schema_version"] = old_schema
+        connection.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
+        )
+    with pytest.raises(InspectorError, match="重新執行.*Alignment") as error:
+        generate_report(path, SelectionRequest(), tmp_path / "review.html")
+    assert error.value.code == 4
+    assert not (tmp_path / "review.html").exists()

@@ -373,7 +373,6 @@ def test_publication_returns_concrete_public_result_models(
         from xic_extractor.extraction.result_assembly import (
             prepare_acquired_observation,
         )
-        from xic_extractor.peak_detection import observations
 
         for file_result in output.file_results:
             source = build_local_acquisition_source_identity(
@@ -387,12 +386,6 @@ def test_publication_returns_concrete_public_result_models(
                 resolver_mode=config.resolver_mode,
             )
 
-        def unexpected_trace_serialization(_trace):
-            raise AssertionError("acquisition already serialized this trace")
-
-        monkeypatch.setattr(
-            observations, "_canonical_trace_bytes", unexpected_trace_serialization
-        )
     request = build_targeted_application_request(
         config,
         [target],
@@ -1734,16 +1727,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     initial_counts = []
 
     def execute_reverse_identity(context, *args, **kwargs):
-        from xic_extractor.peak_detection import observations
-
-        def unexpected_trace_serialization(_trace):
-            raise AssertionError(
-                "paired ISTD trace was already prepared during acquisition"
-            )
-
-        monkeypatch.setattr(
-            observations, "_canonical_trace_bytes", unexpected_trace_serialization
-        )
         context = replace(
             context,
             results_by_sample=tuple(

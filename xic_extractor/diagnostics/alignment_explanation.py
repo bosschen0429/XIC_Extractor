@@ -27,7 +27,7 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
-SCHEMA_VERSION = "alignment_explanation"
+SCHEMA_VERSION = "alignment_explanation.v2"
 
 VALID_CURVE_KINDS = frozenset(
     {
@@ -79,8 +79,6 @@ _PROVENANCE_KEYS = frozenset(
         "trace_content_id",
         "prepared_signal_id",
         "acquisition_source_id",
-        "full_trace_sha256",
-        "selection_trace_sha256",
         "processing_request_id",
         "processing_attempt_id",
         "observation_artifact_id",
@@ -112,8 +110,10 @@ def _validate_curve_payload(
         raise ExplanationError(f"undeclared curve payload keys: {sorted(extra)}")
     if set(payload) != ALLOWED_CURVE_PAYLOAD_KEYS:
         raise ExplanationError("curve payload missing required fields")
-    if payload["schema_version"] != "curve_payload":
-        raise ExplanationError("unsupported curve payload schema version")
+    if payload["schema_version"] != "curve_payload.v2":
+        raise ExplanationError(
+            "不支援此曲線資料格式；請重新執行 Alignment 產生新輸出。"
+        )
     if payload["kind"] != kind or payload["sample_id"] != sample_id:
         raise ExplanationError("curve payload crosses sample or kind binding")
     if not isinstance(sample_id, str) or not sample_id or not record_id:
@@ -607,11 +607,14 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     if row is None:
         raise ExplanationError("malformed explanation: missing completion summary")
     summary = _object(row[0])
+    if summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION):
+        raise ExplanationError(
+            "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
+        )
     if summary.get("query_index_version") not in (None, 1, 2):
         raise ExplanationError("unsupported explanation query index version")
     if (
-        summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION)
-        or summary.get("diagnostic_only") is not True
+        summary.get("diagnostic_only") is not True
         or summary.get("completion") != "post_matrix_publication"
         or summary.get("plot_evidence_capability")
         not in ("retained_curves", "metadata_only")

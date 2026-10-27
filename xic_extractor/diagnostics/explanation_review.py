@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
-REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
+REVIEW_SCHEMA_VERSION = "alignment_explanation_review.v2"
 
 # Per-sample retained review facts. These bits summarize recorded decisions;
 # they do not choose peaks, assign groups, or authorize Matrix values.

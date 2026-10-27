@@ -133,8 +133,6 @@ def _emit_curve_payload(
         actual.update(
             _fields(
                 generation,
-                "full_trace_sha256",
-                "selection_trace_sha256",
                 "acquisition_source_id",
                 "selected_trace_indices",
                 "resolver_mode",
@@ -170,7 +168,7 @@ def _emit_curve_payload(
         else (evaluation.integration if evaluation is not None else None)
     )
     envelope = {
-        "schema_version": "curve_payload",
+        "schema_version": "curve_payload.v2",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,

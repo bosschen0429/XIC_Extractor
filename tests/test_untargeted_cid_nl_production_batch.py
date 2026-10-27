@@ -429,8 +429,6 @@ def _expected_retained_curve(
     if observation is not None:
         generation = observation.generation_provenance
         for name in (
-            "full_trace_sha256",
-            "selection_trace_sha256",
             "selected_trace_indices",
             "resolver_mode",
             "proposal_sources",
@@ -445,7 +443,7 @@ def _expected_retained_curve(
         else evaluation.integration
     )
     value = {
-        "schema_version": "curve_payload",
+        "schema_version": "curve_payload.v2",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,

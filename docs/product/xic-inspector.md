@@ -254,7 +254,7 @@ seed 0.
 
 ## Lightweight Alignment review
 
-New Alignment explanations default to `alignment_explanation_review`. They
+New Alignment explanations default to `alignment_explanation_review.v2`. They
 retain the full candidate/group population, grouping reasons, compact method
 conclusions and sample cell values. Cell values are stored once per row; full
 artifact envelopes and curve arrays are not included by default. Query,

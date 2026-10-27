@@ -405,39 +405,6 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
     )
 
 
-def test_selection_trace_mutation_changes_provenance_not_physical_content(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    trace = _standard_trace(identity.owners)
-    integration = _integration(raw_scan_indices=(1, 2, 3))
-
-    first = mint_peak_observation_ref(
-        processing_owners=identity.owners,
-        sample=identity.sample,
-        trace=trace,
-        integration=integration,
-        selection_intensity=(0.0, 40.0, 500.0, 40.0, 0.0),
-        resolver_mode="smoothed",
-        proposal_sources=("synthetic_selection_trace",),
-    )
-    changed = mint_peak_observation_ref(
-        processing_owners=identity.owners,
-        sample=identity.sample,
-        trace=trace,
-        integration=integration,
-        selection_intensity=(0.0, 45.0, 500.0, 45.0, 0.0),
-        resolver_mode="smoothed",
-        proposal_sources=("synthetic_selection_trace",),
-    )
-
-    assert first.content == changed.content
-    assert first.generation_provenance.selection_trace_sha256 != (
-        changed.generation_provenance.selection_trace_sha256
-    )
-    assert first.artifact.content_identity != changed.artifact.content_identity
-
-
 def test_equivalent_numeric_integration_inputs_have_one_content_identity(
     tmp_path: Path,
 ) -> None:
@@ -1060,24 +1027,12 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
     acquired_provenance = (
         observation_owner.prepare_peak_observation_provenance(
             trace=trace,
-            selection_values=np.asarray(prepared.prepared.positive_signal),
             selected_indices=expected[0].generation_provenance.selected_trace_indices,
             resolver_mode="local_minimum",
             proposal_sources=("canonical_physical_segment",),
         )
         if reuse_trace_provenance == "acquisition"
         else None
-    )
-    serialized_traces = 0
-    original = observation_owner._canonical_trace_bytes
-
-    def counted_trace_bytes(trace):
-        nonlocal serialized_traces
-        serialized_traces += 1
-        return original(trace)
-
-    monkeypatch.setattr(
-        observation_owner, "_canonical_trace_bytes", counted_trace_bytes
     )
     actual = observation_owner.mint_physical_peak_observations(
         processing_owners=identity.owners,
@@ -1091,7 +1046,6 @@ def test_retained_candidate_batch_preserves_canonical_observation_bytes(
         ),
         acquired_trace_provenance=acquired_provenance,
     )
-    assert serialized_traces == (1 if reuse_trace_provenance == "none" else 0)
     assert len(actual) == 2
     for reference, projected in zip(expected, actual, strict=True):
         assert canonical_peak_observation_ref_bytes(

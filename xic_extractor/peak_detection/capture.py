@@ -449,7 +449,6 @@ def _project_physical_capture(
             canonical_sample_identity_id=binding.sample_identity_id,
             trace=trace,
             integration=selected.integration,
-            selection_values=np.asarray(selection_intensity, dtype=float),
             selected_indices=selected.integration.raw_scan_indices,
             resolver_mode=scope.method_constraints.peak_config.resolver_mode,
             proposal_sources=selected.audit.proposal_sources,

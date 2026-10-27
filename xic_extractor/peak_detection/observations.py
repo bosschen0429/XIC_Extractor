@@ -316,8 +316,6 @@ def verify_persisted_peak_observation_claims(
 class PeakObservationGenerationProvenance:
     """Exact trace/query and peak-generation context for one observation ref."""
 
-    full_trace_sha256: str
-    selection_trace_sha256: str
     acquisition_source_id: str
     query_rt_min: float
     query_rt_max: float
@@ -328,11 +326,6 @@ class PeakObservationGenerationProvenance:
     proposal_sources: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _validate_sha256(self.full_trace_sha256, field="full_trace_sha256")
-        _validate_sha256(
-            self.selection_trace_sha256,
-            field="selection_trace_sha256",
-        )
         _validate_typed_digest_id(
             self.acquisition_source_id,
             prefix=_ACQUISITION_SOURCE_ID_PREFIX,
@@ -471,7 +464,7 @@ def mint_physical_peak_observations(
 
     Acquisition/physical decoding owns evaluation validity. This handoff checks
     the current sample, trace and profile once; candidate projections share their
-    full-trace provenance, but retain their own selected region and artifact.
+    query provenance, but retain their own selected region and artifact.
     Independently assembled integrations use ``mint_peak_observation_ref``.
     """
     if not evaluations:
@@ -486,7 +479,6 @@ def mint_physical_peak_observations(
         and np.array_equal(trace.intensity, retained.raw)
     ):
         raise PeakObservationContractError("physical observations cross retained trace")
-    selection_values = np.asarray(retained.positive_signal, dtype=float)
     provenance = acquired_trace_provenance
     if trace_observation is not None:
         if (
@@ -527,7 +519,6 @@ def mint_physical_peak_observations(
             canonical_sample_identity_id=sample.identity.sample_identity_id,
             trace=trace,
             integration=integration,
-            selection_values=selection_values,
             selected_indices=integration.raw_scan_indices,
             resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
@@ -677,7 +668,6 @@ def _peak_observation_values(
         canonical_sample_identity_id=canonical_sample_identity_id,
         trace=trace,
         integration=integration,
-        selection_values=selection_values,
         selected_indices=selected_indices,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
@@ -689,7 +679,6 @@ def _project_peak_observation_values(
     canonical_sample_identity_id: str,
     trace: Trace,
     integration: IntegrationResult,
-    selection_values: np.ndarray,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
@@ -725,7 +714,6 @@ def _project_peak_observation_values(
         if shared_trace_provenance is not None
         else prepare_peak_observation_provenance(
             trace=trace,
-            selection_values=selection_values,
             selected_indices=selected_indices,
             resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
@@ -736,17 +724,12 @@ def _project_peak_observation_values(
 def prepare_peak_observation_provenance(
     *,
     trace: Trace,
-    selection_values: np.ndarray,
     selected_indices: tuple[int, ...],
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
 ) -> PeakObservationGenerationProvenance:
-    """Serialize an acquired trace once, before projecting its observation set."""
+    """Retain query and selection context without hashing signal arrays."""
     return PeakObservationGenerationProvenance(
-        full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
-        selection_trace_sha256=hashlib.sha256(
-            _canonical_selection_trace_bytes(trace, selection_values)
-        ).hexdigest(),
         acquisition_source_id=trace.acquisition_source_id,
         query_rt_min=float(trace.rt_min),
         query_rt_max=float(trace.rt_max),
@@ -867,47 +850,6 @@ def validate_peak_observation_binding(
         raise PeakObservationContractError(
             "peak observation references a different acquisition source"
         )
-
-
-def _finite_signal_values(values: np.ndarray, *, field: str) -> list[float]:
-    numeric = np.asarray(values, dtype=float)
-    if not np.isfinite(numeric).all():
-        raise PeakObservationContractError(f"{field} must be finite")
-    # Canonical JSON represents both signed zeros as 0.0.
-    return cast(list[float], np.where(numeric == 0.0, 0.0, numeric).tolist())
-
-
-def _canonical_trace_bytes(trace: Trace) -> bytes:
-    return _canonical_json_bytes(
-        {
-            "schema": "ms1_trace_generation_provenance",
-            "mz": _finite_float(float(trace.mz), field="trace.mz"),
-            "rt": _finite_signal_values(trace.rt, field="trace.rt"),
-            "intensity": _finite_signal_values(
-                trace.intensity, field="trace.intensity"
-            ),
-            "query_rt_min": _finite_float(float(trace.rt_min), field="trace.rt_min"),
-            "query_rt_max": _finite_float(float(trace.rt_max), field="trace.rt_max"),
-            "query_ppm_tol": _finite_float(float(trace.ppm_tol), field="trace.ppm_tol"),
-            "trace_source": trace.source,
-            "acquisition_source_id": trace.acquisition_source_id,
-        }
-    )
-
-
-def _canonical_selection_trace_bytes(
-    trace: Trace,
-    selection_intensity: np.ndarray,
-) -> bytes:
-    return _canonical_json_bytes(
-        {
-            "schema": "ms1_peak_selection_trace",
-            "rt": _finite_signal_values(trace.rt, field="selection.rt"),
-            "intensity": _finite_signal_values(
-                selection_intensity, field="selection.intensity"
-            ),
-        }
-    )
 
 
 def _content_id(

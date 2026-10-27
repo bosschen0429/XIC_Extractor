@@ -65,8 +65,6 @@ _TECHNICAL_LABELS = {
     "acquisition_source_id": "擷取來源 ID",
     "observation_artifact_id": "觀察 artifact ID",
     "method_subject_id": "方法對象 ID",
-    "full_trace_sha256": "完整訊號 SHA-256",
-    "selection_trace_sha256": "選取訊號 SHA-256",
     "matrix_path": "Matrix 路徑",
 }
 

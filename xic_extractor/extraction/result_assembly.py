@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
@@ -56,8 +54,6 @@ def prepare_acquired_observation(
     evaluation = result.physical_evaluation
     if trace is None or evaluation is None or evaluation.state != "available":
         return result
-    retained = evaluation.retained_prepared_signal
-    assert retained is not None
     trace = replace(
         trace,
         source=TARGETED_ACQUISITION_TRACE_SOURCE,
@@ -65,7 +61,6 @@ def prepare_acquired_observation(
     )
     provenance = prepare_peak_observation_provenance(
         trace=trace,
-        selection_values=np.asarray(retained.positive_signal, dtype=float),
         selected_indices=physical_peak_observation_integration(
             evaluation
         ).raw_scan_indices,

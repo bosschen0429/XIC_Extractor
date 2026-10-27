@@ -28,9 +28,9 @@ def test_cid_nl_evidence_locator_immutability() -> None:
         matrix_sha256="abcd" * 16,
         processing_request_id="req-01",
         processing_attempt_id="att-01",
-        schema_version="alignment_explanation",
+        schema_version="alignment_explanation.v2",
     )
-    assert locator.schema_version == "alignment_explanation"
+    assert locator.schema_version == "alignment_explanation.v2"
     assert locator.processing_request_id == "req-01"
     with pytest.raises(AttributeError):
         locator.schema_version = "unknown"  # type: ignore
@@ -44,7 +44,7 @@ def test_curve_payload_write_and_read() -> None:
                 "C1", "S1", {"candidate_id": "C1", "canonical_sample_identity_id": "S1"}
             )
             curve_envelope = {
-                "schema_version": "curve_payload",
+                "schema_version": "curve_payload.v2",
                 "kind": "initial_capture",
                 "sample_id": "S1",
                 "candidate_id": "C1",
@@ -93,7 +93,7 @@ def test_curve_payload_write_and_read() -> None:
             )
 
         summary = read_cid_nl_explanation(final_path)
-        assert summary["schema_version"] == "alignment_explanation"
+        assert summary["schema_version"] == "alignment_explanation.v2"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
         curves = read_cid_nl_curves(final_path, record_ids=["C1"])
@@ -124,7 +124,7 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
                     kind="initial_capture",
                     record_id="C1",
                     payload={
-                        "schema_version": "curve_payload",
+                        "schema_version": "curve_payload.v2",
                         "kind": "initial_capture",
                         "sample_id": "S1",
                         "extra_fake_field": 123,
@@ -183,7 +183,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
 
 def _bound_curve_payload():
     return {
-        "schema_version": "curve_payload",
+        "schema_version": "curve_payload.v2",
         "kind": "initial_capture",
         "sample_id": "S1",
         "candidate_id": "C1",
