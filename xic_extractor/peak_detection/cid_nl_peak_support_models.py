@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import dataclass, field
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
@@ -21,21 +16,7 @@ from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
 )
 
-SCHEMA_VERSION = "dda_cid_nl_peak_support"
-ARTIFACT_SEMANTIC_ROLE = "dda_cid_nl_peak_support"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_inside_ms1_peak_scope"
-
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class DdaCidNlPeakSupportContractError(ValueError):
@@ -201,59 +182,9 @@ class DdaCidNlPeakSupportContent:
 
 @dataclass(frozen=True, slots=True)
 class DdaCidNlPeakSupportRef:
-    """One immutable DDA-to-peak support artifact with exact upstream refs."""
+    """One immutable DDA-to-peak support relation."""
 
     content: DdaCidNlPeakSupportContent
-    artifact: EvidenceArtifactRef
-
-
-def canonical_dda_cid_nl_peak_support_bytes(
-    reference: DdaCidNlPeakSupportRef,
-) -> bytes:
-    """Return canonical bytes for one immutable support reference."""
-
-    if not isinstance(reference, DdaCidNlPeakSupportRef):
-        raise DdaCidNlPeakSupportContractError(
-            "canonical serialization requires DdaCidNlPeakSupportRef"
-        )
-    return _support_bytes(reference.content)
-
-
-def _support_bytes(content: DdaCidNlPeakSupportContent) -> bytes:
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": {
-            **{
-                item.name: (
-                    asdict(getattr(content, item.name))
-                    if item.name in {"policy", "evidence"}
-                    else getattr(content, item.name)
-                )
-                for item in fields(content)
-                if item.name not in {"peak_observation", "candidate_peaks"}
-            },
-            "peak_observation_content_id": (
-                content.peak_observation.peak_observation_content_id
-            ),
-            "candidate_peak_content_ids": tuple(
-                peak.peak_observation_content_id for peak in content.candidate_peaks
-            ),
-        },
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _finite_float(value: object, *, field: str) -> float:
@@ -266,12 +197,9 @@ def _finite_float(value: object, *, field: str) -> float:
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "DdaCidNlPeakSupportContent",
     "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_dda_cid_nl_peak_support_bytes",
 ]

@@ -537,8 +537,6 @@ def prepare_alignment_explanation(
                         "method_result",
                         "reason_codes",
                         "evidence_artifact_content_ids",
-                        "individual_relation_artifact_content_ids",
-                        "set_relation_artifact_content_ids",
                     ),
                     "candidate_peak_content_ids": tuple(
                         peak.content.peak_observation_content_id

@@ -268,8 +268,6 @@ class CidNlMethodAssessmentContent:
     candidate_peaks: tuple[PeakObservationContent, ...]
     evaluation_receipt: CidNlEvaluationReceipt
     evidence_artifact_content_ids: tuple[str, ...]
-    individual_relation_artifact_content_ids: tuple[str, ...]
-    set_relation_artifact_content_ids: tuple[str, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     reason_codes: tuple[str, ...]
@@ -327,14 +325,6 @@ class CidNlMethodAssessmentContent:
             )
         for values, field in (
             (self.evidence_artifact_content_ids, "evidence_artifact_content_ids"),
-            (
-                self.individual_relation_artifact_content_ids,
-                "individual_relation_artifact_content_ids",
-            ),
-            (
-                self.set_relation_artifact_content_ids,
-                "set_relation_artifact_content_ids",
-            ),
         ):
             _canonical_digest_ids(
                 values,
@@ -523,13 +513,9 @@ def mint_cid_nl_method_assessment_ref(
         candidate_peaks=tuple(peak.content for peak in candidates),
         evaluation_receipt=evaluation_receipt,
         evidence_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in evidence
-        ),
-        individual_relation_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in individual
-        ),
-        set_relation_artifact_content_ids=tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in set_relations
+            sorted(
+                ref.artifact.content_identity.artifact_content_id for ref in evidence
+            )
         ),
         technical_state=technical_state,
         method_result=method_result,
@@ -537,8 +523,6 @@ def mint_cid_nl_method_assessment_ref(
     )
     upstreams = _assessment_upstream_artifacts(
         evidence_refs=evidence,
-        individual_support_refs=individual,
-        set_relation_refs=set_relations,
     )
     artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
@@ -1131,14 +1115,8 @@ def _supported_peaks(
 def _assessment_upstream_artifacts(
     *,
     evidence_refs: tuple[CidNlEvidenceRef, ...],
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts = (
-        *(ref.artifact for ref in evidence_refs),
-        *(ref.artifact for ref in individual_support_refs),
-        *(ref.artifact for ref in set_relation_refs),
-    )
+    artifacts = tuple(ref.artifact for ref in evidence_refs)
     artifact_ids = tuple(artifact.evidence_artifact_id for artifact in artifacts)
     if len(set(artifact_ids)) != len(artifact_ids):
         raise CidNlMethodAssessmentContractError(
@@ -1206,19 +1184,32 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
         raise CidNlMethodAssessmentContractError(
             f"{field} contains a non-owner reference"
         )
-    refs = tuple(
-        sorted(
-            value,
-            key=lambda item: (
-                item.artifact.content_identity.artifact_content_id,
-                item.artifact.evidence_artifact_id,
-            ),
+
+    def event_key(
+        item: CidNlEvidenceRef
+        | DdaCidNlPeakSupportRef
+        | DdaCidNlCandidateSetRelationRef,
+    ) -> tuple:
+        observation = (
+            item.observation
+            if isinstance(item, CidNlEvidenceRef)
+            else item.content.evidence
         )
-    )
-    _require_unique_refs(
-        tuple(item.artifact.evidence_artifact_id for item in refs),
-        field=field,
-    )
+        return (
+            observation.sample_key,
+            observation.scan_number,
+            observation.configured_neutral_loss_da,
+            observation.scan_rt_min,
+            observation.scan_precursor_mz,
+            observation.product_mz,
+        )
+
+    refs = tuple(sorted(value, key=event_key))
+    keys = tuple(event_key(item) for item in refs)
+    if len(set(keys)) != len(keys):
+        raise CidNlMethodAssessmentContractError(
+            f"duplicate acquisition scan or ambiguous {field} measured events"
+        )
     return refs
 
 

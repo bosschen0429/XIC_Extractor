@@ -7,15 +7,9 @@ one peak or minting one vote per candidate.
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceContractError,
@@ -35,21 +29,7 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "dda_cid_nl_candidate_set_relation"
-ARTIFACT_SEMANTIC_ROLE = "dda_cid_nl_candidate_set_relation"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "supports_one_or_more_of"
-
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class DdaCidNlCandidateSetRelationContractError(ValueError):
@@ -112,7 +92,6 @@ class DdaCidNlCandidateSetRelationRef:
     content: DdaCidNlCandidateSetRelationContent
     canonical_evidence: CidNlEvidenceRef
     candidate_peaks: tuple[PeakObservationRef, ...]
-    artifact: EvidenceArtifactRef
 
 
 def resolve_dda_cid_nl_candidate_set_relation_ref(
@@ -147,18 +126,10 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         scan_rt_min=canonical_evidence.observation.scan_rt_min,
         policy=policy,
     )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_dda_cid_nl_candidate_set_relation_bytes(content),
-        upstream_artifacts=(canonical_evidence.artifact,),
-    )
     return DdaCidNlCandidateSetRelationRef(
         content=content,
         canonical_evidence=canonical_evidence,
         candidate_peaks=candidates,
-        artifact=artifact,
     )
 
 
@@ -185,47 +156,6 @@ def validate_dda_cid_nl_candidate_set_relation_binding(
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate-set relation binding was substituted"
         )
-
-
-def canonical_dda_cid_nl_candidate_set_relation_bytes(
-    content: DdaCidNlCandidateSetRelationContent,
-) -> bytes:
-    if not isinstance(content, DdaCidNlCandidateSetRelationContent):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "canonical serialization requires candidate-set relation content"
-        )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": {
-            "sample_key": content.sample_key,
-            "evidence": asdict(content.evidence),
-            "candidate_peak_content_ids": tuple(
-                peak.peak_observation_content_id for peak in content.candidate_peaks
-            ),
-            "matched_candidate_content_ids": tuple(
-                peak.peak_observation_content_id for peak in content.matched_candidates
-            ),
-            "acquisition_mode": content.acquisition_mode,
-            "dda_scan_number": content.dda_scan_number,
-            "scan_rt_min": content.scan_rt_min,
-            "policy": asdict(content.policy),
-            "relationship": content.relationship,
-        },
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise DdaCidNlCandidateSetRelationContractError(
-            "candidate-set relation payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _validate_inputs(
@@ -378,13 +308,10 @@ def _candidate_sort_key(peak: PeakObservationRef) -> str:
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "DdaCidNlCandidateSetRelationContent",
     "DdaCidNlCandidateSetRelationContractError",
     "DdaCidNlCandidateSetRelationRef",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_dda_cid_nl_candidate_set_relation_bytes",
     "resolve_dda_cid_nl_candidate_set_relation_ref",
     "validate_dda_cid_nl_candidate_set_relation_binding",
 ]

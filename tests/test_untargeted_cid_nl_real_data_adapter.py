@@ -691,7 +691,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
-def test_adapter_retains_completed_relation_before_later_evidence_failure(
+def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     physical_records = {}
@@ -746,9 +746,8 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
     retained = observer.artifact_closure()
-    retained_ids = {artifact.evidence_artifact_id for artifact in retained}
-    assert support.artifact in retained
-    assert set(support.artifact.upstream_artifact_ids).issubset(retained_ids)
+    assert support.content.evidence.scan_number in candidates[0].seed_scan_ids
+    assert retained
     assert all(
         artifact.producer_processing_request_id
         == fixture.owners.request.processing_request_id

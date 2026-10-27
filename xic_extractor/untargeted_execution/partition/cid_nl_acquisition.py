@@ -1008,12 +1008,6 @@ def adapt_current_discovery_sample_subject(
         )
         individual_refs.extend(resolved_support)
         set_refs.extend(resolved_sets)
-        if _observer is not None:
-            resolved_relations: tuple[
-                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
-            ] = (*resolved_support, *resolved_sets)
-            for ref in resolved_relations:
-                _observer.record_artifact(ref.artifact)
 
     assessment = _mint_assessment(
         processing_owners=processing_owners,
@@ -1034,8 +1028,6 @@ def adapt_current_discovery_sample_subject(
         artifacts=(
             *(evidence.artifact for evidence in evidence_refs),
             *(projection.artifact for projection in projections),
-            *(support.artifact for support in individual_refs),
-            *(relation.artifact for relation in set_refs),
             assessment.artifact,
         ),
     )
@@ -1286,12 +1278,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             candidate_peaks=observations,
             policy=support_policy,
         )
-        if _observer is not None:
-            backfill_relations: tuple[
-                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
-            ] = (*backfill_support, *backfill_sets)
-            for ref in backfill_relations:
-                _observer.record_artifact(ref.artifact)
     elif method_subject.composition is not None:
         if raw is None or settings is None:
             raise CidNlAcquisitionError(
@@ -1327,12 +1313,8 @@ def backfill_untargeted_cid_nl_sample_subject(
             )
         )
         if _observer is not None:
-            for artifact in (
-                *(ref.artifact for ref in backfill_evidence),
-                *(ref.artifact for ref in backfill_support),
-                *(ref.artifact for ref in backfill_sets),
-            ):
-                _observer.record_artifact(artifact)
+            for evidence in backfill_evidence:
+                _observer.record_artifact(evidence.artifact)
     try:
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -1379,8 +1361,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         producer_attempt=processing_owners.attempt,
         artifacts=(
             *(ref.artifact for ref in backfill_evidence),
-            *(ref.artifact for ref in backfill_support),
-            *(ref.artifact for ref in backfill_sets),
             assessment.artifact,
         ),
     )

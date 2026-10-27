@@ -21,7 +21,6 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
-    canonical_dda_cid_nl_peak_support_bytes,
     resolve_dda_cid_nl_peak_support_ref,
     validate_dda_cid_nl_peak_support_binding,
 )
@@ -75,7 +74,7 @@ class _IdentityFixture:
     owners: ProcessingOwnerReferences
 
 
-def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
+def test_unique_dda_event_resolves_to_one_physical_peak(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
@@ -95,19 +94,6 @@ def test_unique_dda_event_resolves_to_one_physical_peak_and_closes_lineage(
     assert support.content.evidence == evidence.observation
     assert support.content.peak_observation == peak.content
     assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
-    assert support.artifact.upstream_artifact_ids == tuple(
-        sorted((evidence.artifact.evidence_artifact_id,))
-    )
-    assert canonical_dda_cid_nl_peak_support_bytes(support)
-
-    closed = compose_processing_owner_references(
-        request=fixture.request,
-        attempt=fixture.attempt,
-        sample_snapshot=fixture.sample.snapshot,
-        sample_resolutions=(fixture.sample,),
-        evidence_artifacts=(support.artifact, evidence.artifact),
-    )
-    assert support.artifact in closed.evidence_artifacts
 
 
 def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
@@ -262,8 +248,8 @@ def test_scan_and_peak_mutation_invalidate_support_content(tmp_path: Path) -> No
     scan_mutated = _resolve(fixture, changed_scan, original_peak)
     peak_mutated = _resolve(fixture, original_evidence, changed_peak)
 
-    assert original.artifact.content_identity != scan_mutated.artifact.content_identity
-    assert original.artifact.content_identity != peak_mutated.artifact.content_identity
+    assert original.content != scan_mutated.content
+    assert original.content != peak_mutated.content
 
 
 def test_nonselected_candidate_mutation_invalidates_bound_universe(
@@ -302,7 +288,7 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
 
     assert first.content.peak_observation == (changed.content.peak_observation)
     assert first.content.candidate_peaks != (changed.content.candidate_peaks)
-    assert first.artifact.content_identity != changed.artifact.content_identity
+    assert first.content != changed.content
 
 
 def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
@@ -411,7 +397,7 @@ def test_evidence_and_peak_substitution_fail_closed(tmp_path: Path) -> None:
         )
 
 
-def test_retry_preserves_support_content_but_mints_distinct_artifact(
+def test_retry_preserves_support_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
@@ -432,8 +418,6 @@ def test_retry_preserves_support_content_but_mints_distinct_artifact(
     )
 
     assert first.content == retried.content
-    assert first.artifact.content_identity == retried.artifact.content_identity
-    assert first.artifact.evidence_artifact_id != retried.artifact.evidence_artifact_id
 
 
 def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
@@ -475,14 +459,6 @@ def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
     assert (
         forward.artifact.semantic_contract.schema_version
         == "cid_nl_chromatographic_support"
-    )
-    assert forward.artifact.upstream_artifact_ids == tuple(
-        sorted(
-            (
-                first.artifact.evidence_artifact_id,
-                second.artifact.evidence_artifact_id,
-            )
-        )
     )
 
 
@@ -594,7 +570,7 @@ def test_mixed_support_policy_cannot_form_one_event(tmp_path: Path) -> None:
         )
 
 
-def test_equivalent_numeric_policy_inputs_have_one_canonical_identity(
+def test_equivalent_numeric_policy_inputs_have_equal_support(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
@@ -626,13 +602,10 @@ def test_equivalent_numeric_policy_inputs_have_one_canonical_identity(
 
     assert type(integer_policy.precursor_tolerance_da) is float
     assert type(integer_policy.neutral_loss_tolerance_ppm) is float
-    assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
-    assert canonical_dda_cid_nl_peak_support_bytes(integer_ref) == (
-        canonical_dda_cid_nl_peak_support_bytes(float_ref)
-    )
+    assert integer_ref.content == float_ref.content
 
 
-def test_signed_zero_support_content_has_one_canonical_identity(
+def test_signed_zero_support_content_is_equal(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
@@ -651,9 +624,7 @@ def test_signed_zero_support_content_has_one_canonical_identity(
     assert math.copysign(1.0, signed_zero_content.precursor_delta_da) == 1.0
     assert math.copysign(1.0, signed_zero_content.observed_loss_error_ppm) == 1.0
     assert signed_zero_reference == reference
-    assert canonical_dda_cid_nl_peak_support_bytes(signed_zero_reference) == (
-        canonical_dda_cid_nl_peak_support_bytes(reference)
-    )
+    assert signed_zero_reference.content == reference.content
 
 
 def test_scan_mutation_invalidates_chromatographic_event_content(
@@ -684,7 +655,7 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
         ),
     )
 
-    assert first.artifact.content_identity != changed.artifact.content_identity
+    assert first.content != changed.content
 
 
 def test_retry_preserves_chromatographic_event_content_but_not_artifact(
@@ -1081,11 +1052,9 @@ def _processing_owners(
     )
 
 
-def test_chromatographic_support_producer_binds_request_attempt_and_sample(
+def test_chromatographic_support_producer_binds_sample(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.processing_identity import issue_processing_attempt
-
     fixture = _identity_fixture(tmp_path)
     foreign = _identity_fixture(tmp_path, sample_key="sample-b")
     peak = _peak(fixture.owners, fixture.sample)
@@ -1097,12 +1066,9 @@ def test_chromatographic_support_producer_binds_request_attempt_and_sample(
         )
         for scan in (42, 43)
     )
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
     for owners, sample, reason in (
-        (retry_owners, fixture.sample, "processing attempt"),
         (fixture.owners, foreign.sample, "sample"),
-        (foreign.owners, foreign.sample, "processing request"),
+        (foreign.owners, foreign.sample, "sample"),
     ):
         with pytest.raises(CidNlChromatographicSupportContractError, match=reason):
             compose_cid_nl_chromatographic_support_ref(

@@ -2,23 +2,17 @@
 
 from __future__ import annotations
 
-from xic_extractor.evidence_artifacts import mint_evidence_artifact_ref
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
-    _ARTIFACT_SEMANTIC_CONTRACT,
-    ARTIFACT_SEMANTIC_ROLE,
     RELATIONSHIP,
-    SCHEMA_VERSION,
     DdaCidNlPeakSupportContent,
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
-    _support_bytes,
-    canonical_dda_cid_nl_peak_support_bytes,
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
@@ -95,14 +89,7 @@ def resolve_dda_cid_nl_peak_support_ref(
         candidate_peaks=candidate_peaks,
         policy=policy,
     )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=_support_bytes(content),
-        upstream_artifacts=(canonical_evidence.artifact,),
-    )
-    return DdaCidNlPeakSupportRef(content=content, artifact=artifact)
+    return DdaCidNlPeakSupportRef(content=content)
 
 
 def validate_dda_cid_nl_peak_support_binding(
@@ -158,25 +145,6 @@ def validate_dda_cid_nl_peak_support_binding(
         raise DdaCidNlPeakSupportContractError(
             "DDA CID-NL peak support references a different peak observation or "
             "candidate universe"
-        )
-    expected_upstream_ids = (canonical_evidence.artifact.evidence_artifact_id,)
-    if reference.artifact.upstream_artifact_ids != expected_upstream_ids:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support upstream references were substituted"
-        )
-    if (
-        reference.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different processing request"
-        )
-    if (
-        reference.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different processing attempt"
         )
 
 
@@ -343,14 +311,11 @@ def _validate_peak_binding(
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "DdaCidNlPeakSupportContent",
     "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
     "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_dda_cid_nl_peak_support_bytes",
     "resolve_dda_cid_nl_peak_support_ref",
     "validate_dda_cid_nl_peak_support_binding",
 ]

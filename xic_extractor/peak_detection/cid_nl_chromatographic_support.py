@@ -57,7 +57,7 @@ def compose_cid_nl_chromatographic_support_ref(
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cid_nl_chromatographic_support_bytes(content),
-        upstream_artifacts=tuple(support.artifact for support in supports),
+        upstream_artifacts=tuple(evidence.artifact for evidence in evidence_refs),
     )
     return CidNlChromatographicSupportRef(
         content=content, artifact=artifact, evidence_refs=evidence_refs
@@ -139,20 +139,6 @@ def _validated_scan_supports(
                 "measured loss evidence must exactly close scan supports"
             )
     for support in supports:
-        if (
-            support.artifact.producer_processing_request_id
-            != processing_owners.request.processing_request_id
-        ):
-            raise CidNlChromatographicSupportContractError(
-                "DDA scan support references a different processing request"
-            )
-        if (
-            support.artifact.producer_processing_attempt_id
-            != processing_owners.attempt.processing_attempt_id
-        ):
-            raise CidNlChromatographicSupportContractError(
-                "DDA scan support references a different processing attempt"
-            )
         if support.content.sample_key != sample.identity.sample_key:
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different sample"
