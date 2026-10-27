@@ -48,6 +48,7 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
@@ -215,16 +216,15 @@ def _complete_cell_observations(
         for key, pair in evidence.group_backfills.items()
         if key[1] not in members_by_group[key[0]]
     }
-    retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
+    retained_cell_hypotheses: dict[
+        CidNlMethodAssessmentContent, list[PeakHypothesis]
+    ] = {}
     for candidate in grouping.retained_candidates:
         assessment = candidate.direct_support_assessment
         if assessment is None:
             continue
         retained_cell_hypotheses.setdefault(
-            (
-                candidate.sample_key,
-                assessment.artifact.content_identity.artifact_content_id,
-            ),
+            assessment.content,
             [],
         ).append(candidate.peak_hypothesis)
     retained_hypotheses = {

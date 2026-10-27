@@ -245,13 +245,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     assert set(grouping.partition_transition.admitted_members) == {
         owners[name].cross_sample_member_subject for name in accepted
     }
-    assert set(retained) == {
-        (
-            fixture.sample(name).identity.sample_key,
-            assessments[name].artifact.content_identity.artifact_content_id,
-        )
-        for name in accepted
-    }
+    assert set(retained) == {assessments[name].content for name in accepted}
     assert {
         hypothesis.hypothesis_id
         for values in retained.values()

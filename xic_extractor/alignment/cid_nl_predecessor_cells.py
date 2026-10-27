@@ -22,6 +22,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
     is_ms1_only_cid_nl_backfill_assessment,
 )
@@ -47,7 +48,7 @@ def compose_cid_nl_predecessor_cells(
     | None = None,
     selected_cells: frozenset[tuple[str, str]] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        tuple[str, str], tuple[PeakHypothesis, ...]
+        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
     ]
     | None = None,
     rejected_backfill_cells: frozenset[tuple[str, str]] = frozenset(),
@@ -69,18 +70,13 @@ def compose_cid_nl_predecessor_cells(
             raise CellObservationContractError(
                 "group backfill crossed its sample or method subject"
             )
-    # Assessment artifacts already own their identity. Hashing the frozen
-    # assessment itself recursively visits its entire evidence/curve graph.
+    # Match the sample and measured assessment values, not artifact identities.
     unique_assessments: dict[
-        tuple[str, str],
+        CidNlMethodAssessmentContent,
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ] = {}
     for sample, assessment in (*sample_assessments, *backfills.values()):
-        key = (
-            sample.identity.sample_key,
-            assessment.artifact.evidence_artifact_id,
-        )
-        unique_assessments.setdefault(key, (sample, assessment))
+        unique_assessments.setdefault(assessment.content, (sample, assessment))
     sample_assessments = tuple(
         sorted(
             unique_assessments.values(),
@@ -91,13 +87,10 @@ def compose_cid_nl_predecessor_cells(
         owner_id for group in groups for owner_id in group.owner_ids
     )
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
-    consumed_retained_keys: set[tuple[str, str]] = set()
+    consumed_retained_keys: set[CidNlMethodAssessmentContent] = set()
     supports_list: list[CidNlCellGroupSupport] = []
     for sample, assessment in sample_assessments:
-        retained_key = (
-            sample.identity.sample_key,
-            assessment.artifact.content_identity.artifact_content_id,
-        )
+        retained_key = assessment.content
         retained_hypotheses = retained_by_assessment.get(retained_key, ())
         if retained_key in retained_by_assessment:
             consumed_retained_keys.add(retained_key)

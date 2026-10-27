@@ -30,6 +30,7 @@ from xic_extractor.alignment.peak_trajectories import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -143,7 +144,7 @@ def bootstrap_cid_nl_initial_population(
     retain_observation_only_candidates: bool = False,
     elution_contexts: Sequence[SampleElutionContext] = (),
     retained_hypotheses_by_assessment: Mapping[
-        tuple[str, str], tuple[PeakHypothesis, ...]
+        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -183,14 +184,13 @@ def bootstrap_cid_nl_initial_population(
     sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
     owners: list[SampleLocalMS1Owner] = []
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
-    consumed_retained_assessment_ids: set[tuple[str, str]] = set()
+    consumed_retained_assessments: set[CidNlMethodAssessmentContent] = set()
     for sample, assessment in sample_assessments:
         sample_id = sample.identity.sample_key
-        assessment_content_id = assessment.artifact.content_identity.artifact_content_id
-        retained_key = (sample_id, assessment_content_id)
+        retained_key = assessment.content
         retained_hypotheses = retained_by_assessment.get(retained_key, ())
         if retained_key in retained_by_assessment:
-            consumed_retained_assessment_ids.add(retained_key)
+            consumed_retained_assessments.add(retained_key)
         hypotheses = (
             bind_retained_peak_hypotheses_to_assessment_universe(
                 processing_owners=processing_owners,
@@ -215,7 +215,7 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses:
             assessment_by_hypothesis.setdefault(hypothesis.hypothesis_id, assessment)
         sample_by_id[sample_id] = sample
-    if consumed_retained_assessment_ids != set(retained_by_assessment):
+    if consumed_retained_assessments != set(retained_by_assessment):
         raise GroupingBootstrapError(
             "retained hypotheses reference an assessment outside the bootstrap input"
         )

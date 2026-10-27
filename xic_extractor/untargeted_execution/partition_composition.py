@@ -634,12 +634,7 @@ def prepare_untargeted_partition_grouping(
             )
         }
         retained_hypotheses_by_assessment = {
-            (
-                key[0],
-                assessment_by_sample_subject[
-                    key
-                ].artifact.content_identity.artifact_content_id,
-            ): hypotheses
+            assessment_by_sample_subject[key].content: hypotheses
             for key, hypotheses in hypotheses_by_sample_subject.items()
         }
         for binding in child_bindings:

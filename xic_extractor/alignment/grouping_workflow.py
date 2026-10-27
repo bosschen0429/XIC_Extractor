@@ -53,6 +53,7 @@ from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentContent,
     CidNlMethodAssessmentRef,
     is_ms1_only_cid_nl_backfill_assessment,
 )
@@ -183,7 +184,7 @@ def build_initial_cid_nl_cross_sample_groups(
     rt_frame: SampleRtFrame,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        tuple[str, str], tuple[PeakHypothesis, ...]
+        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -311,13 +312,13 @@ def admit_cid_nl_group_backfills(
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
     dict[str, str],
-    dict[tuple[str, str], tuple[PeakHypothesis, ...]],
+    dict[CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]],
     frozenset[tuple[str, str]],
 ]:
     """Choose bounded acquired candidates while preserving all original owners."""
     by_id = {group.group_hypothesis_id: group for group in groups}
     proposals = []
-    retained: dict[tuple[str, str], tuple[PeakHypothesis, ...]] = {}
+    retained: dict[CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
@@ -463,9 +464,7 @@ def admit_cid_nl_group_backfills(
         if assessment.content.method_result != "SUPPORT":
             continue
         additions[group_id].append(owner)
-        retained[
-            (physical_key[0], assessment.artifact.content_identity.artifact_content_id)
-        ] = (hypothesis,)
+        retained[assessment.content] = (hypothesis,)
     completed = []
     successor_ids = {}
     admitted: list[CrossSampleGroupMemberSubject] = []
