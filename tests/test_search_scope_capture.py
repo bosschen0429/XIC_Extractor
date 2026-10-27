@@ -1134,7 +1134,6 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1,
             reason_code=None,
         ),
         candidate_peaks=(observation,),

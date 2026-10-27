@@ -1197,7 +1197,6 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
                 support_policy=cid_nl_support_policy(),
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=1,
                 reason_code=None,
             ),
             candidate_peaks=(peak,),

@@ -58,7 +58,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
         {"query_rt_min": 7.5},
         {"query_rt_max": 8.5},
         {"search_completed": True},
-        {"scanned_event_count": 1},
         {"evidence_scope": "subject_window"},
     ],
 )
@@ -71,7 +70,6 @@ def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=False,
-        scanned_event_count=0,
         reason_code="no_search_eligible_discovery_input",
         evidence_scope="declared_scans",
     )
@@ -233,7 +231,6 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1,
             reason_code=None,
         ),
         candidate_peaks=(peak,),
@@ -516,7 +513,7 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         sample=fixture.sample("edge"),
         target=fixture.target,
         detector_invocation_id="gaussian15:edge",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
         set_relation_refs=(relation,),
@@ -589,7 +586,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="adjacent-peaks",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=peaks,
             evidence_refs=(evidence,),
             individual_support_refs=individual_refs,
@@ -656,7 +653,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="adjacent-peaks",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=peaks,
             evidence_refs=(evidence,),
             individual_support_refs=resolved_individual,
@@ -884,7 +881,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:wrong-peak",
-            evaluation_receipt=_completed_receipt(scanned_event_count=0),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(wrong_peak,),
         )
     with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
@@ -893,7 +890,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:wrong-evidence",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             evidence_refs=(wrong_evidence,),
         )
 
@@ -909,7 +906,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             sample=sample,
             target=fixture.target,
             detector_invocation_id="gaussian15:bound:late-evidence",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             evidence_refs=(late_evidence,),
         )
 
@@ -946,7 +943,7 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:nonqual",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         evidence_refs=(evidence,),
     )
 
@@ -998,7 +995,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:mixed",
-        evaluation_receipt=_completed_receipt(scanned_event_count=2),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=peaks,
         evidence_refs=(interior, boundary),
         individual_support_refs=(individual,),
@@ -1047,7 +1044,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
             sample=sample,
             target=fixture.target,
             detector_invocation_id=f"gaussian15:{stem}:group-membership",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(peak,),
             evidence_refs=(evidence,),
             individual_support_refs=(support,),
@@ -1109,7 +1106,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
         sample=fixture.sample("hold"),
         target=fixture.other_target,
         detector_invocation_id="gaussian15:hold:other-target",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
 
     with pytest.raises(CellObservationContractError, match="group recovery subject"):
@@ -1158,7 +1155,7 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
         "sample": fixture.sample("multi"),
         "target": fixture.target,
         "detector_invocation_id": "gaussian15:multi",
-        "evaluation_receipt": _completed_receipt(scanned_event_count=2),
+        "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
     forward = mint_cid_nl_method_assessment_ref(
@@ -1256,7 +1253,7 @@ def test_assessment_rejects_duplicate_acquisition_scan_evidence(
             sample=fixture.sample("same-scan"),
             target=fixture.target,
             detector_invocation_id="gaussian15:same-scan",
-            evaluation_receipt=_completed_receipt(scanned_event_count=2),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(peak,),
             evidence_refs=(first, second),
             individual_support_refs=supports,
@@ -1315,7 +1312,7 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
             sample=fixture.sample("sample"),
             target=fixture.target,
             detector_invocation_id="gaussian15:sample",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(left,),
             evidence_refs=(evidence,),
             set_relation_refs=(relation,),
@@ -1328,7 +1325,7 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
             sample=retry.sample("sample"),
             target=retry.target,
             detector_invocation_id="gaussian15:sample:retry",
-            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evaluation_receipt=_completed_receipt(),
             candidate_peaks=(left, right),
             evidence_refs=(evidence,),
             set_relation_refs=(relation,),
@@ -1352,7 +1349,6 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=False,
-            scanned_event_count=0,
             reason_code="detector_worker_failed",
         ),
         technical_state="failed",
@@ -1429,7 +1425,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s1"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s1",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s1_peak,),
         evidence_refs=(s1_evidence,),
         individual_support_refs=(s1_support,),
@@ -1441,7 +1437,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s2"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s2",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s2_peak,),
     )
 
@@ -1456,7 +1452,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s3"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s3",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         evidence_refs=(s3_evidence,),
     )
 
@@ -1492,7 +1488,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s4"),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(s4_left, s4_right),
         evidence_refs=(s4_evidence,),
         set_relation_refs=(s4_relation,),
@@ -1509,7 +1505,6 @@ def _truth_table_fixture(tmp_path: Path):
             support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
-            scanned_event_count=0,
             reason_code="dda_not_available",
         ),
         technical_state="unsupported",
@@ -1530,7 +1525,7 @@ def test_targeted_assessment_retains_its_subject_mass_window(
             target=fixture.target,
             detector_invocation_id="targeted-scope",
             evaluation_receipt=replace(
-                _completed_receipt(scanned_event_count=0),
+                _completed_receipt(),
                 evidence_scope=(
                     "declared_scans"
                     if scope_override == "declared_scans"
@@ -1543,14 +1538,13 @@ def test_targeted_assessment_retains_its_subject_mass_window(
         )
 
 
-def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
+def _completed_receipt() -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=scanned_event_count,
         reason_code=None,
     )
 
@@ -1607,7 +1601,7 @@ def _support_assessment(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}:aggregate",
-        evaluation_receipt=_completed_receipt(scanned_event_count=len(evidence_refs)),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
@@ -1700,7 +1694,7 @@ def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
         "processing_owners": fixture.owners,
         "sample": sample,
         "target": fixture.target,
-        "evaluation_receipt": _completed_receipt(scanned_event_count=1),
+        "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
     first_assessment = mint_cid_nl_method_assessment_ref(

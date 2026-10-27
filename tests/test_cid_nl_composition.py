@@ -191,7 +191,8 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     if scenario == "one_scan":
         assert all(
             len(assessment.evidence_refs) == 2
-            and assessment.content.evaluation_receipt.scanned_event_count == 1
+            and len({ref.observation.scan_number for ref in assessment.evidence_refs})
+            == 1
             for assessment in by_sample.values()
         )
     completed = complete_dense_partition(

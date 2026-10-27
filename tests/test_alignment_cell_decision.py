@@ -304,7 +304,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     source = next(
         item

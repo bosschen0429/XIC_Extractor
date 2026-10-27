@@ -436,7 +436,6 @@ def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected
     result = results[target.label]
     assert requests == [(target.mz, 0.0, 12.0, target.ppm_tol)]
     assert result.cid_nl_evaluation_receipt.search_completed
-    assert result.cid_nl_evaluation_receipt.scanned_event_count == 0
     assert result.cid_nl_products == ()
     assert result.candidate_physical_evaluations
     assert any(
@@ -756,7 +755,6 @@ def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
     }
     assert scoped.cid_nl_products == unscoped.cid_nl_products
     assert scoped.cid_nl_evaluation_receipt == unscoped.cid_nl_evaluation_receipt
-    assert scoped.cid_nl_evaluation_receipt.scanned_event_count == len(events)
     assert scoped.selected_cid_nl_supported == unscoped.selected_cid_nl_supported
 
 

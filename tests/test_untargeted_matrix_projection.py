@@ -461,7 +461,7 @@ def _support_input(
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
         detector_invocation_id=f"gaussian15:{sample_stem}",
-        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
         individual_support_refs=(support,),
@@ -473,14 +473,13 @@ def _support_input(
     )
 
 
-def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
+def _completed_receipt() -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
         support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=scanned_event_count,
         reason_code=None,
     )
 

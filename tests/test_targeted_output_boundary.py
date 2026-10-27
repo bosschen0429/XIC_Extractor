@@ -226,9 +226,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     assert all(
         len(item.candidate_peaks) == (2 if with_signal else 0) for item in assessments
     )
-    assert all(
-        item.content.evaluation_receipt.scanned_event_count == 6 for item in assessments
-    )
     assert all(len(item.evidence_refs) == (6 if with_nl else 0) for item in assessments)
     assert all(
         item.content.method_result

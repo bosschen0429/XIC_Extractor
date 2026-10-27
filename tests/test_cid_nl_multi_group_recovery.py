@@ -158,7 +158,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
                 support_policy=cid_nl_support_policy(),
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=1,
                 reason_code=None,
             ),
             candidate_peaks=(peak,),
@@ -1995,7 +1994,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     (missing_decision,) = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
-        if decision.feature_family_id == group_8.feature_family_id
+        if decision.feature_id == group_8.feature_id
         and decision.sample_stem == "Missing"
     )
     assert "Missing" in sample_stems

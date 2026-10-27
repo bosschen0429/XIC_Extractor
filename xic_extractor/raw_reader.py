@@ -2,7 +2,7 @@ import importlib
 import math
 import os
 from collections import defaultdict
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -490,17 +490,13 @@ class RawFileHandle:
 
     def read_ms2_window(
         self, rt_min: float, rt_max: float, *, precursor_scope: Ms2PrecursorScope
-    ) -> tuple[tuple[Ms2ScanEvent, ...], int]:
-        """Read spectra only for MS2 events the scope admits; count the others."""
-        reader = self._iter_ms2_scans(
-            rt_min, rt_max, scan_numbers=None, precursor_scope=precursor_scope
+    ) -> tuple[Ms2ScanEvent, ...]:
+        """Read spectra only for MS2 events the scope admits."""
+        return tuple(
+            self._iter_ms2_scans(
+                rt_min, rt_max, scan_numbers=None, precursor_scope=precursor_scope
+            )
         )
-        events: list[Ms2ScanEvent] = []
-        while True:
-            try:
-                events.append(next(reader))
-            except StopIteration as done:
-                return tuple(events), done.value
 
     def _iter_ms2_scans(
         self,
@@ -509,8 +505,8 @@ class RawFileHandle:
         *,
         scan_numbers: frozenset[int] | None,
         precursor_scope: Ms2PrecursorScope | None = None,
-    ) -> Generator[Ms2ScanEvent, None, int]:
-        """Yield MS2 events; return how many the precursor scope left unread."""
+    ) -> Iterator[Ms2ScanEvent]:
+        """Yield admitted MS2 events and acquisition errors."""
         one_sided_crop = (rt_min is None) != (rt_max is None)
         for name, value in (("rt_min", rt_min), ("rt_max", rt_max)):
             if value is not None and (
@@ -529,7 +525,7 @@ class RawFileHandle:
             )
             rt_max = acquisition_end if rt_max is None else min(rt_max, acquisition_end)
         if rt_min > rt_max:
-            return 0
+            return
         start_scan = self._raw_file.ScanNumberFromRetentionTime(rt_min)
         end_scan = self._raw_file.ScanNumberFromRetentionTime(rt_max)
         selected = (
@@ -539,7 +535,6 @@ class RawFileHandle:
                 number for number in scan_numbers if start_scan <= number <= end_scan
             )
         )
-        unread = 0
         for scan_number in selected:
             try:
                 scan_rt = float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
@@ -578,7 +573,6 @@ class RawFileHandle:
                 if precursor_scope is not None and not precursor_scope(
                     precursor_mz, precursor_metadata
                 ):
-                    unread += 1
                     continue
                 scan_data = self._raw_file.GetSimplifiedScan(scan_number)
                 masses = np.asarray(getattr(scan_data, "Masses", []), dtype=float)
@@ -607,7 +601,6 @@ class RawFileHandle:
                     parse_error=str(exc),
                     scan_number=scan_number,
                 )
-        return unread
 
     def _mass_scale(self, scan_number: int) -> float:
         """Measured m/z divided by true m/z for one scan under the policy."""

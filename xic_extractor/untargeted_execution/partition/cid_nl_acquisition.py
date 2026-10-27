@@ -1286,7 +1286,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     backfill_evidence: tuple[CidNlEvidenceRef, ...] = ()
     backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
     backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
-    scanned_count = 0
     if initial_assessment is not None and observations:
         backfill_evidence = tuple(
             ref
@@ -1300,7 +1299,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             candidate_peaks=observations,
             policy=support_policy,
         )
-        scanned_count = len({ref.observation.scan_number for ref in backfill_evidence})
         if _observer is not None:
             backfill_relations: tuple[
                 DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
@@ -1328,7 +1326,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 "backfill composition mismatches the method subject"
             )
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
-        backfill_evidence, backfill_support, backfill_sets, scanned_count = (
+        backfill_evidence, backfill_support, backfill_sets = (
             _composite_backfill_evidence(
                 processing_owners=processing_owners,
                 sample=sample,
@@ -1373,7 +1371,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 support_policy=support_policy,
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=scanned_count,
                 reason_code=None,
                 evidence_scope=(
                     initial_assessment.content.evaluation_receipt.evidence_scope
@@ -1449,7 +1446,6 @@ def _composite_backfill_evidence(
     tuple[CidNlEvidenceRef, ...],
     tuple[DdaCidNlPeakSupportRef, ...],
     tuple[DdaCidNlCandidateSetRelationRef, ...],
-    int,
 ]:
     """Evaluate the configured loss set on the backfilled physical universe."""
     evidence_refs: list[CidNlEvidenceRef] = []
@@ -1514,7 +1510,6 @@ def _composite_backfill_evidence(
         tuple(evidence_refs),
         tuple(individual_refs),
         tuple(set_refs),
-        len(scan_numbers),
     )
 
 
@@ -1768,11 +1763,6 @@ def _mint_assessment(
                 support_policy=support_policy,
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
-                scanned_event_count=(
-                    len({ref.observation.scan_number for ref in evidence_refs})
-                    if search_completed
-                    else 0
-                ),
                 reason_code=technical_reason_code,
                 evidence_scope="declared_scans",
             ),

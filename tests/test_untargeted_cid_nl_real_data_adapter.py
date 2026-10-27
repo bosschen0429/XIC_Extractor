@@ -977,7 +977,6 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
             "no_search_eligible_discovery_input",
         )
         assert assessment.content.evaluation_receipt.search_completed is False
-        assert assessment.content.evaluation_receipt.scanned_event_count == 0
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
         assert result.acquisition is None
@@ -2025,7 +2024,6 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assert assessment.content.method_result is None
     assert assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
     assert assessment.content.evaluation_receipt.search_completed is False
-    assert assessment.content.evaluation_receipt.scanned_event_count == 0
     assert result.assessment_input.discovery_projections == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
@@ -2052,7 +2050,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     receipt = assessment.content.evaluation_receipt
     assert assessment.content.technical_state == "not_evaluated"
     assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
-    assert receipt.search_completed is False and receipt.scanned_event_count == 0
+    assert receipt.search_completed is False
     assert result.acquisition is None and not result.captures
 
 
@@ -2531,7 +2529,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     )
     assert result.assessment.content.method_result == "HOLD"
     assert result.assessment.content.evaluation_receipt.search_completed is True
-    assert result.assessment.content.evaluation_receipt.scanned_event_count == 0
     assert len(result.assessment.candidate_peaks) == 1
     assert result.assessment.evidence_refs == ()
     assert result.backfill_input is not None
@@ -3138,7 +3135,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         ),
         acquisition_supported=True,
         search_completed=True,
-        scanned_event_count=0,
         reason_code=None,
     )
     kwargs = dict(

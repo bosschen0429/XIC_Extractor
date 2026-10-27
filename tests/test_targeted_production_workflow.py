@@ -1273,7 +1273,6 @@ def with_method_universe(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=len(products),
             reason_code=None,
         ),
         cid_nl_relations=relations,

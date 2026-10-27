@@ -136,7 +136,6 @@ def _view(
             support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=1 if support else 0,
             reason_code=None,
         ),
         candidate_peaks=(peak,),

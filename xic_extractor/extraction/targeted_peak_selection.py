@@ -230,7 +230,6 @@ def assess_targeted_candidate_population(
             support_policy=policy,
             acquisition_supported=True,
             search_completed=True,
-            scanned_event_count=method_window.scanned_event_count,
             reason_code=None,
         )
         relations = evaluate_cid_nl_method_relations(

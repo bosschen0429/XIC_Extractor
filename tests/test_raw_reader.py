@@ -1129,7 +1129,7 @@ def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
     full = tuple(handle.iter_ms2_scans(rt_min=8.0, rt_max=8.2))
     raw.scan_calls.clear()
 
-    events, unread = handle.read_ms2_window(
+    events = handle.read_ms2_window(
         8.0,
         8.2,
         precursor_scope=PrecursorMassScope.around(
@@ -1139,7 +1139,6 @@ def test_precursor_scoped_ms2_window_reads_only_admitted_spectra() -> None:
 
     assert [event.scan_number for event in full] == [1, 2]
     assert events == full[:1]
-    assert unread == 1
     assert raw.scan_calls == [1]
 
 

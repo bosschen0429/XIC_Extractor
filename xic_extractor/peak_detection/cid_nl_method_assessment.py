@@ -198,7 +198,6 @@ class CidNlEvaluationReceipt:
     support_policy: DdaCidNlPeakSupportPolicy
     acquisition_supported: bool
     search_completed: bool
-    scanned_event_count: int
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
     # Untargeted Backfill queries the frozen group while retaining subject lineage.
@@ -211,7 +210,6 @@ class CidNlEvaluationReceipt:
                 and self.query_rt_max is None
                 and self.evidence_scope == "declared_scans"
                 and self.search_completed is False
-                and self.scanned_event_count == 0
             ):
                 raise CidNlMethodAssessmentContractError(
                     "absent evaluation query requires an unattempted "
@@ -236,14 +234,6 @@ class CidNlEvaluationReceipt:
         if not isinstance(self.search_completed, bool):
             raise CidNlMethodAssessmentContractError(
                 "search_completed must be a boolean"
-            )
-        if (
-            isinstance(self.scanned_event_count, bool)
-            or not isinstance(self.scanned_event_count, int)
-            or self.scanned_event_count < 0
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "scanned_event_count must be a non-negative integer"
             )
         if self.reason_code is not None:
             _required_text(self.reason_code, field="reason_code")
@@ -770,21 +760,12 @@ def _validate_attempt_state(
             raise CidNlMethodAssessmentContractError(
                 "completed evaluation cannot carry a technical failure reason"
             )
-        if evaluation_receipt.scanned_event_count < len(
-            {
-                (ref.observation.acquisition_source_id, ref.observation.scan_number)
-                for ref in evidence_refs
-            }
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "scanned_event_count cannot be smaller than measured evidence"
-            )
         return
     if candidate_peaks or evidence_refs or individual_support_refs or set_relation_refs:
         raise CidNlMethodAssessmentContractError(
             "non-evaluated technical state may not carry scientific result refs"
         )
-    if evaluation_receipt.search_completed or evaluation_receipt.scanned_event_count:
+    if evaluation_receipt.search_completed:
         raise CidNlMethodAssessmentContractError(
             "non-evaluated technical state cannot claim a completed search"
         )

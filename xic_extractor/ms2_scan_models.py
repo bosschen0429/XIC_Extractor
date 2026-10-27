@@ -69,8 +69,3 @@ class Ms2Window:
     rt_min: float
     rt_max: float
     events: tuple[Ms2ScanEvent, ...]
-    unread_event_count: int = 0
-
-    @property
-    def scanned_event_count(self) -> int:
-        return len(self.events) + self.unread_event_count

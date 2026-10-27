@@ -533,7 +533,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
                 support_policy=cid_nl_support_policy(),
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=1,
                 reason_code=None,
             ),
             candidate_peaks=(peak,),

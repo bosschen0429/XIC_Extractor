@@ -101,9 +101,7 @@ def _outside_group_fixture(
             sample=fixture.sample(stem),
             method_subject=fixture.method_subject,
             detector_invocation_id=f"outside-group:{stem}",
-            evaluation_receipt=replace(
-                _completed_receipt(scanned_event_count=len(centers)), query_rt_max=16.5
-            ),
+            evaluation_receipt=replace(_completed_receipt(), query_rt_max=16.5),
             candidate_peaks=peaks,
             evidence_refs=evidence,
             individual_support_refs=supports,
@@ -303,7 +301,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         sample=recovered_sample,
         method_subject=fixture.method_subject,
         detector_invocation_id="group-local-recovery",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(recovered_peak,),
     )
     assert backfill_assessment.content.method_result == "HOLD"
@@ -410,7 +408,7 @@ def _support_assessment(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
-        evaluation_receipt=_completed_receipt(scanned_event_count=seed_count),
+        evaluation_receipt=_completed_receipt(),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
@@ -544,7 +542,7 @@ def test_composer_distinguishes_completed_negative_search(
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:completed-negative",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     negative_cell = mint_cell_observation_ref(
         processing_owners=fixture.owners,
@@ -856,7 +854,7 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
         sample=sample,
         target=fixture.target,
         detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
-        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        evaluation_receipt=_completed_receipt(),
     )
     source = next(
         cell
