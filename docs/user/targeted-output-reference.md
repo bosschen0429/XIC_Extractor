@@ -110,8 +110,7 @@ Value is the last column so a long setting such as `targeted_strategy` stays rea
 | target_config_hash | `1a2b3c4d` | First 8 hex characters of the target CSV SHA-256, for comparing target settings |
 | signal_processing_method | `gaussian` | Shared physical signal smoothing method |
 | signal_processing_window_points | `15` | Gaussian smoothing window (points) |
-| targeted_workbook_layout_version | `2` | Delivered workbook presentation layout |
-| targeted_output_schema_version | `targeted_output` | Output schema version |
+| targeted_output_schema_version | `targeted_output` | Unversioned output format |
 
 ---
 

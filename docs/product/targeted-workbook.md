@@ -21,10 +21,11 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
 | `Sample Context` | Supplied sample order table, hidden; only when supplied | Traceability |
 
-`XIC Results`, `Targets` and `Run Metadata` are reader contracts: their names,
-first-row headers and `targeted_workbook_layout_version` 2 stay stable. Readers
-bind headers, not positions. Human sheets may change layout without a version
-change; they never change saved values or decisions.
+`XIC Results`, `Targets` and `Run Metadata` are reader contracts: readers bind
+their named headers and the unversioned `targeted_output` format, not column
+positions or a numeric layout tag. Workbooks carrying the retired layout tag
+must be regenerated. Human sheets may change layout; they never change saved
+values or decisions.
 
 ## Content rules
 

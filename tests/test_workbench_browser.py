@@ -2754,7 +2754,6 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
-    metadata.append(["targeted_workbook_layout_version", 2])
     book.save(path)
     book.close()
     return path

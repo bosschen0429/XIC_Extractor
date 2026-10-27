@@ -84,7 +84,6 @@ def workbook(tmp_path):
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
     metadata.append(["signal_processing_method", "gaussian"])
-    metadata.append(["targeted_workbook_layout_version", 2])
     book.save(path)
     book.close()
     return path
@@ -416,7 +415,7 @@ def test_malformed_targeted_workbook_is_actionable(workbook, damage):
     elif damage == "schema":
         book["Run Metadata"]["B2"] = "unsupported"
     elif damage == "layout":
-        book["Run Metadata"]["B4"] = 1
+        book["Run Metadata"].append(["targeted_workbook_layout_version", 2])
     else:
         book["XIC Results"]["C3"] = "Analyte"
     book.save(workbook)
@@ -523,7 +522,6 @@ def write_rare_detection_workbook(path):
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
-    metadata.append(["targeted_workbook_layout_version", 2])
     book.save(path)
     book.close()
     return path

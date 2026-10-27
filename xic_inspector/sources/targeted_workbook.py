@@ -14,7 +14,6 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from xic_extractor.diagnostics.alignment_explanation import ExplanationError
-from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
@@ -78,9 +77,10 @@ class TargetedWorkbookSource:
                 [row["Key"], row["Value"]]
                 for row in _table(book, "Run Metadata", {"Key", "Value"})
             ]
-            layout = dict(metadata).get("targeted_workbook_layout_version")
-            if layout != TARGETED_WORKBOOK_LAYOUT_VERSION:
-                raise ExplanationError(f"不支援的 Targeted XLSX layout：{layout}")
+            if "targeted_workbook_layout_version" in dict(metadata):
+                raise ExplanationError(
+                    "不支援的 Targeted XLSX：含舊版 layout 標記，請重跑分析。"
+                )
             self.targets = _table(
                 book, "Targets", {"Label", "Role", "m/z", "RT min", "RT max"}
             )
