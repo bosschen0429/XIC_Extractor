@@ -5,9 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionRef,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -22,23 +19,10 @@ class UntargetedCidNlGoldenPathError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlAssessmentInput:
-    """One sample assessment plus exact Discovery projections for its evidence."""
+    """One sample's complete CID-NL method assessment."""
 
     sample: ResolvedCanonicalSampleIdentity
     assessment: CidNlMethodAssessmentRef
-    discovery_projections: tuple[UntargetedCidNlProjectionRef, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "discovery_projections",
-            tuple(
-                sorted(
-                    self.discovery_projections,
-                    key=lambda projection: projection.artifact.evidence_artifact_id,
-                )
-            ),
-        )
 
 
 @dataclass(frozen=True, slots=True)

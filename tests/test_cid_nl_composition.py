@@ -162,10 +162,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         result.job.sample.metadata.raw_stem: fixture_assessment(result)
         for result in runtime.sample_results
     }
-    assert {
-        assessment.artifact.semantic_contract.schema_version
-        for assessment in by_sample.values()
-    } == {"cid_nl_method_assessment_physical_query"}
     if recovery:
         recovered = next(
             result
@@ -319,7 +315,10 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         )
         owners.append(
             owner_from_cid_nl_assessment_support(
-                sample=result.job.sample, assessment=assessment, hypothesis=hypothesis
+                processing_owners=batch.context.processing_owners,
+                sample=result.job.sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
             )
         )
     assert (

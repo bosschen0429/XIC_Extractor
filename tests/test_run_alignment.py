@@ -446,15 +446,13 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
-        identity = output_dir / "alignment_matrix_identity.tsv"
         cells = output_dir / "alignment_cells.tsv"
         seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, identity, cells, seed_audit):
+        for path in (review, matrix, cells, seed_audit):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
-            matrix_identity_tsv=identity,
             cells_tsv=cells,
             backfill_seed_audit_tsv=seed_audit,
         )
@@ -577,7 +575,6 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
             "matrix_tsv": output_dir / "alignment_matrix.tsv",
-            "matrix_identity_tsv": output_dir / "alignment_matrix_identity.tsv",
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -651,7 +648,6 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
         return AlignmentRunOutputs(
             review_tsv=output_dir / "alignment_review.tsv",
             matrix_tsv=output_dir / "alignment_matrix.tsv",
-            matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
             backfill_cell_evidence_tsv=(
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -723,7 +719,6 @@ backfill_expansion_productization = "clean-target-selective"
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
             "matrix_tsv": output_dir / "alignment_matrix.tsv",
-            "matrix_identity_tsv": output_dir / "alignment_matrix_identity.tsv",
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
@@ -805,15 +800,13 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
-        identity = output_dir / "alignment_matrix_identity.tsv"
         light_cells = output_dir / "alignment_backfill_cell_evidence.tsv"
         seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, identity, light_cells, seed_audit):
+        for path in (review, matrix, light_cells, seed_audit):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
-            matrix_identity_tsv=identity,
             backfill_cell_evidence_tsv=light_cells,
             backfill_seed_audit_tsv=seed_audit,
         )

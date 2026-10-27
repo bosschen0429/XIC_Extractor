@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -23,7 +22,6 @@ from xic_extractor.alignment.backfill.conservative import (
     assess_conservative_backfill_group,
     assess_targeted_conservative_backfill_group,
     assess_untargeted_conservative_backfill_group,
-    canonical_conservative_backfill_universe_bytes,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
     mint_conservative_backfill_candidate_universe,
@@ -705,17 +703,7 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
         "s03",
         (_peak(fixture, "s03", apex_rt=8.0),),
     )
-    payload = json.loads(
-        canonical_conservative_backfill_universe_bytes(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("s03"),
-            group_facts=(full_facts,),
-            candidate_assessment=valid_universe.candidate_assessment,
-        )
-    )
-    assert payload["request_sample_population_ids"] == sorted(
-        sample.identity.sample_key for sample in fixture.samples
-    )
+    assert valid_universe.group_facts == (full_facts,)
 
 
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
@@ -773,10 +761,7 @@ def test_group_support_closure_accepts_predecessor_but_rejects_sibling_attempt(
         group_context=predecessor_spine.cells[0].group_context,
         method_assessment=retry_assessment,
     )
-    assert (
-        inherited.artifact.producer_processing_attempt_id
-        == retry.attempt.processing_attempt_id
-    )
+    assert inherited.method_assessment is retry_assessment
 
     sibling = fixture.retry()
     sibling_spine = _spine(
@@ -794,39 +779,6 @@ def test_group_support_closure_accepts_predecessor_but_rejects_sibling_attempt(
             target=retry.target,
             group_context=sibling_spine.cells[0].group_context,
             method_assessment=retry_assessment,
-        )
-
-
-def test_recovery_receipt_rejects_same_request_sibling_assessment(
-    tmp_path: Path,
-) -> None:
-    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    facts = assess_conservative_backfill_group(
-        _spine(
-            fixture,
-            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-            invocation="recovery-attempt-owner",
-        ).cells,
-        sample_population=fixture.samples,
-    )
-    retry = fixture.retry()
-    sibling = fixture.retry()
-    sibling_universe = _recovery_universe(
-        sibling,
-        (facts,),
-        "missing",
-        (_peak(sibling, "missing", apex_rt=8.0),),
-    )
-
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="outside the exact processing attempt",
-    ):
-        mint_conservative_backfill_candidate_universe(
-            processing_owners=retry.owners,
-            sample=retry.sample("missing"),
-            group_facts=(facts,),
-            candidate_assessment=sibling_universe.candidate_assessment,
         )
 
 

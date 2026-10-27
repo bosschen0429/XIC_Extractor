@@ -26,9 +26,6 @@ from tests.test_cross_sample_association_lineage import (
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
-    NEUTRAL_LOSS_DA,
-    PRECURSOR_MZ,
-    PRODUCT_MZ,
     UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
@@ -52,11 +49,6 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
 )
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionRef,
-    mint_untargeted_cid_nl_projection_ref,
-)
-from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -458,7 +450,6 @@ def _support_input(
     return UntargetedCidNlAssessmentInput(
         sample=fixture.sample(sample_stem),
         assessment=assessment,
-        discovery_projections=(_projection(fixture, sample_stem, evidence),),
     )
 
 
@@ -470,38 +461,4 @@ def _completed_receipt() -> CidNlEvaluationReceipt:
         acquisition_supported=True,
         search_completed=True,
         reason_code=None,
-    )
-
-
-def _projection(
-    fixture: UntargetedCidNlNoRawFixture,
-    sample_stem: str,
-    evidence,
-) -> UntargetedCidNlProjectionRef:
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-    )
-    observation = evidence.observation
-    seed = DiscoverySeed(
-        raw_file=fixture.source_paths[sample_stem],
-        sample_stem=sample_stem,
-        scan_number=observation.scan_number,
-        rt=observation.scan_rt_min,
-        precursor_mz=PRECURSOR_MZ,
-        product_mz=PRODUCT_MZ,
-        product_intensity=observation.product_intensity,
-        neutral_loss_tag="NL116",
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=0.0,
-        matched_tag_names=("NL116",),
-        scan_precursor_mz=PRECURSOR_MZ,
-        acquisition_source_id=source.acquisition_source_id,
-    )
-    return mint_untargeted_cid_nl_projection_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        canonical_evidence=evidence,
-        discovery_seed=seed,
     )

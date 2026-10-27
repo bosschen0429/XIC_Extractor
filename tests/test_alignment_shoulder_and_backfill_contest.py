@@ -357,7 +357,12 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
 
     assert (
         contested_backfill_peaks(
-            groups=(replace(group, disposition="unresolved"),),
+            groups=(
+                replace(
+                    group,
+                    membership=replace(group.membership, disposition="unresolved"),
+                ),
+            ),
             backfills=backfills,
             member_observations=_member_observations(group),
         )

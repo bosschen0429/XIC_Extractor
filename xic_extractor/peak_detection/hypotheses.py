@@ -43,7 +43,6 @@ from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
-OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
 
@@ -148,7 +147,6 @@ class PeakHypothesis:
             or self.peak_observation_refs
             or self.evidence.cid_nl_chromatographic_support_ref is not None
             or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
-            or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
         )
 
 
@@ -160,20 +158,6 @@ def validate_peak_hypothesis_selection_authority(
     """Reject diagnostic owner-backed identity at selection/product boundaries."""
 
     if hypothesis.is_owner_backed:
-        validate_peak_hypothesis_id_selection_authority(
-            hypothesis.hypothesis_id,
-            consumer=consumer,
-        )
-
-
-def validate_peak_hypothesis_id_selection_authority(
-    hypothesis_id: str,
-    *,
-    consumer: str,
-) -> None:
-    """Reject the reserved diagnostic identity namespace without needing an object."""
-
-    if hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX):
         raise PeakHypothesisAuthorityError(
             f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
         )

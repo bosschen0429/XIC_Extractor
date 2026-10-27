@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from copy import copy
 from dataclasses import replace
@@ -10,7 +9,6 @@ from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.cell_observation.observations as cell_owner
 import xic_extractor.alignment.cross_sample.peak_groups as group_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
@@ -109,7 +107,10 @@ def _outside_group_fixture(
         assessments.append((fixture.sample(stem), assessment))
     owners = tuple(
         owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+            processing_owners=fixture.owners,
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
         for sample, assessment in assessments
         for hypothesis in compose_cid_nl_peak_hypotheses_from_assessment(
@@ -142,16 +143,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             rt_frame=SampleRtFrame(),
         )
         assert len(cells) == len(groups) * len(assessments)
-        payloads = [
-            json.loads(cell_owner.canonical_cell_observation_bytes(cell.content))
-            for cell in cells
-        ]
-        assert {payload["schema_version"] for payload in payloads} == {
-            "cell_observation"
-        }
-        assert all("outside_group" in payload["content"] for payload in payloads)
-        assert len({frozenset(payload["content"]) for payload in payloads}) == 1
-        assert any(payload["content"]["outside_group"] is None for payload in payloads)
+        assert any(cell.content.outside_group is None for cell in cells)
 
         assert {
             (

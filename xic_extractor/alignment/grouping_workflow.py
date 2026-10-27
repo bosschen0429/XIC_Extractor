@@ -116,7 +116,10 @@ def build_targeted_cross_sample_groups(
                     "Targeted CID-NL selection lacks its method assessment"
                 )
             owner = owner_from_cid_nl_assessment_support(
-                sample=sample, assessment=assessment, hypothesis=selected
+                processing_owners=processing_owners,
+                sample=sample,
+                assessment=assessment,
+                hypothesis=selected,
             )
         elif selected.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
             owner = (
@@ -344,7 +347,10 @@ def admit_cid_nl_group_backfills(
         hypothesis = hypotheses[0]
         owner = (
             owner_from_cid_nl_assessment_support(
-                sample=sample, assessment=assessment, hypothesis=hypothesis
+                processing_owners=result.processing_owners,
+                sample=sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
             )
             if assessment.content.method_result == "SUPPORT"
             else owner_from_cid_nl_assessment_observation(

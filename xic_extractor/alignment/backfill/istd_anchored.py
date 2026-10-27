@@ -89,6 +89,7 @@ def resolve_istd_anchored_backfill(
     sample_by_id = {sample.identity.sample_key: sample for sample in sample_population}
     owners = tuple(
         owner_from_cid_nl_assessment_support(
+            processing_owners=processing_owners,
             sample=support.sample,
             assessment=support.assessment,
             hypothesis=support.hypothesis,

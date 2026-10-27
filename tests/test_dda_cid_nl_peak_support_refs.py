@@ -39,7 +39,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_cid_nl_peak_hypothesis,
 )
 from xic_extractor.peak_detection.selection_decision import (
-    PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
@@ -328,26 +327,12 @@ def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
     )
 
 
-def test_sample_request_and_attempt_substitution_fail_closed(tmp_path: Path) -> None:
+def test_sample_and_request_substitution_fail_closed(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path, sample_key="sample-a")
     foreign = _identity_fixture(tmp_path, sample_key="sample-b")
     evidence = _evidence(fixture.owners, fixture.sample)
     peak = _peak(fixture.owners, fixture.sample)
     support = _resolve(fixture, evidence, peak)
-
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-    with pytest.raises(
-        DdaCidNlPeakSupportContractError,
-        match="different processing attempt",
-    ):
-        validate_dda_cid_nl_peak_support_binding(
-            support,
-            processing_owners=retry_owners,
-            sample=fixture.sample,
-            canonical_evidence=evidence,
-            candidate_peaks=(peak,),
-        )
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="different sample"):
         validate_dda_cid_nl_peak_support_binding(
@@ -358,10 +343,7 @@ def test_sample_request_and_attempt_substitution_fail_closed(tmp_path: Path) -> 
             candidate_peaks=(peak,),
         )
 
-    with pytest.raises(
-        DdaCidNlPeakSupportContractError,
-        match="different processing request",
-    ):
+    with pytest.raises(DdaCidNlPeakSupportContractError):
         validate_dda_cid_nl_peak_support_binding(
             support,
             processing_owners=foreign.owners,
@@ -456,10 +438,6 @@ def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
     )
     assert forward.content.strict_nl_scan_count == 2
     assert forward.content.chromatographic_support_event_count == 1
-    assert (
-        forward.artifact.semantic_contract.schema_version
-        == "cid_nl_chromatographic_support"
-    )
 
 
 def test_missing_or_duplicate_scan_support_fails_closed(tmp_path: Path) -> None:
@@ -658,7 +636,7 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
     assert first.content != changed.content
 
 
-def test_retry_preserves_chromatographic_event_content_but_not_artifact(
+def test_retry_preserves_chromatographic_event_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
@@ -699,12 +677,6 @@ def test_retry_preserves_chromatographic_event_content_but_not_artifact(
     )
 
     assert first_event.content == retry_event.content
-    assert (
-        first_event.artifact.content_identity == retry_event.artifact.content_identity
-    )
-    assert first_event.artifact.evidence_artifact_id != (
-        retry_event.artifact.evidence_artifact_id
-    )
 
 
 def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
@@ -722,7 +694,9 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     )
 
     assert isinstance(hypothesis, PeakHypothesis)
-    assert hypothesis.hypothesis_id.startswith("xic.peak-hypothesis:")
+    assert hypothesis.hypothesis_id == (
+        "sample-a|dda_cid_nl|500.0|8.0|500.0|7.9|8.1|3|42:None|43:None"
+    )
     assert hypothesis.hypothesis_method == "dda_cid_nl"
     assert hypothesis.peak_observation_refs == (peak,)
     assert hypothesis.evidence.cid_nl_chromatographic_support_ref == event
@@ -789,17 +763,6 @@ def test_cid_nl_hypothesis_missing_and_stale_applicability_fail_closed(
             chromatographic_support=None,  # type: ignore[arg-type]
         )
 
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-    retry_peak = _peak(retry_owners, fixture.sample)
-    with pytest.raises(PeakHypothesisContractError, match="processing attempt"):
-        compose_cid_nl_peak_hypothesis(
-            processing_owners=retry_owners,
-            sample=fixture.sample,
-            peak_observation=retry_peak,
-            chromatographic_support=event,
-        )
-
 
 def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
     tmp_path: Path,
@@ -816,14 +779,6 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
 
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         selection_decision_from_hypothesis(hypothesis)
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        PeakHypothesisSelectionDecision(
-            selected_candidate_id=hypothesis.hypothesis_id,
-            trace_group_id="",
-            decision_class="accepted",
-            projected_confidence="HIGH",
-            projected_reason="direct-constructor-bypass",
-        )
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         build_extraction_result(
             peak_result=PeakDetectionResult(

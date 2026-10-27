@@ -7,15 +7,11 @@ without selecting a peak or granting product authority.
 
 from __future__ import annotations
 
-import hashlib
-import json
-
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     CidNlChromatographicSupportRef,
 )
 from xic_extractor.peak_detection.hypotheses import (
     OWNER_BACKED_ANALYSIS_MODE,
-    OWNER_BACKED_HYPOTHESIS_ID_PREFIX,
     AuditTrail,
     EvidenceVector,
     PeakHypothesis,
@@ -31,8 +27,6 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
 HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
 ANALYSIS_MODE_WORKFLOW_NEUTRAL = OWNER_BACKED_ANALYSIS_MODE
-
-_HYPOTHESIS_ID_PREFIX = OWNER_BACKED_HYPOTHESIS_ID_PREFIX
 
 
 class PeakHypothesisContractError(ValueError):
@@ -54,7 +48,16 @@ def compose_cid_nl_peak_hypothesis(
         peak_observation=peak_observation,
         chromatographic_support=chromatographic_support,
     )
-    hypothesis_id = _hypothesis_id(peak_observation, chromatographic_support)
+    hypothesis_id = "|".join(
+        (
+            measured_hypothesis_key(HYPOTHESIS_METHOD_DDA_CID_NL, peak_observation),
+            *(
+                f"{member.support.dda_scan_number}:"
+                f"{member.configured_neutral_loss_da!r}"
+                for member in chromatographic_support.content.scan_supports
+            ),
+        )
+    )
     return PeakHypothesis(
         hypothesis_id=hypothesis_id,
         trace_group_id="",
@@ -88,7 +91,9 @@ def compose_ms1_observation_peak_hypothesis(
         sample=sample,
         peak_observation=peak_observation,
     )
-    hypothesis_id = _observation_hypothesis_id(peak_observation)
+    hypothesis_id = measured_hypothesis_key(
+        HYPOTHESIS_METHOD_MS1_OBSERVATION, peak_observation
+    )
     return PeakHypothesis(
         hypothesis_id=hypothesis_id,
         trace_group_id="",
@@ -135,25 +140,26 @@ def _validate_observation_reference(
         raise PeakHypothesisContractError(str(exc)) from exc
 
 
-def _observation_hypothesis_id(peak_observation: PeakObservationRef) -> str:
-    digest = hashlib.sha256(
-        _canonical_json_bytes(_observation_hypothesis_content_basis(peak_observation))
-    ).hexdigest()
-    return f"{_HYPOTHESIS_ID_PREFIX}{digest}"
+def measured_hypothesis_key(method: str, peak_observation: PeakObservationRef) -> str:
+    """In-process key from the method and the measured selected MS1 peak.
 
+    DDA hypotheses append their supporting scan numbers, so two support
+    events on one physical peak stay distinct without hashing their content.
+    """
 
-def _observation_hypothesis_content_basis(
-    peak_observation: PeakObservationRef,
-) -> dict[str, object]:
-    return {
-        "schema": "peak_hypothesis_ms1_observation_content",
-        "hypothesis_method": HYPOTHESIS_METHOD_MS1_OBSERVATION,
-        "sample_key": (peak_observation.content.sample_key),
-        "peak_observation_content_ids": [
-            peak_observation.content.peak_observation_content_id
-        ],
-        "evidence_artifact_content_ids": [],
-    }
+    content = peak_observation.content
+    return "|".join(
+        (
+            content.sample_key,
+            method,
+            repr(content.mz),
+            repr(content.integration.rt_apex_min),
+            repr(content.integration.height_raw),
+            repr(content.rt[0]),
+            repr(content.rt[-1]),
+            str(len(content.rt)),
+        )
+    )
 
 
 def _validate_reference_pair(
@@ -191,21 +197,6 @@ def _validate_reference_pair(
     except PeakObservationContractError as exc:
         raise PeakHypothesisContractError(str(exc)) from exc
     _validate_reference_content_pair(peak_observation, chromatographic_support)
-    artifact = chromatographic_support.artifact
-    if (
-        artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise PeakHypothesisContractError(
-            "chromatographic support references a different processing request"
-        )
-    if (
-        artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise PeakHypothesisContractError(
-            "chromatographic support references a different processing attempt"
-        )
     if chromatographic_support.content.sample_key != sample.identity.sample_key:
         raise PeakHypothesisContractError(
             "chromatographic support references a different sample"
@@ -229,58 +220,11 @@ def _validate_reference_content_pair(
         )
 
 
-def _hypothesis_id(
-    peak_observation: PeakObservationRef,
-    chromatographic_support: CidNlChromatographicSupportRef,
-) -> str:
-    digest = hashlib.sha256(
-        _canonical_json_bytes(
-            _hypothesis_content_basis(
-                peak_observation,
-                chromatographic_support,
-            )
-        )
-    ).hexdigest()
-    return f"{_HYPOTHESIS_ID_PREFIX}{digest}"
-
-
-def _hypothesis_content_basis(
-    peak_observation: PeakObservationRef,
-    chromatographic_support: CidNlChromatographicSupportRef,
-) -> dict[str, object]:
-    return {
-        "schema": "peak_hypothesis_content",
-        "hypothesis_method": HYPOTHESIS_METHOD_DDA_CID_NL,
-        "sample_key": (peak_observation.content.sample_key),
-        "peak_observation_content_ids": [
-            peak_observation.content.peak_observation_content_id
-        ],
-        "evidence_artifact_content_ids": [
-            chromatographic_support.artifact.content_identity.artifact_content_id
-        ],
-    }
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    try:
-        serialized = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise PeakHypothesisContractError(
-            "owner-backed hypothesis payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
-
-
 __all__ = [
     "HYPOTHESIS_METHOD_DDA_CID_NL",
     "HYPOTHESIS_METHOD_MS1_OBSERVATION",
     "PeakHypothesisContractError",
     "compose_cid_nl_peak_hypothesis",
     "compose_ms1_observation_peak_hypothesis",
+    "measured_hypothesis_key",
 ]

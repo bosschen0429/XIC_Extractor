@@ -7,18 +7,12 @@ searches, HOLD, and REJECT do not need fake ``PeakHypothesis`` objects.
 
 from __future__ import annotations
 
-import json
 import math
 import re
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     DdaCidNlCandidateSetRelationRef,
@@ -64,12 +58,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_physical_query"
-ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
-
 CidNlTechnicalState: TypeAlias = Literal[
     "evaluated",
     "unsupported",
@@ -82,14 +70,6 @@ _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class CidNlMethodAssessmentContractError(ValueError):
@@ -362,7 +342,6 @@ class CidNlMethodAssessmentRef:
     evidence_refs: tuple[CidNlEvidenceRef, ...]
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
-    artifact: EvidenceArtifactRef
 
 
 def resolve_cid_nl_method_relations(
@@ -507,23 +486,12 @@ def mint_cid_nl_method_assessment_ref(
         method_result=method_result,
         reason_codes=reason_codes,
     )
-    upstreams = _assessment_upstream_artifacts(
-        evidence_refs=evidence,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_cid_nl_method_assessment_bytes(content),
-        upstream_artifacts=upstreams,
-    )
     return CidNlMethodAssessmentRef(
         content=content,
         candidate_peaks=candidates,
         evidence_refs=evidence,
         individual_support_refs=individual,
         set_relation_refs=set_relations,
-        artifact=artifact,
     )
 
 
@@ -552,22 +520,7 @@ def validate_cid_nl_method_assessment_binding(
         )
     except IdentityContractError as exc:
         raise CidNlMethodAssessmentContractError(str(exc)) from exc
-    # Construction pins content and upstream refs; minting settles the method.
-    # A handoff checks scope without re-running that scientific decision.
-    if (
-        reference.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise CidNlMethodAssessmentContractError(
-            "CID-NL method assessment references a different processing request"
-        )
-    if (
-        reference.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise CidNlMethodAssessmentContractError(
-            "CID-NL method assessment references a different processing attempt"
-        )
+    # Minting settles the method; a handoff checks scope without re-running it.
     if (
         reference.content.sample_key != sample.identity.sample_key
         or reference.content.acquisition_source_id != source.acquisition_source_id
@@ -576,46 +529,6 @@ def validate_cid_nl_method_assessment_binding(
         raise CidNlMethodAssessmentContractError(
             "CID-NL method assessment sample or subject binding was substituted"
         )
-
-
-def canonical_cid_nl_method_assessment_bytes(
-    content: CidNlMethodAssessmentContent,
-) -> bytes:
-    if not isinstance(content, CidNlMethodAssessmentContent):
-        raise CidNlMethodAssessmentContractError(
-            "canonical serialization requires method assessment content"
-        )
-    content_payload = {
-        item.name: getattr(content, item.name)
-        for item in fields(content)
-        if item.name != "candidate_peaks"
-    }
-    content_payload["candidate_peak_content_ids"] = tuple(
-        peak.peak_observation_content_id for peak in content.candidate_peaks
-    )
-    content_payload["evidence_observations"] = tuple(
-        asdict(observation) for observation in content.evidence_observations
-    )
-    content_payload["method_subject"] = asdict(content.method_subject)
-    content_payload["evaluation_receipt"] = asdict(content.evaluation_receipt)
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": content_payload,
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CidNlMethodAssessmentContractError(
-            "method assessment payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _resolve_method_subject(
@@ -1101,19 +1014,6 @@ def _supported_peaks(
     )
 
 
-def _assessment_upstream_artifacts(
-    *,
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts = tuple(ref.artifact for ref in evidence_refs)
-    artifact_ids = tuple(artifact.evidence_artifact_id for artifact in artifacts)
-    if len(set(artifact_ids)) != len(artifact_ids):
-        raise CidNlMethodAssessmentContractError(
-            "assessment upstream artifacts must be unique"
-        )
-    return tuple(sorted(artifacts, key=lambda item: item.evidence_artifact_id))
-
-
 def _canonical_candidates(
     value: object,
     *,
@@ -1239,7 +1139,6 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "CID_NL_METHOD_ID",
     "CID_NL_METHOD_VERSION",
     "CID_NL_PROVIDER_ID",
@@ -1252,8 +1151,6 @@ __all__ = [
     "CidNlMethodResult",
     "CidNlMethodRelations",
     "CidNlTechnicalState",
-    "SCHEMA_VERSION",
-    "canonical_cid_nl_method_assessment_bytes",
     "evaluate_cid_nl_method_relations",
     "mint_cid_nl_method_assessment_ref",
     "resolve_cid_nl_method_relations",

@@ -167,6 +167,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             assessment=assessment,
         )
         owners[name] = owner_from_cid_nl_assessment_support(
+            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
             hypothesis=hypothesis,

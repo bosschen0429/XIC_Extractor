@@ -11,15 +11,9 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
-    ProcessingAttemptIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
@@ -35,17 +29,6 @@ from xic_extractor.sample_metadata import (
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
 )
-
-_REVIEW_REQUEST_ID = "xic.processing-request:" + "a" * 64
-_TEST_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="tests.review_roundtrip.artifact_owner",
-    semantic_role="review_fixture_evidence",
-    schema_version="review_fixture_evidence",
-    validation_status="diagnostic_only",
-    media_type="application/octet-stream",
-    serialization_format="review_fixture_bytes",
-)
-_TEST_ARTIFACT_ATTEMPT_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
@@ -199,7 +182,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         target_snapshot=target_snapshot,
     )
     attempt = issue_processing_attempt(request)
-    artifacts = _artifact_refs(attempt=attempt)
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
@@ -214,7 +196,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample_snapshot=sample_snapshot,
         sample_resolutions=(sample,),
         target_snapshot=target_snapshot,
-        evidence_artifacts=artifacts,
     )
 
     assert references.request is request
@@ -222,9 +203,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     assert references.sample_snapshot is sample_snapshot
     assert references.sample_resolutions == (sample,)
     assert references.target_snapshot is target_snapshot
-    assert references.evidence_artifacts == tuple(
-        sorted(artifacts, key=lambda artifact: artifact.evidence_artifact_id)
-    )
 
 
 def test_lineage_rejects_metadata_injection_order_mismatch(
@@ -350,49 +328,6 @@ def test_lineage_rejects_two_sources_collapsed_to_one_canonical_sample(
             sample_snapshot=collapsed,
             sample_resolutions=(first, second),
         )
-
-
-def _artifact_ref(
-    label: str,
-    *,
-    attempt: ProcessingAttemptIdentity | None = None,
-    processing_request_id: str | None = None,
-    upstream_artifacts: tuple[EvidenceArtifactRef, ...] = (),
-) -> EvidenceArtifactRef:
-    return mint_evidence_artifact_ref(
-        producer_processing_request_id=(
-            attempt.processing_request_id
-            if attempt is not None
-            else processing_request_id or _REVIEW_REQUEST_ID
-        ),
-        producer_processing_attempt_id=(
-            attempt.processing_attempt_id
-            if attempt is not None
-            else _TEST_ARTIFACT_ATTEMPT_ID
-        ),
-        semantic_contract=_TEST_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=label.encode("utf-8"),
-        upstream_artifacts=upstream_artifacts,
-    )
-
-
-def _artifact_refs(
-    *,
-    attempt: ProcessingAttemptIdentity | None = None,
-    processing_request_id: str | None = None,
-) -> tuple[EvidenceArtifactRef, ...]:
-    return (
-        _artifact_ref(
-            "artifact-a",
-            attempt=attempt,
-            processing_request_id=processing_request_id,
-        ),
-        _artifact_ref(
-            "artifact-b",
-            attempt=attempt,
-            processing_request_id=processing_request_id,
-        ),
-    )
 
 
 def _request(

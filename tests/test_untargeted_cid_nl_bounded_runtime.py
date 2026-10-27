@@ -1063,10 +1063,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             eager.application_result
         )
         assert {
-            assessment.artifact.evidence_artifact_id: assessment
-            for assessment in result.method_assessments
+            assessment.content: assessment for assessment in result.method_assessments
         } == {
-            assessment.artifact.evidence_artifact_id: assessment
+            assessment.content: assessment
             for assessment in eager.method_assessments
             if assessment.content.method_subject.method_subject_id
             in eligible_subject_ids
@@ -1235,9 +1234,10 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
                 child.canonical_samples, expected.canonical_samples, strict=True
             )
         )
-    assert sorted(
-        item.artifact.evidence_artifact_id for item in bounded.method_assessments
-    ) == sorted(item.artifact.evidence_artifact_id for item in eager.method_assessments)
+    assert len(bounded.method_assessments) == len(eager.method_assessments)
+    assert {item.content for item in bounded.method_assessments} == {
+        item.content for item in eager.method_assessments
+    }
     _assert_explanation_parity(tmp_path, plan, config, eager, bounded)
     partition_stages = [
         (event["stage"], event["completed"])

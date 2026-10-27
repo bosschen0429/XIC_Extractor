@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
@@ -23,7 +22,6 @@ from xic_extractor.alignment.cell_observation.records import (
     CellObservationRef,
     OutsideGroupCellRelation,
     _direct_member_integration,
-    canonical_cell_observation_bytes,
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.cross_sample.association import (
@@ -34,9 +32,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
 )
-from xic_extractor.evidence_artifacts import (
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -44,30 +39,6 @@ from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-SCHEMA_VERSION = "cell_observation"
-ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
-
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
-_PEAK_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
-_METHOD_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    # Persisted artifact-hash identity; intentionally not this module's path.
-    owner_namespace="xic_extractor.alignment.cell_observations",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
@@ -189,16 +160,6 @@ class FinalGroupCellObservation:
     def position_keys(self) -> tuple[tuple[str, str], ...]:
         return tuple(
             association.position.key for association in self.position_associations
-        )
-
-    @property
-    def source_cell_artifact_ids(self) -> tuple[str, ...]:
-        return tuple(
-            cell.artifact.evidence_artifact_id
-            for cell in (
-                *self.predecessor_cells,
-                *((self.backfill_cell,) if self.backfill_cell is not None else ()),
-            )
         )
 
 
@@ -524,7 +485,6 @@ def _final_cell_sort_key(
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "CidNlCellGroupContext",
     "CidNlCellGroupSupport",
     "CellObservationContent",
@@ -534,9 +494,7 @@ __all__ = [
     "FinalCellEvidenceState",
     "FinalGroupCellObservation",
     "OutsideGroupCellRelation",
-    "SCHEMA_VERSION",
     "TerminalObservationVariant",
-    "canonical_cell_observation_bytes",
     "compose_final_group_cell_observation_population",
     "mint_cell_observation_ref",
 ]

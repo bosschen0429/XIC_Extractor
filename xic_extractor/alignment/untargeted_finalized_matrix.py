@@ -96,6 +96,12 @@ class CompletedUntargetBatchWriterInputs:
     production_decisions: ProductionDecisionSet
 
 
+def feature_id_label(ordinal: int) -> str:
+    """Report-scoped label of the ``ordinal``-th published group (1-based)."""
+
+    return f"F{ordinal:06d}"
+
+
 def project_completed_untarget_batch_writer_inputs(
     completed: FinalizedUntargetBatchApplicationResult,
     *,
@@ -249,7 +255,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 has_anchor,
             ) = _group_facts(typed_observations)
             row = FinalizedUntargetMatrixRow(
-                feature_id=f"F{len(seen_group_ids):06d}",
+                feature_id=feature_id_label(len(seen_group_ids)),
                 group_hypothesis_id=group_id,
                 destination=projected.route.destination,
                 family_center_mz=center_mz,

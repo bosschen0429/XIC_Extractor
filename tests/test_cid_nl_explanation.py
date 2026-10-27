@@ -227,10 +227,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assert retained["evaluation_receipt"] == json.loads(
         json.dumps(asdict(assessment.content.evaluation_receipt))
     )
-    assert (
-        retained["artifact"]["evidence_artifact_id"]
-        == assessment.artifact.evidence_artifact_id
-    )
+    assert "artifact" not in retained
     assert all(item["candidate_id"] == candidate_id for item in detail["candidates"])
     if scenario == "all_hold":
         excluded = next(

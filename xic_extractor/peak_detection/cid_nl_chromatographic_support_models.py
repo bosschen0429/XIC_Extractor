@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceRef,
@@ -20,21 +15,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 )
 from xic_extractor.peak_detection.observations import PeakObservationContent
 
-SCHEMA_VERSION = "cid_nl_chromatographic_support"
-ARTIFACT_SEMANTIC_ROLE = "cid_nl_chromatographic_support_event"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_scans_within_one_physical_ms1_peak"
-
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace=("xic_extractor.peak_detection.cid_nl_chromatographic_support"),
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class CidNlChromatographicSupportContractError(ValueError):
@@ -132,64 +113,10 @@ class CidNlChromatographicSupportContent:
 
 @dataclass(frozen=True, slots=True)
 class CidNlChromatographicSupportRef:
-    """Immutable aggregate artifact with exact scan-support upstream refs."""
+    """One chromatographic support event with its exact scan evidence."""
 
     content: CidNlChromatographicSupportContent
-    artifact: EvidenceArtifactRef
     evidence_refs: tuple[CidNlEvidenceRef, ...] = ()
-
-
-def canonical_cid_nl_chromatographic_support_bytes(
-    content: CidNlChromatographicSupportContent,
-) -> bytes:
-    """Return canonical bytes for one chromatographic support event."""
-
-    if not isinstance(content, CidNlChromatographicSupportContent):
-        raise CidNlChromatographicSupportContractError(
-            "canonical serialization requires chromatographic support content"
-        )
-    content_payload = {
-        "sample_key": content.sample_key,
-        "peak_observation_content_id": (
-            content.peak_observation.peak_observation_content_id
-        ),
-        "candidate_peak_content_ids": tuple(
-            peak.peak_observation_content_id for peak in content.candidate_peaks
-        ),
-        "acquisition_mode": content.acquisition_mode,
-        "policy": asdict(content.policy),
-        "scan_supports": tuple(
-            {
-                "dda_scan_number": member.support.dda_scan_number,
-                "evidence": asdict(member.support.evidence),
-                "configured_neutral_loss_da": member.configured_neutral_loss_da,
-            }
-            for member in content.scan_supports
-        ),
-        "strict_nl_scan_count": content.strict_nl_scan_count,
-        "chromatographic_support_event_count": (
-            content.chromatographic_support_event_count
-        ),
-        "relationship": content.relationship,
-    }
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": content_payload,
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic support payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
 
 
 def _member_sort_key(
@@ -202,12 +129,9 @@ def _member_sort_key(
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "CidNlChromatographicSupportContent",
     "CidNlChromatographicSupportContractError",
     "CidNlChromatographicSupportRef",
     "DdaCidNlScanSupportMember",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_cid_nl_chromatographic_support_bytes",
 ]

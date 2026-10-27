@@ -7,16 +7,10 @@ selection, and delivery authority remain in their respective adapters.
 
 from __future__ import annotations
 
-import json
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
     Ms1PrecursorObservation,
@@ -24,7 +18,6 @@ from xic_extractor.precursor_evidence import (
     PrecursorMzBasis,
     assess_precursor_loss,
     precursor_inference_bounds,
-    precursor_isolation_membership,
     supports_direct_nl,
 )
 from xic_extractor.processing_identity import (
@@ -35,23 +28,10 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_evidence_observation"
-ARTIFACT_SEMANTIC_ROLE = "canonical_cid_nl_observation"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 ACQUISITION_MODE = "dda_ddms2"
 
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_evidence",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 
 class CidNlEvidenceContractError(ValueError):
@@ -287,10 +267,9 @@ class CidNlEvidenceObservation:
 
 @dataclass(frozen=True, slots=True)
 class CidNlEvidenceRef:
-    """Owner-minted observation plus its immutable attempt artifact."""
+    """Owner-minted observation bound to its request sample."""
 
     observation: CidNlEvidenceObservation
-    artifact: EvidenceArtifactRef
 
 
 def mint_cid_nl_evidence_ref(
@@ -354,66 +333,7 @@ def mint_cid_nl_evidence_ref(
         precursor_metadata=precursor_metadata,
         ms1_precursor_observation=ms1_precursor_observation,
     )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_cid_nl_evidence_bytes(observation),
-    )
-    return CidNlEvidenceRef(observation=observation, artifact=artifact)
-
-
-def canonical_cid_nl_evidence_bytes(
-    observation: CidNlEvidenceObservation,
-) -> bytes:
-    """Return the canonical exact bytes owned by the shared evidence module."""
-
-    if not isinstance(observation, CidNlEvidenceObservation):
-        raise CidNlEvidenceContractError(
-            "canonical serialization requires CidNlEvidenceObservation"
-        )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "sample_key": observation.sample_key,
-        "acquisition_source_id": observation.acquisition_source_id,
-        "acquisition_mode": observation.acquisition_mode,
-        "scan_number": observation.scan_number,
-        "precursor_mz": observation.precursor_mz,
-        "precursor_mz_basis": observation.precursor_mz_basis,
-        "precursor_isolation_membership": precursor_isolation_membership(
-            observation.precursor_mz,
-            observation.scan_precursor_mz,
-            observation.precursor_metadata,
-        ),
-        "supports_direct_nl": observation.supports_direct_nl,
-        "ms1_precursor_observation": asdict(observation.ms1_precursor_observation)
-        if observation.ms1_precursor_observation is not None
-        else None,
-        "scan_precursor_mz": observation.scan_precursor_mz,
-        "precursor_metadata": asdict(observation.precursor_metadata)
-        if observation.precursor_metadata is not None
-        else None,
-        "precursor_inference_tolerance_da": (
-            observation.precursor_inference_tolerance_da
-        ),
-        "product_mz": observation.product_mz,
-        "configured_neutral_loss_da": observation.configured_neutral_loss_da,
-        "observed_neutral_loss_da": observation.observed_neutral_loss_da,
-        "observed_loss_error_ppm": observation.observed_loss_error_ppm,
-        "scan_rt_min": observation.scan_rt_min,
-        "product_intensity": observation.product_intensity,
-    }
-    return (
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        + "\n"
-    ).encode("utf-8")
+    return CidNlEvidenceRef(observation=observation)
 
 
 def validate_cid_nl_evidence_binding(
@@ -422,7 +342,7 @@ def validate_cid_nl_evidence_binding(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> None:
-    """Reject sample, request, attempt, or semantic-contract substitution."""
+    """Reject evidence minted for a different sample or acquisition source."""
 
     if not isinstance(reference, CidNlEvidenceRef):
         raise CidNlEvidenceContractError(
@@ -437,21 +357,6 @@ def validate_cid_nl_evidence_binding(
             "sample must be an owner-resolved canonical sample"
         )
     acquisition_source = _request_acquisition_source(processing_owners, sample)
-    artifact = reference.artifact
-    if (
-        artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise CidNlEvidenceContractError(
-            "canonical CID-NL evidence references a different processing request"
-        )
-    if (
-        artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise CidNlEvidenceContractError(
-            "canonical CID-NL evidence references a different processing attempt"
-        )
     if reference.observation.sample_key != sample.identity.sample_key:
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different sample"
@@ -500,12 +405,9 @@ def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
 
 __all__ = [
     "ACQUISITION_MODE",
-    "ARTIFACT_SEMANTIC_ROLE",
     "CidNlEvidenceContractError",
     "CidNlEvidenceObservation",
     "CidNlEvidenceRef",
-    "SCHEMA_VERSION",
-    "canonical_cid_nl_evidence_bytes",
     "mint_cid_nl_evidence_ref",
     "validate_cid_nl_evidence_binding",
 ]

@@ -16,6 +16,7 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     INITIAL_GROUPING_POLICY,
     UNLISTED_PAIR_DISPOSITION,
 )
+from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_extractor.diagnostics.explanation_review import review_cell, review_record
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     )
     from xic_extractor.discovery.models import DiscoveryCandidate
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlMethodAssessmentContent,
         CidNlMethodAssessmentRef,
     )
     from xic_extractor.untargeted_execution.execution_result import (
@@ -42,20 +44,6 @@ if TYPE_CHECKING:
 
 def _fields(value: Any, *names: str) -> dict[str, Any]:
     return {name: getattr(value, name) for name in names}
-
-
-def _artifact(value: Any) -> dict[str, Any]:
-    return {
-        **_fields(
-            value,
-            "evidence_artifact_id",
-            "producer_processing_request_id",
-            "producer_processing_attempt_id",
-            "upstream_artifact_ids",
-        ),
-        "content_identity": asdict(value.content_identity),
-        "semantic_contract": asdict(value.semantic_contract),
-    }
 
 
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
@@ -86,10 +74,7 @@ def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
         "group_hypothesis_id": observation.group.group_hypothesis_id,
         "sample_key": (observation.canonical_sample.identity.sample_key),
         "predecessor_cells": [
-            {
-                "content": _cell_observation_content_payload(ref.content),
-                "artifact": _artifact(ref.artifact),
-            }
+            {"content": _cell_observation_content_payload(ref.content)}
             for ref in observation.predecessor_cells
         ],
         "backfill_cell": (
@@ -98,8 +83,7 @@ def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
             else {
                 "content": _cell_observation_content_payload(
                     observation.backfill_cell.content
-                ),
-                "artifact": _artifact(observation.backfill_cell.artifact),
+                )
             }
         ),
     }
@@ -320,7 +304,7 @@ def prepare_alignment_explanation(
             set
         )
 
-        assessment_bindings: dict[str, int] = {}
+        emitted_assessments: set[CidNlMethodAssessmentContent] = set()
 
         def report_progress(stage: str, completed: int, total: int | None) -> None:
             if progress_callback is not None:
@@ -510,26 +494,11 @@ def prepare_alignment_explanation(
             )
 
         def emit_assessment(assessment: CidNlMethodAssessmentRef) -> None:
-            identity = assessment.artifact.evidence_artifact_id
-            binding_key = (
-                assessment.artifact.evidence_artifact_id,
-                tuple(
-                    ref.artifact.evidence_artifact_id
-                    for ref in assessment.evidence_refs
-                ),
-            )
-            binding_hash = hash(binding_key)
-            if identity in assessment_bindings:
-                if assessment_bindings[identity] != binding_hash:
-                    raise ValueError(
-                        "conflicting diagnostic owner identity: "
-                        f"{('method_assessments', identity)}"
-                    )
-                return
-            # The typed assessment owner already verified content against its
-            # immutable artifact. Retain only its diagnostic identity bindings,
-            # not the assessment's peak/evidence graph or another projection.
             content = assessment.content
+            # The same settled attempt can reach this projection through more
+            # than one completed relation; its content is the record.
+            if content in emitted_assessments:
+                return
             related = method_candidates[
                 content.method_subject.method_subject_id,
                 content.sample_key,
@@ -556,7 +525,7 @@ def prepare_alignment_explanation(
                         )
             add(
                 "method_assessments",
-                assessment.artifact.evidence_artifact_id,
+                None,
                 {
                     **_fields(
                         content,
@@ -576,14 +545,7 @@ def prepare_alignment_explanation(
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
                     **(
-                        {
-                            "evaluation_receipt": asdict(content.evaluation_receipt),
-                            "artifact": _artifact(assessment.artifact),
-                            "evidence_refs": [
-                                _artifact(ref.artifact)
-                                for ref in assessment.evidence_refs
-                            ],
-                        }
+                        {"evaluation_receipt": asdict(content.evaluation_receipt)}
                         if full_audit
                         else {}
                     ),
@@ -592,7 +554,7 @@ def prepare_alignment_explanation(
             )
             for key in related:
                 sink.update_availability(key, method_assessments="recorded")
-            assessment_bindings[identity] = binding_hash
+            emitted_assessments.add(content)
 
         for assessment in phase_items(
             "method_assessments", completed.method_assessments
@@ -614,9 +576,6 @@ def prepare_alignment_explanation(
                         "discovery_candidate_state",
                         "reason_code",
                     ),
-                    "assessment_artifact_ids": [
-                        ref.artifact.evidence_artifact_id for ref in refs
-                    ],
                 },
                 (key,),
             )
@@ -684,10 +643,11 @@ def prepare_alignment_explanation(
             )
 
         child_count = 0
+        row_count = 0
         report_progress("children", 0, len(application.children))
 
         def consume_child(child: FinalizedUntargetApplicationResult) -> None:
-            nonlocal child_count
+            nonlocal child_count, row_count
             core = child.scientific_core
             for terminal in core.terminal_subjects:
                 key = terminal.candidate_id, terminal.sample_key
@@ -761,6 +721,9 @@ def prepare_alignment_explanation(
 
             for row in child.completed_projection.rows:
                 group_id = row.group.group_hypothesis_id
+                # Same child and row order as the TSV writer that labels rows.
+                row_count += 1
+                feature_id = feature_id_label(row_count)
                 related = group_candidates[group_id]
                 cells = [
                     {
@@ -780,6 +743,7 @@ def prepare_alignment_explanation(
                     row.group.group_hypothesis_id,
                     {
                         "row_key_id": row.group.group_hypothesis_id,
+                        "feature_id": feature_id,
                         "group_hypothesis_id": group_id,
                         "route": {
                             "destination": row.route.destination,

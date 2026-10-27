@@ -805,9 +805,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     }
     warm_s1 = warm_by_stem["S1"].adapter_result
     assert warm_s1.assessment_input.assessment.content == (s1_assessment.content)
-    assert warm_s1.assessment_input.assessment.artifact.evidence_artifact_id == (
-        s1_assessment.artifact.evidence_artifact_id
-    )
     assert warm_s1.acquisition is not None
     assert by_stem["S1"].adapter_result.acquisition is not None
     assert tuple(map(serialize_acquired_trace, warm_s1.acquisition.traces)) == tuple(

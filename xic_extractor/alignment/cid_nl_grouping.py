@@ -241,8 +241,6 @@ def compatible_composite_owners(
         if (
             member is None
             or member.subject_id != owner.owner_id
-            or member.processing_request_id
-            != assessment.artifact.producer_processing_request_id
             or member.sample_key != assessment.content.sample_key
         ):
             return False

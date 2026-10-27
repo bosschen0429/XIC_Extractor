@@ -1036,7 +1036,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 (
                     owner_name,
                     kwargs["sample"].identity.sample_key,
-                    assessment.artifact.content_identity.artifact_content_id,
+                    assessment.content,
                 )
             )
             return compose_hypothesis_universe(**kwargs)
@@ -3877,9 +3877,6 @@ def _assert_conservative_completion_projection(
     import json
     from copy import copy
 
-    from xic_extractor.alignment.cell_observation.observations import (
-        canonical_cell_observation_bytes,
-    )
     from xic_extractor.untargeted_execution.partition.models import (
         project_completed_backfill,
     )
@@ -3889,12 +3886,6 @@ def _assert_conservative_completion_projection(
     assert position.planning_reason == proof.planning_reason
     assert final_cell.canonical_sample is position.sample
     assert any(item.position is position for item in handoff.position_associations)
-    assert (
-        json.loads(
-            canonical_cell_observation_bytes(proof.decision.target_cell.content)
-        )["schema_version"]
-        == "cell_observation"
-    )
 
     def canonical(value):
         return json.dumps(

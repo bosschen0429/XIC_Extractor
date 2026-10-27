@@ -683,7 +683,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
             evidence.observation.scan_number for evidence in assessment.evidence_refs
         )
     ) == tuple(sorted(candidates[0].seed_scan_ids))
-    assert len(result.assessment_input.discovery_projections) == 2
+    assert len(result.assessment_input.assessment.evidence_refs) == 2
     assert result.acquisition is not None
     assert result.acquisition.logical_xic_request_count == 1
     assert result.acquisition.xic_batch_count == 1
@@ -1968,7 +1968,7 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     assert assessment.content.method_result == "REJECT"
     assert assessment.candidate_peaks == ()
     assert len(assessment.evidence_refs) == 1
-    assert len(result.assessment_input.discovery_projections) == 1
+    assert len(result.assessment_input.assessment.evidence_refs) == 1
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -2006,7 +2006,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assert assessment.content.method_result is None
     assert assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
     assert assessment.content.evaluation_receipt.search_completed is False
-    assert result.assessment_input.discovery_projections == ()
+    assert result.assessment_input.assessment.evidence_refs == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -2116,7 +2116,7 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     }
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
-    assert len(result.assessment_input.discovery_projections) == 2
+    assert len(result.assessment_input.assessment.evidence_refs) == 2
 
 
 def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
@@ -2156,7 +2156,7 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
     assert result.assessment_input.assessment.content.technical_state == (
         "not_evaluated"
     )
-    assert result.assessment_input.discovery_projections == ()
+    assert result.assessment_input.assessment.evidence_refs == ()
     assert result.captures == ()
 
 
@@ -2454,12 +2454,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
     physical_mz_offset: float,
 ) -> None:
-    import json
-
-    from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        canonical_cid_nl_method_assessment_bytes,
-    )
-
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2494,12 +2488,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.group_hypothesis_id == "group-physical"
     assert result.assessment.content.method_subject is fixture.method_subject
     assert result.assessment.content.evaluation_receipt.physical_query_mz == (
-        fixture.method_subject.precursor_mz + physical_mz_offset
-    )
-    payload = json.loads(
-        canonical_cid_nl_method_assessment_bytes(result.assessment.content)
-    )
-    assert payload["content"]["evaluation_receipt"]["physical_query_mz"] == (
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
     assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(

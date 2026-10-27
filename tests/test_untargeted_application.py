@@ -878,7 +878,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     )
     plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
     plain_summary = read_cid_nl_explanation(plain)
-    assert "known_istd_reference" not in plain_summary
+    assert plain_summary["known_istd_reference"] is None
     matrix_bytes = matrix.read_bytes()
     reference_path = tmp_path / "reference.xlsx"
     _known_reference_workbook(reference_path)

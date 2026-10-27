@@ -8,18 +8,13 @@ or product authority.
 
 from __future__ import annotations
 
-from xic_extractor.evidence_artifacts import mint_evidence_artifact_ref
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
-    _ARTIFACT_SEMANTIC_CONTRACT,
-    ARTIFACT_SEMANTIC_ROLE,
     RELATIONSHIP,
-    SCHEMA_VERSION,
     CidNlChromatographicSupportContent,
     CidNlChromatographicSupportContractError,
     CidNlChromatographicSupportRef,
     DdaCidNlScanSupportMember,
     _member_sort_key,
-    canonical_cid_nl_chromatographic_support_bytes,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
@@ -52,16 +47,7 @@ def compose_cid_nl_chromatographic_support_ref(
     content = _content_from_supports(
         sample=sample, supports=supports, evidence_refs=evidence_refs
     )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_cid_nl_chromatographic_support_bytes(content),
-        upstream_artifacts=tuple(evidence.artifact for evidence in evidence_refs),
-    )
-    return CidNlChromatographicSupportRef(
-        content=content, artifact=artifact, evidence_refs=evidence_refs
-    )
+    return CidNlChromatographicSupportRef(content=content, evidence_refs=evidence_refs)
 
 
 def _content_from_supports(
@@ -208,13 +194,10 @@ def _validate_owner_sample(
 
 
 __all__ = [
-    "ARTIFACT_SEMANTIC_ROLE",
     "CidNlChromatographicSupportContent",
     "CidNlChromatographicSupportContractError",
     "CidNlChromatographicSupportRef",
     "DdaCidNlScanSupportMember",
     "RELATIONSHIP",
-    "SCHEMA_VERSION",
-    "canonical_cid_nl_chromatographic_support_bytes",
     "compose_cid_nl_chromatographic_support_ref",
 ]

@@ -35,10 +35,6 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.cid_nl_evidence_projection import (
-    UntargetedCidNlProjectionRef,
-    mint_untargeted_cid_nl_projection_ref,
-)
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
@@ -904,7 +900,6 @@ def adapt_current_discovery_sample_subject(
         _preacquired_traces=_preacquired_traces,
     )
     evidence_refs: list[CidNlEvidenceRef] = []
-    projections: list[UntargetedCidNlProjectionRef] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     candidate_universe = tuple(
@@ -945,14 +940,7 @@ def adapt_current_discovery_sample_subject(
                 else None
             ),
         )
-        projection = mint_untargeted_cid_nl_projection_ref(
-            processing_owners=processing_owners,
-            sample=sample,
-            canonical_evidence=evidence,
-            discovery_seed=seed,
-        )
         evidence_refs.append(evidence)
-        projections.append(projection)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(
             processing_owners=processing_owners,
             sample=sample,
@@ -979,7 +967,6 @@ def adapt_current_discovery_sample_subject(
         assessment_input=UntargetedCidNlAssessmentInput(
             sample=sample,
             assessment=assessment,
-            discovery_projections=tuple(projections),
         ),
         acquisition=acquisition,
         captures=captures,

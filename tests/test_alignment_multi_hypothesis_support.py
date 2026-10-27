@@ -115,6 +115,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
     }
     for hypothesis in hypotheses:
         owner = owner_from_cid_nl_assessment_support(
+            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
             hypothesis=hypothesis,
@@ -338,7 +339,10 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             processing_owners=fixture.owners, sample=sample, assessment=assessment
         )
         owner = owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+            processing_owners=fixture.owners,
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
         projected[stem] = owner
         assert owner.sample_stem == stem

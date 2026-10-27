@@ -11,10 +11,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.rt_frame import RtFrame
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -26,22 +22,6 @@ from xic_extractor.processing_identity import (
     ProcessingAttemptIdentity,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-SCHEMA_VERSION = "cell_observation"
-ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
-VALIDATION_STATUS = "diagnostic_only"
-MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
-
-_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    # Persisted artifact-hash identity; intentionally not this module's path.
-    owner_namespace="xic_extractor.alignment.cell_observations",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
 
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
@@ -96,9 +76,6 @@ class CidNlCellGroupContext:
     )
     _method_subject: CidNlMethodSubject = field(init=False, repr=False, compare=False)
     _owner_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
-    _support_artifacts: tuple[EvidenceArtifactRef, ...] = field(
-        init=False, repr=False, compare=False
-    )
 
     def __post_init__(self) -> None:
         subjects = tuple(
@@ -119,9 +96,6 @@ class CidNlCellGroupContext:
             select_cid_nl_group_backfill_subject(self.group, subjects),
         )
         object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
-        object.__setattr__(
-            self, "_support_artifacts", _group_support_artifacts(self.supports)
-        )
 
     @property
     def group_identity(self) -> CrossSampleGroupIdentity:
@@ -147,19 +121,3 @@ class CidNlCellGroupContext:
     @property
     def sorted_owner_ids(self) -> tuple[str, ...]:
         return self._owner_ids
-
-    @property
-    def support_artifacts(self) -> tuple[EvidenceArtifactRef, ...]:
-        return self._support_artifacts
-
-
-def _group_support_artifacts(
-    supports: tuple[CidNlCellGroupSupport, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts: list[EvidenceArtifactRef] = []
-    for support in supports:
-        artifacts.append(support.assessment.artifact)
-    artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
-    return tuple(
-        artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)
-    )

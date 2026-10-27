@@ -1,18 +1,14 @@
-"""CID-NL cell predecessor records and compatible canonical artifact encoding."""
+"""CID-NL cell predecessor records."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
     CidNlCellEvidence,
 )
 from xic_extractor.alignment.cell_observation.group_context import (
-    _ARTIFACT_SEMANTIC_CONTRACT,
-    SCHEMA_VERSION,
-    VALIDATION_STATUS,
     CellObservationContractError,
     CidNlCellGroupContext,
     TerminalObservationVariant,
@@ -22,10 +18,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     CidNlMethodResult,
@@ -78,7 +70,6 @@ class CellObservationRef:
     method_evidence: CellMethodEvidence
     peak_observation: PeakObservationRef | None
     peak_hypothesis: PeakHypothesis | None
-    artifact: EvidenceArtifactRef
     outside_group_context: CidNlCellGroupContext | None = None
 
 
@@ -260,18 +251,6 @@ def mint_cell_observation_ref(
         outside_group=outside_group,
         unassigned_support=unassigned_support,
     )
-    upstreams = _cell_upstream_artifacts(
-        group_context=group_context,
-        method_assessment=method_assessment,
-        outside_group_context=outside_group_context,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_cell_observation_bytes(content),
-        upstream_artifacts=upstreams,
-    )
     return CellObservationRef(
         content=content,
         group_context=group_context,
@@ -279,50 +258,5 @@ def mint_cell_observation_ref(
         method_evidence=CidNlCellEvidence(method_assessment),
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
-        artifact=artifact,
         outside_group_context=outside_group_context,
-    )
-
-
-def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
-    if not isinstance(content, CellObservationContent):
-        raise CellObservationContractError(
-            "canonical serialization requires CellObservation content"
-        )
-    values = {item.name: getattr(content, item.name) for item in fields(content)}
-    if content.outside_group is not None:
-        values["outside_group"] = asdict(content.outside_group)
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "content": values,
-    }
-    try:
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CellObservationContractError(
-            "CellObservation payload must be canonical JSON"
-        ) from exc
-    return (serialized + "\n").encode("utf-8")
-
-
-def _cell_upstream_artifacts(
-    *,
-    group_context: CidNlCellGroupContext,
-    method_assessment: CidNlMethodAssessmentRef,
-    outside_group_context: CidNlCellGroupContext | None = None,
-) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts = [method_assessment.artifact]
-    if outside_group_context is not None:
-        artifacts.extend(outside_group_context.support_artifacts)
-    artifacts.extend(group_context.support_artifacts)
-    artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
-    return tuple(
-        artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)
     )

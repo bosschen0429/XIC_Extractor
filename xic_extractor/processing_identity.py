@@ -15,17 +15,10 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
 
-from xic_extractor.artifact_lineage import (
-    EvidenceArtifactClosureError,
-)
-from xic_extractor.artifact_lineage import (
-    canonical_evidence_artifact_closure as _validate_artifact_closure,
-)
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
-from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadataSnapshot,
@@ -523,27 +516,6 @@ def retry_predecessor_attempt_ids(
     return tuple(predecessor_ids)
 
 
-def canonical_evidence_artifact_closure(
-    *,
-    producer_attempt: ProcessingAttemptIdentity,
-    artifacts: tuple[EvidenceArtifactRef, ...],
-) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate artifacts against the producer's complete retry chain."""
-
-    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
-        raise IdentityContractError(
-            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
-        )
-    return _validate_artifact_closure(
-        processing_request_id=producer_attempt.processing_request_id,
-        processing_attempt_id=producer_attempt.processing_attempt_id,
-        dependency_processing_attempt_ids=retry_predecessor_attempt_ids(
-            producer_attempt
-        ),
-        artifacts=artifacts,
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class ProcessingOwnerReferences:
     """Validated composition of lineage and owner-minted identity references."""
@@ -553,7 +525,6 @@ class ProcessingOwnerReferences:
     sample_snapshot: SampleMetadataSnapshot
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
     target_snapshot: TargetListSnapshot | None = None
-    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = ()
     _sources_by_sample_key: dict[
         str, tuple[ResolvedCanonicalSampleIdentity, AcquisitionSourceIdentity]
     ] = field(init=False, repr=False, compare=False)
@@ -625,15 +596,6 @@ class ProcessingOwnerReferences:
             if not isinstance(self.target_snapshot, TargetListSnapshot):
                 raise IdentityContractError("target_snapshot must be owner-minted")
             _validate_request_target_snapshot(request_inputs, self.target_snapshot)
-        try:
-            canonical_artifacts = canonical_evidence_artifact_closure(
-                producer_attempt=self.attempt,
-                artifacts=self.evidence_artifacts,
-            )
-        except EvidenceArtifactClosureError as exc:
-            raise IdentityContractError(str(exc)) from exc
-        if canonical_artifacts != self.evidence_artifacts:
-            raise IdentityContractError("evidence_artifacts must be canonical-sorted")
         sources_by_id = {
             source.acquisition_source_id: source
             for source in self.request.acquisition_sources
@@ -991,28 +953,15 @@ def compose_processing_owner_references(
     sample_snapshot: SampleMetadataSnapshot,
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...],
     target_snapshot: TargetListSnapshot | None = None,
-    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = (),
 ) -> ProcessingOwnerReferences:
     """Compose owner references without minting or inferring either identity."""
 
-    try:
-        canonical_artifacts = tuple(
-            sorted(
-                evidence_artifacts,
-                key=lambda artifact: artifact.evidence_artifact_id,
-            )
-        )
-    except (AttributeError, TypeError) as exc:
-        raise IdentityContractError(
-            "evidence_artifacts must contain owner-minted EvidenceArtifactRef values"
-        ) from exc
     return ProcessingOwnerReferences(
         request=request,
         attempt=attempt,
         sample_snapshot=sample_snapshot,
         sample_resolutions=sample_resolutions,
         target_snapshot=target_snapshot,
-        evidence_artifacts=canonical_artifacts,
     )
 
 
@@ -1054,7 +1003,6 @@ __all__ = [
     "build_processing_request_identity",
     "canonical_identity_basis_bytes",
     "mint_typed_identity",
-    "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",

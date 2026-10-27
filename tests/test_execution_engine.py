@@ -20,9 +20,6 @@ from tests.processing_identity_no_raw_fixture import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.evidence_artifacts import (
-    mint_artifact_semantic_contract_ref,
-)
 from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -54,17 +51,12 @@ from xic_extractor.execution.partitions import (
     WorkPartition,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker, RuntimeMarkerState
-from xic_extractor.execution.result_store import StreamedResultStore, _OwnerUnpickler
-from xic_extractor.execution.workers import WorkerAdmissionPool
-
-_TEST_CONTRACT = mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.test_execution_engine",
-    semantic_role="test_partition_artifact",
-    schema_version="test",
-    validation_status="diagnostic_only",
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
+from xic_extractor.execution.result_store import (
+    StreamedResultStore,
+    _OwnerUnpickler,
+    open_preserved_results,
 )
+from xic_extractor.execution.workers import WorkerAdmissionPool
 
 
 @dataclass(frozen=True)
@@ -208,8 +200,7 @@ def test_streamed_result_store_shared_objects_identity(
     assert restored.children[0][1] is shared_ref
     checkpoint = store.preserve_failed_results()
     assert checkpoint is not None
-    with checkpoint.open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(checkpoint)
     replay = retained.read(0)
     assert replay.ref == shared_config
     assert replay.children[0][1] == shared_ref
@@ -716,8 +707,7 @@ def test_scheduler_composition_failure_retains_completed_results(
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
-    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
     assert tuple(retained.sequence("children")) == ("child-0",)
     assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
     assert not list(spool_dirs[0].glob("*.tmp"))
@@ -746,8 +736,7 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
-    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
-        retained = _OwnerUnpickler(stream, ()).load()
+    retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
     assert tuple(retained.sequence("children")) == ("child-0", "child-1")
     assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
     assert marker.read().state == RuntimeMarkerState.FINALIZED

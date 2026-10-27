@@ -10,9 +10,8 @@ numeric product value, or calls a writer.
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Literal, cast, final
 
 from xic_extractor.alignment.cell_observation.cid_nl_evidence import CidNlCellEvidence
@@ -29,11 +28,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    mint_artifact_semantic_contract_ref,
-    mint_evidence_artifact_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -55,17 +49,6 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
-BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_candidate_universe"
-BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = "conservative_backfill_candidate_universe"
-_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
-    # Persisted artifact-hash identity; intentionally not this module's path.
-    owner_namespace="xic_extractor.alignment.conservative_backfill",
-    semantic_role=BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
-    schema_version=BACKFILL_UNIVERSE_SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type="application/json",
-    serialization_format="canonical-json-utf8-lf",
-)
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
 ConservativeBackfillDisposition = Literal[
@@ -111,7 +94,6 @@ class ConservativeBackfillCandidateUniverse:
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
     candidate_assessment: CidNlMethodAssessmentRef
     method_evidence: CellMethodEvidence
-    artifact: EvidenceArtifactRef
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
     validation_status: str = VALIDATION_STATUS
@@ -214,38 +196,6 @@ def mint_conservative_backfill_candidate_universe(
             "backfill assessment does not bind the exact sample and target-compatible "
             "method subject"
         )
-    if (
-        candidate_assessment.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-        or candidate_assessment.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise ConservativeBackfillContractError(
-            "backfill assessment is outside the exact processing attempt"
-        )
-    payload = _backfill_universe_bytes(
-        processing_owners=processing_owners,
-        sample=sample,
-        group_facts=facts,
-        candidate_assessment=candidate_assessment,
-        request_sample_population=population,
-        localization=localization,
-        localization_sources=localization_sources,
-    )
-    artifact = mint_evidence_artifact_ref(
-        producer_processing_request_id=(
-            processing_owners.request.processing_request_id
-        ),
-        producer_processing_attempt_id=(
-            processing_owners.attempt.processing_attempt_id
-        ),
-        semantic_contract=_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=payload,
-        upstream_artifacts=_backfill_universe_upstream_artifacts(
-            facts,
-            candidate_assessment,
-        ),
-    )
     return ConservativeBackfillCandidateUniverse(
         processing_owners=processing_owners,
         processing_attempt=processing_owners.attempt,
@@ -253,100 +203,9 @@ def mint_conservative_backfill_candidate_universe(
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         method_evidence=CidNlCellEvidence(candidate_assessment),
-        artifact=artifact,
         localization=localization,
         localization_sources=localization_sources,
     )
-
-
-def canonical_conservative_backfill_universe_bytes(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    group_facts: tuple[ConservativeBackfillGroupFacts, ...],
-    candidate_assessment: CidNlMethodAssessmentRef,
-    localization: BackfillPeakLocation | None = None,
-    localization_sources: tuple[PeakObservationRef, ...] = (),
-) -> bytes:
-    """Serialize the exact no-write backfill universe for artifact replay."""
-
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise ConservativeBackfillContractError(
-            "backfill universe requires validated processing owners"
-        )
-    facts = _canonical_backfill_group_facts(group_facts)
-    population = _processing_owner_sample_population(processing_owners)
-    if not isinstance(candidate_assessment, CidNlMethodAssessmentRef):
-        raise ConservativeBackfillContractError(
-            "backfill universe requires an owner-minted method assessment"
-        )
-    return _backfill_universe_bytes(
-        processing_owners=processing_owners,
-        sample=sample,
-        group_facts=facts,
-        candidate_assessment=candidate_assessment,
-        request_sample_population=population,
-        localization=localization,
-        localization_sources=localization_sources,
-    )
-
-
-def _backfill_universe_bytes(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    group_facts: tuple[ConservativeBackfillGroupFacts, ...],
-    candidate_assessment: CidNlMethodAssessmentRef,
-    request_sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
-    localization: BackfillPeakLocation | None = None,
-    localization_sources: tuple[PeakObservationRef, ...] = (),
-) -> bytes:
-    peaks = candidate_assessment.candidate_peaks
-    processing_attempt = processing_owners.attempt
-    payload: dict[str, object] = {
-        "schema_version": BACKFILL_UNIVERSE_SCHEMA_VERSION,
-        "validation_status": VALIDATION_STATUS,
-        "product_authority": PRODUCT_AUTHORITY,
-        "processing_request_id": processing_attempt.processing_request_id,
-        "processing_attempt_id": processing_attempt.processing_attempt_id,
-        "sample_key": sample.identity.sample_key,
-        "request_sample_population_ids": [
-            member.identity.sample_key for member in request_sample_population
-        ],
-        "method_subject_id": group_facts[0].group_context.method_subject_id,
-        "candidate_assessment_artifact_id": (
-            candidate_assessment.artifact.evidence_artifact_id
-        ),
-        "groups": [
-            {
-                "group_hypothesis_id": fact.group_context.group.group_hypothesis_id,
-                "source_cell_artifact_ids": [
-                    cell.artifact.evidence_artifact_id for cell in fact.source_cells
-                ],
-            }
-            for fact in group_facts
-        ],
-        "candidate_peaks": [
-            {
-                "peak_observation_content_id": (
-                    peak.content.peak_observation_content_id
-                ),
-            }
-            for peak in peaks
-        ],
-    }
-    if localization is not None:
-        payload["localization"] = asdict(localization)
-    return (
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        + "\n"
-    ).encode("utf-8")
 
 
 def plan_conservative_backfill_targets(
@@ -849,18 +708,6 @@ def _processing_owner_sample_population(
     )
 
 
-def _backfill_universe_upstream_artifacts(
-    facts: tuple[ConservativeBackfillGroupFacts, ...],
-    candidate_assessment: CidNlMethodAssessmentRef,
-) -> tuple[EvidenceArtifactRef, ...]:
-    artifacts = (
-        *(cell.artifact for fact in facts for cell in fact.source_cells),
-        candidate_assessment.artifact,
-    )
-    by_id = {artifact.evidence_artifact_id: artifact for artifact in artifacts}
-    return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
-
-
 def _backfill_evidence_from_universe(
     universe: ConservativeBackfillCandidateUniverse | None,
 ) -> tuple[ConservativeBackfillEvidence, ...]:
@@ -1025,7 +872,6 @@ __all__ = [
     "assess_conservative_backfill_group",
     "assess_targeted_conservative_backfill_group",
     "assess_untargeted_conservative_backfill_group",
-    "canonical_conservative_backfill_universe_bytes",
     "map_conservative_backfill_candidates",
     "minimum_direct_support_count",
     "mint_conservative_backfill_candidate_universe",

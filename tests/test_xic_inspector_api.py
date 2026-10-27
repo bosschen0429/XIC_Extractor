@@ -1848,55 +1848,6 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
     assert "有多筆定量決策，未形成單一結果" in item["reason_label"]
 
 
-def test_structured_external_evidence_refs_remain_technical_without_fake_links(
-    tmp_path,
-):
-    report, _, _ = _create_mock_db(tmp_path)
-    external_ref = {
-        "content_identity": {
-            "artifact_content_id": "xic.artifact-content:content-01",
-            "content_sha256": "content-sha-01",
-        },
-        "evidence_artifact_id": "xic.evidence-artifact:external-01",
-        "producer_processing_attempt_id": "xic.processing-attempt:external-att",
-        "producer_processing_request_id": "xic.processing-request:external-req",
-        "upstream_artifact_ids": [],
-    }
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "method_assessments",
-                "assessment-01",
-                json.dumps(
-                    {
-                        "method_result": "HOLD",
-                        "evidence_refs": [external_ref],
-                    }
-                ),
-            ),
-        )
-        _insert_link(
-            connection,
-            ("C1", "S1", "method_assessments", "assessment-01"),
-        )
-
-    output = tmp_path / "structured-external-ref.html"
-    generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    assessment = readable["assessment-01"]
-    assert assessment["links"] == []
-    technical_values = {ref["value"] for ref in assessment["technical_refs"]}
-    assert technical_values >= {
-        "xic.artifact-content:content-01",
-        "xic.evidence-artifact:external-01",
-        "xic.processing-attempt:external-att",
-        "xic.processing-request:external-req",
-        "content-sha-01",
-    }
-
-
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:

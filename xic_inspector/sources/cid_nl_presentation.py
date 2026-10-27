@@ -63,7 +63,6 @@ _TECHNICAL_LABELS = {
     "processing_request_id": "處理 request ID",
     "processing_attempt_id": "處理 attempt ID",
     "acquisition_source_id": "擷取來源 ID",
-    "observation_artifact_id": "觀察 artifact ID",
     "method_subject_id": "方法對象 ID",
     "matrix_path": "Matrix 路徑",
 }
