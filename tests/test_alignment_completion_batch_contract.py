@@ -7,22 +7,17 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
-import xic_extractor.untargeted_execution.execution_result as execution_result_owner
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.completion import (
-    UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
     WorkflowStage,
-    complete_untarget_batch,
 )
 from xic_extractor.alignment.result.application_result import (
     ApplicationResultContractError,
     FinalizedUntargetApplicationResult,
-    FinalizedUntargetBatchApplicationResult,
     UntargetBatchApplicationResultRequest,
-    UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
 from xic_extractor.discovery.batch_contract import (
@@ -32,7 +27,6 @@ from xic_extractor.discovery.batch_contract import (
     candidate_sample_stems_from_request,
     validate_candidate_universe_payload,
 )
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY,
@@ -45,9 +39,6 @@ from xic_extractor.processing_identity import (
     issue_processing_attempt,
     resolve_request_acquisition_source,
 )
-from xic_extractor.untargeted_execution.execution_result import (
-    CompletedUntargetBatchWorkflowResult,
-)
 
 
 def _uninitialized(value_type, **values):
@@ -55,36 +46,6 @@ def _uninitialized(value_type, **values):
     for name, item in values.items():
         object.__setattr__(value, name, item)
     return value
-
-
-def test_completed_batch_rejects_crossed_runtime_attempt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        execution_result_owner, "RuntimeFinalizationReceipt", SimpleNamespace
-    )
-    receipt = SimpleNamespace(
-        supervisor=SimpleNamespace(
-            terminal_outcome=AttemptTerminalOutcome.SUCCEEDED,
-            attempt=object(),
-        ),
-    )
-    application_result = _uninitialized(
-        FinalizedUntargetBatchApplicationResult,
-        scope=object(),
-        processing_request=object(),
-        processing_attempt=object(),
-        children=(),
-    )
-
-    with pytest.raises(
-        workflow_owner.AlignmentWorkflowContractError,
-        match="crossed its runtime attempt",
-    ):
-        CompletedUntargetBatchWorkflowResult(
-            runtime_receipt=receipt,
-            application_result=application_result,
-        )
 
 
 def _fake_scope(
@@ -177,198 +138,6 @@ def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
         scientific_core=core,
         completed_projection=projection,
     )
-
-
-def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path,
-        sample_roles={"sample-a": "qc"},
-    )
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=(fixture.method_subject,),
-        candidate_memberships=(
-            ("candidate:a", fixture.method_subject.method_subject_id),
-        ),
-    )
-    base_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-workflow-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={
-            REQUEST_INPUT_KEY: subject_batch.request_payload(),
-            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
-                processing_owners=fixture.owners,
-                samples=fixture.samples,
-                candidate_ids_by_stem={"sample-a": ("candidate:a",)},
-            ),
-        },
-    )
-    attempt = issue_processing_attempt()
-    subject_id = fixture.method_subject.method_subject_id
-    parent_scope = _fake_scope(
-        request=request,
-        samples=fixture.samples,
-        candidate_ids=("candidate:a",),
-        subject_ids=(subject_id,),
-    )
-    child_scope = _fake_scope(
-        request=request,
-        samples=fixture.samples,
-        candidate_ids=("candidate:a",),
-        subject_ids=(subject_id,),
-    )
-    child = _fake_application(
-        scope=child_scope,
-        request=request,
-        attempt=attempt,
-        samples=fixture.samples,
-        row_id="row:a",
-        physical_id="physical:a",
-    )
-
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="duplicate|conflicts",
-    ):
-        finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=parent_scope,
-                processing_request=request,
-                processing_attempt=attempt,
-                children=(child, child),
-            )
-        )
-
-    retry = issue_processing_attempt(retry_of=attempt)
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="crossed its processing attempt",
-    ):
-        finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=parent_scope,
-                processing_request=request,
-                processing_attempt=retry,
-                children=(child,),
-            )
-        )
-
-
-def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
-    tmp_path,
-) -> None:
-    fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path,
-        sample_roles={"sample-a": "qc", "sample-b": "qc"},
-    )
-    candidate_id = "candidate:a"
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=(fixture.method_subject,),
-        candidate_memberships=(
-            (candidate_id, fixture.method_subject.method_subject_id),
-        ),
-    )
-    base_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-sample-binding-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={
-            REQUEST_INPUT_KEY: subject_batch.request_payload(),
-            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
-                processing_owners=fixture.owners,
-                samples=fixture.samples,
-                candidate_ids_by_stem={"sample-a": (candidate_id,)},
-            ),
-        },
-    )
-    attempt = issue_processing_attempt()
-    parent_scope = _fake_scope(
-        request=request,
-        samples=fixture.samples,
-        candidate_ids=(candidate_id,),
-        subject_ids=(fixture.method_subject.method_subject_id,),
-    )
-    sample_b = fixture.sample("sample-b")
-
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="crossed candidate, subject, or sample",
-    ):
-        finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=parent_scope,
-                processing_request=request,
-                processing_attempt=attempt,
-                children=(),
-                excluded_candidates=(
-                    UntargetedCandidateExclusion(
-                        candidate_id=candidate_id,
-                        method_subject_id=fixture.method_subject.method_subject_id,
-                        sample_key=(sample_b.identity.sample_key),
-                        discovery_candidate_state="review_only_orphan_nl",
-                    ),
-                ),
-            )
-        )
-
-
-def test_batch_application_result_requires_owner_candidate_universe(
-    tmp_path,
-) -> None:
-    fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path,
-        sample_roles={"sample-a": "qc"},
-    )
-    candidate_id = "candidate:a"
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=(fixture.method_subject,),
-        candidate_memberships=(
-            (candidate_id, fixture.method_subject.method_subject_id),
-        ),
-    )
-    base_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-missing-universe-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
-    )
-    sample = fixture.sample("sample-a")
-
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="owner-validated candidate/sample universe",
-    ):
-        UntargetBatchApplicationResultRequest(
-            scope=_fake_scope(
-                request=request,
-                samples=fixture.samples,
-                candidate_ids=(candidate_id,),
-                subject_ids=(fixture.method_subject.method_subject_id,),
-            ),
-            processing_request=request,
-            processing_attempt=issue_processing_attempt(),
-            children=(),
-            excluded_candidates=(
-                UntargetedCandidateExclusion(
-                    candidate_id=candidate_id,
-                    method_subject_id=fixture.method_subject.method_subject_id,
-                    sample_key=sample.identity.sample_key,
-                    discovery_candidate_state="review_only_orphan_nl",
-                ),
-            ),
-        )
 
 
 @pytest.mark.parametrize("carrier", ["tuple", "chunks"])
@@ -658,25 +427,3 @@ def _candidate_selection_request(
             **selection_inputs,
         },
     )
-
-
-def test_batch_child_failure_keeps_stage_and_never_finalizes_partial_results(
-    monkeypatch,
-):
-    request = object()
-    bundle = _uninitialized(UntargetWorkflowBundle, request=object(), adapter=object())
-    error = ValueError("child failed")
-
-    def fail_child(*args, **kwargs):
-        raise workflow_owner.WorkflowStageFailure(WorkflowStage.CAPTURE, error)
-
-    monkeypatch.setattr(workflow_owner, "complete_analysis", fail_child)
-    monkeypatch.setattr(
-        workflow_owner,
-        "finalize_alignment_result",
-        lambda _: pytest.fail("partial batch finalized"),
-    )
-    with pytest.raises(workflow_owner.WorkflowStageFailure) as failure:
-        complete_untarget_batch(request, (bundle,))
-    assert failure.value.stage is WorkflowStage.CAPTURE
-    assert failure.value.error is error

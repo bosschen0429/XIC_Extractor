@@ -67,29 +67,6 @@ from xic_extractor.processing_identity import (
 )
 
 
-def _finalized_alignment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path, monkeypatch
-    )
-    return alignment
-
-
-def _two_group_lineaged_alignment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> FinalizedScientificAlignment:
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path / "alignment",
-        monkeypatch,
-        group_mode="two",
-    )
-    assert len(alignment.final_population) == 2
-    return alignment
-
-
 def _predecessor_cells(base: FinalizedScientificAlignment):
     predecessor_cells = []
     seen = set()

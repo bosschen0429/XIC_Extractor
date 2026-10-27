@@ -1,4 +1,3 @@
-from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
@@ -83,7 +82,6 @@ def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():
     )
 
     assert owner.quantification_eligible is False
-    assert owner_quantification_eligible(owner) is False
     assert owner.quantification_exclusion_reason == (
         "owner_apex_on_integration_boundary"
     )

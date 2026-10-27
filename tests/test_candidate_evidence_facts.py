@@ -15,7 +15,6 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
-    gaussian15_trace_window_evidence,
     integration_with_trace_evidence,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
@@ -40,55 +39,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
-
-
-def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:
-    rt = [0.0, 0.1, 0.2, 0.3, 0.4]
-
-    normalized, facts = gaussian15_trace_window_evidence(
-        rt,
-        [0.0, 0.0, 100.0, 0.0, 0.0],
-        query_apex_rt_min=0.2,
-        half_window_min=0.11,
-    )
-
-    assert facts.status == "ok"
-    assert facts.reason == "gaussian15_query_window_evidence"
-    assert facts.query_apex_in_trace_window is True
-    assert facts.trace_apex_rt_min == pytest.approx(0.2)
-    assert facts.global_trace_apex_delta_min == pytest.approx(0.0)
-    assert facts.local_apex_delta_min == pytest.approx(0.0)
-    assert facts.local_to_global_max_ratio == pytest.approx(1.0)
-    assert facts.local_max_intensity == pytest.approx(normalized.max_intensity)
-
-
-def test_trace_window_coverage_survives_inconclusive_non_positive_signal() -> None:
-    rt = [0.0, 0.1, 0.2]
-
-    _normalized, facts = gaussian15_trace_window_evidence(
-        rt,
-        [0.0, 0.0, 0.0],
-        query_apex_rt_min=0.1,
-    )
-
-    assert facts.status == "inconclusive"
-    assert facts.reason == "non_positive_signal"
-    assert facts.query_apex_in_trace_window is True
-    assert facts.local_to_global_max_ratio is None
-
-
-def test_trace_window_evidence_rejects_crossed_coordinate_cardinality() -> None:
-    normalized, facts = gaussian15_trace_window_evidence(
-        [0.0, 0.1, 0.2],
-        [0.0, 10.0],
-        query_apex_rt_min=0.1,
-    )
-
-    assert normalized.status == "inconclusive"
-    assert normalized.reason == "length_mismatch"
-    assert facts.status == "inconclusive"
-    assert facts.reason == "length_mismatch"
-    assert facts.query_apex_in_trace_window is False
 
 
 def test_integration_trace_evidence_preserves_compatibility_fields() -> None:

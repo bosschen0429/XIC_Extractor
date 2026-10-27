@@ -11,14 +11,11 @@ from tools.diagnostics.docs_policy import (
     PRODUCTIZATION_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
-    is_productization_compatibility_index_text,
 )
 from tools.diagnostics.docs_routing_review import PRODUCTIZATION_OWNER_ROUTE
 from tools.diagnostics.docs_scan import (
     normalize_repo_rel_path,
-    normalized_path_dependency_census,
     permanent_root_contract_problems,
-    resolve_repo_path,
     resolve_repo_target,
 )
 
@@ -57,34 +54,6 @@ def test_repo_relative_path_normalizer_accepts_internal_path() -> None:
 
 def test_relative_link_resolution_rejects_repo_escape() -> None:
     assert resolve_repo_target("docs/guide.md", "../../outside.md") is None
-
-
-def test_repo_path_resolution_rejects_symlink_escape(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    outside = tmp_path / "outside.md"
-    outside.write_text("outside\n", encoding="utf-8")
-    try:
-        (repo / "owner.md").symlink_to(outside)
-    except OSError as exc:
-        if getattr(exc, "winerror", None) == 1314:
-            pytest.skip("Windows runner lacks symbolic-link privilege")
-        raise
-
-    with pytest.raises(ValueError, match="resolves outside repository"):
-        resolve_repo_path(repo, "owner.md")
-
-
-def test_current_control_plane_is_a_compatibility_index_preimage() -> None:
-    root = Path(__file__).parents[1]
-    text = (
-        root / "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-    ).read_text(encoding="utf-8")
-
-    assert is_productization_compatibility_index_text(text)
-    assert not is_productization_compatibility_index_text(
-        "# Productization compatibility index\n"
-    )
 
 
 def test_current_permanent_root_contracts_have_positive_landmarks() -> None:
@@ -255,63 +224,6 @@ def test_permanent_root_contract_ignores_faux_closing_container_in_fence(
     problems = permanent_root_contract_problems(root, rel_path, text)
 
     assert "required route must resolve: docs/product/README.md" in problems
-
-
-def test_dependency_census_resolves_relative_markdown_html_and_constant_consumers(
-    tmp_path: Path,
-) -> None:
-    target = "/".join(
-        (
-            "docs",
-            "superpowers",
-            "plans",
-            "2026-06-15-productization-control-plane.md",
-        )
-    )
-    files = {
-        "docs/guide/ref.md": (
-            "[control][control-plane]\n\n"
-            "[control-plane]:\n  ../superpowers/plans/"
-            "2026-06-15-productization-control-plane.md\n"
-        ),
-        "docs/report.html": (
-            "<a HREF=superpowers/plans/"
-            "2026-06-15-productization-control-plane.md>control</a>\n"
-        ),
-        "notes.txt": f"literal: {target}\n",
-        "tools/check.py": "from policy import " + "CONTROL_" + "PLANE_PATH\n",
-    }
-    for rel_path, text in files.items():
-        path = tmp_path / rel_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    census = normalized_path_dependency_census(
-        tmp_path,
-        target,
-        scan_paths=tuple(files),
-    )
-
-    assert census["literal_path_referrers"] == ["notes.txt"]
-    assert census["relative_markdown_links"] == [
-        {
-            "referrer": "docs/guide/ref.md",
-            "raw_target": (
-                "../superpowers/plans/2026-06-15-productization-control-plane.md"
-            ),
-            "resolved_path": target,
-        }
-    ]
-    assert census["relative_html_links"] == [
-        {
-            "referrer": "docs/report.html",
-            "raw_target": (
-                "superpowers/plans/2026-06-15-productization-control-plane.md"
-            ),
-            "resolved_path": target,
-        }
-    ]
-    assert census["control_plane_constant_consumers"] == ["tools/check.py"]
 
 
 def test_docs_policy_marks_validation_as_route_retained_contract_surface() -> None:

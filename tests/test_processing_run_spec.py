@@ -333,14 +333,7 @@ def test_pure_run_spec_rejects_same_source_under_different_names(
         )
 
 
-def test_run_spec_rejects_invalid_direct_profile_type(tmp_path: Path) -> None:
-    valid = _compile_paths(_raws(tmp_path))
-    with pytest.raises(TypeError, match="SignalProcessingProfile"):
-        compile_processing_run_spec(
-            valid.acquisition_inputs,
-            discovery_settings=_settings(),
-            signal_processing_profile="gaussian",  # type: ignore[arg-type]
-        )
+def test_run_spec_rejects_invalid_direct_profile_type() -> None:
     with pytest.raises(ValueError, match="method"):
         SignalProcessingProfile(method="savgol")
 

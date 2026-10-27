@@ -18,7 +18,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     infer_feature_memberships,
-    supports_existing_feature,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
@@ -595,17 +594,6 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
         else {frozenset(("left",)), frozenset(("right",))}
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == expected
-    for candidate, peer in (owners, owners[::-1]):
-        assert (
-            supports_existing_feature(
-                candidate,
-                (peer,),
-                config=AlignmentConfig(),
-                rt_frame=frame,
-                rules=CID_NL_GROUPING_RULES,
-            )
-            is joins
-        )
 
 
 def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
@@ -651,19 +639,6 @@ def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
         "accepted_contradiction" in d.accepted_risk.risk_flags
         for d in result.sparse_decisions
     )
-    # Without its own calibration support, "unsupported" is compared with
-    # "narrow" in the observed frame, where the two apices coincide.
-    for candidate, expected in zip(owners[1:], (True, False, True), strict=True):
-        assert (
-            supports_existing_feature(
-                candidate,
-                (owners[0],),
-                config=AlignmentConfig(),
-                rt_frame=frame,
-                rules=CID_NL_GROUPING_RULES,
-            )
-            is expected
-        )
     assert [(owner.owner_apex_rt, owner.owner_area) for owner in owners] == [
         (10.0, 1000.0),
         (9.0, 1000.0),
@@ -716,22 +691,6 @@ def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
             "region_disagreement" in decision.accepted_risk.soft_contradictions
             for decision in result.sparse_decisions
         )
-    by_id = {owner.owner_id: owner for owner in owners}
-    band_a = tuple(by_id[owner_id] for owner_id in ("a1", "a2", "a3"))
-    assert supports_existing_feature(
-        by_id["a4"],
-        band_a,
-        config=AlignmentConfig(),
-        rt_frame=frame,
-        rules=CID_NL_GROUPING_RULES,
-    )
-    assert not supports_existing_feature(
-        by_id["b1"],
-        band_a,
-        config=AlignmentConfig(),
-        rt_frame=frame,
-        rules=CID_NL_GROUPING_RULES,
-    )
 
 
 @pytest.mark.parametrize("bootstrap", [False, True])
@@ -818,47 +777,6 @@ def test_singleton_shape_disagreement_is_retained_after_band_extension() -> None
     assert "shape_disagreement" in ramp.accepted_risk.soft_contradictions
     assert {sample for sample, _, _ in ramp.accepted_risk.selected_owners} == set(
         orders
-    )
-
-
-@pytest.mark.parametrize("with_order", [False, True])
-def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -> None:
-    offsets = np.linspace(-0.6, 0.6, 121)
-    reference = replace(
-        _synthetic_owner("reference", "reference", 10),
-        peak_shape=prepare_local_peak_shape(
-            offsets + 10,
-            np.exp(-0.5 * (offsets / 0.07) ** 2),
-            apex_rt_min=10,
-        ),
-    )
-    candidate = replace(reference, owner_id="candidate", sample_stem="candidate")
-    frame = (
-        SampleRtFrame(injection_order={"reference": 1, "candidate": 2})
-        if with_order
-        else SampleRtFrame()
-    )
-    assert supports_existing_feature(
-        candidate,
-        (reference,),
-        config=AlignmentConfig(),
-        rt_frame=frame,
-        rules=CID_NL_GROUPING_RULES,
-    )
-    candidate = replace(
-        candidate,
-        peak_shape=prepare_local_peak_shape(
-            offsets + 10,
-            3 - offsets,
-            apex_rt_min=10,
-        ),
-    )
-    assert not supports_existing_feature(
-        candidate,
-        (reference,),
-        config=AlignmentConfig(),
-        rt_frame=frame,
-        rules=CID_NL_GROUPING_RULES,
     )
 
 

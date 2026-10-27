@@ -17,7 +17,6 @@ from xic_extractor.processing_identity import (
     issue_processing_attempt,
 )
 from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
     SampleMetadata,
     SampleMetadataError,
     SampleMetadataSnapshot,
@@ -231,13 +230,6 @@ def _sample_snapshot(
         rows,
         identity_namespace=identity_namespace,
     )
-
-
-def _resolved_sample(sample_name: str = "Sample A") -> ResolvedCanonicalSampleIdentity:
-    snapshot = _sample_snapshot(
-        SampleMetadata(sample_name=sample_name, raw_stem=sample_name)
-    )
-    return resolve_canonical_sample_identity(snapshot, sample_name)
 
 
 def _target_snapshot(

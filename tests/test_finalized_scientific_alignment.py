@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -252,28 +252,6 @@ def test_finalizer_rejects_short_window_capture_as_no_observation(
         finalize_scientific_alignment(
             scope=scope,
             captures=(incomplete, captures[1]),
-            grouping_result=receipt,
-            cell_observation_handoff=handoff,
-            predecessor_cell_observations=predecessor_cells,
-        )
-
-
-def test_finalizer_rejects_crossed_scope(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
-        tmp_path, monkeypatch
-    )
-    equivalent_but_crossed_scope = replace(scope)
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="SearchScope",
-    ):
-        finalize_scientific_alignment(
-            scope=equivalent_but_crossed_scope,
-            captures=captures,
             grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,

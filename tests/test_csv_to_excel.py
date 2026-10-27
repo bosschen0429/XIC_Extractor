@@ -730,23 +730,6 @@ def _long_row(
     return row
 
 
-def _wide_row(sample_name: str, targets: list[Target]) -> dict[str, str]:
-    row = {"SampleName": sample_name}
-    for target in targets:
-        row.update(
-            {
-                f"{target.label}_RT": "9.1",
-                f"{target.label}_Int": "1000",
-                f"{target.label}_Area": "10000",
-                f"{target.label}_PeakStart": "8.9",
-                f"{target.label}_PeakEnd": "9.3",
-                f"{target.label}_PeakWidth": "0.4000",
-                f"{target.label}_NL": "OK",
-            }
-        )
-    return row
-
-
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))

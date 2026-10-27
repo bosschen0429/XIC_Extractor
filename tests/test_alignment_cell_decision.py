@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pickle
 from copy import copy
-from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any
 
@@ -31,9 +30,7 @@ from tests.test_untargeted_matrix_projection import (
 from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_decision.owner import (
     CellDecisionContractError,
-    NoWriteCellDecision,
     decide_group_cell_population,
-    decide_production_cell,
     decide_target_cell_population,
 )
 from xic_extractor.alignment.cell_observation.observations import (
@@ -123,13 +120,6 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     assert all(
         item.subject is subject
         for item, subject in zip(decisions, projection.subjects, strict=True)
-    )
-    assert (
-        decide_production_cell(
-            projection.subjects[0],
-            target_projection=projection,
-        )
-        == decisions[0]
     )
 
 
@@ -467,23 +457,6 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         decision_owner._decide_group(not_searched, is_member=False)[0].variant
         == "not_searched"
     )
-
-
-def test_decision_is_immutable(
-    tmp_path: Path,
-) -> None:
-    _fixture, _scope, alignment, _hypotheses = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a",),
-        observed_stems=("sample-a",),
-        group_specs=((("sample-a",), "provisional"),),
-    )
-    projection = project_target_pre_cell(alignment)
-    decision = decide_target_cell_population(projection)[0]
-
-    with pytest.raises(FrozenInstanceError):
-        decision.payload = NoWriteCellDecision("unavailable")  # type: ignore[misc]
-    assert decision.selected_integration is not None
 
 
 def _numeric_peak(

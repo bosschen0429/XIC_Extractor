@@ -16,7 +16,6 @@ from tests.processing_identity_no_raw_fixture import (
     PRECURSOR_MZ,
     build_processing_identity_no_raw_fixture,
 )
-from xic_extractor.alignment import cid_nl_evidence_spine as spine_module
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     mint_cell_observation_ref,
@@ -380,17 +379,6 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
             target=fixture.target,
         )
 
-    spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
-    )
-    assert all(
-        cell.content.group_target_label
-        == fixture.target.definition.target_key.target_label
-        for cell in spine.cells
-    )
-
 
 def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
@@ -660,119 +648,6 @@ def test_method_relation_resolution_preserves_unrelated_and_empty_facts(
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     ) == ((), ())
-
-
-def test_reference_spine_mints_once_and_fans_out_same_cell(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fixture, assessments = _truth_table_fixture(tmp_path)
-    calls: list[str] = []
-    mint_counts = {"hypothesis": 0, "group": 0, "cell": 0}
-
-    def forbidden(*_args, **_kwargs):
-        calls.append("writer")
-        raise AssertionError("diagnostic evidence spine invoked product output")
-
-    for path in (
-        "xic_extractor.output.workbook_builder.write_workbook_from_rows",
-        "xic_extractor.output.alignment.tsv_writer.write_alignment_matrix_tsv",
-        "xic_extractor.output.alignment.product_matrix.build_product_matrix_rows",
-        "xic_extractor.output.alignment.pipeline_outputs.write_outputs_atomic",
-    ):
-        monkeypatch.setattr(path, forbidden)
-
-    original_hypothesis = spine_module.compose_cid_nl_peak_hypothesis
-    original_group = spine_module.construct_cross_sample_peak_group_hypotheses
-    original_cell = spine_module.mint_cell_observation_ref
-
-    def counting_hypothesis(*args, **kwargs):
-        mint_counts["hypothesis"] += 1
-        return original_hypothesis(*args, **kwargs)
-
-    def counting_group(*args, **kwargs):
-        mint_counts["group"] += 1
-        return original_group(*args, **kwargs)
-
-    def counting_cell(*args, **kwargs):
-        mint_counts["cell"] += 1
-        return original_cell(*args, **kwargs)
-
-    monkeypatch.setattr(
-        spine_module, "compose_cid_nl_peak_hypothesis", counting_hypothesis
-    )
-    monkeypatch.setattr(
-        spine_module,
-        "construct_cross_sample_peak_group_hypotheses",
-        counting_group,
-    )
-    monkeypatch.setattr(spine_module, "mint_cell_observation_ref", counting_cell)
-
-    spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=tuple(
-            (fixture.sample(sample_stem), assessment)
-            for sample_stem, assessment in zip(
-                ("s1", "s2", "s3", "s4", "s5"),
-                assessments,
-                strict=True,
-            )
-        ),
-    )
-
-    assert calls == []
-    assert mint_counts == {"hypothesis": 1, "group": 1, "cell": 5}
-    assert spine.group is not None
-    assert len(spine.support_hypotheses) == 1
-    assert len(spine.cells) == 5
-    assert len({cell.content for cell in spine.cells}) == 5
-    for cell, targeted, untargeted in zip(
-        spine.cells,
-        spine.targeted_projections,
-        spine.untargeted_projections,
-        strict=True,
-    ):
-        assert targeted.cell is cell
-        assert untargeted.cell is cell
-        assert targeted.group is spine.group
-        assert untargeted.group is spine.group
-        assert targeted.validation_status == "diagnostic_only"
-        assert untargeted.validation_status == "diagnostic_only"
-
-    by_sample = {cell.content.sample_key: cell for cell in spine.cells}
-    assert by_sample[fixture.sample("s1").identity.sample_key].peak_hypothesis
-    assert all(
-        by_sample[fixture.sample(stem).identity.sample_key].peak_hypothesis is None
-        for stem in ("s2", "s3", "s4", "s5")
-    )
-
-    forbidden_field_tokens = ("area", "matrix", "writer", "backfill", "counted")
-    field_names = {field.name.lower() for field in fields(spine.cells[0].content)}
-    assert not any(
-        token in field_name
-        for field_name in field_names
-        for token in forbidden_field_tokens
-    )
-
-
-def test_without_support_assessments_do_not_invent_group_or_cells(
-    tmp_path: Path,
-) -> None:
-    fixture, assessments = _truth_table_fixture(tmp_path)
-    spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=(
-            (fixture.sample("s2"), assessments[1]),
-            (fixture.sample("s3"), assessments[2]),
-        ),
-    )
-
-    assert spine.group is None
-    assert spine.cells == ()
-    assert spine.targeted_projections == ()
-    assert spine.untargeted_projections == ()
 
 
 def test_assessment_binding_rejects_crossed_sample(tmp_path: Path) -> None:

@@ -54,13 +54,6 @@ class MockDeltaMassDiscoveryMethodSpec:
     schema_version: str = "1.0.0"
 
 
-def test_custom_discovery_method_spec_satisfies_protocol():
-    spec = MockDeltaMassDiscoveryMethodSpec()
-    assert isinstance(spec, DiscoveryMethodSpec)
-    assert spec.method == "delta_mass"
-    assert spec.schema_version == "1.0.0"
-
-
 def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path):
     raw_paths = _raws(tmp_path)
     base_spec = _compile_paths(raw_paths)

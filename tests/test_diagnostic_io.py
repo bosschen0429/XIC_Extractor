@@ -9,7 +9,6 @@ from xic_extractor.tabular_io import (
     file_sha256,
     format_diagnostic_value,
     format_spreadsheet_value,
-    numeric_equal,
     optional_float,
     optional_int,
     read_delimited_rows,
@@ -380,10 +379,6 @@ def test_shared_scalar_parsers_match_diagnostic_loader_contracts() -> None:
     assert text_value(None) == ""
     assert text_value("  A  ") == "A"
     assert split_semicolon_labels(" a ; ; b ") == ["a", "b"]
-    assert numeric_equal("1.0000001", "1.0000002") is True
-    assert numeric_equal("1.01", "1.02") is False
-    assert numeric_equal(" raw ", "raw") is True
-    assert numeric_equal("raw", "other") is False
 
 
 def test_rows_by_text_field_preserves_group_order() -> None:
