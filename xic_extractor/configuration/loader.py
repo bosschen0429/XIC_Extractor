@@ -8,10 +8,7 @@ from xic_extractor.configuration.csv_io import (
     read_settings,
     write_config_snapshot,
 )
-from xic_extractor.configuration.hashing import (
-    _compute_config_hash,
-    compute_target_config_hash,
-)
+from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import (
     build_extraction_config,
@@ -112,7 +109,6 @@ def prepare_targeted_config(
             values,
             settings_path,
             output_dir,
-            _compute_config_hash(targets_path, settings_path, settings_overrides=None),
         )
         config = replace(
             config, target_config_hash=compute_target_config_hash(targets_path)
@@ -150,14 +146,7 @@ def load_config_snapshot(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    config_hash = _compute_config_hash(
-        targets_path,
-        settings_path,
-        settings_overrides=settings_overrides,
-    )
-    config = build_extraction_config(
-        parsed, settings, settings_path, output_dir, config_hash
-    )
+    config = build_extraction_config(parsed, settings, settings_path, output_dir)
     targets = _read_targets(targets_path)
     target_config_hash = compute_target_config_hash(targets_path)
     config = ExtractionConfig(

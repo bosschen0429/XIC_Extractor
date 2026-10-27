@@ -75,7 +75,6 @@ def test_run_metadata_sheet_has_required_keys(tmp_path: Path, monkeypatch) -> No
     ws = wb["Run Metadata"]
     keys = {ws.cell(row=row, column=1).value for row in range(2, ws.max_row + 1)}
     assert {
-        "config_hash",
         "app_version",
         "generated_at",
         "targeted_strategy",
@@ -135,7 +134,6 @@ def _config(tmp_path: Path) -> ExtractionConfig:
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        config_hash="abc12345",
     )
 
 

@@ -417,7 +417,7 @@
     if (!payload.items.length) review.append(element('p', '沒有符合條件的目標。'));
     const provenance = element('details', undefined, 'tgt-provenance');
     provenance.append(element('summary', '執行資訊'));
-    const labels = {generated_at: '建立時間', app_version: '版本', config_hash: '設定識別', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
+    const labels = {generated_at: '建立時間', app_version: '版本', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
     review.append(provenance);
     // The online host states the readonly result scope beside this surface.

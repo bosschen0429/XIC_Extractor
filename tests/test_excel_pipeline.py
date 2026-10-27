@@ -185,7 +185,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         for row in range(2, ws_metadata.max_row + 1)
     }
     assert {
-        "config_hash",
         "app_version",
         "generated_at",
         "targeted_strategy",
@@ -335,7 +334,6 @@ def _config(
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        config_hash="abc12345",
     )
 
 

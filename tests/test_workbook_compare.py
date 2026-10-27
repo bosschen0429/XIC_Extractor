@@ -90,8 +90,8 @@ def test_compare_workbooks_compares_run_metadata_values(
 ) -> None:
     left = tmp_path / "left.xlsx"
     right = tmp_path / "right.xlsx"
-    _write_workbook(left, config_hash="left-hash")
-    _write_workbook(right, config_hash="right-hash")
+    _write_workbook(left, target_config_hash="left-hash")
+    _write_workbook(right, target_config_hash="right-hash")
 
     result = compare_workbooks(left, right)
 
@@ -154,7 +154,7 @@ def _write_workbook(
     generated_at: str = "2026-05-03T00:00:00Z",
     elapsed_seconds: str = "1.0",
     output_path: str = "C:\\output\\xic_results.xlsx",
-    config_hash: str = "hash",
+    target_config_hash: str = "hash",
     include_score_breakdown: bool = False,
     score: float = 0.9,
     overview_review_items: int = 1,
@@ -193,7 +193,7 @@ def _write_workbook(
             ws.append(["generated_at", generated_at])
             ws.append(["elapsed_seconds", elapsed_seconds])
             ws.append(["output_path", output_path])
-            ws.append(["config_hash", config_hash])
+            ws.append(["target_config_hash", target_config_hash])
             ws.append(["resolver_mode", "legacy_savgol"])
     if include_score_breakdown:
         ws = wb.create_sheet("Score Breakdown")

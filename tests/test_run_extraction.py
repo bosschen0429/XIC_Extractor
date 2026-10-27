@@ -444,7 +444,6 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
 def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.configuration.hashing import compute_config_hash
     from xic_extractor.configuration.targeted_method_files import (
         create_targeted_method,
         save_targeted_method,
@@ -483,10 +482,6 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
         method_dir.write_text("edited during run", encoding="utf-8")
         (tmp_path / "config" / "workspace.json").write_text(
             "edited during run", encoding="utf-8"
-        )
-        receipt = calls["frozen_inputs"]
-        assert config.config_hash == compute_config_hash(
-            receipt / "targets.csv", receipt / "settings.csv"
         )
         return fake_run(config, targets, **kwargs)
 

@@ -46,7 +46,6 @@ class ExtractionConfig:
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
     parallel_workers: int = field(default_factory=default_parallel_workers)
-    config_hash: str = ""
     target_config_hash: str = ""
     signal_processing_method: str = DEFAULT_SIGNAL_PROCESSING_PROFILE.method
     signal_processing_window_points: int = (

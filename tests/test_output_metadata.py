@@ -46,7 +46,6 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
     rows = metadata.build_metadata_rows(config)
 
     assert [key for key, _value in rows] == [
-        "config_hash",
         "app_version",
         "generated_at",
         "target_config_hash",
@@ -62,7 +61,7 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "count_no_ms2_as_detected",
     ]
     values = dict(rows)
-    assert values["config_hash"] == "abc12345"
+    assert values["target_config_hash"] == "abc12345"
     strategy = json.loads(values["targeted_strategy"])
     assert strategy["strategy"] == "cid-nl"
     assert strategy["cid_nl_identity_precursor_reference"] == "recorded_precursor"
@@ -96,10 +95,11 @@ def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
         "說明",
         "Value",
     ]
-    assert ws["A2"].value == "config_hash"
+    assert ws["A2"].value == "app_version"
     assert ws["B2"].value
-    assert ws["C2"].value == "abc12345"
-    assert ws["A4"].value == "generated_at"
+    assert ws["A3"].value == "generated_at"
+    assert ws["A4"].value == "target_config_hash"
+    assert ws["C4"].value == "abc12345"
     assert ws["A1"].font.name == "Microsoft JhengHei"
     assert ws["A1"].font.bold is True
     assert ws["C2"].border.bottom.style == "thin"
@@ -122,5 +122,5 @@ def _config(output_dir: Path) -> ExtractionConfig:
         ms2_precursor_tol_da=0.4,
         nl_min_intensity_ratio=0.02,
         resolver_mode="local_minimum",
-        config_hash="abc12345",
+        target_config_hash="abc12345",
     )

@@ -19,7 +19,6 @@ def app_version() -> str:
 def build_metadata_rows(config: ExtractionConfig) -> list[tuple[str, object]]:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return [
-        ("config_hash", config.config_hash),
         ("app_version", app_version()),
         ("generated_at", generated_at),
         ("target_config_hash", config.target_config_hash),

@@ -12,7 +12,6 @@ from xic_extractor.output.workbook_styles import (
 )
 
 _DESCRIPTIONS = {
-    "config_hash": "分析設定的識別碼，供比對兩次執行是否採用相同設定。",
     "app_version": "產生這份結果的 XIC Extractor 版本。",
     "generated_at": "結果產生時間（UTC）。",
     "target_config_hash": "目標清單的識別碼，供追查所使用的目標設定。",
