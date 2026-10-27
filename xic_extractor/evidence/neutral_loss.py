@@ -105,6 +105,8 @@ class CandidateMS2Evidence:
     outside_ms1_peak_group_trigger_scan_count: int | None = None
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     best_product_evidence: MS2ProductEvidence | None = None
+    # Candidate-local recorded-precursor RNA transition; not a structural ID.
+    competing_rna_scan_numbers: tuple[int, ...] = ()
 
     def __deepcopy__(self, memo: dict[int, object]) -> CandidateMS2Evidence:
         # Trace summaries and product facts have no mutable signal arrays.

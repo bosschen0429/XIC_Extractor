@@ -158,6 +158,62 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
     assert "stale" not in nl_records[0].reason
 
 
+@pytest.mark.parametrize(
+    "rna_fragment,dna_fragment",
+    [(True, False), (True, True), (False, False), (False, True)],
+)
+def test_hmdc_fragment_identity_controls_published_values(
+    tmp_path, rna_fragment, dna_fragment
+):
+    target = replace(_target(), mz=258.1085, neutral_loss_da=116.0474, cid_nl_tag="dR")
+    config, target, output = production_case(
+        tmp_path, sample_names=("RNA_mixture", "DNA_only"), target=target
+    )
+    first = output.file_results[0].results[target.label]
+    if not dna_fragment:
+        first = replace(first, candidate_ms2_evidence=None)
+    rna_scan = Ms2Scan(
+        43, 1.5, target.mz, np.array([126.0662]), np.array([1000.0]), 1000.0
+    )
+    first = with_method_universe(
+        first, target, extra_scans=(rna_scan,) if rna_fragment else ()
+    )
+    assert first.candidate_ms2_evidence.competing_rna_scan_numbers == (
+        (43,) if rna_fragment else ()
+    )
+    assert first.candidate_ms2_evidence.nl_match == dna_fragment
+    output.file_results[0].results[target.label] = first
+    request = build_targeted_application_request(
+        config, [target], injection_order={"RNA_mixture": 1, "DNA_only": 2}
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    published = completed.publication_output(request, output)
+    conflicted, supported = [f.results[target.label] for f in published.file_results]
+    if rna_fragment:
+        assert conflicted.reported_peak_area is None
+        assert conflicted.reported_rt is None
+        assert not conflicted.targeted_product_projection.counted_detection
+        assert conflicted.targeted_product_projection.projection_reason == (
+            "hmdc_competing_rna_fragment"
+        )
+    else:
+        # No diagnostic fragmentation is not competing chemistry. Preserve the
+        # qualified peak for the existing pair/Backfill decision, not a forced ID.
+        assert conflicted.reported_peak_area == first.reported_peak_area
+        assert conflicted.candidate_ms2_evidence.nl_match == dna_fragment
+        assert not conflicted.candidate_ms2_evidence.competing_rna_scan_numbers
+    assert supported.reported_peak_area is not None
+    assert supported.targeted_product_projection.counted_detection
+    from xic_extractor.output.csv_writers import _long_output_rows
+
+    (row,) = _long_output_rows(published.file_results[0], [target])
+    if rna_fragment:
+        assert row["Area"] == row["RT"] == ""
+        assert "數值留空" in row["Reason"]
+    else:
+        assert float(row["Area"]) == pytest.approx(first.reported_peak_area, abs=0.01)
+
+
 def test_two_samples_reuse_exact_acquired_physical_evaluations(
     tmp_path: Path,
     monkeypatch,
@@ -924,9 +980,10 @@ def production_case(
     sample_names: tuple[str, ...] = ("SampleA",),
     sample_peak_scales: dict[str, float] | None = None,
     secondary_peak: bool = False,
+    target: Target | None = None,
 ) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
-    target = _target()
+    target = target or _target()
     config.data_dir.mkdir()
     file_results = []
     scales = sample_peak_scales or {}
@@ -1003,12 +1060,12 @@ def production_case(
                             alignment_source="region",
                             best_product_evidence=MS2ProductEvidence(
                                 scan_rt=1.5,
-                                precursor_mz=250.0,
-                                product_mz=134.0,
+                                precursor_mz=target.mz,
+                                product_mz=target.mz - target.neutral_loss_da,
                                 product_intensity=500.0,
                                 product_base_ratio=0.5,
                                 target_product_ppm=0.0,
-                                observed_loss_da=116.0,
+                                observed_loss_da=target.neutral_loss_da,
                                 observed_loss_error_ppm=0.0,
                                 scan_number=42,
                                 acquisition_source_id=source.acquisition_source_id,
@@ -1051,7 +1108,11 @@ def production_case(
 
 
 def with_method_universe(
-    result: ExtractionResult, target: Target, *, additional_evaluations=()
+    result: ExtractionResult,
+    target: Target,
+    *,
+    additional_evaluations=(),
+    extra_scans=(),
 ) -> ExtractionResult:
     """Complete the one-peak/one-event acquisition fixture before finalization."""
     evaluation = result.physical_evaluation
@@ -1115,7 +1176,8 @@ def with_method_universe(
                     p.scan_number or 1,
                 )
                 for p in products
-            ),
+            )
+            + tuple(Ms2ScanEvent(scan, None, scan.scan_number) for scan in extra_scans),
         ),
         products=products,
         relations=relations,

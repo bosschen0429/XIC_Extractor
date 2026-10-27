@@ -222,7 +222,12 @@ def _set_long_ms1_values(row: dict[str, str], value: str) -> None:
 
 def _set_long_peak_values(row: dict[str, str], result: ExtractionResultLike) -> None:
     if not _has_reported_peak(result):
-        _set_long_ms1_values(row, "ND")
+        projection = result.targeted_product_projection
+        identity_unavailable = (
+            projection is not None
+            and projection.projection_reason == "hmdc_competing_rna_fragment"
+        )
+        _set_long_ms1_values(row, "" if identity_unavailable else "ND")
         return
     row["RT"] = _format_peak_decimal(result.reported_rt, digits=4)
     row["Area"] = _format_peak_decimal(result.reported_peak_area, digits=2)

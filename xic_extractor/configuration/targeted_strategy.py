@@ -52,6 +52,7 @@ def strategy_receipt() -> dict:
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "cid_nl_evidence_scope": "target_mass_and_physical_peak",
         "cid_nl_ranking_priority": "positive_support_only",
+        "hmdc_fragment_identity": "competing_rna_veto_missing_fragments_allow_backfill",
         "paired_istd_rt_tolerance_min": TARGETED_PAIRED_RT_TOLERANCE_MIN,
         "paired_istd_selection": "qualified_local_candidates_before_chemical_ranking",
         "uncalibrated_paired_istd_position": (

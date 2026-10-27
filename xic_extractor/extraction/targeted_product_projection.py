@@ -9,6 +9,9 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.targeted_strategy import (
     TARGETED_PAIRED_RT_TOLERANCE_MIN,
 )
+from xic_extractor.extraction.targeted_peak_evidence import (
+    targeted_fragment_identity_rejection,
+)
 from xic_extractor.output.targeted_product_model import (
     ProductState,
     ReviewState,
@@ -47,11 +50,17 @@ def project_targeted_result(
                 "support_reasons",
             ),
         )
+    fragment_rejection = targeted_fragment_identity_rejection(
+        target, result.candidate_ms2_evidence
+    )
     conflicts = _merge_reasons(
         () if semantics is None else semantics.conflict_reasons,
         () if semantics is None else semantics.ambiguity_reasons,
         () if selection_decision is None else selection_decision.conflict_reasons,
         () if selection_decision is None else selection_decision.ambiguity_reasons,
+        (fragment_rejection,)
+        if fragment_rejection == "hmdc_competing_rna_fragment"
+        else (),
     )
     review = _merge_reasons(
         () if semantics is None else semantics.review_reasons,

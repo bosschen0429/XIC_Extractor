@@ -34,6 +34,9 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "hmdc_competing_rna_fragment": (
+        "同一峰有 RNA 核糖丟失碎片，不能以 ISTD 位置確認為 hmdC；數值留空"
+    ),
     "paired_istd_multiple_candidates": "配對範圍內有多個合格峰，無法唯一確認身分",
     "paired_istd_position_mismatch": "峰偏離配對 ISTD 位置",
     "targeted_rt_conflict": "峰位置與 RT 參考或範圍衝突",
@@ -174,6 +177,9 @@ def display_measurement_reason(
     concerns: str = "",
 ) -> str:
     """Explain a finished result: its decisive evidence, then other concerns."""
+    fragment_reason = str(row.get("Projection Reason") or "")
+    if fragment_reason == "hmdc_competing_rna_fragment":
+        return reason_text(fragment_reason) + "。"
     exclusions = sorted(reasons(row, "Projection Exclusion Reasons"))
     if exclusions:
         if any(r.startswith("target_sample_applicability:") for r in exclusions):

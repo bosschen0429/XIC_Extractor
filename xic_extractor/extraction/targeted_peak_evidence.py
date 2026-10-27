@@ -7,16 +7,22 @@ these completed answers, never a second broad-precursor neutral-loss search.
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.ms2_trace_evidence import MS2TracePoint, summarize_ms2_trace
 from xic_extractor.peak_detection.cid_nl_method_assessment import CidNlMethodRelations
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
-from xic_extractor.precursor_evidence import recorded_precursor_references
+from xic_extractor.precursor_evidence import (
+    recorded_precursor_references,
+    supports_direct_nl,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult
@@ -46,6 +52,7 @@ def build_targeted_peak_evidence(
             for mz, _basis in recorded_precursor_references(event.scan, target.ppm_tol)
         )
     )
+    competing_events = _hmdc_competing_rna_events(target, window)
     answers = []
     for index, apex_rt in enumerate(candidate_apex_rts):
         interval = relations.candidate_intervals[index]
@@ -121,9 +128,75 @@ def build_targeted_peak_evidence(
                 ms1_peak_group_strict_nl_scan_count=len(supported),
                 ms1_peak_group_strict_nl_event_count=int(bool(supported)),
                 best_product_evidence=best,
+                competing_rna_scan_numbers=tuple(
+                    scan
+                    for scan, rt in competing_events
+                    if interval.rt_left_min <= rt <= interval.rt_right_min
+                ),
             )
         )
     return tuple(answers)
+
+
+def targeted_fragment_identity_rejection(
+    target: Target, evidence: CandidateMS2Evidence | None
+) -> str:
+    """Competing RNA evidence blocks 5-hmdC; missing MS2 is not a veto."""
+    if not _is_hmdc_dna_target(target):
+        return ""
+    if evidence is not None and evidence.competing_rna_scan_numbers:
+        return "hmdc_competing_rna_fragment"
+    return ""
+
+
+def _is_hmdc_dna_target(target: Target) -> bool:
+    return (
+        not target.is_istd
+        and target.neutral_loss_da is not None
+        and abs(target.mz - 258.1085) <= 258.1085 * target.ppm_tol / 1e6
+        and abs(target.neutral_loss_da - 116.0474) <= 0.001
+    )
+
+
+def _hmdc_competing_rna_events(
+    target: Target, window: Ms2Window
+) -> tuple[tuple[int, float], ...]:
+    """Retain the isobaric RNA transition that cannot identify DNA 5-hmdC.
+
+    258.1085 -> 126.0662 (ribose loss) competes with 258.1085 -> 142.0611
+    (deoxyribose loss). Coisolation can explain both, so this is a conflict,
+    never a positive structural assignment or an instruction to pick another peak.
+    The rule is limited to this mass/chemistry, not all DNA targets.
+    """
+    if not _is_hmdc_dna_target(target):
+        return ()
+    profile = targeted_tag_profile("R")
+    ribose_loss = profile.neutral_loss_profiles[0].neutral_loss_da
+    events = []
+    for event in window.events:
+        scan = event.scan
+        if event.parse_error is not None or scan is None or scan.base_peak <= 0:
+            continue
+        references = tuple(
+            mz
+            for mz, basis in recorded_precursor_references(scan, target.ppm_tol)
+            if abs(mz - target.mz) <= target.mz * target.ppm_tol / 1e6
+            and supports_direct_nl(
+                basis, mz, scan.precursor_mz, scan.precursor_metadata
+            )
+        )
+        if any(
+            math.isfinite(float(mass))
+            and math.isfinite(float(intensity))
+            and intensity >= scan.base_peak * profile.nl_min_intensity_ratio
+            and neutral_loss_match(
+                mz, float(mass), ribose_loss, profile.nl_tolerance_ppm
+            )[2]
+            for mz in references
+            for mass, intensity in zip(scan.masses, scan.intensities, strict=True)
+        ):
+            events.append((event.scan_number, scan.rt))
+    return tuple(events)
 
 
 def reselect_targeted_peak_evidence(

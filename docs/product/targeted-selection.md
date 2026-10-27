@@ -156,6 +156,23 @@ existing product projection renders the finalized method answer and retained
 review facts. ISTD expected-presence, MS1-only, RT and quality policies remain
 separate.
 
+For the 5-hmdC mass/chemistry (258.1085, deoxyribose loss 116.0474), a
+candidate-local recorded-precursor transition consistent with ribose loss
+132.0423 (product 126.0662) is competing RNA evidence. It uses the shared RNA
+mass and minimum-relative-intensity policy, not merely the absence of product
+142.0611. The retained scan numbers follow the physical candidate through
+finalization and Backfill. Such a candidate is not counted and its reported RT
+and area are blank; paired-ISTD proximity cannot override it. Seeing both
+transitions remains a mixture/identity conflict, not a forced alternate peak
+or definitive RNA structural assignment. Evidence outside the candidate or
+without a compatible recorded precursor does not trigger this rule. Other
+target masses and isotope standards retain their existing policies.
+When neither DNA nor competing RNA fragments were observed, the existing
+physical-peak, paired-ISTD and Backfill rules still apply. Missing fragmentation
+alone is not a veto or proof of chemical absence, nor does it guarantee recovery.
+The distinguishing transitions are supported by authentic-standard
+[LC-MS/MS measurements of DNA and RNA nucleosides](https://pmc.ncbi.nlm.nih.gov/articles/PMC4993491/).
+
 #### Paired-ISTD identity
 
 An isotope-labelled ISTD co-elutes with its analyte, so a counted ISTD confers

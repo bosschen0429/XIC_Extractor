@@ -22,6 +22,58 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 
+@pytest.mark.parametrize(
+    "precursor,scan_rt,fragment,relative_intensity,expected",
+    [
+        (258.1085, 8.5, 126.0662, 1.0, (42,)),
+        (258.1085, 9.5, 126.0662, 1.0, ()),
+        (258.5, 8.5, 126.0662, 1.0, ()),
+        (258.1085, 8.5, 142.0611, 1.0, ()),
+        (258.1085, 8.5, 126.0662, 0.005, ()),
+    ],
+)
+def test_hmdc_rna_competition_is_precursor_peak_and_fragment_specific(
+    precursor, scan_rt, fragment, relative_intensity, expected
+):
+    from xic_extractor.extraction.targeted_peak_evidence import (
+        build_targeted_peak_evidence,
+    )
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlCandidateInterval,
+        evaluate_cid_nl_method_relations,
+    )
+    from xic_extractor.peak_detection.cid_nl_peak_support import (
+        DdaCidNlPeakSupportPolicy,
+    )
+
+    target = replace(_target(), mz=258.1085, neutral_loss_da=116.0474, cid_nl_tag="dR")
+    relations = evaluate_cid_nl_method_relations(
+        candidate_intervals=(CidNlCandidateInterval(target.mz, 8.4, 8.6),),
+        event_queries=(),
+        policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=target.mz * target.ppm_tol / 1e6,
+            neutral_loss_tolerance_ppm=20.0,
+        ),
+    )
+    scan = Ms2Scan(
+        42,
+        scan_rt,
+        precursor,
+        np.array([fragment]),
+        np.array([1000 * relative_intensity]),
+        1000.0,
+    )
+    (answer,) = build_targeted_peak_evidence(
+        target=target,
+        window=Ms2Window("sample", 8.0, 10.0, (Ms2ScanEvent(scan, None, 42),)),
+        products=(),
+        relations=relations,
+        candidate_apex_rts=(8.5,),
+    )
+    assert answer.competing_rna_scan_numbers == expected
+
+
 @pytest.mark.parametrize("local_peaks", [(), (8.5,), (7.505,), (8.5, 9.2)])
 def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
     tmp_path, local_peaks

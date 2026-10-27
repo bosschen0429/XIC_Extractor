@@ -59,6 +59,7 @@ from xic_extractor.extraction.targeted_istd_backfill import (
 )
 from xic_extractor.extraction.targeted_peak_evidence import (
     reselect_targeted_peak_evidence,
+    targeted_fragment_identity_rejection,
 )
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
@@ -578,8 +579,36 @@ def _finalized_extraction_result(
         else None
     )
     extraction = reselect_targeted_peak_evidence(extraction, reported_evaluation)
+    projection = extraction.targeted_product_projection
+    if projection is not None and reported_evaluation is not None:
+        projection = replace(
+            projection,
+            conflict_reasons=tuple(
+                reason
+                for reason in projection.conflict_reasons
+                if reason != "hmdc_competing_rna_fragment"
+            ),
+        )
+    # Finalization can replace the capture with a retained Backfill candidate.
+    # Consume that candidate's chemistry, never the previous selection's summary.
+    fragment_rejection = targeted_fragment_identity_rejection(
+        target, extraction.candidate_ms2_evidence
+    )
+    if fragment_rejection:
+        no_write_reason = fragment_rejection
+        if (
+            projection is not None
+            and fragment_rejection == "hmdc_competing_rna_fragment"
+        ):
+            projection = replace(
+                projection,
+                conflict_reasons=(
+                    fragment_rejection,
+                    *projection.conflict_reasons,
+                ),
+            )
     projection = _finalized_product_projection(
-        extraction.targeted_product_projection,
+        projection,
         target=target,
         evidence=evidence,
         value=value,
