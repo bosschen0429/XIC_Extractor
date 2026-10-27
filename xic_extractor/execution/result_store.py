@@ -6,7 +6,6 @@ import os
 import re
 import shutil
 from collections.abc import Callable, Iterable
-from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -478,9 +477,13 @@ class StreamedResultStore:
         and private: it neither resumes a runtime attempt nor grants
         publication authority.
         """
-        snapshot = copy(self)
-        snapshot._sealed = True
-        snapshot._field_caches = []
+        snapshot = {
+            "shared_objects": self._shared_objects,
+            "individually_addressable_fields": self._individually_addressable_fields,
+            "partitions": self._partitions,
+            "field_lengths": self._field_lengths,
+            "field_records": self._field_records,
+        }
         destination = self._directory / name
         temporary = destination.with_suffix(".tmp")
         if destination.exists():
@@ -523,25 +526,27 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
     """
     resolved = Path(path).resolve()
     with resolved.open("rb") as stream:
-        store = _OwnerUnpickler(stream, ()).load()
-    if type(store) is not StreamedResultStore:
-        raise TypeError("preserved index does not hold a partition store")
-    if set(vars(store)) != {
-        "_directory",
-        "_shared_objects",
-        "_individually_addressable_fields",
-        "_partitions",
-        "_field_lengths",
-        "_field_records",
-        "_field_caches",
-        "_keys",
-        "_reserved_keys",
-        "_reservations",
-        "_sealed",
+        index = _OwnerUnpickler(stream, ()).load()
+    if not isinstance(index, dict) or set(index) != {
+        "shared_objects",
+        "individually_addressable_fields",
+        "partitions",
+        "field_lengths",
+        "field_records",
     }:
-        raise ValueError("unsupported preserved partition format; rerun the analysis")
-    if not store._sealed:
-        raise ValueError("preserved index is not sealed")
+        raise ValueError(
+            "unsupported preserved partition structure; rerun the analysis"
+        )
+    store = object.__new__(StreamedResultStore)
     store._directory = resolved.parent
+    store._shared_objects = index["shared_objects"]
+    store._individually_addressable_fields = index["individually_addressable_fields"]
+    store._partitions = index["partitions"]
+    store._field_lengths = index["field_lengths"]
+    store._field_records = index["field_records"]
     store._field_caches = []
+    store._keys = {partition.key for partition in store._partitions}
+    store._reserved_keys = set()
+    store._reservations = {}
+    store._sealed = True
     return store

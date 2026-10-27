@@ -539,22 +539,27 @@ def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
         store.preserve_results()
 
 
-def test_preserved_index_refuses_an_unsealed_store(tmp_path):
-    """Only a sealed store may be published; an open spool can still grow."""
-    store = StreamedResultStore(tmp_path / "spool", ())
-    store.append("alpha", Payload(children=("a0",)))
-    forged = tmp_path / "spool" / "forged.pickle"
-    forged.write_bytes(owner_pickle_dumps(store, ()))
-    with pytest.raises(ValueError, match="sealed"):
-        open_preserved_results(forged)
-
-
-def test_preserved_results_reject_obsolete_private_format(tmp_path):
+def test_preserved_results_reject_master_pickled_store(tmp_path):
     store = StreamedResultStore(tmp_path, ())
     store.append("partition", Payload((1,)))
-    # An obsolete private index persisted a numeric format attribute.
-    store._format_version = 2
-    index = store.preserve_results()
+    store.seal()
+    index = tmp_path / "master-index.pickle"
+    # Master serialized the runtime object itself, not a record-index document.
+    index.write_bytes(owner_pickle_dumps(store, ()))
+    with pytest.raises(ValueError, match="rerun the analysis"):
+        open_preserved_results(index)
 
+
+@pytest.mark.parametrize("change", ["missing", "extra"])
+def test_preserved_results_require_complete_index_fields(tmp_path, change):
+    store = StreamedResultStore(tmp_path, ())
+    store.append("partition", Payload((1,)))
+    index = store.preserve_results()
+    payload = pickle.loads(index.read_bytes())
+    if change == "missing":
+        del payload["field_records"]
+    else:
+        payload["extra"] = None
+    index.write_bytes(owner_pickle_dumps(payload, ()))
     with pytest.raises(ValueError, match="rerun the analysis"):
         open_preserved_results(index)
