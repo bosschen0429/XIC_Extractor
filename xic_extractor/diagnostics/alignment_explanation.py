@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -223,9 +222,8 @@ class ExplanationReportWriter:
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        self._record_hashes: dict[tuple[str, str | int], bytes] = {}
         self._record_rowids: dict[tuple[str, str | int], int] = {}
-        self._buffered_records: list[tuple[int, str, str | int, str | bytes]] = []
+        self._buffered_records: dict[int, tuple[str, str | int, str | bytes]] = {}
         self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
         self._buffered_link_members: list[tuple[int, str, str]] = []
         self._buffered_record_links: list[tuple[int, int]] = []
@@ -326,26 +324,26 @@ class ExplanationReportWriter:
     ) -> bool:
         encoded = _json(payload)
         key = (kind, identity)
-        content_hash = hashlib.blake2b(encoded.encode("utf-8"), digest_size=16).digest()
-        existing_hash = self._record_hashes.get(key)
-        if existing_hash is not None and existing_hash != content_hash:
-            raise ValueError(
-                f"conflicting diagnostic owner identity: {(kind, identity)}"
+        stored_payload = (
+            zlib.compress(encoded.encode("utf-8"), 1) if self.review_only else encoded
+        )
+        rowid = self._record_rowids.get(key)
+        is_new = rowid is None
+        if rowid is not None:
+            pending = self._buffered_records.get(rowid)
+            existing_payload = (
+                pending[2]
+                if pending is not None
+                else self._connection()
+                .execute("SELECT payload FROM records WHERE id=?", (rowid,))
+                .fetchone()[0]
             )
-        is_new = existing_hash is None
-        if is_new:
-            self._record_hashes[key] = content_hash
-            self._record_rowids[key] = len(self._record_rowids) + 1
-            self._buffered_records.append(
-                (
-                    self._record_rowids[key],
-                    kind,
-                    identity,
-                    zlib.compress(encoded.encode("utf-8"), 1)
-                    if self.review_only
-                    else encoded,
-                )
-            )
+            if existing_payload != stored_payload:
+                raise ValueError(f"conflicting diagnostic owner identity: {key}")
+        else:
+            rowid = len(self._record_rowids) + 1
+            self._record_rowids[key] = rowid
+            self._buffered_records[rowid] = (kind, identity, stored_payload)
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
             if len(self._buffered_records) >= 20000:
                 self._flush_records()
@@ -443,7 +441,8 @@ class ExplanationReportWriter:
     def _flush_records(self) -> None:
         if self._buffered_records:
             self._connection().executemany(
-                "INSERT INTO records VALUES (?, ?, ?, ?)", self._buffered_records
+                "INSERT INTO records VALUES (?, ?, ?, ?)",
+                ((rowid, *record) for rowid, record in self._buffered_records.items()),
             )
             self._buffered_records.clear()
 
@@ -540,7 +539,6 @@ class ExplanationReportWriter:
             self._connection().close()
             self.connection = None
         self._candidates.clear()
-        self._record_hashes.clear()
         self._record_rowids.clear()
         self._buffered_records.clear()
         self._related_sets.clear()

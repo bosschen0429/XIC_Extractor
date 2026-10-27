@@ -540,7 +540,8 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
     assert not report.with_name(report.name + ".tmp").exists()
 
 
-def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
+@pytest.mark.parametrize("flushed", [False, True])
+def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed):
     from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "stream.sqlite"
@@ -550,6 +551,8 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
         with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
+        if flushed:
+            writer._flush_records()
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
         writer.finalize(_summary_fixture({}, review_only=writer.review_only))
     detail = read_cid_nl_explanation(report, candidate_id="a")
@@ -559,6 +562,8 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
         with ExplanationReportWriter(failed) as writer:
             writer.add_record("facts", "one", {"value": 1}, ())
+            if flushed:
+                writer._flush_records()
             writer.add_record("facts", "one", {"value": 2}, ())
     assert not failed.exists()
     assert not failed.with_name(failed.name + ".tmp").exists()
