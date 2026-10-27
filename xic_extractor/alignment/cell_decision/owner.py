@@ -10,6 +10,7 @@ from typing import Literal, TypeAlias, cast
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
+from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
 )
@@ -175,7 +176,10 @@ def decide_target_cell_population(
 
 def decide_group_cell_population(
     finalized_alignment: FinalizedScientificAlignment,
-) -> dict[str, tuple[CellDecisionPayload, IntegrationResult | None]]:
+) -> dict[
+    tuple[CrossSampleGroupIdentity, str],
+    tuple[CellDecisionPayload, IntegrationResult | None],
+]:
     """Complete values/blank reasons keyed by the authoritative cell observation.
 
     Scientific completion already closed the group/sample population and its
@@ -190,7 +194,7 @@ def decide_group_cell_population(
         for group in finalized_alignment.final_population
     }
     return {
-        observation.cell_observation_id: _decide_group(
+        observation.key: _decide_group(
             observation,
             is_member=observation.sample_key
             in member_samples[observation.group_hypothesis_id],
@@ -429,7 +433,6 @@ def _decision_basis(
             ),
         }
         evidence_identity = {
-            "cell_observation_id": evidence.cell_observation_id,
             "evidence_states": evidence.evidence_states,
             "position_keys": evidence.position_keys,
             "source_cell_artifact_ids": evidence.source_cell_artifact_ids,

@@ -142,7 +142,8 @@ def compact_explanation(
                 if oid is not None
             }
             rows = connection.execute(
-                "SELECT d.payload, o.payload FROM records d LEFT JOIN records o "
+                "SELECT d.payload, COALESCE(json_extract(d.payload, '$.observation'), "
+                "o.payload) FROM records d LEFT JOIN records o "
                 "ON o.kind='cell_observations' "
                 "AND o.record_id=json_extract(d.payload,'$.cell_observation_id') "
                 "WHERE d.kind='cell_decisions' "

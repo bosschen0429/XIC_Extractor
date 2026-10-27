@@ -214,15 +214,13 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
 ):
     _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
     answers = decide_group_cell_population(alignment)
-    assert set(answers) == {
-        item.cell_observation_id for item in alignment.cell_observations
-    }
+    assert set(answers) == {item.key for item in alignment.cell_observations}
     assert {payload.variant for payload, _ in answers.values()} == {
         "not_quantifiable",
         "not_searched",
     }
     for observation in alignment.cell_observations:
-        payload, integration = answers[observation.cell_observation_id]
+        payload, integration = answers[observation.key]
         if observation.evidence_state == "direct_observation":
             assert payload.variant == "not_quantifiable"
             assert integration is observation.integrations[0]

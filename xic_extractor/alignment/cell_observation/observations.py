@@ -43,9 +43,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.processing_identity import (
-    mint_typed_identity,
-)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "cell_observation"
@@ -61,7 +58,6 @@ _PEAK_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
 _METHOD_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
 _TARGET_KEY_ID_PREFIX = "xic.target-key:"
 _TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
-_FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     # Persisted artifact-hash identity; intentionally not this module's path.
@@ -102,15 +98,18 @@ class FinalGroupCellObservation:
     quantifiability authority.
     """
 
-    cell_observation_id: str
     processing_request_id: str
     group: CrossSampleGroupIdentity
     canonical_sample: ResolvedCanonicalSampleIdentity
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     predecessor_cells: tuple[CellObservationRef, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
-    basis_bytes: bytes
     backfill_cell: CellObservationRef | None = None
+
+    @property
+    def key(self) -> tuple[CrossSampleGroupIdentity, str]:
+        """The actual final group and the sample's natural key."""
+        return self.group, self.sample_key
 
     @property
     def group_hypothesis_id(self) -> str:
@@ -321,7 +320,7 @@ def _compose_final_group_cell_observation_population(
                     for association in associations
                 )
             cells.append(
-                _mint_final_group_cell_observation(
+                FinalGroupCellObservation(
                     processing_request_id=request_id,
                     group=group,
                     canonical_sample=sample,
@@ -516,107 +515,6 @@ def _member_for_sample(
             "CrossSample group has duplicate members for one canonical sample"
         )
     return matches[0] if matches else None
-
-
-def _mint_final_group_cell_observation(
-    *,
-    processing_request_id: str,
-    group: CrossSampleGroupIdentity,
-    canonical_sample: ResolvedCanonicalSampleIdentity,
-    position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
-    predecessor_cells: tuple[CellObservationRef, ...],
-    evidence_states: tuple[FinalCellEvidenceState, ...],
-    backfill_cell: CellObservationRef | None = None,
-) -> FinalGroupCellObservation:
-    payload = _final_closure_basis(
-        processing_request_id=processing_request_id,
-        group=group,
-        canonical_sample=canonical_sample,
-        position_associations=position_associations,
-        predecessor_cells=predecessor_cells,
-        evidence_states=evidence_states,
-        backfill_cell=backfill_cell,
-    )
-    identity, basis = mint_typed_identity(_FINAL_CELL_OBSERVATION_ID_PREFIX, payload)
-    return FinalGroupCellObservation(
-        cell_observation_id=identity,
-        processing_request_id=processing_request_id,
-        group=group,
-        canonical_sample=canonical_sample,
-        position_associations=position_associations,
-        predecessor_cells=predecessor_cells,
-        evidence_states=evidence_states,
-        basis_bytes=basis,
-        backfill_cell=backfill_cell,
-    )
-
-
-def _final_closure_basis(
-    *,
-    processing_request_id: str,
-    group: CrossSampleGroupIdentity,
-    canonical_sample: ResolvedCanonicalSampleIdentity,
-    position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
-    predecessor_cells: tuple[CellObservationRef, ...],
-    evidence_states: tuple[FinalCellEvidenceState, ...],
-    backfill_cell: CellObservationRef | None = None,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "schema_version": "final_group_cell_observation",
-        "processing_request_id": processing_request_id,
-        "group": {
-            "group_hypothesis_id": group.group_hypothesis_id,
-            "processing_request_id": group.processing_request_id,
-            "member_subject_ids": [
-                member.member_subject_id for member in group.member_subjects
-            ],
-            "disposition": group.disposition,
-        },
-        "sample_key": canonical_sample.identity.sample_key,
-        "position_associations": [
-            {
-                "position_key": item.position.key,
-                "predecessor_group_hypothesis_id": (
-                    item.position.group_identity.group_hypothesis_id
-                ),
-                "sample_key": item.position.sample.identity.sample_key,
-                "final_successor_group_hypothesis_id": (
-                    item.final_successor.group_hypothesis_id
-                ),
-                "resolution": item.resolution,
-                "planning_reason": item.position.planning_reason,
-            }
-            for item in position_associations
-        ],
-        "predecessor_cells": [
-            {
-                "artifact_id": cell.artifact.evidence_artifact_id,
-                "content_sha256": cell.artifact.content_identity.content_sha256,
-                "group_hypothesis_id": cell.group_context.group.group_hypothesis_id,
-                "sample_key": cell.content.sample_key,
-                "method_assessment_artifact_content_id": (
-                    cell.method_assessment.artifact.content_identity.artifact_content_id
-                ),
-                "peak_observation_content_id": (
-                    None
-                    if cell.peak_observation is None
-                    else cell.peak_observation.content.peak_observation_content_id
-                ),
-                "peak_hypothesis_id": (
-                    None
-                    if cell.peak_hypothesis is None
-                    else cell.peak_hypothesis.hypothesis_id
-                ),
-            }
-            for cell in predecessor_cells
-        ],
-        "evidence_states": list(evidence_states),
-    }
-    if backfill_cell is not None:
-        payload["backfill_cell_artifact_id"] = (
-            backfill_cell.artifact.evidence_artifact_id
-        )
-    return payload
 
 
 def _final_cell_sort_key(

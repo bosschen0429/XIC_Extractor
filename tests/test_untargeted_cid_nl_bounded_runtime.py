@@ -2679,8 +2679,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
     assert len(spools) == 1
     child_ids = tuple(
         tuple(
-            observation.cell_observation_id
-            for observation in child.scientific_core.cell_observations
+            observation.key for observation in child.scientific_core.cell_observations
         )
         for child in result.application_result.children
     )
@@ -2719,8 +2718,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     restored = open_preserved_results(index)
     recovered = tuple(
         tuple(
-            observation.cell_observation_id
-            for observation in child.scientific_core.cell_observations
+            observation.key for observation in child.scientific_core.cell_observations
         )
         for child in restored.sequence("children")
     )
@@ -2735,8 +2733,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     first = restored.read_selected(first_child_partition, "children", (0,))[0]
     assert (
         tuple(
-            observation.cell_observation_id
-            for observation in first.scientific_core.cell_observations
+            observation.key for observation in first.scientific_core.cell_observations
         )
         == child_ids[0]
     )

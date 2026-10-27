@@ -76,6 +76,35 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
     }
 
 
+def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
+    return {
+        **_fields(
+            observation,
+            "processing_request_id",
+            "evidence_states",
+        ),
+        "group_hypothesis_id": observation.group.group_hypothesis_id,
+        "sample_key": (observation.canonical_sample.identity.sample_key),
+        "predecessor_cells": [
+            {
+                "content": _cell_observation_content_payload(ref.content),
+                "artifact": _artifact(ref.artifact),
+            }
+            for ref in observation.predecessor_cells
+        ],
+        "backfill_cell": (
+            None
+            if observation.backfill_cell is None
+            else {
+                "content": _cell_observation_content_payload(
+                    observation.backfill_cell.content
+                ),
+                "artifact": _artifact(observation.backfill_cell.artifact),
+            }
+        ),
+    }
+
+
 def _key(*parts: str) -> str:
     return json.dumps(parts, separators=(",", ":"))
 
@@ -719,48 +748,6 @@ def prepare_alignment_explanation(
             ) in core.grouping_result.backfill_membership_risks:
                 risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
 
-            for observation in (
-                child.scientific_core.cell_observations if full_audit else ()
-            ):
-                related = group_candidates[observation.group.group_hypothesis_id]
-                add(
-                    "cell_observations",
-                    observation.cell_observation_id,
-                    {
-                        **_fields(
-                            observation,
-                            "cell_observation_id",
-                            "processing_request_id",
-                            "evidence_states",
-                        ),
-                        "group_hypothesis_id": observation.group.group_hypothesis_id,
-                        "sample_key": (
-                            observation.canonical_sample.identity.sample_key
-                        ),
-                        "predecessor_cells": [
-                            {
-                                "content": _cell_observation_content_payload(
-                                    ref.content
-                                ),
-                                "artifact": _artifact(ref.artifact),
-                            }
-                            for ref in observation.predecessor_cells
-                        ],
-                        "backfill_cell": (
-                            None
-                            if observation.backfill_cell is None
-                            else {
-                                "content": _cell_observation_content_payload(
-                                    observation.backfill_cell.content
-                                ),
-                                "artifact": _artifact(
-                                    observation.backfill_cell.artifact
-                                ),
-                            }
-                        ),
-                    },
-                    related,
-                )
             for row in child.completed_projection.rows:
                 group_id = row.group.group_hypothesis_id
                 related = group_candidates[group_id]
@@ -821,7 +808,9 @@ def prepare_alignment_explanation(
                             "sample_key": (
                                 decision.subject.canonical_sample.identity.sample_key
                             ),
-                            **_fields(decision.evidence, "cell_observation_id"),
+                            "observation": _final_cell_observation_payload(
+                                decision.evidence
+                            ),
                         },
                         related,
                     )

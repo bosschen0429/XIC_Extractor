@@ -344,7 +344,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             ]
             assert decision.evidence is evidence
             assert subject.group is row.group
-            payload, integration = answers[evidence.cell_observation_id]
+            payload, integration = answers[evidence.key]
             assert decision.payload is payload
             assert decision.selected_integration is integration
             if subject.member_subject is None:
@@ -422,9 +422,8 @@ def test_projection_requires_answers_for_the_exact_observation_population(
     elif variant == "extra":
         changed["other-observation"] = next(iter(changed.values()))
     else:
-        _, changed, _ = _completed_projection(
-            tmp_path / "other", monkeypatch, disposition="established"
-        )
+        group, sample_key = next(iter(changed))
+        changed[group, sample_key + "-other"] = changed.pop((group, sample_key))
     with pytest.raises(UntargetProjectionContractError, match="missing|extra|crossed"):
         project_untarget_matrix(alignment, changed)
 

@@ -173,14 +173,17 @@ class UntargetMatrixProjection:
 
 def project_untarget_matrix(
     finalized_alignment: FinalizedScientificAlignment,
-    decisions: Mapping[str, tuple[CellDecisionPayload, IntegrationResult | None]],
+    decisions: Mapping[
+        tuple[CrossSampleGroupIdentity, str],
+        tuple[CellDecisionPayload, IntegrationResult | None],
+    ],
 ) -> UntargetMatrixProjection:
     """Project sample order, routes and counts from the finalized groups."""
 
     from xic_extractor.alignment.cell_decision.owner import _mint_decision
 
     observations = finalized_alignment.cell_observations
-    if set(decisions) != {item.cell_observation_id for item in observations}:
+    if set(decisions) != {item.key for item in observations}:
         raise UntargetProjectionContractError(
             "Group decision population is missing, extra, or crossed"
         )
@@ -198,7 +201,7 @@ def project_untarget_matrix(
         for sample in finalized_alignment.canonical_samples:
             sample_id = sample.identity.sample_key
             observation = by_position[group.group_hypothesis_id, sample_id]
-            payload, integration = decisions[observation.cell_observation_id]
+            payload, integration = decisions[observation.key]
             projected.append(
                 _mint_decision(
                     subject=GroupCellSubject(
