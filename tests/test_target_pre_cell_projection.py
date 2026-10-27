@@ -38,7 +38,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
     TargetProjectionContractError,
@@ -380,10 +379,7 @@ def _finalized_case(
         target=fixture.target,
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    predecessor = spine.group.membership
     member_by_stem = {
         sample.lookup_token: next(
             member

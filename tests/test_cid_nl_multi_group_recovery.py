@@ -40,9 +40,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSamplePartitionTransition,
 )
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    validate_cross_sample_peak_group_identity,
-)
 from xic_extractor.alignment.feature_membership_inference import (
     supports_existing_feature,
 )
@@ -191,7 +188,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         rt_frame=frame,
     )
     assert group.disposition == "established"
-    identity = validate_cross_sample_peak_group_identity(group, require_canonical=True)
+    identity = group.membership
     initial = CrossSampleGroupingResult(
         processing_owners=fixture.owners,
         rt_frame=frame,

@@ -28,7 +28,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     _hypothesis_from_owner_group,
     _identity_from_owners,
     construct_cross_sample_peak_group_hypotheses,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
@@ -149,13 +148,10 @@ def build_targeted_cross_sample_groups(
         rt_frame=rt_frame,
         rules=CID_NL_GROUPING_RULES,
     )
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
+    identities = tuple(group.membership for group in groups)
     population = tuple(
         sorted(
-            (identity for identity in identities if identity is not None),
+            identities,
             key=lambda group: group.group_hypothesis_id,
         )
     )
@@ -209,17 +205,10 @@ def build_initial_cid_nl_cross_sample_groups(
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     groups = grouping_scope.groups
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
-    if any(identity is None for identity in identities):
-        raise CrossSampleGroupingContractError(
-            "initial group lost its canonical identity"
-        )
+    identities = tuple(group.membership for group in groups)
     population = tuple(
         sorted(
-            (identity for identity in identities if identity is not None),
+            identities,
             key=lambda group: group.group_hypothesis_id,
         )
     )
@@ -263,17 +252,10 @@ def regroup_cid_nl_cross_sample_groups(
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=trajectories,
     )
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
-    if any(identity is None for identity in identities):
-        raise CrossSampleGroupingContractError(
-            "window group lost its canonical identity"
-        )
+    identities = tuple(group.membership for group in groups)
     population = tuple(
         sorted(
-            (identity for identity in identities if identity is not None),
+            identities,
             key=lambda group: group.group_hypothesis_id,
         )
     )
@@ -545,9 +527,7 @@ def admit_cid_nl_group_backfills(
             (
                 cast(
                     CrossSampleGroupIdentity,
-                    validate_cross_sample_peak_group_identity(
-                        group, require_canonical=True
-                    ),
+                    group.membership,
                 )
                 for group in completed
             ),
@@ -613,7 +593,7 @@ def reject_shoulder_groups(
     return tuple(
         replace(
             group,
-            disposition="rejected",
+            membership=replace(group.membership, disposition="rejected"),
             evidence=(
                 f"{group.evidence};shoulder_of:{rejected[group.group_hypothesis_id]}"
             ),

@@ -6,6 +6,7 @@ from typing import get_args
 import pytest
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSampleGroupIdentity,
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.feature_membership_inference import (
@@ -36,7 +37,7 @@ def _group(
     inference_basis: FeatureMembershipGroup | None = None,
 ) -> CrossSamplePeakGroupHypothesis:
     return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_id,
+        membership=CrossSampleGroupIdentity(group_id, "", (), "established"),
         public_family_id="display-family",
         owner_ids=owner_ids or (f"owner:{group_id}",),
         event_member_count=1,

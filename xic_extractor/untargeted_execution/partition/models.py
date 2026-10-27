@@ -29,9 +29,6 @@ from xic_extractor.alignment.completion import (
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    validate_cross_sample_peak_group_identity,
-)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_bootstrap import (
     measured_calibration_anchor_groups,
@@ -523,9 +520,7 @@ def _project_completed_backfill(
 ) -> BackfillCompletionProjection:
     """Bind an admitted batch result; standalone replay validates at its entry."""
     job = result.job
-    group = validate_cross_sample_peak_group_identity(
-        group_context.group, require_canonical=True
-    )
+    group = group_context.group.membership
     assert group is not None
     center = group_context.group.group_center_rt
     if (

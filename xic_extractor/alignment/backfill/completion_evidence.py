@@ -127,7 +127,6 @@ def _completed_backfill_projection_bytes(
             "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
             "sample_key": sample.identity.sample_key,
             "group_id": group_identity.group_hypothesis_id,
-            "group_basis": group_identity.basis_bytes.hex(),
             "group_center_mz": group_center_mz,
             "group_center_rt": group_center_rt,
             "query_rt": query_rt,

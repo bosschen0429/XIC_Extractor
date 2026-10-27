@@ -480,9 +480,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     from xic_extractor.alignment.cross_sample.grouping_result import (
         CrossSampleGroupingResult,
     )
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        validate_cross_sample_peak_group_identity,
-    )
     from xic_extractor.alignment.grouping_bootstrap import InitialGroupingScope
     from xic_extractor.alignment.grouping_workflow import (
         _partition_transition,
@@ -671,13 +668,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
         population = tuple(
             sorted(
-                (
-                    validate_cross_sample_peak_group_identity(
-                        group,
-                        require_canonical=True,
-                    )
-                    for group in initial
-                ),
+                (group.membership for group in initial),
                 key=lambda group: group.group_hypothesis_id,
             )
         )

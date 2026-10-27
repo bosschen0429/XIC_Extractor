@@ -48,7 +48,6 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
@@ -386,14 +385,8 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         target=fixture.target,
         sample_assessments=((samples[1], assessments[1]),),
     )
-    left = validate_cross_sample_peak_group_identity(
-        left_spine.group,
-        require_canonical=True,
-    )
-    right = validate_cross_sample_peak_group_identity(
-        right_spine.group,
-        require_canonical=True,
-    )
+    left = left_spine.group.membership
+    right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
         processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
@@ -460,10 +453,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         target=fixture.target,
         sample_assessments=tuple(zip(samples, assessments, strict=True)),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    predecessor = spine.group.membership
     left = mint_cross_sample_group_identity(
         processing_request_id=predecessor.processing_request_id,
         member_subjects=(predecessor.member_subjects[0],),

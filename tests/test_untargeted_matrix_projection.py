@@ -44,7 +44,6 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.untarget import (
     UntargetProjectionContractError,
@@ -144,10 +143,7 @@ def _untarget_projection_inputs(
             ),
         ),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    predecessor = spine.group.membership
     predecessor_groups = (predecessor,)
     predecessor_cells = spine.cells
     successors = predecessor_groups
@@ -167,10 +163,7 @@ def _untarget_projection_inputs(
                 ),
             ),
         )
-        right = validate_cross_sample_peak_group_identity(
-            right_spine.group,
-            require_canonical=True,
-        )
+        right = right_spine.group.membership
         predecessor_groups = tuple(
             sorted(
                 (predecessor, right),

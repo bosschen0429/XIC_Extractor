@@ -174,7 +174,6 @@ class CrossSampleGroupIdentity:
     group_hypothesis_id: str
     processing_request_id: str
     member_subjects: tuple[CrossSampleGroupMemberSubject, ...]
-    basis_bytes: bytes
     disposition: CrossSampleGroupDisposition
 
 
@@ -204,7 +203,6 @@ def mint_cross_sample_group_identity(
         group_hypothesis_id=typed_identity_digest(_CROSS_SAMPLE_GROUP_PREFIX, basis),
         processing_request_id=request_id,
         member_subjects=members,
-        basis_bytes=basis,
         disposition=resolved_disposition,
     )
 

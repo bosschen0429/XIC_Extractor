@@ -67,14 +67,10 @@ class CrossSamplePeakGroupHypothesis:
     - ``feature_id`` property: legacy output alias for ``public_family_id``.
     """
 
-    group_hypothesis_id: str
+    membership: CrossSampleGroupIdentity
     public_family_id: str
     owner_ids: tuple[str, ...]
     event_member_count: int
-    processing_request_id: str = ""
-    member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
-    identity_basis_bytes: bytes = b""
-    disposition: CrossSampleGroupDisposition = "established"
     source: str = "owner_aligned_feature_shadow"
     neutral_loss_tag: str = ""
     group_center_mz: float | None = None
@@ -93,6 +89,22 @@ class CrossSamplePeakGroupHypothesis:
     )
     inference_basis: FeatureMembershipGroup | None = None
     inference_decisions: tuple[SparseFeatureDecision, ...] = ()
+
+    @property
+    def group_hypothesis_id(self) -> str:
+        return self.membership.group_hypothesis_id
+
+    @property
+    def processing_request_id(self) -> str:
+        return self.membership.processing_request_id
+
+    @property
+    def member_subjects(self) -> tuple[CrossSampleGroupMemberSubject, ...]:
+        return self.membership.member_subjects
+
+    @property
+    def disposition(self) -> CrossSampleGroupDisposition:
+        return self.membership.disposition
 
     @property
     def cluster_id(self) -> str:
@@ -117,44 +129,6 @@ class CrossSamplePeakGroupHypothesis:
     @property
     def event_cluster_ids(self) -> tuple[str, ...]:
         return self.owner_ids
-
-
-def validate_cross_sample_peak_group_identity(
-    group: CrossSamplePeakGroupHypothesis,
-    *,
-    require_canonical: bool = False,
-) -> CrossSampleGroupIdentity | None:
-    """Replay the canonical identity retained by a scientific group carrier."""
-
-    if not isinstance(group, CrossSamplePeakGroupHypothesis):
-        raise CrossSampleContractError("group must be a CrossSample hypothesis")
-    has_identity = bool(
-        group.processing_request_id
-        or group.member_subjects
-        or group.identity_basis_bytes
-    )
-    if not has_identity:
-        if require_canonical:
-            raise CrossSampleContractError(
-                "scientific CrossSample carrier is missing canonical identity"
-            )
-        return None
-    if not (
-        group.processing_request_id
-        and group.member_subjects
-        and group.identity_basis_bytes
-    ):
-        raise CrossSampleContractError(
-            "canonical CrossSample carrier has incomplete identity fields"
-        )
-    identity = CrossSampleGroupIdentity(
-        group_hypothesis_id=group.group_hypothesis_id,
-        processing_request_id=group.processing_request_id,
-        member_subjects=group.member_subjects,
-        basis_bytes=group.identity_basis_bytes,
-        disposition=group.disposition,
-    )
-    return identity
 
 
 def construct_cross_sample_peak_group_hypotheses(
@@ -289,14 +263,10 @@ def _hypothesis_from_owner_group(
         else evidence
     )
     return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_identity.group_hypothesis_id,
+        membership=group_identity,
         public_family_id=public_family_id,
         owner_ids=tuple(owner.owner_id for owner in group),
         event_member_count=sum(len(owner.all_events) for owner in group),
-        processing_request_id=group_identity.processing_request_id,
-        member_subjects=group_identity.member_subjects,
-        identity_basis_bytes=group_identity.basis_bytes,
-        disposition=group_identity.disposition,
         source="cross_sample_peak_group_successor_constructor",
         neutral_loss_tag=group[0].neutral_loss_tag,
         group_center_mz=center_mz,
@@ -346,5 +316,4 @@ __all__ = (
     "construct_cross_sample_peak_group_hypotheses",
     "group_member_subject_from_peak_hypothesis",
     "mint_cross_sample_group_identity",
-    "validate_cross_sample_peak_group_identity",
 )

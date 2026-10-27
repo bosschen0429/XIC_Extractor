@@ -55,7 +55,6 @@ from xic_extractor.alignment.cross_sample.association import (
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
     mint_cross_sample_group_identity,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -229,10 +228,7 @@ def _outside_population_handoff(tmp_path: Path):
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
     )
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
+    identities = tuple(group.membership for group in groups)
     binding = SimpleNamespace(
         samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
     )
@@ -337,10 +333,7 @@ def _owner_handoff(tmp_path: Path):
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert spine.group is not None
-    group = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
+    group = spine.group.membership
     return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
 
 
@@ -603,14 +596,8 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         target=fixture.target,
         sample_assessments=((sample, second_assessment),),
     )
-    first_group = validate_cross_sample_peak_group_identity(
-        first_spine.group,
-        require_canonical=True,
-    )
-    second_group = validate_cross_sample_peak_group_identity(
-        second_spine.group,
-        require_canonical=True,
-    )
+    first_group = first_spine.group.membership
+    second_group = second_spine.group.membership
     assert first_group != second_group
     samples = (sample,)
     first_cell = first_spine.cells[0]
@@ -681,14 +668,8 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         target=fixture.target,
         sample_assessments=((samples[1], second_assessment),),
     )
-    left = validate_cross_sample_peak_group_identity(
-        left_spine.group,
-        require_canonical=True,
-    )
-    right = validate_cross_sample_peak_group_identity(
-        right_spine.group,
-        require_canonical=True,
-    )
+    left = left_spine.group.membership
+    right = right_spine.group.membership
     merged = mint_cross_sample_group_identity(
         processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
@@ -792,10 +773,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
             (samples[1], second_assessment),
         ),
     )
-    predecessor = validate_cross_sample_peak_group_identity(
-        predecessor_spine.group,
-        require_canonical=True,
-    )
+    predecessor = predecessor_spine.group.membership
     members_by_sample = {
         member.sample_key: member for member in predecessor.member_subjects
     }

@@ -49,7 +49,7 @@ def _mint_group_in_process(processing_request_id, members):
         processing_request_id=processing_request_id,
         member_subjects=members,
     )
-    return group.group_hypothesis_id, group.basis_bytes
+    return group
 
 
 def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -> None:

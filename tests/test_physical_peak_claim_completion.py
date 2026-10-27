@@ -20,7 +20,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
@@ -217,10 +216,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         for stems in (("A", "B", "S") if direct else ("A", "B"), ("C", "D"))
     )
     assert all(group.disposition == "established" for group in groups)
-    identities = tuple(
-        validate_cross_sample_peak_group_identity(group, require_canonical=True)
-        for group in groups
-    )
+    identities = tuple(group.membership for group in groups)
     initial = CrossSampleGroupingResult(
         processing_owners=fixture.owners,
         rt_frame=frame,

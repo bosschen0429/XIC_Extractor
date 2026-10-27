@@ -42,6 +42,7 @@ from xic_extractor.peak_detection.elution_context import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
 from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
+from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -190,15 +191,7 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                 if value.get("rt_calibration") is not None
                 else None,
                 elution_contexts=tuple(
-                    SampleElutionContext(
-                        **{
-                            **context,
-                            "landmarks": tuple(
-                                ElutionLandmark(**landmark)
-                                for landmark in context["landmarks"]
-                            ),
-                        }
-                    )
+                    _read_elution_context(context)
                     for context in value.get("elution_contexts", ())
                 ),
             )
@@ -222,6 +215,35 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
         ):
             raise ValueError("Grouping snapshot omits an observation's sample")
     return inputs, payload["provenance"]
+
+
+def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
+    landmarks = []
+    for item in value["landmarks"]:
+        segment = item["physical_segment"]
+        landmarks.append(
+            ElutionLandmark(
+                **{
+                    **item,
+                    "physical_segment": None
+                    if segment is None
+                    else PhysicalSegment(
+                        **{
+                            **segment,
+                            "evidence_sources": tuple(segment["evidence_sources"]),
+                        }
+                    ),
+                }
+            )
+        )
+    return SampleElutionContext(
+        **{
+            **value,
+            "rt": tuple(value["rt"]),
+            "raw": tuple(value["raw"]),
+            "landmarks": tuple(landmarks),
+        }
+    )
 
 
 def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:

@@ -9,7 +9,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePeakGroupHypothesis,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.evidence_artifacts import (
@@ -92,9 +91,6 @@ class CidNlCellGroupContext:
     processing_attempt: ProcessingAttemptIdentity
     rt_frame: RtFrame
     sample_universe: frozenset[str] | None = None
-    _group_identity: CrossSampleGroupIdentity = field(
-        init=False, repr=False, compare=False
-    )
     _method_subjects: tuple[CidNlMethodSubject, ...] = field(
         init=False, repr=False, compare=False
     )
@@ -117,11 +113,6 @@ class CidNlCellGroupContext:
                 key=lambda subject: subject.method_subject_id,
             )
         )
-        identity = validate_cross_sample_peak_group_identity(
-            self.group, require_canonical=True
-        )
-        assert identity is not None
-        object.__setattr__(self, "_group_identity", identity)
         object.__setattr__(self, "_method_subjects", subjects)
         object.__setattr__(
             self,
@@ -147,7 +138,7 @@ class CidNlCellGroupContext:
 
     @property
     def group_identity(self) -> CrossSampleGroupIdentity:
-        return self._group_identity
+        return self.group.membership
 
     @property
     def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
