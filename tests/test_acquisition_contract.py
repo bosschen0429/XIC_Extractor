@@ -9,8 +9,6 @@ import pytest
 import xic_extractor.acquisition_contract as acquisition_contract_module
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
-    RawAcquisitionSessionCapability,
-    RawAcquisitionSessionReceipt,
     TraceCoordinate,
     TraceCoordinateKind,
     acquire_trace_batch,
@@ -49,7 +47,7 @@ class _NoRawBatchAdapter:
         return (100, 120)
 
 
-def test_raw_session_capability_is_unique_pickleable_and_owner_minted(
+def test_raw_session_capability_is_unique_and_pickleable(
     tmp_path: Path,
 ) -> None:
     source = _source(tmp_path)
@@ -60,24 +58,6 @@ def test_raw_session_capability_is_unique_pickleable_and_owner_minted(
     assert first != second
     assert first.acquisition_source == source
     assert pickle.loads(pickle.dumps(first)) == first
-    with pytest.raises(AcquisitionContractError, match="minted by acquisition owner"):
-        RawAcquisitionSessionCapability(
-            capability_id=first.capability_id,
-            session_nonce=first.session_nonce,
-            acquisition_source=source,
-            _mint_token=object(),
-        )
-
-
-def test_raw_session_receipt_cannot_be_caller_minted(tmp_path: Path) -> None:
-    capability = mint_raw_acquisition_session_capability(_source(tmp_path))
-
-    with pytest.raises(AcquisitionContractError, match="minted by raw_reader"):
-        RawAcquisitionSessionReceipt(
-            receipt_id="forged",
-            capability=capability,
-            _mint_token=object(),
-        )
 
 
 def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(

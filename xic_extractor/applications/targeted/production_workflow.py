@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
-from dataclasses import InitVar, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -122,7 +122,6 @@ _NO_OBSERVATION_ARTIFACT_CONTRACT = mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
 )
-_COMPLETED_WORKFLOW_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,13 +181,6 @@ class CompletedTargetedProductionWorkflow:
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
     _acquisition_file_ids: tuple[int, ...]
     _publication_output: RunOutput
-    _mint_token: InitVar[object] = None
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _COMPLETED_WORKFLOW_MINT_TOKEN:
-            raise TypeError(
-                "CompletedTargetedProductionWorkflow must be minted by its owner"
-            )
 
     def publication_output(
         self,
@@ -223,7 +215,7 @@ def execute_targeted_production_workflow(
     *,
     expected_inputs: TargetedProductionInputSnapshot | None = None,
 ) -> CompletedTargetedProductionWorkflow:
-    """Complete the admitted Target population and seal its publication model."""
+    """Complete the admitted Target population and build its publication model."""
 
     prepared = _prepare_targeted_production_workflow(
         request, acquisition_evidence, expected_inputs=expected_inputs
@@ -253,7 +245,6 @@ def execute_targeted_production_workflow(
         finalized_results=finalized_results,
         _acquisition_file_ids=prepared.acquisition_file_ids,
         _publication_output=publication_output,
-        _mint_token=_COMPLETED_WORKFLOW_MINT_TOKEN,
     )
 
 

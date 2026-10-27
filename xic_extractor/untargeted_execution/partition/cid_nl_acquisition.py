@@ -1,7 +1,7 @@
 """Current Discovery-to-assessment adapter for one Untargeted CID-NL subject.
 
 Discovery candidates are receipts.  This adapter reacquires their exact MS1 and
-MS2 observations from one owner-bound RAW handle, then closes the existing
+MS2 observations from one source-bound RAW handle, then closes the existing
 CellObservationRef assessment input without fabricating Targeted identity or
 Matrix authority.
 """

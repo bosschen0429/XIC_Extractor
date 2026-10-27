@@ -33,7 +33,7 @@ from xic_extractor.raw_reader import (
     Ms2Scan,
     Ms2ScanEvent,
     RawFileHandle,
-    require_owner_bound_raw_handle,
+    require_source_bound_raw_handle,
 )
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
@@ -63,7 +63,7 @@ class CachedUntargetedRaw:
         self._handle = (
             None
             if callable(raw)
-            else self._require_policy(require_owner_bound_raw_handle(raw, source))
+            else self._require_policy(require_source_bound_raw_handle(raw, source))
         )
         self.native_open_attempted = self._handle is not None
         self.native_opened = self._handle is not None
@@ -85,7 +85,7 @@ class CachedUntargetedRaw:
             assert self._opener is not None
             self.native_open_attempted = True
             self._handle = self._require_policy(
-                require_owner_bound_raw_handle(self._opener(), self._source)
+                require_source_bound_raw_handle(self._opener(), self._source)
             )
             self.native_opened = True
         return self._handle
@@ -276,7 +276,7 @@ def bind_untargeted_acquisition_cache(
     """Bind a verified native handle to the optional persistent fact cache."""
 
     if cache_dir is None:
-        return require_owner_bound_raw_handle(raw, source)
+        return require_source_bound_raw_handle(raw, source)
     return CachedUntargetedRaw(
         raw,
         source=source,
@@ -294,7 +294,7 @@ def require_owner_bound_untargeted_raw(
                 "cached RAW handle is bound to a different acquisition source"
             )
         return raw
-    return require_owner_bound_raw_handle(raw, source)
+    return require_source_bound_raw_handle(raw, source)
 
 
 def acquire_untargeted_trace_batch(
@@ -304,8 +304,8 @@ def acquire_untargeted_trace_batch(
 ) -> TraceAcquisitionBatch:
     if isinstance(raw, CachedUntargetedRaw):
         return raw.acquire_trace_batch(capability, requests)
-    owner_bound = require_owner_bound_raw_handle(raw, capability.acquisition_source)
-    return acquire_trace_batch(capability, requests, RawSuperWindowSource(owner_bound))
+    source_bound = require_source_bound_raw_handle(raw, capability.acquisition_source)
+    return acquire_trace_batch(capability, requests, RawSuperWindowSource(source_bound))
 
 
 class _FactCache:

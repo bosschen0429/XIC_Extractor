@@ -569,7 +569,7 @@ def discover_sample_for_process_job(
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None],
     raw_open_receipt_observer: Callable[[RawAcquisitionSessionReceipt | None], None],
 ) -> _DiscoverySampleResult:
-    """Discover one process job's sample through the owner-bound RAW opener."""
+    """Discover one process job's sample through the source-bound RAW opener."""
     return _discover_completed_sample(
         job.raw_path,
         settings=job.settings,

@@ -6,10 +6,9 @@ import hashlib
 import json
 import secrets
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, dataclass
-from dataclasses import field as dataclass_field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, final
+from typing import Protocol
 
 import numpy as np
 
@@ -33,87 +32,21 @@ class AcquisitionContractError(ValueError):
     """Raised when an adapter cannot truthfully satisfy its declared capability."""
 
 
-_RAW_SESSION_CAPABILITY_MINT_TOKEN = object()
-_RAW_SESSION_RECEIPT_MINT_TOKEN = object()
-
-
-@final
 @dataclass(frozen=True, slots=True)
 class RawAcquisitionSessionCapability:
-    """Unique parent-issued authority for one physical RAW-open session."""
+    """Unique identifier for one planned physical RAW-open session."""
 
     capability_id: str
     session_nonce: str
     acquisition_source: AcquisitionSourceIdentity
-    _mint_token: InitVar[object] = dataclass_field(kw_only=True)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RawAcquisitionSessionCapability is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RAW_SESSION_CAPABILITY_MINT_TOKEN:
-            raise AcquisitionContractError(
-                "RAW session capabilities must be minted by acquisition owner"
-            )
-        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
-            raise AcquisitionContractError(
-                "acquisition_source must be an owner-minted identity"
-            )
-        nonce = self.session_nonce
-        if (
-            not isinstance(nonce, str)
-            or len(nonce) != 32
-            or any(character not in "0123456789abcdef" for character in nonce)
-        ):
-            raise AcquisitionContractError(
-                "session_nonce must be a lower-case 32-character hex token"
-            )
-        expected = _raw_session_capability_id(
-            self.acquisition_source,
-            session_nonce=nonce,
-        )
-        if self.capability_id != expected:
-            raise AcquisitionContractError(
-                "capability_id mismatches RAW source and session nonce"
-            )
 
 
-@final
 @dataclass(frozen=True, slots=True)
 class RawAcquisitionSessionReceipt:
-    """RAW-reader-minted proof that one bound vendor handle opened."""
+    """Record that one source-bound vendor handle opened."""
 
     receipt_id: str
     capability: RawAcquisitionSessionCapability
-    _mint_token: InitVar[object] = dataclass_field(kw_only=True)
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("RawAcquisitionSessionReceipt is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RAW_SESSION_RECEIPT_MINT_TOKEN:
-            raise AcquisitionContractError(
-                "RAW session receipts must be minted by raw_reader"
-            )
-        if not isinstance(self.capability, RawAcquisitionSessionCapability):
-            raise AcquisitionContractError(
-                "capability must be an owner-minted RAW session capability"
-            )
-        expected = _typed_id(
-            "xic.raw-acquisition-session-receipt:",
-            {
-                "schema": "raw_acquisition_session_receipt",
-                "capability_id": self.capability.capability_id,
-                "acquisition_source_id": (
-                    self.capability.acquisition_source.acquisition_source_id
-                ),
-                "raw_open_count": 1,
-            },
-        )
-        if self.receipt_id != expected:
-            raise AcquisitionContractError(
-                "receipt_id mismatches RAW session capability"
-            )
 
 
 def mint_raw_acquisition_session_capability(
@@ -133,7 +66,6 @@ def mint_raw_acquisition_session_capability(
         ),
         session_nonce=session_nonce,
         acquisition_source=acquisition_source,
-        _mint_token=_RAW_SESSION_CAPABILITY_MINT_TOKEN,
     )
 
 
@@ -143,9 +75,7 @@ def _mint_raw_acquisition_session_receipt(
     """Private RAW-reader seam; mint only after the vendor handle has opened."""
 
     if not isinstance(capability, RawAcquisitionSessionCapability):
-        raise AcquisitionContractError(
-            "capability must be an owner-minted RAW session capability"
-        )
+        raise AcquisitionContractError("capability must be a RAW session capability")
     return RawAcquisitionSessionReceipt(
         receipt_id=_typed_id(
             "xic.raw-acquisition-session-receipt:",
@@ -159,7 +89,6 @@ def _mint_raw_acquisition_session_receipt(
             },
         ),
         capability=capability,
-        _mint_token=_RAW_SESSION_RECEIPT_MINT_TOKEN,
     )
 
 

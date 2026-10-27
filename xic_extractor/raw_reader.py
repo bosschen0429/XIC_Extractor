@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path, PureWindowsPath
 from threading import Lock
 from types import SimpleNamespace
-from typing import Any, final
+from typing import Any
 
 import numpy as np
 
@@ -749,110 +749,41 @@ class RawFileHandle:
             return self._thermo.trace_settings_factory()
 
 
-def _owner_bound_raw_handle_support() -> tuple[
-    Callable[
-        [
-            Any,
-            _ThermoApi,
-            AcquisitionSourceIdentity,
-            RawAcquisitionSessionReceipt | None,
-            MassRecalibration,
-        ],
-        RawFileHandle,
-    ],
-    Callable[[object, AcquisitionSourceIdentity], RawFileHandle],
-]:
-    mint_token = object()
+class _SourceBoundRawFileHandle(RawFileHandle):
+    """Native handle carrying the RAW source verified when it was opened."""
 
-    @final
-    class OwnerBoundRawFileHandle(RawFileHandle):
-        __slots__ = ("_bound_acquisition_source", "_raw_open_receipt")
+    __slots__ = ("_bound_acquisition_source", "_raw_open_receipt")
 
-        def __init__(
-            self,
-            raw_file: Any,
-            thermo: _ThermoApi,
-            source: AcquisitionSourceIdentity,
-            raw_open_receipt: RawAcquisitionSessionReceipt | None,
-            mass_recalibration: MassRecalibration,
-            *,
-            _mint_token: object,
-        ) -> None:
-            if _mint_token is not mint_token:
-                raise RawReaderError(
-                    "owner-bound RAW handles must be minted by open_raw"
-                )
-            super().__init__(raw_file, thermo, mass_recalibration)
-            self._bound_acquisition_source = source
-            self._raw_open_receipt = raw_open_receipt
-
-        def __setattr__(self, name: str, value: object) -> None:
-            if name in {
-                "_raw_file",
-                "_thermo",
-                "_bound_acquisition_source",
-                "_raw_open_receipt",
-                "_mass_recalibration",
-            } and hasattr(self, name):
-                raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
-            super().__setattr__(name, value)
-
-        def __delattr__(self, name: str) -> None:
-            if name in {
-                "_raw_file",
-                "_thermo",
-                "_bound_acquisition_source",
-                "_raw_open_receipt",
-                "_mass_recalibration",
-            }:
-                raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
-            super().__delattr__(name)
-
-        def __init_subclass__(cls, **kwargs: object) -> None:
-            raise TypeError("owner-bound RAW handles are final")
-
-        @property
-        def acquisition_source(self) -> AcquisitionSourceIdentity:
-            return self._bound_acquisition_source
-
-        @property
-        def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None:
-            return self._raw_open_receipt
-
-    def mint(
+    def __init__(
+        self,
         raw_file: Any,
         thermo: _ThermoApi,
         source: AcquisitionSourceIdentity,
         raw_open_receipt: RawAcquisitionSessionReceipt | None,
         mass_recalibration: MassRecalibration,
-    ) -> RawFileHandle:
-        return OwnerBoundRawFileHandle(
-            raw_file,
-            thermo,
-            source,
-            raw_open_receipt,
-            mass_recalibration,
-            _mint_token=mint_token,
-        )
+    ) -> None:
+        super().__init__(raw_file, thermo, mass_recalibration)
+        self._bound_acquisition_source = source
+        self._raw_open_receipt = raw_open_receipt
 
-    def require(
-        raw: object,
-        expected: AcquisitionSourceIdentity,
-    ) -> RawFileHandle:
-        if not isinstance(raw, OwnerBoundRawFileHandle):
-            raise RawReaderError("RAW handle was not owner-bound by open_raw")
-        if raw.acquisition_source != expected:
-            raise RawReaderError(
-                "RAW handle is bound to a different acquisition source"
-            )
-        return raw
+    @property
+    def acquisition_source(self) -> AcquisitionSourceIdentity:
+        return self._bound_acquisition_source
 
-    return mint, require
+    @property
+    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None:
+        return self._raw_open_receipt
 
 
-_mint_owner_bound_raw_handle, require_owner_bound_raw_handle = (
-    _owner_bound_raw_handle_support()
-)
+def require_source_bound_raw_handle(
+    raw: object,
+    expected: AcquisitionSourceIdentity,
+) -> RawFileHandle:
+    if not isinstance(raw, _SourceBoundRawFileHandle):
+        raise RawReaderError("RAW handle has no acquisition source binding")
+    if raw.acquisition_source != expected:
+        raise RawReaderError("RAW handle is bound to a different acquisition source")
+    return raw
 
 
 def open_raw(
@@ -940,7 +871,7 @@ def open_raw(
         if _raw_session_capability is None
         else _mint_raw_acquisition_session_receipt(_raw_session_capability)
     )
-    handle = _mint_owner_bound_raw_handle(
+    handle = _SourceBoundRawFileHandle(
         raw_file,
         thermo,
         source_binding.source,
@@ -1248,9 +1179,7 @@ def _validate_raw_session_capability(
     if capability is None:
         return
     if not isinstance(capability, RawAcquisitionSessionCapability):
-        raise RawReaderError(
-            "_raw_session_capability must be an owner-minted capability"
-        )
+        raise RawReaderError("_raw_session_capability must be a RAW session capability")
     if not isinstance(expected_acquisition_source, AcquisitionSourceIdentity):
         raise RawReaderError(
             "RAW session capability requires expected_acquisition_source"

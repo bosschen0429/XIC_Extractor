@@ -326,7 +326,7 @@ def derive_runtime_raw_open_metrics(
         )
     if not isinstance(capability, RawAcquisitionSessionCapability):
         raise RuntimeFinalizationContractError(
-            "capability must be an owner-minted RAW session capability"
+            "capability must be a RAW session capability"
         )
     if not receipt_batch:
         return RuntimeRawOpenMetrics(

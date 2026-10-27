@@ -505,58 +505,12 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
         )
 
 
-def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None:
-    from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import (
-        open_raw,
-        require_owner_bound_raw_handle,
-    )
-
-    _write_expected_dlls(tmp_path)
-    raw_path = tmp_path / "sample.raw"
-    other_path = tmp_path / "other.raw"
-    raw_path.write_bytes(b"sample-a")
-    other_path.write_bytes(b"sample-b")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    other_source = build_acquisition_source_identity(
-        other_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    raw = _FakeRaw()
-    thermo = _fake_thermo(raw)
-    handle = open_raw(
-        raw_path,
-        tmp_path,
-        expected_acquisition_source=source,
-        _import_module=_working_imports(),
-        _thermo=thermo,
-    )
-
-    for attribute, replacement in (
-        ("_raw_file", _FakeRaw()),
-        ("_thermo", _fake_thermo(_FakeRaw())),
-        ("_bound_acquisition_source", other_source),
-    ):
-        with pytest.raises(AttributeError, match="is sealed"):
-            setattr(handle, attribute, replacement)
-        with pytest.raises(AttributeError, match="is sealed"):
-            delattr(handle, attribute)
-
-    assert handle.acquisition_source == source
-    assert require_owner_bound_raw_handle(handle, source) is handle
-
-
 def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import (
         RawFileHandle,
         RawReaderError,
-        require_owner_bound_raw_handle,
+        require_source_bound_raw_handle,
     )
 
     raw_path = tmp_path / "sample.raw"
@@ -571,9 +525,9 @@ def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) ->
 
     with pytest.raises(
         RawReaderError,
-        match="was not owner-bound by open_raw",
+        match="has no acquisition source binding",
     ):
-        require_owner_bound_raw_handle(handle, source)
+        require_source_bound_raw_handle(handle, source)
 
 
 def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
