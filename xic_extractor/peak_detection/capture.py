@@ -260,13 +260,7 @@ def _capture_trace_group(
         method_subject_id=binding.method_subject_id,
     )
     return TraceGroup(
-        trace_group_id="|".join(
-            (
-                scope.request.processing_request_id,
-                trace.sample_name,
-                binding.candidate_id,
-            )
-        ),
+        trace_group_id=f"{trace.sample_name}|{binding.candidate_id}",
         sample_name=trace.sample_name,
         analysis_mode=scope.variant,
         context_id=label,

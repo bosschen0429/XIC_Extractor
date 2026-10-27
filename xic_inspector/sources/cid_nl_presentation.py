@@ -59,7 +59,6 @@ _TECHNICAL_LABELS = {
     "candidate_id": "候選 ID",
     "feature_id": "分組 ID",
     "physical_peak_key": "觀察 ID",
-    "processing_request_id": "處理 request ID",
     "processing_attempt_id": "處理 attempt ID",
     "acquisition_source_id": "擷取來源 ID",
     "method_subject_id": "方法對象 ID",

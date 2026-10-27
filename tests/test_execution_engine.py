@@ -299,9 +299,7 @@ class MockAdapter:
             for i in range(num_partitions)
         )
         self._global_closure_work_unit_key = (
-            f"global-closure:{owners.request.processing_request_id}"
-            if declare_global_closure
-            else None
+            "global-closure" if declare_global_closure else None
         )
         self._work_unit_keys = (
             *(key for p in self._partitions for key in p.work_unit_keys),
@@ -354,7 +352,7 @@ class MockAdapter:
 
     @property
     def owner_completeness_attestation(self) -> str:
-        return f"{self._owners.request.processing_request_id}:mock-attestation"
+        return "mock-attestation"
 
     def get_shared_objects(self) -> tuple[object, ...]:
         return (self._owners,)
@@ -1128,7 +1126,7 @@ def test_r386_01_global_closure_failure_retains_prior_success(
         s for s in settlements if s.work_unit_key == "wu:partition-00001"
     )
     closure_settlement = next(
-        s for s in settlements if s.work_unit_key.startswith("global-closure:")
+        s for s in settlements if s.work_unit_key == "global-closure"
     )
 
     assert p0_settlement.outcome.value == "succeeded"
@@ -1232,9 +1230,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
 
     p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
     p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
-    closure = next(
-        s for s in settlements if s.work_unit_key.startswith("global-closure:")
-    )
+    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
 
     assert p0.outcome.value == "failed"
     assert p0.failure_detail.stage == "partition-composition"
@@ -1375,9 +1371,7 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
 
     p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
     p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
-    closure = next(
-        s for s in settlements if s.work_unit_key.startswith("global-closure:")
-    )
+    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
 
     assert p0.outcome.value == "succeeded"
     assert p1.outcome.value == "succeeded"

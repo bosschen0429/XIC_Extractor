@@ -1239,7 +1239,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )

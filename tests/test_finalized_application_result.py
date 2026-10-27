@@ -193,10 +193,7 @@ def test_untarget_owner_pickle_rebinds_completion_and_rejects_tampered_export(
     )
     assert result.scientific_core is restored_core
     assert result.completed_projection is restored_projection
-    assert (
-        restored_core.processing_request.processing_request_id
-        == core.processing_request.processing_request_id
-    )
+    assert restored_core.processing_request == core.processing_request
     assert restored_projection.rows[0].counts == projection.rows[0].counts
     assert restored_projection.rows[0].route == projection.rows[0].route
     if tamper == "core":

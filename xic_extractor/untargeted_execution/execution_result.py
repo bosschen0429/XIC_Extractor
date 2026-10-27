@@ -183,10 +183,6 @@ class CompletedUntargetBatchWorkflowResult:
         return self._publication_inputs
 
     @property
-    def processing_request_id(self) -> str:
-        return self.application_result.processing_request.processing_request_id
-
-    @property
     def processing_attempt_id(self) -> str:
         return self.application_result.processing_attempt.processing_attempt_id
 

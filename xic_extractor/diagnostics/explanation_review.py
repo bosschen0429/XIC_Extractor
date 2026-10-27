@@ -356,6 +356,4 @@ def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             "method_subject_id",
         )
         return {name: payload[name] for name in names if name in payload}
-    return {
-        key: value for key, value in payload.items() if key != "processing_request_id"
-    }
+    return dict(payload)

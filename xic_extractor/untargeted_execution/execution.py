@@ -409,9 +409,7 @@ class UntargetedPartitionPipelineAdapter:
                     shared_objects=shared_objects,
                 ),
             )
-        self._global_closure_work_unit_key = (
-            f"global-closure:{self._owners.request.processing_request_id}"
-        )
+        self._global_closure_work_unit_key = "global-closure"
         self._work_unit_keys = (
             *(
                 key
@@ -441,9 +439,7 @@ class UntargetedPartitionPipelineAdapter:
                 context.samples, partition.resource_keys, strict=True
             )
         )
-        self._owner_completeness_attestation = (
-            f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
-        )
+        self._owner_completeness_attestation = "cid-nl-partitioned"
 
     @property
     def partitions(

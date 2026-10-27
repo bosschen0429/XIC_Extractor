@@ -340,12 +340,6 @@ def _require_batch_population(
             raise ApplicationResultContractError(
                 "Untarget batch child crossed its processing attempt"
             )
-        if core.processing_request.processing_request_id != (
-            request.processing_request.processing_request_id
-        ):
-            raise ApplicationResultContractError(
-                "Untarget batch child crossed its processing request"
-            )
         if set(_sample_ids(core.canonical_samples)) != sample_ids:
             raise ApplicationResultContractError(
                 "Untarget batch children must share one sample universe"

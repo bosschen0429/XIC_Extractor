@@ -154,9 +154,7 @@ class IndexedCidNlSource(CidNlSource):
 
             def rank(sort_key):
                 ref = json.loads(sort_key)
-                full = serialize_canonical_ref(
-                    [ref[0], self.request_id, self.attempt_id, *ref[1:]]
-                )
+                full = serialize_canonical_ref([ref[0], self.attempt_id, *ref[1:]])
                 return sampling_rank(full, request.seed)
 
             db.create_function("sample_rank", 1, rank, deterministic=True)
@@ -264,14 +262,12 @@ class IndexedCidNlSource(CidNlSource):
                 ).fetchone()
                 _, ref = build_canonical_ref(
                     kind,
-                    self.request_id,
                     self.attempt_id,
                     identifier,
                     sample_id=sid[0] if sid else None,
                 )
                 result = CanonicalItem(
                     kind,
-                    self.request_id,
                     self.attempt_id,
                     identifier,
                     ref,

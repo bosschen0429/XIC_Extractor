@@ -631,7 +631,7 @@ def _identity_fixture(
         (SampleMetadata(sample_name=sample_name, raw_stem=sample_key),),
         identity_namespace="study:peak-observation",
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     sample = resolve_canonical_sample_identity(snapshot, sample_key)
     return _IdentityFixture(
         request=request,

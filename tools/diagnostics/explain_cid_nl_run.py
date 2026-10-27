@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Candidates: {result['candidate_count']} | "
             f"Matrix rows: {result['matrix_row_count']}"
         )
-        print(f"Request: {result['processing_request_id']}")
+        print(f"Attempt: {result['processing_attempt_id']}")
         for candidate in result.get("candidate_examples", ()):
             print(f"  {candidate['sample_stem']}: {candidate['candidate_id']}")
         reasons = sorted(

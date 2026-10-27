@@ -1011,7 +1011,7 @@ def _attempt(tmp_path: Path):
         acquisition_format="fixture",
         observation_namespace="package0:no-raw",
     )
-    request = build_processing_request_identity(
+    build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -1025,4 +1025,4 @@ def _attempt(tmp_path: Path):
         processing_contract_version="package0_fixture",
         scientific_inputs={"neutral_loss_da": 116.0474},
     )
-    return issue_processing_attempt(request)
+    return issue_processing_attempt()

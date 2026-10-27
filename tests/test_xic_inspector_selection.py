@@ -25,14 +25,12 @@ def _make_item(
     sample_id = sample_ids[0] if kind == "candidate" else None
     ref, sref = build_canonical_ref(
         kind=kind,  # type: ignore
-        request_id="req1",
         attempt_id="att1",
         identifier=identifier,
         sample_id=sample_id,
     )
     return CanonicalItem(
         kind=kind,  # type: ignore
-        request_id="req1",
         attempt_id="att1",
         identifier=identifier,
         serialized_ref=sref,

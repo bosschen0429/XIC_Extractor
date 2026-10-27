@@ -384,7 +384,6 @@ def _expected_retained_curve(
     candidate_id,
     trace,
     evaluation,
-    request_id,
     attempt_id,
     observation=None,
     method_subject_id=None,
@@ -393,7 +392,6 @@ def _expected_retained_curve(
     # result or a re-executed signal-processing calculation.
     signal = evaluation.retained_prepared_signal if evaluation is not None else None
     provenance = {
-        "processing_request_id": request_id,
         "processing_attempt_id": attempt_id,
     }
     if method_subject_id is not None:
@@ -450,7 +448,6 @@ def _expected_retained_curve(
                 (
                     "profile_version",
                     "acquisition_source_id",
-                    "processing_request_id",
                     "processing_attempt_id",
                     "selected_trace_indices",
                     "resolver_mode",
@@ -476,7 +473,6 @@ def _expected_capture_curve(evidence):
         candidate_id=evidence.candidate_id,
         trace=evidence.trace,
         evaluation=evidence.physical_evaluation,
-        request_id=evidence.processing_request_id,
         attempt_id=evidence.processing_attempt_id,
         observation=evidence.observation_ref,
         method_subject_id=evidence.method_subject_id,
@@ -1264,9 +1260,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         sample: tuple(candidate.candidate_id for candidate in sample_candidates)
         for sample, sample_candidates in candidates.items()
     }
-    assert completed.processing_request_id == (
-        completed.application_result.processing_request.processing_request_id
-    )
     assert completed.processing_attempt_id == (
         completed.application_result.processing_attempt.processing_attempt_id
     )
@@ -1372,7 +1365,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
             trace=source_trace,
             evaluation=record.evaluation,
-            request_id=application.processing_request.processing_request_id,
             attempt_id=application.processing_attempt.processing_attempt_id,
         )
         expected_curves.append(expected)
@@ -1897,7 +1889,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,
                 provenance={
-                    "processing_request_id": evidence.processing_request_id,
                     "processing_attempt_id": evidence.processing_attempt_id,
                     "method_subject_id": evidence.method_subject_id,
                 },
@@ -1905,9 +1896,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         sink.finalize(
             _summary_fixture(
                 {
-                    "processing_request_id": (
-                        job.processing_owners.request.processing_request_id
-                    ),
                     "processing_attempt_id": (
                         job.processing_owners.attempt.processing_attempt_id
                     ),

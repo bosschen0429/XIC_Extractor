@@ -76,7 +76,6 @@ class CellObservationRef:
 def _direct_member_integration(
     *,
     member: CrossSampleGroupMemberSubject | None,
-    processing_request_id: str,
     canonical_sample: ResolvedCanonicalSampleIdentity,
     terminal_variant: TerminalObservationVariant,
     terminal_hypothesis: PeakHypothesis | None,
@@ -189,12 +188,7 @@ def mint_cell_observation_ref(
         processing_owners.attempt.processing_attempt_id,
         *retry_predecessor_attempt_ids(processing_owners.attempt),
     }
-    if (
-        group_context.processing_attempt.processing_request_id
-        != processing_owners.request.processing_request_id
-        or group_context.processing_attempt.processing_attempt_id
-        not in allowed_attempts
-    ):
+    if group_context.processing_attempt.processing_attempt_id not in allowed_attempts:
         raise CellObservationContractError(
             "group SUPPORT closure is outside the current attempt or retry lineage"
         )

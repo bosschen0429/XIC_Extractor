@@ -383,7 +383,7 @@ def test_retry_preserves_support_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry = issue_processing_attempt(retry_of=fixture.attempt)
     retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
 
     first_evidence = _evidence(fixture.owners, fixture.sample)
@@ -640,7 +640,7 @@ def test_retry_preserves_chromatographic_event_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry = issue_processing_attempt(retry_of=fixture.attempt)
     retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
     first_peak = _peak(fixture.owners, fixture.sample)
     retry_peak = _peak(retry_owners, fixture.sample)
@@ -984,7 +984,7 @@ def _identity_fixture(
         (SampleMetadata(sample_name=sample_key, raw_stem=sample_key),),
         identity_namespace="study:dda-cid-nl-peak-support",
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     sample = resolve_canonical_sample_identity(snapshot, sample_key)
     return _IdentityFixture(
         request=request,

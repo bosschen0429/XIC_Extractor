@@ -62,12 +62,6 @@ def build_cross_sample_association_lineage_handoff(
 ) -> CrossSampleAssociationLineageHandoff:
     """Compile exact coverage positions onto exact final CrossSample groups."""
 
-    if coverage.processing_owners.request.processing_request_id != (
-        final_receipt.processing_request_id
-    ):
-        raise CrossSampleAssociationContractError(
-            "coverage and final receipt cross processing request"
-        )
     predecessor_associations, position_associations = _compile_associations(
         coverage=coverage,
         final_receipt=final_receipt,

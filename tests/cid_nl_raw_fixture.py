@@ -107,7 +107,7 @@ def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
     )
     return compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=owners.sample_snapshot,
         sample_resolutions=owners.sample_resolutions,
     )

@@ -1555,7 +1555,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=context.processing_owners.sample_snapshot,
         sample_resolutions=context.samples,
     )

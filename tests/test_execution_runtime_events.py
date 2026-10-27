@@ -275,9 +275,9 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
         preflight_required_work_manifest,
     )
 
-    request = _request(tmp_path)
-    attempt = issue_processing_attempt(request)
-    other_attempt = issue_processing_attempt(request, retry_of=attempt)
+    _request(tmp_path)
+    attempt = issue_processing_attempt()
+    other_attempt = issue_processing_attempt(retry_of=attempt)
     queued = append_attempt_lifecycle_event(
         AttemptLifecycleHistory(attempt=attempt),
         AttemptLifecycleEventKind.ATTEMPT_QUEUED,
@@ -633,9 +633,9 @@ def test_history_rejects_forged_attempt_sequence_and_transition(
         AttemptLifecycleHistory,
     )
 
-    request = _request(tmp_path)
-    attempt = issue_processing_attempt(request)
-    retry = issue_processing_attempt(request, retry_of=attempt)
+    _request(tmp_path)
+    attempt = issue_processing_attempt()
+    retry = issue_processing_attempt(retry_of=attempt)
     queued = AttemptLifecycleEvent(
         attempt=attempt,
         sequence=1,
@@ -765,7 +765,7 @@ def test_execution_runtime_contract_stays_inside_identity_boundary() -> None:
 
 
 def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
-    return issue_processing_attempt(_request(tmp_path))
+    return issue_processing_attempt()
 
 
 def _request(tmp_path: Path) -> ProcessingRequestIdentity:

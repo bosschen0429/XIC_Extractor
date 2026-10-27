@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,7 +30,6 @@ from xic_extractor.peak_detection.search_scope import (
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
-    build_processing_request_identity,
     resolve_request_acquisition_source,
 )
 
@@ -68,7 +66,6 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
 
     assert isinstance(result, FinalizedScientificAlignment)
     assert result.processing_request is scope.request
-    assert result.processing_request_id == scope.request.processing_request_id
     assert result.canonical_samples == tuple(
         sorted(
             scope.samples,
@@ -261,7 +258,7 @@ def test_finalizer_rejects_short_window_capture_as_no_observation(
         )
 
 
-def test_finalizer_rejects_crossed_scope_and_request(
+def test_finalizer_rejects_crossed_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,29 +274,6 @@ def test_finalizer_rejects_crossed_scope_and_request(
         finalize_scientific_alignment(
             scope=equivalent_but_crossed_scope,
             captures=captures,
-            grouping_result=receipt,
-            cell_observation_handoff=handoff,
-            predecessor_cell_observations=predecessor_cells,
-        )
-
-    crossed_inputs = json.loads(scope.request.normalized_scientific_inputs_json)
-    crossed_inputs["crossed_request"] = True
-    crossed_request = build_processing_request_identity(
-        acquisition_sources=scope.request.acquisition_sources,
-        acquisition_bindings=scope.request.acquisition_bindings,
-        scientific_input_schema_version=(scope.request.scientific_input_schema_version),
-        processing_algorithm_version=scope.request.processing_algorithm_version,
-        processing_contract_version=scope.request.processing_contract_version,
-        scientific_inputs=crossed_inputs,
-    )
-    crossed_request_scope = replace(scope, request=crossed_request)
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="processing request",
-    ):
-        finalize_scientific_alignment(
-            scope=crossed_request_scope,
-            captures=(),
             grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,

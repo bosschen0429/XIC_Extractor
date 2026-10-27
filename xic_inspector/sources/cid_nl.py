@@ -80,7 +80,6 @@ class CidNlSource:
         self._selection_cells: (
             Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
         ) = None
-        self.request_id = self.summary.get("processing_request_id", "")
         self.attempt_id = self.summary.get("processing_attempt_id", "")
         self.records = metadata.records
         self.candidates = metadata.candidates
@@ -345,14 +344,12 @@ class CidNlSource:
             sample_ids.update(self._row_samples.get(identifier, set()) & scope)
             _, ref = build_canonical_ref(
                 kind,
-                self.request_id,
                 self.attempt_id,
                 identifier,
                 sample_id=next(iter(keys))[1] if kind == "candidate" else None,
             )
             return CanonicalItem(
                 kind=kind,
-                request_id=self.request_id,
                 attempt_id=self.attempt_id,
                 identifier=identifier,
                 serialized_ref=ref,
@@ -399,14 +396,12 @@ class CidNlSource:
         members = group.get("member_subjects", [])
         _, ref = build_canonical_ref(
             kind,
-            self.request_id,
             self.attempt_id,
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
         )
         return CanonicalItem(
             kind=kind,
-            request_id=self.request_id,
             attempt_id=self.attempt_id,
             identifier=identifier,
             serialized_ref=ref,
@@ -557,7 +552,6 @@ class CidNlSource:
             )
         _, ref = build_canonical_ref(
             kind,
-            self.request_id,
             self.attempt_id,
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
@@ -597,7 +591,6 @@ class CidNlSource:
         }
         return CanonicalItem(
             kind=kind,
-            request_id=self.request_id,
             attempt_id=self.attempt_id,
             identifier=identifier,
             serialized_ref=ref,
@@ -847,10 +840,7 @@ class CidNlSource:
                 )
             for curve in raw_curves:
                 provenance = curve.get("provenance", {})
-                for name, expected in (
-                    ("processing_request_id", self.request_id),
-                    ("processing_attempt_id", self.attempt_id),
-                ):
+                for name, expected in (("processing_attempt_id", self.attempt_id),):
                     if name in provenance and provenance[name] != expected:
                         raise ExplanationError(f"Selected curve crosses {name} binding")
         rendered = []

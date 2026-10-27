@@ -23,9 +23,7 @@ from xic_extractor.execution._finalization import (
 from xic_extractor.execution._lifecycle import AttemptRuntime, AttemptTerminalOutcome
 from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 from xic_extractor.processing_identity import (
-    PROCESSING_REQUEST_ID_PREFIX,
     IdentityContractError,
-    validate_typed_identity_id,
 )
 from xic_extractor.validation_primitives import (
     require_attempt_uuid,
@@ -44,7 +42,6 @@ class RuntimeMarkerState(str, Enum):
 @dataclass(frozen=True, slots=True)
 class RuntimeMarkerSnapshot:
     state: RuntimeMarkerState
-    processing_request_id: str
     processing_attempt_id: str
     artifact_namespace: str
     manifest_work_unit_keys: tuple[str, ...]
@@ -72,7 +69,6 @@ class OwnerPathRuntimeMarker:
         attempt = runtime.manifest.attempt
         proposed = RuntimeMarkerSnapshot(
             state=RuntimeMarkerState.LAUNCHED,
-            processing_request_id=attempt.processing_request_id,
             processing_attempt_id=attempt.processing_attempt_id,
             artifact_namespace=self.artifact_namespace,
             manifest_work_unit_keys=runtime.manifest.work_unit_keys,
@@ -142,7 +138,6 @@ class OwnerPathRuntimeMarker:
             attempt = coordinator.state.runtime.manifest.attempt
             expected_scope = RuntimeMarkerSnapshot(
                 state=RuntimeMarkerState.LAUNCHED,
-                processing_request_id=attempt.processing_request_id,
                 processing_attempt_id=attempt.processing_attempt_id,
                 artifact_namespace=self.artifact_namespace,
                 manifest_work_unit_keys=(
@@ -155,7 +150,6 @@ class OwnerPathRuntimeMarker:
                 )
             finalized = RuntimeMarkerSnapshot(
                 state=RuntimeMarkerState.FINALIZED,
-                processing_request_id=launch.processing_request_id,
                 processing_attempt_id=launch.processing_attempt_id,
                 artifact_namespace=launch.artifact_namespace,
                 manifest_work_unit_keys=launch.manifest_work_unit_keys,
@@ -290,8 +284,7 @@ def _same_attempt_scope(
     right: RuntimeMarkerSnapshot,
 ) -> bool:
     return (
-        left.processing_request_id == right.processing_request_id
-        and left.processing_attempt_id == right.processing_attempt_id
+        left.processing_attempt_id == right.processing_attempt_id
         and left.artifact_namespace == right.artifact_namespace
         and left.manifest_work_unit_keys == right.manifest_work_unit_keys
     )
@@ -302,7 +295,6 @@ def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
         {
             "schema_version": "execution_runtime_status_marker",
             "state": snapshot.state.value,
-            "processing_request_id": snapshot.processing_request_id,
             "processing_attempt_id": snapshot.processing_attempt_id,
             "artifact_namespace": snapshot.artifact_namespace,
             "manifest_work_unit_keys": list(snapshot.manifest_work_unit_keys),
@@ -330,7 +322,6 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     expected_keys = {
         "schema_version",
         "state",
-        "processing_request_id",
         "processing_attempt_id",
         "artifact_namespace",
         "manifest_work_unit_keys",
@@ -368,11 +359,6 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
             "finalized marker requires terminal outcome"
         )
     try:
-        request_id = validate_typed_identity_id(
-            payload["processing_request_id"],
-            prefix=PROCESSING_REQUEST_ID_PREFIX,
-            field="processing_request_id",
-        )
         attempt_id = require_attempt_uuid(
             payload["processing_attempt_id"], error_factory=IdentityContractError
         )
@@ -382,7 +368,6 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         ) from exc
     return RuntimeMarkerSnapshot(
         state=state,
-        processing_request_id=request_id,
         processing_attempt_id=attempt_id,
         artifact_namespace=_required_text(
             payload["artifact_namespace"], field="artifact_namespace"

@@ -28,12 +28,10 @@ def test_cid_nl_evidence_locator_immutability() -> None:
         report_path=Path("out/cid_nl_explanation.sqlite"),
         matrix_path=Path("out/alignment_matrix.tsv"),
         matrix_sha256="abcd" * 16,
-        processing_request_id="req-01",
         processing_attempt_id="att-01",
         schema_version="alignment_explanation",
     )
     assert locator.schema_version == "alignment_explanation"
-    assert locator.processing_request_id == "req-01"
     with pytest.raises(AttributeError):
         locator.schema_version = "unknown"  # type: ignore
 
@@ -85,7 +83,6 @@ def test_curve_payload_write_and_read() -> None:
             final_path = writer.finalize(
                 _summary_fixture(
                     {
-                        "processing_request_id": "req-1",
                         "processing_attempt_id": "att-1",
                         "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
                     },
@@ -178,7 +175,6 @@ def _curve_provenance():
     return {
         "profile_version": None,
         "acquisition_source_id": None,
-        "processing_request_id": None,
         "processing_attempt_id": None,
         "selected_trace_indices": None,
         "resolver_mode": None,

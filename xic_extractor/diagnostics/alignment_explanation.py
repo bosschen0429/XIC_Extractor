@@ -75,7 +75,6 @@ _PROVENANCE_KEYS = frozenset(
     {
         "profile_version",
         "acquisition_source_id",
-        "processing_request_id",
         "processing_attempt_id",
         "selected_trace_indices",
         "resolver_mode",
@@ -640,7 +639,6 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         "plot_evidence_capability",
         "diagnostic_only",
         "completion",
-        "processing_request_id",
         "scientific_input_schema_version",
         "processing_algorithm_version",
         "processing_contract_version",

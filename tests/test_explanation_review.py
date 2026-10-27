@@ -636,7 +636,6 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
         _write_metadata_json(
             tmp_path / "alignment_run_metadata.json",
             {
-                "processing_request_id": summary["processing_request_id"],
                 "processing_attempt_id": summary["processing_attempt_id"],
                 "mass_recalibration_by_sample": json.dumps(
                     {s: {"policy": p} for s, p in policies.items()}
@@ -760,7 +759,6 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
         writer.finalize(
             _summary_fixture(
                 {
-                    "processing_request_id": "quality-request",
                     "processing_attempt_id": "quality-attempt",
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),

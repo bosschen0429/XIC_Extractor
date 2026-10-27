@@ -69,7 +69,6 @@ def publish_untargeted_outputs(
         _ensure_output_publication_not_cancelled(should_cancel)
         metadata = {
             **metadata,
-            "processing_request_id": completed.processing_request_id,
             "processing_attempt_id": completed.processing_attempt_id,
         }
         inputs = completed.publication_inputs
@@ -144,7 +143,6 @@ def publish_untargeted_outputs(
                 report_path=db_path,
                 matrix_path=outputs.matrix_tsv,
                 matrix_sha256=matrix_sha256,
-                processing_request_id=completed.processing_request_id,
                 processing_attempt_id=completed.processing_attempt_id,
                 schema_version="alignment_explanation"
                 if policy.explanation_full_audit

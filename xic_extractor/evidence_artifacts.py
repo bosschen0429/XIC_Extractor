@@ -13,6 +13,5 @@ class EvidenceLocator:
     report_path: Path
     matrix_path: Path
     matrix_sha256: str
-    processing_request_id: str
     processing_attempt_id: str
     schema_version: str

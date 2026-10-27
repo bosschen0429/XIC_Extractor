@@ -160,7 +160,6 @@ class TargetedWorkbookSource:
             "source_kind": "targeted_workbook",
             "plot_evidence_capability": "metadata_only",
             "selection_evidence_capability": "recorded_decisions",
-            "processing_request_id": "targeted-workbook",
             "processing_attempt_id": digest,
             "method_context": metadata,
             "target_names": labels,
@@ -213,13 +212,10 @@ class TargetedWorkbookSource:
                 for r in records
                 if pair and (istd := self._records_by_key.get((r["SampleName"], pair)))
             }
-            _, ref = build_canonical_ref(
-                "target", "targeted-workbook", self.locator.workbook_sha256, label
-            )
+            _, ref = build_canonical_ref("target", self.locator.workbook_sha256, label)
             items.append(
                 CanonicalItem(
                     kind="target",
-                    request_id="targeted-workbook",
                     attempt_id=self.locator.workbook_sha256,
                     identifier=label,
                     serialized_ref=ref,

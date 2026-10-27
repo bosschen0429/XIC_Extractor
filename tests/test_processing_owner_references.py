@@ -168,7 +168,7 @@ def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> N
     ):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(sample,),
         )
@@ -181,7 +181,7 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         payload=b"request-a",
         target_snapshot=target_snapshot,
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
@@ -222,7 +222,7 @@ def test_lineage_rejects_metadata_injection_order_mismatch(
     )
     matching = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=matching_snapshot,
         sample_resolutions=(matching_sample,),
     )
@@ -241,7 +241,7 @@ def test_lineage_rejects_metadata_injection_order_mismatch(
     with pytest.raises(IdentityContractError, match="injection_order.*request binding"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(sample,),
         )
@@ -251,13 +251,12 @@ def test_lineage_composition_rejects_raw_or_cross_request_references(
     tmp_path: Path,
 ) -> None:
     request = _request(tmp_path, payload=b"request-a")
-    other_request = _request(tmp_path, payload=b"request-b")
-    attempt = issue_processing_attempt(other_request)
+    issue_processing_attempt()
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
     )
-    sample = resolve_canonical_sample_identity(
+    resolve_canonical_sample_identity(
         sample_snapshot,
         "request-a",
     )
@@ -265,24 +264,17 @@ def test_lineage_composition_rejects_raw_or_cross_request_references(
         sample_snapshot,
         "request-b",
     )
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        compose_processing_owner_references(
-            request=request,
-            attempt=attempt,
-            sample_snapshot=sample_snapshot,
-            sample_resolutions=(sample,),
-        )
     with pytest.raises(IdentityContractError, match="cover.*acquisition binding"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=(wrong_sample,),
         )
     with pytest.raises(IdentityContractError, match="owner-resolved"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=sample_snapshot,
             sample_resolutions=("Sample A",),  # type: ignore[arg-type]
         )
@@ -305,7 +297,7 @@ def test_lineage_rejects_resolutions_mixed_across_owner_snapshots(
     with pytest.raises(IdentityContractError, match="same sample metadata snapshot"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=complete,
             sample_resolutions=(first, mixed_second),
         )
@@ -324,7 +316,7 @@ def test_lineage_rejects_two_sources_collapsed_to_one_canonical_sample(
     with pytest.raises(IdentityContractError, match="distinct canonical sample"):
         compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=collapsed,
             sample_resolutions=(first, second),
         )

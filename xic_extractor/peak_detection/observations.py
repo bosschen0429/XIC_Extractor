@@ -189,7 +189,6 @@ class RetainedCaptureEvidence:
     """Actual capture inputs and output, with no scientific decision authority."""
 
     sample_key: str
-    processing_request_id: str
     processing_attempt_id: str
     method_subject_id: str
     candidate_id: str | None

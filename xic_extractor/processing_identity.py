@@ -285,40 +285,10 @@ class AcquisitionInputBinding:
             raise IdentityContractError("injection_order must be a positive integer")
 
 
-def _request_basis(
-    *,
-    acquisition_sources: tuple[AcquisitionSourceIdentity, ...],
-    acquisition_bindings: tuple[AcquisitionInputBinding, ...],
-    scientific_input_schema_version: str,
-    processing_algorithm_version: str,
-    processing_contract_version: str,
-    normalized_scientific_inputs_json: str,
-) -> dict[str, object]:
-    return {
-        "schema": "processing_request_identity",
-        "acquisition_sources": [
-            source.acquisition_source_id for source in acquisition_sources
-        ],
-        "acquisition_bindings": [
-            {
-                "acquisition_source_id": binding.acquisition_source_id,
-                "adapter_input_key": binding.adapter_input_key,
-                "injection_order": binding.injection_order,
-            }
-            for binding in acquisition_bindings
-        ],
-        "scientific_input_schema_version": scientific_input_schema_version,
-        "processing_algorithm_version": processing_algorithm_version,
-        "processing_contract_version": processing_contract_version,
-        "normalized_scientific_inputs": json.loads(normalized_scientific_inputs_json),
-    }
-
-
 @dataclass(frozen=True, slots=True)
 class ProcessingRequestIdentity:
     """Immutable normalized scientific request over identified sources."""
 
-    processing_request_id: str
     acquisition_sources: tuple[AcquisitionSourceIdentity, ...]
     acquisition_bindings: tuple[AcquisitionInputBinding, ...]
     scientific_input_schema_version: str
@@ -327,11 +297,6 @@ class ProcessingRequestIdentity:
     normalized_scientific_inputs_json: str
 
     def __post_init__(self) -> None:
-        request_id = _validate_typed_id(
-            self.processing_request_id,
-            prefix=_PROCESSING_REQUEST_PREFIX,
-            field="processing_request_id",
-        )
         if (
             not isinstance(self.acquisition_sources, tuple)
             or not self.acquisition_sources
@@ -389,15 +354,15 @@ class ProcessingRequestIdentity:
         if len(self.acquisition_bindings) != len(source_ids):
             raise IdentityContractError("bindings must cover each source exactly once")
 
-        schema_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.scientific_input_schema_version,
             field="scientific_input_schema_version",
         )
-        algorithm_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.processing_algorithm_version,
             field="processing_algorithm_version",
         )
-        contract_version = _require_nonempty_text(
+        _require_nonempty_text(
             self.processing_contract_version,
             field="processing_contract_version",
         )
@@ -417,29 +382,12 @@ class ProcessingRequestIdentity:
                 "normalized_scientific_inputs_json must be canonical JSON object"
             )
 
-        expected_id = _typed_digest(
-            _PROCESSING_REQUEST_PREFIX,
-            _request_basis(
-                acquisition_sources=self.acquisition_sources,
-                acquisition_bindings=self.acquisition_bindings,
-                scientific_input_schema_version=schema_version,
-                processing_algorithm_version=algorithm_version,
-                processing_contract_version=contract_version,
-                normalized_scientific_inputs_json=normalized_json,
-            ),
-        )
-        if request_id != expected_id:
-            raise IdentityContractError(
-                "processing_request_id rebind mismatches immutable request"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class ProcessingAttemptIdentity:
-    """Unique execution identity referencing one processing request."""
+    """One execution of a request; a retry links its predecessor attempt."""
 
     processing_attempt_id: str
-    processing_request_id: str
     retry_of: ProcessingAttemptIdentity | None = None
 
     @property
@@ -454,20 +402,11 @@ class ProcessingAttemptIdentity:
         attempt_id = require_attempt_uuid(
             self.processing_attempt_id, error_factory=IdentityContractError
         )
-        request_id = _validate_typed_id(
-            self.processing_request_id,
-            prefix=_PROCESSING_REQUEST_PREFIX,
-            field="processing_request_id",
-        )
         retry_of = self.retry_of
         if retry_of is not None:
             if not isinstance(retry_of, ProcessingAttemptIdentity):
                 raise IdentityContractError(
                     "retry_of must be a ProcessingAttemptIdentity"
-                )
-            if retry_of.processing_request_id != request_id:
-                raise IdentityContractError(
-                    "retry predecessor references a different processing request"
                 )
             if retry_of.processing_attempt_id == attempt_id:
                 raise IdentityContractError("an attempt cannot retry itself")
@@ -489,10 +428,6 @@ def retry_predecessor_attempt_ids(
         predecessor_id = predecessor.processing_attempt_id
         if predecessor_id in seen:
             raise IdentityContractError("retry predecessor chain must be acyclic")
-        if predecessor.processing_request_id != attempt.processing_request_id:
-            raise IdentityContractError(
-                "retry predecessor chain references a different processing request"
-            )
         seen.add(predecessor_id)
         predecessor_ids.append(predecessor.processing_attempt_id)
         predecessor = predecessor.retry_of
@@ -517,10 +452,6 @@ class ProcessingOwnerReferences:
             raise IdentityContractError("request must be a ProcessingRequestIdentity")
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
             raise IdentityContractError("attempt must be a ProcessingAttemptIdentity")
-        if self.attempt.processing_request_id != self.request.processing_request_id:
-            raise IdentityContractError(
-                "attempt references a different processing request"
-            )
         if not isinstance(self.sample_snapshot, SampleMetadataSnapshot):
             raise IdentityContractError("sample_snapshot must be owner-minted")
         if not isinstance(self.sample_resolutions, tuple) or any(
@@ -856,17 +787,7 @@ def build_processing_request_identity(
                 ),
             )
         )
-    basis = _request_basis(
-        acquisition_sources=acquisition_sources,
-        acquisition_bindings=acquisition_bindings,
-        scientific_input_schema_version=scientific_input_schema_version,
-        processing_algorithm_version=processing_algorithm_version,
-        processing_contract_version=processing_contract_version,
-        normalized_scientific_inputs_json=normalized_json,
-    )
-    request_id = _typed_digest(_PROCESSING_REQUEST_PREFIX, basis)
     return ProcessingRequestIdentity(
-        processing_request_id=request_id,
         acquisition_sources=acquisition_sources,
         acquisition_bindings=acquisition_bindings,
         scientific_input_schema_version=scientific_input_schema_version,
@@ -877,24 +798,15 @@ def build_processing_request_identity(
 
 
 def issue_processing_attempt(
-    request: ProcessingRequestIdentity,
     *,
     retry_of: ProcessingAttemptIdentity | None = None,
 ) -> ProcessingAttemptIdentity:
-    """Issue a fresh attempt token, optionally linked to a same-request retry."""
+    """Issue a fresh attempt token, optionally linked to the attempt it retries."""
 
-    if not isinstance(request, ProcessingRequestIdentity):
-        raise IdentityContractError("request must be a ProcessingRequestIdentity")
-    if retry_of is not None:
-        if not isinstance(retry_of, ProcessingAttemptIdentity):
-            raise IdentityContractError("retry_of must be a ProcessingAttemptIdentity")
-        if retry_of.processing_request_id != request.processing_request_id:
-            raise IdentityContractError(
-                "retry predecessor references a different processing request"
-            )
+    if retry_of is not None and not isinstance(retry_of, ProcessingAttemptIdentity):
+        raise IdentityContractError("retry_of must be a ProcessingAttemptIdentity")
     return ProcessingAttemptIdentity(
         processing_attempt_id=str(uuid.uuid4()),
-        processing_request_id=request.processing_request_id,
         retry_of=retry_of,
     )
 

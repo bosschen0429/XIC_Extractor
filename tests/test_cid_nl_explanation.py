@@ -59,7 +59,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 def _summary_fixture(values, *, review_only=False):
     """Complete persisted metadata for small diagnostic writer fixtures."""
     summary = {
-        "processing_request_id": "fixture",
         "scientific_input_schema_version": "fixture",
         "processing_algorithm_version": "fixture",
         "processing_contract_version": "fixture",

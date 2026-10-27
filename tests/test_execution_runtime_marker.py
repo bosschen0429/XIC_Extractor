@@ -134,7 +134,6 @@ def test_finalization_atomically_replaces_launch_with_terminal_status(
     assert set(payload) == {
         "schema_version",
         "state",
-        "processing_request_id",
         "processing_attempt_id",
         "artifact_namespace",
         "manifest_work_unit_keys",
@@ -215,16 +214,13 @@ def test_marker_reader_rejects_obsolete_outer_schema(tmp_path: Path) -> None:
         marker.read()
 
 
-@pytest.mark.parametrize("field", ["processing_request_id", "processing_attempt_id"])
-def test_marker_reader_rejects_invalid_persisted_identity(
-    tmp_path: Path, field: str
-) -> None:
+def test_marker_reader_rejects_invalid_persisted_identity(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json", "runtime-attempt-artifacts:a"
     )
     marker.record_launch(_runtime(_attempt(tmp_path)))
     payload = json.loads(marker.path.read_bytes())
-    payload[field] = "../different-attempt"
+    payload["processing_attempt_id"] = "../different-attempt"
     marker.path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(RuntimeFinalizationContractError, match="processing identity"):
@@ -528,7 +524,7 @@ def _attempt(
         acquisition_format="thermo_raw",
         observation_namespace="thermo.raw.ms_controller_1",
     )
-    request = build_processing_request_identity(
+    build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -542,4 +538,4 @@ def _attempt(
         processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
-    return issue_processing_attempt(request)
+    return issue_processing_attempt()

@@ -203,7 +203,6 @@ def export_explanation_curves(
                             "candidate_id": observation["candidate_id"],
                             "new_diagnostic_extraction": True,
                             "source_binding_basis": _SOURCE_BINDING_BASIS,
-                            "processing_request_id": summary["processing_request_id"],
                             "processing_attempt_id": summary["processing_attempt_id"],
                         },
                     )
@@ -222,7 +221,6 @@ def export_explanation_curves(
                 review_rt_window=window,
                 quality_flags={
                     "new_diagnostic_extraction": True,
-                    "processing_request_id": summary["processing_request_id"],
                     "processing_attempt_id": summary["processing_attempt_id"],
                 },
                 traces=tuple(traces),
@@ -344,10 +342,7 @@ def _review_mass_policies(
     payload = metadata.get("mass_recalibration_by_sample")
     if payload is None:
         return {}
-    if any(
-        metadata.get(key) != summary[key]
-        for key in ("processing_request_id", "processing_attempt_id")
-    ):
+    if any(metadata.get(key) != summary[key] for key in ("processing_attempt_id",)):
         raise ExplanationError(
             "Alignment metadata 不屬於這份檢閱結果，請使用同次執行的檔案。"
         )

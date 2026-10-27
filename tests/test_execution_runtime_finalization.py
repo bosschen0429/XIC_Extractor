@@ -650,7 +650,7 @@ def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
         acquisition_format="thermo_raw",
         observation_namespace="thermo.raw.ms_controller_1",
     )
-    request = build_processing_request_identity(
+    build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -664,4 +664,4 @@ def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
         processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
-    return issue_processing_attempt(request)
+    return issue_processing_attempt()

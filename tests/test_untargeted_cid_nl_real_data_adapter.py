@@ -247,7 +247,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -595,7 +595,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -1052,7 +1052,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
             method_subject=subject,
             owners=compose_processing_owner_references(
                 request=request,
-                attempt=issue_processing_attempt(request),
+                attempt=issue_processing_attempt(),
                 sample_snapshot=fixture.owners.sample_snapshot,
                 sample_resolutions=fixture.samples,
             ),
@@ -1693,7 +1693,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2277,7 +2277,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2600,7 +2600,7 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2684,7 +2684,7 @@ def test_physical_backfill_context_is_not_search_permission(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -2856,7 +2856,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
@@ -3056,7 +3056,7 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )

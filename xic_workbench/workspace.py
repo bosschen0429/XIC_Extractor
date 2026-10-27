@@ -226,7 +226,6 @@ class ReviewWorkspace:
                 }
                 for row in page.payload["summary"]["samples"]
             ],
-            "request_id": page.payload["summary"].get("processing_request_id", ""),
             "samples": page.payload["samples"],
             "run_total": page.run_total,
             "matched_count": page.matched_count,

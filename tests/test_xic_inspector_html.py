@@ -104,7 +104,6 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         title="Origin curves",
         evidence_capability="retained_curves",
         strategy="sample",
-        request_id="origin",
         run_total=1,
         eligible_count=1,
         selected_count=1,
@@ -156,7 +155,6 @@ def test_hostile_fields_stay_data_in_portable_report() -> None:
         title=title,
         evidence_capability="metadata_only",
         strategy="query",
-        request_id="r",
         run_total=1,
         eligible_count=1,
         selected_count=1,
@@ -197,7 +195,6 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
         title="Generic report",
         evidence_capability="metadata_only",
         strategy="sample",
-        request_id="generic",
         run_total=1,
         eligible_count=1,
         selected_count=1,
@@ -261,7 +258,6 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
         title="Pair support report",
         evidence_capability="metadata_only",
         strategy="sample",
-        request_id="pair-support",
         run_total=1,
         eligible_count=1,
         selected_count=1,
@@ -319,7 +315,6 @@ def test_record_scope_does_not_become_a_candidate_adoption_claim() -> None:
         title="Scoped reference",
         evidence_capability="metadata_only",
         strategy="sample",
-        request_id="scoped",
         run_total=1,
         eligible_count=1,
         selected_count=1,
@@ -339,7 +334,6 @@ def test_build_and_write_report_atomically() -> None:
             title="測試報告",
             evidence_capability="retained_curves",
             strategy="sample",
-            request_id="req-123",
             run_total=100,
             eligible_count=50,
             selected_count=10,
@@ -352,7 +346,6 @@ def test_build_and_write_report_atomically() -> None:
         content = out.read_text(encoding="utf-8")
         assert "測試報告" in content
         assert "retained_curves" in content
-        assert "req-123" in content
         # Check no temporary files left
         tmp_files = list(out.parent.glob("*.tmp.*"))
         assert len(tmp_files) == 0
@@ -388,7 +381,6 @@ def _relationship_render(payload, expression):
         title="Relationships",
         evidence_capability="retained_curves",
         strategy="sample",
-        request_id="relationships",
         run_total=1,
         eligible_count=1,
         selected_count=1,

@@ -115,7 +115,6 @@ def _emit_curve_payload(
     actual = {
         "profile_version": None,
         "acquisition_source_id": None,
-        "processing_request_id": None,
         "processing_attempt_id": None,
         "selected_trace_indices": None,
         "resolver_mode": None,
@@ -268,7 +267,6 @@ def prepare_alignment_explanation(
     ) as sink:
         application = completed.application_result
         request = application.processing_request
-        request_id = request.processing_request_id
         subjects = cid_nl_method_subject_batch_from_request(request)
         memberships = dict(subjects.candidate_memberships)
         membership_risks = {
@@ -434,7 +432,6 @@ def prepare_alignment_explanation(
                 ),
                 evaluation=record.evaluation,
                 provenance={
-                    "processing_request_id": request_id,
                     "processing_attempt_id": (
                         application.processing_attempt.processing_attempt_id
                     ),
@@ -468,7 +465,6 @@ def prepare_alignment_explanation(
                 evaluation=evidence.physical_evaluation,
                 provenance=_fields(
                     evidence,
-                    "processing_request_id",
                     "processing_attempt_id",
                     "method_subject_id",
                 ),
@@ -826,7 +822,6 @@ def prepare_alignment_explanation(
             summary = {
                 **_fields(
                     request,
-                    "processing_request_id",
                     "scientific_input_schema_version",
                     "processing_algorithm_version",
                     "processing_contract_version",

@@ -246,27 +246,14 @@ def test_rejected_disposition_is_retained(
     assert handoff.position_associations[0].final_successor.disposition == "rejected"
 
 
-def test_crossed_request_and_zero_successor_reject(
+def test_zero_successor_rejects(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path / "one", sample_stems=("sample-a",))
     other = _fixture(tmp_path / "two", sample_stems=("sample-x",))
     group = _group(fixture, ("sample-a",))
-    other_group = _group(other, ("sample-x",))
+    _group(other, ("sample-x",))
     coverage = _coverage(fixture, (group,))
-
-    with pytest.raises(
-        CrossSampleAssociationContractError,
-        match="cross processing request",
-    ):
-        build_cross_sample_association_lineage_handoff(
-            coverage=coverage,
-            final_receipt=_final_receipt(
-                other,
-                predecessors=(other_group,),
-                successors=(other_group,),
-            ),
-        )
 
     valid_receipt = _final_receipt(
         fixture,
@@ -394,7 +381,7 @@ def _coverage_context(
     return _CoverageContext(
         processing_owners=compose_processing_owner_references(
             request=request,
-            attempt=issue_processing_attempt(request),
+            attempt=issue_processing_attempt(),
             sample_snapshot=snapshot,
             sample_resolutions=resolved,
         ),

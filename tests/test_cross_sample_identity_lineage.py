@@ -39,7 +39,7 @@ def _subjects(tmp_path, *sample_stems: str):
     return fixture, subjects
 
 
-def _mint_group_in_process(processing_request_id, members):
+def _mint_group_in_process(members):
     from xic_extractor.alignment.cross_sample.peak_groups import (
         mint_cross_sample_group_identity,
     )
@@ -71,13 +71,10 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
 
 def test_group_identity_is_order_and_parallelism_invariant(tmp_path) -> None:
     fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
-    request_id = fixture.request.processing_request_id
-
     with ProcessPoolExecutor(max_workers=2) as executor:
         receipts = tuple(
             executor.map(
                 _mint_group_in_process,
-                (request_id, request_id),
                 (members, tuple(reversed(members))),
             )
         )

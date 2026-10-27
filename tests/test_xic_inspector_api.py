@@ -165,7 +165,6 @@ def _create_mock_db(
             ),
             "provenance": {
                 **_curve_provenance(),
-                "processing_request_id": request_id,
                 "processing_attempt_id": attempt_id,
             },
         }
@@ -178,7 +177,6 @@ def _create_mock_db(
         writer.finalize(
             _summary_fixture(
                 {
-                    "processing_request_id": request_id,
                     "processing_attempt_id": attempt_id,
                     "matrix_path": str(matrix_path),
                     "matrix_sha256": matrix_hash,
@@ -262,7 +260,6 @@ def test_generate_report_sample_strategy_success() -> None:
         metadata_start = re.search(r"\bmetadata\s*:\s*(\{)", content).start(1)
         metadata, _ = json.JSONDecoder().raw_decode(content[metadata_start:])
         assert title == metadata["title"] == "Inspector"
-        assert res.source.processing_request_id not in title + metadata["title"]
         assert "retained_curves" in content
 
 
@@ -281,7 +278,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         "cell_observation_id": "cell-observation-02",
         "feature_id": "G1",
         "sample_key": "S2",
-        "processing_request_id": "req-01",
         "evidence_states": [],
         "predecessor_cells": [],
     }
@@ -770,7 +766,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     )
 
 
-@pytest.mark.parametrize("failure", ["missing", "request", "attempt", "sample"])
+@pytest.mark.parametrize("failure", ["missing", "attempt", "sample"])
 def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     import zlib
 
@@ -788,8 +784,6 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
             payload = json.loads(zlib.decompress(blob))
             if failure == "attempt":
                 payload["provenance"]["processing_attempt_id"] = "another-attempt"
-            elif failure == "request":
-                payload["provenance"]["processing_request_id"] = "another-request"
             else:
                 payload["sample_id"] = "S2"
             connection.execute(
@@ -1728,13 +1722,11 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
         >= {
             "曲線 evidence ref": 1,
             "觀察 ID": "obs-01",
-            "處理 request ID": "req-01",
             "處理 attempt ID": "att-01",
         }.items()
     )
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
     assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
-    assert curve["provenance"]["processing_request_id"] == "req-01"
     assert item["samples"][0]["decision_refs"] == ["cd-01"]
     assert item["samples"][0]["decision_reason"] == "來源未記錄定量理由。"
 

@@ -146,10 +146,6 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
         processing_contract_version="golden_contract",
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
-    assert request.processing_request_id == (
-        "xic.processing-request:"
-        "0e72426ca2d554e64d699c239ebbe47b089ff65ec05945d65aea87d4eec8af09"
-    )
 
     changed_algorithm = build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,
@@ -159,13 +155,13 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
         processing_contract_version=request.processing_contract_version,
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
-    assert changed_algorithm.processing_request_id != request.processing_request_id
+    assert changed_algorithm != request
 
     monkeypatch.setattr(
         "xic_extractor.processing_identity.uuid.uuid4",
         lambda: UUID("00112233-4455-6677-8899-aabbccddeeff"),
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     assert attempt.processing_attempt_id == "00112233-4455-6677-8899-aabbccddeeff"
 
 
@@ -439,7 +435,7 @@ def test_semantic_injection_order_reorder_changes_request(tmp_path: Path) -> Non
         ),
     )
 
-    assert reversed_order.processing_request_id != forward.processing_request_id
+    assert reversed_order != forward
 
 
 def test_real_data_discovery_settings_change_processing_request_identity(
@@ -471,7 +467,7 @@ def test_real_data_discovery_settings_change_processing_request_identity(
         current_discovery_settings=changed_settings,
     )
 
-    assert changed.processing_request_id != first.processing_request_id
+    assert changed != first
     request_inputs = json.loads(first.normalized_scientific_inputs_json)
     snapshot = request_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY]
     assert snapshot["settings"]["product_search_ppm"] == 50.0
@@ -502,7 +498,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     )
 
     assert original.acquisition_sources == renamed.acquisition_sources
-    assert original.processing_request_id != renamed.processing_request_id
+    assert original != renamed
 
 
 def test_targeted_request_uses_local_revision_without_reading_raw_content(
@@ -558,11 +554,11 @@ def test_request_invalidates_changed_source_or_target_window(
     )
 
     changed_ids = {
-        substituted.processing_request_id,
-        target_changed.processing_request_id,
-        rt_changed.processing_request_id,
+        substituted,
+        target_changed,
+        rt_changed,
     }
-    assert baseline.processing_request_id not in changed_ids
+    assert baseline not in changed_ids
     assert len(changed_ids) == 3
 
 
@@ -588,7 +584,7 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
         targets=(second_target, first_target),
     )
 
-    assert reordered.processing_request_id != forward.processing_request_id
+    assert reordered != forward
     assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
 
 
@@ -625,12 +621,12 @@ def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     config = _config(tmp_path)
     inputs = _resolved_inputs()
     request = _request(config, paths, resolved=inputs)
-    original_id = request.processing_request_id
+    original_id = request
 
     inputs.injection_order["sample_a"] = 9
 
-    assert request.processing_request_id == original_id
-    assert _request(config, paths, resolved=inputs).processing_request_id != original_id
+    assert request == original_id
+    assert _request(config, paths, resolved=inputs) != original_id
 
 
 def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None:
@@ -678,8 +674,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
             injection_order={"sample_a": 1},
         ),
     )
-    with pytest.raises(IdentityContractError, match="rebind"):
-        replace(request, normalized_scientific_inputs_json='{"changed":true}')
 
 
 def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
@@ -872,33 +866,17 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
             injection_order={"sample_a": 1},
         ),
     )
-    first_attempt = issue_processing_attempt(request)
-    retry = issue_processing_attempt(request, retry_of=first_attempt)
+    first_attempt = issue_processing_attempt()
+    retry = issue_processing_attempt(retry_of=first_attempt)
 
     assert retry.processing_attempt_id != first_attempt.processing_attempt_id
-    assert retry.processing_request_id == first_attempt.processing_request_id
     assert retry.retry_of_attempt_id == first_attempt.processing_attempt_id
     assert retry.retry_of is first_attempt
     assert first_attempt.retry_of_attempt_id is None
     assert {field.name for field in fields(first_attempt)} == {
         "processing_attempt_id",
-        "processing_request_id",
         "retry_of",
     }
-
-    changed_request = _request(
-        replace(_config(tmp_path), nl_min_intensity_ratio=0.02),
-        [path],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"sample_a": 1},
-        ),
-    )
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        issue_processing_attempt(changed_request, retry_of=first_attempt)
-
-    foreign_attempt = issue_processing_attempt(changed_request)
-    with pytest.raises(IdentityContractError, match="different processing request"):
-        replace(retry, retry_of=foreign_attempt)
 
     assert request.processing_algorithm_version == (
         TARGETED_PROCESSING_ALGORITHM_VERSION
@@ -1028,9 +1006,7 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
     monkeypatch.setattr(
         targeted_strategy, "TARGETED_PRECURSOR_REFERENCE", "independent_mass"
     )
-    assert (
-        _request(config, paths).processing_request_id != baseline.processing_request_id
-    )
+    assert _request(config, paths) != baseline
     monkeypatch.undo()
     original = targeted_strategy.targeted_tag_profile
     monkeypatch.setattr(
@@ -1038,6 +1014,4 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
         "targeted_tag_profile",
         lambda tag: replace(original(tag), product_search_ppm=51.0),
     )
-    assert (
-        _request(config, paths).processing_request_id != baseline.processing_request_id
-    )
+    assert _request(config, paths) != baseline

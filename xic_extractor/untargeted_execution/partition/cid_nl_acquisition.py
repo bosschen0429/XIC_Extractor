@@ -1300,7 +1300,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         capture_evidence=tuple(
             RetainedCaptureEvidence(
                 sample_key=sample.identity.sample_key,
-                processing_request_id=processing_owners.request.processing_request_id,
                 processing_attempt_id=processing_owners.attempt.processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
@@ -1501,7 +1500,6 @@ def _reacquire_peak_observations(
         captures.append(capture)
         retained = RetainedCaptureEvidence(
             sample_key=sample.identity.sample_key,
-            processing_request_id=processing_owners.request.processing_request_id,
             processing_attempt_id=processing_owners.attempt.processing_attempt_id,
             method_subject_id=binding.method_subject_id,
             candidate_id=candidate.candidate_id,

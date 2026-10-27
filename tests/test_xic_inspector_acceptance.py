@@ -112,7 +112,6 @@ def test_missing_bound_matrix_rejects_generation(
         writer.finalize(
             _summary_fixture(
                 {
-                    "processing_request_id": "req-1",
                     "processing_attempt_id": "att-1",
                     "matrix_path": str(matrix_file),
                     "matrix_sha256": "0" * 64,
@@ -292,7 +291,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     locator = outputs.evidence
     assert isinstance(locator, EvidenceLocator)
     summary = read_cid_nl_explanation(locator.report_path)
-    assert locator.processing_request_id == summary["processing_request_id"]
     assert locator.processing_attempt_id == summary["processing_attempt_id"]
     assert (
         locator.matrix_sha256

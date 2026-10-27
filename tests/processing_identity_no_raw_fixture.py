@@ -57,7 +57,7 @@ class ProcessingIdentityNoRawFixture:
         return matches[0]
 
     def retry(self) -> ProcessingIdentityNoRawFixture:
-        retry_attempt = issue_processing_attempt(self.request, retry_of=self.attempt)
+        retry_attempt = issue_processing_attempt(retry_of=self.attempt)
         retry_owners = compose_processing_owner_references(
             request=self.request,
             attempt=retry_attempt,
@@ -179,7 +179,7 @@ def build_processing_identity_no_raw_fixture(
     )
     target = resolve_target_definition(target_snapshot, "Analyte")
     other_target = resolve_target_definition(target_snapshot, "Other Analyte")
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     owners = compose_processing_owner_references(
         request=request,
         attempt=attempt,
@@ -225,7 +225,7 @@ def build_targeted_processing_identity_raw_fixture(
         current_discovery_settings=current_discovery_settings,
         current_discovery_candidates_by_sample=(current_discovery_candidates_by_sample),
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     owners = compose_processing_owner_references(
         request=request,
         attempt=attempt,

@@ -380,7 +380,7 @@ def compose_partition_context(
     )
     owners = compose_processing_owner_references(
         request=request,
-        attempt=issue_processing_attempt(request),
+        attempt=issue_processing_attempt(),
         sample_snapshot=snapshot,
         sample_resolutions=samples,
     )

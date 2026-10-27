@@ -209,7 +209,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     subject_id = fixture.method_subject.method_subject_id
     parent_scope = _fake_scope(
         request=request,
@@ -245,7 +245,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
             )
         )
 
-    retry = issue_processing_attempt(request, retry_of=attempt)
+    retry = issue_processing_attempt(retry_of=attempt)
     with pytest.raises(
         ApplicationResultContractError,
         match="crossed its processing attempt",
@@ -290,7 +290,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     parent_scope = _fake_scope(
         request=request,
         samples=fixture.samples,
@@ -358,7 +358,7 @@ def test_batch_application_result_requires_owner_candidate_universe(
                 subject_ids=(fixture.method_subject.method_subject_id,),
             ),
             processing_request=request,
-            processing_attempt=issue_processing_attempt(request),
+            processing_attempt=issue_processing_attempt(),
             children=(),
             excluded_candidates=(
                 UntargetedCandidateExclusion(
@@ -426,7 +426,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
             ),
         },
     )
-    attempt = issue_processing_attempt(request)
+    attempt = issue_processing_attempt()
     parent_scope = _fake_scope(
         request=request,
         samples=fixture.samples,
@@ -452,7 +452,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
 
     if case == "wrong_attempt":
         handoff = children[1].scientific_core.cell_observation_handoff
-        handoff.coverage.processing_owners.attempt = issue_processing_attempt(request)
+        handoff.coverage.processing_owners.attempt = issue_processing_attempt()
     elif case == "duplicate_physical":
         children[1].scientific_core.final_population[0].member_subjects[
             0

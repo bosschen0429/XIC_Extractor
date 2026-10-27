@@ -58,7 +58,6 @@ from xic_extractor.xic_models import XICTrace
 
 
 def _bind_mock_publication_inputs(completed, kwargs):
-    completed.processing_request_id = "request-test"
     completed.processing_attempt_id = "attempt-test"
     completed.initial_groups = ()
     candidates = kwargs["candidates_by_sample"]
@@ -708,10 +707,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             else:
                 assert result.evidence.report_path == report_path
                 assert (
-                    result.evidence.processing_request_id
-                    == completed.processing_request_id
-                )
-                assert (
                     result.evidence.processing_attempt_id
                     == completed.processing_attempt_id
                 )
@@ -1157,7 +1152,6 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         (cli_output / "alignment_run_metadata.json").read_text(encoding="utf-8")
     )
     assert "mass_recalibration_by_sample" in metadata
-    assert metadata["processing_request_id"]
     assert metadata["processing_attempt_id"]
     if not backfill_enabled:
         assert metadata["backfill_execution"] == "not_run"

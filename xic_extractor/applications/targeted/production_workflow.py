@@ -228,9 +228,7 @@ def _validate_finalized_result_population(
             "finalized workflow must return an exact immutable Target result tuple"
         )
     _validate_target_population(request, results)
-    request_ids = {
-        result.processing_request.processing_request_id for result in results
-    }
+    request_ids = {result.processing_request for result in results}
     sample_populations = {
         tuple(sample.identity.sample_key for sample in result.canonical_samples)
         for result in results
@@ -840,7 +838,7 @@ def _prepare_targeted_production_workflow(
         current_inputs.processing_request,
         profile=profile,
     )
-    attempt = issue_processing_attempt(processing_request)
+    attempt = issue_processing_attempt()
     owners = compose_processing_owner_references(
         request=processing_request,
         attempt=attempt,
@@ -978,7 +976,7 @@ def _context_for_target(
     if target_index == 0:
         return context
     owners = context.owners
-    attempt = issue_processing_attempt(owners.request)
+    attempt = issue_processing_attempt()
     return replace(
         context,
         owners=compose_processing_owner_references(

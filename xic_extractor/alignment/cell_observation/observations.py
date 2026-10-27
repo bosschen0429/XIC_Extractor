@@ -69,7 +69,6 @@ class FinalGroupCellObservation:
     quantifiability authority.
     """
 
-    processing_request_id: str
     group: CrossSampleGroupIdentity
     canonical_sample: ResolvedCanonicalSampleIdentity
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
@@ -195,7 +194,6 @@ def _compose_final_group_cell_observation_population(
     predecessor_cells: tuple[CellObservationRef, ...],
     backfill_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
-    request_id = handoff.coverage.processing_owners.request.processing_request_id
     backfilled_by_key: dict[tuple[str, str], CellObservationRef] = {}
     for backfill_ref in backfill_cells:
         key = (
@@ -209,7 +207,6 @@ def _compose_final_group_cell_observation_population(
     source_by_position = _index_predecessor_cells(
         predecessor_cells,
         positions=positions,
-        processing_request_id=request_id,
     )
     associations_by_key: dict[
         tuple[int, int], list[CrossSampleCoveragePositionAssociation]
@@ -276,13 +273,11 @@ def _compose_final_group_cell_observation_population(
                         source_cell=source_by_position.get(association.position.key),
                         final_group=group,
                         canonical_sample=sample,
-                        processing_request_id=request_id,
                     )
                     for association in associations
                 )
             cells.append(
                 FinalGroupCellObservation(
-                    processing_request_id=request_id,
                     group=group,
                     canonical_sample=sample,
                     position_associations=associations,
@@ -302,7 +297,6 @@ def _index_predecessor_cells(
     predecessor_cells: Sequence[CellObservationRef],
     *,
     positions: tuple[BackfillPlanningPosition, ...],
-    processing_request_id: str,
 ) -> dict[tuple[str, str], CellObservationRef]:
     if isinstance(predecessor_cells, (str, bytes)):
         raise CellObservationContractError(
@@ -364,7 +358,6 @@ def _derive_lane_evidence_state(
     source_cell: CellObservationRef | None,
     final_group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
-    processing_request_id: str,
 ) -> FinalCellEvidenceState:
     if source_cell is None:
         if (
@@ -449,7 +442,6 @@ def _derive_lane_evidence_state(
             )
         _direct_member_integration(
             member=final_member,
-            processing_request_id=processing_request_id,
             canonical_sample=canonical_sample,
             terminal_variant="observed",
             terminal_hypothesis=source_cell.peak_hypothesis,

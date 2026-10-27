@@ -140,10 +140,6 @@ class FinalizedScientificAlignment:
         )
 
     @property
-    def processing_request_id(self) -> str:
-        return self.processing_request.processing_request_id
-
-    @property
     def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
         return self.grouping_result.final_population
 
@@ -171,10 +167,6 @@ def finalize_scientific_alignment(
     if type(grouping_result) is not CrossSampleGroupingResult:
         raise FinalizedScientificAlignmentContractError(
             "finalization requires an exact CrossSample final receipt"
-        )
-    if grouping_result.processing_request_id != scope.request.processing_request_id:
-        raise FinalizedScientificAlignmentContractError(
-            "CrossSample final receipt crossed the processing request"
         )
     if isinstance(captures, (str, bytes)):
         raise FinalizedScientificAlignmentContractError(
