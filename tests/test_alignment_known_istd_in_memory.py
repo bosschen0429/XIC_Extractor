@@ -79,6 +79,7 @@ def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
     ref = mint_known_istd_reference_from_measurements(targets, coords)
 
     assert isinstance(ref, KnownIstdReference)
+    assert ref.workbook_sha256 == ""
     assert len(ref.coordinates) == 6
 
     # Verify deltas:

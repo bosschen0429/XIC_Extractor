@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import statistics
@@ -46,6 +45,8 @@ class KnownIstdReference:
     """Declared ISTD definitions and measured reference coordinates, never areas."""
 
     workbook_path: str
+    # Empty when the coordinates were measured in memory rather than read from
+    # a file; a path is never hashed in place of file content.
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
@@ -317,14 +318,9 @@ def mint_known_istd_reference_from_measurements(
         for (label, sample), rt in sorted(coordinates.items())
         if label in centers
     )
-    sha = (
-        source_sha256
-        if source_sha256
-        else hashlib.sha256(source_identifier.encode("utf-8")).hexdigest()
-    )
     return KnownIstdReference(
         workbook_path=source_identifier,
-        workbook_sha256=sha,
+        workbook_sha256=source_sha256,
         anchor=build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
         coordinates=coords,
         peak_selections=peak_selections,
