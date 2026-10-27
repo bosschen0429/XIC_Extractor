@@ -43,6 +43,11 @@ values or decisions.
   not for reading the batch.
 - `面積` projects every saved Area, including zero, ND and blank, independent of
   counted detection. It calculates no ratio.
+- An observed Target with unavailable quantitation has blank RT/Area rather than
+  ND. Its `NL Evidence` still states any observed CID-NL, and `Reason` separates
+  supported identity from unavailable quantity. `Counted Detection` remains false
+  because the quantitative result is unavailable; this does not mean the target
+  evidence was absent.
 - A review reason names the evidence the saved decision rests on, and the
   suggested check names the one thing that could overturn it. A counted analyte
   rests on its MS1 peak at the paired ISTD position (or on observed neutral

@@ -32,6 +32,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_OBSERVATION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
@@ -680,10 +681,32 @@ def _physical_segment_support_failure(
     # discovering each local maximum. Surface ripples cannot erase that
     # contour's acquired support and full rise/fall. Discovery and Backfill
     # retain their nearest-valley contrast requirement.
-    if selection_policy_version != PHYSICAL_PEAK_REFERENCE_POLICY:
+    if selection_policy_version not in {
+        PHYSICAL_PEAK_REFERENCE_POLICY,
+        PHYSICAL_PEAK_OBSERVATION_POLICY,
+    }:
         prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
+    if selection_policy_version == PHYSICAL_PEAK_OBSERVATION_POLICY:
+        # Quantitation compares the contour to acquired flanking background.
+        # The rise/fall of a sparsely sampled peak is signal, not a noise sample.
+        # Keep each flank separate so the gap across the peak adds no residual.
+        flank_points = prepared.profile.window_points
+        flank_noise = []
+        for start, end in (
+            (max(0, left - flank_points), left),
+            (right, min(len(prepared.rt), right + flank_points)),
+        ):
+            sigma = short_scale_noise_sigma(
+                np.asarray(prepared.rt[start:end]),
+                np.asarray(prepared.raw[start:end]),
+            )
+            if sigma is not None:
+                flank_noise.append(sigma)
+        if not flank_noise:
+            return "insufficient_quantitation_context"
+        noise_sigma = max(flank_noise)
     minimum_contrast = (
         BACKFILL_MIN_CONTRAST_SIGMA
         if selection_policy_version
@@ -691,7 +714,10 @@ def _physical_segment_support_failure(
         else DISCOVERY_MIN_CONTRAST_SIGMA
     )
     if prominence < minimum_contrast * noise_sigma:
-        if selection_policy_version == PHYSICAL_PEAK_REFERENCE_POLICY:
+        if selection_policy_version in {
+            PHYSICAL_PEAK_REFERENCE_POLICY,
+            PHYSICAL_PEAK_OBSERVATION_POLICY,
+        }:
             return "insufficient_reference_peak_contrast"
         return (
             "insufficient_backfill_peak_contrast"
@@ -733,7 +759,12 @@ def answer_physical_peak_question(
                 selected,
                 selection_policy_version=question.selection_policy_version,
             )
-            if support_failure:
+            if question.selection_policy_version == PHYSICAL_PEAK_OBSERVATION_POLICY:
+                # Observation existence and quantitative suitability are different
+                # answers. Retain the geometry and any method evidence even when
+                # the diagnostic integral must not become a reported quantity.
+                reason = support_failure
+            elif support_failure:
                 state, reason = "unavailable", support_failure
                 selected = None
             elif (
@@ -743,8 +774,13 @@ def answer_physical_peak_question(
                 # Shared acquired support and local contrast qualify the peak.
                 # Overlap remains review evidence on the measured interval.
                 background_qualified = True
+    answer_schema = (
+        "physical_observation_answer"
+        if question.selection_policy_version == PHYSICAL_PEAK_OBSERVATION_POLICY
+        else "physical_peak_answer"
+    )
     answer = PhysicalPeakAnswer(
-        schema_version="physical_peak_answer",
+        schema_version=answer_schema,
         state=state,
         reason=reason,
         question=question,

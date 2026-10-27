@@ -412,21 +412,23 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
             for s in ("S0", "S1", "S2", "S3")
         ),
     )
-    assert next(
-        rt
-        for label, sample, rt, _ in reference.coordinates
-        if label == "I3" and sample == "S2"
-    ) == pytest.approx(9.7 if separate_batch else 23.2, abs=0.021)
+    recovered = {(label, sample): rt for label, sample, rt, _ in reference.coordinates}
+    if separate_batch:
+        assert ("I3", "S2") not in recovered
+        assert not any(
+            s.label == "I3" and s.sample_stem == "S2" for s in reference.peak_selections
+        )
+        return
+    else:
+        assert recovered["I3", "S2"] == pytest.approx(23.2, abs=0.021)
     selection = next(
         s
         for s in reference.peak_selections
         if s.label == "I3" and s.sample_stem == "S2"
     )
-    assert selection.initial_rt_min == pytest.approx(9.7, abs=0.021)
-    if separate_batch:
-        assert selection.basis == "direct_targeted"
-        assert selection.supporting_samples == ()
-        return
+    # Remote NL at 9.7 is outside the reference-localized Target population.
+    # Only same-batch evidence can establish the unfragmented local reference.
+    assert selection.initial_rt_min is None
     assert selection.selected_rt_min == pytest.approx(23.2, abs=0.021)
     assert not selection.nl_observed
     assert selection.basis == "cross_sample_physical_peak"

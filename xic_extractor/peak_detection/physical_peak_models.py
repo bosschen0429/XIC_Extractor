@@ -14,6 +14,7 @@ PhysicalPeakState = Literal["available", "unavailable", "failed"]
 PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
 PHYSICAL_PEAK_REFERENCE_POLICY = "reference_localized_contour_peak"
+PHYSICAL_PEAK_OBSERVATION_POLICY = "reference_localized_observation"
 PHYSICAL_PEAK_NO_SELECTION_POLICY = "no_selected_physical_segment"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
 # The group RT resolves several peaks in the context, and a tail that settles
@@ -26,6 +27,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_REFERENCE_POLICY,
+        PHYSICAL_PEAK_OBSERVATION_POLICY,
         PHYSICAL_PEAK_NO_SELECTION_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
@@ -172,6 +174,17 @@ class PhysicalPeakEvaluation:
     operations: tuple[PhysicalPeakOperation, ...]
     # Live owner intermediates for projection; not scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+
+    @property
+    def quantitation_failure(self) -> str:
+        """An observed contour can retain identity evidence without a usable area.
+
+        Its integration remains a diagnostic descriptor, not a publishable value.
+        The observation policy records this decision in the persisted answer.
+        """
+        if self.question.selection_policy_version == PHYSICAL_PEAK_OBSERVATION_POLICY:
+            return self.reason
+        return ""
 
     def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:
         # The complete answer graph is frozen dataclasses, tuples and scalars.

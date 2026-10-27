@@ -81,6 +81,14 @@ def project_targeted_result(
             else selection_decision.not_counted_reasons,
         )
     )
+    if (
+        result.physical_evaluation is not None
+        and result.physical_evaluation.quantitation_failure
+    ):
+        not_counted = _merge_reasons(not_counted, ("not_quantifiable",))
+        review = _merge_reasons(
+            review, (result.physical_evaluation.quantitation_failure,)
+        )
     exclusions: tuple[str, ...] = ()
     if selection_decision is not None:
         exclusions = _merge_reasons(
@@ -397,7 +405,9 @@ def build_targeted_product_projection(
             support,
             review,
             conflicts,
-            ("missing_positive_ms1_peak",),
+            ("not_quantifiable",)
+            if "not_quantifiable" in not_counted
+            else ("missing_positive_ms1_peak",),
             exclusions,
             legacy,
         )

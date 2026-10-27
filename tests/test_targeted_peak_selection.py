@@ -23,6 +23,137 @@ from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 
 @pytest.mark.parametrize(
+    "core,quantifiable", [([480.0, 590.0, 750.0], True), ([930.0], False)]
+)
+def test_target_keeps_sparse_direct_evidence_before_quantitation(
+    tmp_path, monkeypatch, core, quantifiable
+):
+    from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+
+    config = _config(tmp_path)
+    target = replace(_target(), is_istd=True, istd_pair="", cid_nl_tag="dR")
+    rt = np.arange(5.0, 14.0, 0.0415)
+    intensity = np.zeros_like(rt)
+    start = int(np.argmin(abs(rt - 8.5)))
+    intensity[start : start + len(core)] = core
+    # Neither a clean local MS1-only peak nor a distant peak can replace the
+    # directly supported observation merely because it is harder to quantify.
+    intensity += 2000 * np.exp(-0.5 * ((rt - 10.0) / 0.10) ** 2)
+    intensity += 3000 * np.exp(-0.5 * ((rt - 12.0) / 0.10) ** 2)
+    scan = Ms2Scan(
+        42,
+        float(rt[start] + 0.02),
+        target.mz,
+        np.array([target.mz - target.neutral_loss_da]),
+        np.array([1000.0]),
+        1000.0,
+    )
+    prepared = prepare_physical_signal(rt, intensity)
+    assessment = targeted_peak_selection.assess_targeted_candidate_population(
+        target=target,
+        config=config,
+        trace_group=targeted_extraction_trace_group(
+            sample_name="sample",
+            target=target,
+            config=config,
+            rt=rt,
+            intensity=intensity,
+            rt_min=5.0,
+            rt_max=14.0,
+            expected_rt_min=8.5,
+        ),
+        prepared_result=prepared,
+        universe=enumerate_physical_segment_universe(prepared),
+        selection_window=(5.0, 14.0),
+        preferred_rt=8.5,
+        strict_preferred_rt=False,
+        method_window=Ms2Window("sample", 5.0, 14.0, (Ms2ScanEvent(scan, None, 42),)),
+    )
+    assert any(e.nl_match for e in assessment.candidate_ms2_evidence.values())
+    assert all(
+        abs(c.selection_apex_rt - 8.5) <= 2 for c in assessment.candidates.candidates
+    )
+    builder = build_scoring_context_factory(config=config)(
+        target=target,
+        sample_name="sample",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=prepared,
+        istd_rt_in_this_sample=None,
+        paired_istd_fwhm=None,
+        target_reference_rt=8.5,
+        candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
+    )
+    ranked = assessment.rank_candidates(
+        scoring_context_builder=builder,
+        istd_confidence_note=None,
+        paired_istd_anchor_rt=None,
+    )
+    result = assessment.complete_result(ranked, scoring_context_builder=builder)
+    assert result.selected_cid_nl_supported
+    assert result.nl_token.startswith("OK")
+    assert abs(result.reported_rt - 8.5) < 0.15
+    assert (result.reported_peak_area is not None) == quantifiable
+    from tests.raw_header_fakes import install_fake_raw_headers
+    from xic_extractor.applications.targeted.application import (
+        build_targeted_application_request,
+    )
+    from xic_extractor.applications.targeted.production_workflow import (
+        execute_targeted_production_workflow,
+    )
+    from xic_extractor.extraction.pipeline import _bind_acquisition_sources
+    from xic_extractor.extraction.result_models import FileResult, RunOutput
+    from xic_extractor.output.csv_writers import _long_output_rows
+    from xic_extractor.processing_identity import (
+        AcquisitionSourceExpectation,
+        build_local_acquisition_source_identity,
+    )
+    from xic_extractor.raw_reader import (
+        THERMO_RAW_ACQUISITION_FORMAT,
+        THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+
+    install_fake_raw_headers(monkeypatch)
+    path = tmp_path / "sample.raw"
+    path.write_bytes(b"sample")
+    source = build_local_acquisition_source_identity(
+        path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    stat = path.stat()
+    expectation = AcquisitionSourceExpectation(
+        source=source,
+        path_identity=(
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        ),
+    )
+    output = _bind_acquisition_sources(
+        RunOutput([FileResult("sample", {target.label: result})], []),
+        {"sample": expectation},
+    )
+    request = build_targeted_application_request(
+        config, [target], injection_order={"sample": 1}
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    published = completed.publication_output(request, output)
+    final = published.file_results[0].results[target.label]
+    assert final.selected_cid_nl_supported
+    assert final.nl_token == "OK"
+    assert (final.reported_peak_area is not None) == quantifiable
+    (row,) = _long_output_rows(published.file_results[0], [target])
+    assert row["NL Evidence"] == "已觀察到"
+    if not quantifiable:
+        assert row["Area"] == ""
+        assert "已見目標中性丟失證據" in row["Reason"]
+
+
+@pytest.mark.parametrize(
     "precursor,scan_rt,fragment,relative_intensity,expected",
     [
         (258.1085, 8.5, 126.0662, 1.0, (42,)),

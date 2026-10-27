@@ -36,12 +36,35 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_OBSERVATION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+
+
+def test_observation_preserves_background_contour_but_withholds_quantitation():
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 100.0 + np.random.default_rng(19).normal(0.0, 10.0, len(rt))
+    raw += 5.0 * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
+    observation = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="known-target",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_OBSERVATION_POLICY,
+    )
+    assert observation.state == "available"
+    assert observation.quantitation_failure
+    assert observation.answer.schema_version == "physical_observation_answer"
+    payload = serialize_physical_peak_evaluation(
+        rt,
+        raw,
+        profile=SignalProcessingProfile(),
+        evaluation=observation,
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == observation
 
 
 @pytest.mark.parametrize(

@@ -2017,15 +2017,16 @@ def test_paired_selection_uses_local_peak_in_workbook_and_inspector(
     assert rows["Far"]["Review Reason"] is None
     assert rows["Near"]["Review"] is None
     assert rows["Spike"]["Counted Detection"] == "FALSE"
-    assert rows["Spike"]["Area"] == "ND"
-    assert rows["Spike"]["Review"] is None
-    assert rows["Spike"]["Review Reason"] is None
+    assert rows["Spike"]["Area"] is None
+    assert "無法可靠定量" in rows["Spike"]["Reason"]
+    assert rows["Spike"]["Review"] == "Review"
+    assert rows["Spike"]["Review Reason"]
     from xic_extractor.output.review_queue_model import review_queue_rows
 
     queue = review_queue_rows(
         _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
     )
-    assert not any(row["Target"] == "Analyte" for row in queue)
+    assert {row["Sample"] for row in queue if row["Target"] == "Analyte"} == {"Spike"}
     saved = {
         r["SampleName"]: r
         for r in TargetedWorkbookSource(path).records

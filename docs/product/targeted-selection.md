@@ -71,11 +71,15 @@ MS2 product as proof of unique support.
 
 `peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
 candidate once from typed
-candidate evidence and physical eligibility. Chemical support precedes
+candidate evidence. Chemical support precedes
 localization hints and trace quality; contextual RT and deterministic abundance
-break ties within the supported evidence ordering. Expected RT and paired-ISTD shifts guide identity, not acquisition. Exact-mass
-MS1 candidate coverage spans the sample acquisition interval, including targets
-without MS2. The complete scan population is read once per sample; each tag is
+break ties within the supported evidence ordering. Expected RT and paired-ISTD
+shifts localize candidates, not acquisition. The default candidate half-window
+is two minutes around the current reference; a wider declared target interval
+retains its half-width. The paired-ISTD one-minute constraint still applies when
+that anchor exists. Outside candidates cannot substitute for missing local
+evidence. Exact-mass MS1 acquisition spans the sample acquisition interval,
+including targets without MS2. The complete scan population is read once per sample; each tag is
 parsed once by Discovery, with shared parent-MS1 verification and scan-event
 resolution within each target’s m/z population before candidate-local CID-NL
 assessment. Different recorded precursors from one scan remain available to
@@ -89,13 +93,22 @@ A matching NL at another chromatographic position does not make the two peaks
 interchangeable. This does not crop acquisition or confirm an unsupported
 nearby peak.
 
-For an ISTD with a known reference RT, the shared physical owner uses
-`reference_localized_contour_peak` to qualify a full contour, not each surface
-ripple. The [physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-owns its support requirements and unchanged quantitative values. Candidate
-enumeration and physical answers use the same policy, retained in the physical
-question for replay. Other Targeted candidates, Discovery and Backfill keep
-their existing local-valley qualification.
+For a known Target reference, the shared physical owner uses
+`reference_localized_observation`. Local contours enter method assessment before
+quantitative qualification. The physical answer separately records any
+quantitation failure; a retained diagnostic integral is not publication authority.
+The [physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+owns acquired-core support and flanking-background contrast. Directly supported
+observations remain eligible even when their quantity is unavailable. Without
+direct support, quantifiable local candidates precede non-quantifiable ones;
+the complete assessed population remains retained. Discovery and Backfill keep
+their existing qualification policies.
+
+The cell-decision owner withholds a numeric write for a non-quantifiable
+observation. Its selected CID-NL evidence survives finalization; workbook RT and
+area are blank and its reason distinguishes observed target evidence from an
+unconfirmed candidate. `Counted Detection` still requires usable quantitation.
+This is not a Backfill recovery or a new identity claim inferred from peak shape.
 
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by

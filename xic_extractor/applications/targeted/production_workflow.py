@@ -381,6 +381,8 @@ def _build_publication_output(
             no_write_reason = (
                 ""
                 if render_decision.variant == "numeric"
+                else "not_quantifiable"
+                if render_decision.variant == "not_quantifiable"
                 else getattr(
                     render_decision,
                     "no_write_reason",
@@ -575,7 +577,8 @@ def _finalized_extraction_result(
     captured_physical_evaluation = extraction.physical_evaluation
     reported_evaluation = (
         evidence.hypothesis.peak_observation_refs[0].physical_evaluation
-        if not no_write_reason and type(evidence) is ObservedSearchSubject
+        if no_write_reason in {"", "not_quantifiable"}
+        and type(evidence) is ObservedSearchSubject
         else None
     )
     extraction = reselect_targeted_peak_evidence(extraction, reported_evaluation)

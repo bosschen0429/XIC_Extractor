@@ -20,6 +20,7 @@ TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
 # Selection and final identity use the same method-relative paired-ISTD window.
 TARGETED_PAIRED_RT_TOLERANCE_MIN = 1.0
+TARGETED_REFERENCE_HALF_WINDOW_MIN = 2.0
 
 
 @dataclass(frozen=True)
@@ -47,14 +48,17 @@ def targeted_tag_profile(tag: str) -> TargetedTagProfile:
 def strategy_receipt() -> dict:
     return {
         "strategy": TARGETED_STRATEGY,
-        "candidate_coverage": "complete_acquisition_exact_mass",
-        "expected_rt_usage": "identity_reference_not_acquisition_window",
+        "candidate_coverage": "reference_localized_observations_before_quality",
+        "acquisition_coverage": "complete_acquisition_exact_mass",
+        "expected_rt_usage": "bounded_candidate_scope_not_exact_apex",
+        "reference_half_window_min": TARGETED_REFERENCE_HALF_WINDOW_MIN,
+        "quantitation_policy": "acquired_core_and_flanking_background",
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "cid_nl_evidence_scope": "target_mass_and_physical_peak",
         "cid_nl_ranking_priority": "positive_support_only",
         "hmdc_fragment_identity": "competing_rna_veto_missing_fragments_allow_backfill",
         "paired_istd_rt_tolerance_min": TARGETED_PAIRED_RT_TOLERANCE_MIN,
-        "paired_istd_selection": "qualified_local_candidates_before_chemical_ranking",
+        "paired_istd_selection": "local_method_evidence_before_quantitation",
         "uncalibrated_paired_istd_position": (
             "qualified_identity_and_coelution_rejection"
         ),

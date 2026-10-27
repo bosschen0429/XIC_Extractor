@@ -370,7 +370,9 @@ def _strategy_config(tmp_path):
 
 
 @pytest.mark.parametrize("expected_rt", [2.0, 8.0])
-def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected_rt):
+def test_expected_rt_localizes_candidates_without_cropping_acquisition(
+    tmp_path, expected_rt
+):
     target = _intent_target(expected_rt)
     config = _strategy_config(tmp_path)
     rt = np.linspace(0, 12, 601)
@@ -403,12 +405,12 @@ def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected
     assert requests == [(target.mz, 0.0, 12.0, target.ppm_tol)]
     assert result.cid_nl_evaluation_receipt.search_completed
     assert result.cid_nl_products == ()
-    assert result.candidate_physical_evaluations
+    assert bool(result.candidate_physical_evaluations) == (expected_rt == 8.0)
     assert any(
         abs(item.integration.rt_apex_min - 8) < 0.1
         for item in result.candidate_physical_evaluations
         if item.integration is not None
-    )
+    ) == (expected_rt == 8.0)
     assert not result.cid_nl_relations.supported_candidate_indexes
 
 
@@ -468,7 +470,7 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
 
 @pytest.mark.parametrize(
     ("precursor_offset", "event_rt", "expected_rt", "supported"),
-    [(0.0, 8.0, 8.0, True), (-0.07, 8.0, 2.0, False), (-0.07, 2.0, None, False)],
+    [(0.0, 3.5, 3.5, True), (-0.07, 3.5, 2.0, False), (-0.07, 2.0, None, False)],
 )
 def test_target_identity_does_not_promote_coisolated_mass_compatibility(
     tmp_path, precursor_offset, event_rt, expected_rt, supported
@@ -482,7 +484,7 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
     intensity = (
         10
         + 800 * np.exp(-(((rt - 2) / 0.12) ** 2))
-        + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+        + 1000 * np.exp(-(((rt - 3.5) / 0.12) ** 2))
     )
     scan = Ms2Scan(
         7,
@@ -783,7 +785,7 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         serialize_physical_peak_evaluation,
     )
 
-    target = replace(_intent_target(15.5), is_istd=is_istd)
+    target = replace(_intent_target(16.0), is_istd=is_istd)
     config = _strategy_config(tmp_path)
     rt = np.linspace(0.0, 24.0, 2401)
     rng = np.random.default_rng(479)
@@ -827,7 +829,7 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    assert result.reported_rt == pytest.approx(17.5 if is_istd else 10.9, abs=0.05)
+    assert result.reported_rt == pytest.approx(17.5, abs=0.05)
     assert result.selected_cid_nl_supported
     selected = next(
         evaluation
@@ -847,5 +849,5 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         assert target_extraction.credible_istd_anchor_rt(result) == result.reported_rt
         assert (
             restored.question.selection_policy_version
-            == "reference_localized_contour_peak"
+            == "reference_localized_observation"
         )

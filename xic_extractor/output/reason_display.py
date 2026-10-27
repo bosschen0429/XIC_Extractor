@@ -34,6 +34,11 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "not_quantifiable": "無法可靠定量；面積留空",
+    "insufficient_reference_peak_contrast": "目標訊號與局部背景無法可靠分離",
+    "insufficient_original_xic_support": "原始 MS1 取樣點不足以可靠積分",
+    "insufficient_original_xic_continuity": "原始 MS1 訊號不連續，面積不可靠",
+    "insufficient_quantitation_context": "缺少可評估定量品質的背景範圍",
     "hmdc_competing_rna_fragment": (
         "同一峰有 RNA 核糖丟失碎片，不能以 ISTD 位置確認為 hmdC；數值留空"
     ),
@@ -77,6 +82,7 @@ BasisKind = Literal[
     "backfill_identity",
     "paired_istd_identity",
     "nl_observed",
+    "identity_without_quantitation",
     "ms1_coherent",
     "rt_support",
     "nl_not_required",
@@ -108,6 +114,17 @@ def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
     """Name the evidence the saved decision rests on, for a reader to test."""
     support = reasons(row, "Projection Support Reasons")
     not_counted = reasons(row, "Projection Not Counted Reasons")
+    if (
+        "not_quantifiable" in not_counted
+        or row.get("Projection Reason") == "not_quantifiable"
+    ):
+        nl = str(row.get("NL", ""))
+        return DecisionBasis(
+            "identity_without_quantitation",
+            "已見目標中性丟失證據，但無法可靠定量；面積留空"
+            if nl == "OK" or nl.startswith("WARN_")
+            else "保留局部候選，但無法可靠定量；面積留空",
+        )
     if str(row.get("Counted Detection", "")).upper() == "TRUE":
         if "cross_sample_backfill_identity" in support:
             return DecisionBasis("backfill_identity", "由同批樣本回填確認的峰")
@@ -192,6 +209,8 @@ def display_measurement_reason(
     basis = decision_basis(row)
     if basis.kind == "off_paired_istd_position":
         return f"{basis.text}，報 ND。"
+    if basis.kind == "identity_without_quantitation":
+        return f"{basis.text}。"
     if not has_quantifiable_peak:
         return "搜尋範圍內沒有可定量的 MS1 峰。"
     covered = _SHAPE_REVIEW if basis.kind in _SHAPE_BASES else frozenset()

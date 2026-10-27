@@ -162,16 +162,22 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   relative to fluctuations. The fixed factor 4 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   These checks are necessary lower bounds, not sufficient proof of chemical
-  identity or quantification readiness. An ISTD with a known reference RT uses
-  `reference_localized_contour_peak`: the same acquired-support, continuity,
-  complete-context and four-MAD floor, with full contour prominence instead of
-  nearest-valley relief. A broad contour with small ripples remains eligible for
-  reference-first identity selection; its apex, bounds and area are unchanged.
-  Insufficient contrast gives `insufficient_reference_peak_contrast`. The
-  physical question records this policy; broadness and overlap remain review
-  evidence, not permission to claim a pure constituent area.
-  Discovery uses the same original-support and local-contrast qualification as
-  non-ISTD Targeted, for every supported smoothing window. Alternating low/high
+  identity or quantification readiness. Targeted reference-localized observations
+  retain contours before these quality checks: `reference_localized_observation`
+  produces a `physical_observation_answer` with observation availability and a
+  separate quantitative failure reason. It uses complete context and the same
+  acquired-core support/continuity requirement. Full-contour prominence is compared
+  to the larger short-scale noise estimate from its two acquired flanks, each up
+  to one smoothing-window length outside the interval. The peak's own sparsely
+  sampled rise/fall does not become its background noise. The four-MAD contrast
+  floor is unchanged; unavailable flank context withholds quantitation. A diagnostic
+  integral can remain attached to the observation but must not enter the Target
+  numeric cell when qualification fails. Method evidence survives this decision.
+  Broadness and overlap remain review evidence, not permission to claim a pure
+  constituent area. The earlier `reference_localized_contour_peak` policy remains
+  replayable for its persisted consumers.
+  Discovery retains original-support and local-contrast qualification
+  for every supported smoothing window. Alternating low/high
   acquired values can fail top continuity even
   when their smoothed contour looks like a peak. Short-interval curvature can
   inflate noise, and small ripples can deny a broad peak local relief; these
@@ -358,10 +364,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 ## Targeted Analyte / STD Pair Evidence
 
-- Candidate-aligned CID-NL support takes precedence over RT hints and trace
-  quality. A configured RT window bounds acquisition context but does not veto
-  an otherwise eligible retained peak solely because its apex lies outside the
-  hint. This does not authorize unbounded RAW acquisition.
+- Candidate-aligned CID-NL support takes precedence over trace quality within
+  the Target's reference-localized candidate scope. The current reference is
+  not an exact-apex requirement. The Targeted strategy records the default
+  half-window and honors wider declared intervals; outside observations do not
+  substitute for missing local evidence. Acquisition remains bounded by the RAW
+  acquisition interval.
 - Paired ISTD RT guides candidate localization. RT distance and legacy
   confidence labels remain source context, not identity vetoes or standalone
   review actions. A supported and quantifiable peak can still require review

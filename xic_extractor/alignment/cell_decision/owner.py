@@ -251,6 +251,12 @@ def _decide_target(
             "Target observed terminal requires an owner-backed PeakHypothesis"
         )
     integration = hypothesis.integration
+    if any(
+        observation.physical_evaluation is not None
+        and observation.physical_evaluation.quantitation_failure
+        for observation in hypothesis.peak_observation_refs
+    ):
+        return NoWriteCellDecision("not_quantifiable"), integration
     return _payload_from_integration(integration), integration
 
 

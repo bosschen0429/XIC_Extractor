@@ -125,6 +125,11 @@ class ExtractionResult:
 
     @property
     def reported_peak_area(self) -> float | None:
+        if (
+            self.physical_evaluation is not None
+            and self.physical_evaluation.quantitation_failure
+        ):
+            return None
         integration = self._selected_integration
         if integration is not None:
             if integration.area_ms1_morphology is not None:

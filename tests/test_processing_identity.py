@@ -921,7 +921,10 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
     config = _config(tmp_path)
     baseline = _request(config, paths)
     receipt = json.loads(baseline.normalized_scientific_inputs_json)["strategy"]
-    assert receipt["candidate_coverage"] == "complete_acquisition_exact_mass"
+    assert (
+        receipt["candidate_coverage"]
+        == "reference_localized_observations_before_quality"
+    )
     assert (
         receipt["uncalibrated_paired_istd_position"]
         == "qualified_identity_and_coelution_rejection"

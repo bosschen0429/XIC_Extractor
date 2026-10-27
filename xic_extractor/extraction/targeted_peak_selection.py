@@ -13,6 +13,7 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.targeted_strategy import (
     TARGETED_PAIRED_RT_TOLERANCE_MIN,
     TARGETED_PRECURSOR_REFERENCE,
+    TARGETED_REFERENCE_HALF_WINDOW_MIN,
 )
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
@@ -61,8 +62,8 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_OBSERVATION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
-    PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
@@ -131,6 +132,26 @@ class TargetedCandidateAssessment:
                 status="OK" if local else "PEAK_NOT_FOUND",
                 n_prominent_peaks=len(local),
             )
+        # Every local observation has already received its method assessment.
+        # Quantitative suitability can resolve an unsupported MS1-only choice,
+        # but must never remove an observation with positive identity evidence.
+        supported = tuple(
+            c
+            for c in candidates.candidates
+            if (evidence := self.candidate_ms2_evidence.get(c)) is not None
+            and evidence.nl_match
+        )
+        quantifiable = tuple(
+            c
+            for c in candidates.candidates
+            if not self.candidate_evaluations[c].quantitation_failure
+        )
+        ranked_population = supported or quantifiable or candidates.candidates
+        candidates = replace(
+            candidates,
+            candidates=ranked_population,
+            n_prominent_peaks=len(ranked_population),
+        )
         return select_peak_and_area(
             candidates,
             self.config,
@@ -236,13 +257,32 @@ def assess_targeted_candidate_population(
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
     physical_policy = (
-        PHYSICAL_PEAK_REFERENCE_POLICY
-        if target.is_istd and preferred_rt is not None
+        PHYSICAL_PEAK_OBSERVATION_POLICY
+        if preferred_rt is not None
         else PHYSICAL_PEAK_POINT_POLICY
     )
     candidates = physical_candidates_result(
         prepared_result, universe, selection_policy_version=physical_policy
     )
+    if preferred_rt is not None:
+        half_window = max(
+            TARGETED_REFERENCE_HALF_WINDOW_MIN, (target.rt_max - target.rt_min) / 2
+        )
+        selection_window = (
+            max(selection_window[0], preferred_rt - half_window),
+            min(selection_window[1], preferred_rt + half_window),
+        )
+        local = tuple(
+            c
+            for c in candidates.candidates
+            if selection_window[0] <= c.selection_apex_rt <= selection_window[1]
+        )
+        candidates = replace(
+            candidates,
+            candidates=local,
+            status="OK" if local else "PEAK_NOT_FOUND",
+            n_prominent_peaks=len(local),
+        )
     evaluations = {
         candidate: answer_selected_physical_candidate(
             prepared_result,
