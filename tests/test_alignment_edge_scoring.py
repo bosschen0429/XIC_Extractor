@@ -188,32 +188,6 @@ def test_numeric_and_sample_hard_gates(
     assert edge.reason == f"blocked: {expected_reason}"
 
 
-def test_non_detected_owner_blocks_edge() -> None:
-    edge = evaluate_owner_edge(
-        _owner("s1"),
-        _owner("s2"),
-        config=AlignmentConfig(),
-        right_detected_owner=False,
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.decision == "blocked_edge"
-    assert edge.failure_reason == "non_detected_owner"
-
-
-def test_ambiguous_owner_blocks_edge() -> None:
-    edge = evaluate_owner_edge(
-        _owner("s1"),
-        _owner("s2"),
-        config=AlignmentConfig(),
-        left_ambiguous_owner=True,
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.decision == "blocked_edge"
-    assert edge.failure_reason == "ambiguous_owner"
-
-
 def test_missing_drift_and_raw_over_strict_window_is_weak() -> None:
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
@@ -521,71 +495,32 @@ def test_identity_conflict_blocks_edge() -> None:
     assert edge.failure_reason == "identity_conflict"
 
 
-def test_backfill_bridge_precedes_non_detected_owner() -> None:
-    edge = evaluate_owner_edge(
-        _owner("s1", identity_conflict=True),
-        _owner("s1"),
-        config=AlignmentConfig(),
-        edge_depends_on_backfill=True,
-        right_detected_owner=False,
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.decision == "blocked_edge"
-    assert edge.failure_reason == "backfill_bridge"
-
-
-def test_non_detected_owner_precedes_ambiguous_and_identity_conflict() -> None:
-    edge = evaluate_owner_edge(
-        _owner("s1", identity_conflict=True),
-        _owner("s2"),
-        config=AlignmentConfig(),
-        left_detected_owner=False,
-        left_ambiguous_owner=True,
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.decision == "blocked_edge"
-    assert edge.failure_reason == "non_detected_owner"
-
-
 @pytest.mark.parametrize(
     (
         "left",
         "right",
         "expected_reason",
-        "call_kwargs",
     ),
     [
         (
             _owner("s1", identity_conflict=True),
-            _owner("s2"),
-            "ambiguous_owner",
-            {"left_ambiguous_owner": True},
-        ),
-        (
-            _owner("s1", identity_conflict=True),
             _owner("s1"),
             "identity_conflict",
-            {},
         ),
         (
             _owner("s1"),
             _owner("s1", neutral_loss_tag="DNA_base_loss"),
             "same_sample",
-            {},
         ),
         (
             _owner("s1", neutral_loss_tag="DNA_dR", precursor_mz=250.0000),
             _owner("s2", neutral_loss_tag="DNA_base_loss", precursor_mz=250.0200),
             "neutral_loss_tag_mismatch",
-            {},
         ),
         (
             _owner("s1", precursor_mz=250.0000, product_mz=150.0000),
             _owner("s2", precursor_mz=250.0200, product_mz=150.0100),
             "precursor_mz_out_of_tolerance",
-            {},
         ),
         (
             _owner(
@@ -599,7 +534,6 @@ def test_non_detected_owner_precedes_ambiguous_and_identity_conflict() -> None:
                 observed_neutral_loss_da=100.0100,
             ),
             "product_mz_out_of_tolerance",
-            {},
         ),
     ],
 )
@@ -607,14 +541,12 @@ def test_adjacent_hard_gate_precedence_edges(
     left: SampleLocalMS1Owner,
     right: SampleLocalMS1Owner,
     expected_reason: str,
-    call_kwargs: dict[str, bool],
 ) -> None:
     edge = evaluate_owner_edge(
         left,
         right,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
-        **call_kwargs,
     )
 
     assert edge.decision == "blocked_edge"

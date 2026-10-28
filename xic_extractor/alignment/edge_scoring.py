@@ -64,11 +64,6 @@ def evaluate_owner_edge(
     config: AlignmentConfig,
     rt_frame: RtFrame,
     method_evidence: MethodPairEvidence,
-    edge_depends_on_backfill: bool = False,
-    left_detected_owner: bool = True,
-    right_detected_owner: bool = True,
-    left_ambiguous_owner: bool = False,
-    right_ambiguous_owner: bool = False,
 ) -> OwnerEdgeEvidence:
     rt_raw_delta_sec = abs(left.owner_apex_rt - right.owner_apex_rt) * 60.0
     drift_source = rt_frame.drift_source
@@ -84,11 +79,6 @@ def evaluate_owner_edge(
         right,
         config=config,
         method_evidence=method_evidence,
-        edge_depends_on_backfill=edge_depends_on_backfill,
-        left_detected_owner=left_detected_owner,
-        right_detected_owner=right_detected_owner,
-        left_ambiguous_owner=left_ambiguous_owner,
-        right_ambiguous_owner=right_ambiguous_owner,
         rt_frame=rt_frame,
     )
     if failure:
@@ -151,18 +141,7 @@ def _hard_gate_failure(
     rt_frame: RtFrame,
     config: AlignmentConfig,
     method_evidence: MethodPairEvidence,
-    edge_depends_on_backfill: bool,
-    left_detected_owner: bool,
-    right_detected_owner: bool,
-    left_ambiguous_owner: bool,
-    right_ambiguous_owner: bool,
 ) -> tuple[HardGateFailureReason | None, bool]:
-    if edge_depends_on_backfill:
-        return "backfill_bridge", False
-    if not left_detected_owner or not right_detected_owner:
-        return "non_detected_owner", False
-    if left_ambiguous_owner or right_ambiguous_owner:
-        return "ambiguous_owner", False
     if left.identity_conflict or right.identity_conflict:
         return "identity_conflict", False
     if left.sample_stem == right.sample_stem:

@@ -322,7 +322,9 @@ frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitte
 [Final grouping](../../xic_extractor/alignment/feature_membership_inference.py)
 selects a feasible complete configuration rather than withdrawing a choice
 because another one is close. This policy applies to Untargeted final/regroup
-membership, not bootstrap, Targeted selection, or Backfill admission.
+membership, not bootstrap or Targeted selection. Backfill admission applies the
+same membership cost to fixed groups within its own search eligibility; see
+[Backfill](backfill.md).
 
 - A connected precursor-mass neighborhood is the comparison universe. Every
   cost comparison in it uses common apices only when all members have estimated
@@ -398,8 +400,10 @@ eligibility; Matrix headers and the strict identity TSV remain unchanged.
 
 #### Conservative admission and shape measurement
 
-For conservative bootstrap and existing-feature admission, measured peak
-shape supplies fallback evidence when neither side has calibration support. The owner adapter
+Membership inference outside final selection — bootstrap, Targeted grouping,
+subject Backfill planning and the evidence spine — admits conservatively. There,
+measured peak shape supplies fallback evidence when neither side has
+calibration support. The owner adapter
 retains an apex-relative, own-max Gaussian-smoothed shape from the selected
 raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
 translates RT but does not stretch width. Only in this private derivative,
@@ -423,11 +427,9 @@ remain unassessed, not positive evidence of identity.
 Shape agreement alone does not establish membership. A measured contradiction
 applies to the entire proposed union, including trajectory seeds, singleton
 admission and separated-band bridges; intermediate members cannot hide it.
-Directional assignment and Backfill admission consume the same region/shape rule.
-Simultaneous Backfill candidates are also compared with each other after
-claim resolution. Both endpoints of a shape conflict remain unassigned;
-independent compatible additions can still join, without an ordering winner.
-Explicit known-identity constraints remain separate from inferred membership.
+Directional and window assignment consume the same region/shape rule. Final
+selection and Backfill admission instead count shape and region disagreement as
+cost and risk. Explicit known-identity constraints remain separate from inferred membership.
 
 Bootstrap seed support consumes Discovery evidence scores and the existing MS2
 seed count. Alignment does not turn peak SNR into identity or Matrix write

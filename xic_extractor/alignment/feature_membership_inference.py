@@ -2206,45 +2206,6 @@ def _feature_rt_may_support(
     return False
 
 
-def supports_existing_feature(
-    owner: SampleLocalMS1Owner,
-    members: tuple[SampleLocalMS1Owner, ...],
-    *,
-    rules: GroupingRules,
-    config: AlignmentConfig,
-    rt_frame: RtFrame,
-) -> bool:
-    """Apply the same feature evidence rule without fitting or assigning again."""
-    injection_order = rt_frame.injection_order
-    if injection_order and all(
-        item.sample_stem in injection_order for item in (owner, *members)
-    ):
-        corrected_rt = {
-            item.owner_id: rt_frame.corrected_rt_min(item) for item in (owner, *members)
-        }
-        return (
-            _window_band_candidate(
-                owner,
-                "frozen-feature",
-                members,
-                orders=injection_order,
-                corrected_rt=corrected_rt,
-                config=config,
-                rules=rules,
-                rt_frame=rt_frame,
-            )
-            is not None
-        )
-    ordered = sorted(members, key=lambda item: (item.sample_stem, item.owner_id))
-    track = _FeatureTrack.from_owner(ordered[0], direction="forward", rules=rules)
-    for member in ordered[1:]:
-        track.add(member)
-    candidate = _compare_owner_to_feature(
-        owner, track, config=config, rt_frame=rt_frame, counts=Counter(), rules=rules
-    )
-    return candidate.cost is not None and candidate.cost < _UNASSIGNED_COST
-
-
 def _compare_owner_to_feature(
     owner: SampleLocalMS1Owner,
     track: _FeatureTrack,
