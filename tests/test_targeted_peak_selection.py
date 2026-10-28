@@ -205,18 +205,18 @@ def test_hmdc_rna_competition_is_precursor_peak_and_fragment_specific(
     assert answer.competing_rna_scan_numbers == expected
 
 
-@pytest.mark.parametrize("local_peaks", [(), (8.5,), (7.505,), (8.5, 9.2)])
-def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
-    tmp_path, local_peaks
-):
+def _paired_assessment(tmp_path, local_peaks):
     config = _config(tmp_path)
     target = replace(_target(), cid_nl_tag="dR")
     rt = np.arange(5.0, 11.0, 0.005)
+    # 6.0 lies outside the reference view; 9.3 is in view but does not
+    # co-elute with an ISTD at 8.5 whose half-prominence width is 0.25 min.
     intensity = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
+    intensity += 3000.0 * np.exp(-0.5 * ((rt - 9.3) / 0.04) ** 2)
     for apex in local_peaks:
         intensity += 2000.0 * np.exp(-0.5 * ((rt - apex) / 0.04) ** 2)
     prepared = prepare_physical_signal(rt, intensity)
-    assessment = targeted_peak_selection.assess_targeted_candidate_population(
+    return targeted_peak_selection.assess_targeted_candidate_population(
         target=target,
         config=config,
         trace_group=targeted_extraction_trace_group(
@@ -236,21 +236,32 @@ def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
         strict_preferred_rt=False,
         method_window=Ms2Window("sample", 5.0, 11.0, ()),
     )
+
+
+@pytest.mark.parametrize("local_peaks", [(), (8.5,), (8.27,), (8.5, 8.7)])
+def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
+    tmp_path, local_peaks
+):
+    assessment = _paired_assessment(tmp_path, local_peaks)
+    assert any(
+        abs(c.selection_apex_rt - 9.3) < 0.02 for c in assessment.candidates.candidates
+    )
     ranked = assessment.rank_candidates(
         scoring_context_builder=None,
         istd_confidence_note=None,
         paired_istd_anchor_rt=8.5,
+        paired_istd_half_width=0.25,
     )
     assert len(ranked.candidates) == len(local_peaks)
-    assert all(abs(c.selection_apex_rt - 8.5) <= 1.0 for c in ranked.candidates)
+    assert all(abs(c.selection_apex_rt - 8.5) <= 0.25 for c in ranked.candidates)
     result = assessment.complete_result(ranked, scoring_context_builder=None)
     if not local_peaks:
         assert result.reported_peak_area is None
     elif len(local_peaks) == 1:
         assert result.reported_rt == pytest.approx(local_peaks[0])
-        if local_peaks[0] == 7.505:
-            # The pair window admits an apex; it must not clip the peak's area.
-            assert result.peak.peak_start < 7.5
+        if local_peaks[0] == 8.27:
+            # Co-elution admits an apex; it must not clip the peak's area.
+            assert result.peak.peak_start < 8.25
         assert (
             "paired_istd_multiple_candidates"
             not in result.targeted_product_projection.conflict_reasons
@@ -261,6 +272,73 @@ def test_paired_selection_constrains_qualified_population_and_holds_ambiguity(
             "paired_istd_multiple_candidates"
             in result.targeted_product_projection.conflict_reasons
         )
+
+
+def test_istd_half_width_is_read_from_the_reported_physical_peak(tmp_path):
+    from xic_extractor.extraction.paired_coelution import istd_half_width_min
+
+    assessment = _paired_assessment(tmp_path, (8.5,))
+    ranked = assessment.rank_candidates(
+        scoring_context_builder=None,
+        istd_confidence_note=None,
+        paired_istd_anchor_rt=8.5,
+        paired_istd_half_width=0.25,
+    )
+    result = assessment.complete_result(ranked, scoring_context_builder=None)
+    # Gaussian sigma 0.04 min: full width at half maximum is 2.355 * sigma.
+    assert istd_half_width_min(result) == pytest.approx(2.355 * 0.04, abs=0.01)
+    assert istd_half_width_min(None) is None
+
+
+def _ms2(*, nl_match: bool, rna_scans: tuple[int, ...]) -> CandidateMS2Evidence:
+    return CandidateMS2Evidence(
+        ms2_present=True,
+        nl_match=nl_match,
+        nl_status="OK" if nl_match else "NL_FAIL",
+        trigger_scan_count=1,
+        strict_nl_scan_count=int(nl_match),
+        best_loss_ppm=None,
+        best_scan_rt=None,
+        best_product_base_ratio=None,
+        alignment_source="candidate",
+        competing_rna_scan_numbers=rna_scans,
+    )
+
+
+@pytest.mark.parametrize("neighbour_has_rna", [False, True])
+def test_hmdc_rna_only_peak_neither_competes_with_nor_vetoes_its_neighbour(
+    tmp_path, neighbour_has_rna
+):
+    assessment = _paired_assessment(tmp_path, (8.5, 8.7))
+    assessment = replace(
+        assessment,
+        target=replace(
+            assessment.target, mz=258.1085, neutral_loss_da=116.0474, cid_nl_tag="dR"
+        ),
+    )
+    local = sorted(
+        (
+            c
+            for c in assessment.candidates.candidates
+            if 8.4 < c.selection_apex_rt < 8.8
+        ),
+        key=lambda c: c.selection_apex_rt,
+    )
+    hmdc, rna = local
+    evidence = dict(assessment.candidate_ms2_evidence)
+    evidence[rna] = _ms2(nl_match=False, rna_scans=(7,))
+    evidence[hmdc] = _ms2(nl_match=False, rna_scans=(8,) if neighbour_has_rna else ())
+    ranked = replace(assessment, candidate_ms2_evidence=evidence).rank_candidates(
+        scoring_context_builder=None,
+        istd_confidence_note=None,
+        paired_istd_anchor_rt=8.5,
+        paired_istd_half_width=0.25,
+    )
+    if neighbour_has_rna:
+        # Every local peak is RNA-only: keep them so the conflict is published.
+        assert set(ranked.candidates) == {hmdc, rna}
+    else:
+        assert ranked.candidates == (hmdc,)
 
 
 def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> None:

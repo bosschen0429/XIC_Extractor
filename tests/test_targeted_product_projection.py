@@ -181,6 +181,10 @@ class _Result:
     targeted_product_projection: object
 
 
+def _widths(istd: dict, width: float = 0.2) -> dict[str, float]:
+    return {sample: width for sample in istd}
+
+
 @pytest.mark.parametrize("confirmed", [0, 1, 2])
 def test_pair_position_preserves_configured_offset_without_batch_gate(confirmed):
     analyte = {"sample": _Result(25.5, _analyte(cid_nl=False))}
@@ -188,7 +192,9 @@ def test_pair_position_preserves_configured_offset_without_batch_gate(confirmed)
     for index in range(confirmed):
         analyte[str(index)] = _Result(25.5, _analyte(cid_nl=True))
         istd[str(index)] = _Result(25.0, _istd())
-    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    positions = paired_istd_positions(
+        analyte, istd, _widths(istd), expected_offset_min=0.5
+    )
     assert positions.identified == {"sample"}
     assert positions.off_position == {}
 
@@ -200,7 +206,9 @@ def test_counted_off_position_peaks_are_rejected_not_self_calibrated(confirmed):
     for index in range(confirmed):
         analyte[str(index)] = _Result(30.0, _analyte(cid_nl=True))
         istd[str(index)] = _Result(25.0, _istd())
-    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    positions = paired_istd_positions(
+        analyte, istd, _widths(istd), expected_offset_min=0.5
+    )
     assert positions.off_position == {sample: 4.5 for sample in analyte}
     assert positions.identified == set()
 
@@ -209,8 +217,23 @@ def test_counted_off_position_peaks_are_rejected_not_self_calibrated(confirmed):
 def test_unconfirmed_or_missing_istd_cannot_reject_analyte_position(pair):
     analyte = {"sample": _Result(30.0, _analyte(cid_nl=True))}
     istd = {} if pair is None else {"sample": _Result(25.0, pair)}
-    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    positions = paired_istd_positions(
+        analyte, istd, _widths(istd), expected_offset_min=0.5
+    )
     assert positions.off_position == {}
+
+
+def test_istd_peak_width_of_the_same_injection_sets_the_coelution_tolerance():
+    # The same 0.3 min deviation: outside a sharp ISTD, inside a broad one.
+    analyte = {
+        "sharp": _Result(9.3, _analyte(cid_nl=False)),
+        "broad": _Result(9.3, _analyte(cid_nl=False)),
+        "unmeasured": _Result(9.3, _analyte(cid_nl=False)),
+    }
+    istd = {sample: _Result(9.0, _istd()) for sample in analyte}
+    positions = paired_istd_positions(analyte, istd, {"sharp": 0.15, "broad": 0.5})
+    assert positions.identified == {"broad"}
+    assert positions.off_position == {"sharp": pytest.approx(0.3)}
 
 
 def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
@@ -233,19 +256,19 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     analyte["incoherent"] = _Result(9.11, _analyte(cid_nl=False, support=()))
     istd["relocated"] = istd["incoherent"] = _Result(9.0, _istd())
 
-    positions = paired_istd_positions(analyte, istd)
+    positions = paired_istd_positions(analyte, istd, _widths(istd))
     assert positions.identified == {"near", "backfilled_istd", "relocated"}
-    # Confirmed batch peaks cannot shift the method-relative one-minute window.
+    # Confirmed batch peaks cannot shift or widen the ISTD-derived position.
     assert positions.off_position.keys() == {"off_offset"}
     assert positions.off_position["off_offset"] == pytest.approx(1.05)
     # Sparse batch confirmation does not veto the current sample's valid pair.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
-    lone_positions = paired_istd_positions(lone, istd)
+    lone_positions = paired_istd_positions(lone, istd, _widths(istd))
     assert lone_positions.identified == {"near"}
     assert lone_positions.off_position == {"off_offset": pytest.approx(1.05)}
 
 
-@pytest.mark.parametrize("offset", [-1.0, -0.79, 0.79, 1.0])
+@pytest.mark.parametrize("offset", [-0.2, -0.1, 0.1, 0.2])
 def test_pair_window_accepts_qualified_unambiguous_peak_not_just_rt(offset):
     analyte = {
         "qualified": _Result(9.0 + offset, _analyte(cid_nl=False)),
@@ -259,9 +282,8 @@ def test_pair_window_accepts_qualified_unambiguous_peak_not_just_rt(offset):
             ),
         ),
     }
-    positions = paired_istd_positions(
-        analyte, {sample: _Result(9.0, _istd()) for sample in analyte}
-    )
+    istd = {sample: _Result(9.0, _istd()) for sample in analyte}
+    positions = paired_istd_positions(analyte, istd, _widths(istd))
     assert positions.identified == {"qualified"}
     assert positions.off_position == {}
 
@@ -296,6 +318,6 @@ def test_uncalibrated_pair_uses_sample_istd_position_and_peak_quality(
     if confirmed_count:
         analyte["confirmed"] = _Result(26.05, _analyte(cid_nl=True))
         istd["confirmed"] = _Result(26.0, _istd())
-    positions = paired_istd_positions(analyte, istd)
+    positions = paired_istd_positions(analyte, istd, _widths(istd))
     assert positions.off_position == {"far": pytest.approx(19.45)}
     assert positions.identified == {"near", "backfilled_istd"}

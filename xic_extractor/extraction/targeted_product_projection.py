@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.targeted_strategy import (
-    TARGETED_PAIRED_RT_TOLERANCE_MIN,
-)
+from xic_extractor.extraction.paired_coelution import coelutes_with_istd
 from xic_extractor.extraction.targeted_peak_evidence import (
+    HMDC_COELUTING_RNA_ISOMER,
+    HMDC_COMPETING_RNA_FRAGMENT,
     targeted_fragment_identity_rejection,
 )
 from xic_extractor.output.targeted_product_model import (
@@ -59,7 +59,7 @@ def project_targeted_result(
         () if selection_decision is None else selection_decision.conflict_reasons,
         () if selection_decision is None else selection_decision.ambiguity_reasons,
         (fragment_rejection,)
-        if fragment_rejection == "hmdc_competing_rna_fragment"
+        if fragment_rejection == HMDC_COMPETING_RNA_FRAGMENT
         else (),
     )
     review = _merge_reasons(
@@ -89,6 +89,9 @@ def project_targeted_result(
         review = _merge_reasons(
             review, (result.physical_evaluation.quantitation_failure,)
         )
+    if fragment_rejection == HMDC_COELUTING_RNA_ISOMER:
+        not_counted = _merge_reasons(not_counted, ("not_quantifiable",))
+        review = _merge_reasons(review, (HMDC_COELUTING_RNA_ISOMER,))
     exclusions: tuple[str, ...] = ()
     if selection_decision is not None:
         exclusions = _merge_reasons(
@@ -231,22 +234,25 @@ class PairedIstdPositions:
 def paired_istd_positions(
     analyte: Mapping[str, ExtractionResult],
     istd: Mapping[str, ExtractionResult],
+    istd_half_widths: Mapping[str, float],
     *,
     expected_offset_min: float = 0.0,
 ) -> PairedIstdPositions:
-    """Judge analyte peaks against the paired isotope ISTD position.
+    """Judge analyte peaks against the paired isotope ISTD of the same injection.
 
-    A counted isotope ISTD fixes the method-relative search position. Qualified,
-    unambiguous MS1 peaks within the method tolerance may inherit pair identity.
-    The same window constrains selection; batch-selected peaks must not move its
-    center or expand its tolerance. Off-position peaks are not reported.
-    The number of other confirmed samples never gates identity: the current sample still
-    needs a valid ISTD, qualified peak and no blockers.
+    A counted isotope ISTD fixes where its analyte co-elutes: its apex plus the
+    configured offset, within its own half-prominence width. Qualified,
+    unambiguous MS1 peaks there may inherit pair identity; peaks elsewhere are
+    not reported. Other samples never move the position or widen it, and their
+    confirmation count never gates identity: the current sample still needs a
+    valid ISTD, qualified peak and no blockers.
     """
     counted_istd = {
         sample: rt
         for sample, result in istd.items()
-        if _counted(result) and (rt := _finite(result.reported_rt)) is not None
+        if _counted(result)
+        and (rt := _finite(result.reported_rt)) is not None
+        and sample in istd_half_widths
     }
     identified = set()
     off_position = {}
@@ -255,9 +261,9 @@ def paired_istd_positions(
         rt = _finite(result.reported_rt)
         if projection is None or sample not in counted_istd or rt is None:
             continue
-        deviation = rt - counted_istd[sample] - expected_offset_min
-        if abs(deviation) > TARGETED_PAIRED_RT_TOLERANCE_MIN:
-            off_position[sample] = deviation
+        expected = counted_istd[sample] + expected_offset_min
+        if not coelutes_with_istd(rt, expected, istd_half_widths[sample]):
+            off_position[sample] = rt - expected
         elif (
             not projection.counted_detection
             and not projection.conflict_reasons

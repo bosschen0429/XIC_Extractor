@@ -192,10 +192,16 @@ def test_hmdc_fragment_identity_controls_published_values(
     if rna_fragment:
         assert conflicted.reported_peak_area is None
         assert conflicted.reported_rt is None
-        assert not conflicted.targeted_product_projection.counted_detection
-        assert conflicted.targeted_product_projection.projection_reason == (
-            "hmdc_competing_rna_fragment"
-        )
+        projection = conflicted.targeted_product_projection
+        assert not projection.counted_detection
+        if dna_fragment:
+            # Both sugar losses in one peak: 5-hmdC is identified, but its MS1
+            # area includes the co-eluting RNA isomer.
+            assert projection.projection_reason == "not_quantifiable"
+            assert "hmdc_coeluting_rna_isomer" in projection.review_reasons
+            assert "hmdc_competing_rna_fragment" not in projection.conflict_reasons
+        else:
+            assert projection.projection_reason == "hmdc_competing_rna_fragment"
     else:
         # No diagnostic fragmentation is not competing chemistry. Preserve the
         # qualified peak for the existing pair/Backfill decision, not a forced ID.
@@ -209,7 +215,7 @@ def test_hmdc_fragment_identity_controls_published_values(
     (row,) = _long_output_rows(published.file_results[0], [target])
     if rna_fragment:
         assert row["Area"] == row["RT"] == ""
-        assert "數值留空" in row["Reason"]
+        assert ("面積留空" if dna_fragment else "數值留空") in row["Reason"]
     else:
         assert float(row["Area"]) == pytest.approx(first.reported_peak_area, abs=0.01)
 

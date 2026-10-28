@@ -40,7 +40,11 @@ _REASON_TEXT = {
     "insufficient_original_xic_continuity": "原始 MS1 訊號不連續，面積不可靠",
     "insufficient_quantitation_context": "缺少可評估定量品質的背景範圍",
     "hmdc_competing_rna_fragment": (
-        "同一峰有 RNA 核糖丟失碎片，不能以 ISTD 位置確認為 hmdC；數值留空"
+        "同一峰只有 RNA 核糖丟失碎片，沒有 dR 碎片，不能確認為 hmdC；數值留空"
+    ),
+    "hmdc_coeluting_rna_isomer": (
+        "同一峰同時有 dR 與 RNA 核糖丟失碎片：可確認 hmdC，"
+        "但 MS1 面積含共洗脫的 RNA 異構物；面積留空"
     ),
     "paired_istd_multiple_candidates": "配對範圍內有多個合格峰，無法唯一確認身分",
     "paired_istd_position_mismatch": "峰偏離配對 ISTD 位置",
@@ -118,6 +122,11 @@ def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
         "not_quantifiable" in not_counted
         or row.get("Projection Reason") == "not_quantifiable"
     ):
+        if "hmdc_coeluting_rna_isomer" in reasons(row, "Projection Review Reasons"):
+            return DecisionBasis(
+                "identity_without_quantitation",
+                reason_text("hmdc_coeluting_rna_isomer"),
+            )
         nl = str(row.get("NL", ""))
         return DecisionBasis(
             "identity_without_quantitation",

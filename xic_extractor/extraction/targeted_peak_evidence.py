@@ -138,15 +138,28 @@ def build_targeted_peak_evidence(
     return tuple(answers)
 
 
+HMDC_COMPETING_RNA_FRAGMENT = "hmdc_competing_rna_fragment"
+HMDC_COELUTING_RNA_ISOMER = "hmdc_coeluting_rna_isomer"
+
+
 def targeted_fragment_identity_rejection(
     target: Target, evidence: CandidateMS2Evidence | None
 ) -> str:
-    """Competing RNA evidence blocks 5-hmdC; missing MS2 is not a veto."""
-    if not _is_hmdc_dna_target(target):
+    """Judge one 5-hmdC peak by the sugar losses observed inside it.
+
+    Ribose loss without deoxyribose loss makes the peak an RNA isomer. Both
+    losses in the same peak identify 5-hmdC, but its MS1 area includes the
+    co-eluting isomer. Missing MS2 is not a veto.
+    """
+    if (
+        not _is_hmdc_dna_target(target)
+        or evidence is None
+        or not evidence.competing_rna_scan_numbers
+    ):
         return ""
-    if evidence is not None and evidence.competing_rna_scan_numbers:
-        return "hmdc_competing_rna_fragment"
-    return ""
+    if evidence.nl_match:
+        return HMDC_COELUTING_RNA_ISOMER
+    return HMDC_COMPETING_RNA_FRAGMENT
 
 
 def _is_hmdc_dna_target(target: Target) -> bool:

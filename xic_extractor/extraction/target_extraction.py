@@ -20,6 +20,7 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
+from xic_extractor.extraction.paired_coelution import istd_half_width_min
 from xic_extractor.extraction.result_assembly import prepare_acquired_observation
 from xic_extractor.extraction.scoring_factory import (
     is_credible_istd_peak,
@@ -349,6 +350,11 @@ def extract_one_target(
         scoring_context_builder=scoring_context_builder,
         istd_confidence_note=istd_confidence_note,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
+        paired_istd_half_width=(
+            istd_half_width_min(results.get(target.istd_pair))
+            if istd_rt_in_this_sample is not None
+            else None
+        ),
     )
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,

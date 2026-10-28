@@ -18,8 +18,6 @@ from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
-# Selection and final identity use the same method-relative paired-ISTD window.
-TARGETED_PAIRED_RT_TOLERANCE_MIN = 1.0
 TARGETED_REFERENCE_HALF_WINDOW_MIN = 2.0
 
 
@@ -56,8 +54,10 @@ def strategy_receipt() -> dict:
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "cid_nl_evidence_scope": "target_mass_and_physical_peak",
         "cid_nl_ranking_priority": "positive_support_only",
-        "hmdc_fragment_identity": "competing_rna_veto_missing_fragments_allow_backfill",
-        "paired_istd_rt_tolerance_min": TARGETED_PAIRED_RT_TOLERANCE_MIN,
+        "hmdc_fragment_identity": (
+            "rna_only_peak_veto_mixed_peak_unquantified_missing_fragments_allow_backfill"
+        ),
+        "paired_istd_coelution": "istd_apex_plus_offset_within_istd_half_width",
         "paired_istd_selection": "local_method_evidence_before_quantitation",
         "uncalibrated_paired_istd_position": (
             "qualified_identity_and_coelution_rejection"

@@ -34,6 +34,7 @@ from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
     resolve_target_definition,
 )
+from xic_extractor.extraction.paired_coelution import istd_half_width_min
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
@@ -58,6 +59,8 @@ from xic_extractor.extraction.targeted_istd_backfill import (
     resolve_targeted_istd_backfill,
 )
 from xic_extractor.extraction.targeted_peak_evidence import (
+    HMDC_COELUTING_RNA_ISOMER,
+    HMDC_COMPETING_RNA_FRAGMENT,
     reselect_targeted_peak_evidence,
     targeted_fragment_identity_rejection,
 )
@@ -512,6 +515,11 @@ def _apply_paired_istd_positions(
         positions = paired_istd_positions(
             analyte,
             istd,
+            {
+                sample: width
+                for sample, result in istd.items()
+                if (width := istd_half_width_min(result)) is not None
+            },
             expected_offset_min=current_target_reference_rt(
                 target, reference_rt=0.0, paired_target=targets_by_label[pair]
             ),
@@ -589,7 +597,12 @@ def _finalized_extraction_result(
             conflict_reasons=tuple(
                 reason
                 for reason in projection.conflict_reasons
-                if reason != "hmdc_competing_rna_fragment"
+                if reason != HMDC_COMPETING_RNA_FRAGMENT
+            ),
+            review_reasons=tuple(
+                reason
+                for reason in projection.review_reasons
+                if reason != HMDC_COELUTING_RNA_ISOMER
             ),
         )
     # Finalization can replace the capture with a retained Backfill candidate.
@@ -597,18 +610,20 @@ def _finalized_extraction_result(
     fragment_rejection = targeted_fragment_identity_rejection(
         target, extraction.candidate_ms2_evidence
     )
-    if fragment_rejection:
+    if fragment_rejection == HMDC_COMPETING_RNA_FRAGMENT:
         no_write_reason = fragment_rejection
-        if (
-            projection is not None
-            and fragment_rejection == "hmdc_competing_rna_fragment"
-        ):
+        if projection is not None:
             projection = replace(
                 projection,
-                conflict_reasons=(
-                    fragment_rejection,
-                    *projection.conflict_reasons,
-                ),
+                conflict_reasons=(fragment_rejection, *projection.conflict_reasons),
+            )
+    elif fragment_rejection == HMDC_COELUTING_RNA_ISOMER:
+        # Identity stands; the MS1 area also integrates the co-eluting isomer.
+        no_write_reason = no_write_reason or "not_quantifiable"
+        if projection is not None:
+            projection = replace(
+                projection,
+                review_reasons=(*projection.review_reasons, fragment_rejection),
             )
     projection = _finalized_product_projection(
         projection,

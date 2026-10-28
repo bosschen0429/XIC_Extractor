@@ -1254,109 +1254,77 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
     assert raw.windows == [(0.0, 20.0)]
 
 
-def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "analyte_rt_range,analyte_peak,ms2",
+    [
+        # Own NL support, outside the analyte's expected RT range.
+        ((13.4, 13.8), 13.06, NLResult("OK", 1.0, 13.06, 1, 0, 1)),
+        # Own NL support, a quarter minute from the ISTD.
+        ((12.7, 14.7), 13.95, NLResult("OK", 1.0, 13.95, 1, 0, 1)),
+        # No NL support.
+        ((12.7, 14.7), 14.31, NLResult("NL_FAIL", None, None, 1, 0, 1)),
+    ],
+)
+def test_paired_analyte_peak_that_does_not_coelute_with_istd_is_not_selected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    analyte_rt_range,
+    analyte_peak,
+    ms2,
 ) -> None:
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD", rt_min=13.4, rt_max=13.8),
+        _target(
+            "Analyte",
+            istd_pair="ISTD",
+            rt_min=analyte_rt_range[0],
+            rt_max=analyte_rt_range[1],
+        ),
         _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
+    raw = _RecordingRaw(peak_centers=[13.70, analyte_peak])
+    analyte_candidates: list[float] = []
 
-    raw = _RecordingRaw(peak_centers=[13.70, 13.06])
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM,
-        lambda *_args, **_kwargs: raw,
-    )
+    def _fake_select_peak_and_area(
+        candidates_result: PeakCandidatesResult,
+        config: ExtractionConfig,
+        *,
+        preferred_rt: float | None = None,
+        strict_preferred_rt: bool = False,
+        scoring_context_builder: object | None = None,
+        istd_confidence_note: str | None = None,
+        **_kwargs: object,
+    ) -> PeakDetectionResult:
+        if _typed_kwarg(_kwargs, "evidence_role") != "ISTD":
+            analyte_candidates.extend(
+                c.selection_apex_rt for c in candidates_result.candidates
+            )
+            return _failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1.0)
+        return _with_runtime_typed_scores(
+            _ok_peak(13.70, 2000.0, 3000.0),
+            candidates_result=candidates_result,
+            preferred_rt=preferred_rt,
+            evidence_role="ISTD",
+            istd_pair="",
+            paired_istd_anchor_rt=None,
+        )
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
-        _peak_sequence(
-            [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.06, 5000.0, 8000.0)]
-        ),
+        _fake_select_peak_and_area,
     )
-    _set_ms2_fixtures(
-        [
-            NLResult("OK", 1.0, 13.70, 1, 0, 1),
-            NLResult("OK", 1.0, 13.06, 1, 0, 1),
-        ]
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 13.70, 1, 0, 1), ms2])
 
     output = _run(config, targets)
 
-    expected_peak = _formatted_peak_columns(
-        "Analyte", output.file_results[0].results["Analyte"]
-    )
-    # The fixture supplies a symmetric Gaussian on a fixed acquired
-    # grid. Its nearest sample to the known center is the independent apex
-    # oracle; the mocked ranking result does not own physical peak facts.
-    assert len(raw.windows) == 2
-    sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
-    expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.06))]
-    assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
-    assert (
-        _result_row(output, targets, "Analyte", 0)["Int"]
-        == expected_peak["Analyte_Int"]
-    )
-    assert (
-        _result_row(output, targets, "Analyte", 0)["Area"]
-        == expected_peak["Analyte_Area"]
-    )
-    long_rows = _run_output_to_long_rows(output, targets)
-    analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["Confidence"] == "LOW"
-    assert analyte_row["Product State"] == "detected_clean"
-    assert analyte_row["Counted Detection"] == "TRUE"
-    assert analyte_row["Projection Conflict Reasons"] == ""
-    assert output.file_results[0].results["Analyte"].confidence == "LOW"
-    # Expected RT and the paired offset are identity priors, not DDA anchor crops.
-    assert all(record.issue != "NL_ANCHOR_FALLBACK" for record in output.diagnostics)
-    assert output.file_results[0].results["Analyte"].candidate_ms2_evidence.nl_match
-
-
-def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from_istd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = _config(tmp_path)
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [
-        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
-        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
-    ]
-
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM,
-        _open_raw_factory(peak_centers=[13.70, 13.95]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
-        _peak_sequence(
-            [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.95, 5000.0, 8000.0)]
-        ),
-    )
-    _set_ms2_fixtures(
-        [
-            NLResult("OK", 1.0, 13.70, 1, 0, 1),
-            NLResult("OK", 1.0, 13.95, 1, 0, 1),
-        ]
-    )
-
-    output = _run(config, targets)
-
-    result = output.file_results[0].results["Analyte"]
-    expected = _formatted_peak_columns("Analyte", result)
-    assert _result_row(output, targets, "Analyte", 0)["RT"] == expected["Analyte_RT"]
-    assert float(_result_row(output, targets, "Analyte", 0)["RT"]) == pytest.approx(
-        13.95, abs=0.03
-    )
-    assert (
-        _result_row(output, targets, "Analyte", 0)["Area"] == expected["Analyte_Area"]
-    )
-    diagnostics = _diagnostics_to_rows(output.diagnostics)
-    assert not any(
-        record["Target"] == "Analyte" and record["Issue"] == "ANCHOR_RT_MISMATCH"
-        for record in diagnostics
-    )
+    # The ISTD of this injection fixes where its analyte co-elutes; a peak
+    # outside its half-width is another signal, with or without its own NL.
+    assert all(abs(rt - analyte_peak) > 0.05 for rt in analyte_candidates)
+    analyte_row = _result_row(output, targets, "Analyte", 0)
+    assert analyte_row["Counted Detection"] == "FALSE"
+    assert analyte_row["RT"] in {"", "ND"}
 
 
 def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
@@ -1461,76 +1429,6 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
     assert analyte_row["Counted Detection"] == "FALSE"
     assert (
         "cid_nl_method_not_supported" in analyte_row["Projection Not Counted Reasons"]
-    )
-
-
-def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = _config(tmp_path)
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [
-        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
-        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
-    ]
-
-    raw = _RecordingRaw(peak_centers=[13.70, 14.31])
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM,
-        lambda *_args, **_kwargs: raw,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
-        _peak_sequence(
-            [
-                _ok_peak(13.70, 2000.0, 3000.0),
-                _ok_peak(14.31, 5000.0, 8000.0, nl_match=False),
-            ]
-        ),
-    )
-    _set_ms2_fixtures(
-        [
-            NLResult("OK", 1.0, 13.70, 1, 0, 1),
-            NLResult("NL_FAIL", None, None, 1, 0, 1),
-        ]
-    )
-
-    output = _run(config, targets)
-
-    expected_peak = _formatted_peak_columns(
-        "Analyte", output.file_results[0].results["Analyte"]
-    )
-    assert len(raw.windows) == 2
-    sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
-    expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 14.31))]
-    assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
-    assert (
-        _result_row(output, targets, "Analyte", 0)["Area"]
-        == expected_peak["Analyte_Area"]
-    )
-    long_rows = _run_output_to_long_rows(output, targets)
-    analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["RT"] == expected_peak["Analyte_RT"]
-    assert analyte_row["Area"] == expected_peak["Analyte_Area"]
-    assert analyte_row["Confidence"] == "VERY_LOW"
-    assert analyte_row["Product State"] == "not_counted"
-    assert analyte_row["Counted Detection"] == "FALSE"
-    assert (
-        "cid_nl_method_not_supported" in analyte_row["Projection Not Counted Reasons"]
-    )
-    assert output.file_results[0].results["Analyte"].confidence == "LOW"
-    selected_peak = output.file_results[0].results["Analyte"].peak_result.peak
-    assert selected_peak is not None
-    istd_rt = output.file_results[0].results["ISTD"].reported_rt
-    assert istd_rt is not None
-    diagnostics = _diagnostics_to_rows(output.diagnostics)
-    assert any(
-        record["Target"] == "Analyte"
-        and record["Issue"] == "ANCHOR_RT_MISMATCH"
-        and f"Paired analyte peak RT {selected_peak.rt:.3f}" in record["Reason"]
-        and f"ISTD anchor at {istd_rt:.3f}" in record["Reason"]
-        and "allowed ±0.50 min" in record["Reason"]
-        for record in diagnostics
     )
 
 

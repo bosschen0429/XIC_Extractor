@@ -11,7 +11,6 @@ import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.targeted_strategy import (
-    TARGETED_PAIRED_RT_TOLERANCE_MIN,
     TARGETED_PRECURSOR_REFERENCE,
     TARGETED_REFERENCE_HALF_WINDOW_MIN,
 )
@@ -19,9 +18,14 @@ from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
 )
+from xic_extractor.extraction.paired_coelution import coelutes_with_istd
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import selected_candidate
-from xic_extractor.extraction.targeted_peak_evidence import build_targeted_peak_evidence
+from xic_extractor.extraction.targeted_peak_evidence import (
+    HMDC_COMPETING_RNA_FRAGMENT,
+    build_targeted_peak_evidence,
+    targeted_fragment_identity_rejection,
+)
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
@@ -112,25 +116,48 @@ class TargetedCandidateAssessment:
         scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
         istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
+        paired_istd_half_width: float | None = None,
     ) -> PeakDetectionResult:
         candidates = self.candidates
         if (
             not self.target.is_istd
             and self.target.istd_pair
             and paired_istd_anchor_rt is not None
+            and paired_istd_half_width is not None
             and self.preferred_rt is not None
         ):
+            # preferred_rt is this injection's ISTD apex plus the pair offset.
             local = tuple(
                 candidate
                 for candidate in candidates.candidates
-                if abs(candidate.selection_apex_rt - self.preferred_rt)
-                <= TARGETED_PAIRED_RT_TOLERANCE_MIN
+                if coelutes_with_istd(
+                    candidate.selection_apex_rt,
+                    self.preferred_rt,
+                    paired_istd_half_width,
+                )
             )
             candidates = replace(
                 candidates,
                 candidates=local,
                 status="OK" if local else "PEAK_NOT_FOUND",
                 n_prominent_peaks=len(local),
+            )
+        # A peak whose own fragments name a different compound is not this
+        # target's observation; it must not compete with or veto its neighbours.
+        other_compound = {
+            c
+            for c in candidates.candidates
+            if targeted_fragment_identity_rejection(
+                self.target, self.candidate_ms2_evidence.get(c)
+            )
+            == HMDC_COMPETING_RNA_FRAGMENT
+        }
+        if other_compound and len(other_compound) < len(candidates.candidates):
+            remaining = tuple(
+                c for c in candidates.candidates if c not in other_compound
+            )
+            candidates = replace(
+                candidates, candidates=remaining, n_prominent_peaks=len(remaining)
             )
         # Every local observation has already received its method assessment.
         # Quantitative suitability can resolve an unsupported MS1-only choice,

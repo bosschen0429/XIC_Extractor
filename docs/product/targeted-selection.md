@@ -76,7 +76,7 @@ localization hints and trace quality; contextual RT and deterministic abundance
 break ties within the supported evidence ordering. Expected RT and paired-ISTD
 shifts localize candidates, not acquisition. The default candidate half-window
 is two minutes around the current reference; a wider declared target interval
-retains its half-width. The paired-ISTD one-minute constraint still applies when
+retains its half-width. The paired-ISTD co-elution constraint still applies when
 that anchor exists. Outside candidates cannot substitute for missing local
 evidence. Exact-mass MS1 acquisition spans the sample acquisition interval,
 including targets without MS2. The complete scan population is read once per sample; each tag is
@@ -171,17 +171,21 @@ separate.
 
 For the 5-hmdC mass/chemistry (258.1085, deoxyribose loss 116.0474), a
 candidate-local recorded-precursor transition consistent with ribose loss
-132.0423 (product 126.0662) is competing RNA evidence. It uses the shared RNA
-mass and minimum-relative-intensity policy, not merely the absence of product
-142.0611. The retained scan numbers follow the physical candidate through
-finalization and Backfill. Such a candidate is not counted and its reported RT
-and area are blank; paired-ISTD proximity cannot override it. Seeing both
-transitions remains a mixture/identity conflict, not a forced alternate peak
-or definitive RNA structural assignment. Evidence outside the candidate or
-without a compatible recorded precursor does not trigger this rule. Other
-target masses and isotope standards retain their existing policies.
-When neither DNA nor competing RNA fragments were observed, the existing
-physical-peak, paired-ISTD and Backfill rules still apply. Missing fragmentation
+132.0423 (product 126.0662) is RNA evidence. It uses the shared RNA mass and
+minimum-relative-intensity policy, not merely the absence of product 142.0611.
+The retained scan numbers follow the physical candidate through finalization
+and Backfill. Each physical peak is judged by its own sugar losses:
+
+| Inside the peak | Result |
+| --- | --- |
+| Ribose loss, no deoxyribose loss | The peak is an RNA isomer (`hmdc_competing_rna_fragment`). It leaves the candidate population; only when every local peak is RNA-only is the cell published with this conflict and blank RT/area. Paired-ISTD proximity cannot override it. |
+| Both losses | 5-hmdC is identified, but its MS1 area includes the co-eluting isomer (`hmdc_coeluting_rna_isomer`): not quantifiable, RT/area blank. |
+| Neither | Not a veto; the physical-peak, paired-ISTD and Backfill rules apply. |
+
+An RNA-only peak does not veto a neighbouring peak, and this is not a
+definitive RNA structural assignment. Evidence outside the candidate or without
+a compatible recorded precursor does not trigger this rule. Other target masses
+and isotope standards retain their existing policies. Missing fragmentation
 alone is not a veto or proof of chemical absence, nor does it guarantee recovery.
 The distinguishing transitions are supported by authentic-standard
 [LC-MS/MS measurements of DNA and RNA nucleosides](https://pmc.ncbi.nlm.nih.gov/articles/PMC4993491/).
@@ -203,15 +207,26 @@ composes it once every Target of the batch has rendered. All of these must hold:
    recovered peak, whose first capture may describe another peak). It has no
    conflict or exclusion, and its only not-counted reasons are missing direct
    NL/MS2.
-3. Its apex RT is within ±1 minute of the counted ISTD plus the configured
-   analyte-minus-ISTD expected-RT offset. The Targeted strategy receipt records
-   this tolerance. Selected batch peaks do not shift or expand this window.
-   Batch confirmation count is not an identity gate; the current-sample ISTD,
-   peak-quality and blocker requirements above still apply.
+3. Its apex co-elutes with the ISTD: it lies within the ISTD's own
+   half-prominence width of the ISTD apex plus the configured
+   analyte-minus-ISTD expected-RT offset (`extraction.paired_coelution`).
+   The width is read from the ISTD's reported physical peak in the same
+   injection, so poor chromatography widens it and a sharp ISTD keeps a closely
+   eluting isomer with identical fragments out. Selected batch peaks do not
+   shift or expand this position. Batch confirmation count is not an identity
+   gate; the current-sample ISTD, peak-quality and blocker requirements above
+   still apply. Without a measurable ISTD width no pair position is applied.
+
+The bundled targets carry the analyte-minus-ISTD offsets measured on mixed
+standards (deuterated pairs elute 2–10 s apart; 15N/13C pairs co-elute).
+Analyte and ISTD share the same chromatographic drift, so the offset holds
+while absolute RT moves. On a 54-sample urine batch, 92–95% of 8-oxodG and
+8-oxo-Guo apexes with their own NL support fell within one ISTD half-width;
+for 5-medC, the N4-medC isomer about 20 s later falls outside it.
 
 When a credible paired ISTD is available during acquisition, selection first
-restricts the already-qualified physical candidates to this same window, then
-ranks their evidence. A remote NL-supported peak cannot displace a local peak.
+restricts the already-qualified physical candidates to this same position,
+then ranks their evidence. A remote NL-supported peak cannot displace a local peak.
 No qualified local candidate means no selected value, not relaxed physical
 qualification. Multiple local candidates without a unique candidate-level NL
 match are retained as `paired_istd_multiple_candidates` ambiguity, not counted
@@ -225,7 +240,7 @@ remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
 The same position also rejects. When the paired ISTD is counted, any analyte
-peak outside that tolerance is another signal, not this analyte, even if its own
+peak outside that co-elution position is another signal, not this analyte, even if its own
 neutral loss had made it counted. Its RT, area and bounds are published as ND
 (`analyte_peak_off_paired_istd_position`) and counted detection is false. The
 measured peak remains an `OFF_ISTD_POSITION` diagnostic event and its candidate
