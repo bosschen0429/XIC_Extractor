@@ -985,11 +985,16 @@ def validate_physical_peak_question(question: PhysicalPeakQuestion) -> None:
 
 
 def validate_physical_peak_answer(answer: PhysicalPeakAnswer) -> None:
-    if answer.schema_version != "physical_peak_answer":
+    if answer.schema_version not in {
+        "physical_peak_answer",
+        "physical_observation_answer",
+    }:
         raise ValueError("unsupported physical peak answer schema")
     if answer.state not in {"available", "unavailable", "failed"}:
         raise ValueError("unsupported physical peak answer state")
-    if (answer.state == "available") != (answer.reason == ""):
+    if answer.schema_version == "physical_peak_answer" and (
+        answer.state == "available"
+    ) != (answer.reason == ""):
         raise ValueError("physical peak answer state/reason is not canonical")
     if (answer.state == "available") != (answer.selected_segment is not None):
         raise ValueError("physical peak answer selection is not canonical")

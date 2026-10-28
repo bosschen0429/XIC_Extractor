@@ -51,7 +51,6 @@ def test_observation_preserves_background_contour_but_withholds_quantitation():
     raw += 5.0 * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
     observation = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
-        selection_subject_id="known-target",
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_OBSERVATION_POLICY,
     )
