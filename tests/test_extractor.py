@@ -1650,81 +1650,6 @@ def _ok_peak(
     )
 
 
-def _ok_peak_with_rejected_candidate(
-    rt: float,
-    intensity: float,
-    area: float,
-) -> PeakDetectionResult:
-    selected = _candidate(rt, intensity=intensity, area=area)
-    rejected = _candidate(
-        rt + 0.4,
-        intensity=intensity * 0.4,
-        area=area * 0.25,
-        proposal_sources=("local_minimum",),
-    )
-    return PeakDetectionResult(
-        status="OK",
-        peak=selected.peak,
-        n_points=15,
-        max_smoothed=intensity,
-        n_prominent_peaks=2,
-        candidates=(selected, rejected),
-        candidate_scores=(
-            _candidate_score(selected, confidence="HIGH", raw_score=90),
-            _candidate_score(rejected, confidence="LOW", raw_score=45),
-        ),
-    )
-
-
-def _candidate(
-    rt: float,
-    *,
-    intensity: float = 1200.0,
-    area: float = 3400.25,
-    proposal_sources: tuple[str, ...] = ("legacy_savgol",),
-) -> PeakCandidate:
-    peak = PeakResult(
-        rt=rt,
-        intensity=intensity,
-        intensity_smoothed=intensity,
-        area=area,
-        peak_start=rt - 0.5,
-        peak_end=rt + 0.5,
-    )
-    return PeakCandidate(
-        peak=peak,
-        selection_apex_rt=rt,
-        selection_apex_intensity=intensity,
-        selection_apex_index=7,
-        raw_apex_rt=rt,
-        raw_apex_intensity=intensity,
-        raw_apex_index=7,
-        prominence=intensity * 0.5,
-        proposal_sources=proposal_sources,
-        source_apex_rank=1,
-        region_scan_count=15,
-        region_duration_min=1.0,
-        region_edge_ratio=1.5,
-    )
-
-
-def _candidate_score(
-    candidate: PeakCandidate,
-    *,
-    confidence: str,
-    raw_score: int,
-) -> PeakCandidateScore:
-    return PeakCandidateScore(
-        candidate=candidate,
-        confidence=confidence,
-        reason=f"decision: {confidence.lower()}",
-        raw_score=raw_score,
-        support_labels=("strict_nl_ok",),
-        concern_labels=() if confidence == "HIGH" else ("nl_fail",),
-        cap_labels=() if confidence == "HIGH" else ("nl_fail_cap",),
-    )
-
-
 def _failed_peak(
     status: str, *, n_points: int, max_smoothed: float | None
 ) -> PeakDetectionResult:
@@ -1807,15 +1732,6 @@ def _capturing_peak_sequence(
         return result
 
     return _fake_select_peak_and_area
-
-
-def _anchor_sequence(results: list[float | None]):
-    pending = list(results)
-
-    def _fake_find_nl_anchor_rt(*_args, **_kwargs) -> float | None:
-        return pending.pop(0)
-
-    return _fake_find_nl_anchor_rt
 
 
 def _dedupe_consecutive(values: list[float | None]) -> list[float | None]:

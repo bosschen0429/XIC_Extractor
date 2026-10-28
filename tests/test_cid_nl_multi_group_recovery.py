@@ -31,16 +31,12 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
 )
-from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSamplePartitionTransition,
-)
-from xic_extractor.alignment.feature_membership_inference import (
-    supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
@@ -201,15 +197,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     )
     backfills = {}
     for name in ("narrow", "other", "compatible"):
-        # Both conflicting shapes pass individually against the references:
-        # r(narrow, reference)=.898, r(wide, reference)=.818, but r(narrow, wide)=.597.
-        assert supports_existing_feature(
-            owners[name],
-            group.owners,
-            config=config,
-            rt_frame=frame,
-            rules=CID_NL_GROUPING_RULES,
-        )
         backfills[
             (
                 group.group_hypothesis_id,

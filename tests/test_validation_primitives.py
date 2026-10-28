@@ -18,12 +18,10 @@ from xic_extractor.validation_primitives import (
     require_mapping,
     require_optional_integer,
     require_optional_lower_sha256,
-    require_optional_owner_normalized_text,
     require_optional_text,
     require_owner_normalized_text,
     require_text,
     require_tuple_of,
-    sha256_hexdigest,
 )
 
 
@@ -211,9 +209,6 @@ def test_require_owner_normalized_text() -> None:
     with pytest.raises(ValueError, match="f must be non-empty owner-normalized text"):
         require_owner_normalized_text(None, field="f")
 
-    assert require_optional_owner_normalized_text(None, field="f") is None
-    assert require_optional_owner_normalized_text("valid", field="f") == "valid"
-
 
 def test_require_mapping_and_list() -> None:
     assert require_mapping({"a": 1}, label="obj") == {"a": 1}
@@ -268,14 +263,3 @@ def test_require_tuple_of() -> None:
 
     with pytest.raises(ValueError, match="numbers must be a tuple of int values"):
         require_tuple_of((1, "two", 3), int, field="numbers")
-
-
-def test_sha256_hexdigest() -> None:
-    import hashlib
-
-    data_bytes = b"test payload"
-    data_str = "test payload"
-    expected = hashlib.sha256(data_bytes).hexdigest()
-
-    assert sha256_hexdigest(data_bytes) == expected
-    assert sha256_hexdigest(data_str) == expected

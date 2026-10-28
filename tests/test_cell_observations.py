@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from copy import copy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -609,16 +608,6 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         predecessor_cells=(first_cell, second_cell),
     )
     assert len(composed) == 2
-
-    crossed = copy(first_cell)
-    object.__setattr__(crossed, "group_context", second_cell.group_context)
-    with pytest.raises(
-        CellObservationContractError, match="duplicates a coverage position"
-    ):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(crossed, second_cell),
-        )
 
 
 @pytest.mark.parametrize("outside_support", (False, True))

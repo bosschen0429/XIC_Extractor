@@ -20,8 +20,6 @@ from xic_extractor.alignment.backfill.conservative import (
     ConservativeBackfillContractError,
     ConservativeBackfillEvidence,
     assess_conservative_backfill_group,
-    assess_targeted_conservative_backfill_group,
-    assess_untargeted_conservative_backfill_group,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
     mint_conservative_backfill_candidate_universe,
@@ -87,16 +85,11 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         invocation="roles",
     )
 
-    targeted = assess_targeted_conservative_backfill_group(
-        spine.targeted_projections,
-        sample_population=fixture.samples,
-    )
-    untargeted = assess_untargeted_conservative_backfill_group(
-        spine.untargeted_projections,
+    targeted = assess_conservative_backfill_group(
+        spine.cells,
         sample_population=fixture.samples,
     )
 
-    assert targeted == untargeted
     assert all(
         left is right
         for left, right in zip(
@@ -168,16 +161,11 @@ def test_large_run_backfill_preserves_population_threshold(
         support_apex_by_sample={f"s{i}": 8.0 for i in range(support_count)},
         invocation="large-run",
     )
-    for facts in (
-        assess_targeted_conservative_backfill_group(
-            spine.targeted_projections, sample_population=fixture.samples
-        ),
-        assess_untargeted_conservative_backfill_group(
-            spine.untargeted_projections, sample_population=fixture.samples
-        ),
-    ):
-        assert facts.minimum_support_k == 4
-        assert facts.may_attempt_backfill is (support_count >= 4)
+    facts = assess_conservative_backfill_group(
+        spine.cells, sample_population=fixture.samples
+    )
+    assert facts.minimum_support_k == 4
+    assert facts.may_attempt_backfill is (support_count >= 4)
     plans = plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
     )

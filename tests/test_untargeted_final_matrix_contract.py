@@ -191,13 +191,3 @@ def _integration(
 def _read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
-
-
-def _worksheet_records(sheet) -> list[dict[str, object]]:
-    rows = list(sheet.iter_rows(values_only=True))
-    headers = [str(value) for value in rows[0]]
-    return [
-        dict(zip(headers, row, strict=True))
-        for row in rows[1:]
-        if any(value is not None for value in row)
-    ]

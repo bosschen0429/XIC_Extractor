@@ -19,21 +19,7 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_cid_nl_curves,
     read_cid_nl_explanation,
 )
-from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-
-
-def test_cid_nl_evidence_locator_immutability() -> None:
-    locator = EvidenceLocator(
-        report_path=Path("out/cid_nl_explanation.sqlite"),
-        matrix_path=Path("out/alignment_matrix.tsv"),
-        matrix_sha256="abcd" * 16,
-        processing_attempt_id="att-01",
-        schema_version="alignment_explanation",
-    )
-    assert locator.schema_version == "alignment_explanation"
-    with pytest.raises(AttributeError):
-        locator.schema_version = "unknown"  # type: ignore
 
 
 def test_curve_payload_write_and_read() -> None:

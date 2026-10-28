@@ -1563,50 +1563,6 @@ def _display_collision_matrix() -> AlignmentMatrix:
     )
 
 
-def _split_writer_matrix(
-    peak_hypotheses: tuple[SimpleNamespace, ...],
-) -> AlignmentMatrix:
-    parent = SimpleNamespace(
-        feature_id="FAM_PARENT",
-        neutral_loss_tag="DNA_dR",
-        family_center_mz=500.123,
-        family_center_rt=8.49,
-        family_product_mz=384.076,
-        family_observed_neutral_loss_da=116.047,
-        has_anchor=True,
-        event_cluster_ids=("FAM_PARENT",),
-        event_member_count=2,
-        evidence="owner_complete_link;owner_count=2",
-        peak_hypotheses=peak_hypotheses,
-    )
-    return AlignmentMatrix(
-        clusters=(parent,),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="FAM_PARENT", area=100.0),
-            _cell("sample-b", "detected", cluster_id="FAM_PARENT", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-
-def _split_hypothesis(
-    peak_hypothesis_id: str,
-    sample_stems: tuple[str, ...],
-    *,
-    source_feature_ids: tuple[str, ...] | None = ("FAM_PARENT",),
-) -> SimpleNamespace:
-    values: dict[str, object] = {
-        "peak_hypothesis_id": peak_hypothesis_id,
-        "row_identity_basis": "split_peak_hypothesis",
-        "split_evaluation_status": "complete_product_ready_split",
-        "projection_status": "not_projection",
-        "sample_stems": sample_stems,
-    }
-    if source_feature_ids is not None:
-        values["source_feature_ids"] = source_feature_ids
-    return SimpleNamespace(**values)
-
-
 def _cell(
     sample_stem: str,
     status,

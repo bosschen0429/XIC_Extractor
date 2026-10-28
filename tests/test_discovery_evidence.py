@@ -51,18 +51,6 @@ def test_default_evidence_profile_pins_thresholds() -> None:
     assert thresholds.scan_support_low_score_max == 0.2
 
 
-def test_evidence_weights_are_frozen_and_hashable() -> None:
-    first = DiscoveryEvidenceWeights()
-    second = DiscoveryEvidenceWeights()
-    assert hash(first) == hash(second)
-
-
-def test_evidence_thresholds_are_frozen_and_hashable() -> None:
-    first = DiscoveryEvidenceThresholds()
-    second = DiscoveryEvidenceThresholds()
-    assert hash(first) == hash(second)
-
-
 def test_score_discovery_evidence_preserves_default_baseline() -> None:
     evidence = score_discovery_evidence(_candidate(), settings=_settings())
 

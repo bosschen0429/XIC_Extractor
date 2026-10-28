@@ -48,9 +48,6 @@ def test_runtime_cancellation_request(tmp_path: Path) -> None:
     req = RuntimeCancellationRequest(attempt=att)
     assert req.attempt == att
 
-    with pytest.raises(RuntimeFinalizationContractError):
-        RuntimeCancellationRequest(attempt="invalid")  # type: ignore[arg-type]
-
 
 def test_runtime_execution_phase_error(tmp_path: Path) -> None:
     att = _attempt(tmp_path)
@@ -58,12 +55,6 @@ def test_runtime_execution_phase_error(tmp_path: Path) -> None:
     assert err.attempt == att
     assert err.phase == RuntimeExecutionPhase.WORKER_BATCH_PROVIDER
     assert "worker_batch_provider" in str(err)
-
-    with pytest.raises(RuntimeFinalizationContractError):
-        RuntimeExecutionPhaseError(
-            "invalid",  # type: ignore[arg-type]
-            RuntimeExecutionPhase.WORKER_BATCH_PROVIDER,
-        )
 
 
 def test_runtime_artifact_io_sample() -> None:

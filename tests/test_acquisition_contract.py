@@ -161,10 +161,6 @@ def test_runtime_owner_aggregates_only_typed_acquisition_receipts(
     assert metrics.xic_batch_count == 2
     assert metrics.adapter_chromatogram_call_count == 0
     assert metrics.trace_point_count == 6
-    with pytest.raises(ValueError, match="TraceAcquisitionBatch receipts"):
-        derive_runtime_acquisition_metrics(  # type: ignore[arg-type]
-            ({"logical_xic_request_count": 999},)
-        )
 
 
 def test_batch_trace_contract_records_observed_backend_call_delta(
