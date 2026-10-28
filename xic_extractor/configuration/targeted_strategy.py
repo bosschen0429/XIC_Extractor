@@ -19,6 +19,10 @@ from xic_extractor.settings_schema import TARGETED_STRATEGY
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
 TARGETED_REFERENCE_HALF_WINDOW_MIN = 2.0
+# MS1 half-window around the injection's ISTD-measured mass offset. On a
+# 54-sample urine batch, 86/92 NL-supported co-eluting analytes fell within
+# 6 ppm of it, while neighbouring interferences sat 9-25 ppm away.
+TARGETED_MS1_MASS_TOLERANCE_PPM = 6.0
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,8 @@ def strategy_receipt() -> dict:
             "rna_only_peak_veto_mixed_peak_unquantified_missing_fragments_allow_backfill"
         ),
         "paired_istd_coelution": "istd_apex_plus_offset_within_istd_half_width",
+        "ms1_mass_window": "median_istd_injection_offset_when_three_measured",
+        "ms1_mass_tolerance_ppm": TARGETED_MS1_MASS_TOLERANCE_PPM,
         "paired_istd_selection": "local_method_evidence_before_quantitation",
         "uncalibrated_paired_istd_position": (
             "qualified_identity_and_coelution_rejection"

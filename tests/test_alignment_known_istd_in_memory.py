@@ -373,6 +373,10 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
                 for x in requests
             )
 
+        def scan_window_for_request(self, request):
+            # No MS1 spectra: the injection mass offset stays unmeasured.
+            return 1, 0
+
         def iter_ms2_scans(self, low, high):
             return tuple(
                 Ms2ScanEvent(

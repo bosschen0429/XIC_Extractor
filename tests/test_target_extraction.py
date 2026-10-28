@@ -414,6 +414,85 @@ def test_expected_rt_localizes_candidates_without_cropping_acquisition(
     assert not result.cid_nl_relations.supported_candidate_indexes
 
 
+@pytest.mark.parametrize("offset_ppm,narrowed", [(3.0, True), (16.0, False)])
+def test_injection_mass_offset_reads_target_in_its_calibrated_narrow_window(
+    tmp_path, offset_ppm, narrowed
+):
+    target = _intent_target(8.0)
+    config = _strategy_config(tmp_path)
+    rt = np.linspace(0, 12, 601)
+    intensity = 10 + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+    requests = []
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            requests.append((mz, low, high, ppm))
+            return rt, intensity
+
+        def iter_ms2_scans(self, low, high):
+            return iter(())
+
+    results = {}
+    target_extraction.extract_one_target(
+        Raw(),
+        config,
+        "sample",
+        target,
+        reference_rt=None,
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(config=config),
+        ms1_mass_offset_ppm=offset_ppm,
+    )
+    # The calibrated read must stay inside the declared window; an offset too
+    # large for that keeps the declared window.
+    expected = (
+        (pytest.approx(target.mz * (1 + offset_ppm / 1e6)), 0.0, 12.0, 6.0)
+        if narrowed
+        else (target.mz, 0.0, 12.0, target.ppm_tol)
+    )
+    assert requests == [expected]
+    trace = results[target.label].acquisition_trace
+    assert (trace.mz, trace.ppm_tol) == (target.mz, target.ppm_tol)
+
+
+@pytest.mark.parametrize(
+    "errors,expected", [((3.0, 3.5, 2.5, 18.0), 3.25), ((3.0, 18.0), None)]
+)
+def test_injection_mass_offset_is_the_median_of_measured_istds(errors, expected):
+    from types import SimpleNamespace
+
+    from xic_extractor.extraction.injection_mass_offset import (
+        injection_mass_offset_ppm,
+    )
+
+    istds = [
+        replace(_intent_target(8.0), label=f"ISTD{i}", mz=200.0 + 50 * i)
+        for i in range(len(errors))
+    ]
+    error_by_mz = {t.mz: e for t, e in zip(istds, errors, strict=True)}
+
+    class Raw:
+        def scan_window_for_request(self, request):
+            return 10, 12
+
+        def retention_time_for_scan(self, scan):
+            return 8.0
+
+        def ms1_centroid_mz(self, rt, low, high):
+            mz = (low + high) / 2
+            # One ISTD selected on a neighbouring interference reads far off.
+            return mz * (1 + error_by_mz[mz] / 1e6)
+
+    offset = injection_mass_offset_ppm(
+        Raw(), [(t, SimpleNamespace(reported_rt=8.0)) for t in istds]
+    )
+    assert offset == (None if expected is None else pytest.approx(expected))
+
+
 @pytest.mark.parametrize("precursor_offset", [0.0, 0.5])
 def test_targeted_products_use_discovery_seeds_once_per_tag(
     monkeypatch, precursor_offset

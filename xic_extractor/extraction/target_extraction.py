@@ -13,6 +13,9 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
+from xic_extractor.configuration.targeted_strategy import (
+    TARGETED_MS1_MASS_TOLERANCE_PPM,
+)
 from xic_extractor.extraction.anchors import (
     paired_anchor_mismatch_diagnostic,
 )
@@ -20,6 +23,7 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
+from xic_extractor.extraction.injection_mass_offset import injection_mass_offset_ppm
 from xic_extractor.extraction.paired_coelution import istd_half_width_min
 from xic_extractor.extraction.result_assembly import prepare_acquired_observation
 from xic_extractor.extraction.scoring_factory import (
@@ -149,31 +153,49 @@ def process_file(
             results: dict[str, ExtractionResult] = {}
             diagnostics: list[DiagnosticRecord] = []
             istd_shape_metrics_by_label: dict[str, tuple[float, float | None]] = {}
-            istd_confidence_by_label = {}
+            istd_confidence_by_label: dict[str, str] = {}
             istd_anchor_rts: dict[str, float] = {}
-            for target in targets:
-                if not target.is_istd:
-                    continue
-                extract_one_target(
-                    raw,
-                    config,
-                    sample_name,
-                    target,
-                    reference_rt=None,
-                    sample_window=sample_window,
-                    method_seeds=seeds_by_tag.get(target.cid_nl_tag),
-                    strict_preferred_rt=False,
-                    results=results,
-                    diagnostics=diagnostics,
-                    scoring_context_factory=scoring_context_factory,
-                    shape_metrics_by_label=istd_shape_metrics_by_label,
-                )
-                confidence = results[target.label].peak_result.confidence
-                if confidence is not None:
-                    istd_confidence_by_label[target.label] = confidence
-                anchor_rt = credible_istd_anchor_rt(results.get(target.label))
-                if anchor_rt is not None:
-                    istd_anchor_rts[target.label] = anchor_rt
+
+            def extract_istds(mass_offset_ppm: float | None) -> None:
+                results.clear()
+                diagnostics.clear()
+                istd_shape_metrics_by_label.clear()
+                istd_confidence_by_label.clear()
+                istd_anchor_rts.clear()
+                for target in targets:
+                    if not target.is_istd:
+                        continue
+                    extract_one_target(
+                        raw,
+                        config,
+                        sample_name,
+                        target,
+                        reference_rt=None,
+                        sample_window=sample_window,
+                        method_seeds=seeds_by_tag.get(target.cid_nl_tag),
+                        strict_preferred_rt=False,
+                        results=results,
+                        diagnostics=diagnostics,
+                        scoring_context_factory=scoring_context_factory,
+                        shape_metrics_by_label=istd_shape_metrics_by_label,
+                        ms1_mass_offset_ppm=mass_offset_ppm,
+                    )
+                    confidence = results[target.label].peak_result.confidence
+                    if confidence is not None:
+                        istd_confidence_by_label[target.label] = confidence
+                    anchor_rt = credible_istd_anchor_rt(results.get(target.label))
+                    if anchor_rt is not None:
+                        istd_anchor_rts[target.label] = anchor_rt
+
+            extract_istds(None)
+            # The configured window can admit a stronger neighbouring ion. Once
+            # the ISTDs measure this injection's mass offset, every Target,
+            # ISTDs included, is read again in that calibrated narrow window.
+            mass_offset_ppm = injection_mass_offset_ppm(
+                raw, ((t, results[t.label]) for t in targets if t.is_istd)
+            )
+            if mass_offset_ppm is not None:
+                extract_istds(mass_offset_ppm)
             sample_drift = estimate_sample_drift(targets, istd_anchor_rts)
             istd_targets = {
                 target.label: target for target in targets if target.is_istd
@@ -214,6 +236,7 @@ def process_file(
                         target,
                         istd_shape_metrics_by_label,
                     ),
+                    ms1_mass_offset_ppm=mass_offset_ppm,
                 )
             return result_models.FileResult(
                 sample_name=sample_name,
@@ -246,6 +269,7 @@ def extract_one_target(
     istd_rt_in_this_sample: float | None = None,
     paired_istd_fwhm: float | None = None,
     shape_metrics_by_label: dict[str, tuple[float, float | None]] | None = None,
+    ms1_mass_offset_ppm: float | None = None,
 ) -> float | None:
     selection_config = replace(
         config,
@@ -263,12 +287,16 @@ def extract_one_target(
     selection_rt_min, selection_rt_max = raw.acquisition_rt_bounds()
     context_rt_min, context_rt_max = selection_rt_min, selection_rt_max
     anchor_rt = target_reference_rt
-    rt, intensity = raw.extract_xic(
-        target.mz,
-        context_rt_min,
-        context_rt_max,
-        target.ppm_tol,
+    # The trace keeps the Target's declared m/z and ppm as its identity. A
+    # measured injection offset narrows the read to its calibrated core, which
+    # must lie inside that declared window; otherwise the declared window stays.
+    xic_mz, xic_ppm = (
+        (target.mz * (1 + ms1_mass_offset_ppm / 1e6), TARGETED_MS1_MASS_TOLERANCE_PPM)
+        if ms1_mass_offset_ppm is not None
+        and abs(ms1_mass_offset_ppm) + TARGETED_MS1_MASS_TOLERANCE_PPM <= target.ppm_tol
+        else (target.mz, target.ppm_tol)
     )
+    rt, intensity = raw.extract_xic(xic_mz, context_rt_min, context_rt_max, xic_ppm)
     if sample_window is None:
         sample_window = (
             acquire_ms2_window(

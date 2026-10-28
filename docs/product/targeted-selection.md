@@ -85,6 +85,20 @@ resolution within each target’s m/z population before candidate-local CID-NL
 assessment. Different recorded precursors from one scan remain available to
 their respective targets.
 
+The MS1 trace is read in the injection's own mass window
+(`extraction.injection_mass_offset`). ISTDs are first read with the configured
+ppm tolerance; the median of their apex centroid errors is the injection's
+systematic mass offset. Every Target, ISTDs included, is then read again at
+m/z × (1 + offset) ± 6 ppm. That calibrated core must lie inside the Target's
+declared window, which remains the trace and capture-binding identity; an
+offset too large for that keeps the declared window. At least three measured
+ISTDs are required, so an ISTD selected on a neighbouring interference cannot
+move the offset; otherwise the configured tolerance stays. On a 54-sample urine batch the injection offsets were +2.8 to +4.0 ppm;
+86 of 92 co-eluting, NL-supported analytes lay within 6 ppm of it, while
+interferences that a 20 ppm trace had merged into or substituted for the
+target peak lay 9–25 ppm away. MS2 precursor matching keeps the shared
+precursor mass policy.
+
 Within the same chemical-support tier, ISTD selection checks anchor
 completeness, then continuous distance from the known reference before
 morphology, review-blocker count, MS2 trace strength or abundance. Drifting
