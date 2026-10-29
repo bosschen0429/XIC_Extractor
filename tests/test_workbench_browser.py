@@ -646,36 +646,27 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     )
 
 
-def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_errors):
+def test_empty_targeted_run_explains_where_to_add_a_target(workbench):
     page = workbench
     page.locator("#target-edit").click()
     page.get_by_role("button", name="刪除第 1 列", exact=True).click()
     page.locator("#target-editor").get_by_role(
         "button", name="完成", exact=True
     ).click()
-    expected_http_error = (
-        "Failed to load resource: the server responded with a status of "
-        "400 (Bad Request)"
+    requests = []
+    page.on(
+        "request",
+        lambda request: (
+            requests.append(request.url)
+            if request.url.endswith("/api/analysis/start")
+            else None
+        ),
     )
-    with page.expect_console_message(
-        lambda message: message.type == "error" and message.text == expected_http_error
-    ):
-        with page.expect_response("**/api/analysis/start") as response:
-            _start(page, "targeted")
-    # This rejection is the contract under test; all other browser errors still fail.
-    browser_errors.remove(expected_http_error)
-    assert response.value.status == 400
-    technical_detail = response.value.json()["error"]
-    assert technical_detail
+    _start(page, "targeted")
     error = page.locator("#toasts .toast.error")
-    expect(error).to_contain_text("請先在 Targeted 清單新增至少一個 target")
-    expect(error).to_contain_text(technical_detail)
-    state = page.request.get(
-        response.value.url.replace("/start", ""),
-        headers={"X-XIC-Client": "workbench"},
-    )
-    assert state.ok
-    assert state.json()["job"] is None
+    expect(error).to_have_text("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。")
+    # The empty list is caught before any run request reaches the workspace.
+    assert requests == []
 
 
 @pytest.mark.parametrize(
@@ -858,31 +849,31 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
         page.locator("#query-form button[type=submit]").click()
     titles = page.locator("#item-list .item-top strong")
     expect(titles).to_have_count(25)
-    expect(titles.nth(0)).to_have_text("m/z 123.398")
-    expect(titles.nth(1)).to_have_text("m/z 123.42")
+    expect(titles.nth(0)).to_have_text("m/z 123.3980")
+    expect(titles.nth(1)).to_have_text("m/z 123.4200")
     expect(titles.nth(2)).to_have_text("m/z 123.4567")
     # The workspace tests own distance/ranking correctness; the UI must display
     # the returned distance rather than recompute it from the formatted title.
-    distance = query.value.json()["items"][0]["mz_distance"]
+    distance = query.value.json()["items"][0]["mz_distance"] / 123.4 * 1e6
     expect(page.locator("#item-list .item-distance").first).to_have_text(
-        f"Δm/z {distance}"
+        f"Δ {distance:.1f} ppm" if distance < 10 else f"Δ {round(distance):,} ppm"
     )
     expect(page.locator("#nearest-results-note")).to_contain_text("1 組缺少有效 m/z")
     expect(page.locator("#list-summary")).to_contain_text("32")
     page.locator("#next").click()
     expect(titles).to_have_count(7)
-    expect(titles.last).to_have_text("m/z 350")
+    expect(titles.last).to_have_text("m/z 350.0000")
     page.locator("#previous").click()
-    expect(titles.nth(0)).to_have_text("m/z 123.398")
+    expect(titles.nth(0)).to_have_text("m/z 123.3980")
 
     # Optional RT narrows eligibility without changing distance order and
     # remains applied when pagination requests the next candidate slice.
     page.locator("#rt-min").fill("0.5")
     page.locator("#query-form button[type=submit]").click()
-    expect(titles.nth(0)).to_have_text("m/z 123.42")
+    expect(titles.nth(0)).to_have_text("m/z 123.4200")
     page.locator("#next").click()
     expect(titles).to_have_count(6)
-    expect(titles.last).to_have_text("m/z 350")
+    expect(titles.last).to_have_text("m/z 350.0000")
     page.locator("#reset-query").click()
     expect(page.locator("#nearest-mz")).to_have_value("")
     expect(page.locator("#rt-min")).to_have_value("")
@@ -929,7 +920,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     }
     expect(page.locator("#item-list button")).to_have_count(25)
     expect(page.locator("#item-list .item-top strong").first).to_have_text(
-        "m/z 123.398"
+        "m/z 123.3980"
     )
     for invalid in ("abc", "Infinity", "NaN", "0", "-1"):
         page.locator("#nearest-mz").fill(invalid)
@@ -941,7 +932,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     expect(page.locator("#nearest-mz-error")).to_be_hidden()
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list .item-top strong").first).to_have_text(
-        "m/z 123.398"
+        "m/z 123.3980"
     )
 
 
@@ -2397,8 +2388,8 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     if mode == "nearest":
         expect(page.locator("#nearest-mz")).to_have_value("123.4")
         expect(titles).to_have_count(25)
-        expect(titles.nth(0)).to_have_text("m/z 123.398")
-        expect(titles.nth(1)).to_have_text("m/z 123.42")
+        expect(titles.nth(0)).to_have_text("m/z 123.3980")
+        expect(titles.nth(1)).to_have_text("m/z 123.4200")
         expect(page.locator("#list-summary")).to_contain_text("32")
     else:
         expect(page.locator("#mz-min")).to_have_value("123.4")

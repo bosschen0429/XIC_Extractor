@@ -151,6 +151,11 @@ window.XicUi = (() => {
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
   const count = (value) => Number(value).toLocaleString();
+  // Mass distance reads in ppm of the queried m/z, the unit used for tolerance.
+  const ppm = (distance, mz) => {
+    const value = (distance / mz) * 1e6;
+    return value < 10 ? value.toFixed(1) : Math.round(value).toLocaleString();
+  };
   // Intensities span decades, so they read as Excel-style scientific notation.
   const scientific = (value) => {
     const [mantissa, exponent] = value.toExponential(2).split("e");
@@ -749,7 +754,7 @@ window.XicUi = (() => {
       top.className = "item-top";
       const title = document.createElement("strong");
       title.textContent = targeted ? item.title
-        : `m/z ${nearest ? String(item.precursor_mz) : fmt(item.precursor_mz, 4)}`;
+        : `m/z ${fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
       rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
@@ -766,7 +771,7 @@ window.XicUi = (() => {
       if (label) bottom.append(node("span", label, `chip ${badgeTone[label] || "warn"}`));
       button.append(top);
       if (nearest) {
-        button.append(node("span", `Δm/z ${item.mz_distance}`, "item-distance"));
+        button.append(node("span", `Δ ${ppm(item.mz_distance, page.nearest_mz)} ppm`, "item-distance"));
       }
       button.append(bottom);
       button.addEventListener("click", () =>

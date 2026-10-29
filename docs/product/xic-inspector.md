@@ -33,7 +33,8 @@ into the default result list. Matrix and unresolved-group review offers a
 single approximate m/z query; RT is optional. Candidates are ranked across the
 selected population by absolute distance from the item's unrounded displayed
 precursor m/z, then canonical item ID, before pagination in pages of 25. The
-list shows the distance and counts groups excluded for missing valid m/z. It
+list shows m/z to four decimals with the distance in ppm of the query, and
+counts groups excluded for missing valid m/z. It
 does not apply an implicit mass tolerance or confirm compound identity.
 
 The separate exact mode retains group ID, m/z and RT witness-chain filtering;
