@@ -1021,57 +1021,19 @@ th.num {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 48px 24px 40px;
+  gap: 10px;
+  padding: 56px 24px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  box-shadow: none;
   text-align: center;
-}
-.review-empty h2 {
-  font-size: 18px;
 }
 .review-empty-links {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   justify-content: center;
   gap: 4px;
-  color: var(--muted);
   font-size: 13px;
-}
-.review-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 220px));
-  gap: 14px;
-  margin: 6px 0 4px;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
-}
-.review-steps li {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
-  text-align: left;
-  counter-increment: step;
-}
-.review-steps li::before {
-  content: counter(step);
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-}
-.review-steps span {
-  color: var(--subtle);
-  font-size: 12px;
 }
 .inline-status {
   display: flex;
@@ -1141,8 +1103,27 @@ th.num {
 .overview-quantities { margin: 24px 0; }
 .overview-quantities summary { cursor: pointer; color: var(--muted); }
 .overview-quantities table { margin-top: 14px; }
-.overview-unknown { color: var(--warn); }
-.targeted-review-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; position: sticky; top: var(--topbar-h); z-index: 5; background: var(--surface); padding: 10px 0; }
+.overview-unknown { color: var(--warn); font-size: 13px; }
+/* Untargeted: the conclusion and its actions share one row; counts sit beside. */
+.overview-lead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 48px; margin-bottom: 20px; }
+.overview-lead .overview-heading h2 { margin: 0 0 16px; }
+.overview-lead .overview-actions { margin: 0; }
+.overview-lead .overview-metrics { margin: 0; gap: 40px; }
+.overview-coverage { max-width: 720px; text-align: left; font-size: 14px; }
+.overview-coverage th, .overview-coverage td { padding: 9px 12px; }
+.overview-coverage .meter-bar { width: 220px; }
+.overview-more { margin-top: 20px; }
+.overview-more summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.overview-more .overview-actions { margin: 12px 0 0; }
+.targeted-review-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.targeted-review-nav button { min-height: 30px; padding: 4px 10px; border-color: transparent; background: transparent; color: var(--accent); font-size: 13px; }
+.targeted-review-nav button:hover { background: var(--accent-soft); }
+/* Untargeted curves: counts in one quiet line, then the plot. */
+#inline-curves { padding: 0 22px; }
+#inline-curve-coverage { margin: 0 0 6px; color: var(--subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
+#inline-curve-status { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+#inline-curve-status:empty { display: none; }
+
 @media (max-width: 700px) {
   .targeted-overview { padding: 20px 16px; }
   .overview-heading h2 { font-size: 22px; }
@@ -1164,19 +1145,43 @@ th.num {
   overflow: hidden;
 }
 .list-panel form {
-  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
 }
-.list-panel h2 {
-  font-size: 15px;
+.list-panel form .field {
+  margin: 0;
 }
-.list-panel .subtle {
-  margin: 2px 0 10px;
-  font-size: 12px;
+/* Mode and value read as one search field. */
+#untargeted-search:not([hidden]) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0;
+}
+#untargeted-search select {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  background-color: var(--surface-2);
+}
+#untargeted-search input {
+  margin: 0;
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+#untargeted-search #nearest-mz-field[hidden] + .query-error,
+#untargeted-search:has(#nearest-mz-field[hidden]) select {
+  border-radius: var(--radius-sm);
+}
+#untargeted-search .query-error {
+  grid-column: 1 / -1;
+  margin-top: 6px;
 }
 .range-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 10px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr) 10px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   margin-top: 8px;
@@ -1193,25 +1198,75 @@ th.num {
   padding: 5px 8px;
   font-size: 13px;
 }
-.query-advanced {
-  margin-top: 10px;
+.query-advanced > summary {
+  color: var(--subtle);
+  font-size: 12px;
 }
-.query-advanced .field {
+.query-advanced > input {
   margin-top: 8px;
 }
+.query-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .search-button {
-  width: 100%;
-  margin-top: 12px;
+  flex: 1;
 }
 .list-summary {
   display: flex;
-  justify-content: space-between;
-  padding: 8px 16px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px 8px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface-2);
   color: var(--subtle);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.list-summary strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+.list-summary .list-sort {
+  margin-left: auto;
+}
+.nearest-results-note {
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--subtle);
+  font-size: 12px;
+}
+.nearest-results-note[hidden] {
+  display: none;
+}
+/* A fraction as a bar with its exact count. */
+.meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.meter-bar {
+  position: relative;
+  width: 64px;
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+.meter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.meter-text {
+  color: var(--subtle);
+  font-size: 12px;
 }
 .item-list {
   flex: 1;
@@ -1261,7 +1316,8 @@ th.num {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 5px;
+  min-height: 20px;
+  margin-top: 4px;
   color: var(--subtle);
   font-size: 12px;
 }
@@ -1303,6 +1359,9 @@ th.num {
   gap: 14px;
   padding: 18px 22px 6px;
 }
+.detail-heading .eyebrow:empty {
+  display: none;
+}
 .detail-heading h2 {
   font-size: 22px;
   font-weight: 650;
@@ -1330,10 +1389,6 @@ th.num {
   display: flex;
   align-items: center;
   gap: 7px;
-}
-.acquisition-panel .subtle {
-  margin: 3px 0 10px;
-  font-size: 12px;
 }
 .sample-list {
   display: flex;
@@ -1701,3 +1756,67 @@ kbd {
 .query-error { margin: 8px 0; color: var(--danger); font-size: 12px; }
 .nearest-results-note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .item-distance { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Sample choice is a quiet line until opened. */
+.acquisition-panel:not([open]) {
+  padding: 6px 0;
+  border-color: transparent;
+  background: transparent;
+}
+.acquisition-panel > summary.section-heading {
+  justify-content: flex-start;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+#recorded-review {
+  padding: 0 22px 22px;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.button-link.icon-only {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+.item-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.item-stepper button {
+  min-width: 34px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+}
+.item-stepper span {
+  min-width: 64px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+#inline-curve-status.error {
+  color: var(--danger);
+}
+#inline-curve-status.working {
+  color: var(--accent);
+}
+@media (max-width: 640px) {
+  .source-summary {
+    flex-wrap: wrap;
+  }
+  .source-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

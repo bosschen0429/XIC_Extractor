@@ -404,3 +404,29 @@
 .xic-inspector > .detail-panel { border:0;box-shadow:none;border-radius:0;background:transparent; }
 .xic-inspector[data-mode="offline"].tx-body { max-width:1100px;padding:16px 24px 12px; }
 @media(max-width:760px) { .xic-inspector[data-mode="offline"] { padding:12px; } }
+/* Compact RT window: one quiet row under the plot title. */
+.xic-inspector .rt-range { display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 8px;color:var(--muted);font-size:12px; }
+.xic-inspector .rt-range input { width:84px;min-height:28px;padding:3px 7px;font-size:12px;font-variant-numeric:tabular-nums; }
+.xic-inspector .rt-range button { min-height:28px;padding:2px 10px;font-size:12px; }
+.xic-inspector .rt-range .text-action { border-color:transparent;background:transparent;color:var(--accent); }
+.xic-inspector .curve-toolbar { display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-bottom:10px; }
+.xic-inspector .curve-toolbar .overlay-controls { margin:0;font-size:12px;color:var(--muted); }
+/* Saved results: numbers align right; rows without a number recede. */
+.xic-inspector .saved-table td { vertical-align:middle; }
+
+.xic-inspector .saved-table .num { text-align:right;font-variant-numeric:tabular-nums; }
+.xic-inspector .saved-table .saved-note { color:var(--muted);font-size:12px; }
+.xic-inspector .saved-table tr.saved-empty td:first-child { color:var(--muted); }
+.xic-inspector .saved-table .result-missing { padding:0;background:transparent; }
+.xic-inspector .internal-evidence > summary { color:var(--muted);font-size:13px;cursor:pointer; }
+/* Hosted views sit inside the host's card: no second card or page wash. */
+.xic-inspector:not([data-mode="offline"]) { position:relative;background:transparent; }
+.xic-inspector:not([data-mode="offline"]) .detail-panel { padding:0;border:0;border-radius:0;background:transparent; }
+.xic-inspector[data-mode="curves"] .signal-bar { position:absolute;top:0;right:0;margin:0;z-index:1; }
+.xic-inspector[data-mode="curves"] .curve-toolbar { min-height:34px;padding-right:128px; }
+.xic-inspector[data-mode="result"] .signal-bar { display:none; }
+.xic-inspector .saved-table .sample-dot { display:inline-block;margin-right:8px;vertical-align:middle; }
+.xic-inspector .saved-table td { padding-top:9px;padding-bottom:9px; }
+.xic-inspector .saved-table .evidence-actions { justify-content:flex-end; }
+.xic-inspector .saved-table .evidence-link { min-height:0;padding:2px 6px;color:var(--subtle);font-size:12px; }
+.xic-inspector .saved-table tr:hover .evidence-link, .xic-inspector .saved-table .evidence-link:focus-visible { color:var(--accent); }

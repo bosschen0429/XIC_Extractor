@@ -709,27 +709,27 @@ def readable_curve(
 
 def _decision_label(cells):
     if not cells:
-        return "沒有這個樣本的定量決策紀錄。"
+        return "沒有定量決策紀錄"
     if len(cells) != 1:
-        return f"保留 {len(cells)} 筆定量決策，沒有合併成單一數值。"
+        return f"{len(cells)} 筆定量決策，未合併"
     cell = cells[0]
     value = cell["quantitative_value"]
     if value is None:
         variant = cell.get("variant")
         variant_label = {
-            "not_searched": "本次未搜尋，定量結果保留為空值。",
-            "rejected_observation": "本次觀察未被採用，定量結果保留為空值。",
-            "unavailable": "本次沒有可用觀察，定量結果保留為空值。",
-            "unresolved": "當次決策尚未解決，定量結果保留為空值。",
+            "not_searched": "未搜尋",
+            "rejected_observation": "觀察未採用",
+            "unavailable": "無可用觀察",
+            "unresolved": "決策未解決",
         }.get(variant)
         if variant_label:
             return variant_label
-        return "當次定量決策記錄為空值，並非零。"
+        return "記錄為空值"
     if value == 0:
-        return "當次定量決策記錄的數值為零。"
+        return "記錄為零"
     if cell.get("source") == "trapezoid_counts_seconds_on_canonical_signal":
-        return "依當次採用的訊號，以梯形積分面積定量。"
-    return "當次定量決策已保留數值。"
+        return "梯形積分面積"
+    return "已保留數值"
 
 
 def _item_labels(item, samples, route):
