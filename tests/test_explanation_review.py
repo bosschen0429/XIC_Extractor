@@ -23,6 +23,7 @@ from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_inspector.api import SelectionRequest, generate_report
 from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.curve_bundle import read_curve_bundle
+from xic_workbench import acquisition
 from xic_workbench.acquisition import (
     CurveAcquisitionCancelled,
     export_explanation_curves,
@@ -390,7 +391,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
             return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
 
     @contextmanager
-    def raw(path, dll, *, expected_acquisition_source, mass_recalibration):
+    def raw(path, dll, *, expected_acquisition_source, mass_recalibration, **_kwargs):
         opened.append(path.name)
         assert expected_acquisition_source.content_sha256
         yield Raw()
@@ -437,12 +438,14 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
     return review, group_id, sample_ids, candidates
 
 
-def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None):
+def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None, empty=()):
     class Raw:
         def __init__(self, stem):
             self.stem = stem
 
         def extract_xic(self, mz, lower, upper, ppm):
+            if self.stem in empty:
+                return np.array([]), np.array([])
             rt = np.linspace(lower, upper, 51)
             amplitude = 1000 if self.stem == "S1" else 2000
             result = rt, amplitude * np.exp(-(((rt - 8) / 0.08) ** 2))
@@ -451,7 +454,7 @@ def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None):
             return result
 
     @contextmanager
-    def raw(path, dll, *, expected_acquisition_source, mass_recalibration):
+    def raw(path, dll, *, expected_acquisition_source, mass_recalibration, **_kwargs):
         opened.append((path.name, expected_acquisition_source.acquisition_source_id))
         yield Raw(path.stem)
 
@@ -515,6 +518,76 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
         and curve["provenance"]["raw_identity"].startswith("sha256:")
         for curve in inspector_curves
     )
+
+
+def test_curve_export_skips_a_sample_without_usable_signal(tmp_path, monkeypatch):
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    _install_distinct_curve_raws(monkeypatch, [], empty={"S1"})
+    output = tmp_path / "partial.json"
+
+    result = export_explanation_curves(
+        review,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id=group_id,
+        sample_ids=tuple(sample_ids.values()),
+    )
+
+    assert result["unusable_samples"] == ["S1"]
+    traces = read_curve_bundle(output).transitions[0].traces
+    assert [trace.sample_label for trace in traces] == ["S2"]
+
+    _install_distinct_curve_raws(monkeypatch, [], empty={"S1", "S2"})
+    with pytest.raises(ExplanationError, match="都沒有可用訊號"):
+        export_explanation_curves(
+            review,
+            tmp_path / "none.json",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            group_id=group_id,
+            sample_ids=tuple(sample_ids.values()),
+        )
+    assert not (tmp_path / "none.json").exists()
+
+
+def test_curve_export_reuses_content_verification_while_raw_is_unchanged(
+    tmp_path, monkeypatch
+):
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    _install_distinct_curve_raws(monkeypatch, [])
+    hashed = []
+    real = acquisition.fingerprint_file_content
+    monkeypatch.setattr(
+        acquisition,
+        "fingerprint_file_content",
+        lambda path, **kwargs: hashed.append(path.name) or real(path, **kwargs),
+    )
+    verified = {}
+    for name in ("first.json", "second.json"):
+        export_explanation_curves(
+            review,
+            tmp_path / name,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            group_id=group_id,
+            sample_ids=tuple(sample_ids.values()),
+            verified_raws=verified,
+        )
+    assert sorted(hashed) == ["S1.raw", "S2.raw"]
+
+    # A changed file is verified again, and mismatched content still fails.
+    (tmp_path / "S1.raw").write_bytes(b"another acquisition")
+    with pytest.raises(ExplanationError, match="分析時使用的 RAW 內容不同"):
+        export_explanation_curves(
+            review,
+            tmp_path / "third.json",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            group_id=group_id,
+            sample_ids=tuple(sample_ids.values()),
+            verified_raws=verified,
+        )
 
 
 def test_curve_export_sample_scope_opens_only_selected_raw(tmp_path, monkeypatch):
@@ -582,7 +655,7 @@ def test_curve_export_rejects_identity_mismatch_before_raw_open(tmp_path, monkey
     )
     output = tmp_path / "identity-mismatch.json"
 
-    with pytest.raises(ExplanationError, match="does not match exactly one"):
+    with pytest.raises(ExplanationError, match="分析時使用的 RAW 內容不同"):
         export_explanation_curves(
             review,
             output,
@@ -626,7 +699,11 @@ def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw
 
 @pytest.mark.parametrize("saved", (False, True))
 def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch, saved):
-    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.configuration.mass_recalibration import (
+        MassRecalibration,
+        MassRecalibrationResult,
+        serialize_mass_recalibration_result,
+    )
     from xic_extractor.output.alignment.pipeline_outputs import _write_metadata_json
 
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
@@ -637,8 +714,18 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
             tmp_path / "alignment_run_metadata.json",
             {
                 "processing_attempt_id": summary["processing_attempt_id"],
+                # The producer publishes each sample's complete probe result.
                 "mass_recalibration_by_sample": json.dumps(
-                    {s: {"policy": p} for s, p in policies.items()}
+                    {
+                        s: json.loads(
+                            serialize_mass_recalibration_result(
+                                MassRecalibrationResult(
+                                    "unavailable", policy=MassRecalibration(p)
+                                )
+                            )
+                        )
+                        for s, p in policies.items()
+                    }
                 ),
             },
         )
@@ -646,8 +733,13 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
     else:
         _write_metadata_json(tmp_path / "alignment_run_metadata.json", {})
 
+    replayed = {}
+
     @contextmanager
     def raw(path, dll, *, mass_recalibration=MassRecalibration.NONE, **kwargs):
+        prepared = kwargs.get("prepared_mass_recalibration")
+        replayed[path.stem] = prepared and prepared.result.outcome
+
         class Raw:
             def extract_xic(self, mz, lower, upper, ppm):
                 rt = np.linspace(lower, upper, 51)
@@ -673,6 +765,8 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
     }
     assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
     assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
+    # A saved probe result is replayed; the RAW is not probed again.
+    assert replayed == {"S1": "unavailable" if saved else None, "S2": None}
 
     if saved:
         sidecar = tmp_path / "alignment_run_metadata.json"

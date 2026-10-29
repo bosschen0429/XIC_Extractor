@@ -72,6 +72,13 @@ def main(argv: list[str] | None = None) -> int:
                 ppm=args.curve_ppm,
             )
             print(json.dumps(result, indent=2))
+            if result["unusable_samples"]:
+                # The bundle omits these samples; say so beside the receipt.
+                print(
+                    "No usable signal near the retained apex, omitted: "
+                    + ", ".join(result["unusable_samples"]),
+                    file=sys.stderr,
+                )
             return 0
         if args.compact_to is not None:
             from xic_extractor.diagnostics.explanation_conversion import (

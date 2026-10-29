@@ -162,15 +162,18 @@ window.XicUi = (() => {
     診斷曲線: "accent",
   };
   let statusOwner = "review";
-  function status(message, kind = "", owner = "review") {
+  // Headlines stay in plain language; the technical reason is one hover away.
+  function status(message, kind = "", owner = "review", detail = "") {
     statusOwner = owner;
     $("status").textContent = message;
     $("status").className = `inline-status ${kind}`;
+    $("status").title = detail;
   }
-  function curveStatus(message, kind = "") {
+  function curveStatus(message, kind = "", detail = "") {
     $("xic-status").textContent = message;
     $("inline-curve-status").textContent = message;
     $("inline-curve-status").className = kind;
+    $("inline-curve-status").title = detail;
     // Untargeted curves report beside their plot. Targeted curve completion may
     // replace its own page feedback, not a still-valid query or saved-result
     // error; the drawer retains the curve's local feedback.
@@ -192,7 +195,9 @@ window.XicUi = (() => {
     });
     const data = await response.json();
     if (!response.ok)
-      throw new Error(data.error || `要求失敗（${response.status}）`);
+      throw Object.assign(new Error(data.error || `要求失敗（${response.status}）`), {
+        detail: data.detail || "",
+      });
     return data;
   }
   const reviewSlots = new Map();
@@ -406,7 +411,7 @@ window.XicUi = (() => {
     try {
       await work();
     } catch (error) {
-      status(error.message, "error");
+      status(error.message, "error", "review", error.detail);
     } finally {
       state.busy = false;
       controls();
@@ -899,8 +904,10 @@ window.XicUi = (() => {
     const mounted = await mountReview(targeted ? "xic-review" : "inline-curve-review", view.id, "curves");
     if (!mounted || state.curveView !== view) return;
     if (!targeted) {
-      // The plotted curves are their own receipt beside the saved values.
-      curveStatus("");
+      // The plotted curves are their own receipt beside the saved values;
+      // only samples left out of the plot need words.
+      const labels = (view.unusable || []).join("、");
+      curveStatus(labels ? `${labels} 在保留峰頂附近沒有可用訊號` : "");
       $("inline-curve-review").hidden = false;
       return;
     }
@@ -910,8 +917,8 @@ window.XicUi = (() => {
     $("xic-retry").hidden = true;
     $("xic-download").hidden = false;
   }
-  function curveMessage(message, retry = false, kind = retry ? "error" : "working") {
-    curveStatus(message, kind);
+  function curveMessage(message, retry = false, kind = retry ? "error" : "working", detail = "") {
+    curveStatus(message, kind, detail);
     if (state.page.source_kind !== "targeted_workbook") {
       $("inline-curves").hidden = false;
       $("inline-curve-review").hidden = true;
@@ -1034,7 +1041,7 @@ window.XicUi = (() => {
     const key = JSON.stringify([state.recorded, request]);
     state.curveRequestKey = key;
     if (state.curveCache.has(key)) {
-      showCurveView({id: state.curveCache.get(key)});
+      showCurveView({...state.curveCache.get(key)});
       return;
     }
     curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
@@ -1045,7 +1052,7 @@ window.XicUi = (() => {
       $("job-progress").hidden = false;
       updateProgress(state.job);
       controls();
-      setTimeout(() => pollJob(view), 400);
+      setTimeout(() => pollJob(view), 100);
     } catch (error) {
       curveMessage(error.message, true);
     }
@@ -1068,16 +1075,17 @@ window.XicUi = (() => {
       updateProgress(job);
       if (["running", "cancelling"].includes(job.status)) {
         controls();
-        setTimeout(() => pollJob(view), 500);
+        setTimeout(() => pollJob(view), 150);
         return;
       }
       if (job.status === "succeeded") {
-        state.curveCache.set(state.curveRequestKey, job.view_id);
-        if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
         view.id = job.view_id;
+        view.unusable = job.receipt?.unusable_samples || [];
+        state.curveCache.set(state.curveRequestKey, {...view});
+        if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
         showCurveView(view);
       } else {
-        curveMessage(job.message, true, job.status === "failed" ? "error" : "");
+        curveMessage(job.message, true, job.status === "failed" ? "error" : "", job.detail);
       }
       state.job = null;
       if (!state.restoring && serverPage !== state.page) restoreQuery(state.page, state.filters);

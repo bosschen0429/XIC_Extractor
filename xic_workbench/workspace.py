@@ -12,6 +12,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from xic_extractor.diagnostics.alignment_explanation import (
+    ExplanationError,
+    ExplanationUnavailableError,
+)
 from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
@@ -64,6 +68,7 @@ class ReviewWorkspace:
         )
         self._cancel = threading.Event()
         self._report: Path | None = None
+        self._verified_raws: dict[Path, Any] = {}
         self._page: PreparedReport | None = None
         self._job: dict[str, Any] | None = None
         self._detail: dict[str, Any] | None = None
@@ -109,7 +114,16 @@ class ReviewWorkspace:
         ).resolve()
         with self._lock:
             self._require_idle()
-            summary = read_evidence_summary(path)
+            try:
+                summary = read_evidence_summary(path)
+            except ExplanationUnavailableError:
+                raise
+            except ExplanationError as exc:
+                # The technical reason travels as detail, not as the headline.
+                raise ValueError(
+                    "無法讀取這份結果：可能由舊版本產生或檔案已損壞，"
+                    "請用目前版本重新執行分析。"
+                ) from exc
             sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
@@ -126,6 +140,8 @@ class ReviewWorkspace:
             )
             # Failed opens never displace the previously usable batch.
             self._report, self._page = path, page
+            # RAW content checks are reused only while this batch stays open.
+            self._verified_raws = {}
             self._detail, self._job = None, None
             return self._page_response()
 
@@ -437,6 +453,7 @@ class ReviewWorkspace:
                     expected_source=expected_source,
                     is_cancelled=cancel.is_set,
                     on_progress=acquired,
+                    verified_raws=self._verified_raws,
                 )
             else:
                 receipt = export_explanation_curves(
@@ -445,6 +462,7 @@ class ReviewWorkspace:
                     **request,
                     is_cancelled=cancel.is_set,
                     on_progress=acquired,
+                    verified_raws=self._verified_raws,
                 )
             prepared = prepare_report(
                 bundle_path,
@@ -469,8 +487,15 @@ class ReviewWorkspace:
                 phase="已取消",
                 message="已取消；原有檢閱結果仍可使用。",
             )
-        except Exception as exc:
+        except ExplanationError as exc:
             update(status="failed", phase="未完成", message=str(exc))
+        except Exception as exc:
+            update(
+                status="failed",
+                phase="未完成",
+                message="讀取 RAW 時發生錯誤。",
+                detail=f"{type(exc).__name__}: {exc}",
+            )
 
     def job(self, job_id: str) -> dict[str, Any]:
         with self._lock:
