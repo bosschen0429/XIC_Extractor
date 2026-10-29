@@ -939,7 +939,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
         expect(page.locator("#nearest-mz-error")).to_contain_text("大於 0 的有限 m/z")
         assert not page.locator("#query-form").evaluate("form => form.checkValidity()")
         page.locator("#query-form button[type=submit]").click()
-        expect(page.locator("#nearest-results-note")).to_contain_text("123.4")
+        expect(page.locator("#list-summary")).to_contain_text("123.4")
     page.locator("#nearest-mz").fill("123.4000")
     expect(page.locator("#nearest-mz-error")).to_be_hidden()
     page.locator("#query-form button[type=submit]").click()
@@ -1080,7 +1080,8 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     page.locator("#back-to-overview").click()
     overview.locator("summary").click()
     overview.get_by_role("button", name="1 組未採用").click()
-    expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
+    expect(page.locator("#list-summary strong")).to_have_text("未採用群組")
+    expect(page.locator("#list-summary")).to_contain_text("1 組")
     expect(
         page.locator("#recorded-review").locator(".sample-table tbody tr").first
     ).to_contain_text("5.000e+2")
@@ -1130,7 +1131,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
                 "[data-inspector-id='svg-raw'] polyline"
             )
         ).to_have_count(1)
-        page.locator("#item-list button").filter(has_text="6 / 6 個樣本有值").click()
+        page.locator("#item-list button").filter(has_text="6 / 6").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
@@ -2240,7 +2241,7 @@ def test_targeted_role_change_preserves_other_filter_inputs(role_review):
     expect(page.locator("#target-id")).to_have_value("")
     expect(names).to_have_text(["全部目標", "Gamma"])
     empty = page.locator("#selection-empty")
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     expect(empty).to_contain_text("ISTD")
     expect(page.locator("#target-sample")).to_have_value("S3")
     expect(page.locator("#target-attention")).to_be_checked()
@@ -2322,14 +2323,14 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
     page.locator("#target-id").select_option("ISTD")
     empty = page.locator("#selection-empty")
     expect(empty).to_be_visible()
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
-    for condition in ("目標：ISTD", "樣本：S3", "優先檢閱", "清除條件"):
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
+    for condition in ("目標：ISTD", "樣本：S3", "優先檢閱"):
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
     expect(page.locator("#selection")).to_be_hidden()
     _view(page, "targeted")
     page.go_back()
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     expect(page.locator("#target-id")).to_have_value("ISTD")
     expect(page.locator("#target-attention")).to_be_checked()
 
@@ -2348,7 +2349,7 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
     )
     page.unroute("**/api/query")
     page.locator("#target-id").select_option("ISTD")
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     page.locator("#target-attention").uncheck()
     expect(empty).to_be_hidden()
     expect(page.locator("#item-title")).to_contain_text("ISTD")
@@ -2385,8 +2386,8 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page.locator("#rt-min").fill("20")
     page.locator("#query-form button[type=submit]").click()
     empty = page.locator("#selection-empty")
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
-    for condition in ("矩陣群組", "123.4", "RT ≥ 20", "清除條件"):
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
+    for condition in ("矩陣群組", "123.4", "RT ≥ 20"):
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
     if mode == "exact":
@@ -2423,7 +2424,7 @@ def test_zero_result_history_discards_pending_query_feedback(
     page.locator("#target-attention").check()
     page.locator("#target-id").select_option("ISTD")
     empty = page.locator("#selection-empty")
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     pending = []
     page.route("**/api/query", lambda route: pending.append(route))
     with page.expect_request("**/api/query"):
@@ -2440,7 +2441,7 @@ def test_zero_result_history_discards_pending_query_feedback(
     ):
         pending.pop().fulfill(status=500, json={"error": "Discarded query failure"})
     browser_errors.remove(expected_http_error)
-    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     expect(empty).to_contain_text("目標：ISTD")
     expect(empty).to_contain_text("優先檢閱")
     expect(page.locator("#status")).not_to_contain_text("Discarded query failure")

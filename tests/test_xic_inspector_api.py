@@ -344,7 +344,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert samples["S2"]["quantitative_value"] is None
     assert samples["S2"]["decision_refs"] == ["cd-02"]
     assert samples["S2"]["status_kind"] == "null"
-    assert samples["S2"]["decision_label"] == "本次未搜尋，定量結果保留為空值。"
+    assert samples["S2"]["decision_label"] == "未搜尋"
     assert "「本次未搜尋」（not_searched）" in samples["S2"]["decision_reason"]
 
     readable = {record["ref"]: record for record in item["details"]["readable_records"]}

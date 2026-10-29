@@ -170,8 +170,14 @@ window.XicUi = (() => {
   function curveStatus(message, kind = "") {
     $("xic-status").textContent = message;
     $("inline-curve-status").textContent = message;
-    // Curve completion may replace its own feedback, not a still-valid query
-    // or saved-result error. The drawer retains the curve's local feedback.
+    $("inline-curve-status").className = kind;
+    // Untargeted curves report beside their plot. Targeted curve completion may
+    // replace its own page feedback, not a still-valid query or saved-result
+    // error; the drawer retains the curve's local feedback.
+    if (state.page?.source_kind !== "targeted_workbook") {
+      if (statusOwner === "curves") status("", "", "curves");
+      return;
+    }
     if (statusOwner === "curves" || !$("status").classList.contains("error"))
       status(message, kind, "curves");
   }
@@ -292,7 +298,7 @@ window.XicUi = (() => {
         // The unchanged source keeps saved report/item IDs valid. Reuse its
         // reading snapshot after restoring the corresponding server query.
         serverPage = page;
-        status("已還原結果查詢。");
+        status("");
       }
     } catch (error) {
       if (revision === navigation.revision) status(error.message, "error");
@@ -335,11 +341,8 @@ window.XicUi = (() => {
     for (const id of ["mz-min", "mz-max"]) $(id).disabled = busy || nearest;
     $("group-filter").hidden = state.page?.source_kind === "targeted_workbook" || nearest;
     $("group-id").disabled = busy || $("group-filter").hidden;
-    $("search-mode-hint").textContent = nearest
-      ? "依 m/z 距離找候選，不代表化合物確認或通過質量容差。RT 可留白；精確 m/z 範圍與分組 ID 不生效。"
-      : "精確範圍／分組 ID 生效；約略 m/z 不生效。";
     $("review-range-filters").querySelector("summary").textContent = nearest
-      ? "RT 範圍（選填，留白不限）" : "m/z / RT 範圍";
+      ? "RT 範圍" : "m/z / RT 範圍";
     if (nearest) $("review-range-filters").open = true;
     validateNearestMz();
   }
@@ -365,13 +368,17 @@ window.XicUi = (() => {
     $("acquisition-hint").textContent = !state.item
       ? ""
       : !supported
-        ? "這個項目沒有任何樣本保留觀測座標，無法自動取得 XIC。"
+        ? "沒有樣本保留觀測座標，無法取得 XIC。"
         : state.analysisBusy
           ? "分析執行中；完成後才能讀取 RAW。"
-          : state.samples.size === 0
-            ? "勾選至少一個樣本後即可載入。"
-            : "";
-    $("sample-count").textContent = `已選 ${state.samples.size} 個樣本`;
+          : "";
+    $("sample-count").textContent = `${state.samples.size} / ${supported}`;
+    const index = itemIndex();
+    $("item-position").textContent = index < 0 ? ""
+      : `${count(state.page.offset + index + 1)} / ${count(state.page.matched_count)}`;
+    $("item-previous").disabled = busy || index < 0 || state.page.offset + index === 0;
+    $("item-next").disabled = busy || index < 0 ||
+      state.page.offset + index >= state.page.matched_count - 1;
     $("previous").disabled = busy || !state.page || state.page.offset === 0;
     $("next").disabled =
       busy ||
@@ -423,9 +430,9 @@ window.XicUi = (() => {
   }
   function renderSelectionEmpty() {
     if (state.page?.matched_count === 0) {
-      selectionEmpty("目前篩選條件沒有符合結果", emptyResultGuidance());
+      selectionEmpty("沒有符合的結果", emptyResultGuidance());
     } else {
-      selectionEmpty("選擇一個項目開始檢閱", "查看當次分析紀錄，或為選定樣本重新取得 XIC。");
+      selectionEmpty("", "");
     }
   }
   function selectionEmpty(title, description) {
@@ -450,8 +457,7 @@ window.XicUi = (() => {
     for (const [key, label] of [["mz_min", "m/z ≥"], ["mz_max", "m/z ≤"], ["rt_min", "RT ≥"], ["rt_max", "RT ≤"]]) {
       if (filters[key] != null) parts.push(`${label} ${filters[key]}${key.startsWith("rt_") ? " min" : ""}`);
     }
-    return `目前條件：${parts.join("；") || "全批結果（未加篩選）"}。`
-      + "可調整上方單一條件後重查，或按「清除條件」返回瀏覽；不會自動放寬條件。";
+    return parts.join("；") || "全批結果";
   }
   function showTargetedOverview() {
     $("targeted-overview").hidden = false;
@@ -515,6 +521,17 @@ window.XicUi = (() => {
       element.className = className;
       return element;
     };
+  // A fraction reads as a filled bar beside its exact count.
+  function meter(value, total, label = "") {
+    const wrap = node("span", undefined, "meter");
+    const bar = node("span", undefined, "meter-bar");
+    const fill = node("span");
+    fill.style.width = `${total ? Math.round((value / total) * 100) : 0}%`;
+    bar.append(fill);
+    wrap.append(bar, node("span", `${count(value)} / ${count(total)}`, "meter-text"));
+    if (label) wrap.title = `${label} ${count(value)} / ${count(total)}`;
+    return wrap;
+  }
   function renderTargetedOverview(summary) {
     const host = $("targeted-overview");
     host.replaceChildren();
@@ -528,20 +545,22 @@ window.XicUi = (() => {
       ));
       return button;
     };
+    const lead = node("div", undefined, "overview-lead");
     const heading = node("div", undefined, "overview-heading");
-    heading.append(node("span", "整批結果總覽", "eyebrow"));
     const conclusion = !summary.result_count ? "尚無已保存結果"
       : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆結果`
         : "沒有需要先看的結果";
-    heading.append(node("h2", conclusion));
-    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標`
-      + (summary.focus_count ? ` · 分布在 ${count(summary.focus_target_count)} 個目標` : "");
-    heading.append(node("p", scope, "subtle"));
-    host.append(heading);
+    const title = node("h2", conclusion);
+    // The reading rule stays one hover away; the counts below show where it applies.
+    title.title = `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`;
+    heading.append(title);
+    const actions = node("div", undefined, "overview-actions");
+    if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
+    actions.append(resultButton("查看所有樣本結果 →"));
+    heading.append(actions);
     const metrics = node("div", undefined, "overview-metrics");
     const ratio = (counted, total) => `${count(counted)} / ${count(total)}`;
     for (const [value, label] of [
-      [count(summary.focus_count), "需先看"],
       [ratio(summary.analyte_counted, summary.analyte_total), "Analyte 計入"],
       [ratio(summary.istd_counted, summary.istd_total), "ISTD 計入"],
     ]) {
@@ -550,17 +569,13 @@ window.XicUi = (() => {
       metric.append(node("strong", value), node("span", label));
       metrics.append(metric);
     }
-    host.append(metrics);
-    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測。`, "overview-unknown"));
-    const actions = node("div", undefined, "overview-actions");
-    if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
-    actions.append(resultButton("查看所有樣本結果 →"));
-    host.append(actions);
-    host.append(node("h3", "各目標結果"));
-    const table = node("table", undefined, "overview-table");
+    lead.append(heading, metrics);
+    host.append(lead);
+    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測`, "overview-unknown"));
+    const table = node("table", undefined, "overview-table overview-targets");
     const head = node("thead");
     const header = node("tr");
-    for (const text of ["目標", "類型", "計入 / 全部", "需先看", "要確認"]) header.append(node("th", text));
+    for (const text of ["目標", "類型", "計入", "需先看", "要確認"]) header.append(node("th", text));
     head.append(header);
     const body = node("tbody");
     // Counts sit in their own columns; this column says only what to check.
@@ -578,10 +593,11 @@ window.XicUi = (() => {
       const row = node("tr");
       const name = node("td");
       name.append(resultButton(target.label, target.label, false, "text-button"));
-      const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
+      const counted = node("td");
+      counted.append(meter(target.counted, target.total));
+      if (target.count_unknown) counted.append(node("span", ` ${target.count_unknown} 未記錄`, "overview-unknown"));
       const focus = node("td");
       if (target.focus_samples.length) focus.append(resultButton(`${target.focus_samples.length} 筆 →`, target.label, true, "text-button focus-link"));
-      else focus.textContent = "—";
       row.append(name, node("td", target.role || "—"), counted, focus, node("td", focusText(target)));
       body.append(row);
     }
@@ -590,7 +606,7 @@ window.XicUi = (() => {
     scroll.append(table);
     host.append(scroll);
     const quantities = node("details", undefined, "overview-quantities");
-    quantities.append(node("summary", "量值摘要（僅計入偵測的結果）"));
+    quantities.append(node("summary", "量值摘要（僅計入偵測）"));
     const values = node("table", undefined, "overview-table");
     const valueHeader = node("tr");
     for (const text of ["目標", "RT 範圍 (min)", "Area 中位數"]) valueHeader.append(node("th", text));
@@ -604,35 +620,44 @@ window.XicUi = (() => {
     }
     values.append(valueHead, valueBody);
     quantities.append(values);
-    host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
+    host.append(quantities);
   }
   function renderUntargetedOverview(summary) {
     const host = $("targeted-overview");
     host.replaceChildren();
-    host.append(node("span", "Untargeted · 整批結果總覽", "eyebrow"),
-      node("h2", summary.unresolved_count ? `先看 ${count(summary.unresolved_count)} 組未解決定量` : "矩陣中沒有未解決定量"),
-      node("p", "閱讀順序依已保存的定量狀態與樣本覆蓋數；不重新判定峰，也不把缺值當作異常。"));
-    const metrics = node("div", undefined, "overview-metrics");
-    for (const [value, label] of [[summary.matrix_count, "進入矩陣"], [summary.complete_count, "全部樣本都有值"], [summary.unresolved_count, "需先看"]]) {
-      const metric = node("div"); metric.append(node("strong", count(value)), node("span", label)); metrics.append(metric);
-    }
-    host.append(metrics);
-    const openScope = (label, scope, parent = host) => {
-      const button = node("button", label); button.type = "button"; button.dataset.idle = "";
+    const openScope = (label, scope, parent, className = "") => {
+      const button = node("button", label, className); button.type = "button"; button.dataset.idle = "";
       button.addEventListener("click", () => action(async () => {
         navigation.push(); $("query-form").reset(); await query(0, {review_scope: scope});
       })); parent.append(button);
     };
-    if (summary.unresolved_count) openScope("先看未解決定量", "unresolved");
-    openScope("查看全部矩陣群組", "matrix");
-    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 個樣本未建立內標 RT 校正。XIC 顯示原始時間；這不代表內標未檢出。`, "overview-unknown"));
-    const table = node("table", undefined, "overview-table");
-    const head = node("tr"); head.append(node("th", "樣本"), node("th", "矩陣中有定量值的群組")); table.append(head);
-    for (const sample of summary.samples) {const row = node("tr"); row.append(node("td", sample.label), node("td", `${count(sample.numeric_count)} / ${count(summary.matrix_count)}`)); table.append(row);}
+    const lead = node("div", undefined, "overview-lead");
+    const heading = node("div", undefined, "overview-heading");
+    heading.append(node("h2", summary.unresolved_count ? `先看 ${count(summary.unresolved_count)} 組未解決定量` : "矩陣中沒有未解決定量"));
+    const actions = node("div", undefined, "overview-actions");
+    if (summary.unresolved_count) openScope("先看未解決定量", "unresolved", actions, "primary");
+    openScope("查看全部矩陣群組", "matrix", actions);
+    heading.append(actions);
+    const metrics = node("div", undefined, "overview-metrics");
+    for (const [value, label] of [[summary.matrix_count, "進入矩陣"], [summary.complete_count, "全部樣本都有值"]]) {
+      const metric = node("div"); metric.append(node("strong", count(value)), node("span", label)); metrics.append(metric);
+    }
+    lead.append(heading, metrics);
+    host.append(lead);
+    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 樣本未建立內標 RT 校正 · XIC 顯示原始時間，不代表內標未檢出`, "overview-unknown"));
+    const table = node("table", undefined, "overview-table overview-coverage");
+    const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的矩陣群組")); table.append(head);
+    for (const sample of summary.samples) {
+      const row = node("tr"), cell = node("td");
+      cell.append(meter(sample.numeric_count, summary.matrix_count));
+      row.append(node("td", sample.label), cell); table.append(row);
+    }
     host.append(table);
-    const more = node("details"); more.append(node("summary", "進階：未採用群組與候選證據"), node("p", "這些不是矩陣結果，僅在追查未採用原因時檢閱。"));
-    openScope(`${count(summary.archive_count)} 組未採用`, "archive", more);
-    openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", more);
+    const more = node("details", undefined, "overview-more"); more.append(node("summary", "未進入矩陣的紀錄"));
+    const archived = node("div", undefined, "overview-actions");
+    openScope(`${count(summary.archive_count)} 組未採用`, "archive", archived);
+    openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", archived);
+    more.append(archived);
     host.append(more);
   }
   function renderPage(page) {
@@ -652,7 +677,6 @@ window.XicUi = (() => {
     }
     // Targeted review items are targets; Untargeted items are candidates.
     const noun = targeted ? "目標" : "項目";
-    $("list-title").textContent = targeted ? "目標" : "檢閱項目";
     $("targeted-overview").hidden = true;
     $("targeted-review-nav").hidden = !page.overview;
     if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
@@ -667,9 +691,6 @@ window.XicUi = (() => {
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
     $("target-id").value = selectedTarget;
     document.querySelector(".acquisition-panel").hidden = targeted;
-    $("acquisition-description").textContent = targeted
-      ? "點結果列的「看 XIC」，或勾選要看的樣本。自動帶入目標與配對 ISTD；ND 也能看圖，不改寫結果。"
-      : "勾選要看的樣本，讀取保留峰頂附近的 RAW。缺少觀測座標的樣本無法自動擷取。";
     $("ppm").closest("label").hidden = targeted;
     const selectedSample = $("target-sample").value;
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
@@ -677,11 +698,9 @@ window.XicUi = (() => {
     clearSelection();
     $("review").hidden = false;
     $("review-empty").hidden = true;
-    $("batch-title").textContent = targeted ? "Targeted 結果" : "批次結果已開啟";
-    $("batch-description").textContent = targeted ? page.source.split(/[\\/]/).pop() : page.source;
-    $("raw-dir").closest(".path-line").hidden = false;
-    $("dll-dir").closest(".path-line").hidden = false;
-    $("source-settings").querySelector("summary").textContent = "結果與 RAW 位置";
+    $("batch-title").textContent = targeted ? "Targeted 結果" : "Untargeted 結果";
+    $("batch-description").textContent = page.source.split(/[\\/]/).pop();
+    $("batch-description").hidden = false;
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     const download = $("result-download");
@@ -697,25 +716,21 @@ window.XicUi = (() => {
     }
     $("batch-count").hidden = false;
     $("batch-count").textContent = page.overview?.kind === "untargeted"
-      ? `${count(page.samples.length)} 個樣本 · ${count(page.overview.matrix_count)} 組矩陣結果`
-      : `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
+      ? `${count(page.samples.length)} 樣本 · ${count(page.overview.matrix_count)} 組`
+      : `${count(page.samples.length)} 樣本 · ${count(page.run_total)} ${targeted ? "目標" : "項目"}`;
     const filtered = page.matched_count !== page.run_total;
+    const untargetedScope = page.overview?.kind === "untargeted";
+    const scopeName = ({matrix: "矩陣群組", unresolved: "未解決定量", archive: "未採用群組", candidates: "未分組候選"})[page.review_scope];
     $("list-summary").replaceChildren(
-      Object.assign(document.createElement("span"), {
-        textContent: page.overview?.kind === "untargeted" ? `${({matrix:"矩陣群組",unresolved:"未解決定量",archive:"未採用群組",candidates:"未分組候選"})[page.review_scope] || "所有紀錄"} · ${count(page.matched_count)} 組` : filtered
-          ? `符合 ${count(page.matched_count)} ／ 全批 ${count(page.run_total)}`
-          : `全批 ${count(page.run_total)} 個${noun}`,
-      }),
-      Object.assign(document.createElement("span"), {
-        textContent: page.selected_count
-          ? `第 ${count(page.offset + 1)}–${count(page.offset + page.selected_count)} 筆`
-          : "",
-      }),
+      node("strong", untargetedScope ? scopeName || "所有紀錄" : noun),
+      node("span", untargetedScope ? `${count(page.matched_count)} 組`
+        : filtered ? `${count(page.matched_count)} / ${count(page.run_total)}` : count(page.run_total)),
     );
-    $("nearest-results-note").hidden = !nearest;
-    $("nearest-results-note").textContent = nearest
-      ? `約略 m/z ${page.nearest_mz} 的候選 · 依接近程度排序（全批排序後，每頁 25 筆）。`
-        + (page.missing_mz_count ? `另有 ${count(page.missing_mz_count)} 組缺少有效 m/z，未列入排序。` : "")
+    // The list itself shows the ordering through each row's distance.
+    if (nearest) $("list-summary").append(node("span", `≈ m/z ${page.nearest_mz}`, "list-sort"));
+    $("nearest-results-note").hidden = !(nearest && page.missing_mz_count);
+    $("nearest-results-note").textContent = nearest && page.missing_mz_count
+      ? `${count(page.missing_mz_count)} 組缺少有效 m/z，未排序`
       : "";
     const list = $("item-list");
     list.replaceChildren();
@@ -736,15 +751,14 @@ window.XicUi = (() => {
       top.append(title, rt);
       const bottom = document.createElement("span");
       bottom.className = "item-bottom";
-      const summary = document.createElement("span");
-      summary.textContent = targeted
-        ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
-        : `${item.numeric_count} / ${page.samples.length} 個樣本有值`;
-      const badge = document.createElement("span");
-      const label = targeted ? item.badge_label || "已記錄" : item.unresolved_count ? `${item.unresolved_count} 個未解決定量` : "已保存結果";
-      badge.className = `chip ${badgeTone[label] || ""}`;
-      badge.textContent = label;
-      bottom.append(summary, badge);
+      // Coverage reads as a bar; a chip appears only when the saved result
+      // carries something to check.
+      if (targeted) bottom.append(node("span", `${item.review_summary.scope_sample_count} 樣本`));
+      else bottom.append(meter(item.numeric_count, page.samples.length, "有值樣本"));
+      const label = targeted
+        ? item.badge_label && item.badge_label !== "已記錄" ? item.badge_label : ""
+        : item.unresolved_count ? `${item.unresolved_count} 未解決` : "";
+      if (label) bottom.append(node("span", label, `chip ${badgeTone[label] || "warn"}`));
       button.append(top);
       if (nearest) {
         button.append(node("span", `Δm/z ${item.mz_distance}`, "item-distance"));
@@ -765,12 +779,7 @@ window.XicUi = (() => {
     $("page-label").textContent = page.matched_count
       ? `${count(Math.floor(page.offset / page.limit) + 1)} / ${count(Math.max(1, Math.ceil(page.matched_count / page.limit)))} 頁`
       : "0 筆";
-    status(
-      nearest ? `已載入 ${count(page.matched_count)} 組候選，依 m/z 接近程度排序；不是科學容差判定。`
-        : filtered
-        ? `找到 ${count(page.matched_count)} 個符合條件的${noun}（搜尋範圍是全批已儲存結果）。`
-        : `已載入全批 ${count(page.run_total)} 個${noun}。`,
-    );
+    status("");
   }
   async function selectItem(item) {
     const revision = navigation.revision;
@@ -779,8 +788,8 @@ window.XicUi = (() => {
       restoreDetail(detail);
       if (state.page.source_kind !== "targeted_workbook") {
         $("inline-curves").hidden = false;
-        if (!state.samples.size) $("inline-curve-status").textContent = "這組沒有可用觀測座標，無法自動取得 XIC。已保存的結果仍可查看。";
-        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未設定 RAW 或 DLL 位置。設定「結果與 RAW 位置」後，按「載入所選樣本 XIC」。";
+        if (!state.samples.size) $("inline-curve-status").textContent = "沒有觀測座標，無法取得 XIC。";
+        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未設定 RAW 或 DLL 位置。";
         else await startCurves();
       }
     }
@@ -798,7 +807,7 @@ window.XicUi = (() => {
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
     const targeted = state.page.source_kind === "targeted_workbook";
-    $("item-kind").textContent = targeted ? "Targeted 已保存結果" : item.title;
+    $("item-kind").textContent = targeted ? "" : item.title;
     $("item-title").textContent = targeted
       ? `${item.title} · m/z ${fmt(item.precursor_mz, 4)}`
       : `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
@@ -857,18 +866,16 @@ window.XicUi = (() => {
     if (!targeted) {
       const missing = state.page.samples.filter(sample => !available.has(sample.id));
       const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
-      $("inline-curve-coverage").textContent = `${item.numeric_count} 個樣本有定量值 · ${available.size} 個樣本可讀取 XIC（預設全部載入）`
-        + (numericMissing.length ? `。有定量值，但目前檢閱資料未提供可擷取座標：${numericMissing.map(sample => sample.label).join("、")}。` : "。")
-        + (missing.length ? `本次無法取得曲線的樣本：${missing.map(sample => sample.label).join("、")}。` : "");
+      // Numeric results and acquirable coordinates are separate facts.
+      const curveless = missing.filter(sample => !numericMissing.includes(sample));
+      $("inline-curve-coverage").textContent = `${item.numeric_count} 有值 · ${available.size} 可讀 XIC`
+        + (numericMissing.length ? ` · 有值但缺座標：${numericMissing.map(sample => sample.label).join("、")}` : "")
+        + (curveless.length ? ` · 無座標：${curveless.map(sample => sample.label).join("、")}` : "");
     }
     showRecorded();
-    status("可查看已保存結果，或按「看 XIC」讀取 RAW；看圖不改寫結果。");
+    status("");
   }
   function showRecorded() {
-    $("view-note").hidden = state.page.source_kind === "targeted_workbook";
-    $("view-note").textContent = state.page.source_kind === "targeted_workbook"
-      ? ""
-      : "先看 XIC 與下方保存的 Area；可展開「查看樣本 XIC」更換樣本。內部證據收在進階內容。";
     mountReview("recorded-review", state.recorded, "result");
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
@@ -877,6 +884,7 @@ window.XicUi = (() => {
     state.curveView = view;
     const targeted = state.page.source_kind === "targeted_workbook";
     if (targeted) $("xic-download").href = `/reports/${view.id}.html?download=1`;
+    const loadedLabel = () => $("xic-sample").selectedOptions[0]?.textContent;
     if (targeted && !$("xic-dialog").open) {
       curveStatus("診斷曲線已載入；重新開啟曲線視窗即可檢閱。");
       return;
@@ -890,12 +898,13 @@ window.XicUi = (() => {
     }
     const mounted = await mountReview(targeted ? "xic-review" : "inline-curve-review", view.id, "curves");
     if (!mounted || state.curveView !== view) return;
-    const samples = targeted ? $("xic-sample").selectedOptions[0].textContent : `${state.samples.size} 個樣本`;
-    curveStatus(`${samples} 的診斷曲線已載入；不改寫已保存結果。`);
     if (!targeted) {
+      // The plotted curves are their own receipt beside the saved values.
+      curveStatus("");
       $("inline-curve-review").hidden = false;
       return;
     }
+    curveStatus(`${loadedLabel()} 的診斷曲線已載入`);
     $("xic-review").hidden = false;
     $("xic-loading").hidden = true;
     $("xic-retry").hidden = true;
@@ -948,7 +957,7 @@ window.XicUi = (() => {
       if ($(id).value.trim()) filters[key] = Number($(id).value);
     return filters;
   }
-  async function query(offset, filters = state.filters) {
+  async function query(offset, filters = state.filters, selectLast = false) {
     const revision = navigation.revision;
     if (!$("selection-empty").hidden)
       selectionEmpty("正在查詢結果…", "正在依目前條件查詢；尚未取得結果。");
@@ -964,8 +973,26 @@ window.XicUi = (() => {
     if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
-    if (page.items.length) await selectItem(page.items[0]);
+    if (page.items.length) await selectItem(page.items[selectLast ? page.items.length - 1 : 0]);
     return revision === navigation.revision;
+  }
+  // Reading continues across page boundaries of the same filtered list.
+  function itemIndex() {
+    return state.page && state.item
+      ? state.page.items.findIndex((item) => item.id === state.item.id)
+      : -1;
+  }
+  async function stepItem(step) {
+    const page = state.page, target = itemIndex() + step;
+    if (target >= 0 && target < page.items.length) {
+      await selectItem(page.items[target]);
+      document.querySelector(`.item[data-item-id="${CSS.escape(page.items[target].id)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const offset = page.offset + step * page.limit;
+    if (offset < 0 || offset >= page.matched_count) return;
+    await query(offset, state.filters, step < 0);
   }
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
@@ -983,9 +1010,10 @@ window.XicUi = (() => {
     const targeted = state.page.source_kind === "targeted_workbook";
     $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
     $("xic-navigation").hidden = !targeted;
+    // The legend names the shaded bounds; only the RAW binding limit needs words.
     $("xic-source-note").textContent = targeted
-      ? "陰影為已保存峰界；看圖不會重新積分或改變判定。"
-      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。看圖不改寫結果。";
+      ? ""
+      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。";
     if (targeted) {
       $("xic-sample").value = [...state.samples][0];
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
@@ -1184,6 +1212,10 @@ window.XicUi = (() => {
   $("next").addEventListener("click", () =>
     action(() => query(state.page.offset + 25), "正在載入下一頁…"),
   );
+  $("item-previous").addEventListener("click", () =>
+    action(() => stepItem(-1), "正在開啟上一筆…"));
+  $("item-next").addEventListener("click", () =>
+    action(() => stepItem(1), "正在開啟下一筆…"));
   $("load-curves").addEventListener("click", () =>
     action(startCurves, "正在準備所選樣本 XIC…"),
   );

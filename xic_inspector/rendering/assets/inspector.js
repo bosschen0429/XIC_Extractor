@@ -5,7 +5,7 @@
   // mounts later for another group, draws curves on the same signal basis.
   const display = {signal: 'smoothed', overlays: new Set()};
   const displayViews = new Set();
-  const signalSwitchMarkup = `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視" hidden><span>曲線訊號</span><div class="axis-switch"><button type="button" data-signal="raw">原始</button><button type="button" data-signal="smoothed">平滑</button></div></div>`;
+  const signalSwitchMarkup = `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視" hidden><div class="axis-switch"><button type="button" data-signal="raw">原始</button><button type="button" data-signal="smoothed">平滑</button></div></div>`;
   const detailMarkup = `
 <main class="panel detail-panel" id="detail-panel"><div id="workspace-content"></div></main>
 `;
@@ -395,7 +395,7 @@
       applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
-      section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));
+      section.append(scroll);
       const method = element('details', undefined, 'tgt-method');
       method.append(element('summary', '方法設定'));
       method.append(facts([
@@ -696,7 +696,7 @@
     if(cs.length===1)return `<p class="control-value" data-current-capture="${esc(curveKey(cs[0],all.indexOf(cs[0])))}">${esc(cs[0].stage_label||cs[0].kind||'保留曲線')}</p>`;
     return `<select id="capture-select" aria-label="擷取階段">${cs.map(c=>{const key=curveKey(c,all.indexOf(c));return `<option value="${esc(key)}" ${key===state.capture?'selected':''}>${esc(c.stage_label||c.kind||'保留曲線')}</option>`;}).join('')}</select>`;
   }
-  function overlayControl(item){const ks=overlays(item),labels={baseline:'疊加基線',positive:'疊加基線以上訊號'};return ks.length?`<div class="control-group overlay-controls"><span class="control-label">疊加</span>${ks.map(k=>`<label><input type="checkbox" data-overlay="${k}" ${display.overlays.has(k)?'checked':''}> ${labels[k]}</label>`).join('')}</div>`:'';}
+  function overlayControl(item){const ks=overlays(item),labels={baseline:'疊加基線',positive:'疊加基線以上訊號'};return ks.length?`<div class="control-group overlay-controls">${ks.map(k=>`<label><input type="checkbox" data-overlay="${k}" ${display.overlays.has(k)?'checked':''}> ${labels[k]}</label>`).join('')}</div>`:'';}
   function compactNames(item){
     // Legends show the distinguishing tail of long shared sample stems; the full name stays in the tooltip.
     const names=itemRows(item).map(r=>sampleName(r.sample_id));if(names.length<2)return n=>n;
@@ -743,12 +743,12 @@
     const isAligned=axis==='aligned', coverage=alignmentCoverage(item), total=Math.max(coverage.total,coverage.available);
     if(isAligned&&!alignedAvailable(item))return `<p class="plot-note" id="plot-aligned"><strong>對齊時間圖不可用</strong>：來源未提供目前所選曲線與${signalLabel}的對齊座標；不以原始座標代替。</p>`;
     const calibration=isAligned?`<p class="alignment-summary ${coverage.available<total?'partial':''}">${coverage.available} / ${total} 個顯示中樣本有對齊座標${coverage.available<total?'；其餘不外插':''}</p>`:'';
-    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div>${isAligned?'':rtViewControls(item)}<div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
+    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊 RT':'原始 RT'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div>${isAligned?'':rtViewControls(item)}<div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
   }
   function rtViewControls(item) {
     if (!Array.isArray(item.review_rt_window)) return '';
     const window = state.plotWindow || item.review_rt_window;
-    return `<div class="selection-controls"><label>顯示 RT 起點 <input id="plot-rt-start" type="number" step="any" value="${drt(window[0])}" aria-label="顯示 RT 起點"></label><label>終點 <input id="plot-rt-end" type="number" step="any" value="${drt(window[1])}" aria-label="顯示 RT 終點"></label><button type="button" data-rt-view="apply">套用範圍</button><button type="button" data-rt-view="full">完整已載入範圍</button></div>`;
+    return `<div class="rt-range"><span aria-hidden="true">RT</span><input id="plot-rt-start" type="number" step="any" value="${drt(window[0])}" aria-label="顯示 RT 起點"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${drt(window[1])}" aria-label="顯示 RT 終點"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
@@ -805,12 +805,12 @@
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
     if(mode==='result'){
-      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p><div class="table-scroll"><table class="sample-table"><thead><tr><th>樣本</th><th>Area</th><th>定量狀態</th><th>依據</th></tr></thead><tbody>${itemRows(item).map(r=>`<tr><td>${esc(sampleName(r.sample_id))}</td><td>${finite(r.quantitative_value)?Number(r.quantitative_value).toExponential(3):'—'}</td><td>${finite(r.quantitative_value)?'有定量值':esc(r.decision_label||'未提供定量')}</td><td>${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`).join('')}</tbody></table></div></section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
+      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><div class="table-scroll"><table class="sample-table saved-table"><thead><tr><th>樣本</th><th class="num">Area</th><th>判定</th><th><span class="sr-only">依據</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const value=r.quantitative_value,numeric=finite(value)&&value!==0;return `<tr class="${numeric?'':'saved-empty'}"><td><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</td><td class="num">${numeric?Number(value).toExponential(3):value===0?'<span class="result-zero">0</span>':has(r,'quantitative_value')?'<span class="result-null">空值</span>':'<span class="result-missing">—</span>'}</td><td class="saved-note">${numeric?'':esc(r.decision_label||'未提供定量決策')}</td><td class="num">${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`;}).join('')}</tbody></table></div></section>${evidencePanel(item)}<details class="internal-evidence"><summary>內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
     }
     const graph=state.sample?`${sampleName(state.sample)} · 目前查看`:'所有可見樣本',selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[display.signal]||'訊號',signalLabel=selectedSignalLabel;
     if(mode==='curves'){
-      setHTML($('workspace-content'),`<section class="inspection-section"><h3>所選樣本 XIC</h3><p>本次從 RAW 讀取的檢閱曲線；不是重新定量。</p><div class="selection-controls">${overlayControl(item)}</div><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${plotCard(item,'raw',signalLabel,true)}</section>`);
+      setHTML($('workspace-content'),`<section class="inspection-section curve-section"><div class="curve-toolbar"><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${overlayControl(item)}</div>${plotCard(item,'raw',signalLabel,true)}</section>`);
       return;
     }
     const aligned=alignedAvailable(item);

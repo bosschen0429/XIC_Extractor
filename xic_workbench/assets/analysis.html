@@ -18,9 +18,7 @@
 <main id="workspace-targeted" class="page analysis-page" hidden>
   <header class="page-header">
     <div>
-      <span class="eyebrow">Targeted 分析</span>
       <h1>依目標清單擷取 XIC</h1>
-      <p class="subtle">完成後產生一份 XLSX，可直接在結果檢閱開啟。</p>
     </div>
     <div class="button-row">
       <button id="target-new" type="button" class="ghost" data-analysis-idle>
@@ -35,8 +33,7 @@
           <div class="step-head">
             <span class="step-no">1</span>
             <div>
-              <h2>資料與輸出</h2>
-              <p class="subtle">更換 RAW 資料夾時，會清空上機資訊。</p>
+              <h2 title="更換 RAW 資料夾時，會清空上機資訊。">資料與輸出</h2>
             </div>
           </div>
           <div id="targeted-data" class="step-body"></div>
@@ -62,23 +59,22 @@
             <div id="target-preview" class="target-preview"></div>
             <div id="target-dropzone" class="target-dropzone">
               <strong>拖曳方法檔或目標表到這裡</strong>
-              <p class="subtle">自動辨識 XLSX 方法檔／目標表，也支援 CSV、TSV（單檔上限 1 MiB）。</p>
+              <p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
               <button id="target-import" type="button" data-analysis-idle>選擇檔案</button>
               <p id="target-import-status" role="status" aria-live="polite"></p>
             </div>
             <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
             <div class="actions">
-              <button id="target-method-load" type="button" data-analysis-idle>載入清單</button>
+              <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
             </div>
             <div class="actions"><a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a><a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a><button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button></div>
-            <p class="subtle">方法 XLSX 包含目標、ISTD 配對與共用處理策略。載入會取代目前清單；RAW 資料夾、上機資訊和本機設定不變。</p>
           </div>
           <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
-          <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2><p class="subtle">同時處理多個 RAW 可縮短執行時間。</p></div></div>
+          <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2></div></div>
           <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>
@@ -120,9 +116,7 @@
 <main id="workspace-untargeted" class="page analysis-page" hidden>
   <header class="page-header">
     <div>
-      <span class="eyebrow">Untargeted 分析</span>
       <h1>探索候選並跨樣本對齊</h1>
-      <p class="subtle">完成後可直接在結果檢閱開啟這個批次。</p>
     </div>
     <div class="button-row">
       <button id="untargeted-new" type="button" class="ghost" data-analysis-idle>
@@ -145,7 +139,6 @@
             <span class="step-no">1</span>
             <div>
               <h2>執行範圍</h2>
-              <p class="subtle">選擇要執行的分析階段。</p>
             </div>
           </div>
           <div id="u-mode" class="mode-options step-body" role="radiogroup">
@@ -181,9 +174,9 @@
               ></label
             >
           </div>
-          <div class="step-body">
-            <label><input type="checkbox" id="u-alignment-enabled" checked data-analysis-idle /> 執行跨樣本 Alignment（關閉時只輸出各樣本 Discovery）</label>
-            <label><input type="checkbox" id="u-backfill-enabled" checked data-analysis-idle /> 執行 Backfill（關閉時缺格維持未搜尋，不填零值）</label>
+          <div class="step-body option-line">
+            <label title="關閉時只輸出各樣本 Discovery"><input type="checkbox" id="u-alignment-enabled" checked data-analysis-idle /> 跨樣本 Alignment</label>
+            <label title="關閉時缺格維持未搜尋，不填零值"><input type="checkbox" id="u-backfill-enabled" checked data-analysis-idle /> Backfill</label>
           </div>
         </section>
         <section class="card step">
@@ -191,17 +184,16 @@
             <span class="step-no">2</span>
             <div>
               <h2>資料與輸出</h2>
-              <p class="subtle">依執行範圍顯示需要的檔案。</p>
             </div>
           </div>
           <div class="step-body">
             <div id="untargeted-paths"></div>
             <details class="method-section" open>
               <summary>內標清單（選用）</summary>
-              <p class="subtle">與 Targeted 共用清單格式，只使用 role=istd 且符合本方法 CID-NL 的列；其他 tag 標示不適用，不當成 ND。忽略一般目標及 Targeted 方法設定。</p>
+              <p class="subtle">只使用 role=istd 且符合本方法 CID-NL tag 的列；其他 tag 不當成 ND。</p>
               <div id="istd-dropzone" class="target-dropzone">
                 <strong>拖曳內標清單到這裡</strong>
-                <p class="subtle">支援 XLSX 目標表／方法檔、CSV、TSV（單檔上限 1 MiB）。</p>
+                <p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p>
                 <input id="istd-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
                 <button id="istd-import" type="button" data-analysis-idle>選擇檔案</button>
                 <a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
@@ -227,7 +219,6 @@
             <span class="step-no">3</span>
             <div>
               <h2>分析方法</h2>
-              <p class="subtle">Neutral loss 標籤與 RT 範圍。</p>
             </div>
             <div class="button-row step-action">
               <button type="button" id="method-import" class="ghost" data-analysis-idle>
@@ -405,7 +396,6 @@
   <div class="dialog-head">
     <div>
       <h2>編輯目標清單</h2>
-      <p class="subtle">目標表保留 expected RT、CID/NL tag 與明確 ISTD 配對；匯入不會自動推測配對。</p>
     </div>
     <button
       type="button"
@@ -530,7 +520,7 @@
           <tr>
             <th>啟用</th>
             <th>標籤名稱</th>
-            <th>CID-NL tag</th>
+            <th>Neutral loss (Da)</th>
             <th></th>
           </tr>
         </thead>
