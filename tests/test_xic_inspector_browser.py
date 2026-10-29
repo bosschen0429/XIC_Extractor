@@ -266,6 +266,42 @@ def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_
     expect(button).to_have_attribute("aria-pressed", "false")
 
 
+def test_enlarged_curves_pin_and_unpin_samples_without_hiding_other_curves(review_page):
+    page = review_page
+    payload, catalog = _sample_sidebar_payload()
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload=>XicInspector.mount(document.getElementById('host'),payload,{mode:'curves'})",
+        payload,
+    )
+    root = page.locator("#host")
+    root.locator('[data-zoom="raw"]').click()
+    dialog = _control(root, "zoom-dialog")
+    line = dialog.locator('polyline[data-sample-id="sample-3"]')
+    point = line.evaluate("""line=>{
+        const svg=line.ownerSVGElement, point=svg.createSVGPoint();
+        point.x=line.points[2].x;point.y=line.points[2].y;
+        const screen=point.matrixTransform(svg.getScreenCTM());
+        return {x:screen.x,y:screen.y};
+    }""")
+    button = root.locator('[data-curve-focus="sample-3"]')
+    for pressed in (True, False):
+        page.mouse.click(point["x"], point["y"])
+        dialog.locator(".dialog-header").hover()
+        expect(button).to_have_attribute("aria-pressed", str(pressed).lower())
+        expect(line).to_have_css("opacity", "1" if pressed else "0.92")
+        expect(dialog.locator('polyline[data-sample-id="sample-4"]')).to_have_css(
+            "opacity", "0.15" if pressed else "0.92"
+        )
+        expect(dialog.locator("polyline")).to_have_count(8)
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    expect(
+        root.get_by_role("button", name=f"聚焦 {catalog[3]['label']}", exact=True)
+    ).to_have_attribute("aria-pressed", "false")
+
+
 def test_curve_sidebar_bounds_many_samples_without_squeezing_the_plot(review_page):
     from copy import deepcopy
 

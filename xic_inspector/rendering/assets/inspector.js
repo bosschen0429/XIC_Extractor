@@ -908,7 +908,7 @@
         event.preventDefault();event.stopPropagation();curveUi.pinned=null;hideCurveTooltip();
       }
     });
-    $('detail-panel').addEventListener('click',event=>{
+    root.addEventListener('click',event=>{
       if(curveWorkspaceClick(event))event.stopPropagation();
     },true);
     $('detail-panel').addEventListener('change',event=>{
