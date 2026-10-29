@@ -277,7 +277,13 @@ class ReviewWorkspace:
             }
         )
         target_id = None
-        curve_samples = observed
+        # A group with any observed apex can be read for every member: samples
+        # without their own apex are acquired at the group's position.
+        curve_samples = (
+            sorted(s["sample_id"] for s in item.get("samples", []))
+            if group_id and observed
+            else observed
+        )
         numeric_samples = [
             s["sample_id"]
             for s in item.get("samples", [])

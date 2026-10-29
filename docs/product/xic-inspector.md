@@ -44,14 +44,17 @@ sample coverage; it is not a new scientific score. Search reads saved evidence
 without RAW, while selecting a result retains the acquisition behavior below.
 The offline custom Inspector retains its bounded evidence-sampling view.
 
-Selecting an Untargeted group automatically loads all observed samples'
-XIC inline when RAW and DLL locations are configured. The sample selector can
-restrict the display explicitly. Counts distinguish saved numeric results,
-samples with acquisition coordinates, and loaded curves; samples without
-coordinates are named. Saved Area and decision labels stay in a separate
-table; internal evidence is disclosed on demand. Missing locations, coordinates,
-or failed acquisition are explained instead of displaying empty plots. A sample
-without retained apex coordinates is unavailable, not zero signal. Targeted XIC
+Selecting an Untargeted group automatically loads every member sample's XIC
+inline when RAW and DLL locations are configured. A sample with its own retained
+apex is read around that apex; a member without one is read at the median m/z
+and apex RT of the group's observed samples, drawn dashed and labelled as a
+group-position read, so a missed peak can be seen. A group-position curve is a
+diagnostic view only: it neither selects nor integrates a peak and does not
+change the saved empty value. The sample selector can restrict the display
+explicitly. Counts distinguish saved numeric results, samples with their own
+apex, and group-position reads. Saved Area and decision labels stay in a
+separate table; internal evidence is disclosed on demand. Missing locations or
+failed acquisition are explained instead of displaying empty plots. Targeted XIC
 continues to open in its side drawer, leaving the saved table in place; closing
 it restores row focus. Repeated selections within the same group reuse loaded
 curves. Source evidence and newly acquired diagnostic curves remain distinct.
@@ -313,9 +316,12 @@ observations. `--curve-padding-min` defaults to 0.5 minutes around each saved
 apex; `--curve-ppm` defaults to 5. These are explicitly labelled new diagnostic
 extractions from the supplied RAW files, using the current signal profile.
 They do not rerun Backfill, choose peaks, integrate areas or replace recorded
-quantification. Unobserved samples are not acquired implicitly. A sample
-without usable signal in its window is omitted from the bundle, listed in the
-printed receipt's `unusable_samples`, and named on stderr. The Inspector
+quantification. The CLI defaults to observed samples only. Workbench explicitly
+requests every group member, including those without their own apex, using the
+group-position behavior described above; candidate-only requests still require
+that sample's retained apex. A sample without usable signal in its window is
+omitted from the bundle, listed in the printed receipt's `unusable_samples`,
+and named on stderr. The Inspector
 itself remains acquisition-free.
 
 ### CID-NL execution explanations

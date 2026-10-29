@@ -875,12 +875,12 @@ window.XicUi = (() => {
     )));
     if (!targeted) {
       const missing = state.page.samples.filter(sample => !available.has(sample.id));
-      const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
-      // Numeric results and acquirable coordinates are separate facts.
-      const curveless = missing.filter(sample => !numericMissing.includes(sample));
-      $("inline-curve-coverage").textContent = `${item.numeric_count} 有值 · ${available.size} 可讀 XIC`
-        + (numericMissing.length ? ` · 有值但缺座標：${numericMissing.map(sample => sample.label).join("、")}` : "")
-        + (curveless.length ? ` · 無座標：${curveless.map(sample => sample.label).join("、")}` : "");
+      const positioned = state.page.samples.filter(sample =>
+        available.has(sample.id) && !item.observed_sample_ids.includes(sample.id));
+      // Numeric results, own apexes and group-position reads are separate facts.
+      $("inline-curve-coverage").textContent = `${item.numeric_count} 有值 · ${item.observed_sample_ids.length} 有峰頂座標`
+        + (positioned.length ? ` · ${positioned.length} 依群組位置擷取（虛線）` : "")
+        + (missing.length ? ` · 無法擷取：${missing.map(sample => sample.label).join("、")}` : "");
     }
     showRecorded();
     status("");

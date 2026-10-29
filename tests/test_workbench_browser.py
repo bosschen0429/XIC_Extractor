@@ -1102,7 +1102,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     from tests.test_xic_workbench import _review_batch
 
     db = (
-        _create_mock_db(tmp_path)[0]
+        _create_mock_db(tmp_path, samples=[{"sample_key": "S1"}])[0]
         if sample_count == 1
         else _review_batch(tmp_path, sample_count=sample_count)[0]
     )
@@ -1118,7 +1118,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
             page.locator("#inline-curve-review").locator(
                 "[data-inspector-id='svg-raw'] polyline"
             )
-        ).to_have_count(1)
+        ).to_have_count(sample_count)
         page.locator("#item-list button").filter(has_text="6 / 6").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
@@ -1156,6 +1156,45 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     }""")
     review.locator("[data-inspector-id='zoom-close']").click()
     expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_hidden()
+
+
+def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
+    workbench, tmp_path, monkeypatch
+):
+    from tests.test_explanation_review import (
+        _group_with_missing_apex_review,
+        _install_distinct_curve_raws,
+    )
+
+    report, matrix = _group_with_missing_apex_review(tmp_path)
+    originals = [path.read_bytes() for path in (report, matrix)]
+    opened = []
+    _install_distinct_curve_raws(monkeypatch, opened)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill(str(tmp_path))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    review = _wait_for_curve_report(page, inline=True)
+    curves = review.locator("[data-inspector-id='svg-raw'] polyline")
+    expect(curves).to_have_count(3)
+    expect(curves.filter(has=page.locator("title", has_text="S3"))).to_have_attribute(
+        "stroke-dasharray", "6 4"
+    )
+    expect(
+        review.locator(".sample-legend label").filter(has_text="S3")
+    ).to_contain_text("群組位置")
+    expect(page.locator("#inline-curve-coverage")).to_have_text(
+        "2 有值 · 2 有峰頂座標 · 1 依群組位置擷取（虛線）"
+    )
+    saved = page.locator("#recorded-review .sample-table tbody tr")
+    expect(saved.filter(has_text="S1")).to_contain_text("1.000e+2")
+    expect(saved.filter(has_text="S2")).to_contain_text("2.000e+2")
+    expect(saved.filter(has_text="S3")).to_contain_text("空值")
+    assert [name for name, _ in opened] == ["S1.raw", "S2.raw", "S3.raw"]
+    assert [path.read_bytes() for path in (report, matrix)] == originals
 
 
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(

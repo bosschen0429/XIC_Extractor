@@ -433,3 +433,4 @@
 /* Evidence opens under the row it explains. */
 .xic-inspector .saved-table tr.evidence-row > td { padding:0 0 12px;background:transparent; }
 .xic-inspector .saved-table tr.evidence-row:hover > td { background:transparent; }
+.xic-inspector .legend-note { margin-left:4px;color:var(--subtle);font-size:11px; }
