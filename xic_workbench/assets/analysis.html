@@ -150,7 +150,17 @@
                 data-analysis-idle
               /><span
                 ><strong>完整分析</strong
-                ><small>Discovery → Alignment，產生跨樣本矩陣</small></span
+                ><small>Discovery → Alignment → 矩陣</small></span
+              ></label
+            ><label class="mode-option"
+              ><input
+                type="radio"
+                name="u-mode"
+                value="discovery_batch"
+                data-analysis-idle
+              /><span
+                ><strong>整批 Discovery</strong
+                ><small>各 RAW 候選，不對齊</small></span
               ></label
             ><label class="mode-option"
               ><input
@@ -159,8 +169,8 @@
                 value="discovery_only"
                 data-analysis-idle
               /><span
-                ><strong>只做 Discovery</strong
-                ><small>單一 RAW 的候選與檢閱表</small></span
+                ><strong>單一 RAW</strong
+                ><small>一個 RAW 的候選與檢閱表</small></span
               ></label
             ><label class="mode-option"
               ><input
@@ -175,7 +185,6 @@
             >
           </div>
           <div class="step-body option-line">
-            <label title="關閉時只輸出各樣本 Discovery"><input type="checkbox" id="u-alignment-enabled" checked data-analysis-idle /> 跨樣本 Alignment</label>
             <label title="關閉時缺格維持未搜尋，不填零值"><input type="checkbox" id="u-backfill-enabled" checked data-analysis-idle /> Backfill</label>
           </div>
         </section>
