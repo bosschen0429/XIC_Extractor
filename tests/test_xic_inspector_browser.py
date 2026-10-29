@@ -49,6 +49,272 @@ def _control(root, name):
     return root.locator(f'[data-inspector-id="{name}"]')
 
 
+def _sample_sidebar_payload():
+    groups = ("Benign", "Normal", "Tumor", "QC")
+    samples, curves, rows = [], [], []
+    for index in range(8):
+        sid = f"sample-{index}"
+        samples.append(
+            {
+                "id": sid,
+                "label": f"long_shared_sample_filename_{index}_QC{index}",
+                "group": groups[index // 2],
+            }
+        )
+        rows.append({"sample_id": sid, "quantitative_value": index + 10})
+        curves.append(
+            {
+                "sample_id": sid,
+                "raw_rts": [1, 1.25, 1.5, 1.75, 2],
+                "raw_intensities": [0, 10, 100 + 20 * index, 10, 0],
+                "processed_curves": [
+                    {
+                        "kind": "smoothed",
+                        "rts": [1, 1.25, 1.5, 1.75, 2],
+                        "intensities": [0, 20, 80 + 15 * index, 20, 0],
+                    }
+                ],
+                "quality_flags": {
+                    "new_diagnostic_extraction": True,
+                    "acquired_at_group_position": index % 2 == 0,
+                },
+            }
+        )
+    missing = {"id": "without-curve", "label": "missing_sample", "group": "Tumor"}
+    return {
+        "samples": samples,
+        "items": [
+            {
+                "id": "feature",
+                "kind": "group",
+                "title": "saved group",
+                "samples": rows,
+                "curves": curves,
+                "review_rt_window": [1, 2],
+            }
+        ],
+    }, samples + [missing]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_curve_sidebar_groups_are_additive_and_collapse_does_not_hide_curves(
+    review_page, theme
+):
+    from itertools import combinations
+
+    page = review_page
+    payload, catalog = _sample_sidebar_payload()
+    page.set_content('<div id="host"></div>')
+    page.evaluate("theme=>document.documentElement.dataset.theme=theme", theme)
+    _load_view_assets(page)
+    page.evaluate(
+        """({payload,catalog})=>XicInspector.mount(
+        document.getElementById('host'),payload,{mode:'curves',samples:catalog})""",
+        {"payload": payload, "catalog": catalog},
+    )
+    root = page.locator("#host")
+    lines = _control(root, "svg-raw").locator("polyline[data-sample-id]")
+    expect(lines).to_have_count(8)
+    for pair in combinations(("Benign", "Normal", "Tumor", "QC"), 2):
+        root.get_by_role("button", name="全部隱藏", exact=True).click()
+        for group in pair:
+            root.get_by_role("checkbox", name=f"顯示 {group} 整組", exact=True).check()
+        expect(lines).to_have_count(4)
+        assert set(
+            lines.evaluate_all("lines=>lines.map(line=>line.dataset.sampleId)")
+        ) == {
+            sample["id"]
+            for sample in catalog
+            if sample.get("group") in pair and sample["id"] != "without-curve"
+        }
+    root.get_by_role("button", name="全部顯示", exact=True).click()
+    root.get_by_role("button", name="收合 Benign 組別", exact=True).click()
+    expect(lines).to_have_count(8)
+    root.get_by_role("checkbox", name="顯示 Benign 整組", exact=True).uncheck()
+    expect(lines).to_have_count(6)
+    root.get_by_role("checkbox", name="顯示 Benign 整組", exact=True).check()
+    expect(
+        root.get_by_role("button", name="展開 Benign 組別", exact=True)
+    ).to_be_visible()
+    root.get_by_role("button", name="展開 Benign 組別", exact=True).click()
+    root.get_by_role(
+        "checkbox", name=f"在圖中顯示 {catalog[0]['label']}", exact=True
+    ).uncheck()
+    expect(lines).to_have_count(7)
+    expect(
+        root.get_by_role("checkbox", name="顯示 Benign 整組", exact=True)
+    ).to_have_attribute("aria-checked", "mixed")
+    expect(
+        root.get_by_role("checkbox", name="在圖中顯示 missing_sample", exact=True)
+    ).to_be_disabled()
+    root.get_by_role("searchbox", name="搜尋樣本名稱").fill("QC7")
+    expect(root.locator(".curve-sample-row")).to_have_count(1)
+    expect(lines).to_have_count(7)
+    root.get_by_role("checkbox", name="顯示 Benign 整組", exact=True).check()
+    expect(lines).to_have_count(8)
+    root.get_by_role("searchbox", name="搜尋樣本名稱").fill("")
+    expect(root.locator(".curve-sample-row")).to_have_count(9)
+    assert (
+        page.evaluate(
+            "() => document.querySelector('#host').querySelectorAll('polyline').length"
+        )
+        == 8
+    )
+
+
+def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_page):
+    page = review_page
+    payload, catalog = _sample_sidebar_payload()
+    page.set_content('<div id="host"></div><div id="narrow"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """({payload,catalog})=>{
+        XicInspector.mount(document.getElementById('host'),payload,{mode:'curves',samples:catalog});
+        const subset=structuredClone(payload);subset.samples=subset.samples.slice(3,5);
+        subset.items[0].curves=subset.items[0].curves.slice(3,5);
+        subset.items[0].samples=subset.items[0].samples.slice(3,5);
+        XicInspector.mount(document.getElementById('narrow'),subset,{mode:'curves',samples:catalog,sampleIds:subset.samples.map(s=>s.id)});
+    }""",
+        {"payload": payload, "catalog": catalog},
+    )
+    root = page.locator("#host")
+    line = _control(root, "svg-raw").locator('polyline[data-sample-id="sample-3"]')
+    other = _control(page.locator("#narrow"), "svg-raw").locator(
+        'polyline[data-sample-id="sample-3"]'
+    )
+    assert line.evaluate("line=>getComputedStyle(line).stroke") == other.evaluate(
+        "line=>getComputedStyle(line).stroke"
+    )
+    row = root.locator('.curve-sample-row[data-sample-id="sample-3"]')
+    assert row.locator(".curve-swatch line").evaluate(
+        "line=>getComputedStyle(line).stroke"
+    ) == line.evaluate("line=>getComputedStyle(line).stroke")
+    button = root.get_by_role("button", name=f"聚焦 {catalog[3]['label']}", exact=True)
+    button.hover()
+    expect(line).to_have_css("opacity", "1")
+    expect(
+        _control(root, "svg-raw").locator('polyline[data-sample-id="sample-4"]')
+    ).to_have_css("opacity", "0.15")
+    button.click()
+    page.mouse.move(5, 5)
+    expect(button).to_have_attribute("aria-pressed", "true")
+    expect(root.get_by_role("button", name="解除聚焦", exact=True)).to_be_visible()
+    root.get_by_role("button", name="解除聚焦", exact=True).click()
+    expect(_control(root, "svg-raw").locator("polyline")).to_have_count(8)
+    name = row.locator(".curve-sample-name")
+    assert name.evaluate("name=>getComputedStyle(name).whiteSpace") == "nowrap"
+    expect(row.locator(".curve-name-tail")).to_contain_text("QC3")
+    button.focus()
+    expect(root.get_by_role("tooltip")).to_contain_text(catalog[3]["label"])
+    # Moving onto an actual plotted point identifies and pins its sample.
+    fourth = _control(root, "svg-raw").locator('polyline[data-sample-id="sample-4"]')
+    point = fourth.evaluate("""line=>{
+        const svg=line.ownerSVGElement, point=svg.createSVGPoint();
+        point.x=line.points[2].x;point.y=line.points[2].y;
+        const screen=point.matrixTransform(svg.getScreenCTM());
+        return {x:screen.x,y:screen.y};
+    }""")
+    page.mouse.move(point["x"], point["y"])
+    expect(root.get_by_role("tooltip")).to_contain_text(catalog[4]["label"])
+    expect(root.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
+    expect(line).to_have_css("opacity", "0.15")
+    page.mouse.click(point["x"], point["y"])
+    page.mouse.move(5, 5)
+    pinned = root.get_by_role("button", name=f"聚焦 {catalog[4]['label']}", exact=True)
+    expect(pinned).to_have_attribute("aria-pressed", "true")
+    root.get_by_role("button", name="原始", exact=True).click()
+    expect(root.get_by_role("button", name="原始", exact=True)).to_be_focused()
+    expect(pinned).to_have_attribute("aria-pressed", "true")
+    expect(_control(root, "svg-raw").locator("polyline")).to_have_count(8)
+    expect(fourth).to_have_attribute("data-kind", "raw")
+    root.get_by_role(
+        "checkbox", name=f"在圖中顯示 {catalog[4]['label']}", exact=True
+    ).uncheck()
+    expect(pinned).to_have_attribute("aria-pressed", "false")
+    expect(root.get_by_role("button", name="解除聚焦", exact=True)).to_be_hidden()
+    # Main and enlarged charts must not share a clip-path ID or clip width.
+    button.click()
+    root.locator('[data-zoom="raw"]').click()
+    enlarged = _control(root, "zoom-container").locator(
+        'polyline[data-sample-id="sample-3"]'
+    )
+    expect(enlarged).to_have_css("opacity", "1")
+    point = enlarged.evaluate("""line=>{
+        const svg=line.ownerSVGElement, point=svg.createSVGPoint();
+        point.x=line.points[2].x;point.y=line.points[2].y;
+        const screen=point.matrixTransform(svg.getScreenCTM());
+        return {x:screen.x,y:screen.y};
+    }""")
+    page.mouse.move(point["x"], point["y"])
+    expect(_control(root, "zoom-dialog").get_by_role("tooltip")).to_contain_text(
+        catalog[3]["label"]
+    )
+    assert page.evaluate("""()=>{
+        const ids=[...document.querySelectorAll('[id]')].map(node=>node.id);
+        return ids.length===new Set(ids).size;
+    }""")
+    main_clip = (
+        _control(root, "svg-raw").locator("clipPath rect").get_attribute("width")
+    )
+    zoom_clip = (
+        _control(root, "zoom-container").locator("clipPath rect").get_attribute("width")
+    )
+    assert main_clip != zoom_clip
+    page.keyboard.press("Escape")
+    expect(_control(root, "zoom-dialog")).to_be_hidden()
+    page.keyboard.press("Escape")
+    expect(button).to_have_attribute("aria-pressed", "false")
+
+
+def test_curve_sidebar_bounds_many_samples_without_squeezing_the_plot(review_page):
+    from copy import deepcopy
+
+    page = review_page
+    payload, _ = _sample_sidebar_payload()
+    prototype = payload["items"][0]["curves"]
+    payload["samples"] = [
+        {
+            "id": f"s-{i}",
+            "label": f"long_shared_name_for_many_samples_{i:03}_DNA",
+            "group": ("Benign", "Normal", "Tumor", "QC")[i % 4],
+        }
+        for i in range(85)
+    ]
+    payload["items"][0]["curves"] = [
+        {**deepcopy(prototype[i % 8]), "sample_id": f"s-{i}"} for i in range(85)
+    ]
+    payload["items"][0]["samples"] = [{"sample_id": f"s-{i}"} for i in range(85)]
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload=>XicInspector.mount(document.getElementById('host'),payload,{mode:'curves'})",
+        payload,
+    )
+    root = page.locator("#host")
+    for width in (1360, 1024, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.wait_for_function("""()=>{
+            const plot=document.querySelector('.curve-main .svg-container');
+            const width=plot.querySelector('svg').viewBox.baseVal.width;
+            return Math.abs(width-plot.clientWidth)<1;
+        }""")
+        assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
+        sidebar = root.locator(".curve-sidebar").bounding_box()
+        chart = root.locator(".curve-main").bounding_box()
+        if width > 1000:
+            assert sidebar["width"] <= 240
+            assert chart["width"] > sidebar["width"] * 2
+        else:
+            assert chart["y"] >= sidebar["y"] + sidebar["height"]
+        sample_list = root.locator(".curve-sample-list")
+        assert sample_list.evaluate("node=>node.scrollHeight>node.clientHeight")
+        sample_list.evaluate("node=>node.scrollTop=node.scrollHeight")
+        expect(
+            root.get_by_role("checkbox", name="顯示 Benign 整組", exact=True)
+        ).to_be_in_viewport()
+        expect(_control(root, "svg-raw").locator("polyline")).to_have_count(85)
+
+
 def _targeted_rows(root):
     root.get_by_role("button", name=re.compile(r"^全部")).click()
     return root.locator(".tgt-table tbody tr:not([hidden])")

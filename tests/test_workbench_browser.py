@@ -1159,14 +1159,23 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 
 
 def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
-    workbench, tmp_path, monkeypatch
+    workbench, config_dir, tmp_path, monkeypatch
 ):
     from tests.test_explanation_review import (
         _group_with_missing_apex_review,
         _install_distinct_curve_raws,
     )
+    from xic_workbench.samples import save_batch_samples
 
     report, matrix = _group_with_missing_apex_review(tmp_path)
+    save_batch_samples(
+        config_dir,
+        tmp_path,
+        [
+            asdict(SampleMetadata(sid, sid, group=group))
+            for sid, group in (("S1", "Study"), ("S2", "Study"), ("S3", "QC"))
+        ],
+    )
     originals = [path.read_bytes() for path in (report, matrix)]
     opened = []
     _install_distinct_curve_raws(monkeypatch, opened)
@@ -1180,21 +1189,55 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
     expect(curves).to_have_count(3)
-    expect(curves.filter(has=page.locator("title", has_text="S3"))).to_have_attribute(
+    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
         "stroke-dasharray", "6 4"
     )
-    expect(
-        review.locator(".sample-legend label").filter(has_text="S3")
-    ).to_contain_text("群組位置")
-    expect(page.locator("#inline-curve-coverage")).to_have_text(
-        "2 有值 · 2 有峰頂座標 · 1 依群組位置擷取（虛線）"
-    )
+    review.get_by_role("button", name="聚焦 S3", exact=True).hover()
+    expect(review.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
+    # Display controls consume the saved groups, without another RAW read.
+    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).uncheck()
+    expect(curves).to_have_count(1)
+    expect(curves).to_have_attribute("data-sample-id", "S3")
+    review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).uncheck()
+    expect(curves).to_have_count(0)
+    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).check()
+    expect(curves).to_have_count(2)
+    review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).check()
+    expect(curves).to_have_count(3)
     saved = page.locator("#recorded-review .sample-table tbody tr")
     expect(saved.filter(has_text="S1")).to_contain_text("1.000e+2")
     expect(saved.filter(has_text="S2")).to_contain_text("2.000e+2")
     expect(saved.filter(has_text="S3")).to_contain_text("空值")
     assert [name for name, _ in opened] == ["S1.raw", "S2.raw", "S3.raw"]
     assert [path.read_bytes() for path in (report, matrix)] == originals
+    # A loaded view keeps the confirmed display context it was prepared with.
+    view_id = review.get_attribute("data-view-id")
+    save_batch_samples(
+        config_dir,
+        tmp_path,
+        [
+            asdict(SampleMetadata(sid, sid, group="Edited later"))
+            for sid in ("S1", "S2", "S3")
+        ],
+    )
+    captured = page.evaluate(
+        "id=>fetch(`/api/views/${id}`,{headers:{'X-XIC-Client':'workbench'}})"
+        ".then(response=>response.json())",
+        view_id,
+    )
+    assert captured["sample_groups"] == {"S1": "Study", "S2": "Study", "S3": "QC"}
+    exported = page.evaluate(
+        """async id=>{
+        const response=await fetch(`/reports/${id}.html`,{
+            headers:{'X-XIC-Client':'workbench'}});
+        const html=new DOMParser().parseFromString(await response.text(),'text/html');
+        return JSON.parse(html.querySelector('#inspector-data').textContent);
+    }""",
+        view_id,
+    )
+    assert "sample_groups" not in exported
+    assert exported["items"] == captured["items"]
+    assert exported["samples"] == captured["samples"]
 
 
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(

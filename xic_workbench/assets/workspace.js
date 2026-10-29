@@ -230,6 +230,8 @@ window.XicUi = (() => {
       }
       slot.handle = window.XicInspector.mount($(id), payload, {
         mode,
+        samples: state.page.all_samples,
+        sampleIds: state.page.samples.map(sample => sample.id),
         onRequestCurves: request => {
           if (reviewSlots.get(id) === slot && state.detail === slot.detail)
             requestCurves(request);
@@ -873,15 +875,6 @@ window.XicUi = (() => {
     $("xic-sample").replaceChildren(...detail.item.curve_sample_ids.map(id => new Option(
       state.page.samples.find(sample => sample.id === id)?.label || id, id,
     )));
-    if (!targeted) {
-      const missing = state.page.samples.filter(sample => !available.has(sample.id));
-      const positioned = state.page.samples.filter(sample =>
-        available.has(sample.id) && !item.observed_sample_ids.includes(sample.id));
-      // Numeric results, own apexes and group-position reads are separate facts.
-      $("inline-curve-coverage").textContent = `${item.numeric_count} 有值 · ${item.observed_sample_ids.length} 有峰頂座標`
-        + (positioned.length ? ` · ${positioned.length} 依群組位置擷取（虛線）` : "")
-        + (missing.length ? ` · 無法擷取：${missing.map(sample => sample.label).join("、")}` : "");
-    }
     showRecorded();
     status("");
   }
@@ -912,7 +905,7 @@ window.XicUi = (() => {
       // The plotted curves are their own receipt beside the saved values;
       // only samples left out of the plot need words.
       const labels = (view.unusable || []).join("、");
-      curveStatus(labels ? `${labels} 在保留峰頂附近沒有可用訊號` : "");
+      curveStatus(labels ? `${labels} 在本次擷取範圍沒有可用訊號` : "");
       $("inline-curve-review").hidden = false;
       return;
     }

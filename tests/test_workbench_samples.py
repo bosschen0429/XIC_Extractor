@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_workbench import targeted
 from xic_workbench.samples import (
     read_batch_samples,
+    review_sample_groups,
     sample_annotations_path,
     sample_overview,
     save_batch_samples,
@@ -50,6 +52,37 @@ def test_annotation_file_is_one_per_raw_folder(tmp_path) -> None:
     assert first != other
     assert first.parent == tmp_path / "config" / "sample_metadata"
     assert first.name.startswith("Batch_A-") and first.suffix == ".tsv"
+
+
+def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tmp_path):
+    config, raw_dir = tmp_path / "config", tmp_path / "raw"
+    source = [
+        {"sample_key": "canonical-study", "sample_stem": "Renamed_sample"},
+        {"sample_key": "canonical-qc", "sample_stem": "Pool"},
+        {"sample_key": "TumorBC12345_DNA"},
+        {"sample_key": "unavailable-sample"},
+    ]
+    assert review_sample_groups(config, raw_dir, source) == {}
+    # There are no RAW files or headers here; only confirmed folder annotations.
+    save_batch_samples(
+        config,
+        raw_dir,
+        [
+            asdict(
+                SampleMetadata(
+                    "unrelated display alias", "RENAMED_sample", group="Study"
+                )
+            ),
+            asdict(SampleMetadata("Pool", "Pool", sample_role="pooled_qc")),
+            asdict(SampleMetadata("TumorBC12345_DNA", "TumorBC12345_DNA")),
+            asdict(SampleMetadata("not in report", "extra", group="Excluded")),
+        ],
+    )
+    assert review_sample_groups(config, raw_dir, source) == {
+        "canonical-study": "Study",
+        "canonical-qc": "QC",
+    }
+    assert review_sample_groups(config, tmp_path / "different-raw-folder", source) == {}
 
 
 def test_sequence_preview_does_not_wait_for_raw_headers(tmp_path, monkeypatch):

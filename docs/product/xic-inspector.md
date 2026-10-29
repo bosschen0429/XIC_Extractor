@@ -50,14 +50,32 @@ apex is read around that apex; a member without one is read at the median m/z
 and apex RT of the group's observed samples, drawn dashed and labelled as a
 group-position read, so a missed peak can be seen. A group-position curve is a
 diagnostic view only: it neither selects nor integrates a peak and does not
-change the saved empty value. The sample selector can restrict the display
-explicitly. Counts distinguish saved numeric results, samples with their own
-apex, and group-position reads. Saved Area and decision labels stay in a
+change the saved empty value. Saved Area and decision labels stay in a
 separate table; internal evidence is disclosed on demand. Missing locations or
 failed acquisition are explained instead of displaying empty plots. Targeted XIC
 continues to open in its side drawer, leaving the saved table in place; closing
 it restores row focus. Repeated selections within the same group reuse loaded
 curves. Source evidence and newly acquired diagnostic curves remain distinct.
+
+Loaded Untargeted curves use a searchable sample sidebar, capped at 240px on
+desktop so the plot remains primary. Long names retain their suffix and reveal
+the full name on hover or keyboard focus. Sample line swatches match the plot's
+colour and dash style; colours use the complete source catalog rather than the
+subset of successfully loaded curves. Saved sample groups support additive,
+tri-state selection above the scrollable list. When the report does not record
+groups, review reads the selected RAW folder's confirmed sample annotations,
+joining by the report's RAW stems and retaining canonical report sample IDs.
+These display annotations are captured with the interactive view, not added to
+the offline report payload; later annotation edits do not rewrite that view's
+history. Any combination can be displayed;
+collapsing a group only hides its list rows, and searching does not change which
+curves are drawn. Samples without a saved or confirmed group remain ungrouped;
+names are not used to infer groups. Unavailable curves stay listed but cannot be
+selected. Hover links samples and curves in both directions; clicking pins
+emphasis without hiding the other selected curves. Group-position provenance
+appears on hover, not in a permanent coordinate/origin legend. These controls
+operate on loaded curves only, without more RAW reads or changes to saved
+values. Acquisition controls and the offline report retain their separate roles.
 
 Acquisition is sequential and bounded to the saved observations of the selected
 samples. The page displays progress and supports cooperative cancellation
