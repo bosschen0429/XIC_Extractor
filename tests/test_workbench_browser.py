@@ -345,6 +345,50 @@ def test_browse_fills_the_field_from_the_native_chooser(
     assert requests == [("folder", initial), ("folder", str(tmp_path))]
 
 
+@pytest.mark.parametrize("kind", ["folder", "report"])
+def test_result_chooser_opens_batch_folders_and_report_files(
+    workbench, monkeypatch, tmp_path, kind
+):
+    from shutil import copyfile
+
+    from tests.test_xic_workbench import _review_batch
+    from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+    from xic_workbench import server
+
+    original, _ = _review_batch(tmp_path)
+    batch = tmp_path / "completed-batch"
+    alignment = batch / "alignment"
+    alignment.mkdir(parents=True)
+    report = alignment / REPORT_FILENAME
+    copyfile(original, report)
+    chosen = str(batch if kind == "folder" else report)
+    choices, calls = [chosen, ""], []
+
+    def choose(requested_kind, current=""):
+        calls.append((requested_kind, current))
+        return choices.pop(0)
+
+    monkeypatch.setattr(server, "choose_path", choose)
+    page = workbench
+    _view(page, "review")
+    field = page.locator("#source")
+    field.fill("previous-selection")
+    name = "選擇結果資料夾" if kind == "folder" else "選擇結果檔案"
+    browse = page.get_by_role("button", name=name, exact=True)
+    browse.click()
+    expect(field).to_have_value(chosen)
+    browse.click()
+    expect(browse).not_to_have_attribute("aria-busy", "true")
+    expect(field).to_have_value(chosen)
+    assert calls == [(kind, "previous-selection"), (kind, chosen)]
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/open")
+    ) as opened:
+        page.locator("#open-form button[type=submit]").click()
+    assert opened.value.json()["source"] == str(report)
+    expect(page.locator("#batch-title")).to_have_text("Untargeted 結果")
+
+
 def test_navigation_and_theme_survive_reload(workbench):
     page = workbench
     for view in ("untargeted", "review", "targeted"):
