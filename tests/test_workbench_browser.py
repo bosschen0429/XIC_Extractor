@@ -98,8 +98,20 @@ def workbench_defaults():
 
 @pytest.fixture
 def workbench(
-    browser, config_dir, browser_errors, browser_diagnostics, workbench_defaults
+    browser,
+    config_dir,
+    browser_errors,
+    browser_diagnostics,
+    workbench_defaults,
+    monkeypatch,
 ):
+    from xic_extractor import thermo_reader_install
+
+    monkeypatch.setattr(
+        thermo_reader_install,
+        "default_thermo_reader_dir",
+        lambda: config_dir.parent / "managed-reader",
+    )
     with ExitStack() as cleanup:
         workspace = ReviewWorkspace(config_dir=config_dir, defaults=workbench_defaults)
         cleanup.callback(workspace.close)
@@ -179,6 +191,75 @@ def test_reader_setup_acceptance_install_and_reload(
     page.reload()
     expect(notice).to_be_hidden()
     assert page.locator("#t-dll_dir").input_value() == str(installed)
+
+
+def test_dll_readiness_follows_validation_not_just_a_nonempty_path(workbench, tmp_path):
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+
+    page = workbench
+    item = page.locator("#target-checklist li").filter(
+        has_text="RawFileReader DLL 資料夾"
+    )
+    expect(item).not_to_have_class("ok")
+    valid = tmp_path / "valid-reader"
+    valid.mkdir()
+    for name in EXPECTED_THERMO_DLLS:
+        (valid / name).write_bytes(b"test assembly")
+    page.locator("#t-dll_dir").fill(str(valid))
+    expect(item).to_have_class("ok")
+    expect(page.locator("#reader-setup-dll")).to_be_hidden()
+    page.locator("#t-dll_dir").fill(str(tmp_path / "not-installed"))
+    expect(item).not_to_have_class("ok")
+    expect(item).to_have_class("todo")
+    expect(page.locator("#reader-setup-dll")).to_be_visible()
+
+
+@pytest.mark.parametrize("workbench_defaults", [{"dll_dir": "missing-launch-reader"}])
+def test_existing_reader_can_be_selected_without_downloading_or_accepting_again(
+    workbench, config_dir, tmp_path
+):
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+
+    installed = tmp_path / "managed-reader"
+    installed.mkdir()
+    for name in EXPECTED_THERMO_DLLS:
+        (installed / name).write_bytes(b"test assembly")
+    page = workbench
+    page.reload()
+    expect(page.locator("#reader-setup-install")).to_be_hidden()
+    page.get_by_role("button", name="使用已安裝版本", exact=True).click()
+    expect(page.locator("#t-dll_dir")).to_have_value(str(installed))
+    assert read_settings(config_dir=config_dir)["dll_dir"] == str(installed)
+    page.reload()
+    expect(page.locator("#t-dll_dir")).to_have_value(str(installed))
+    expect(page.locator("#reader-setup-dll")).to_be_hidden()
+
+
+def test_real_browser_reload_and_multiple_tabs_retire_only_after_last_close(
+    browser, config_dir, browser_errors
+):
+    from tests.test_workbench_lifecycle import _launch, _request
+
+    with _launch(config_dir) as (process, url):
+        context = browser.new_context()
+        try:
+            first = context.new_page()
+            first.on("pageerror", lambda error: browser_errors.append(str(error)))
+            first.goto(url)
+            expect(first.locator("#t-dll_dir")).to_be_visible()
+            first.reload()
+            expect(first.locator("#t-dll_dir")).to_be_visible()
+            second = context.new_page()
+            second.on("pageerror", lambda error: browser_errors.append(str(error)))
+            second.goto(url)
+            expect(second.locator("#t-dll_dir")).to_be_visible()
+            first.close()
+            assert process.poll() is None
+            assert _request(url, "/api/review")[0] == 200
+            second.close()
+            assert process.wait(timeout=30) == 0
+        finally:
+            context.close()
 
 
 def test_analysis_poll_waits_for_previous_response(workbench):

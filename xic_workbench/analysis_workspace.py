@@ -65,6 +65,19 @@ class AnalysisWorkspace:
             warnings.append(f"workspace.json 有無效值，修正後才能執行 Targeted：{exc}")
         if overrides:
             warnings.append("啟動選項覆寫：" + ", ".join(overrides))
+        reader = self.thermo_reader_status(settings.get("dll_dir", ""))
+        configured = (
+            settings.get("dll_dir", "").replace("\\", "/").rstrip("/").casefold()
+        )
+        if (
+            not self.defaults.get("dll_dir")
+            and configured in {"", "c:/xcalibur/system/programs"}
+            and reader["dll_errors"]
+            and reader["installed_dir"]
+        ):
+            settings["dll_dir"] = reader["installed_dir"]
+            reader = {**reader, "dll_dir": reader["installed_dir"], "dll_errors": []}
+            warnings.append("RawFileReader：已使用本機已安裝的版本，不需重新下載。")
         discovery = read_discovery_config(config_dir=self.config_dir)
         discovery["dll_dir"] = settings.get("dll_dir", "")
         if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
@@ -93,7 +106,7 @@ class AnalysisWorkspace:
             "targeted_methods": self.targeted_methods(),
             "preferences": self.preferences(),
             "analysis": self.state(),
-            "thermo_reader": self.thermo_reader_status(settings.get("dll_dir", "")),
+            "thermo_reader": reader,
         }
 
     def thermo_reader_status(self, dll_dir: str) -> dict[str, Any]:
@@ -106,13 +119,23 @@ class AnalysisWorkspace:
         from xic_extractor.thermo_reader_install import (
             THERMO_LICENSE_URL,
             THERMO_READER_VERSION,
+            default_thermo_reader_dir,
         )
 
-        return {
-            "dotnet_errors": dotnet_runtime_errors(),
-            "dll_errors": thermo_dll_errors(Path(dll_dir))
+        installed = default_thermo_reader_dir()
+        dll_errors = (
+            thermo_dll_errors(Path(dll_dir))
             if dll_dir
-            else ["RawFileReader DLL directory is not set."],
+            else ["RawFileReader DLL directory is not set."]
+        )
+        installed_errors = (
+            dll_errors if Path(dll_dir) == installed else thermo_dll_errors(installed)
+        )
+        return {
+            "dll_dir": dll_dir,
+            "installed_dir": "" if installed_errors else str(installed),
+            "dotnet_errors": dotnet_runtime_errors(),
+            "dll_errors": dll_errors,
             "dotnet_install_command": DOTNET_INSTALL_COMMAND,
             "license_url": THERMO_LICENSE_URL,
             "version": THERMO_READER_VERSION,
@@ -273,15 +296,35 @@ class AnalysisWorkspace:
             from xic_workbench.target_import import import_targets
 
             return {"targets": import_targets(Path(values["path"]))}
-        if action == "thermo-reader/install":
-            from xic_extractor.thermo_reader_install import install_thermo_reader
+        if action == "thermo-reader/status":
+            dll_dir = values.get("dll_dir", "")
+            if not isinstance(dll_dir, str):
+                raise ValueError("請提供 DLL 資料夾。")
+            return self.thermo_reader_status(dll_dir)
+        if action in {"thermo-reader/install", "thermo-reader/use-installed"}:
+            from xic_extractor.thermo_reader_install import (
+                default_thermo_reader_dir,
+                install_thermo_reader,
+            )
             from xic_workbench.config_io import write_dll_dir
 
-            target = install_thermo_reader(
-                accept_license=values.get("accept_license") is True
-            )
+            if action == "thermo-reader/install":
+                target = install_thermo_reader(
+                    accept_license=values.get("accept_license") is True
+                )
+                message = f"RawFileReader 已安裝，DLL 資料夾已設為 {target}"
+            else:
+                from xic_extractor.raw_reader import thermo_dll_errors
+
+                target = default_thermo_reader_dir()
+                errors = thermo_dll_errors(target)
+                if errors:
+                    raise ValueError(
+                        "已安裝的 RawFileReader 不完整，請重新下載。 "
+                        + " ".join(errors)
+                    )
+                message = f"已使用本機 RawFileReader，DLL 資料夾已設為 {target}"
             write_dll_dir(str(target), config_dir=self.config_dir)
-            message = f"RawFileReader 已安裝，DLL 資料夾已設為 {target}"
             if self.defaults.pop("dll_dir", None):
                 message += (
                     "。本次工作區已改用新路徑；下次啟動前請更新或移除 "

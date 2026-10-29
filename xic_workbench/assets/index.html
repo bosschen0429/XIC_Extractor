@@ -241,20 +241,26 @@
           </p>
         </div>
         <div id="reader-setup-dll" hidden>
-          <p>
-            需要 Thermo RawFileReader <span id="reader-setup-version"></span>。同意授權後會下載到本機使用者資料夾，並自動設定
-            DLL 資料夾。
-          </p>
-          <label class="reader-setup-accept">
-            <input type="checkbox" id="reader-setup-accept" />
-            我已閱讀並同意
-            <a id="reader-setup-license" target="_blank" rel="noopener noreferrer"
-              >Thermo RawFileReader 授權條款</a
-            >
-          </label>
-          <button type="button" id="reader-setup-install" class="primary" disabled>
-            下載並設定 RawFileReader
-          </button>
+          <div id="reader-setup-existing" hidden>
+            <p>本機已有可用的 RawFileReader，不需重新下載。</p>
+            <button type="button" id="reader-setup-use" class="primary">使用已安裝版本</button>
+          </div>
+          <div id="reader-setup-download">
+            <p>
+              需要 Thermo RawFileReader <span id="reader-setup-version"></span>。同意授權後會下載到本機使用者資料夾，並自動設定
+              DLL 資料夾。
+            </p>
+            <label class="reader-setup-accept">
+              <input type="checkbox" id="reader-setup-accept" />
+              我已閱讀並同意
+              <a id="reader-setup-license" target="_blank" rel="noopener noreferrer"
+                >Thermo RawFileReader 授權條款</a
+              >
+            </label>
+            <button type="button" id="reader-setup-install" class="primary" disabled>
+              下載並設定 RawFileReader
+            </button>
+          </div>
         </div>
         <details>
           <summary>詳細原因</summary>
