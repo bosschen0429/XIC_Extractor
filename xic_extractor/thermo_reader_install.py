@@ -70,7 +70,8 @@ def install_thermo_reader(
     """Download the pinned packages, verify them, and place their DLLs together.
 
     Download and verify every package before changing installed DLLs. Only the
-    reader's files are replaced; a custom destination may hold unrelated data.
+    reader's changed files are replaced; identical installed DLLs may be in use.
+    A custom destination may hold unrelated data.
     """
     if not accept_license:
         raise ThermoReaderInstallError(
@@ -93,7 +94,17 @@ def install_thermo_reader(
                 )
         target.mkdir(exist_ok=True)
         for dll in staging.iterdir():
-            dll.replace(target / dll.name)
+            installed = target / dll.name
+            if installed.is_file() and installed.read_bytes() == dll.read_bytes():
+                continue
+            try:
+                dll.replace(installed)
+            except PermissionError as exc:
+                raise ThermoReaderInstallError(
+                    f"無法更新 RawFileReader DLL「{installed}」；檔案可能正在使用，"
+                    "或沒有寫入權限。請先關閉使用該 DLL 的 XIC／Python 程序後重試；"
+                    "若仍失敗，請確認資料夾權限。"
+                ) from exc
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return target
