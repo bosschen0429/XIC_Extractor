@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -279,6 +280,19 @@ def fake_runs(monkeypatch, tmp_path):
     control.release.set()
 
 
+def _drop_file(page, selector, name, content):
+    transfer = page.evaluate_handle(
+        """({name, content}) => {
+        const transfer = new DataTransfer();
+        const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+        transfer.items.add(new File([bytes], name));
+        return transfer;
+    }""",
+        {"name": name, "content": base64.b64encode(content).decode()},
+    )
+    page.locator(selector).dispatch_event("drop", {"dataTransfer": transfer})
+
+
 def _view(page, name):
     with page.expect_response(
         lambda response: response.url.endswith("/api/preferences")
@@ -302,6 +316,77 @@ def _wait_for_curve_report(page, *, inline=False):
     # The view becomes visible only after acquisition and report mounting finish.
     expect(review).to_be_visible(timeout=BACKGROUND_JOB_TIMEOUT_MS)
     return review
+
+
+def test_browse_fills_the_field_from_the_native_chooser(
+    workbench, monkeypatch, tmp_path
+):
+    from xic_workbench import server
+
+    page = workbench
+    choices = [str(tmp_path), ""]
+    requests = []
+
+    def choose(kind, current=""):
+        requests.append((kind, current))
+        return choices.pop(0)
+
+    monkeypatch.setattr(server, "choose_path", choose)
+    field = page.locator("#t-data_dir")
+    browse = page.locator("[data-browse='t-data_dir']")
+    initial = field.input_value()
+    browse.click()
+    expect(field).to_have_value(str(tmp_path))
+    # Cancelling the chooser keeps the chosen location.
+    browse.click()
+    expect(browse).not_to_have_attribute("aria-busy", "true")
+    expect(field).to_have_value(str(tmp_path))
+    # The chooser starts from whatever the field holds.
+    assert requests == [("folder", initial), ("folder", str(tmp_path))]
+
+
+@pytest.mark.parametrize("kind", ["folder", "report"])
+def test_result_chooser_opens_batch_folders_and_report_files(
+    workbench, monkeypatch, tmp_path, kind
+):
+    from shutil import copyfile
+
+    from tests.test_xic_workbench import _review_batch
+    from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+    from xic_workbench import server
+
+    original, _ = _review_batch(tmp_path)
+    batch = tmp_path / "completed-batch"
+    alignment = batch / "alignment"
+    alignment.mkdir(parents=True)
+    report = alignment / REPORT_FILENAME
+    copyfile(original, report)
+    chosen = str(batch if kind == "folder" else report)
+    choices, calls = [chosen, ""], []
+
+    def choose(requested_kind, current=""):
+        calls.append((requested_kind, current))
+        return choices.pop(0)
+
+    monkeypatch.setattr(server, "choose_path", choose)
+    page = workbench
+    _view(page, "review")
+    field = page.locator("#source")
+    field.fill("previous-selection")
+    name = "選擇結果資料夾" if kind == "folder" else "選擇結果檔案"
+    browse = page.get_by_role("button", name=name, exact=True)
+    browse.click()
+    expect(field).to_have_value(chosen)
+    browse.click()
+    expect(browse).not_to_have_attribute("aria-busy", "true")
+    expect(field).to_have_value(chosen)
+    assert calls == [(kind, "previous-selection"), (kind, chosen)]
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/open")
+    ) as opened:
+        page.locator("#open-form button[type=submit]").click()
+    assert opened.value.json()["source"] == str(report)
+    expect(page.locator("#batch-title")).to_have_text("Untargeted 結果")
 
 
 def test_navigation_and_theme_survive_reload(workbench):
@@ -1803,7 +1888,7 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     original = path.read_bytes()
     assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
     with page.expect_file_chooser() as chooser:
-        page.get_by_role("button", name="選擇檔案", exact=True).click()
+        page.locator("#target-import").click()
     chooser.value.set_files(path)
     expect(page.locator("#target-import-summary")).to_contain_text(
         "方法檔（Method + Targets）"
@@ -1836,7 +1921,6 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
 
 
 def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
-    import base64
 
     from tests.test_targeted_method_files import rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
@@ -1930,7 +2014,6 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
 def test_untargeted_istd_shared_upload_and_persistence(
     workbench, config_dir, tmp_path, extension, drop
 ):
-    import base64
     import csv
 
     from tests.test_targeted_method_files import rows
@@ -1970,11 +2053,11 @@ def test_untargeted_istd_shared_upload_and_persistence(
                 "content": base64.b64encode(path.read_bytes()).decode(),
             },
         )
-        page.locator("#istd-dropzone").dispatch_event(
+        page.locator("#istd-path-field").dispatch_event(
             "drop", {"dataTransfer": transfer}
         )
     else:
-        page.locator("#istd-import-file").set_input_files(path)
+        _drop_file(page, "#istd-path-field", path.name, path.read_bytes())
     expect(page.locator("#istd-import-status")).to_contain_text(
         f"已匯入 shared.{extension}"
     )
@@ -1984,9 +2067,7 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
     retained = page.locator("#u-targets_csv").input_value()
-    page.locator("#istd-import-file").set_input_files(
-        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
-    )
+    _drop_file(page, "#istd-path-field", "bad.xls", b"bad")
     expect(page.locator("#istd-import-status")).to_contain_text("不支援 .xls")
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
     expect(page.locator("#istd-preview")).to_contain_text("standard")
@@ -2024,7 +2105,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
     _view(page, "untargeted")
-    page.locator("#istd-import-file").set_input_files(path)
+    _drop_file(page, "#istd-path-field", path.name, path.read_bytes())
     expect(page.locator("#istd-import-status")).to_contain_text("已匯入")
     rna = page.locator("#istd-preview tr").filter(has_text="RNA standard")
     expect(page.locator("#istd-summary")).to_have_text(

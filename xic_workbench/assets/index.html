@@ -110,9 +110,6 @@
       <symbol id="i-x" viewBox="0 0 24 24">
         <path d="M6 6l12 12M18 6 6 18" />
       </symbol>
-      <symbol id="i-up" viewBox="0 0 24 24">
-        <path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" />
-      </symbol>
       <symbol id="i-download" viewBox="0 0 24 24">
         <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />
       </symbol>
@@ -136,10 +133,6 @@
         <path
           d="M19.5 11A7.5 7.5 0 0 0 6 7l-2 2M4 4.5V9h4.5M4.5 13A7.5 7.5 0 0 0 18 17l2-2M20 19.5V15h-4.5"
         />
-      </symbol>
-      <symbol id="i-drive" viewBox="0 0 24 24">
-        <rect x="3" y="4.5" width="18" height="12" rx="2" />
-        <path d="M8 20.5h8M12 16.5v4" />
       </symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24">
         <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
@@ -305,9 +298,18 @@
                 type="button"
                 data-browse="source"
                 data-kind="report"
+                aria-label="選擇結果檔案"
                 data-idle
               >
-                瀏覽</button
+                檔案</button
+              ><button
+                type="button"
+                data-browse="source"
+                data-kind="folder"
+                aria-label="選擇結果資料夾"
+                data-idle
+              >
+                資料夾</button
               ><button class="primary" type="submit" data-idle>
                 開啟批次
               </button></span
@@ -587,46 +589,6 @@
     </dialog>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
-
-    <dialog id="browser-dialog">
-      <div class="dialog-head">
-        <h2 id="browse-title">選擇本機位置</h2>
-        <button
-          id="browse-close"
-          type="button"
-          class="dialog-close"
-          aria-label="關閉位置選擇"
-        >
-          <svg class="icon"><use href="#i-x" /></svg>
-        </button>
-      </div>
-      <div class="dialog-body">
-        <form id="browse-form">
-          <button
-            id="browse-parent"
-            type="button"
-            aria-label="上一層"
-            title="上一層"
-          >
-            <svg class="icon"><use href="#i-up" /></svg></button
-          ><input id="browse-path" type="text" aria-label="資料夾路徑" /><button
-            type="submit"
-          >
-            前往
-          </button>
-        </form>
-        <p id="browse-note" class="subtle" role="status"></p>
-        <div id="browse-entries"></div>
-      </div>
-      <div class="dialog-foot">
-        <button id="browse-roots" type="button" class="ghost spacer">
-          <svg class="icon"><use href="#i-drive" /></svg>本機磁碟
-        </button>
-        <button id="browse-use" type="button" class="primary">
-          使用此資料夾
-        </button>
-      </div>
-    </dialog>
 
     <dialog id="confirm-dialog">
       <form method="dialog">

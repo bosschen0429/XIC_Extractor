@@ -639,21 +639,41 @@ def test_http_rejects_cross_origin_or_unidentified_api_calls(
         assert request("/api/open", {"source": "."}, headers=headers)[0] == 403
 
 
-def test_browse_uses_current_report_folder_without_exposing_other_files(tmp_path):
-    report = tmp_path / "cid_nl_explanation.sqlite"
-    report.touch()
-    (tmp_path / "sample.raw").touch()
-    (tmp_path / "subfolder").mkdir()
+def test_pick_returns_the_native_choice_and_starts_from_the_field(
+    tmp_path, monkeypatch
+):
+    from xic_workbench import native_picker, server
+
+    calls = []
+
+    def choose(kind, current=""):
+        calls.append((kind, current))
+        return "" if kind == "folder" else str(tmp_path / "chosen.sqlite")
+
+    monkeypatch.setattr(server, "choose_path", choose)
     with _client(ReviewWorkspace()) as request:
-        status, listing, _ = request(
-            "/api/browse", {"path": str(report), "kind": "report"}
+        status, body, _ = request(
+            "/api/pick", {"kind": "report", "path": str(tmp_path)}
         )
-        assert status == 200
-        assert listing["path"] == str(tmp_path.resolve())
-        assert [
-            (entry["name"], entry["directory"]) for entry in listing["entries"]
-        ] == [("subfolder", True), ("cid_nl_explanation.sqlite", False)]
-        assert request("/sample.raw")[0] == 404
+        assert (status, body) == (200, {"path": str(tmp_path / "chosen.sqlite")})
+        # Cancelling leaves the field as it was.
+        assert request("/api/pick", {"kind": "folder"})[1] == {"path": ""}
+        assert request("/api/pick", {"kind": "folder", "extra": 1})[0] == 400
+
+        def busy(kind, current=""):
+            raise native_picker.PickerBusy("已有開啟中的選擇視窗。")
+
+        monkeypatch.setattr(server, "choose_path", busy)
+        assert request("/api/pick", {"kind": "folder"})[0] == 409
+    assert calls == [("report", str(tmp_path)), ("folder", "")]
+
+    with pytest.raises(ValueError):
+        native_picker.choose_path("unknown")
+    nested = tmp_path / "batch"
+    nested.mkdir()
+    # A typed path that no longer exists starts at its nearest existing parent.
+    assert native_picker._starting_folder(str(nested / "gone" / "x.raw")) == str(nested)
+    assert native_picker._starting_folder("  ") == ""
 
 
 def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path):

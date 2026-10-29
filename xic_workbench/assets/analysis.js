@@ -559,13 +559,15 @@
     targetCount();
     done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
   }
-  function bindListUpload(prefix, receive) {
-    $(`${prefix}-import`).onclick = () => $(`${prefix}-import-file`).click();
-    $(`${prefix}-import-file`).onchange = (event) => {
-      receive(event.target.files);
-      event.target.value = "";
-    };
-    const zone = $(`${prefix}-dropzone`);
+  function bindListUpload(prefix, receive, zone = $(`${prefix}-dropzone`)) {
+    const chooser = $(`${prefix}-import-file`);
+    if (chooser) {
+      $(`${prefix}-import`).onclick = () => chooser.click();
+      chooser.onchange = (event) => {
+        receive(event.target.files);
+        event.target.value = "";
+      };
+    }
     for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
       zone.addEventListener(type, (event) => {
         event.preventDefault();
@@ -2226,7 +2228,8 @@
       done(result.message);
     });
     bindListUpload("target", previewTargetFiles);
-    bindListUpload("istd", importIstdFiles);
+    // The ISTD list is a path row: browse for a file there, or drop one on it.
+    bindListUpload("istd", importIstdFiles, $("istd-path-field"));
     $("target-import-preview").addEventListener("close", () => {
       if (pendingTargetImport) $("target-import-status").textContent = "已取消匯入，目前清單未變更。";
       pendingTargetImport = null;
@@ -2556,10 +2559,10 @@
     pathField(
       $("istd-path-field"),
       "targets_csv",
-      "內標清單 XLSX／CSV／TSV（留空停用）",
+      "內標清單",
       "targets",
       state.config.untargeted.targets_csv,
-    );
+    ).placeholder = "留空不使用 · 可拖曳 XLSX、CSV、TSV 到這裡";
     setMode(
       state.config.untargeted.mode === "full" &&
         state.config.untargeted.alignment_enabled === false
