@@ -256,6 +256,24 @@
 }
 
 /* Samples */
+.sample-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 14px;
+  margin-top: 8px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.sample-tools .text-button {
+  min-height: 0;
+  padding: 2px 0;
+  font-size: 12px;
+}
+#sample-editor:has(#sample-rows .sample-empty) .toolbar,
+#sample-editor:has(#sample-rows .sample-empty) .toolbar + .subtle {
+  display: none;
+}
 .sample-summary {
   display: flex;
   flex-wrap: wrap;
@@ -823,4 +841,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+#sample-rows .sample-empty td {
+  padding: 18px 12px;
+  color: var(--subtle);
+}
+#sample-rows .sample-empty button {
+  margin-left: 12px;
 }

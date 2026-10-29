@@ -292,9 +292,7 @@
     <div class="button-row step-action">
       <button type="button" data-part="samples-edit" class="ghost" data-analysis-idle>
         <svg class="icon"><use href="#i-list" /></svg>樣本明細</button
-      ><button type="button" data-part="samples-export" class="ghost" data-analysis-idle>
-        <svg class="icon"><use href="#i-download" /></svg>匯出
-      </button>
+      >
     </div>
   </div>
   <div class="step-body">
@@ -311,18 +309,21 @@
         匯入上機資訊
       </button>
     </div>
-    <div class="import-line annotation-line">
-      <span class="subtle">組別與排除</span
-      ><button type="button" data-part="samples-table" data-analysis-idle>
-        匯入合作者樣品表</button
-      ><button type="button" data-part="samples-carry" data-analysis-idle>
-        沿用上一批分組
-      </button>
-    </div>
     <div class="sample-summary">
       <div data-part="role-summary" class="chip-row"></div>
       <button type="button" data-part="samples-refresh" data-analysis-idle>
         <svg class="icon"><use href="#i-vial" /></svg>列出樣本檔名
+      </button>
+    </div>
+    <!-- Group and exclusion tools are secondary: one quiet line of text actions. -->
+    <div class="sample-tools">
+      <span>組別與排除</span
+      ><button type="button" data-part="samples-table" class="text-button" data-analysis-idle>
+        匯入合作者樣品表</button
+      ><button type="button" data-part="samples-carry" class="text-button" data-analysis-idle>
+        沿用上一批分組</button
+      ><button type="button" data-part="samples-export" class="text-button" data-analysis-idle>
+        匯出樣本資料
       </button>
     </div>
     <div data-part="group-cards" class="group-cards" hidden></div>
@@ -467,7 +468,7 @@
         ><button id="sample-include" type="button">取消排除</button></span
       >
     </div>
-    <p class="subtle">改動會立即存成這個 RAW 資料夾的樣品資訊；Targeted 與 Untargeted 共用。勾選的樣本才會套用批次操作；點樣品名稱中的詞可選取所有含這個詞的樣本。</p>
+    <p class="subtle">改動立即儲存到這個 RAW 資料夾，Targeted 與 Untargeted 共用 · 點樣品名稱中的詞可選取所有含該詞的樣本</p>
     <datalist id="sample-group-options"></datalist>
     <div class="table-scroll editor-table">
       <table>
