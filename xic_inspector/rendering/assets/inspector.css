@@ -430,3 +430,6 @@
 .xic-inspector .saved-table .evidence-actions { justify-content:flex-end; }
 .xic-inspector .saved-table .evidence-link { min-height:0;padding:2px 6px;color:var(--subtle);font-size:12px; }
 .xic-inspector .saved-table tr:hover .evidence-link, .xic-inspector .saved-table .evidence-link:focus-visible { color:var(--accent); }
+/* Evidence opens under the row it explains. */
+.xic-inspector .saved-table tr.evidence-row > td { padding:0 0 12px;background:transparent; }
+.xic-inspector .saved-table tr.evidence-row:hover > td { background:transparent; }

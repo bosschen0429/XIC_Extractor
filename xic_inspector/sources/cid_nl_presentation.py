@@ -152,6 +152,7 @@ def readable_record(
     available_refs: set[RecordKey],
     *,
     scope: tuple[list[str], list[str]],
+    sample_labels: dict[str, str],
 ) -> dict[str, Any]:
     kind = record["kind"]
     facts = record["facts"]
@@ -160,7 +161,9 @@ def readable_record(
     return {
         "ref": record["ref"],
         "title": title,
-        "summary": _record_summary(item, kind, facts, sample_ids, candidate_ids, title),
+        "summary": _record_summary(
+            item, kind, facts, sample_ids, candidate_ids, title, sample_labels
+        ),
         "sample_ids": sample_ids,
         "candidate_ids": candidate_ids,
         "fields": _record_fields(facts),
@@ -172,14 +175,18 @@ def readable_record(
     }
 
 
-def _sample_name(item: CanonicalItem, sample_id: str) -> str:
+def _sample_name(
+    item: CanonicalItem, sample_id: str, sample_labels: dict[str, str] | None = None
+) -> str:
+    # A sample without a witness still reads by the report's sample label,
+    # the same name the sample table shows.
     return next(
         (
             witness.sample_stem
             for witness in item.witnesses
             if witness.sample_key == sample_id and witness.sample_stem
         ),
-        sample_id,
+        (sample_labels or {}).get(sample_id, sample_id),
     )
 
 
@@ -190,8 +197,13 @@ def _record_summary(
     sample_ids: list[str],
     candidate_ids: list[str],
     title: str,
+    sample_labels: dict[str, str],
 ) -> str:
-    sample = _sample_name(item, sample_ids[0]) if len(sample_ids) == 1 else None
+    sample = (
+        _sample_name(item, sample_ids[0], sample_labels)
+        if len(sample_ids) == 1
+        else None
+    )
     if kind == "cell_decisions":
         value = facts.get("value", facts.get("quantitative_value"))
         owner = f"{sample} 的" if sample else "這筆"
