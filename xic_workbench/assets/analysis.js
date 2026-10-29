@@ -1537,10 +1537,15 @@
       body.append(tr);
     }
     if (!set.rows.length) {
-      const tr = el("tr");
-      const td = el("td", "尚未讀取樣本。關閉此視窗後按「列出樣本檔名」。");
+      // With nothing listed, the only useful action is to list the RAW names.
+      const tr = el("tr", undefined, "sample-empty");
+      const td = el("td");
       td.colSpan = 9;
-      td.className = "subtle";
+      const list = el("button", "列出樣本檔名");
+      list.type = "button";
+      list.dataset.analysisIdle = "";
+      list.onclick = () => act(() => scanSamples(page));
+      td.append(el("span", "尚未讀取樣本", "subtle"), list);
       tr.append(td);
       body.append(tr);
     }
@@ -1596,21 +1601,10 @@
   // Jobs
   async function startJob(kind, values) {
     if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
+    if (kind === "targeted" && !values.targets.length)
+      throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
     if (kind === "untargeted") await saveUntargeted(true);
-    try {
-      state.analysis = await api("/api/analysis/start", { kind, values });
-    } catch (error) {
-      if (
-        kind === "targeted" &&
-        values.targets.length === 0 &&
-        error.message.includes("at least one target row is required")
-      ) {
-        throw new Error(
-          `請先在 Targeted 清單新增至少一個 target：按「檢視與編輯」新增，或匯入目標清單。\n詳細資訊：${error.message}`,
-        );
-      }
-      throw error;
-    }
+    state.analysis = await api("/api/analysis/start", { kind, values });
     if (kind === "targeted") {
       state.config.settings = { ...values.settings };
       state.config.targeted_method = await api("/api/targeted/method", {});

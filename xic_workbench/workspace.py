@@ -239,6 +239,7 @@ class ReviewWorkspace:
                 {
                     "id": row["sample_key"],
                     "label": row.get("sample_stem", row["sample_key"]),
+                    **({"group": row["group"]} if "group" in row else {}),
                 }
                 for row in page.payload["summary"]["samples"]
             ],
@@ -277,7 +278,13 @@ class ReviewWorkspace:
             }
         )
         target_id = None
-        curve_samples = observed
+        # A group with any observed apex can be read for every member: samples
+        # without their own apex are acquired at the group's position.
+        curve_samples = (
+            sorted(s["sample_id"] for s in item.get("samples", []))
+            if group_id and observed
+            else observed
+        )
         numeric_samples = [
             s["sample_id"]
             for s in item.get("samples", [])
@@ -426,7 +433,7 @@ class ReviewWorkspace:
         bundle_path = self._folder / f"{job_id}.json"
         try:
             # Confirm the opened result still owns this request.
-            prepare_report(
+            source_samples = prepare_report(
                 source,
                 SelectionRequest(
                     strategy="query",
@@ -442,7 +449,7 @@ class ReviewWorkspace:
                 ),
                 expected_source=expected_source,
                 is_cancelled=cancel.is_set,
-            )
+            ).payload["summary"]["samples"]
             if request.get("target_id"):
                 from xic_workbench.targeted_curves import export_targeted_curves
 
@@ -470,10 +477,17 @@ class ReviewWorkspace:
                 on_progress=rendered,
                 is_cancelled=cancel.is_set,
             )
+            sample_groups = {}
+            if not request.get("target_id"):
+                from xic_workbench.samples import review_sample_groups
+
+                sample_groups = review_sample_groups(
+                    self.analysis.config_dir, request["raw_dir"], source_samples
+                )
             with self._lock:
                 if cancel.is_set():
                     raise CurveAcquisitionCancelled("已取消曲線載入。")
-                self._store_view(job_id, prepared)
+                self._store_view(job_id, prepared, sample_groups=sample_groups)
                 update(
                     status="succeeded",
                     phase="完成",
@@ -512,14 +526,23 @@ class ReviewWorkspace:
                 self._job.update(status="cancelling", message="等待目前讀取結束後停止…")
             return dict(self._job)
 
-    def _store_view(self, view_id: str, prepared: PreparedReport) -> None:
+    def _store_view(
+        self,
+        view_id: str,
+        prepared: PreparedReport,
+        *,
+        sample_groups: dict[str, str] | None = None,
+    ) -> None:
         # Session history stays on disk, not in an accumulating curve-payload cache.
         path = self._folder / f"{view_id}.view.json"
+        snapshot = prepared.render_data()
+        if sample_groups:
+            # Freeze display annotations with this view, separately from source
+            # owner facts. Offline rendering does not consume this context.
+            snapshot["sample_groups"] = sample_groups
         try:
             with path.open("w", encoding="utf-8") as stream:
-                json.dump(
-                    prepared.render_data(), stream, ensure_ascii=False, allow_nan=False
-                )
+                json.dump(snapshot, stream, ensure_ascii=False, allow_nan=False)
         except Exception:
             path.unlink(missing_ok=True)
             raise
@@ -534,14 +557,19 @@ class ReviewWorkspace:
             return json.load(stream)
 
     def view_payload(self, view_id: str) -> dict[str, Any]:
-        """Read the selected owner facts captured when this view was prepared."""
+        """Read captured owner facts with the interactive view's display groups."""
         with self._lock:
-            return self._view_snapshot(view_id)["payload_data"]
+            snapshot = self._view_snapshot(view_id)
+            payload = snapshot["payload_data"]
+            if "sample_groups" in snapshot:
+                payload["sample_groups"] = snapshot["sample_groups"]
+            return payload
 
     def report_path(self, view_id: str) -> Path:
         """Package an immutable view as offline HTML only when requested."""
         with self._lock:
             snapshot = self._view_snapshot(view_id)
+            snapshot.pop("sample_groups", None)
             path = self._folder / f"{view_id}.html"
             if not path.is_file():
                 write_report_atomically(build_report_html(**snapshot), path)

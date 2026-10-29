@@ -2582,3 +2582,21 @@ def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None
         generate_report(path, SelectionRequest(), tmp_path / "review.html")
     assert error.value.code == 4
     assert not (tmp_path / "review.html").exists()
+
+
+def test_decision_summary_names_a_sample_without_witness_by_its_report_label():
+    from types import SimpleNamespace
+
+    from xic_inspector.sources import cid_nl_presentation as presentation
+
+    # A sample with no candidate witness still reads as the table names it.
+    summary = presentation._record_summary(
+        SimpleNamespace(witnesses=()),
+        "cell_decisions",
+        {"value": None},
+        ["canonical-sample-id"],
+        [],
+        "樣本定量決策",
+        {"canonical-sample-id": "BenignfatBC1055_DNA"},
+    )
+    assert summary.startswith("BenignfatBC1055_DNA 的")

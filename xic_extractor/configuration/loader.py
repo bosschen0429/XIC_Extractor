@@ -45,7 +45,7 @@ class PreparedTargetedConfig:
 
 def default_output_dir(config_dir: Path) -> Path:
     """Run artifacts go beside the config folder unless a caller chooses."""
-    return Path(config_dir).parent / "output"
+    return Path(config_dir).resolve().parent / "output"
 
 
 def prepare_targeted_config(

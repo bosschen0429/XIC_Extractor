@@ -150,6 +150,11 @@ window.XicUi = (() => {
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
   const count = (value) => Number(value).toLocaleString();
+  // Mass distance reads in ppm of the queried m/z, the unit used for tolerance.
+  const ppm = (distance, mz) => {
+    const value = (distance / mz) * 1e6;
+    return value < 10 ? value.toFixed(1) : Math.round(value).toLocaleString();
+  };
   // Intensities span decades, so they read as Excel-style scientific notation.
   const scientific = (value) => {
     const [mantissa, exponent] = value.toExponential(2).split("e");
@@ -224,6 +229,8 @@ window.XicUi = (() => {
       }
       slot.handle = window.XicInspector.mount($(id), payload, {
         mode,
+        samples: state.page.all_samples,
+        sampleIds: state.page.samples.map(sample => sample.id),
         onRequestCurves: request => {
           if (reviewSlots.get(id) === slot && state.detail === slot.detail)
             requestCurves(request);
@@ -748,7 +755,7 @@ window.XicUi = (() => {
       top.className = "item-top";
       const title = document.createElement("strong");
       title.textContent = targeted ? item.title
-        : `m/z ${nearest ? String(item.precursor_mz) : fmt(item.precursor_mz, 4)}`;
+        : `m/z ${fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
       rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
@@ -765,7 +772,7 @@ window.XicUi = (() => {
       if (label) bottom.append(node("span", label, `chip ${badgeTone[label] || "warn"}`));
       button.append(top);
       if (nearest) {
-        button.append(node("span", `Δm/z ${item.mz_distance}`, "item-distance"));
+        button.append(node("span", `Δ ${ppm(item.mz_distance, page.nearest_mz)} ppm`, "item-distance"));
       }
       button.append(bottom);
       button.addEventListener("click", () =>
@@ -867,15 +874,6 @@ window.XicUi = (() => {
     $("xic-sample").replaceChildren(...detail.item.curve_sample_ids.map(id => new Option(
       state.page.samples.find(sample => sample.id === id)?.label || id, id,
     )));
-    if (!targeted) {
-      const missing = state.page.samples.filter(sample => !available.has(sample.id));
-      const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
-      // Numeric results and acquirable coordinates are separate facts.
-      const curveless = missing.filter(sample => !numericMissing.includes(sample));
-      $("inline-curve-coverage").textContent = `${item.numeric_count} 有值 · ${available.size} 可讀 XIC`
-        + (numericMissing.length ? ` · 有值但缺座標：${numericMissing.map(sample => sample.label).join("、")}` : "")
-        + (curveless.length ? ` · 無座標：${curveless.map(sample => sample.label).join("、")}` : "");
-    }
     showRecorded();
     status("");
   }
@@ -906,7 +904,7 @@ window.XicUi = (() => {
       // The plotted curves are their own receipt beside the saved values;
       // only samples left out of the plot need words.
       const labels = (view.unusable || []).join("、");
-      curveStatus(labels ? `${labels} 在保留峰頂附近沒有可用訊號` : "");
+      curveStatus(labels ? `${labels} 在本次擷取範圍沒有可用訊號` : "");
       $("inline-curve-review").hidden = false;
       return;
     }

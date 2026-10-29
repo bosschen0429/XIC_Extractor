@@ -1120,7 +1120,6 @@ th.num {
 .targeted-review-nav button:hover { background: var(--accent-soft); }
 /* Untargeted curves: counts in one quiet line, then the plot. */
 #inline-curves { padding: 0 22px; }
-#inline-curve-coverage { margin: 0 0 6px; color: var(--subtle); font-size: 12px; font-variant-numeric: tabular-nums; }
 #inline-curve-status { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 #inline-curve-status:empty { display: none; }
 

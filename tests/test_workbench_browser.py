@@ -731,36 +731,27 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     )
 
 
-def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_errors):
+def test_empty_targeted_run_explains_where_to_add_a_target(workbench):
     page = workbench
     page.locator("#target-edit").click()
     page.get_by_role("button", name="刪除第 1 列", exact=True).click()
     page.locator("#target-editor").get_by_role(
         "button", name="完成", exact=True
     ).click()
-    expected_http_error = (
-        "Failed to load resource: the server responded with a status of "
-        "400 (Bad Request)"
+    requests = []
+    page.on(
+        "request",
+        lambda request: (
+            requests.append(request.url)
+            if request.url.endswith("/api/analysis/start")
+            else None
+        ),
     )
-    with page.expect_console_message(
-        lambda message: message.type == "error" and message.text == expected_http_error
-    ):
-        with page.expect_response("**/api/analysis/start") as response:
-            _start(page, "targeted")
-    # This rejection is the contract under test; all other browser errors still fail.
-    browser_errors.remove(expected_http_error)
-    assert response.value.status == 400
-    technical_detail = response.value.json()["error"]
-    assert technical_detail
+    _start(page, "targeted")
     error = page.locator("#toasts .toast.error")
-    expect(error).to_contain_text("請先在 Targeted 清單新增至少一個 target")
-    expect(error).to_contain_text(technical_detail)
-    state = page.request.get(
-        response.value.url.replace("/start", ""),
-        headers={"X-XIC-Client": "workbench"},
-    )
-    assert state.ok
-    assert state.json()["job"] is None
+    expect(error).to_have_text("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。")
+    # The empty list is caught before any run request reaches the workspace.
+    assert requests == []
 
 
 @pytest.mark.parametrize(
@@ -943,31 +934,31 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
         page.locator("#query-form button[type=submit]").click()
     titles = page.locator("#item-list .item-top strong")
     expect(titles).to_have_count(25)
-    expect(titles.nth(0)).to_have_text("m/z 123.398")
-    expect(titles.nth(1)).to_have_text("m/z 123.42")
+    expect(titles.nth(0)).to_have_text("m/z 123.3980")
+    expect(titles.nth(1)).to_have_text("m/z 123.4200")
     expect(titles.nth(2)).to_have_text("m/z 123.4567")
     # The workspace tests own distance/ranking correctness; the UI must display
     # the returned distance rather than recompute it from the formatted title.
-    distance = query.value.json()["items"][0]["mz_distance"]
+    distance = query.value.json()["items"][0]["mz_distance"] / 123.4 * 1e6
     expect(page.locator("#item-list .item-distance").first).to_have_text(
-        f"Δm/z {distance}"
+        f"Δ {distance:.1f} ppm" if distance < 10 else f"Δ {round(distance):,} ppm"
     )
     expect(page.locator("#nearest-results-note")).to_contain_text("1 組缺少有效 m/z")
     expect(page.locator("#list-summary")).to_contain_text("32")
     page.locator("#next").click()
     expect(titles).to_have_count(7)
-    expect(titles.last).to_have_text("m/z 350")
+    expect(titles.last).to_have_text("m/z 350.0000")
     page.locator("#previous").click()
-    expect(titles.nth(0)).to_have_text("m/z 123.398")
+    expect(titles.nth(0)).to_have_text("m/z 123.3980")
 
     # Optional RT narrows eligibility without changing distance order and
     # remains applied when pagination requests the next candidate slice.
     page.locator("#rt-min").fill("0.5")
     page.locator("#query-form button[type=submit]").click()
-    expect(titles.nth(0)).to_have_text("m/z 123.42")
+    expect(titles.nth(0)).to_have_text("m/z 123.4200")
     page.locator("#next").click()
     expect(titles).to_have_count(6)
-    expect(titles.last).to_have_text("m/z 350")
+    expect(titles.last).to_have_text("m/z 350.0000")
     page.locator("#reset-query").click()
     expect(page.locator("#nearest-mz")).to_have_value("")
     expect(page.locator("#rt-min")).to_have_value("")
@@ -1014,7 +1005,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     }
     expect(page.locator("#item-list button")).to_have_count(25)
     expect(page.locator("#item-list .item-top strong").first).to_have_text(
-        "m/z 123.398"
+        "m/z 123.3980"
     )
     for invalid in ("abc", "Infinity", "NaN", "0", "-1"):
         page.locator("#nearest-mz").fill(invalid)
@@ -1026,7 +1017,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     expect(page.locator("#nearest-mz-error")).to_be_hidden()
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list .item-top strong").first).to_have_text(
-        "m/z 123.398"
+        "m/z 123.3980"
     )
 
 
@@ -1196,7 +1187,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     from tests.test_xic_workbench import _review_batch
 
     db = (
-        _create_mock_db(tmp_path)[0]
+        _create_mock_db(tmp_path, samples=[{"sample_key": "S1"}])[0]
         if sample_count == 1
         else _review_batch(tmp_path, sample_count=sample_count)[0]
     )
@@ -1212,7 +1203,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
             page.locator("#inline-curve-review").locator(
                 "[data-inspector-id='svg-raw'] polyline"
             )
-        ).to_have_count(1)
+        ).to_have_count(sample_count)
         page.locator("#item-list button").filter(has_text="6 / 6").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
@@ -1250,6 +1241,88 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     }""")
     review.locator("[data-inspector-id='zoom-close']").click()
     expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_hidden()
+
+
+def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    from tests.test_explanation_review import (
+        _group_with_missing_apex_review,
+        _install_distinct_curve_raws,
+    )
+    from xic_workbench.samples import save_batch_samples
+
+    report, matrix = _group_with_missing_apex_review(tmp_path)
+    save_batch_samples(
+        config_dir,
+        tmp_path,
+        [
+            asdict(SampleMetadata(sid, sid, group=group))
+            for sid, group in (("S1", "Study"), ("S2", "Study"), ("S3", "QC"))
+        ],
+    )
+    originals = [path.read_bytes() for path in (report, matrix)]
+    opened = []
+    _install_distinct_curve_raws(monkeypatch, opened)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill(str(tmp_path))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    review = _wait_for_curve_report(page, inline=True)
+    curves = review.locator("[data-inspector-id='svg-raw'] polyline")
+    expect(curves).to_have_count(3)
+    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
+        "stroke-dasharray", "6 4"
+    )
+    review.get_by_role("button", name="聚焦 S3", exact=True).hover()
+    expect(review.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
+    # Display controls consume the saved groups, without another RAW read.
+    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).uncheck()
+    expect(curves).to_have_count(1)
+    expect(curves).to_have_attribute("data-sample-id", "S3")
+    review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).uncheck()
+    expect(curves).to_have_count(0)
+    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).check()
+    expect(curves).to_have_count(2)
+    review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).check()
+    expect(curves).to_have_count(3)
+    saved = page.locator("#recorded-review .sample-table tbody tr")
+    expect(saved.filter(has_text="S1")).to_contain_text("1.000e+2")
+    expect(saved.filter(has_text="S2")).to_contain_text("2.000e+2")
+    expect(saved.filter(has_text="S3")).to_contain_text("空值")
+    assert [name for name, _ in opened] == ["S1.raw", "S2.raw", "S3.raw"]
+    assert [path.read_bytes() for path in (report, matrix)] == originals
+    # A loaded view keeps the confirmed display context it was prepared with.
+    view_id = review.get_attribute("data-view-id")
+    save_batch_samples(
+        config_dir,
+        tmp_path,
+        [
+            asdict(SampleMetadata(sid, sid, group="Edited later"))
+            for sid in ("S1", "S2", "S3")
+        ],
+    )
+    captured = page.evaluate(
+        "id=>fetch(`/api/views/${id}`,{headers:{'X-XIC-Client':'workbench'}})"
+        ".then(response=>response.json())",
+        view_id,
+    )
+    assert captured["sample_groups"] == {"S1": "Study", "S2": "Study", "S3": "QC"}
+    exported = page.evaluate(
+        """async id=>{
+        const response=await fetch(`/reports/${id}.html`,{
+            headers:{'X-XIC-Client':'workbench'}});
+        const html=new DOMParser().parseFromString(await response.text(),'text/html');
+        return JSON.parse(html.querySelector('#inspector-data').textContent);
+    }""",
+        view_id,
+    )
+    assert "sample_groups" not in exported
+    assert exported["items"] == captured["items"]
+    assert exported["samples"] == captured["samples"]
 
 
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(
@@ -2478,8 +2551,8 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     if mode == "nearest":
         expect(page.locator("#nearest-mz")).to_have_value("123.4")
         expect(titles).to_have_count(25)
-        expect(titles.nth(0)).to_have_text("m/z 123.398")
-        expect(titles.nth(1)).to_have_text("m/z 123.42")
+        expect(titles.nth(0)).to_have_text("m/z 123.3980")
+        expect(titles.nth(1)).to_have_text("m/z 123.4200")
         expect(page.locator("#list-summary")).to_contain_text("32")
     else:
         expect(page.locator("#mz-min")).to_have_value("123.4")

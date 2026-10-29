@@ -1061,7 +1061,11 @@ class CidNlSource:
         }
         readable = [
             presentation.readable_record(
-                item, record, available_refs, scope=self._record_scope(item, record)
+                item,
+                record,
+                available_refs,
+                scope=self._record_scope(item, record),
+                sample_labels=self.sample_labels,
             )
             for record in item.details["records"]
         ]

@@ -608,6 +608,138 @@ def test_curve_export_sample_scope_opens_only_selected_raw(tmp_path, monkeypatch
     assert [name for name, _ in opened] == ["S2.raw"]
 
 
+def _group_with_missing_apex_review(tmp_path):
+    from dataclasses import asdict
+
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    sources = []
+    for sid in ("S1", "S2", "S3"):
+        raw = tmp_path / f"{sid}.raw"
+        raw.write_bytes(sid.encode())
+        sources.append(
+            asdict(
+                build_acquisition_source_identity(
+                    raw,
+                    acquisition_format="thermo_raw",
+                    observation_namespace="fixture",
+                )
+            )
+        )
+    matrix = tmp_path / "matrix.tsv"
+    matrix.write_text("saved matrix with an empty S3 cell", encoding="utf-8")
+    report = tmp_path / "review.sqlite"
+    keys = [("C1", "S1"), ("C2", "S2")]
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
+            writer.add_candidate(
+                cid,
+                sid,
+                {
+                    "candidate_id": cid,
+                    "sample_key": sid,
+                    "precursor_mz": mz,
+                    "rt_apex_min": rt,
+                },
+            )
+            writer.add_record(
+                "terminal_subjects",
+                cid,
+                {
+                    "candidate_id": cid,
+                    "sample_key": sid,
+                    "observations": [
+                        {"physical_peak_key": cid, "rt_apex_min": rt},
+                        {"physical_peak_key": "other-group", "rt_apex_min": 99},
+                    ],
+                },
+                [(cid, sid)],
+            )
+        writer.add_record(
+            "final_groups",
+            "G1",
+            {
+                "feature_id": "G1",
+                "member_subjects": [
+                    {"sample_key": sid, "physical_peak_keys": [cid]}
+                    for cid, sid in keys
+                ],
+            },
+            keys,
+        )
+        writer.add_record(
+            "rows",
+            "G1",
+            {
+                "feature_id": "G1",
+                "route": {"destination": "matrix", "reason": "saved"},
+            },
+            keys,
+        )
+        writer.add_row_cells(
+            "G1",
+            [
+                {
+                    "sample_key": sid,
+                    "variant": "numeric" if value else "unavailable",
+                    "value": value,
+                }
+                for sid, value in (("S1", 100), ("S2", 200), ("S3", None))
+            ],
+            {"S1": 0, "S2": 1, "S3": 2},
+        )
+        writer.finalize(
+            _summary_fixture(
+                {
+                    "samples": [{"sample_key": sid} for sid in ("S1", "S2", "S3")],
+                    "acquisition_sources": sources,
+                    "matrix_path": str(matrix),
+                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                },
+                review_only=True,
+            )
+        )
+    return report, matrix
+
+
+@pytest.mark.parametrize("sample_ids", [("S1", "S2", "S3"), ("S3",)])
+def test_group_missing_apex_uses_group_medians_without_changing_saved_results(
+    tmp_path, monkeypatch, sample_ids
+):
+    review, matrix = _group_with_missing_apex_review(tmp_path)
+    originals = [path.read_bytes() for path in (review, matrix)]
+    opened = []
+    _install_distinct_curve_raws(monkeypatch, opened)
+    output = tmp_path / "group-curves.json"
+    export_explanation_curves(
+        review,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id="G1",
+        sample_ids=sample_ids,
+    )
+    bundle = read_curve_bundle(output)
+    traces = {trace.sample_id: trace for trace in bundle.transitions[0].traces}
+    assert set(traces) == set(sample_ids)
+    assert [name for name, _ in opened] == [f"{sid}.raw" for sid in sample_ids]
+    fallback = traces["S3"]
+    assert fallback.mz == 500.0
+    assert fallback.extraction_rt_window == (7.5, 8.5)
+    assert fallback.quality_flags["acquired_at_group_position"] is True
+    assert max(fallback.raw.intensity) == pytest.approx(2000)
+    if "S1" in traces:
+        assert traces["S1"].mz == 499.0
+        assert traces["S1"].extraction_rt_window == (7.4, 8.4)
+        assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
+        assert traces["S2"].mz == 501.0
+        assert traces["S2"].extraction_rt_window == (7.6, 8.6)
+        assert not traces["S2"].quality_flags["acquired_at_group_position"]
+    assert all(trace.integration is None for trace in traces.values())
+    assert bundle.transitions[0].quantifications == ()
+    assert [path.read_bytes() for path in (review, matrix)] == originals
+
+
 def test_curve_export_cancelled_before_or_during_acquisition_leaves_no_output(
     tmp_path, monkeypatch
 ):

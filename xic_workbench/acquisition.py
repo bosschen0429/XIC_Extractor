@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -66,7 +67,7 @@ def export_explanation_curves(
     on_progress: Callable[[int, int, str], None] | None = None,
     verified_raws: dict[Path, AcquisitionSourceExpectation] | None = None,
 ) -> dict[str, Any]:
-    """Acquire new review curves around retained apexes without deciding area.
+    """Acquire diagnostic curves at saved apexes or requested group positions.
 
     ``verified_raws`` lets a caller reuse content verification across requests;
     an entry applies only while the RAW path keeps the same file state.
@@ -127,11 +128,22 @@ def export_explanation_curves(
 
     observed_samples = {sid for sid, _ in selected}
     unobserved_samples = requested_samples - observed_samples
-    if unobserved_samples:
+    if unobserved_samples and (group_id is None or not selected):
         raise ExplanationError(
             "Requested samples have no retained apex coordinates for this selection: "
             f"{sorted(unobserved_samples)}. Diagnostic curves require an observed apex."
         )
+    if unobserved_samples:
+        # A requested group member without its own apex is read at the group's
+        # observed position, so a missed peak can still be seen; the trace says so.
+        position = {
+            "candidate_id": None,
+            "mz": statistics.median(o["mz"] for o in selected.values()),
+            "rt": statistics.median(o["rt"] for o in selected.values()),
+            "group_position": True,
+        }
+        for sid in unobserved_samples:
+            selected[sid, "group-position"] = position
     if requested_samples:
         selected = {
             key: observation
@@ -222,6 +234,9 @@ def export_explanation_curves(
                         ),
                         quality_flags={
                             "candidate_id": observation["candidate_id"],
+                            "acquired_at_group_position": observation.get(
+                                "group_position", False
+                            ),
                             "new_diagnostic_extraction": True,
                             "source_binding_basis": _SOURCE_BINDING_BASIS,
                             "processing_attempt_id": summary["processing_attempt_id"],
@@ -234,7 +249,7 @@ def export_explanation_curves(
             on_progress(completed + 1, total, sid)
 
     if not traces:
-        raise ExplanationError("所選樣本在保留峰頂附近都沒有可用訊號。")
+        raise ExplanationError("所選樣本在擷取範圍內都沒有可用訊號。")
     window = (
         min(trace.extraction_rt_window[0] for trace in traces),
         max(trace.extraction_rt_window[1] for trace in traces),

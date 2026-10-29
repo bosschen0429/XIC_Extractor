@@ -56,6 +56,30 @@ def sample_annotations_path(config_dir: Path, raw_dir: Path) -> Path:
     return Path(config_dir) / ANNOTATIONS_DIR / f"{name}-{digest.hexdigest()[:12]}.tsv"
 
 
+def review_sample_groups(
+    config_dir: Path, raw_dir: Path, source_samples: list[dict[str, Any]]
+) -> dict[str, str]:
+    """Join confirmed folder annotations to report IDs through their RAW stems.
+
+    This is display context, not a rewrite of historical analysis metadata.
+    Reading annotations needs neither RAW enumeration nor instrument headers.
+    """
+    path = sample_annotations_path(config_dir, raw_dir)
+    if not path.is_file():
+        return {}
+    annotations = {
+        row.raw_stem.casefold(): resolve_sample_group(row)
+        for row in load_sample_metadata(path)
+    }
+    groups = {}
+    for sample in source_samples:
+        stem = sample.get("sample_stem", sample["sample_key"])
+        group = annotations.get(stem.casefold(), "")
+        if sample_group_key(group):
+            groups[sample["sample_key"]] = group
+    return groups
+
+
 def read_batch_samples(
     config_dir: Path,
     raw_dir: Path,

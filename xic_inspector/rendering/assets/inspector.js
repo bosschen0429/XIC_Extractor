@@ -62,8 +62,8 @@
     // Prefix DOM and SVG reference identities at the markup boundary, not in
     // the scientific presentation helpers that produce the same plot for both hosts.
     element.innerHTML = String(content)
-      .replace(/\bid="([^"]+)"/g, (_, id) => `data-inspector-id="${id}" id="${instanceId}${id}"`)
-      .replace(/\bfor="([^"]+)"/g, (_, id) => `for="${instanceId}${id}"`)
+      .replace(/(^|\s)id="([^"]+)"/g, (_, space, id) => `${space}data-inspector-id="${id}" id="${instanceId}${id}"`)
+      .replace(/(^|\s)for="([^"]+)"/g, (_, space, id) => `${space}for="${instanceId}${id}"`)
       .replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${instanceId}${id})`);
   }
   container.append(root);
@@ -441,9 +441,14 @@
   };
   const chrome = mode === 'offline'
     ? offlineMarkup.replace('%%DETAIL_SURFACE%%', detailMarkup).replace('%%DIALOG_SURFACE%%', dialogMarkup)
-    : `<div class="signal-bar">${signalSwitchMarkup}</div>` + detailMarkup + dialogMarkup;
+    : (mode === 'curves' ? '' : `<div class="signal-bar">${signalSwitchMarkup}</div>`) + detailMarkup + dialogMarkup;
   setHTML(root, chrome.replace(/%%([A-Z_]+)%%/g, (_, key) => esc(fields[key] ?? '')));
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
+  // The host supplies the complete saved-source catalog, even when this view
+  // contains fewer traces. Colour identity must not depend on loaded curves.
+  const catalog=Array.isArray(options.samples)?options.samples:samples;
+  const sampleById=new Map([...samples,...catalog].map(s=>[s.id,s]));
+  const sampleColors=new Map(catalog.map((s,index)=>[s.id,index]));
   const colors=Array.from({length:8},(_,index)=>`var(--curve-${index+1})`);
   const has=(o,k)=>Object.prototype.hasOwnProperty.call(o||{},k);
   const finite=v=>typeof v==='number'&&Number.isFinite(v), fixed=(v,d)=>finite(v)?v.toFixed(d):'未提供';
@@ -451,8 +456,8 @@
   const rtMin=v=>finite(v)?`${rt(v)} min`:'未提供', drtMin=v=>finite(v)?`${drt(v)} min`:'未提供';
   const tickNum=v=>v===0?'0':Math.abs(v)>=1e6?v.toExponential(1):Math.abs(v)>=100?Math.round(v).toLocaleString('en-US'):num(v);
   const num=v=>finite(v)?v.toLocaleString('en-US',{maximumFractionDigits:3}):'未提供';
-  const sample=id=>samples.find(s=>s.id===id), sampleName=id=>sample(id)?.label||id||'未記錄樣本名稱';
-  const color=id=>sample(id)?.group_color||colors[Math.max(0,samples.findIndex(s=>s.id===id))%colors.length];
+  const sample=id=>sampleById.get(id), sampleName=id=>sample(id)?.label||id||'未記錄樣本名稱';
+  const color=id=>(mode==='offline'&&sample(id)?.group_color)||colors[(sampleColors.get(id)??0)%colors.length];
   const itemRows=item=>Array.isArray(item.samples)?item.samples:[];
   const witnesses=item=>Array.isArray(item.witnesses)?item.witnesses:(Array.isArray(item.candidates)?item.candidates:[]);
   const candidateId=w=>w?.candidate_id||w?.id||'', witnessSample=w=>w?.sample_key||w?.sample_id||'';
@@ -467,6 +472,8 @@
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
   const initialItem=queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
   const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
+  const curveUi={model:null,query:'',collapsed:new Set(),pinned:null,hover:null,observer:null};
+  cleanups.push(()=>curveUi.observer?.disconnect());
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
 
   function candidates(item,sid=state.sample){
@@ -517,7 +524,7 @@
   // Channels share their sample's colour, so line style tells them apart unless it already tells support origins apart.
   function lineDash(item){
     const styles=originsRecorded(item)?new Map():channelStyles(item),roleOf=new Map(witnesses(item).map(w=>[candidateId(w),w.role]));
-    return (curve,origin)=>styles.get(roleOf.get(curve.candidate_id))??curveDash(item,origin);
+    return (curve,origin)=>curve.quality_flags?.acquired_at_group_position?'6 4':styles.get(roleOf.get(curve.candidate_id))??curveDash(item,origin);
   }
   function originRefs(origin){return [...new Set(['method_refs','capture_refs','observation_refs'].flatMap(key=>Array.isArray(origin?.[key])?origin[key]:[]).filter(Boolean))];}
   function sampleAlignment(item,row){
@@ -717,7 +724,236 @@
     const rawApex=curve.integration?.raw_apex_rt_min, showRaw=finite(rawApex)&&(!finite(curve.apex_rt)||Math.abs(rawApex-curve.apex_rt)>1e-7);
     return `<div class="readout-heading"><div><span class="eyebrow">目前檢閱 · 下列 RT 均為原始時間</span><strong>${esc(sampleName(state.sample))}${c?` · ${esc(candidateName)}`:''}${stage===candidateName?'':` · ${esc(stage)}`}</strong></div>${curve.evidence_ref?`<button type="button" class="evidence-link" data-evidence-ref="${esc(curve.evidence_ref)}" data-evidence-context="目前曲線與積分">查看曲線來源</button>`:''}</div><dl class="integration-grid"><div><dt>積分範圍（原始時間）</dt><dd data-readout="bounds">${finite(curve.bound_left_rt)||finite(curve.bound_right_rt)?`${drt(curve.bound_left_rt)}–${drt(curve.bound_right_rt)} min`:'未提供'}</dd></div><div><dt>積分峰頂（原始時間）</dt><dd data-readout="apex">${drtMin(curve.apex_rt)}</dd></div>${showRaw?`<div><dt>原始訊號峰頂（原始時間）</dt><dd data-readout="raw-apex">${drt(rawApex)} min</dd></div>`:''}<div><dt>當次原始計數面積</dt><dd data-readout="area">${finite(curve.area)?`${num(curve.area)} <span>counts·s</span>`:'未提供'}</dd></div><div><dt>正式定量值</dt><dd data-readout="quantity">${result(row)}</dd></div></dl><p class="control-note">面積是這次積分的原始計數面積；正式定量值是來源保存的決策結果，兩者分開顯示。</p>${evidenceButtons(row.decision_refs,evidenceContext,evidenceLabel)}`;
   }
-  function plot(item,axis,peer=false,wide=false){
+  function curveAcquisitionLabel(curve){
+    if(curve.quality_flags?.acquired_at_group_position)return '依群組位置擷取';
+    if(curve.quality_flags?.new_diagnostic_extraction)return '依樣本峰頂擷取';
+    return curve.stage_label||'來源保存曲線';
+  }
+  function curveSidebarModel(item){
+    if(curveUi.model?.item===item)return curveUi.model;
+    const bySample=new Map(), scope=options.sampleIds?new Set(options.sampleIds):null;
+    for(const curve of item.curves||[]){
+      if(!seriesList(curve,'raw','raw').length&&!seriesList(curve,'raw','smoothed').length)continue;
+      if(!bySample.has(curve.sample_id))bySample.set(curve.sample_id,[]);
+      bySample.get(curve.sample_id).push(curve);
+    }
+    const dash=lineDash(item),groups=new Map();
+    const rows=catalog.filter(s=>!scope||scope.has(s.id)).map(s=>{
+      const curves=bySample.get(s.id)||[], first=curves[0];
+      return {id:s.id,name:sampleName(s.id),group:s.group||data.sample_groups?.[s.id]||'未分組',curves,
+        dash:first?dash(first,curveOrigin(item,s.id)):'',available:curves.length>0};
+    });
+    for(const row of rows){
+      if(!groups.has(row.group))groups.set(row.group,[]);
+      groups.get(row.group).push(row);
+    }
+    state.visible=new Set(rows.filter(row=>row.available).map(row=>row.id));
+    curveUi.model={item,rows,groups:[...groups].map(([name,rows])=>({name,rows,available:rows.filter(row=>row.available)}))};
+    curveUi.pinned=null;curveUi.hover=null;
+    return curveUi.model;
+  }
+  function curveSampleList(model){
+    const query=curveUi.query.trim().toLocaleLowerCase();
+    return model.groups.map(group=>{
+      const rows=group.rows.filter(row=>row.name.toLocaleLowerCase().includes(query));
+      if(!rows.length)return '';
+      const open=!curveUi.collapsed.has(group.name);
+      return `<section class="curve-sample-group"><button type="button" class="curve-collapse" data-curve-collapse="${esc(group.name)}" aria-expanded="${open}" aria-label="${open?'收合':'展開'} ${esc(group.name)} 組別"><span class="curve-chevron" aria-hidden="true">›</span><span class="curve-group-name">${esc(group.name)}</span><span class="curve-group-count" data-curve-count="${esc(group.name)}"></span></button><div class="curve-group-body" ${open?'':'hidden'}>${rows.map(row=>{
+        const tail=row.name.length>20?row.name.slice(-10):'',leading=tail?row.name.slice(0,-10):row.name;
+        return `<div class="curve-sample-row${row.available?'':' curve-unavailable'}" data-sample-id="${esc(row.id)}" ${row.available?'':`tabindex="0" aria-label="${esc(row.name)}，無曲線"`}><input type="checkbox" data-sample-visible="${esc(row.id)}" aria-label="在圖中顯示 ${esc(row.name)}" ${state.visible.has(row.id)?'checked':''} ${row.available?'':'disabled'}><button type="button" class="curve-sample-focus" data-curve-focus="${esc(row.id)}" aria-label="聚焦 ${esc(row.name)}" aria-pressed="false" ${row.available?'':'disabled'}><svg class="curve-swatch" aria-hidden="true" viewBox="0 0 28 8"><line x1="1" y1="4" x2="27" y2="4" stroke="${color(row.id)}" stroke-width="2.2" stroke-dasharray="${row.dash}"/></svg><span class="curve-sample-name" aria-hidden="true"><span class="curve-name-leading">${esc(leading)}</span><span class="curve-name-tail">${esc(tail)}</span></span></button>${row.available?'':'<span class="curve-missing" aria-hidden="true">—</span>'}</div>`;
+      }).join('')}</div></section>`;
+    }).join('')||'<p class="curve-list-empty">沒有符合的樣本</p>';
+  }
+  function syncCurveSelection(){
+    const model=curveUi.model;
+    const inputs=[...root.querySelectorAll('[data-curve-group]')],counts=[...root.querySelectorAll('[data-curve-count]')];
+    for(const group of model.groups){
+      const selected=group.available.filter(row=>state.visible.has(row.id)).length;
+      for(const input of inputs){
+        if(input.dataset.curveGroup!==group.name)continue;
+        input.checked=selected>0&&selected===group.available.length;
+        input.indeterminate=selected>0&&selected<group.available.length;
+        input.disabled=!group.available.length;
+        input.setAttribute('aria-checked',input.indeterminate?'mixed':String(input.checked));
+      }
+      for(const count of counts){
+        if(count.dataset.curveCount===group.name)count.textContent=`${selected}/${group.available.length}`;
+      }
+    }
+    for(const input of root.querySelectorAll('[data-sample-visible]'))input.checked=state.visible.has(input.dataset.sampleVisible);
+    if(curveUi.pinned&&!state.visible.has(curveUi.pinned))curveUi.pinned=null;
+    applyCurveEmphasis();
+  }
+  function curveLineOpacity(id,overlay=false){
+    const focused=curveUi.hover||curveUi.pinned;
+    return (focused?(id===focused?1:.15):.92)*(overlay?.7:1);
+  }
+  function applyCurveEmphasis(){
+    for(const line of root.querySelectorAll('svg[data-curve-chart] polyline[data-sample-id]')){
+      line.style.opacity=String(curveLineOpacity(line.dataset.sampleId,line.dataset.curveOverlay==='true'));
+    }
+    for(const row of root.querySelectorAll('.curve-sample-row')){
+      row.classList.toggle('is-hovered',row.dataset.sampleId===curveUi.hover);
+      row.classList.toggle('is-pinned',row.dataset.sampleId===curveUi.pinned);
+      row.querySelector('[data-curve-focus]').setAttribute('aria-pressed',String(row.dataset.sampleId===curveUi.pinned));
+    }
+    if($('curve-clear-focus'))$('curve-clear-focus').hidden=!curveUi.pinned;
+  }
+  function hideCurveTooltip(){
+    if($('curve-tooltip'))$('curve-tooltip').hidden=true;
+    curveUi.describedElement?.removeAttribute('aria-describedby');
+    curveUi.describedElement=null;
+    curveUi.hover=null;applyCurveEmphasis();
+  }
+  function showCurveTooltip(id,event,element,detail='',origin=''){
+    const row=curveUi.model.rows.find(row=>row.id===id),tip=$('curve-tooltip');
+    if(!row||!tip)return;
+    // Modal content lives in the browser's top layer, outside the main chart's
+    // stacking context. Keep its tooltip in that same dialog.
+    const host=element.closest('dialog[open]')||$('curve-workspace');
+    if(tip.parentElement!==host)host.append(tip);
+    curveUi.hover=row.available?id:null;applyCurveEmphasis();
+    const name=document.createElement('strong'),note=document.createElement('span');
+    name.textContent=row.name;
+    note.textContent=origin||(row.available?[...new Set(row.curves.map(curveAcquisitionLabel))].join(' / '):'無曲線');
+    tip.replaceChildren(name,note);
+    if(detail){const value=document.createElement('span');value.textContent=detail;tip.append(value);}
+    tip.hidden=false;
+    curveUi.describedElement?.removeAttribute('aria-describedby');
+    curveUi.describedElement=element;element.setAttribute('aria-describedby',tip.id);
+    const bounds=host.getBoundingClientRect(),anchor=element.getBoundingClientRect();
+    const left=(event?.clientX??anchor.right)-bounds.left+12,top=(event?.clientY??anchor.top)-bounds.top+16;
+    tip.style.left=`${host.scrollLeft+Math.max(8,Math.min(left,bounds.width-tip.offsetWidth-8))}px`;
+    tip.style.top=`${host.scrollTop+Math.max(8,Math.min(top,bounds.height-tip.offsetHeight-8))}px`;
+  }
+  function drawCurveWorkspacePlot(){
+    const element=$('svg-raw');if(!element||destroyed)return;
+    const width=Math.max(280,element.clientWidth);
+    curveUi.width=width;
+    setHTML(element,plot(curveUi.model.item,'raw',false,true,width));
+    curveUi.geometry=new WeakMap();
+    applyCurveEmphasis();
+  }
+  function renderCurveWorkspace(item){
+    const model=curveSidebarModel(item);
+    hideCurveTooltip();$('curve-tooltip')?.remove();
+    curveUi.observer?.disconnect();
+    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="raw" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
+    syncSignalSwitch();syncCurveSelection();drawCurveWorkspacePlot();
+    curveUi.observer=new ResizeObserver(()=>{
+      if($('svg-raw')?.clientWidth!==curveUi.width)drawCurveWorkspacePlot();
+    });
+    curveUi.observer.observe($('svg-raw'));
+  }
+  function changeCurveVisibility(update){
+    hideCurveTooltip();update();syncCurveSelection();drawCurveWorkspacePlot();
+  }
+  function curveWorkspaceClick(event){
+    const all=event.target.closest('[data-curve-all]');
+    if(all){changeCurveVisibility(()=>{
+      state.visible=new Set(all.dataset.curveAll==='true'?curveUi.model.rows.filter(row=>row.available).map(row=>row.id):[]);
+    });return true;}
+    const collapse=event.target.closest('[data-curve-collapse]');
+    if(collapse){
+      const group=collapse.dataset.curveCollapse,open=curveUi.collapsed.has(group);
+      if(open)curveUi.collapsed.delete(group);else curveUi.collapsed.add(group);
+      collapse.setAttribute('aria-expanded',String(open));
+      collapse.setAttribute('aria-label',`${open?'收合':'展開'} ${group} 組別`);
+      collapse.nextElementSibling.hidden=!open;return true;
+    }
+    if(event.target.closest('[data-curve-clear]')){
+      curveUi.pinned=null;hideCurveTooltip();return true;
+    }
+    const focus=event.target.closest('[data-curve-focus]');
+    if(focus){
+      const id=focus.dataset.curveFocus;
+      curveUi.pinned=curveUi.pinned===id?null:id;
+      if(!state.visible.has(id))changeCurveVisibility(()=>state.visible.add(id));
+      else applyCurveEmphasis();
+      return true;
+    }
+    const svg=event.target.closest('svg[data-curve-chart]');
+    if(svg){
+      const nearest=nearestCurve(svg,event);
+      if(nearest){curveUi.pinned=curveUi.pinned===nearest.line.dataset.sampleId?null:nearest.line.dataset.sampleId;applyCurveEmphasis();}
+      return true;
+    }
+    return false;
+  }
+  function nearestCurve(svg,event){
+    const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;
+    const position=point.matrixTransform(svg.getScreenCTM().inverse()),chart=svg.dataset;
+    const left=+chart.chartLeft,top=+chart.chartTop,width=+chart.chartWidth,height=+chart.chartHeight;
+    if(position.x<left||position.x>left+width||position.y<top||position.y>top+height)return null;
+    let lines=curveUi.geometry?.get(svg);
+    if(!lines){
+      lines=[...svg.querySelectorAll('polyline[data-sample-id][data-curve-overlay="false"]')].map(line=>({line,points:Array.from(line.points,point=>({x:point.x,y:point.y}))}));
+      curveUi.geometry??=new WeakMap();curveUi.geometry.set(svg,lines);
+    }
+    let nearest=null,distance=Infinity;
+    for(const {line,points} of lines){
+      if(!points.length||position.x<points[0].x||position.x>points[points.length-1].x)continue;
+      let start=0,end=points.length-1;
+      while(end-start>1){const middle=(start+end)>>1;if(points[middle].x<=position.x)start=middle;else end=middle;}
+      const a=points[start],b=points[end],y=a.y+(b.y-a.y)*(b.x===a.x?0:(position.x-a.x)/(b.x-a.x));
+      const gap=Math.abs(position.y-y);
+      if(gap<distance){distance=gap;nearest={line,y,rt:+chart.domainStart+(+chart.domainEnd-(+chart.domainStart))*(position.x-left)/width};}
+    }
+    if(nearest)nearest.signal=+chart.signalLow+(+chart.signalHigh-(+chart.signalLow))*(top+height-nearest.y)/height;
+    return nearest;
+  }
+  if(mode==='curves'){
+    root.addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&!root.querySelector('dialog[open]')&&(curveUi.pinned||curveUi.hover)){
+        event.preventDefault();event.stopPropagation();curveUi.pinned=null;hideCurveTooltip();
+      }
+    });
+    root.addEventListener('click',event=>{
+      if(curveWorkspaceClick(event))event.stopPropagation();
+    },true);
+    $('detail-panel').addEventListener('change',event=>{
+      const input=event.target;
+      if(input.dataset.curveGroup!==undefined){
+        const group=curveUi.model.groups.find(group=>group.name===input.dataset.curveGroup);
+        changeCurveVisibility(()=>group.available.forEach(row=>{
+          if(input.checked)state.visible.add(row.id);else state.visible.delete(row.id);
+        }));
+      }else if(input.dataset.sampleVisible){
+        changeCurveVisibility(()=>{
+          if(input.checked)state.visible.add(input.dataset.sampleVisible);else state.visible.delete(input.dataset.sampleVisible);
+        });
+      }else return;
+      event.stopPropagation();
+    },true);
+    root.addEventListener('input',event=>{
+      if(event.target.dataset.inspectorId!=='curve-search')return;
+      curveUi.query=event.target.value;hideCurveTooltip();
+      setHTML($('curve-sample-list'),curveSampleList(curveUi.model));syncCurveSelection();
+    });
+    root.addEventListener('pointerover',event=>{
+      const row=event.target.closest('.curve-sample-row');
+      if(row)showCurveTooltip(row.dataset.sampleId,event,row.querySelector('[data-curve-focus]'));
+    });
+    root.addEventListener('pointermove',event=>{
+      const svg=event.target.closest('svg[data-curve-chart]');if(!svg)return;
+      const nearest=nearestCurve(svg,event);
+      if(nearest)showCurveTooltip(nearest.line.dataset.sampleId,event,svg,`RT ${rt(nearest.rt)} min · 訊號 ≈ ${num(nearest.signal)}`,nearest.line.dataset.curveOrigin);
+      else hideCurveTooltip();
+    });
+    root.addEventListener('pointerout',event=>{
+      const region=event.target.closest('.curve-sample-row,svg[data-curve-chart]');
+      if(region&&!region.contains(event.relatedTarget))hideCurveTooltip();
+    });
+    root.addEventListener('focusin',event=>{
+      const row=event.target.closest('.curve-sample-row');
+      if(row)showCurveTooltip(row.dataset.sampleId,null,event.target);else hideCurveTooltip();
+    });
+    root.addEventListener('focusout',event=>{
+      const row=event.target.closest('.curve-sample-row');
+      if(row&&!row.contains(event.relatedTarget))hideCurveTooltip();
+    });
+  }
+  function plot(item,axis,peer=false,wide=false,width=0){
     const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,display.signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
     if(!drawable.length){const [chosen,other]=display.signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
@@ -725,19 +961,28 @@
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
-    const W=wide?1060:760,H=330,L=62,T=24,IW=W-88,IH=248,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
-    let svg=`<defs><clipPath id="curve-window-${axis}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
+    const W=width||(wide?1060:760),H=width?420:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
+    const clipId=`curve-window-${axis}${mode==='curves'?(width?'-main':'-zoom'):''}`;
+    let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}
     svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/>`;
-    for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="298" text-anchor="middle" font-size="13" fill="#48534f">${rt(v)}</text>`;}
+    for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${rt(v)}</text>`;}
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
     const dash=lineDash(item);
-    [...extra.map(d=>({...d,overlay:true})),...drawable].forEach(({curve,series:s,overlay})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=(!peer&&state.sample&&!focused?.16:.92)*(overlay?.7:1),points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#curve-window-${axis})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${overlay?1.2:s.kind==='raw'?1.7:2.2}" stroke-dasharray="${overlay?'3 3':dash(curve,origin)}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if(overlay||curve!==active||!state.bounds)return;
+    [...extra.map(d=>({...d,overlay:true})),...drawable].forEach(({curve,series:s,overlay})=>{
+      const focused=peer||!state.sample||curve.sample_id===state.sample;
+      const opacity=mode==='curves'?curveLineOpacity(curve.sample_id,overlay):(!peer&&state.sample&&!focused?.16:.92)*(overlay?.7:1);
+      const points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' ');
+      const signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);
+      const title=mode==='curves'?'':`<title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title>`;
+      svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${overlay?1.2:s.kind==='raw'?1.7:2.2}" stroke-dasharray="${overlay?'3 3':dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
+      if(overlay||curve!==active||!state.bounds)return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
-    return `<svg role="img" aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="324" text-anchor="middle" font-size="13" fill="#48534f">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
+    const hoverData=mode==='curves'?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
+    return `<svg role="img" ${hoverData} aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
   }
   function plotCard(item,axis,signalLabel,wide=false){
     const isAligned=axis==='aligned', coverage=alignmentCoverage(item), total=Math.max(coverage.total,coverage.available);
@@ -805,12 +1050,12 @@
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
     if(mode==='result'){
-      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><div class="table-scroll"><table class="sample-table saved-table"><thead><tr><th>樣本</th><th class="num">Area</th><th>判定</th><th><span class="sr-only">依據</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const value=r.quantitative_value,numeric=finite(value)&&value!==0;return `<tr class="${numeric?'':'saved-empty'}"><td><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</td><td class="num">${numeric?Number(value).toExponential(3):value===0?'<span class="result-zero">0</span>':has(r,'quantitative_value')?'<span class="result-null">空值</span>':'<span class="result-missing">—</span>'}</td><td class="saved-note">${numeric?'':esc(r.decision_label||'未提供定量決策')}</td><td class="num">${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`;}).join('')}</tbody></table></div></section>${evidencePanel(item)}<details class="internal-evidence"><summary>內部證據</summary>${internalPairSupportPanel(item)}</details>`);
+      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><div class="table-scroll"><table class="sample-table saved-table"><thead><tr><th>樣本</th><th class="num">Area</th><th>判定</th><th><span class="sr-only">依據</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const value=r.quantitative_value,numeric=finite(value)&&value!==0;return `<tr class="${numeric?'':'saved-empty'}"><td><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</td><td class="num">${numeric?Number(value).toExponential(3):value===0?'<span class="result-zero">0</span>':has(r,'quantitative_value')?'<span class="result-null">空值</span>':'<span class="result-missing">—</span>'}</td><td class="saved-note">${numeric?'':esc(r.decision_label||'未提供定量決策')}</td><td class="num">${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>${state.evidence&&state.evidenceContext===`${sampleName(r.sample_id)} 的定量依據`?`<tr class="evidence-row"><td colspan="4">${evidencePanel(item)}</td></tr>`:''}`;}).join('')}</tbody></table></div></section>${state.evidence&&!itemRows(item).some(r=>state.evidenceContext===`${sampleName(r.sample_id)} 的定量依據`)?evidencePanel(item):''}<details class="internal-evidence"><summary>內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
     }
     const graph=state.sample?`${sampleName(state.sample)} · 目前查看`:'所有可見樣本',selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[display.signal]||'訊號',signalLabel=selectedSignalLabel;
     if(mode==='curves'){
-      setHTML($('workspace-content'),`<section class="inspection-section curve-section"><div class="curve-toolbar"><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${overlayControl(item)}</div>${plotCard(item,'raw',signalLabel,true)}</section>`);
+      renderCurveWorkspace(item);
       return;
     }
     const aligned=alignedAvailable(item);
@@ -866,7 +1111,15 @@
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
   $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('[data-inspector-id="clear-inline"]'))clearFilters();});
   }
-  $('zoom-close').addEventListener('click',()=>$('zoom-dialog').close());$('zoom-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
+  $('zoom-close').addEventListener('click',()=>$('zoom-dialog').close());
+  $('zoom-dialog').addEventListener('close',event=>{
+    event.stopPropagation();
+    if(destroyed)return;
+    if(mode==='curves'){
+      hideCurveTooltip();$('curve-workspace')?.append($('curve-tooltip'));
+    }
+    dialogOpener?.focus();
+  });
   root.addEventListener('keydown',event=>{const dialog=root.querySelector('dialog[open]');if(dialog){if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dialog.close();}return;}if(event.key==='Escape'&&state.evidence){event.preventDefault();event.stopPropagation();state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}if(mode !== 'offline'||event.target.closest('input,textarea,select')||!['ArrowDown','ArrowUp'].includes(event.key)||!listed.length)return;event.preventDefault();const i=listed.findIndex(x=>x.id===state.id);state.id=listed[Math.max(0,Math.min(listed.length-1,i+(event.key==='ArrowDown'?1:-1)))].id;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
   if (mode === 'offline') $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;setHTML($('report-info-body'),`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`);$('report-info-dialog').showModal();});
   $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
@@ -878,7 +1131,13 @@
   function refreshViews(){displayViews.forEach(view=>view());}
   const showDisplay=()=>{syncSignalSwitch();detail();};
   displayViews.add(showDisplay);cleanups.push(()=>displayViews.delete(showDisplay));
-  root.addEventListener('click',event=>{const button=event.target.closest('[data-signal]');if(!button||button.dataset.signal===display.signal)return;display.signal=button.dataset.signal;refreshViews();});
+  root.addEventListener('click',event=>{
+    const button=event.target.closest('[data-signal]');
+    if(!button||button.dataset.signal===display.signal)return;
+    const hadFocus=document.activeElement===button;
+    display.signal=button.dataset.signal;refreshViews();
+    if(mode==='curves'&&hadFocus)root.querySelector(`[data-signal="${display.signal}"]`)?.focus({preventScroll:true});
+  });
   syncSignalSwitch();
   if(mode === 'offline'){if(data.notice){$('report-notice').textContent=data.notice;$('report-notice').hidden=false;}list();}
   else detail();
