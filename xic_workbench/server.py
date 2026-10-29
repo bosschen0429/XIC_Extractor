@@ -5,17 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
-import os
 import re
 import secrets
 import socket
 import sqlite3
-import string
 import threading
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
-from itertools import islice
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -24,6 +21,7 @@ from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.presets import PresetError
 from xic_inspector.api import InspectorError, read_evidence_summary, resolve_source
 from xic_workbench.analysis_workspace import json_value
+from xic_workbench.native_picker import PickerBusy, choose_path
 from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
 
 _ASSETS = {
@@ -39,70 +37,6 @@ _INSPECTOR_ASSETS = {
     "/assets/inspector.js": ("inspector.js", "text/javascript; charset=utf-8"),
     "/assets/inspector.css": ("inspector.css", "text/css; charset=utf-8"),
 }
-_BROWSE_SUFFIXES = {
-    "folder": (),
-    "report": (".sqlite", ".db", ".xlsx"),
-    "raw": (".raw",),
-    "csv": (".csv",),
-    "targets": (".csv", ".tsv", ".xlsx"),
-    "metadata": (".docx", ".xlsx", ".csv", ".tsv"),
-    "preset": (".toml",),
-    "file": (".csv", ".tsv", ".xlsx", ".json", ".toml", ".txt"),
-}
-
-
-def _browse(values: dict) -> dict:
-    if set(values) - {"path", "kind"} or values.get("kind") not in _BROWSE_SUFFIXES:
-        raise ValueError("請選擇資料夾或結果檔案。")
-    value = values.get("path", "")
-    if not isinstance(value, str):
-        raise ValueError("路徑必須是文字。")
-    if not value.strip():
-        roots = (
-            [Path(f"{drive}:/") for drive in string.ascii_uppercase]
-            if os.name == "nt"
-            else [Path("/")]
-        )
-        return {
-            "path": "",
-            "parent": None,
-            "truncated": False,
-            "entries": [
-                {"name": str(root), "path": str(root), "directory": True}
-                for root in roots
-                if root.is_dir()
-            ],
-        }
-    folder = Path(value).expanduser().resolve()
-    if values["kind"] != "folder" and folder.is_file():
-        folder = folder.parent
-    if not folder.is_dir():
-        raise ValueError("此資料夾不存在或無法讀取。")
-    entries = []
-    with os.scandir(folder) as children:
-        for child in children:
-            if child.is_dir() or (
-                values["kind"] != "folder"
-                and child.name.lower().endswith(_BROWSE_SUFFIXES[values["kind"]])
-            ):
-                entries.append(
-                    {
-                        "name": child.name,
-                        "path": child.path,
-                        "directory": child.is_dir(),
-                    }
-                )
-                if len(entries) > 1000:
-                    break
-    return {
-        "path": str(folder),
-        "parent": str(folder.parent) if folder.parent != folder else "",
-        "truncated": len(entries) > 1000,
-        "entries": sorted(
-            islice(entries, 1000),
-            key=lambda entry: (not entry["directory"], entry["name"].casefold()),
-        ),
-    }
 
 
 class _WorkbenchHTTPServer(ThreadingHTTPServer):
@@ -181,7 +115,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 action()
             except PermissionError as exc:
                 self._send(403, {"error": str(exc)})
-            except WorkspaceBusy as exc:
+            except (WorkspaceBusy, PickerBusy) as exc:
                 self._send(409, {"error": str(exc)})
             except (
                 ValueError,
@@ -308,8 +242,15 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             elif path == "/api/curves":
                 self._send(202, workspace.start_curves(values))
                 return
-            elif path == "/api/browse":
-                result = _browse(values)
+            elif path == "/api/pick":
+                kind, current = values.get("kind"), values.get("path", "")
+                if (
+                    set(values) - {"path", "kind"}
+                    or not isinstance(kind, str)
+                    or not isinstance(current, str)
+                ):
+                    raise ValueError("請選擇資料夾或檔案類型。")
+                result = {"path": choose_path(kind, current)}
             elif path == "/api/analysis/start":
                 if not isinstance(values.get("values"), dict):
                     raise ValueError("請提供分析設定。")

@@ -304,6 +304,33 @@ def _wait_for_curve_report(page, *, inline=False):
     return review
 
 
+def test_browse_fills_the_field_from_the_native_chooser(
+    workbench, monkeypatch, tmp_path
+):
+    from xic_workbench import server
+
+    page = workbench
+    choices = [str(tmp_path), ""]
+    requests = []
+
+    def choose(kind, current=""):
+        requests.append((kind, current))
+        return choices.pop(0)
+
+    monkeypatch.setattr(server, "choose_path", choose)
+    field = page.locator("#t-data_dir")
+    browse = page.locator("[data-browse='t-data_dir']")
+    initial = field.input_value()
+    browse.click()
+    expect(field).to_have_value(str(tmp_path))
+    # Cancelling the chooser keeps the chosen location.
+    browse.click()
+    expect(browse).not_to_have_attribute("aria-busy", "true")
+    expect(field).to_have_value(str(tmp_path))
+    # The chooser starts from whatever the field holds.
+    assert requests == [("folder", initial), ("folder", str(tmp_path))]
+
+
 def test_navigation_and_theme_survive_reload(workbench):
     page = workbench
     for view in ("untargeted", "review", "targeted"):

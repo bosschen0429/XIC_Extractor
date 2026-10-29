@@ -128,7 +128,7 @@ window.XicUi = (() => {
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const { icon, navigation } = window.XicUi;
+  const { navigation } = window.XicUi;
   const state = {
     runFolders: new Map(),
     runFolder: null,
@@ -145,7 +145,6 @@ window.XicUi = (() => {
     job: null,
     samples: new Set(),
     filters: {},
-    browser: null,
     analysisBusy: false,
   };
   const fmt = (value, digits) =>
@@ -1128,60 +1127,6 @@ window.XicUi = (() => {
     });
   }
   $("xic-retry").addEventListener("click", () => action(startCurves));
-  async function browse(path) {
-    try {
-      const data = await api("/api/browse", { path, kind: state.browser.kind });
-      state.browser.data = data;
-      $("browse-path").value = data.path;
-      $("browse-parent").disabled = data.parent === null;
-      $("browse-use").disabled = !data.path;
-      const files = data.entries.filter((entry) => !entry.directory).length;
-      $("browse-note").textContent = data.truncated
-        ? "此處僅顯示前 1,000 個位置；可直接輸入完整路徑。"
-        : !data.path
-          ? "選擇一個磁碟開始。"
-          : files
-            ? "點選檔案即可使用；或進入資料夾後按「使用此資料夾」。"
-            : "進入資料夾，或按「使用此資料夾」選擇目前位置。";
-      const list = $("browse-entries");
-      list.replaceChildren();
-      for (const entry of data.entries) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = entry.directory ? "is-dir" : "is-file";
-        button.append(
-          icon(!data.path ? "drive" : entry.directory ? "folder" : "file"),
-          document.createTextNode(entry.name),
-        );
-        button.addEventListener("click", () =>
-          entry.directory ? browse(entry.path) : useLocation(entry.path),
-        );
-        list.append(button);
-      }
-      if (!data.entries.length) {
-        const empty = document.createElement("p");
-        empty.className = "empty";
-        empty.textContent =
-          state.browser.kind === "folder"
-            ? "這裡沒有子資料夾。若這就是要用的位置，按「使用此資料夾」。"
-            : "這裡沒有符合類型的檔案或子資料夾。";
-        list.append(empty);
-      }
-      list.scrollTop = 0;
-    } catch (error) {
-      $("browse-note").textContent = error.message;
-    }
-  }
-  function useLocation(path) {
-    $(state.browser.target).value = path;
-    $(state.browser.target).dispatchEvent(
-      new Event("change", { bubbles: true }),
-    );
-    $(state.browser.target).dispatchEvent(
-      new Event("input", { bubbles: true }),
-    );
-    $("browser-dialog").close();
-  }
   $("open-form").addEventListener("submit", (event) => {
     event.preventDefault();
     action(openBatch, "正在讀取批次結果…");
@@ -1259,21 +1204,26 @@ window.XicUi = (() => {
     next.scrollIntoView({ block: "nearest" });
     next.click();
   });
-  document.addEventListener("click", (event) => {
+  // "瀏覽" opens the operating system's own chooser on this computer.
+  document.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-browse]");
-    if (!button) return;
-    state.browser = {
-      target: button.dataset.browse,
-      kind: button.dataset.kind,
-    };
-    $("browse-title").textContent =
-      ["folder"].includes(button.dataset.kind) || !button.dataset.kind
-        ? "選擇資料夾"
-        : "選擇檔案或資料夾";
-    $("browse-use").textContent = "使用此資料夾";
-    $("browser-dialog").showModal();
-    $("browse-path").focus();
-    browse($(state.browser.target).value);
+    if (!button || button.getAttribute("aria-busy") === "true") return;
+    const target = $(button.dataset.browse);
+    button.setAttribute("aria-busy", "true");
+    try {
+      const { path } = await api("/api/pick", {
+        kind: button.dataset.kind || "folder",
+        path: target.value,
+      });
+      if (!path) return;
+      target.value = path;
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      window.XicUi.toast(error.message, "error");
+    } finally {
+      button.removeAttribute("aria-busy");
+    }
   });
   // A result opened from its run keeps that run's folders; the editable
   // RAW field may later point elsewhere, for example to load curves.
@@ -1291,20 +1241,6 @@ window.XicUi = (() => {
     state.analysisBusy = event.detail;
     controls();
   });
-  $("browse-close").addEventListener("click", () =>
-    $("browser-dialog").close(),
-  );
-  $("browse-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    browse($("browse-path").value);
-  });
-  $("browse-parent").addEventListener("click", () =>
-    browse(state.browser.data.parent),
-  );
-  $("browse-roots").addEventListener("click", () => browse(""));
-  $("browse-use").addEventListener("click", () =>
-    useLocation(state.browser.data.path),
-  );
   action(async () => {
     const session = await api("/api/session");
     $("source").value = session.defaults.source || "";

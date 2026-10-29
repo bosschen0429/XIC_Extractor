@@ -1547,63 +1547,6 @@ th.num {
   font-size: 13px;
 }
 
-/* Location browser */
-#browser-dialog {
-  width: min(760px, calc(100vw - 32px));
-}
-#browse-form {
-  display: flex;
-  gap: 8px;
-}
-#browse-path {
-  flex: 1;
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.browse-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-#browse-note {
-  margin-top: 10px;
-  font-size: 12px;
-}
-#browse-entries {
-  height: min(380px, 50vh);
-  margin-top: 8px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-#browse-entries button {
-  justify-content: flex-start;
-  width: 100%;
-  min-height: 36px;
-  padding: 7px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  font-weight: 450;
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-#browse-entries button:hover {
-  background: var(--accent-soft);
-}
-#browse-entries .icon {
-  color: var(--subtle);
-}
-#browse-entries .is-dir .icon {
-  color: var(--accent);
-}
-#browse-entries .is-file {
-  color: var(--accent);
-  font-weight: 600;
-}
-
 /* About */
 .shortcut-list {
   display: grid;
@@ -1839,4 +1782,8 @@ kbd {
 }
 .xic-footer:has(#xic-source-note:empty) {
   display: none;
+}
+[data-browse][aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.6;
 }
