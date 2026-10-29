@@ -237,8 +237,7 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         {
             "min": 1,
             "step": 1,
-            "help": "同時處理的 RAW 數，Untargeted 也使用此值。"
-            "留空時為 CPU 核心數減一（至少 1）。",
+            "placeholder": "自動（CPU 核心數 − 1）",
         },
     ),
 )

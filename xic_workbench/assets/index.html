@@ -377,16 +377,16 @@
         <aside class="list-panel">
           <form id="query-form">
             <div id="targeted-filters" hidden>
-              <label class="field">類別
+              <label class="field"><span class="sr-only">類別</span>
                 <select id="target-role" data-idle>
                   <option value="">全部類別</option>
                   <option value="Analyte">Analyte（分析物）</option>
                   <option value="ISTD">ISTD（內標）</option>
                 </select>
               </label>
-              <label class="field">目標<select id="target-id" data-idle></select></label>
-              <label class="field">樣本<select id="target-sample" data-idle></select></label>
-              <label><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>
+              <label class="field"><span class="sr-only">目標</span><select id="target-id" data-idle></select></label>
+              <label class="field"><span class="sr-only">樣本</span><select id="target-sample" data-idle></select></label>
+              <label class="check-line"><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>
             </div>
             <div id="untargeted-search" hidden>
               <select id="untargeted-search-mode" aria-label="搜尋方式" data-idle>
@@ -564,7 +564,7 @@
 
     <dialog id="xic-dialog" class="xic-dialog" aria-labelledby="xic-title">
       <header class="xic-heading">
-        <div><span class="eyebrow">色譜檢閱 · 唯讀</span><h2 id="xic-title">XIC</h2></div>
+        <div><h2 id="xic-title">XIC</h2></div>
         <div class="xic-heading-actions">
           <a id="xic-download" class="button-link" hidden>匯出圖表</a>
           <button id="xic-close" type="button" aria-label="關閉曲線，返回結果">← 返回樣本結果</button>
@@ -583,7 +583,7 @@
         <button id="xic-retry" type="button" hidden>重試</button>
       </div>
       <div id="xic-review" aria-label="樣本 XIC 圖表" hidden></div>
-      <footer class="xic-footer"><span id="xic-source-note">只載入正在查看的曲線，不變更已保存的結果。</span><span>Esc 返回結果</span></footer>
+      <footer class="xic-footer"><span id="xic-source-note"></span></footer>
     </dialog>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>

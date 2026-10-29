@@ -395,7 +395,7 @@
       applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
-      section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));
+      section.append(scroll);
       const method = element('details', undefined, 'tgt-method');
       method.append(element('summary', '方法設定'));
       method.append(facts([

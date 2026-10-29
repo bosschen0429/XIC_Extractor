@@ -545,20 +545,22 @@ window.XicUi = (() => {
       ));
       return button;
     };
+    const lead = node("div", undefined, "overview-lead");
     const heading = node("div", undefined, "overview-heading");
-    heading.append(node("span", "整批結果總覽", "eyebrow"));
     const conclusion = !summary.result_count ? "尚無已保存結果"
       : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆結果`
         : "沒有需要先看的結果";
-    heading.append(node("h2", conclusion));
-    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標`
-      + (summary.focus_count ? ` · 分布在 ${count(summary.focus_target_count)} 個目標` : "");
-    heading.append(node("p", scope, "subtle"));
-    host.append(heading);
+    const title = node("h2", conclusion);
+    // The reading rule stays one hover away; the counts below show where it applies.
+    title.title = `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`;
+    heading.append(title);
+    const actions = node("div", undefined, "overview-actions");
+    if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
+    actions.append(resultButton("查看所有樣本結果 →"));
+    heading.append(actions);
     const metrics = node("div", undefined, "overview-metrics");
     const ratio = (counted, total) => `${count(counted)} / ${count(total)}`;
     for (const [value, label] of [
-      [count(summary.focus_count), "需先看"],
       [ratio(summary.analyte_counted, summary.analyte_total), "Analyte 計入"],
       [ratio(summary.istd_counted, summary.istd_total), "ISTD 計入"],
     ]) {
@@ -567,17 +569,13 @@ window.XicUi = (() => {
       metric.append(node("strong", value), node("span", label));
       metrics.append(metric);
     }
-    host.append(metrics);
-    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測。`, "overview-unknown"));
-    const actions = node("div", undefined, "overview-actions");
-    if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
-    actions.append(resultButton("查看所有樣本結果 →"));
-    host.append(actions);
-    host.append(node("h3", "各目標結果"));
-    const table = node("table", undefined, "overview-table");
+    lead.append(heading, metrics);
+    host.append(lead);
+    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測`, "overview-unknown"));
+    const table = node("table", undefined, "overview-table overview-targets");
     const head = node("thead");
     const header = node("tr");
-    for (const text of ["目標", "類型", "計入 / 全部", "需先看", "要確認"]) header.append(node("th", text));
+    for (const text of ["目標", "類型", "計入", "需先看", "要確認"]) header.append(node("th", text));
     head.append(header);
     const body = node("tbody");
     // Counts sit in their own columns; this column says only what to check.
@@ -595,10 +593,11 @@ window.XicUi = (() => {
       const row = node("tr");
       const name = node("td");
       name.append(resultButton(target.label, target.label, false, "text-button"));
-      const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
+      const counted = node("td");
+      counted.append(meter(target.counted, target.total));
+      if (target.count_unknown) counted.append(node("span", ` ${target.count_unknown} 未記錄`, "overview-unknown"));
       const focus = node("td");
       if (target.focus_samples.length) focus.append(resultButton(`${target.focus_samples.length} 筆 →`, target.label, true, "text-button focus-link"));
-      else focus.textContent = "—";
       row.append(name, node("td", target.role || "—"), counted, focus, node("td", focusText(target)));
       body.append(row);
     }
@@ -607,7 +606,7 @@ window.XicUi = (() => {
     scroll.append(table);
     host.append(scroll);
     const quantities = node("details", undefined, "overview-quantities");
-    quantities.append(node("summary", "量值摘要（僅計入偵測的結果）"));
+    quantities.append(node("summary", "量值摘要（僅計入偵測）"));
     const values = node("table", undefined, "overview-table");
     const valueHeader = node("tr");
     for (const text of ["目標", "RT 範圍 (min)", "Area 中位數"]) valueHeader.append(node("th", text));
@@ -621,7 +620,7 @@ window.XicUi = (() => {
     }
     values.append(valueHead, valueBody);
     quantities.append(values);
-    host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
+    host.append(quantities);
   }
   function renderUntargetedOverview(summary) {
     const host = $("targeted-overview");
@@ -1011,9 +1010,10 @@ window.XicUi = (() => {
     const targeted = state.page.source_kind === "targeted_workbook";
     $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
     $("xic-navigation").hidden = !targeted;
+    // The legend names the shaded bounds; only the RAW binding limit needs words.
     $("xic-source-note").textContent = targeted
-      ? "陰影為已保存峰界；看圖不會重新積分或改變判定。"
-      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。看圖不改寫結果。";
+      ? ""
+      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。";
     if (targeted) {
       $("xic-sample").value = [...state.samples][0];
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);

@@ -1820,3 +1820,23 @@ kbd {
     justify-content: space-between;
   }
 }
+/* Targeted: names and counts align left; only the cell to read first is marked. */
+.overview-targets { text-align: left; font-size: 14px; }
+.overview-targets th, .overview-targets td { padding: 10px 14px; }
+.overview-targets .text-button { text-align: left; }
+.overview-targets td:nth-child(5) { color: var(--muted); font-size: 13px; }
+#targeted-filters:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.xic-footer:has(#xic-source-note:empty) {
+  display: none;
+}

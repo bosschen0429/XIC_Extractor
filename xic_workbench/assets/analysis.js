@@ -256,6 +256,7 @@
     if (kind === "checkbox")
       input.checked = value === true || String(value).toLowerCase() === "true";
     else input.value = value ?? "";
+    if (spec.placeholder) input.placeholder = spec.placeholder;
     const help = spec.help ? el("small", spec.help) : null;
     if (["folder", "file"].includes(kind)) {
       const browse = el("button", "瀏覽");
@@ -646,14 +647,10 @@
   }
   function renderTargetPreview() {
     const preview = $("target-preview");
+    // An empty list leaves the drop zone as the only thing to act on.
+    preview.hidden = !state.targets.length;
     if (!state.targets.length) {
-      preview.replaceChildren(
-        el(
-          "div",
-          "目前沒有目標。匯入 CSV／TSV／Excel，或按「檢視與編輯」新增。",
-          "target-preview-empty",
-        ),
-      );
+      preview.replaceChildren();
       return;
     }
     const table = el("table");
@@ -1025,7 +1022,7 @@
     $(sampleId(page, "role-summary")).replaceChildren(
       ...(set.rows.length
         ? []
-        : [el("span", "先列出檔名或匯入上機資訊，即可指定角色、組別與排除；不必等待 RAW 掃描。", "subtle")]),
+        : []),
       ...roles
         .filter((role) => counts.has(role))
         .map((role) =>

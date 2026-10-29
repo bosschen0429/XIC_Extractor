@@ -808,3 +808,19 @@
   margin-right: 4px;
   font-size: 13px;
 }
+.analysis-page .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.analysis-page .option-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.analysis-page .option-line label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
