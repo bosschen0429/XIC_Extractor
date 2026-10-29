@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -277,6 +278,19 @@ def fake_runs(monkeypatch, tmp_path):
     monkeypatch.setattr("xic_workbench.untargeted.UntargetedRun", FakeRun)
     yield control
     control.release.set()
+
+
+def _drop_file(page, selector, name, content):
+    transfer = page.evaluate_handle(
+        """({name, content}) => {
+        const transfer = new DataTransfer();
+        const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+        transfer.items.add(new File([bytes], name));
+        return transfer;
+    }""",
+        {"name": name, "content": base64.b64encode(content).decode()},
+    )
+    page.locator(selector).dispatch_event("drop", {"dataTransfer": transfer})
 
 
 def _view(page, name):
@@ -1830,7 +1844,7 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     original = path.read_bytes()
     assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
     with page.expect_file_chooser() as chooser:
-        page.get_by_role("button", name="選擇檔案", exact=True).click()
+        page.locator("#target-import").click()
     chooser.value.set_files(path)
     expect(page.locator("#target-import-summary")).to_contain_text(
         "方法檔（Method + Targets）"
@@ -1863,7 +1877,6 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
 
 
 def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
-    import base64
 
     from tests.test_targeted_method_files import rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
@@ -1957,7 +1970,6 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
 def test_untargeted_istd_shared_upload_and_persistence(
     workbench, config_dir, tmp_path, extension, drop
 ):
-    import base64
     import csv
 
     from tests.test_targeted_method_files import rows
@@ -1997,11 +2009,11 @@ def test_untargeted_istd_shared_upload_and_persistence(
                 "content": base64.b64encode(path.read_bytes()).decode(),
             },
         )
-        page.locator("#istd-dropzone").dispatch_event(
+        page.locator("#istd-path-field").dispatch_event(
             "drop", {"dataTransfer": transfer}
         )
     else:
-        page.locator("#istd-import-file").set_input_files(path)
+        _drop_file(page, "#istd-path-field", path.name, path.read_bytes())
     expect(page.locator("#istd-import-status")).to_contain_text(
         f"已匯入 shared.{extension}"
     )
@@ -2011,9 +2023,7 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
     retained = page.locator("#u-targets_csv").input_value()
-    page.locator("#istd-import-file").set_input_files(
-        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
-    )
+    _drop_file(page, "#istd-path-field", "bad.xls", b"bad")
     expect(page.locator("#istd-import-status")).to_contain_text("不支援 .xls")
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
     expect(page.locator("#istd-preview")).to_contain_text("standard")
@@ -2051,7 +2061,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
     _view(page, "untargeted")
-    page.locator("#istd-import-file").set_input_files(path)
+    _drop_file(page, "#istd-path-field", path.name, path.read_bytes())
     expect(page.locator("#istd-import-status")).to_contain_text("已匯入")
     rna = page.locator("#istd-preview tr").filter(has_text="RNA standard")
     expect(page.locator("#istd-summary")).to_have_text(

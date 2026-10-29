@@ -57,19 +57,25 @@
           </div>
           <div class="step-body">
             <div id="target-preview" class="target-preview"></div>
-            <div id="target-dropzone" class="target-dropzone">
-              <strong>拖曳方法檔或目標表到這裡</strong>
-              <p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p>
+            <!-- Lists use the same label | field | action rows as every path. -->
+            <div id="target-dropzone" class="path-line drop-line">
+              <label for="target-import">匯入檔案</label>
+              <span class="drop-target">拖曳方法檔或目標表到這裡 · XLSX、CSV、TSV</span>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
-              <button id="target-import" type="button" data-analysis-idle>選擇檔案</button>
-              <p id="target-import-status" role="status" aria-live="polite"></p>
+              <button id="target-import" type="button" data-analysis-idle>瀏覽</button>
             </div>
-            <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
-            <div class="actions">
+            <p id="target-import-status" role="status" aria-live="polite"></p>
+            <div class="path-line">
+              <label for="target-method-select">已儲存的清單</label>
+              <select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select>
               <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
-              <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
             </div>
-            <div class="actions"><a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a><a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a><button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button></div>
+            <div class="actions list-actions">
+              <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
+              <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
+              <a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a>
+              <a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a>
+            </div>
           </div>
           <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
         </section>
@@ -200,15 +206,8 @@
             <details class="method-section" open>
               <summary>內標清單（選用）</summary>
               <p class="subtle">只使用 role=istd 且符合本方法 CID-NL tag 的列；其他 tag 不當成 ND。</p>
-              <div id="istd-dropzone" class="target-dropzone">
-                <strong>拖曳內標清單到這裡</strong>
-                <p class="subtle">XLSX、CSV、TSV · 上限 1 MiB</p>
-                <input id="istd-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
-                <button id="istd-import" type="button" data-analysis-idle>選擇檔案</button>
-                <a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
-                <p id="istd-import-status" role="status" aria-live="polite"></p>
-              </div>
-              <div id="istd-path-field"></div>
+              <div id="istd-path-field" class="drop-line"></div>
+              <p id="istd-import-status" role="status" aria-live="polite"></p>
               <p id="istd-summary" class="subtle"></p>
               <div id="istd-preview" class="target-preview"></div>
               <div class="button-row">
@@ -218,7 +217,8 @@
                   另存可編輯副本</button
                 ><button type="button" id="istd-open" data-analysis-idle>
                   <svg class="icon"><use href="#i-external" /></svg>開啟清單
-                </button>
+                </button
+                ><a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
               </div>
             </details>
           </div>
