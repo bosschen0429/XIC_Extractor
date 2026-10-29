@@ -323,30 +323,27 @@ def test_navigation_and_theme_survive_reload(workbench):
 def test_untargeted_module_switches_persist_and_follow_mode(workbench):
     page = workbench
     _view(page, "untargeted")
-    alignment = page.locator("#u-alignment-enabled")
+    batch = page.locator("input[name=u-mode][value=discovery_batch]")
     backfill = page.locator("#u-backfill-enabled")
-    expect(alignment).to_be_checked()
+    expect(page.locator("input[name=u-mode][value=full]")).to_be_checked()
     expect(backfill).to_be_checked()
     backfill.uncheck()
-    alignment.uncheck()
-    expect(backfill).to_be_disabled()
+    batch.check()
+    expect(backfill).to_be_hidden()
     with page.expect_response(
         lambda response: response.url.endswith("/api/untargeted/save")
     ):
         page.locator("#untargeted-save").click()
-    expect(backfill).to_be_disabled()
     page.reload()
-    expect(alignment).not_to_be_checked()
-    expect(backfill).not_to_be_checked()
-    expect(backfill).to_be_disabled()
+    # Batch Discovery persists as a full run without Alignment.
+    expect(batch).to_be_checked()
+    expect(backfill).to_be_hidden()
     page.locator("input[name=u-mode][value=align_only]").check()
-    expect(alignment).to_be_hidden()
     expect(backfill).to_be_enabled()
+    expect(backfill).not_to_be_checked()
     page.locator("input[name=u-mode][value=discovery_only]").check()
     expect(backfill).to_be_hidden()
     page.locator("input[name=u-mode][value=full]").check()
-    expect(alignment).not_to_be_checked()
-    alignment.check()
     expect(backfill).to_be_enabled()
 
 

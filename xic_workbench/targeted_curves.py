@@ -21,13 +21,16 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
     FingerprintCancelledError,
     build_acquisition_source_identity,
 )
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    PreparedRawMassRecalibration,
     open_raw,
+    stat_identity,
 )
 from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
@@ -63,11 +66,14 @@ def export_targeted_curves(
     expected_source: TargetedWorkbookLocator | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
+    verified_raws: dict[Path, PreparedRawMassRecalibration] | None = None,
 ) -> dict[str, Any]:
     """Acquire curves, never select peaks, integrate, or update the workbook.
 
     XLSX stores sample names but not RAW fingerprints. New RAW identities bind
     this diagnostic read only; they cannot certify the original acquisition.
+    ``verified_raws`` reuses a RAW's identity and recalibration result across
+    requests while its path keeps the same file state.
     Full-trace preparation preserves signal-processing context before display
     zoom, and saved peak bounds are overlays rather than recomputed decisions.
     """
@@ -139,22 +145,41 @@ def export_targeted_curves(
     for index, sample in enumerate(samples):
         check_cancel()
         path = selected_paths[sample]
-        try:
-            identity = build_acquisition_source_identity(
-                path,
-                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-                should_cancel=is_cancelled,
-            )
-        except FingerprintCancelledError as exc:
-            raise CurveAcquisitionCancelled("已取消曲線載入。") from exc
+        known = (verified_raws or {}).get(path)
+        state = stat_identity(path.stat())
+        if (
+            known is None
+            or known.acquisition.path_identity != state
+            or known.result.policy is not mass_policy
+        ):
+            known = None
+            try:
+                identity = build_acquisition_source_identity(
+                    path,
+                    acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                    observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+                    should_cancel=is_cancelled,
+                )
+            except FingerprintCancelledError as exc:
+                raise CurveAcquisitionCancelled("已取消曲線載入。") from exc
+            if stat_identity(path.stat()) != state:
+                raise ExplanationError(f"{path.name} 在讀取時被修改，請稍後再試。")
+        else:
+            identity = known.acquisition.source
         raw_sources[sample] = identity.acquisition_source_id
         with open_raw(
             path,
             dll_dir,
             expected_acquisition_source=identity,
+            _expected_path_identity=state,
             mass_recalibration=mass_policy,
+            prepared_mass_recalibration=known,
         ) as raw:
+            if verified_raws is not None:
+                verified_raws[path] = PreparedRawMassRecalibration(
+                    AcquisitionSourceExpectation(identity, state),
+                    raw.mass_recalibration_result,
+                )
             lower, upper = raw.acquisition_rt_bounds()
             for spec in selected_targets:
                 check_cancel()

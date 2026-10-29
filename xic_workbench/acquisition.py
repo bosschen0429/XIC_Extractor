@@ -11,7 +11,8 @@ from typing import Any, Callable
 
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
-    resolve_mass_recalibration,
+    MassRecalibrationResult,
+    deserialize_mass_recalibration_result,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
@@ -24,12 +25,17 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
     AcquisitionSourceIdentity,
     FingerprintCancelledError,
     IdentityContractError,
     fingerprint_file_content,
 )
-from xic_extractor.raw_reader import open_raw
+from xic_extractor.raw_reader import (
+    PreparedRawMassRecalibration,
+    open_raw,
+    stat_identity,
+)
 from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
     CurveBundle,
@@ -58,8 +64,13 @@ def export_explanation_curves(
     sample_ids: tuple[str, ...] = (),
     is_cancelled: Callable[[], bool] | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
+    verified_raws: dict[Path, AcquisitionSourceExpectation] | None = None,
 ) -> dict[str, Any]:
-    """Acquire new review curves around retained apexes without deciding area."""
+    """Acquire new review curves around retained apexes without deciding area.
+
+    ``verified_raws`` lets a caller reuse content verification across requests;
+    an entry applies only while the RAW path keeps the same file state.
+    """
     if (candidate_id is None) == (group_id is None):
         raise ExplanationError(
             "Choose exactly one candidate ID or group ID for curve export"
@@ -70,7 +81,7 @@ def export_explanation_curves(
         raise FileExistsError(f"Curve output must be a new file: {output}")
 
     summary = read_cid_nl_explanation(report)
-    mass_policies = _review_mass_policies(report, summary)
+    mass_results = _review_mass_results(report, summary)
     sample_labels = {
         row["sample_key"]: row["sample_stem"] for row in summary["samples"]
     }
@@ -142,6 +153,9 @@ def export_explanation_curves(
 
     sources = _report_acquisition_sources(summary)
     traces: list[CurveBundleTrace] = []
+    # A window without signal leaves that sample out; the other samples remain
+    # readable and the receipt names the omission.
+    unusable_samples: set[str] = set()
     source_ids_by_sample: dict[str, str] = {}
     profile = resolve_signal_processing_profile()
     total = len(by_sample)
@@ -152,20 +166,30 @@ def export_explanation_curves(
             raise ExplanationError("Invalid sample stem in report")
         raw_path = raw_dir / f"{stem}.raw"
         if not raw_path.is_file():
-            raise ExplanationError(
-                f"RAW is required for this selected curve: {raw_path}"
-            )
-        expected_source = _resolve_report_source(
-            raw_path, sources, is_cancelled=is_cancelled
+            raise ExplanationError(f"RAW 資料夾裡找不到 {stem}.raw")
+        known = verified_raws if verified_raws is not None else {}
+        expectation = _resolve_report_source(
+            raw_path, sources, known.get(raw_path), is_cancelled=is_cancelled
         )
-        source_ids_by_sample[sid] = expected_source.acquisition_source_id
+        known[raw_path] = expectation
+        source_ids_by_sample[sid] = expectation.source.acquisition_source_id
         _check_cancel(is_cancelled)
+        # The run's own recalibration result is replayed instead of re-probing
+        # every MS1 scan of the RAW for each review request.
+        saved = mass_results.get(stem)
         with open_raw(
             raw_path,
             dll_dir,
-            expected_acquisition_source=expected_source,
-            mass_recalibration=mass_policies.get(stem, MassRecalibration.NONE),
+            expected_acquisition_source=expectation.source,
+            _expected_path_identity=expectation.path_identity,
+            mass_recalibration=MassRecalibration.NONE
+            if saved is None
+            else saved.policy,
+            prepared_mass_recalibration=None
+            if saved is None or saved.policy is MassRecalibration.NONE
+            else PreparedRawMassRecalibration(expectation, saved),
         ) as raw:
+            acquired_before = len(traces)
             for oid, observation in observations:
                 _check_cancel(is_cancelled)
                 lower = max(0.0, observation["rt"] - padding_min)
@@ -175,17 +199,14 @@ def export_explanation_curves(
                     rt, intensity, profile=profile
                 ).prepared
                 if prepared is None:
-                    raise ExplanationError(
-                        f"Selected window has no usable curve: {stem}, "
-                        f"{observation['candidate_id']}"
-                    )
+                    continue
                 traces.append(
                     CurveBundleTrace(
                         trace_id=f"review:{sid}:{oid}",
                         sample_id=sid,
                         sample_label=stem,
                         role="diagnostic_reacquisition",
-                        raw_identity=expected_source.acquisition_source_id,
+                        raw_identity=expectation.source.acquisition_source_id,
                         mz=observation["mz"],
                         ppm=ppm,
                         extraction_rt_window=(lower, upper),
@@ -207,9 +228,13 @@ def export_explanation_curves(
                         },
                     )
                 )
+        if len(traces) == acquired_before:
+            unusable_samples.add(stem)
         if on_progress is not None:
             on_progress(completed + 1, total, sid)
 
+    if not traces:
+        raise ExplanationError("所選樣本在保留峰頂附近都沒有可用訊號。")
     window = (
         min(trace.extraction_rt_window[0] for trace in traces),
         max(trace.extraction_rt_window[1] for trace in traces),
@@ -234,6 +259,7 @@ def export_explanation_curves(
         "output": str(output.resolve()),
         "sample_count": len(by_sample),
         "curve_count": len(traces),
+        "unusable_samples": sorted(unusable_samples),
         "bytes": output.stat().st_size,
         "acquisition_sources": dict(sorted(source_ids_by_sample.items())),
         "source_binding_basis": _SOURCE_BINDING_BASIS,
@@ -288,20 +314,32 @@ def _report_acquisition_sources(
 def _resolve_report_source(
     raw_path: Path,
     sources: tuple[AcquisitionSourceIdentity, ...],
+    known: AcquisitionSourceExpectation | None,
     *,
     is_cancelled: Callable[[], bool] | None,
-) -> AcquisitionSourceIdentity:
+) -> AcquisitionSourceExpectation:
+    try:
+        before = raw_path.stat()
+    except OSError as exc:
+        raise ExplanationError(f"無法讀取 {raw_path.name} 來核對內容。") from exc
+    if (
+        known is not None
+        and known.source in sources
+        and stat_identity(before) == known.path_identity
+    ):
+        return known
     try:
         fingerprint = fingerprint_file_content(
             raw_path,
             should_cancel=is_cancelled,
         )
+        after = raw_path.stat()
     except FingerprintCancelledError as exc:
         raise CurveAcquisitionCancelled("Curve acquisition cancelled") from exc
-    except IdentityContractError as exc:
-        raise ExplanationError(
-            f"Unable to verify selected RAW identity: {raw_path}"
-        ) from exc
+    except (IdentityContractError, OSError) as exc:
+        raise ExplanationError(f"無法讀取 {raw_path.name} 來核對內容。") from exc
+    if stat_identity(before) != stat_identity(after):
+        raise ExplanationError(f"{raw_path.name} 在核對內容時被修改，請稍後再試。")
     matches = tuple(
         source
         for source in sources
@@ -310,10 +348,9 @@ def _resolve_report_source(
     )
     if len(matches) != 1:
         raise ExplanationError(
-            "Selected RAW does not match exactly one acquisition source retained "
-            f"by the report: {raw_path}"
+            f"{raw_path.name} 與這份結果分析時使用的 RAW 內容不同，無法對應樣本。"
         )
-    return matches[0]
+    return AcquisitionSourceExpectation(matches[0], stat_identity(after))
 
 
 def _check_cancel(is_cancelled: Callable[[], bool] | None) -> None:
@@ -327,10 +364,10 @@ __all__ = [
 ]
 
 
-def _review_mass_policies(
+def _review_mass_results(
     report: Path, summary: dict[str, Any]
-) -> dict[str, MassRecalibration]:
-    """Replay co-published policy, never infer it from the current defaults.
+) -> dict[str, MassRecalibrationResult]:
+    """Replay the run's co-published recalibration, never re-probe or re-default.
 
     Legacy results without policy metadata retain vendor coordinates. A policy
     sidecar belongs to this review only when both run identities agree.
@@ -347,6 +384,6 @@ def _review_mass_policies(
             "Alignment metadata 不屬於這份檢閱結果，請使用同次執行的檔案。"
         )
     return {
-        sample: resolve_mass_recalibration(result["policy"])
+        sample: deserialize_mass_recalibration_result(json.dumps(result))
         for sample, result in json.loads(payload).items()
     }

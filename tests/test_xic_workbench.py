@@ -7,6 +7,7 @@ import http.client
 import json
 import re
 import socket
+import sqlite3
 import threading
 import time
 import weakref
@@ -497,6 +498,17 @@ def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
     ] == before
 
 
+def test_http_open_explains_unreadable_report_in_plain_language(tmp_path):
+    report = tmp_path / "cid_nl_explanation.sqlite"
+    with sqlite3.connect(report) as connection:
+        connection.execute("CREATE TABLE unrelated (value TEXT)")
+    with _client(ReviewWorkspace()) as request:
+        status, body, _ = request("/api/open", {"source": str(report)})
+    assert status == 400
+    assert body["error"].startswith("無法讀取這份結果")
+    assert body["detail"]
+
+
 def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
     tmp_path, monkeypatch
 ):
@@ -734,7 +746,8 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
                 break
             time.sleep(0.01)
         assert result["status"] == "failed"
-        assert "selected RAW is missing" in result["message"]
+        assert result["message"] == "讀取 RAW 時發生錯誤。"
+        assert "selected RAW is missing" in result["detail"]
         assert request(report_url)[1] == original
         assert request(view_url)[1] == original_payload
 

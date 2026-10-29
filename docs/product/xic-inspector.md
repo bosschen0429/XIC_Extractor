@@ -60,11 +60,16 @@ samples. The page displays progress and supports cooperative cancellation
 between RAW operations. A failed or cancelled job leaves prior reports usable.
 One acquisition runs at a time. The workspace never changes the source evidence
 or Matrix, and new curves do not choose peaks, integrate or replace saved values.
+A sample whose window has no usable signal is left out and named beside the
+curves; the request fails only when no selected sample yields a curve.
 
 The report's sample stem locates each RAW. Its content must match exactly one
 acquisition source retained by that report. These older reports do not retain
 an independent canonical-sample-to-RAW binding: the page and curve provenance
 state this limitation. Missing files and mismatched content fail explicitly.
+Content is verified once per RAW while a batch is open and reused while the
+file keeps the same size and timestamps. Review replays the run's recorded mass
+recalibration result rather than re-probing each RAW.
 
 `xic_workbench.workspace` owns the local session and jobs;
 `xic_workbench.acquisition` owns diagnostic reacquisition, shared with the
@@ -307,7 +312,9 @@ observations. `--curve-padding-min` defaults to 0.5 minutes around each saved
 apex; `--curve-ppm` defaults to 5. These are explicitly labelled new diagnostic
 extractions from the supplied RAW files, using the current signal profile.
 They do not rerun Backfill, choose peaks, integrate areas or replace recorded
-quantification. Unobserved samples are not acquired implicitly. The Inspector
+quantification. Unobserved samples are not acquired implicitly. A sample
+without usable signal in its window is omitted from the bundle, listed in the
+printed receipt's `unusable_samples`, and named on stderr. The Inspector
 itself remains acquisition-free.
 
 ### CID-NL execution explanations

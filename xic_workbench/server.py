@@ -194,7 +194,10 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 PresetError,
                 sqlite3.Error,
             ) as exc:
-                self._send(400, {"error": str(exc)})
+                payload = {"error": str(exc)}
+                if exc.__cause__ is not None:
+                    payload["detail"] = str(exc.__cause__)
+                self._send(400, payload)
             except Exception:
                 logging.getLogger(__name__).exception("Local workspace request failed")
                 self._send(

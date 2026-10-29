@@ -113,7 +113,13 @@ def install_targeted_raws(
         (raw_dir / f"{sample}.raw").write_bytes(sample.encode())
     reads = []
 
+    from xic_extractor.configuration.mass_recalibration import (
+        VENDOR_MASS_RECALIBRATION_RESULT,
+    )
+
     class Raw:
+        mass_recalibration_result = VENDOR_MASS_RECALIBRATION_RESULT
+
         def __init__(self, name):
             self.name = name
 
@@ -185,6 +191,45 @@ def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     assert receipt["source_binding_basis"] == "workbook_sample_name_unverified"
     assert not receipt["original_acquisition_verified"]
     assert workbook.read_bytes() == before
+
+
+def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
+    workbook, tmp_path, monkeypatch
+):
+    from xic_workbench import targeted_curves
+
+    raw_dir = tmp_path / "raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300})
+    identified = []
+    real = targeted_curves.build_acquisition_source_identity
+    monkeypatch.setattr(
+        targeted_curves,
+        "build_acquisition_source_identity",
+        lambda path, **kwargs: identified.append(path.name) or real(path, **kwargs),
+    )
+    verified = {}
+    for index in range(2):
+        targeted_curves.export_targeted_curves(
+            workbook,
+            tmp_path / f"curves-{index}.json",
+            raw_dir=raw_dir,
+            dll_dir=tmp_path,
+            target_id="Analyte",
+            sample_ids=("Sample A",),
+            verified_raws=verified,
+        )
+    assert identified == ["Sample A.raw"]
+    (raw_dir / "Sample A.raw").write_bytes(b"replaced acquisition")
+    targeted_curves.export_targeted_curves(
+        workbook,
+        tmp_path / "curves-changed.json",
+        raw_dir=raw_dir,
+        dll_dir=tmp_path,
+        target_id="Analyte",
+        sample_ids=("Sample A",),
+        verified_raws=verified,
+    )
+    assert identified == ["Sample A.raw", "Sample A.raw"]
 
 
 def test_nd_curve_acquisition_reports_original_support_without_changing_saved_values(
@@ -755,7 +800,10 @@ def test_targeted_review_replays_saved_mass_policy(
     import numpy as np
 
     from tests.test_output_metadata import _config
-    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.configuration.mass_recalibration import (
+        MassRecalibration,
+        MassRecalibrationResult,
+    )
     from xic_extractor.output.metadata import build_metadata_rows
     from xic_inspector.sources.curve_bundle import read_curve_bundle
     from xic_workbench.targeted_curves import export_targeted_curves
@@ -775,6 +823,10 @@ def test_targeted_review_replays_saved_mass_policy(
     @contextmanager
     def raw(path, dll, *, mass_recalibration=MassRecalibration.NONE, **kwargs):
         class Raw:
+            mass_recalibration_result = MassRecalibrationResult(
+                "none", policy=mass_recalibration
+            )
+
             def acquisition_rt_bounds(self):
                 return 0.0, 12.0
 

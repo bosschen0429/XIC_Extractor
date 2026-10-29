@@ -774,10 +774,19 @@
   }
 
   // Untargeted
-  function currentMode() {
+  // "Batch Discovery" is the full run without its Alignment stage; the
+  // saved run state keeps that as mode "full" with Alignment disabled.
+  function currentChoice() {
     return (
       document.querySelector('input[name="u-mode"]:checked')?.value || "full"
     );
+  }
+  function currentMode() {
+    const choice = currentChoice();
+    return choice === "discovery_batch" ? "full" : choice;
+  }
+  function alignmentRuns() {
+    return ["full", "align_only"].includes(currentChoice());
   }
   function setMode(value) {
     const input = document.querySelector(
@@ -786,11 +795,8 @@
     (input || document.querySelector('input[name="u-mode"]')).checked = true;
   }
   function moduleFields() {
-    const mode = currentMode();
-    const alignment = mode === "align_only" || (mode === "full" && $("u-alignment-enabled").checked);
-    $("u-alignment-enabled").parentElement.hidden = mode !== "full";
-    $("u-backfill-enabled").parentElement.hidden = mode === "discovery_only";
-    $("u-alignment-enabled").disabled = isBusy() || mode !== "full";
+    const alignment = alignmentRuns();
+    $("u-backfill-enabled").parentElement.hidden = !alignment;
     $("u-backfill-enabled").disabled = isBusy() || !alignment;
     $("istd-path-field").parentElement.hidden = !alignment;
   }
@@ -807,7 +813,7 @@
     const values = {
       ...state.config.untargeted,
       mode: currentMode(),
-      alignment_enabled: currentMode() === "align_only" || $("u-alignment-enabled").checked,
+      alignment_enabled: alignmentRuns(),
       backfill_enabled: $("u-backfill-enabled").checked,
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
@@ -2238,7 +2244,6 @@
       $("target-import-status").textContent = `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
     };
     $("u-mode").addEventListener("change", modeFields);
-    $("u-alignment-enabled").addEventListener("change", modeFields);
     $("u-preset").onchange = () =>
       act(async () => {
         await loadMethod($("u-preset").value);
@@ -2555,8 +2560,12 @@
       "targets",
       state.config.untargeted.targets_csv,
     );
-    setMode(state.config.untargeted.mode);
-    $("u-alignment-enabled").checked = state.config.untargeted.alignment_enabled !== false;
+    setMode(
+      state.config.untargeted.mode === "full" &&
+        state.config.untargeted.alignment_enabled === false
+        ? "discovery_batch"
+        : state.config.untargeted.mode,
+    );
     $("u-backfill-enabled").checked = state.config.untargeted.backfill_enabled !== false;
     $("sequence-source").value = state.config.untargeted.sequence_source || "";
     for (const method of state.config.methods) {
