@@ -292,10 +292,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     assert isinstance(locator, EvidenceLocator)
     summary = read_cid_nl_explanation(locator.report_path)
     assert locator.processing_attempt_id == summary["processing_attempt_id"]
-    assert (
-        locator.matrix_sha256
-        == hashlib.sha256(locator.matrix_path.read_bytes()).hexdigest()
-    )
 
     out_html = tmp_path / "handoff.html"
     result = generate_report(

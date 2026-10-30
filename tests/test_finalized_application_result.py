@@ -24,9 +24,6 @@ from xic_extractor.alignment.projection.untarget import matrix as untarget_matri
 from xic_extractor.alignment.result import (
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
-    TargetApplicationResultRequest,
-    UntargetApplicationResultRequest,
-    finalize_alignment_result,
 )
 
 
@@ -66,11 +63,9 @@ def test_target_result_binds_exact_owner_graph_and_completion_receipts(
 ) -> None:
     scientific_core, projection = _target_completion(tmp_path / "target")
 
-    result = finalize_alignment_result(
-        TargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-        )
+    result = FinalizedTargetApplicationResult(
+        scientific_core=cast(Any, scientific_core),
+        completed_projection=projection,
     )
 
     assert type(result) is FinalizedTargetApplicationResult
@@ -108,11 +103,9 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
         monkeypatch,
     )
 
-    result = finalize_alignment_result(
-        UntargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-        )
+    result = FinalizedUntargetApplicationResult(
+        scientific_core=cast(Any, scientific_core),
+        completed_projection=projection,
     )
 
     assert type(result) is FinalizedUntargetApplicationResult
@@ -145,11 +138,9 @@ def test_untarget_result_consumes_projection_without_recomputing_it(
         reject_recomputation,
     )
 
-    result = finalize_alignment_result(
-        UntargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-        )
+    result = FinalizedUntargetApplicationResult(
+        scientific_core=cast(Any, scientific_core),
+        completed_projection=projection,
     )
 
     assert result.scientific_core is scientific_core
@@ -182,11 +173,9 @@ def test_untarget_owner_pickle_rebinds_completion(
     assert restored_core is not core
     assert restored_projection is not projection
     assert restored_projection.finalized_alignment is restored_core
-    result = finalize_alignment_result(
-        UntargetApplicationResultRequest(
-            scientific_core=restored_core,
-            completed_projection=restored_projection,
-        )
+    result = FinalizedUntargetApplicationResult(
+        scientific_core=restored_core,
+        completed_projection=restored_projection,
     )
     assert result.scientific_core is restored_core
     assert result.completed_projection is restored_projection

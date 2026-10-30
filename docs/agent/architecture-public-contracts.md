@@ -40,9 +40,7 @@ schema versions, and command flags. Do not copy those inventories here.
   Application publication owns cancellation and explanation lifetime through
   writing and closes the result on every exit. Acquisition worker/cache lifetime
   remains separate. GUI and CLI receive durable published outputs only.
-  `tests/test_docs_architecture_census.py` pins these execution boundaries;
-  `xic_extractor.alignment.owner_build_route_receipt` and
-  `tests/test_untargeted_application.py` own the route receipt labels.
+  `tests/test_docs_architecture_census.py` pins these execution boundaries.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
 - Formal Untargeted partitions consume the pure CID-NL input contract in

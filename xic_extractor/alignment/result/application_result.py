@@ -64,57 +64,6 @@ class UntargetedCandidateExclusion:
 
 
 @dataclass(frozen=True, slots=True)
-class TargetApplicationResultRequest:
-    scientific_core: FinalizedScientificAlignment
-    completed_projection: TargetPostCellProjection
-
-    @property
-    def variant(self) -> Literal["targeted"]:
-        return "targeted"
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetApplicationResultRequest:
-    scientific_core: FinalizedScientificAlignment
-    completed_projection: UntargetMatrixProjection
-
-    @property
-    def variant(self) -> Literal["untargeted"]:
-        return "untargeted"
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetBatchApplicationResultRequest:
-    """Request to seal one complete multi-subject Untarget result."""
-
-    scope: UntargetedSearchScope
-    processing_request: ProcessingRequestIdentity
-    processing_attempt: ProcessingAttemptIdentity
-    children: (
-        tuple[FinalizedUntargetApplicationResult, ...]
-        | ImmutableSequence[FinalizedUntargetApplicationResult]
-    )
-    excluded_candidates: (
-        tuple[UntargetedCandidateExclusion, ...]
-        | ImmutableSequence[UntargetedCandidateExclusion]
-    ) = ()
-
-    def __post_init__(self) -> None:
-        _require_batch_population(self)
-
-    @property
-    def variant(self) -> Literal["untargeted_batch"]:
-        return "untargeted_batch"
-
-
-ApplicationResultRequest: TypeAlias = (
-    TargetApplicationResultRequest
-    | UntargetApplicationResultRequest
-    | UntargetBatchApplicationResultRequest
-)
-
-
-@dataclass(frozen=True, slots=True)
 class FinalizedTargetApplicationResult:
     scientific_core: FinalizedScientificAlignment
     completed_projection: TargetPostCellProjection
@@ -173,7 +122,10 @@ class FinalizedUntargetBatchApplicationResult:
     excluded_candidates: (
         tuple[UntargetedCandidateExclusion, ...]
         | ImmutableSequence[UntargetedCandidateExclusion]
-    )
+    ) = ()
+
+    def __post_init__(self) -> None:
+        _require_batch_population(self)
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:
@@ -251,53 +203,8 @@ FinalizedApplicationResult: TypeAlias = (
 )
 
 
-def finalize_alignment_result(
-    request: ApplicationResultRequest,
-) -> FinalizedApplicationResult:
-    """Seal one scientific core and one matching completed projection."""
-
-    if type(request) is TargetApplicationResultRequest:
-        core = request.scientific_core
-        return FinalizedTargetApplicationResult(
-            scientific_core=core,
-            completed_projection=request.completed_projection,
-        )
-    if type(request) is UntargetApplicationResultRequest:
-        core = request.scientific_core
-        result = FinalizedUntargetApplicationResult(
-            scientific_core=core,
-            completed_projection=request.completed_projection,
-        )
-        return result
-    if type(request) is UntargetBatchApplicationResultRequest:
-        # Construction already closes the batch; this handoff adds no new input.
-        return FinalizedUntargetBatchApplicationResult(
-            scope=request.scope,
-            processing_request=request.processing_request,
-            processing_attempt=request.processing_attempt,
-            children=request.children,
-            excluded_candidates=request.excluded_candidates,
-        )
-    raise ApplicationResultContractError(
-        "application result requires an exact discriminated request variant"
-    )
-
-
-def _finalize_fresh_untarget_result(
-    request: UntargetApplicationResultRequest,
-) -> FinalizedUntargetApplicationResult:
-    """Transfer owners just completed in the callback-free workflow closure."""
-
-    result = FinalizedUntargetApplicationResult(
-        scientific_core=request.scientific_core,
-        completed_projection=request.completed_projection,
-    )
-    return result
-
-
 def _require_batch_population(
-    request: UntargetBatchApplicationResultRequest
-    | FinalizedUntargetBatchApplicationResult,
+    request: FinalizedUntargetBatchApplicationResult,
 ) -> None:
     """Close cross-child coverage once; children retain their owner's answers."""
     expected = Counter(request.scope.declared_candidate_ids)
@@ -410,14 +317,9 @@ def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
 
 __all__ = (
     "ApplicationResultContractError",
-    "ApplicationResultRequest",
     "FinalizedApplicationResult",
     "FinalizedTargetApplicationResult",
     "FinalizedUntargetApplicationResult",
     "FinalizedUntargetBatchApplicationResult",
-    "TargetApplicationResultRequest",
-    "UntargetApplicationResultRequest",
-    "UntargetBatchApplicationResultRequest",
     "UntargetedCandidateExclusion",
-    "finalize_alignment_result",
 )

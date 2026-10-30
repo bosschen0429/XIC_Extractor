@@ -33,7 +33,6 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
@@ -154,9 +153,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         batch,
         alignment_config=alignment_config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "composition"
-        ),
     )
     by_sample = {
         result.job.sample.metadata.raw_stem: fixture_assessment(result)

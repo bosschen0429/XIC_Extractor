@@ -5,7 +5,6 @@ import json
 import math
 import subprocess
 import sys
-from collections import Counter
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -66,7 +65,6 @@ from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
     ProcessTreeMemorySampler,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -143,8 +141,7 @@ def _assert_partition_composition_parity(
     subject_worksets=None,
 ):
     from xic_extractor.alignment.result.application_result import (
-        UntargetBatchApplicationResultRequest,
-        finalize_alignment_result,
+        FinalizedUntargetBatchApplicationResult,
     )
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         mint_untargeted_cid_nl_method_subject_batch,
@@ -203,14 +200,12 @@ def _assert_partition_composition_parity(
             key=lambda item: candidate_order[item.candidate_id],
         )
     )
-    result = finalize_alignment_result(
-        UntargetBatchApplicationResultRequest(
-            scope=original.scope,
-            processing_request=original.processing_request,
-            processing_attempt=original.processing_attempt,
-            children=tuple(child for part in parts for child in part.children),
-            excluded_candidates=exclusions,
-        )
+    result = FinalizedUntargetBatchApplicationResult(
+        scope=original.scope,
+        processing_request=original.processing_request,
+        processing_attempt=original.processing_attempt,
+        children=tuple(child for part in parts for child in part.children),
+        excluded_candidates=exclusions,
     )
     recomposed = replace(completed, application_result=result)
     assert project_completed_untarget_batch_writer_inputs(
@@ -1224,6 +1219,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.discovery.input_source import DiscoveryInputSource
 
+    obsolete_marker = tmp_path / "alignment" / ".cid_nl_runtime.json"
+    obsolete_marker.parent.mkdir(exist_ok=True)
+    obsolete_marker.write_bytes(b"obsolete attempt status")
     completed = alignment_adapter.complete_untargeted_alignment(
         discovery_batch=discovery_batch,
         candidates_by_sample=(
@@ -1383,20 +1381,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
         )
 
-    assert Counter(preparation_fingerprints) == Counter(
-        tmp_path / f"{stem}.raw" for stem in discovery_batch.sample_order
-    ), "formal preparation must fully fingerprint each RAW source once"
+    assert preparation_fingerprints == [], "preparation must not read RAW content"
+    assert obsolete_marker.read_bytes() == b"obsolete attempt status"
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
         runtime_fingerprints,
     )
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "alignment" / ".cid_nl_runtime.json",
-        "untargeted-cid-nl-alignment",
-    ).read_optional()
-    assert marker is not None
-    assert marker.processing_attempt_id == completed.processing_attempt_id
-    assert marker.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert (
+        completed.runtime_receipt.supervisor.terminal_outcome
+        is AttemptTerminalOutcome.SUCCEEDED
+    )
     runtime_ledger = completed.runtime_receipt.observability_ledger
     assert all(event.monotonic_offset_ns is None for event in runtime_ledger.events)
     unavailable_metric_names = {
@@ -2399,10 +2393,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "compatible-source-subject.runtime.json",
-            "compatible-source-subject",
-        ),
         alignment_config=alignment_config,
     )
     assert runtime.succeeded
@@ -2629,27 +2619,22 @@ def test_production_reuses_source_verification_across_runtime_opens(
     opened = _install_runtime_raws(
         monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "runtime.json", "source")
     execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "out",
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=1,
     )
-    snapshot = marker.read_optional()
-    assert snapshot is not None
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert len(opened[path]) == len(plan.subject_batch.subjects) > 1
-    assert fingerprints == [path]
+    assert fingerprints == []
 
 
 def test_production_rejects_source_change_during_expectation_mint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path, _raw, arguments = _source_verification_inputs(tmp_path)
-    build_source = input_owner.build_acquisition_source_identity
+    build_source = input_owner.build_local_acquisition_source_identity
 
     def change_after_fingerprint(source_path, **kwargs):
         source = build_source(source_path, **kwargs)
@@ -2657,7 +2642,7 @@ def test_production_rejects_source_change_during_expectation_mint(
         return source
 
     monkeypatch.setattr(
-        input_owner, "build_acquisition_source_identity", change_after_fingerprint
+        input_owner, "build_local_acquisition_source_identity", change_after_fingerprint
     )
     with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
         prepare_eager_untargeted_plan(**arguments)
@@ -2685,7 +2670,7 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path, _raw, arguments = _source_verification_inputs(tmp_path)
-    build_source = processing_spec_adapter.build_acquisition_source_identity
+    build_source = processing_spec_adapter.build_local_acquisition_source_identity
 
     def change_after_fingerprint(source_path, **kwargs):
         source = build_source(source_path, **kwargs)
@@ -2694,7 +2679,7 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
 
     monkeypatch.setattr(
         processing_spec_adapter,
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         change_after_fingerprint,
     )
     with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
@@ -2791,18 +2776,13 @@ def test_production_rejects_source_change_after_input_verification(
         replacement.write_bytes(path.read_bytes())
         replacement.replace(path)
     _install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
-    marker = OwnerPathRuntimeMarker(tmp_path / "runtime.json", "source")
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "failed-output",
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             alignment_config=AlignmentConfig(),
         )
-    snapshot = marker.read_optional()
-    assert snapshot is not None
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_sample_job_builder_rejects_changed_request_bound_inputs(
@@ -3116,10 +3096,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
     result = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json",
-            "production-batch",
-        ),
     )
 
     assert result.succeeded
@@ -3206,7 +3182,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            owner_build_xic_backend="raw",
             owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,
@@ -3417,9 +3392,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         output_dir=tmp_path / "admission-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "admission.json", "admission"
-        ),
         raw_workers=1,
     )
     assert set(completed.application_result.candidate_ids) == admitted
@@ -3514,9 +3486,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
-        ),
         alignment_config=AlignmentConfig(),
         progress_callback=progress_events.append,
     )
@@ -3631,9 +3600,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     runtime_plain = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime-plain.json", "plain"
-        ),
         alignment_config=AlignmentConfig(),
     )
     assert runtime_plain.succeeded
@@ -3666,7 +3632,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
         alignment_config=config,
         known_istd_reference=reference,
     )
@@ -3970,10 +3935,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     runtime_result = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "recovery.runtime.json",
-            "production-recovery",
-        ),
     )
     recovered = tuple(
         result
@@ -4195,7 +4156,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 discovery_batch_index=tmp_path / "discovery_batch_index.csv",
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
-                owner_build_xic_backend="raw",
                 owner_backfill_xic_backend="raw",
                 output_level="machine",
                 peak_config=peak_config,
@@ -4297,9 +4257,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "ms1-only-publication"
-        ),
     )
     assert runtime.succeeded
     recovered = {
@@ -4354,7 +4311,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            owner_build_xic_backend="raw",
             owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,

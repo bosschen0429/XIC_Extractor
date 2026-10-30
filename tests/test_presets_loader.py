@@ -39,12 +39,12 @@ def test_load_builtin_dna_dr_product_ready_preset_stays_sample_universe_safe() -
     assert preset.name == "DNA dR Owner Backfill (compat)"
     assert preset.combine_mode == "single"
     assert preset.tags[0].name == "DNA_dR"
-    assert preset.alignment_overrides == {
-        "owner_build_xic_backend": "raw-super-window",
-    }
+    assert preset.alignment_overrides == {}
 
 
-def test_existing_path_toml_loads_owner_backend_option(tmp_path: Path) -> None:
+def test_existing_path_toml_rejects_retired_owner_backend_option(
+    tmp_path: Path,
+) -> None:
     preset_path = tmp_path / "custom.toml"
     preset_path.write_text(
         """
@@ -66,13 +66,8 @@ owner_build_xic_backend = "raw-super-window"
         encoding="utf-8",
     )
 
-    preset = load_preset(preset_path)
-
-    assert preset.source == str(preset_path)
-    assert preset.discovery_overrides == {"rt_max": 20.0}
-    assert preset.alignment_overrides == {
-        "owner_build_xic_backend": "raw-super-window",
-    }
+    with pytest.raises(PresetError, match="owner_build_xic_backend"):
+        load_preset(preset_path)
 
 
 @pytest.mark.parametrize(

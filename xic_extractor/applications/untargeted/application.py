@@ -12,9 +12,6 @@ from xic_extractor.alignment.backfill.peak_fact_provenance import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_experiment import replay_grouping
-from xic_extractor.alignment.owner_build_route_receipt import (
-    _mint_retained_untargeted_cid_nl_route_receipt,
-)
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
@@ -79,7 +76,6 @@ def run_untargeted_application(
             "raw_workers": request.execution.raw_workers,
             "raw_worker_backend": request.execution.raw_worker_backend,
             "raw_xic_batch_size": 1,
-            "owner_build_xic_backend": request.legacy.owner_build_xic_backend,
             "owner_backfill_xic_backend": "raw",
             "owner_backfill_window_strategy": "exact",
             "owner_backfill_superwindow_span_factor": 2,
@@ -97,9 +93,6 @@ def run_untargeted_application(
         stage.metrics["feature_candidate_count"] = len(
             candidates_by_sample.feature_candidate_ids()
         )
-    owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
-        configured_backend=request.legacy.owner_build_xic_backend,
-    )
     outputs = replace(
         request.publication.output_paths(request.output_dir),
         run_metadata_json=request.output_dir / "alignment_run_metadata.json",
@@ -116,7 +109,6 @@ def run_untargeted_application(
         discovery_batch_index=request.discovery_batch_index,
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
-        owner_build_xic_backend=request.legacy.owner_build_xic_backend,
         owner_backfill_xic_backend="raw",
         owner_backfill_window_strategy="exact",
         owner_backfill_superwindow_span_factor=2,
@@ -148,14 +140,7 @@ def run_untargeted_application(
         metadata["backfill_execution"] = "not_run"
     metadata.update(
         {
-            "alignment_route": "untargeted_cid_nl_finalized",
-            "effective_owner_build_route": (
-                owner_build_route_receipt.effective_owner_build_route
-            ),
-            "effective_owner_build_xic_backend": "none",
-            "owner_build_xic_backend_role": "configured_legacy_option",
             "matrix_value_policy": "owner_finalized_cell_decision",
-            "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean",
         }
     )
     if resolved_known_istd_reference is not None:
@@ -207,7 +192,6 @@ def run_untargeted_application(
         metadata=metadata,
         timing_recorder=recorder,
         should_cancel=context.should_cancel,
-        owner_build_route_receipt=owner_build_route_receipt,
     )
 
 

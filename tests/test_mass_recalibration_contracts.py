@@ -51,7 +51,9 @@ def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
         discovery_receipt_index_fields,
         mint_discovery_candidate_universe_receipt,
     )
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_local_acquisition_source_identity,
+    )
 
     csv = tmp_path / "candidates.csv"
     csv.write_text("candidate_id\n", encoding="utf-8")
@@ -70,7 +72,7 @@ def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
         )
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample,
-            acquisition_source=build_acquisition_source_identity(
+            acquisition_source=build_local_acquisition_source_identity(
                 raw, acquisition_format="thermo_raw", observation_namespace="test"
             ),
             candidate_csv=csv,

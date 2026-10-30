@@ -37,7 +37,6 @@ class RuntimeExecutionPhase(str, Enum):
 
     WORKER_BATCH_PROVIDER = "worker_batch_provider"
     TELEMETRY_PROVIDER = "telemetry_provider"
-    PERSISTER = "persister"
 
 
 class RuntimeExecutionPhaseError(RuntimeError):
@@ -434,35 +433,6 @@ RuntimeWorkerBatchProvider = Callable[
     [Any],
     RuntimeWorkerBatchReceipt,
 ]
-RuntimeFinalizationPersister = Callable[
-    [RuntimeFinalizationReceipt],
-    RuntimeFinalizationReceipt,
-]
-
-
-def accept_runtime_finalization_receipt(
-    expected: RuntimeFinalizationReceipt,
-    submitted: RuntimeFinalizationReceipt,
-    *,
-    existing: RuntimeFinalizationReceipt | None = None,
-) -> RuntimeFinalizationReceipt:
-    """Accept the persisted finalization; identical replay is idempotent."""
-
-    if not isinstance(expected, RuntimeFinalizationReceipt):
-        raise RuntimeFinalizationContractError(
-            "expected must be a RuntimeFinalizationReceipt"
-        )
-    if not isinstance(submitted, RuntimeFinalizationReceipt) or submitted != expected:
-        raise RuntimeFinalizationContractError(
-            "persisted runtime finalization conflicts with the owner receipt"
-        )
-    if existing is None:
-        return submitted
-    if not isinstance(existing, RuntimeFinalizationReceipt) or existing != submitted:
-        raise RuntimeFinalizationContractError(
-            "conflicting runtime finalization receipt already exists"
-        )
-    return existing
 
 
 def _validate_rss_sample(
@@ -536,7 +506,6 @@ __all__ = (
     "RuntimeCancellationRequest",
     "RuntimeExecutionPhase",
     "RuntimeExecutionPhaseError",
-    "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimeProcessTreePeakRssSample",
     "RuntimeRawOpenMetrics",
@@ -546,7 +515,6 @@ __all__ = (
     "RuntimeWorkerBatchProvider",
     "RuntimeWorkerBatchReceipt",
     "RuntimeWorkerPeakRssSample",
-    "accept_runtime_finalization_receipt",
     "compact_runtime_acquisition_receipt",
     "derive_runtime_acquisition_metrics",
     "derive_runtime_raw_open_metrics",

@@ -229,7 +229,6 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
             ),
             candidate_artifact_sha256="0" * 64,
             candidate_artifact_byte_size=0,
-            candidate_payload_sha256="0" * 64,
             physical_facts_sha256=fingerprint.content_sha256,
             physical_facts_byte_size=fingerprint.byte_size,
         )

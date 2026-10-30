@@ -463,7 +463,6 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
             cells_tsv=None,
             run_metadata_json=None,
             evidence=locator,
-            owner_build_route_receipt=None,
         )
 
     monkeypatch.setattr(module, "run_untargeted_application", align)
@@ -518,7 +517,6 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
             cells_tsv=None,
             run_metadata_json=None,
             evidence=None,
-            owner_build_route_receipt=None,
         ),
     )
     progress = []

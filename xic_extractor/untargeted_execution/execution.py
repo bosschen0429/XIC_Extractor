@@ -41,7 +41,6 @@ from xic_extractor.execution.partitions import (
     ProcessingOwners,
     WorkPartition,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -825,7 +824,6 @@ def execute_untargeted_plan(
     output_dir: Path,
     alignment_config: AlignmentConfig,
     telemetry_provider: RuntimeTelemetryProvider,
-    recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     max_partition_jobs: int = 100_000,
@@ -887,7 +885,6 @@ def execute_untargeted_plan(
             phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
             telemetry_provider=telemetry_provider,
-            recovery_marker=recovery_marker,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,

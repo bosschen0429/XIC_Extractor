@@ -12,8 +12,7 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
-    UntargetBatchApplicationResultRequest,
-    finalize_alignment_result,
+    FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
@@ -31,7 +30,6 @@ from xic_extractor.execution.attempt import (
     RuntimeTelemetryProvider,
     start_runtime_attempt,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
 )
@@ -98,7 +96,6 @@ def execute_dense_partition(
     batch: UntargetedPartitionInputs,
     *,
     telemetry_provider: RuntimeTelemetryProvider,
-    recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     known_istd_reference: KnownIstdReference | None = None,
@@ -114,7 +111,6 @@ def execute_dense_partition(
         runtime,
         batch.jobs,
         telemetry_provider=telemetry_provider,
-        recovery_marker=recovery_marker,
         progress_callback=progress_callback,
         alignment_config=alignment_config,
         prepare_grouping=lambda results: prepare_untargeted_partition_grouping(
@@ -159,14 +155,12 @@ def complete_dense_partition(
         ),
         capture_bindings=partition.capture_bindings,
     )
-    application_result = finalize_alignment_result(
-        UntargetBatchApplicationResultRequest(
-            scope=scope,
-            processing_request=owners.request,
-            processing_attempt=owners.attempt,
-            children=partition.children,
-            excluded_candidates=partition.excluded_candidates,
-        )
+    application_result = FinalizedUntargetBatchApplicationResult(
+        scope=scope,
+        processing_request=owners.request,
+        processing_attempt=owners.attempt,
+        children=partition.children,
+        excluded_candidates=partition.excluded_candidates,
     )
     return CompletedUntargetBatchWorkflowResult(
         runtime_receipt=runtime_result.finalization,

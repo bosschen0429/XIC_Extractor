@@ -51,7 +51,6 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.execution.attempt import start_runtime_attempt
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -325,7 +324,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         alignment_config=config,
         prepare_grouping=prepare,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "window"),
     )
     assert result.succeeded
     assert len(observed) == 2
@@ -451,9 +449,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         alignment_config=config,
         prepare_grouping=prepare,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "query-runtime.json", "query-rt"
-        ),
     )
     assert result.succeeded
     for sample_result in result.sample_results:
@@ -586,9 +581,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "reject-recovery"
-        ),
     )
     if outcome == "failed":
         assert not result.succeeded
@@ -801,9 +793,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "multi-group-recovery"
-        ),
     )
     assert result.succeeded, tuple(
         s.failure_detail.message
@@ -1316,9 +1305,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "shared-recovery-claim"
-        ),
     )
     assert result.succeeded
     missing = next(
@@ -1473,9 +1459,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "shared-ms1-only-backfill"
-        ),
     )
     assert result.succeeded
     missing_attempts = tuple(
@@ -1696,9 +1679,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "ms1-only-backfill"
-        ),
     )
     assert result.succeeded
     missing = next(
@@ -1870,9 +1850,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "support-elsewhere"
-        ),
     )
     assert result.succeeded
     missing = next(

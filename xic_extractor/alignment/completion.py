@@ -36,12 +36,7 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
-    TargetApplicationResultRequest,
-    UntargetApplicationResultRequest,
-    UntargetBatchApplicationResultRequest,
     UntargetedCandidateExclusion,
-    _finalize_fresh_untarget_result,
-    finalize_alignment_result,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -397,25 +392,13 @@ def _finish_variant(
             target_decisions = decide_target_cell_population(target_pre_cell)
             stage = WorkflowStage.POST_CELL_PROJECTION
             target_projection = project_target_post_cell(
-                target_pre_cell,
-                target_decisions,
+                target_pre_cell, target_decisions
             )
             stage = WorkflowStage.APPLICATION_RESULT
-            result = finalize_alignment_result(
-                TargetApplicationResultRequest(
-                    scientific_core=scientific,
-                    completed_projection=target_projection,
-                )
+            return FinalizedTargetApplicationResult(
+                scientific_core=scientific,
+                completed_projection=target_projection,
             )
-            if (
-                type(result) is not FinalizedTargetApplicationResult
-                or result.scientific_core is not scientific
-                or result.completed_projection is not target_projection
-            ):
-                raise AlignmentWorkflowContractError(
-                    "application_result returned a crossed Target result"
-                )
-            return result
         stage = WorkflowStage.CELL_DECISION
         from xic_extractor.alignment.cell_decision.owner import (
             decide_group_cell_population,
@@ -426,21 +409,10 @@ def _finish_variant(
         untarget_projection = project_untarget_matrix(scientific, untarget_decisions)
         stage = WorkflowStage.APPLICATION_RESULT
         # No adapter callback intervenes between these owner completions.
-        result = _finalize_fresh_untarget_result(
-            UntargetApplicationResultRequest(
-                scientific_core=scientific,
-                completed_projection=untarget_projection,
-            )
+        return FinalizedUntargetApplicationResult(
+            scientific_core=scientific,
+            completed_projection=untarget_projection,
         )
-        if (
-            type(result) is not FinalizedUntargetApplicationResult
-            or result.scientific_core is not scientific
-            or result.completed_projection is not untarget_projection
-        ):
-            raise AlignmentWorkflowContractError(
-                "application_result returned a crossed Untarget result"
-            )
-        return result
     except Exception as exc:
         raise WorkflowStageFailure(stage, exc) from exc
 
@@ -488,19 +460,13 @@ def complete_untarget_batch(
                     "Untarget batch child returned a crossed application result"
                 )
             children.append(child)
-        application_result = finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=request.scope,
-                processing_request=request.processing_request,
-                processing_attempt=request.processing_attempt,
-                children=tuple(children),
-                excluded_candidates=request.excluded_candidates,
-            )
+        application_result = FinalizedUntargetBatchApplicationResult(
+            scope=request.scope,
+            processing_request=request.processing_request,
+            processing_attempt=request.processing_attempt,
+            children=tuple(children),
+            excluded_candidates=request.excluded_candidates,
         )
-        if type(application_result) is not FinalizedUntargetBatchApplicationResult:
-            raise AlignmentWorkflowContractError(
-                "application_result returned a crossed Untarget batch result"
-            )
         return application_result
     except WorkflowStageFailure:
         raise

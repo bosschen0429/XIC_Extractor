@@ -22,6 +22,19 @@ def test_read_discovery_batch_index_requires_owner_closure(tmp_path: Path) -> No
         read_discovery_batch_index(index_path)
 
 
+def test_old_discovery_index_requires_regeneration(tmp_path: Path) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+
+    path = tmp_path / "discovery_batch_index.csv"
+    path.write_text(
+        "schema_version,sample_stem,raw_file,candidate_csv,acquisition_content_sha256\n"
+        "discovery_batch_index,S1,S1.raw,candidates.csv,unused\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="regenerate Discovery"):
+        read_discovery_batch_index(path)
+
+
 @pytest.mark.parametrize("provisional,seed_count", [(True, 1), (True, 2), (False, 2)])
 def test_owner_bound_csv_preserves_final_provisional_decision(
     tmp_path: Path,
@@ -30,7 +43,6 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
 ) -> None:
     from xic_extractor.discovery.batch_contract import (
         mint_discovery_candidate_universe_receipt,
-        validate_discovery_candidate_universe,
     )
     from xic_extractor.discovery.csv_reader import (
         read_discovery_candidates_csv,
@@ -38,8 +50,7 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     )
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
     from xic_extractor.processing_identity import (
-        IdentityContractError,
-        build_acquisition_source_identity,
+        build_local_acquisition_source_identity,
     )
 
     path = tmp_path / "candidates.csv"
@@ -54,7 +65,7 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     write_discovery_candidates_csv(path, (candidate,))
     raw = tmp_path / "Sample_1.raw"
     raw.write_bytes(b"synthetic acquisition")
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         raw,
         acquisition_format="thermo_raw",
         observation_namespace="test",
@@ -70,12 +81,6 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     assert restored.is_provisional is provisional
     assert restored.seed_event_count == seed_count
     assert restored.ms1_trace_quality == "provisional"
-    with pytest.raises(IdentityContractError, match="candidate payload"):
-        validate_discovery_candidate_universe(
-            receipt,
-            acquisition_source=source,
-            candidates=(replace(restored, is_provisional=not provisional),),
-        )
 
 
 @pytest.mark.parametrize("value", ["", "true", "1", "unknown"])
@@ -940,7 +945,9 @@ def _discovery_input_batch(
         DiscoveryBatchInput,
         read_discovery_candidates_csv,
     )
-    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.processing_identity import (
+        build_local_acquisition_source_identity,
+    )
 
     candidate_csvs = {}
     raw_files = {}
@@ -951,7 +958,7 @@ def _discovery_input_batch(
         raw_path = root / f"{stem}.raw"
         raw_path.write_bytes(stem.encode())
         candidates = read_discovery_candidates_csv(path)
-        source = build_acquisition_source_identity(
+        source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format="thermo_raw",
             observation_namespace="test",

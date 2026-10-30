@@ -272,7 +272,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
 
     fingerprinted_paths: list[Path] = []
-    owner = adapter.build_acquisition_source_identity
+    owner = adapter.build_local_acquisition_source_identity
 
     def counted_fingerprint(path: Path, **kwargs):
         fingerprinted_paths.append(path)
@@ -280,7 +280,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
 
     monkeypatch.setattr(
         adapter,
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         counted_fingerprint,
     )
 

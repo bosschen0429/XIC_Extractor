@@ -60,7 +60,7 @@ from xic_extractor.discovery.sample_process_execution import (
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
 )
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -472,7 +472,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
-    assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index"}
+    assert {row["schema_version"] for row in index_rows} == {
+        "discovery_batch_index_local_source"
+    }
     assert "discovery_receipt_id" not in index_rows[0]
     assert "acquisition_source_id" not in index_rows[0]
     assert [row["medium_count"] for row in index_rows] == ["0", "1"]
@@ -1018,7 +1020,7 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
     )
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"spawn-receipt")
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1049,7 +1051,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"failure-receipt")
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1093,7 +1095,7 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-failure")
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1585,7 +1587,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     path, dll_dir, source = calls[0]
     assert path == raw_path
     assert dll_dir == tmp_path / "dll"
-    assert source == build_acquisition_source_identity(
+    assert source == build_local_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1631,7 +1633,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
 ) -> None:
     raw_path = tmp_path / "Sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
+    source = build_local_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

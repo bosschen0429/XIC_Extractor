@@ -67,7 +67,6 @@ from xic_extractor.execution.attempt import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,
@@ -215,13 +214,6 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
         cancellation_request=RuntimeCancellationRequest(attempt=attempt),
     )
     worker_calls: list[str] = []
-    persisted: list[RuntimeFinalizationReceipt] = []
-
-    def persist(
-        proposed: RuntimeFinalizationReceipt,
-    ) -> RuntimeFinalizationReceipt:
-        persisted.append(proposed)
-        return proposed
 
     receipt = execute_runtime_attempt(
         runtime,
@@ -230,12 +222,10 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
             worker_calls.append("called") or RuntimeWorkerBatchReceipt(settlements=())
         ),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=persist,
     )
 
     state = receipt.coordinator.state
     assert worker_calls == []
-    assert persisted == [receipt]
     assert receipt.coordinator.proposed_outcome is AttemptTerminalOutcome.CANCELLED
     assert tuple(
         (settlement.work_unit_key, settlement.outcome)
@@ -275,7 +265,6 @@ def test_runtime_phase_error_wraps_worker_exception_without_follow_on_callbacks(
     )
     worker_seen: list[RuntimeAttemptAggregate] = []
     telemetry_calls: list[str] = []
-    persister_calls: list[RuntimeFinalizationReceipt] = []
     sentinel = RuntimeError("worker callback details stay out of owner facts")
 
     def worker(aggregate: RuntimeAttemptAggregate) -> RuntimeWorkerBatchReceipt:
@@ -286,17 +275,12 @@ def test_runtime_phase_error_wraps_worker_exception_without_follow_on_callbacks(
         telemetry_calls.append("called")
         return build_runtime_telemetry_samples_from_coordinator(_coordinator)
 
-    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
-        persister_calls.append(proposed)
-        return proposed
-
     with pytest.raises(RuntimeExecutionPhaseError) as raised:
         execute_runtime_attempt(
             runtime,
             (_reservation(attempt),),
             worker_batch_provider=worker,
             telemetry_provider=telemetry,
-            persister=persist,
         )
 
     error = raised.value
@@ -311,7 +295,6 @@ def test_runtime_phase_error_wraps_worker_exception_without_follow_on_callbacks(
     assert worker_seen[0].state.resources[0].open_outcome is None
     assert worker_seen[0].state.resources[0].cleanup_outcome is None
     assert telemetry_calls == []
-    assert persister_calls == []
     assert not hasattr(error, "receipt")
 
 
@@ -325,7 +308,6 @@ def test_runtime_phase_error_wraps_telemetry_exception_after_one_worker_batch(
         owner_completeness_attestation="runtime-owner-test",
     )
     worker_calls: list[str] = []
-    persister_calls: list[RuntimeFinalizationReceipt] = []
     sentinel = RuntimeError("telemetry callback details stay out of owner facts")
 
     def worker(_aggregate: RuntimeAttemptAggregate) -> RuntimeWorkerBatchReceipt:
@@ -335,19 +317,12 @@ def test_runtime_phase_error_wraps_telemetry_exception_after_one_worker_batch(
     def telemetry(_coordinator):
         raise sentinel
 
-    def persist_after_telemetry(
-        proposed: RuntimeFinalizationReceipt,
-    ) -> RuntimeFinalizationReceipt:
-        persister_calls.append(proposed)
-        return proposed
-
     with pytest.raises(RuntimeExecutionPhaseError) as raised:
         execute_runtime_attempt(
             runtime,
             (),
             worker_batch_provider=worker,
             telemetry_provider=telemetry,
-            persister=persist_after_telemetry,
         )
 
     error = raised.value
@@ -355,79 +330,7 @@ def test_runtime_phase_error_wraps_telemetry_exception_after_one_worker_batch(
     assert error.attempt == attempt
     assert error.phase is RuntimeExecutionPhase.TELEMETRY_PROVIDER
     assert error.__cause__ is sentinel
-    assert persister_calls == []
     assert not hasattr(error, "observability_ledger")
-
-
-def test_runtime_phase_error_wraps_persister_exception_before_write(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path, stem="phase-persister-before-write")
-    runtime = start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test",
-    )
-    proposed_receipts: list[RuntimeFinalizationReceipt] = []
-    sentinel = RuntimeError("persister callback details stay out of owner facts")
-
-    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
-        proposed_receipts.append(proposed)
-        raise sentinel
-
-    with pytest.raises(RuntimeExecutionPhaseError) as raised:
-        execute_runtime_attempt(
-            runtime,
-            (),
-            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            persister=persist,
-        )
-
-    error = raised.value
-    assert len(proposed_receipts) == 1
-    assert error.attempt == attempt
-    assert error.phase is RuntimeExecutionPhase.PERSISTER
-    assert error.__cause__ is sentinel
-    assert not hasattr(error, "receipt")
-    assert "persister callback details" not in str(error)
-
-
-def test_runtime_phase_error_preserves_marker_durability_but_not_acceptance(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path, stem="phase-persister-after-write")
-    runtime = start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test",
-    )
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "phase-persister.runtime.json",
-        "runtime-attempt-artifacts:phase-persister",
-    )
-    marker.record_launch(runtime)
-    sentinel = RuntimeError("persister raised after durable marker write")
-
-    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
-        marker(proposed)
-        raise sentinel
-
-    with pytest.raises(RuntimeExecutionPhaseError) as raised:
-        execute_runtime_attempt(
-            runtime,
-            (),
-            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            persister=persist,
-        )
-
-    error = raised.value
-    assert error.phase is RuntimeExecutionPhase.PERSISTER
-    assert error.attempt == attempt
-    assert error.__cause__ is sentinel
-    assert marker.read().state.value == "finalized"
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
@@ -449,7 +352,6 @@ def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
                 object(),
             ),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            persister=lambda proposed: proposed,
         )
 
     runtime = start_runtime_attempt(
@@ -464,24 +366,6 @@ def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
             worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
             telemetry_provider=lambda _coordinator: cast(
                 RuntimeTelemetrySamples,
-                object(),
-            ),
-            persister=lambda proposed: proposed,
-        )
-
-    runtime = start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test",
-    )
-    with pytest.raises(RuntimeFinalizationContractError):
-        execute_runtime_attempt(
-            runtime,
-            (),
-            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            persister=lambda _proposed: cast(
-                RuntimeFinalizationReceipt,
                 object(),
             ),
         )
@@ -505,7 +389,6 @@ def test_runtime_phase_error_does_not_catch_base_exception(tmp_path: Path) -> No
             (),
             worker_batch_provider=lambda _aggregate: (_ for _ in ()).throw(sentinel),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            persister=lambda proposed: proposed,
         )
 
     assert raised.value is sentinel
@@ -518,7 +401,6 @@ def test_runtime_phase_error_public_contract_is_closed_and_owner_bound(
     assert tuple(phase.value for phase in RuntimeExecutionPhase) == (
         "worker_batch_provider",
         "telemetry_provider",
-        "persister",
     )
     error = RuntimeExecutionPhaseError(
         attempt,
@@ -580,7 +462,6 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
     receipt = _finalize_runtime_attempt(
         aggregate,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
     )
 
     assert isinstance(receipt, RuntimeFinalizationReceipt)
@@ -694,7 +575,6 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
         _finalize_runtime_attempt(
             aggregate,
             telemetry_provider=missing_offset,
-            persister=lambda proposed: proposed,
         )
 
 
@@ -717,10 +597,6 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
         work_unit_keys=work_unit_keys,
         owner_completeness_attestation=owner_completeness_attestation,
     )
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "preflight.runtime.json",
-        "runtime-attempt-artifacts:preflight",
-    )
     worker_calls: list[str] = []
 
     assert runtime.manifest_preflight_failed is True
@@ -729,7 +605,6 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
         AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
         AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
     )
-    marker.record_launch(runtime)
     receipt = execute_runtime_attempt(
         runtime,
         (_reservation(attempt),),
@@ -737,7 +612,6 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
             worker_calls.append("called") or RuntimeWorkerBatchReceipt(settlements=())
         ),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=marker,
     )
 
     assert worker_calls == []
@@ -771,7 +645,6 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
     ):
         assert metrics[name].availability is RuntimeMetricAvailability.UNSUPPORTED
         assert metrics[name].reason == "not_started_preflight_failure"
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 @pytest.mark.parametrize(
@@ -830,7 +703,6 @@ def test_unopened_process_resource_does_not_invent_worker_topology(
     receipt = _finalize_runtime_attempt(
         aggregate,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
     )
 
     assert "worker_started" not in {
@@ -911,7 +783,6 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
             ),
         ),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
     )
 
     assert "worker_started" in {
@@ -1068,12 +939,10 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
     expected = _finalize_runtime_attempt(
         RuntimeAttemptAggregate(state=expected_state),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
     )
     actual = _finalize_runtime_attempt(
         aggregate,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
     )
     assert asdict(actual.coordinator) == (asdict(expected.coordinator))
     assert asdict(actual.observability_ledger) == (
@@ -1265,12 +1134,10 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
     expected = _finalize_runtime_attempt(
         eager,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda receipt: receipt,
     )
     actual = _finalize_runtime_attempt(
         compressed,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda receipt: receipt,
     )
     assert asdict(actual.observability_ledger) == (
         asdict(expected.observability_ledger)

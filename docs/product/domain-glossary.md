@@ -391,8 +391,8 @@ spellings below.
 
 The surviving `owner` senses are the sample-local MS1 peak to which candidates
 are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
-(`processing_owners`, `capture_owner`), and module responsibility
-(`owner_build_xic_backend`). The adjective formerly attached to internal
+(`processing_owners`, `capture_owner`), and module responsibility.
+The adjective formerly attached to internal
 Backfill types, functions, constants, and modules adds no meaning and is removed.
 
 `physical` means the MS1-measured ion or chromatographic peak itself, as opposed

@@ -1,14 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 
 from tests.alignment_pipeline_helpers import write_batch
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.owner_build_route_receipt import (
-    _mint_retained_untargeted_cid_nl_route_receipt,
-)
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output.alignment.pipeline_outputs import (
@@ -20,15 +17,10 @@ from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_requ
 
 
 def _alignment_outputs(
-    *,
-    configured_backend: Literal["raw", "raw_superwindow", "ms1_index"] = "raw",
     **kwargs: Any,
 ) -> _AlignmentRunOutputs:
     return _AlignmentRunOutputs(
         **kwargs,
-        owner_build_route_receipt=_mint_retained_untargeted_cid_nl_route_receipt(
-            configured_backend=configured_backend,
-        ),
     )
 
 
@@ -190,7 +182,6 @@ def test_alignment_modes_apply_product_ready_runtime(
     def fake_run_alignment(request, context=None) -> _AlignmentRunOutputs:
         captured_alignment.update(request=request, context=context)
         return _alignment_outputs(
-            configured_backend=request.legacy.owner_build_xic_backend,
             matrix_tsv=output_dir / "alignment_matrix.tsv",
         )
 
@@ -229,10 +220,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         captured_alignment["request"].execution.raw_workers == DEFAULT_ALIGNMENT_WORKERS
     )
     assert captured_alignment["request"].execution.raw_worker_backend == "process"
-    assert (
-        captured_alignment["request"].legacy.owner_build_xic_backend
-        == "raw_superwindow"
-    )
     assert captured_alignment["request"].publication.output_level == "machine"
     assert captured_alignment["request"].publication.emit_alignment_cells is False
     assert (
@@ -260,12 +247,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         assert run_spec.acquisition_inputs[0].sample_stem == "A"
     else:
         assert captured_discovery == {}
-    assert summary["owner_build_route"] == {
-        "configured_owner_build_xic_backend": "raw_superwindow",
-        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
-        "effective_owner_build_xic_backend": None,
-        "effective_route_validation": "owner_validated",
-    }
 
 
 def test_alignment_interruption_propagates_from_execute(
@@ -307,8 +288,7 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
         'name = "Custom"\n'
         'description = "Bound before execution"\n'
         'combine_mode = "single"\n\n'
-        '[[tag]]\nstrategy = "neutral_loss"\nname = "TEST"\nvalue = 100.0\n\n'
-        '[alignment]\nowner_build_xic_backend = "ms1-index"\n',
+        '[[tag]]\nstrategy = "neutral_loss"\nname = "TEST"\nvalue = 100.0\n',
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raw"
@@ -319,8 +299,7 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
         module,
         "run_untargeted_application",
         lambda request, context=None, **kwargs: (
-            captured.update(request=request, context=context)
-            or _alignment_outputs(configured_backend="ms1_index")
+            captured.update(request=request, context=context) or _alignment_outputs()
         ),
     )
     request = DiscoveryRequest(
@@ -337,8 +316,6 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
     preset_path.unlink()
 
     _execute(request)
-
-    assert captured["request"].legacy.owner_build_xic_backend == "ms1_index"
 
 
 def test_request_rejects_retired_standard_peak_route_before_discovery(

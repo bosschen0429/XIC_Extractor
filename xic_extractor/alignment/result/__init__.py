@@ -2,13 +2,9 @@
 
 from xic_extractor.alignment.result.application_result import (
     ApplicationResultContractError,
-    ApplicationResultRequest,
     FinalizedApplicationResult,
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
-    TargetApplicationResultRequest,
-    UntargetApplicationResultRequest,
-    finalize_alignment_result,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalGroupCellObservation,
@@ -22,7 +18,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
 
 __all__ = (
     "ApplicationResultContractError",
-    "ApplicationResultRequest",
     "FinalGroupCellObservation",
     "FinalizedApplicationResult",
     "FinalizedScientificAlignment",
@@ -31,9 +26,8 @@ __all__ = (
     "FinalizedUntargetApplicationResult",
     "ObservedSearchSubject",
     "SearchedNoObservationSubject",
-    "TargetApplicationResultRequest",
+    "FinalizedTargetApplicationResult",
     "TerminalSearchObservation",
-    "UntargetApplicationResultRequest",
-    "finalize_alignment_result",
+    "FinalizedUntargetApplicationResult",
     "finalize_scientific_alignment",
 )

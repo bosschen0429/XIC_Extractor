@@ -73,8 +73,6 @@ value = 116.0474                 # neutral loss mass (Da)
 [discovery]                      # optional overrides for discovery defaults
 # nl_tolerance_ppm = 20.0
 
-[alignment]                      # optional overrides for alignment defaults
-# owner_build_xic_backend = "raw-super-window"
 ```
 
 ### Tag Rules
@@ -129,29 +127,12 @@ These values apply unless overridden in the `[discovery]` section.
 
 ## Alignment Defaults
 
-These values apply unless overridden in the `[alignment]` section.
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `owner_build_xic_backend` | `raw` | XIC backend for owner construction |
+Alignment uses the retained CID-NL batch route. Presets do not select an
+owner-build XIC backend; `owner_build_xic_backend` is not accepted.
 
 All former `standard_peak_backfill*` and `backfill_expansion*` alignment keys
 are retired from normal presets. Supplying one is an error; there is no ignored
 compatibility mode or replacement publication choice.
-
-### XIC Backend Values
-
-| Value | Description |
-| --- | --- |
-| `raw` | Read directly from RAW files (default) |
-| `raw-super-window` | RAW with wider super-window for cross-sample coverage |
-| `ms1-index` | Use pre-built MS1 index (faster, requires prior indexing) |
-
-For CID-NL methods, including multiple neutral-loss tags, the retained batch supersedes these legacy
-owner-construction backends. The configured value remains visible in the route
-receipt for compatibility, while the effective route is reported as
-`retained_untargeted_cid_nl_batch` with no effective legacy backend. The values
-above continue to apply to explicit legacy/non-pure Alignment routes.
 
 ---
 

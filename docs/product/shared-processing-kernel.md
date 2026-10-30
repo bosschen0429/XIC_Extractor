@@ -41,7 +41,7 @@ XIC has one shared scientific processing lifecycle:
 Target then binds its fixed-row subjects, completes cell decisions, and closes
 projection. Untarget first completes Feature × Sample payloads and selected
 integrations, then projects Matrix rows/cells once. Both hand their completed
-projection to the existing result finalizer.
+projection directly to an immutable application result.
 
 A configured Target constrains search and fixes a projection row. A
 configured Target does not prove a sample-local observation, group
@@ -65,7 +65,7 @@ but callers cannot bypass the semantic owner.
 | Target projection binding/subjects | finalized core + Target scope -> fixed row binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
 | Cell decision | Target subject or completed Feature × Sample observation -> numeric/no-write payload + selected integration | Sole selected-value owner; no row identity prerequisite for Untarget |
 | Projection completion | completed cell answers -> output identities, inclusion, counts/reasons, review/archive routing | Untarget projects once and wraps `ProductionCellDecision`; does not recompute evidence or selected values |
-| Result finalizer | discriminated request + shared core + completed projection -> immutable workflow result | Validates closure only; no RAW, regrouping, revisit, selection, or rendering |
+| Application result | shared core + completed projection -> immutable workflow result | Retains completed scientific answers; batch construction checks complete child coverage without regrouping, revisit, selection, or rendering |
 
 `TargetCellSubject` binds one stable `TargetKey`, exact `TargetDefinition`,
 canonical sample, `TargetRowBinding`, and optional finalized group.

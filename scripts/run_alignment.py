@@ -16,7 +16,6 @@ from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
 )
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
@@ -116,7 +115,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     peak_config_nl_min_intensity_ratio = (
         recipe.discovery_settings.nl_min_intensity_ratio
     )
-    owner_build_xic_backend = recipe.owner_build_xic_backend
     if preset.name == "DNA dR Owner Backfill (compat)":
         print(
             "Preset readiness authority: not_evaluated "
@@ -130,9 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             acquisition_cache_dir=args.acquisition_cache_dir,
             max_partition_jobs=args.max_partition_jobs,
         )
-        legacy = RetainedAlignmentOptions(
-            owner_build_xic_backend=owner_build_xic_backend,
-        )
+        legacy = RetainedAlignmentOptions()
         validate_retained_processing_profile(signal_processing_profile)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -201,7 +197,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             output_dir=output_dir,
-            owner_build_xic_backend=owner_build_xic_backend,
         )
         return 0
 
@@ -316,11 +311,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
     if outputs.run_metadata_json is not None:
         print(f"Alignment run metadata JSON: {outputs.run_metadata_json}")
-    owner_build_route_receipt = outputs.owner_build_route_receipt
-    if not isinstance(owner_build_route_receipt, OwnerBuildRouteReceipt):
-        print("Alignment owner did not return its route receipt", file=sys.stderr)
-        return 2
-    _print_owner_build_route_receipt(owner_build_route_receipt)
     if timing_recorder is not None:
         if args.timing_live_output is not None:
             print(f"Timing live JSON: {args.timing_live_output.resolve()}")
@@ -521,15 +511,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Output directory for --profile cprofile sidecar files.",
     )
     parser.add_argument(
-        "--owner-build-xic-backend",
-        choices=("raw", "raw-super-window", "ms1-index"),
-        default=None,
-        help=(
-            "Configured backend provenance recorded in the owner route receipt. "
-            "The finalized CID-NL owner determines the effective execution route."
-        ),
-    )
-    parser.add_argument(
         "--signal-processing-method",
         choices=(DEFAULT_SIGNAL_PROCESSING_PROFILE.method,),
         default=DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
@@ -728,8 +709,6 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
         )
     preset = load_preset(args.preset)
     recipe_overrides: dict[str, object] = {}
-    if args.owner_build_xic_backend is not None:
-        recipe_overrides["owner_build_xic_backend"] = args.owner_build_xic_backend
     recipe = bind_cid_nl_recipe(
         preset, "align_only", recipe_overrides=recipe_overrides or None
     )
@@ -791,7 +770,6 @@ def _print_preflight_summary(
     raw_dir: Path,
     dll_dir: Path,
     output_dir: Path,
-    owner_build_xic_backend: str,
 ) -> None:
     sample_count = len(discovery_batch.sample_order)
     print("Alignment launch preflight OK (diagnostic_only; no validation completed)")
@@ -820,7 +798,6 @@ def _print_preflight_summary(
     print(f"Backfill: {'enabled' if args.backfill else 'disabled (not searched)'}")
     print(f"Input indexing / RAW backend: {args.raw_worker_backend}")
     print("Source fingerprint backend: thread")
-    _print_owner_build_route_preflight(owner_build_xic_backend)
     print(
         "Timing JSON: "
         f"{args.timing_output.resolve() if args.timing_output else '<none>'}"
@@ -829,28 +806,6 @@ def _print_preflight_summary(
         "Timing live JSON: "
         f"{args.timing_live_output.resolve() if args.timing_live_output else '<none>'}"
     )
-
-
-def _print_owner_build_route_receipt(receipt: OwnerBuildRouteReceipt) -> None:
-    print(
-        "Configured owner-build XIC backend: "
-        f"{receipt.configured_owner_build_xic_backend}"
-    )
-    if receipt.effective_owner_build_xic_backend is None:
-        print(f"Effective owner-build route: {receipt.effective_owner_build_route}")
-    else:
-        print(
-            "Effective owner-build route: "
-            f"{receipt.effective_owner_build_route}:"
-            f"{receipt.effective_owner_build_xic_backend}"
-        )
-    print("Effective route validation: owner_validated")
-
-
-def _print_owner_build_route_preflight(owner_build_xic_backend: str) -> None:
-    print(f"Configured owner-build XIC backend: {owner_build_xic_backend}")
-    print("Effective owner-build route: <not executed>")
-    print("Effective route validation: not_executed")
 
 
 def _mz_range(value: str) -> tuple[float, float]:

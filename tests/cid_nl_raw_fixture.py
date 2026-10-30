@@ -20,7 +20,7 @@ from xic_extractor.discovery.ms1_capture import (
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import (
@@ -55,7 +55,7 @@ def _current_candidates(
     source = raw.acquisition_source
     if source is None:
         source = (
-            build_acquisition_source_identity(
+            build_local_acquisition_source_identity(
                 raw_file,
                 acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
                 observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -116,7 +116,7 @@ def fake_acquisition_source() -> AcquisitionSourceIdentity:
     with tempfile.TemporaryDirectory() as directory:
         raw_path = Path(directory) / "sample.raw"
         raw_path.write_bytes(b"owner-bound-discovery")
-        return build_acquisition_source_identity(
+        return build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

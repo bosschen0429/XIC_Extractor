@@ -30,8 +30,7 @@ from tests.untargeted_partition_fixtures import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.result.application_result import (
-    UntargetBatchApplicationResultRequest,
-    finalize_alignment_result,
+    FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
@@ -47,7 +46,6 @@ from xic_extractor.diagnostics.alignment_explanation import (
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
@@ -114,7 +112,7 @@ def _owner_run(tmp_path, monkeypatch, scenario):
     )
     settings = apply_to_discovery(load_preset(str(preset)))
     peak_config = _peak_config(tmp_path)
-    paths = tuple(tmp_path / f"S{i}.synthetic" for i in (1, 2))
+    paths = tuple(tmp_path / f"S{i}.raw" for i in (1, 2))
     sources, candidates = {}, {}
     for path, loss in zip(paths, (116.0474, 132.0423), strict=True):
         path.write_bytes(path.stem.encode())
@@ -161,9 +159,6 @@ def _owner_run(tmp_path, monkeypatch, scenario):
     runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "explanation"
-        ),
         alignment_config=config,
     )
     completed = complete_dense_partition(batch, runtime, alignment_config=config)
@@ -397,14 +392,12 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         loads += 1
         return excluded
 
-    application = finalize_alignment_result(
-        UntargetBatchApplicationResultRequest(
-            scope=application.scope,
-            processing_request=application.processing_request,
-            processing_attempt=application.processing_attempt,
-            children=application.children,
-            excluded_candidates=ImmutableSequence((len(excluded),), load_exclusions),
-        )
+    application = FinalizedUntargetBatchApplicationResult(
+        scope=application.scope,
+        processing_request=application.processing_request,
+        processing_attempt=application.processing_attempt,
+        children=application.children,
+        excluded_candidates=ImmutableSequence((len(excluded),), load_exclusions),
     )
     duplicated = replace(
         completed,
@@ -488,14 +481,12 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
         return read_record(*args)
 
     monkeypatch.setattr(store, "_read_record", counted_read)
-    restored = finalize_alignment_result(
-        UntargetBatchApplicationResultRequest(
-            scope=application.scope,
-            processing_request=application.processing_request,
-            processing_attempt=application.processing_attempt,
-            children=store.sequence("children"),
-            excluded_candidates=application.excluded_candidates,
-        )
+    restored = FinalizedUntargetBatchApplicationResult(
+        scope=application.scope,
+        processing_request=application.processing_request,
+        processing_attempt=application.processing_attempt,
+        children=store.sequence("children"),
+        excluded_candidates=application.excluded_candidates,
     )
     loads = 0
     report = write_cid_nl_explanation(

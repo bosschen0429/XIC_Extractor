@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -117,42 +117,6 @@ class UntargetMatrixProjection:
 
     finalized_alignment: FinalizedScientificAlignment
     rows: tuple[UntargetMatrixRow, ...]
-    _completion_seal: tuple[object, ...] = field(
-        init=False,
-        repr=False,
-        compare=False,
-    )
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_completion_seal", _untarget_completion_state(self))
-
-    def __copy__(self) -> UntargetMatrixProjection:
-        # Preserve the live-substitution oracle independently of spool restoration.
-        clone = object.__new__(type(self))
-        for owner_field in fields(self):
-            object.__setattr__(clone, owner_field.name, getattr(self, owner_field.name))
-        return clone
-
-    def __getstate__(self) -> tuple[object, ...]:
-        """Export a verified completion for private same-process storage."""
-        if not hasattr(self, "_completion_seal"):
-            raise UntargetProjectionContractError("Untarget projection is unsealed")
-        validate_untarget_matrix_completion_receipt(self)
-        return (self.finalized_alignment, self.rows)
-
-    def __setstate__(self, state: tuple[object, ...]) -> None:
-        """Restore direct bindings from the private same-process spool."""
-        if (
-            hasattr(self, "_completion_seal")
-            or type(state) is not tuple
-            or len(state) != 2
-        ):
-            raise UntargetProjectionContractError(
-                "invalid Untarget projection restoration"
-            )
-        object.__setattr__(self, "finalized_alignment", state[0])
-        object.__setattr__(self, "rows", state[1])
-        object.__setattr__(self, "_completion_seal", _untarget_completion_state(self))
 
     @property
     def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
@@ -218,40 +182,6 @@ def project_untarget_matrix(
     return UntargetMatrixProjection(
         finalized_alignment=finalized_alignment,
         rows=tuple(rows),
-    )
-
-
-def validate_untarget_matrix_completion_receipt(
-    projection: UntargetMatrixProjection,
-) -> None:
-    """Verify retained completion fields without reopening projection policy."""
-
-    if type(projection) is not UntargetMatrixProjection:
-        raise UntargetProjectionContractError(
-            "completed Untarget receipt requires an exact UntargetMatrixProjection"
-        )
-    try:
-        current_state = _untarget_completion_state(projection)
-    except (AttributeError, TypeError) as exc:
-        raise UntargetProjectionContractError(
-            "completed Untarget projection receipt was substituted or partial"
-        ) from exc
-    if (
-        type(projection._completion_seal) is not tuple
-        or projection._completion_seal != current_state
-    ):
-        raise UntargetProjectionContractError(
-            "completed Untarget projection receipt was substituted or partial"
-        )
-
-
-def _untarget_completion_state(
-    projection: UntargetMatrixProjection,
-) -> tuple[object, ...]:
-    return (
-        id(projection),
-        id(projection.finalized_alignment),
-        id(projection.rows),
     )
 
 

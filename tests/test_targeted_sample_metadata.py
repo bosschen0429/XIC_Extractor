@@ -249,7 +249,6 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
             SimpleNamespace(
                 discovery_settings=settings,
                 alignment_config=AlignmentConfig(),
-                owner_build_xic_backend="raw",
             ),
         ),
     )

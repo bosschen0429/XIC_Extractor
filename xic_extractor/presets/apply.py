@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.mass_recalibration import resolve_mass_recalibration
@@ -39,17 +39,8 @@ _POSITIVE_FLOAT_FIELDS = frozenset(
     }
 )
 _RT_FIELDS = frozenset({"rt_min", "rt_max"})
-OWNER_BUILD_XIC_BACKENDS = frozenset(
-    {
-        "raw",
-        "raw-super-window",
-        "ms1-index",
-    }
-)
 _CID_NL_RECIPE_ROUTES = frozenset({"full", "discovery_only", "align_only"})
-_CID_NL_RECIPE_OVERRIDE_KEYS = frozenset(DISCOVERY_TUNING_OVERRIDE_KEYS) | {
-    "owner_build_xic_backend",
-}
+_CID_NL_RECIPE_OVERRIDE_KEYS = DISCOVERY_TUNING_OVERRIDE_KEYS
 
 
 def bind_cid_nl_recipe(
@@ -78,25 +69,11 @@ def bind_cid_nl_recipe(
         preset,
         explicit_tuning_overrides=discovery_overrides or None,
     )
-    alignment_config, runtime_options = apply_to_alignment(preset)
-    owner_build_xic_backend = _owner_build_xic_backend_projection(
-        runtime_options.get("owner_build_xic_backend", "raw")
-    )
-    if "owner_build_xic_backend" in overrides:
-        owner_build_xic_backend = _owner_build_xic_backend_projection(
-            _enum_str_setting(
-                overrides,
-                "owner_build_xic_backend",
-                "raw",
-                OWNER_BUILD_XIC_BACKENDS,
-            )
-        )
-
+    alignment_config = apply_to_alignment(preset)
     return BoundCidNlRecipe(
         route=route,
         discovery_settings=discovery_settings,
         alignment_config=alignment_config,
-        owner_build_xic_backend=owner_build_xic_backend,
     )
 
 
@@ -118,19 +95,6 @@ def filter_cid_nl_recipe_presets(
             continue
         accepted.append(preset_name)
     return tuple(accepted)
-
-
-def _owner_build_xic_backend_projection(
-    value: object,
-) -> Literal["raw", "raw_superwindow", "ms1_index"]:
-    text = str(value)
-    if text == "raw":
-        return "raw"
-    if text in {"raw-super-window", "raw_superwindow"}:
-        return "raw_superwindow"
-    if text in {"ms1-index", "ms1_index"}:
-        return "ms1_index"
-    raise PresetError(f"unsupported owner_build_xic_backend: {text}")
 
 
 def apply_to_discovery(
@@ -312,18 +276,12 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
     )
 
 
-def apply_to_alignment(preset: Preset) -> tuple[AlignmentConfig, dict[str, object]]:
+def apply_to_alignment(preset: Preset) -> AlignmentConfig:
     overrides = dict(preset.alignment_overrides)
     reject_retired_alignment_runtime_options(overrides)
-    owner_build_xic_backend = _enum_str_setting(
-        overrides,
-        "owner_build_xic_backend",
-        "raw",
-        OWNER_BUILD_XIC_BACKENDS,
-    )
-    return AlignmentConfig(), {
-        "owner_build_xic_backend": owner_build_xic_backend,
-    }
+    if overrides:
+        raise PresetError(f"unsupported alignment setting: {next(iter(overrides))}")
+    return AlignmentConfig()
 
 
 def _neutral_loss_value(tag: PresetTag) -> float:

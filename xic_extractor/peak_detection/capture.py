@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import cast
 
 import numpy as np
@@ -73,7 +73,7 @@ class SampleLocalCaptureError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class _CaptureOwnerSeal:
+class SampleLocalCapture:
     scope: SearchScope
     candidate_id: str
     trace: Trace
@@ -86,38 +86,6 @@ class _CaptureOwnerSeal:
     physical_selection_intensity: tuple[float, ...] | None = None
     physical_observation_content: PeakObservationContent | None = None
     physical_observation_provenance: PeakObservationGenerationProvenance | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class SampleLocalCapture:
-    _owner_seal: _CaptureOwnerSeal = field(repr=False, compare=False)
-    scope: SearchScope
-    candidate_id: str
-    trace: Trace
-    trace_group: TraceGroup
-    detection: Ms1TracePeakDetection
-    hypotheses: tuple[PeakHypothesis, ...]
-    receipt_hypothesis: PeakHypothesis | None
-    selected_hypothesis: PeakHypothesis | None
-    physical_evaluation: PhysicalPeakEvaluation | None = None
-
-    def __post_init__(self) -> None:
-        seal = self._owner_seal
-        if (
-            not isinstance(seal, _CaptureOwnerSeal)
-            or seal.scope is not self.scope
-            or seal.candidate_id != self.candidate_id
-            or seal.trace is not self.trace
-            or seal.trace_group is not self.trace_group
-            or seal.detection is not self.detection
-            or seal.hypotheses is not self.hypotheses
-            or seal.receipt_hypothesis is not self.receipt_hypothesis
-            or seal.selected_hypothesis is not self.selected_hypothesis
-            or seal.physical_evaluation is not self.physical_evaluation
-        ):
-            raise SampleLocalCaptureError(
-                "SampleLocalCapture must be issued by the shared capture owner"
-            )
 
 
 def capture_peak_hypotheses(
@@ -189,18 +157,7 @@ def capture_peak_hypotheses(
                 hypotheses,
                 binding.retained_selected_integration,
             )
-    owner_seal = _CaptureOwnerSeal(
-        scope=scope,
-        candidate_id=candidate,
-        trace=trace,
-        trace_group=trace_group,
-        detection=detection,
-        hypotheses=hypotheses,
-        receipt_hypothesis=receipt_hypothesis,
-        selected_hypothesis=selected,
-    )
     return SampleLocalCapture(
-        _owner_seal=owner_seal,
         scope=scope,
         candidate_id=candidate,
         trace=trace,
@@ -232,7 +189,6 @@ def rebind_untargeted_capture_scope(
     return replace(
         capture,
         scope=scope,
-        _owner_seal=replace(capture._owner_seal, scope=scope),
     )
 
 
@@ -445,7 +401,7 @@ def _project_physical_capture(
         intensity=trace.intensity,
     )
     hypotheses = (selected,) if selected is not None else ()
-    seal = _CaptureOwnerSeal(
+    return SampleLocalCapture(
         scope=scope,
         candidate_id=binding.candidate_id,
         trace=trace,
@@ -458,18 +414,6 @@ def _project_physical_capture(
         physical_selection_intensity=selection_intensity,
         physical_observation_content=observation_content,
         physical_observation_provenance=observation_provenance,
-    )
-    return SampleLocalCapture(
-        _owner_seal=seal,
-        scope=scope,
-        candidate_id=binding.candidate_id,
-        trace=trace,
-        trace_group=trace_group,
-        detection=detection,
-        hypotheses=hypotheses,
-        receipt_hypothesis=selected,
-        selected_hypothesis=selected,
-        physical_evaluation=evaluation,
     )
 
 
@@ -668,7 +612,6 @@ def _project_captured_physical_observation(
     """Reuse a capture-owner physical answer after rebinding its live trace."""
 
     binding = require_capture_binding(capture.scope, capture.candidate_id)
-    capture.__post_init__()
     evaluation = capture.physical_evaluation
     if evaluation is None:
         raise PeakObservationContractError(
@@ -679,8 +622,8 @@ def _project_captured_physical_observation(
         or selected.integration != capture.receipt_hypothesis.integration
     ):
         raise PeakObservationContractError("capture selection changed")
-    content = capture._owner_seal.physical_observation_content
-    provenance = capture._owner_seal.physical_observation_provenance
+    content = capture.physical_observation_content
+    provenance = capture.physical_observation_provenance
     if content is None or provenance is None:
         raise PeakObservationContractError(
             "physical observation requires the capture owner projection"
@@ -740,40 +683,16 @@ def bind_owner_backed_capture_hypothesis(
         raise SampleLocalCaptureError(
             "owner hypothesis does not bind the captured physical selection"
         ) from exc
-    hypotheses = (hypothesis,)
-    seal = _CaptureOwnerSeal(
-        scope=capture.scope,
-        candidate_id=capture.candidate_id,
-        trace=capture.trace,
-        trace_group=capture.trace_group,
-        detection=capture.detection,
-        hypotheses=hypotheses,
-        receipt_hypothesis=capture.receipt_hypothesis,
+    return replace(
+        capture,
+        hypotheses=(hypothesis,),
         selected_hypothesis=hypothesis,
-        physical_evaluation=capture.physical_evaluation,
-        physical_selection_intensity=capture._owner_seal.physical_selection_intensity,
-        physical_observation_content=(capture._owner_seal.physical_observation_content),
-        physical_observation_provenance=(
-            capture._owner_seal.physical_observation_provenance
-        ),
-    )
-    return SampleLocalCapture(
-        _owner_seal=seal,
-        scope=capture.scope,
-        candidate_id=capture.candidate_id,
-        trace=capture.trace,
-        trace_group=capture.trace_group,
-        detection=capture.detection,
-        hypotheses=hypotheses,
-        receipt_hypothesis=capture.receipt_hypothesis,
-        selected_hypothesis=hypothesis,
-        physical_evaluation=capture.physical_evaluation,
     )
 
 
 def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
     if capture.physical_evaluation is not None:
-        return capture._owner_seal.physical_selection_intensity
+        return capture.physical_selection_intensity
     selected = capture.selected_hypothesis
     if selected is None or selected.integration.integration_method not in {
         "selected_envelope_gaussian15",

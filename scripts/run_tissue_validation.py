@@ -247,7 +247,6 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             "preset": "dna_dr",
             "discovery": _json_value(effective_discovery),
             "alignment": _json_value(recipe.alignment_config),
-            "owner_build_xic_backend": recipe.owner_build_xic_backend,
             "signal_processing": _json_value(DEFAULT_SIGNAL_PROCESSING_PROFILE),
         },
         "inputs": {

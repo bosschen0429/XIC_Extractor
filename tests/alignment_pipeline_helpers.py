@@ -35,7 +35,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     fingerprint_file_content,
 )
 
@@ -124,7 +124,7 @@ def _owner_closed_receipt_fields(
 
     source_path = candidates_csv.with_name("owner_closed_acquisition.raw")
     source_path.write_bytes(f"owner-closed-acquisition:{sample_stem}".encode())
-    acquisition_source = build_acquisition_source_identity(
+    acquisition_source = build_local_acquisition_source_identity(
         source_path,
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",

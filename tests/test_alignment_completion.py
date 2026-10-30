@@ -12,7 +12,6 @@ from xic_extractor.alignment.completion import (
     TargetWorkflowRequest,
     UntargetWorkflowAdapter,
     UntargetWorkflowCompositionRequest,
-    WorkflowStage,
     complete_analysis,
 )
 from xic_extractor.alignment.cross_sample.grouping_result import (
@@ -23,10 +22,6 @@ from xic_extractor.alignment.projection.target.post_cell import (
 )
 from xic_extractor.alignment.projection.untarget.matrix import (
     UntargetMatrixProjection,
-)
-from xic_extractor.alignment.result.application_result import (
-    FinalizedTargetApplicationResult,
-    FinalizedUntargetApplicationResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -41,11 +36,9 @@ def _exact_uninitialized(value_type, **fields):
 
 
 @pytest.mark.parametrize("variant", ["target", "untarget"])
-@pytest.mark.parametrize("crossed_result", [False, True])
 def test_workflow_forwards_exact_owner_objects_once(
     monkeypatch: pytest.MonkeyPatch,
     variant: str,
-    crossed_result: bool,
 ) -> None:
     import xic_extractor.alignment.cell_decision.owner as decision_owner
 
@@ -87,18 +80,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     projection = _exact_uninitialized(
         TargetPostCellProjection if variant == "target" else UntargetMatrixProjection
     )
-    application_result = _exact_uninitialized(
-        FinalizedTargetApplicationResult
-        if variant == "target"
-        else FinalizedUntargetApplicationResult,
-        scientific_core=(
-            _exact_uninitialized(FinalizedScientificAlignment)
-            if crossed_result
-            else scientific
-        ),
-        completed_projection=projection,
-    )
-
     monkeypatch.setattr(
         workflow_owner,
         "resolve_workflow_processing_owners",
@@ -152,24 +133,9 @@ def test_workflow_forwards_exact_owner_objects_once(
         "project_untarget_matrix",
         lambda before, after: projection,
     )
-    monkeypatch.setattr(
-        workflow_owner,
-        "finalize_alignment_result"
-        if variant == "target"
-        else "_finalize_fresh_untarget_result",
-        lambda value: application_result,
-    )
-
-    if crossed_result:
-        with pytest.raises(workflow_owner.WorkflowStageFailure) as failure:
-            complete_analysis(request, adapter)
-        assert failure.value.stage is WorkflowStage.APPLICATION_RESULT
-        assert (
-            type(failure.value.error) is workflow_owner.AlignmentWorkflowContractError
-        )
-        assert "crossed" in str(failure.value.error)
-    else:
-        assert complete_analysis(request, adapter) is application_result
+    application_result = complete_analysis(request, adapter)
+    assert application_result.scientific_core is scientific
+    assert application_result.completed_projection is projection
     expected_calls = [
         "validate",
         "capture",

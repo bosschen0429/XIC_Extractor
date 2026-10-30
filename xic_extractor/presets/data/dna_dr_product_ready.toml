@@ -8,6 +8,3 @@ name = "DNA_dR"
 value = 116.0474
 
 [discovery]
-
-[alignment]
-owner_build_xic_backend = "raw-super-window"

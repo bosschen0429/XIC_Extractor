@@ -24,7 +24,6 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.execution.attempt import start_runtime_attempt
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     CidNlAcquisitionError,
     adapt_current_discovery_sample_subject,
@@ -131,9 +130,6 @@ def test_runtime_retains_physical_receipt_failure_and_call_cost(tmp_path, monkey
         runtime,
         (job,),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "physical-receipt.runtime.json", "physical-receipt:test"
-        ),
     )
     assert not result.succeeded
     assert result.sample_results == ()

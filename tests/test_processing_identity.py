@@ -431,8 +431,12 @@ def test_targeted_request_uses_local_revision_without_reading_raw_content(
 ) -> None:
     path = _raw(tmp_path / "sample_a.raw", b"source-a")
 
-    def reject_content_read(*_args, **_kwargs):
-        pytest.fail("Normal Targeted preparation must not read full RAW content")
+    original_open = Path.open
+
+    def reject_content_read(candidate, *args, **kwargs):
+        if candidate == path:
+            pytest.fail("Normal Targeted preparation must not read full RAW content")
+        return original_open(candidate, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", reject_content_read)
     request = _request(

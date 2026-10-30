@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.conservative import (
@@ -44,7 +44,7 @@ class FinalizedScientificAlignmentContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ObservedSearchSubject:
-    """One owner-sealed capture with a selected scientific hypothesis."""
+    """One completed capture with a selected scientific hypothesis."""
 
     candidate_id: str
     sample_key: str
@@ -58,7 +58,7 @@ class ObservedSearchSubject:
 
 @dataclass(frozen=True, slots=True)
 class SearchedNoObservationSubject:
-    """One owner-sealed completed capture without a selected hypothesis."""
+    """One completed completed capture without a selected hypothesis."""
 
     candidate_id: str
     sample_key: str
@@ -90,54 +90,7 @@ class FinalizedScientificAlignment:
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None
     cell_observations: tuple[FinalGroupCellObservation, ...]
     grouping_result: CrossSampleGroupingResult
-    _completion_seal: tuple[int, ...] = field(init=False, repr=False, compare=False)
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_completion_seal", _scientific_completion_state(self))
-
-    def __copy__(self) -> FinalizedScientificAlignment:
-        # A live clone is still a substitution, not an owner-restored spool read.
-        clone = object.__new__(type(self))
-        for owner_field in fields(self):
-            object.__setattr__(clone, owner_field.name, getattr(self, owner_field.name))
-        return clone
-
-    def __getstate__(self) -> tuple[object, ...]:
-        """Export a verified completion for private same-process storage."""
-        if not hasattr(self, "_completion_seal"):
-            raise FinalizedScientificAlignmentContractError(
-                "scientific core is unsealed"
-            )
-        _validate_finalized_scientific_alignment_completion_receipt(self)
-        return tuple(
-            getattr(self, owner_field.name)
-            for owner_field in fields(self)
-            if owner_field.name != "_completion_seal"
-        )
-
-    def __setstate__(self, state: tuple[object, ...]) -> None:
-        """Restore direct bindings from the private same-process spool."""
-        owner_fields = tuple(
-            owner_field
-            for owner_field in fields(self)
-            if owner_field.name != "_completion_seal"
-        )
-        if (
-            hasattr(self, "_completion_seal")
-            or type(state) is not tuple
-            or len(state) != len(owner_fields)
-        ):
-            raise FinalizedScientificAlignmentContractError(
-                "invalid scientific core restoration"
-            )
-        for owner_field, value in zip(owner_fields, state, strict=True):
-            object.__setattr__(self, owner_field.name, value)
-        object.__setattr__(
-            self,
-            "_completion_seal",
-            _scientific_completion_state(self),
-        )
 
     @property
     def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
@@ -162,7 +115,7 @@ def finalize_scientific_alignment(
     backfill_cell_observations: Sequence[CellObservationRef] = (),
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
-    """Validate one complete capture population and seal its shared core."""
+    """Validate one complete capture population and close its shared core."""
 
     if type(grouping_result) is not CrossSampleGroupingResult:
         raise FinalizedScientificAlignmentContractError(
@@ -170,7 +123,7 @@ def finalize_scientific_alignment(
         )
     if isinstance(captures, (str, bytes)):
         raise FinalizedScientificAlignmentContractError(
-            "captures must be a finite sequence of owner-sealed values"
+            "captures must be a finite sequence of completed values"
         )
     capture_tuple = tuple(captures)
     terminal_subjects = tuple(
@@ -221,45 +174,6 @@ def finalize_scientific_alignment(
         targeted_backfill_decisions=targeted_backfill_decisions,
     )
     return result
-
-
-def _validate_finalized_scientific_alignment_completion_receipt(
-    result: FinalizedScientificAlignment,
-) -> None:
-    """Validate one retained scientific-core completion receipt."""
-
-    if type(result) is not FinalizedScientificAlignment:
-        raise FinalizedScientificAlignmentContractError(
-            "scientific-core validation requires an exact finalized alignment"
-        )
-    try:
-        state = _scientific_completion_state(result)
-        seal = result._completion_seal
-    except AttributeError as exc:
-        raise FinalizedScientificAlignmentContractError(
-            "scientific core completion receipt was substituted or partial"
-        ) from exc
-    if type(seal) is not tuple or seal != state:
-        raise FinalizedScientificAlignmentContractError(
-            "scientific core completion receipt was substituted or partial"
-        )
-
-
-def _scientific_completion_state(
-    result: FinalizedScientificAlignment,
-) -> tuple[int, ...]:
-    """Bind immutable owner answers; their constructors own scientific validation."""
-    return (
-        id(result),
-        id(result.scope),
-        id(result.processing_request),
-        id(result.canonical_samples),
-        id(result.terminal_subjects),
-        id(result.cell_observation_handoff),
-        id(result.cell_observations),
-        id(result.grouping_result),
-        id(result.targeted_backfill_decisions),
-    )
 
 
 def _terminal_subject(

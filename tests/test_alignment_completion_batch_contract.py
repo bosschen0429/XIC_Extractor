@@ -17,8 +17,7 @@ from xic_extractor.alignment.completion import (
 from xic_extractor.alignment.result.application_result import (
     ApplicationResultContractError,
     FinalizedUntargetApplicationResult,
-    UntargetBatchApplicationResultRequest,
-    finalize_alignment_result,
+    FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
@@ -93,7 +92,6 @@ def _candidate_universe_payload(
                 "candidate_ids": list(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
-                "candidate_payload_sha256": "0" * 64,
                 "candidate_artifact_schema_version": "discovery_candidates_csv",
                 "candidate_artifact_sha256": "0" * 64,
                 "candidate_artifact_byte_size": 0,
@@ -249,9 +247,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
         children=supplied_children,
     )
     if case == "valid":
-        result = finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(**kwargs)
-        )
+        result = FinalizedUntargetBatchApplicationResult(**kwargs)
         assert result.children is supplied_children
         assert result.rows == tuple(
             child.completed_projection.rows[0] for child in children
@@ -262,7 +258,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
             "duplicate_physical": "share a physical observation",
         }[case]
         with pytest.raises(ApplicationResultContractError, match=message):
-            finalize_alignment_result(UntargetBatchApplicationResultRequest(**kwargs))
+            FinalizedUntargetBatchApplicationResult(**kwargs)
     if carrier == "chunks":
         assert 1 in loads
 
@@ -316,7 +312,6 @@ def _universe_entry(**overrides: object) -> dict[str, object]:
         "sample_stem": "S1",
         "candidate_count": 1,
         "candidate_ids": ["c1"],
-        "candidate_payload_sha256": "a" * 64,
         "candidate_artifact_schema_version": "discovery_candidates_csv",
         "candidate_artifact_sha256": "b" * 64,
         "candidate_artifact_byte_size": 0,
@@ -338,9 +333,6 @@ def test_candidate_universe_payload_accepts_lowercase_digests() -> None:
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("candidate_payload_sha256", "A" * 64, "digest is invalid"),
-        ("candidate_payload_sha256", "a" * 63, "digest is invalid"),
-        ("candidate_payload_sha256", None, "digest is invalid"),
         ("candidate_artifact_sha256", "B" * 64, "owner receipt facts are invalid"),
         ("candidate_artifact_sha256", 7, "owner receipt facts are invalid"),
     ],

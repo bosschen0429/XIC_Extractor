@@ -40,8 +40,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
 )
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
@@ -78,7 +76,8 @@ def _plan(
     raws = {}
     candidates = {}
     for path in paths:
-        path.write_bytes(path.stem.encode())
+        if not path.exists():
+            path.write_bytes(path.stem.encode())
         raw, sample_candidates = _nearby_subject_candidates(
             path,
             settings=settings,
@@ -706,26 +705,14 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
         )
         for index, subject_id in enumerate(mass_execution_ids)
     )
-    captured = []
-
-    def capture_finalization(request):
-        captured.append(request)
-        return request
-
     monkeypatch.setattr(
         composition_owner,
-        "finalize_alignment_result",
-        capture_finalization,
-    )
-    monkeypatch.setattr(
-        composition_owner,
-        "UntargetBatchApplicationResultRequest",
+        "FinalizedUntargetBatchApplicationResult",
         lambda **values: SimpleNamespace(**values),
     )
 
     finalized = adapter.finalize_application(StoredChildren(), outputs)
 
-    assert captured == [finalized]
     assert tuple(finalized.children) == canonical_ids
 
 
@@ -1021,7 +1008,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         runtime = execute_dense_partition(
             batch,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
             alignment_config=config,
             known_istd_reference=reference,
         )
@@ -1042,9 +1028,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         output_dir=tmp_path / "eligibility-output",
         alignment_config=config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "eligibility.json", "eligibility"
-        ),
         max_partition_jobs=len(plan.context.samples),
         raw_workers=raw_workers,
         pipeline_overlap=True,
@@ -1138,7 +1121,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     eager_runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
         alignment_config=config,
         known_istd_reference=reference,
     )
@@ -1146,7 +1128,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         batch, eager_runtime, alignment_config=config, known_istd_reference=reference
     )
     warm_threads.clear()
-    marker = OwnerPathRuntimeMarker(tmp_path / "bounded.json", "bounded")
     progress_events = []
     live_path = tmp_path / "alignment-live.json"
     recorder = TimingRecorder("alignment", live_output_path=live_path)
@@ -1176,7 +1157,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             output_dir=tmp_path / "bounded-output",
             alignment_config=config,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             known_istd_reference=reference,
             progress_callback=report_progress,
             max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
@@ -1274,11 +1254,9 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert heartbeat["completed"] == heartbeat["total"] == phase_count
     eager_manifest = eager_runtime.finalization.coordinator.state.runtime.manifest
     assert len(eager_manifest.work_unit_keys) == len(batch.jobs)
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
-    assert len(snapshot.manifest_work_unit_keys) == (
-        partition_count * len(plan.context.samples) * 2 + 1
-    )
+    assert len(
+        bounded.runtime_receipt.coordinator.state.runtime.manifest.work_unit_keys
+    ) == (partition_count * len(plan.context.samples) * 2 + 1)
     assert actual.children
     if scenario == "recovery":
         assert any(result.backfill_attempts for result in eager_runtime.sample_results)
@@ -1324,7 +1302,6 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     import xic_extractor.untargeted_execution.execution as bounded_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    marker = OwnerPathRuntimeMarker(tmp_path / "failed.json", "failed")
     original_error = OSError("second partition storage unavailable")
     calls = []
     if failure_seam == "later_partition":
@@ -1355,7 +1332,6 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
             output_dir=tmp_path / "failed-output",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
         )
     assert len(calls) == 2
@@ -1364,11 +1340,6 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         ".partition_spool-*/failed-results.pickle"
     )
     assert any(str(retained) in note for note in error.value.__notes__)
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
-    assert snapshot.processing_attempt_id == (
-        plan.context.processing_owners.attempt.processing_attempt_id
-    )
 
 
 def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
@@ -1391,7 +1362,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         output_dir=tmp_path / "cold-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "cold.json", "cold"),
         max_partition_jobs=len(baseline_plan.context.samples),
         pipeline_overlap=False,
     )
@@ -1401,11 +1371,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     opened_runs = []
     plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
     output_dir = tmp_path / "retry-output"
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "retry.json",
-        "retry",
-        allow_failed_attempt_retry=True,
-    )
     original_append = owner.StreamedResultStore.append_children
     append_calls = 0
 
@@ -1423,12 +1388,10 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             pipeline_overlap=False,
         )
     failed_attempt_id = plan.context.processing_owners.attempt.processing_attempt_id
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
     monkeypatch.setattr(owner.StreamedResultStore, "append_children", original_append)
     retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
@@ -1437,7 +1400,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         max_partition_jobs=len(retry_plan.context.samples),
         pipeline_overlap=False,
     )
@@ -1507,9 +1469,6 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         output_dir=tmp_path / "serial-partitions",
         alignment_config=config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "serial-partitions.json", "serial-partitions"
-        ),
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=False,
@@ -1573,9 +1532,6 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         output_dir=tmp_path / "overlapped-partitions",
         alignment_config=config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "overlapped-partitions.json", "overlapped-partitions"
-        ),
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=True,
@@ -1629,9 +1585,6 @@ def test_overlapped_partition_acquisition_failure_propagates(
         return result
 
     monkeypatch.setattr(owner, "execute_partition", leaf)
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "overlapped-failure.json", "overlapped-failure"
-    )
     with pytest.raises(
         RuntimeError, match="injected concurrent acquisition failure"
     ) as error:
@@ -1640,7 +1593,6 @@ def test_overlapped_partition_acquisition_failure_propagates(
             output_dir=tmp_path / "overlapped-failure",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
@@ -1651,7 +1603,6 @@ def test_overlapped_partition_acquisition_failure_propagates(
         "partition-00001-initial",
     } <= observed_budgets.keys()
     assert all(budget == 2 for budget in observed_budgets.values())
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
 
 
@@ -1682,20 +1633,17 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
     monkeypatch.setattr(
         owner.UntargetedPartitionPipelineAdapter, "execute_composition", failing_compose
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "last-bootstrap.json", "last-bootstrap")
     with pytest.raises(RuntimeError, match="last bootstrap cannot be sealed"):
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "last-bootstrap",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
         )
     assert not waiting_final.is_set()
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 @pytest.mark.parametrize("cancel_during_grouping", [False, True])
@@ -1750,14 +1698,12 @@ def test_final_grouping_failure_stops_before_any_backfill(
         owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
     )
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
-    marker = OwnerPathRuntimeMarker(tmp_path / "grouping.json", "grouping")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "grouping",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=pipeline_overlap,
@@ -1780,11 +1726,8 @@ def test_final_grouping_failure_stops_before_any_backfill(
         if record["partition_key"].endswith("-backfill")
     }
     assert backfill_statuses == {"cancelled"}
-    if cancel_during_grouping:
-        assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
-    else:
+    if not cancel_during_grouping:
         assert "grouping finalization failed" in str(error.value)
-        assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
@@ -1937,7 +1880,6 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         output_dir=tmp_path / "parallel",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "parallel.json", "parallel"),
         max_partition_jobs=8,
         raw_workers=raw_workers,
         progress_callback=progress,
@@ -2050,14 +1992,12 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
         monkeypatch.setattr(owner.StreamedResultStore, "append", fail_spool)
-    marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "failed",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             raw_workers=2,
             max_partition_jobs=8,
             should_cancel=should_cancel,
@@ -2068,12 +2008,6 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     assert entered == {"partition-00000-initial"}
     assert set(opened) == closed
     assert len(opened) == (4 if failure_mode == "spool_failure" else 2)
-    expected_outcome = (
-        AttemptTerminalOutcome.CANCELLED
-        if failure_mode == "cancel"
-        else AttemptTerminalOutcome.FAILED
-    )
-    assert marker.read().terminal_outcome is expected_outcome
     assert len(batches) == 1
     resources = batches[0].resource_settlements
     assert sum(
@@ -2354,7 +2288,6 @@ def test_sparse_recovery_partition_matches_dense_composition(
     dense_runtime = execute_dense_partition(
         dense_batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "dense.json", "dense"),
         alignment_config=config,
     )
     assert dense_runtime.succeeded
@@ -2667,9 +2600,6 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / f"spool-{retain}.json", "spool"
-        ),
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
@@ -2753,7 +2683,6 @@ def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
         output_dir=tmp_path / "runtime",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "cleanup"),
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
     )
@@ -2807,7 +2736,6 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / f"{tag}.json", "cache"),
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_acquisition_cache=retain,
@@ -2864,9 +2792,6 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=OwnerPathRuntimeMarker(
-                tmp_path / "failed-cache.json", "failed-cache"
-            ),
             max_partition_jobs=len(plan.context.samples),
         )
     assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

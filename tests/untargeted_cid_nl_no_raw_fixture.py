@@ -12,7 +12,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingOwnerReferences,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
@@ -72,7 +72,7 @@ def build_untargeted_cid_nl_no_raw_fixture(
     ):
         source_path = tmp_path / f"{sample_stem}.synthetic"
         source_path.write_bytes(f"untargeted-cid-nl-no-raw:{sample_stem}".encode())
-        source = build_acquisition_source_identity(
+        source = build_local_acquisition_source_identity(
             source_path,
             acquisition_format=(
                 THERMO_RAW_ACQUISITION_FORMAT

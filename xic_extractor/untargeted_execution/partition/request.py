@@ -48,7 +48,7 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
     ProcessingOwnerReferences,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
@@ -226,7 +226,7 @@ def build_partition_context(
     else:
         for stem, path in paths_by_stem.items():
             before = stat_identity(path.stat())
-            source = build_acquisition_source_identity(
+            source = build_local_acquisition_source_identity(
                 path,
                 acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
                 observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -472,7 +472,6 @@ def _candidate_universe_entry(
         "sample_stem": sample_stem,
         "candidate_count": len(ordered),
         "candidate_ids": list(candidate_ids),
-        "candidate_payload_sha256": receipt.candidate_payload_sha256,
         "candidate_artifact_schema_version": (
             receipt.candidate_artifact_schema_version
         ),

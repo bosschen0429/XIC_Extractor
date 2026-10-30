@@ -101,22 +101,20 @@ def test_apply_to_discovery_merges_preset_then_explicit_tuning() -> None:
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
 
 
-def test_apply_to_alignment_returns_owner_backend_only() -> None:
+def test_apply_to_alignment_returns_default_config() -> None:
     preset = load_preset("dna_dr")
 
-    alignment_config, run_overrides = apply_to_alignment(preset)
+    alignment_config = apply_to_alignment(preset)
 
     assert alignment_config == AlignmentConfig()
-    assert run_overrides == {"owner_build_xic_backend": "raw"}
 
 
-def test_apply_to_alignment_returns_product_ready_runtime_options() -> None:
+def test_apply_to_alignment_returns_product_ready_config() -> None:
     preset = load_preset("dna_dr_product_ready")
 
-    alignment_config, run_overrides = apply_to_alignment(preset)
+    alignment_config = apply_to_alignment(preset)
 
     assert alignment_config == AlignmentConfig()
-    assert run_overrides == {"owner_build_xic_backend": "raw-super-window"}
 
 
 @pytest.mark.parametrize(
@@ -175,38 +173,16 @@ def test_apply_to_alignment_rejects_retired_normal_route_fields(field: str) -> N
         apply_to_alignment(preset)
 
 
-def test_bind_cid_nl_recipe_preserves_owner_backend() -> None:
-    preset = Preset(
-        name="Indexed owner construction",
-        description="Owner construction is independent of Standard Peak",
-        tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
-        combine_mode="single",
-        discovery_overrides={},
-        alignment_overrides={
-            "owner_build_xic_backend": "ms1-index",
-        },
-        source="test",
-    )
-
-    _, runtime_options = apply_to_alignment(preset)
-    recipe = bind_cid_nl_recipe(preset, "full")
-
-    assert runtime_options == {"owner_build_xic_backend": "ms1-index"}
-    assert recipe.owner_build_xic_backend == "ms1_index"
-
-
 def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
     recipe = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
 
     assert recipe.route == "full"
     assert recipe.discovery_settings == apply_to_discovery(load_preset("dna_dr"))
     assert recipe.alignment_config == AlignmentConfig()
-    assert recipe.owner_build_xic_backend == "raw"
     assert {item.name for item in fields(recipe)} == {
         "route",
         "discovery_settings",
         "alignment_config",
-        "owner_build_xic_backend",
     }
     with pytest.raises(FrozenInstanceError):
         recipe.route = "discovery_only"
@@ -218,12 +194,10 @@ def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:
         "align_only",
         recipe_overrides={
             "rt_max": 20.0,
-            "owner_build_xic_backend": "ms1-index",
         },
     )
 
     assert recipe.discovery_settings.rt_max == pytest.approx(20.0)
-    assert recipe.owner_build_xic_backend == "ms1_index"
 
     with pytest.raises(PresetError, match="unknown CID-NL recipe override"):
         bind_cid_nl_recipe(

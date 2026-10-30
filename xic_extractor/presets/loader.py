@@ -100,7 +100,7 @@ RETIRED_STANDARD_PEAK_ALIGNMENT_KEYS = frozenset(
         "backfill_expansion_min_shape_r",
     }
 )
-ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset({"owner_build_xic_backend"})
+ALIGNMENT_RUNTIME_OVERRIDE_KEYS: frozenset[str] = frozenset()
 
 
 def list_presets() -> tuple[str, ...]:

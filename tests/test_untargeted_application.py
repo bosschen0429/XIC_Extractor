@@ -37,7 +37,6 @@ from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
-    RetainedAlignmentOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
 )
@@ -206,7 +205,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         assert closed == [True]
         return
 
-    result = application_module.run_untargeted_application(
+    application_module.run_untargeted_application(
         UntargetedRequest(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
@@ -221,7 +220,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             else None,
             execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
             publication=UntargetedPublicationPolicy(emit_cid_nl_explanation=True),
-            legacy=RetainedAlignmentOptions(owner_build_xic_backend="raw_superwindow"),
         )
     )
 
@@ -231,21 +229,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     assert captured_retained["known_istd_reference"] is (
         reference if with_reference else None
     )
-    assert result.owner_build_route_receipt is not None
-    assert result.owner_build_route_receipt.as_dict() == {
-        "configured_owner_build_xic_backend": "raw_superwindow",
-        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
-        "effective_owner_build_xic_backend": None,
-        "effective_route_validation": "owner_validated",
-    }
     metadata = captured_write["metadata"]
     assert isinstance(metadata, dict)
-    assert metadata["owner_build_xic_backend"] == "raw_superwindow"
-    assert metadata["owner_build_xic_backend_role"] == "configured_legacy_option"
-    assert metadata["effective_owner_build_route"] == (
-        "retained_untargeted_cid_nl_batch"
-    )
-    assert metadata["effective_owner_build_xic_backend"] == "none"
     assert metadata.get("known_istd_reference_target_snapshot") == (
         reference.provenance["target_snapshot"] if with_reference else None
     )
@@ -546,7 +531,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
-    from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
     from xic_extractor.execution.result_store import StreamedResultStore
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
     from xic_extractor.untargeted_execution.execution import (
@@ -560,9 +544,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         output_dir=tmp_path / "runtime",
         alignment_config=config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.json", "output-test"
-        ),
         max_partition_jobs=4,
         retain_partition_memory=False,
     )
@@ -1111,7 +1092,6 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             SimpleNamespace(
                 discovery_settings=settings,
                 alignment_config=AlignmentConfig(),
-                owner_build_xic_backend="raw",
             ),
         ),
     )

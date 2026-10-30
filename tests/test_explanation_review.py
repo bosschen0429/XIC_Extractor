@@ -380,7 +380,6 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
         alignment_config=config,
     )
     source_before = review.read_bytes()
-    (tmp_path / "S1.raw").write_bytes(b"S1")
     opened = []
 
     class Raw:
@@ -393,7 +392,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     @contextmanager
     def raw(path, dll, *, expected_acquisition_source, mass_recalibration, **_kwargs):
         opened.append(path.name)
-        assert expected_acquisition_source.content_sha256
+        assert expected_acquisition_source.local_file_revision
         yield Raw()
 
     monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
@@ -433,8 +432,6 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
         review, candidate_id=candidates["S1"][0].candidate_id
     )
     group_id = detail["records"]["final_groups"][0]["feature_id"]
-    for stem in sample_ids:
-        (tmp_path / f"{stem}.raw").write_bytes(stem.encode())
     return review, group_id, sample_ids, candidates
 
 
@@ -483,15 +480,15 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
 
     assert result["sample_count"] == 2
     assert result["source_binding_basis"] == (
-        "report_sample_stem+report_acquisition_source_content"
+        "report_sample_stem+report_acquisition_source_identity"
     )
     assert set(result["acquisition_sources"]) == set(sample_ids.values())
     assert all(
-        source_id.startswith("sha256:")
+        source_id.startswith("local:")
         for source_id in result["acquisition_sources"].values()
     )
     assert {name for name, _ in opened} == {"S1.raw", "S2.raw"}
-    assert all(identity.startswith("sha256:") for _, identity in opened)
+    assert all(identity.startswith("local:") for _, identity in opened)
     assert progress == [
         (index, 2, sid)
         for index, sid in enumerate(sorted(sample_ids.values()), start=1)
@@ -515,7 +512,7 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
     )
     assert all(
         curve["stage_label"] == "diagnostic_reacquisition"
-        and curve["provenance"]["raw_identity"].startswith("sha256:")
+        and curve["provenance"]["raw_identity"].startswith("local:")
         for curve in inspector_curves
     )
 
@@ -551,9 +548,7 @@ def test_curve_export_skips_a_sample_without_usable_signal(tmp_path, monkeypatch
     assert not (tmp_path / "none.json").exists()
 
 
-def test_curve_export_reuses_content_verification_while_raw_is_unchanged(
-    tmp_path, monkeypatch
-):
+def test_curve_export_uses_local_revision_without_hashing_raw(tmp_path, monkeypatch):
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
     _install_distinct_curve_raws(monkeypatch, [])
     hashed = []
@@ -574,7 +569,7 @@ def test_curve_export_reuses_content_verification_while_raw_is_unchanged(
             sample_ids=tuple(sample_ids.values()),
             verified_raws=verified,
         )
-    assert sorted(hashed) == ["S1.raw", "S2.raw"]
+    assert hashed == []
 
     # A changed file is verified again, and mismatched content still fails.
     (tmp_path / "S1.raw").write_bytes(b"another acquisition")
@@ -1239,9 +1234,6 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
 def test_production_publication_automatically_includes_recorded_risk(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.alignment.owner_build_route_receipt import (
-        _mint_retained_untargeted_cid_nl_route_receipt,
-    )
     from xic_extractor.applications.untargeted.publication import (
         UntargetedPublicationPolicy,
         publish_untargeted_outputs,
@@ -1262,9 +1254,6 @@ def test_production_publication_automatically_includes_recorded_risk(
         metadata={},
         timing_recorder=TimingRecorder("alignment", enabled=False),
         should_cancel=None,
-        owner_build_route_receipt=_mint_retained_untargeted_cid_nl_route_receipt(
-            configured_backend="raw"
-        ),
     )
     assert outputs.evidence is not None
     assert outputs.evidence.matrix_path == outputs.matrix_tsv
