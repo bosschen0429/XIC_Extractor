@@ -26,8 +26,6 @@ __all__ = (
     "FinalizedUntargetApplicationResult",
     "ObservedSearchSubject",
     "SearchedNoObservationSubject",
-    "FinalizedTargetApplicationResult",
     "TerminalSearchObservation",
-    "FinalizedUntargetApplicationResult",
     "finalize_scientific_alignment",
 )

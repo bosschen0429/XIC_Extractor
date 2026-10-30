@@ -58,7 +58,7 @@ class ObservedSearchSubject:
 
 @dataclass(frozen=True, slots=True)
 class SearchedNoObservationSubject:
-    """One completed completed capture without a selected hypothesis."""
+    """One completed capture without a selected hypothesis."""
 
     candidate_id: str
     sample_key: str

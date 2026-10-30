@@ -180,7 +180,6 @@ def execute_attempt(
         progress_callback=progress_callback,
         prepare_grouping=prepare_grouping,
     )
-
     finalization = execute_runtime_attempt(
         runtime,
         work.reservations,
