@@ -373,11 +373,6 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   not identity support. Method evidence is attributed against the full retained
   physical candidate universe; overlapping or boundary evidence remains
   set-level rather than supporting an individual peak.
-- `xic_extractor.extraction.paired_area_ratio` provides read-only batch research
-  observations. Its leave-one-out median +/- 3 scaled MAD range uses counted
-  target/paired ISTD area references; min/max remains descriptive. Neither the
-  ratio nor its reference range changes peak selection, quantities, product
-  projection, or counted-detection decisions. It is not a production stage.
 - The single-pass application owns the completed result. External MS1-shape
   support and approval files do not authorize a different selection or count.
 
