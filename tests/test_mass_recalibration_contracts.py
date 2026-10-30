@@ -161,20 +161,26 @@ def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
     assert restored.read("xic", b"same-query") == b"baseline masses"
 
 
-def test_corrected_ms2_cache_reacquires_legacy_precursors_but_reuses_xic(tmp_path):
+@pytest.mark.parametrize(
+    "policy", (MassRecalibration.EASY_IC_PROBE, MassRecalibration.EASY_IC_RESTORE)
+)
+@pytest.mark.parametrize("old_ms2_kind", ("ms2", "ms2_parent_centroid"))
+def test_corrected_ms2_cache_reacquires_legacy_precursors_but_reuses_xic(
+    tmp_path, policy, old_ms2_kind
+):
     from xic_extractor.untargeted_execution.acquisition_cache import _FactCache
 
-    legacy = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    legacy = _FactCache(tmp_path, "same-source", policy)
     # Populate the previous producer's persisted MS2 directory.
-    legacy._ms2_kind = "ms2"
+    legacy._ms2_kind = old_ms2_kind
     legacy.write("ms2", b"same-query", b"uncorrected selected precursor")
     legacy.write("xic", b"same-query", b"corrected MS1 signal")
 
-    current = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    current = _FactCache(tmp_path, "same-source", policy)
     assert current.read("ms2", b"same-query") is None
     assert current.read("xic", b"same-query") == b"corrected MS1 signal"
     current.write("ms2", b"same-query", b"corrected selected precursor")
-    reopened = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_PROBE)
+    reopened = _FactCache(tmp_path, "same-source", policy)
     assert reopened.read("ms2", b"same-query") == b"corrected selected precursor"
 
 

@@ -365,7 +365,11 @@ def test_anchor_uses_only_finite_ms1_finds_and_reads_no_spectra():
     assert handle.mass_recalibration_result is result
 
 
-def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monkeypatch):
+@pytest.mark.parametrize("mono_present", (True, False))
+@pytest.mark.parametrize("measured_precursor", (True, False))
+def test_parent_centroid_classifies_selected_mass_without_reliable_mono(
+    mono_present, measured_precursor, monkeypatch
+):
     monkeypatch.setitem(LM_BY_SCAN, 1, 12.5)
     labels = (
         "LM Correction (ppm):",
@@ -375,9 +379,10 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
         "Number of LM Found:",
     )
     true_product = TRUE_MZ - 116.0474
-    selected = _recorded(TRUE_MZ, 1)
-    # The selected ion is an exact parent centroid. The vendor's separate
-    # monoisotopic estimate need not predict its M+1 mass to four decimals.
+    selected = _recorded(TRUE_MZ, 1) if measured_precursor else TRUE_MZ
+    # The vendor's mono estimate may be missing or fail to predict M+1 to four
+    # decimals. Only an exact parent centroid proves this is a measured mass;
+    # a nonmatching inclusion-list setpoint must stay unchanged.
     mono = _recorded(TRUE_MZ - 1.0033548, 1) - 0.0003
     vendor = _Vendor(trailer_labels=labels)
     vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
@@ -392,9 +397,9 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
         Labels=list(labels),
         Values=[
             str(LM_BY_SCAN[scan]),
-            str(mono),
+            str(mono) if mono_present else "0",
             "1",
-            "1",
+            "1" if mono_present else "0",
             str(vendor.found.get(scan, 0)),
         ],
     )
@@ -412,6 +417,8 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
         116.0474, abs=1e-8
     )
     assert scans[1].precursor_mz == scans[0].precursor_mz
+    if not mono_present:
+        assert scans[0].precursor_metadata.monoisotopic_mz is None
     assert vendor.centroid_reads - reads == 1
 
 

@@ -688,17 +688,18 @@ class RawFileHandle:
         or a parent centroid is measured; inclusion-list setpoints stay unchanged.
         """
         monoisotopic = metadata.monoisotopic_mz
-        if monoisotopic is None:
-            return precursor_mz, metadata
         if metadata.master_scan_number is None:
+            if monoisotopic is None:
+                return precursor_mz, metadata
             raise RawReaderError(
                 f"MS2 scan {scan_number} records a precursor without its parent MS1"
             )
         parent_scale = self._mass_scale(metadata.master_scan_number)
         measured_precursor = (
-            abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
+            monoisotopic is not None
+            and abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
         )
-        if metadata.charge is not None:
+        if monoisotopic is not None and metadata.charge is not None:
             # Compare in the recorded coordinate system, before correcting M.
             # Both measured masses share the parent scale, including spacing.
             spacing = _CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
@@ -714,7 +715,7 @@ class RawFileHandle:
                 selected = precursor_mz / parent_scale
                 index = int(np.searchsorted(parent[1], selected))
                 # A selected parent centroid remains a measured precursor even
-                # when the vendor's mono/isotope estimate is imprecise. Allow
+                # when the vendor's mono estimate is missing or imprecise. Allow
                 # only arithmetic roundoff here, not a mass-tolerance window
                 # that could turn an inclusion-list setpoint into a measurement.
                 measured_precursor = any(
@@ -725,7 +726,12 @@ class RawFileHandle:
             precursor_mz = precursor_mz / parent_scale
         return (
             precursor_mz,
-            replace(metadata, monoisotopic_mz=monoisotopic / parent_scale),
+            replace(
+                metadata,
+                monoisotopic_mz=(
+                    None if monoisotopic is None else monoisotopic / parent_scale
+                ),
+            ),
         )
 
     def _build_chromatogram_settings(self, mz: float, ppm_tol: float) -> Any:
