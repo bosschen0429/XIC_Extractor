@@ -36,6 +36,7 @@ class _Vendor:
         self.centroid_reads = 0
         self.trailer_reads = 0
         self.found = {1: 1, 4: 1, 5: 1}
+        self.polarity = "Positive"
         self.centroids = {
             # The analyte at its recorded mass, plus a neighbour 20 ppm above
             # the true analyte mass that a 5 ppm window must exclude.
@@ -55,7 +56,9 @@ class _Vendor:
         return RT_BY_SCAN[scan]
 
     def GetFilterForScanNumber(self, scan):
-        return SimpleNamespace(MSOrder="Ms2" if scan == 2 else "Ms1")
+        return SimpleNamespace(
+            MSOrder="Ms2" if scan == 2 else "Ms1", Polarity=self.polarity
+        )
 
     def GetCentroidStream(self, scan, _refresh):
         self.centroid_reads += 1
@@ -211,6 +214,7 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         vendor = _Vendor(trailer_labels=labels)
         vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
             MSOrder="Ms2" if scan == 2 else "Ms1",
+            Polarity="Positive",
             Filter=SimpleNamespace(
                 Reactions=[SimpleNamespace(PrecursorMass=filter_precursor)]
             ),
@@ -278,6 +282,9 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         ("missing_found", "missing_lock_mass_trailers"),
         ("no_finds", "no_ms1_lock_mass_anchor"),
         ("nonfinite", "no_ms1_lock_mass_anchor"),
+        ("negative", "negative_polarity"),
+        ("mixed", "unsupported_or_mixed_polarity"),
+        ("unknown", "unsupported_or_mixed_polarity"),
     ],
 )
 def test_unavailable_preserves_vendor_mass_paths(case, reason):
@@ -288,9 +295,18 @@ def test_unavailable_preserves_vendor_mass_paths(case, reason):
         vendor.trailer_labels = ["LM Correction (ppm):"]
     elif case == "no_finds":
         vendor.found = {}
-    else:
+    elif case == "nonfinite":
         vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
             Values=["nan", "1"]
+        )
+    elif case == "negative":
+        vendor.polarity = "Negative"
+    elif case == "unknown":
+        vendor.polarity = "Any"
+    elif case == "mixed":
+        vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
+            MSOrder="Ms2" if scan == 2 else "Ms1",
+            Polarity="Negative" if scan == 2 else "Positive",
         )
     probe = _handle(vendor)
     vendor_handle = _handle(vendor, MassRecalibration.NONE)
@@ -317,7 +333,10 @@ def test_unavailable_preserves_vendor_mass_paths(case, reason):
         ((3, 499, 501),)
     ) == vendor_handle.read_ms1_mass_windows(((3, 499, 501),))
     result = probe.mass_recalibration_result
-    assert (result.outcome, result.reason) == ("unavailable", reason)
+    assert (result.outcome, result.reason) == (
+        "not_applicable" if case == "negative" else "unavailable",
+        reason,
+    )
     assert result.baseline_lm is None
 
 
@@ -363,6 +382,7 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
     vendor = _Vendor(trailer_labels=labels)
     vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
         MSOrder="Ms2" if scan == 2 else "Ms1",
+        Polarity="Positive",
         Filter=SimpleNamespace(Reactions=[SimpleNamespace(PrecursorMass=selected)]),
     )
     vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
@@ -421,7 +441,7 @@ def test_default_policy_keeps_the_vendor_xic():
 
 
 @pytest.mark.parametrize("polarity", ("Positive", "Negative"))
-def test_ms2_only_shift_is_restored_without_background_references(polarity):
+def test_ms2_only_shift_is_restored_only_in_positive_mode(polarity):
     vendor = _Vendor()
     vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
         MSOrder="Ms2" if scan == 2 else "Ms1",
@@ -432,7 +452,7 @@ def test_ms2_only_shift_is_restored_without_background_references(polarity):
         Labels=vendor.trailer_labels,
         Values=["-6" if scan == 2 else "1", "1"],
     )
-    # MS1 is already at baseline; only the negative/positive MS2 was moved.
+    # MS1 is at baseline. Negative-mode product readings must remain vendor data.
     vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
         Masses=[250.0 * (1 - 14e-6)], Intensities=[50.0]
     )
@@ -440,9 +460,20 @@ def test_ms2_only_shift_is_restored_without_background_references(polarity):
     handle = _handle(vendor)
     event = next(handle.iter_ms2_scan_subset(9, 11, frozenset({2})))
     assert event.parse_error is None
-    assert event.scan.masses == pytest.approx([250.0], abs=1e-9)
+    assert event.scan.masses == pytest.approx(
+        [250.0 if polarity == "Positive" else 250.0 * (1 - 14e-6)], abs=1e-9
+    )
     assert event.scan.precursor_mz == 500.0
-    assert handle.mass_recalibration_result.baseline_lm == 1.0
+    result = handle.mass_recalibration_result
+    if polarity == "Positive":
+        assert result.baseline_lm == 1.0
+        assert result.outcome == "applied"
+    else:
+        assert result.baseline_lm is None
+        assert (result.outcome, result.reason) == (
+            "not_applicable",
+            "negative_polarity",
+        )
     assert vendor.centroid_reads == 0
 
 

@@ -46,8 +46,11 @@ CID-NL Discovery presets default to `easy_ic_restore` when
 the median finite LM Correction from MS1 scans with Number of LM Found > 0
 as each file's baseline. Each scan's shift in ppm is twice its LM minus twice
 the baseline. The adapter divides recorded masses by `1 + shift_ppm * 1e-6`.
-The mechanism-supported ppm approximation applies to both polarities and MS2-only
-excursions; no background-ion threshold enables or disables MS2 correction.
+The mechanism-supported ppm approximation applies only to positive-polarity RAWs,
+including MS2-only excursions. No background-ion threshold gates MS2 correction.
+Negative-polarity RAWs retain all vendor mass paths and explicitly report
+`outcome=not_applicable`, `reason=negative_polarity`; restoration is not attempted.
+Mixed or unknown polarities report `unavailable` and retain vendor mass paths.
 Missing trailers or an absent baseline produce `unavailable` and retain vendor
 read paths. Missing finite LM in a scan under an applied policy is a read error.
 Downstream algorithms receive masses, not a second correction policy.

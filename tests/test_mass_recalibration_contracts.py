@@ -46,7 +46,8 @@ def test_preset_rollback_roundtrip_and_identity(tmp_path, policy):
         assert method["settings"]["mass_recalibration"] == policy.value
 
 
-def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
+@pytest.mark.parametrize("outcome", ("applied", "not_applicable"))
+def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, outcome):
     from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
     from xic_extractor.discovery.batch_contract import (
         discovery_receipt_from_index_fields,
@@ -63,9 +64,10 @@ def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
         raw = tmp_path / (sample + ".raw")
         raw.write_bytes(sample.encode())
         result = MassRecalibrationResult(
-            "applied",
-            baseline_lm=baseline,
-            n_anchor=60,
+            outcome,
+            reason="negative_polarity" if outcome == "not_applicable" else None,
+            baseline_lm=baseline if outcome == "applied" else None,
+            n_anchor=60 if outcome == "applied" else 0,
             policy=MassRecalibration.EASY_IC_RESTORE,
         )
         receipt = mint_discovery_candidate_universe_receipt(

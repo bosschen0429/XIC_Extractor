@@ -211,7 +211,7 @@ class RawFileHandle:
         return self._mass_recalibration_result
 
     def _prepare_mass_restoration(self) -> MassRecalibrationResult:
-        """Anchor each RAW to its finite MS1 lock-mass finds, without spectra."""
+        """Restore positive-only RAWs from MS1 finds; never correct negative mode."""
         if self._mass_recalibration is MassRecalibration.EASY_IC_PROBE:
             raise RawReaderError(
                 "easy_ic_probe is replay-only; use a saved result, "
@@ -220,16 +220,23 @@ class RawFileHandle:
         self._load_lm_trailer_index()
         result = MassRecalibrationResult("unavailable", policy=self._mass_recalibration)
         lm_index, found_index = self._lm_trailer_index, self._lm_found_trailer_index
-        if lm_index is None or found_index is None:
-            return replace(result, reason="missing_lock_mass_trailers")
         if self._thermo.ms1_order is None:
             raise RawReaderError("mass restoration requires the vendor MS1 order")
         raw = self._raw_file
         anchors: list[float] = []
+        polarities: set[str] = set()
         for scan in range(
             raw.RunHeaderEx.FirstSpectrum, raw.RunHeaderEx.LastSpectrum + 1
         ):
-            if raw.GetFilterForScanNumber(scan).MSOrder != self._thermo.ms1_order:
+            scan_filter = raw.GetFilterForScanNumber(scan)
+            polarity = str(scan_filter.Polarity)
+            polarities.add(polarity)
+            if (
+                polarity != "Positive"
+                or scan_filter.MSOrder != self._thermo.ms1_order
+                or lm_index is None
+                or found_index is None
+            ):
                 continue
             values = raw.GetTrailerExtraInformation(scan).Values
             if max(lm_index, found_index) >= len(values):
@@ -238,6 +245,12 @@ class RawFileHandle:
             found = _finite_float_or_none(values[found_index])
             if lm is not None and found is not None and found > 0:
                 anchors.append(lm)
+        if polarities == {"Negative"}:
+            return replace(result, outcome="not_applicable", reason="negative_polarity")
+        if polarities != {"Positive"}:
+            return replace(result, reason="unsupported_or_mixed_polarity")
+        if lm_index is None or found_index is None:
+            return replace(result, reason="missing_lock_mass_trailers")
         if not anchors:
             return replace(result, reason="no_ms1_lock_mass_anchor")
         return replace(

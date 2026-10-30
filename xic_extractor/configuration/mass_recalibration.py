@@ -76,14 +76,20 @@ def deserialize_mass_recalibration_result(content: str) -> MassRecalibrationResu
     if set(payload) != expected:
         raise ValueError("invalid mass recalibration result fields")
     payload["policy"] = policy
-    if payload["outcome"] not in {"none", "applied", "not_needed", "unavailable"}:
+    if payload["outcome"] not in {
+        "none",
+        "applied",
+        "not_needed",
+        "unavailable",
+        "not_applicable",
+    }:
         raise ValueError("invalid mass recalibration outcome")
     if policy is MassRecalibration.EASY_IC_RESTORE:
         baseline, count = payload["baseline_lm"], payload["n_anchor"]
         if (
             type(count) is not int
             or count < 0
-            or payload["outcome"] not in {"applied", "unavailable"}
+            or payload["outcome"] not in {"applied", "unavailable", "not_applicable"}
             or (
                 payload["outcome"] == "applied"
                 and (
@@ -92,7 +98,7 @@ def deserialize_mass_recalibration_result(content: str) -> MassRecalibrationResu
                     or count == 0
                 )
             )
-            or (payload["outcome"] == "unavailable" and baseline is not None)
+            or (payload["outcome"] != "applied" and baseline is not None)
         ):
             raise ValueError("invalid EASY-IC restoration baseline")
     return MassRecalibrationResult(**payload)
