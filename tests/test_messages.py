@@ -116,7 +116,7 @@ def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
     assert "quadrature window at 50 ppm per ion" in records[1].reason
 
 
-def test_ms1_diagnostics_describe_localized_measurement_not_distant_context() -> None:
+def test_ms1_diagnostics_retain_competition_without_replacing_selected_body() -> None:
     target = replace(
         _target("NoNL"), neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None
     )
@@ -151,14 +151,15 @@ def test_ms1_diagnostics_describe_localized_measurement_not_distant_context() ->
     assert result.reported_peak_intensity < 300.0
     assert [
         candidate.peak.rt for candidate in result.peak_result.candidates
-    ] == pytest.approx([9.0], abs=0.01)
-    assert result.peak_result.n_prominent_peaks == 1
-    # Other measured contours remain available for inspection, but are not
-    # counted as competing measurements after reference localization.
+    ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
+    assert result.peak_result.n_prominent_peaks == 3
+    # The observed body at the supplied reference remains the provisional
+    # answer. Without calibrated RT context, the stronger alternatives remain
+    # visible competition rather than being erased by a fixed local window.
     assert [
         s.apex_rt_min for s in result.physical_evaluation.segment_universe.segments
     ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
-    assert not any(record.issue == "MULTI_PEAK" for record in diagnostics)
+    assert any(record.issue == "MULTI_PEAK" for record in diagnostics)
 
 
 def test_build_diagnostic_records_reports_selected_candidate_observed_loss() -> None:
