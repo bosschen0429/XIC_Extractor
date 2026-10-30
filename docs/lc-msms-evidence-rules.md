@@ -161,7 +161,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   offset and intensity units cannot supply local relief
   relative to fluctuations. The fixed factor 4 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
-  These checks are necessary lower bounds, not sufficient proof of chemical
+  For these qualified-peak policies, these are lower bounds, not proof of chemical
   identity or quantification readiness. An ISTD with a known reference RT uses
   `reference_localized_contour_peak`: the same acquired-support, continuity,
   complete-context and four-MAD floor, with full contour prominence instead of
@@ -171,7 +171,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   physical question records this policy; broadness and overlap remain review
   evidence, not permission to claim a pure constituent area.
   Discovery uses the same original-support and local-contrast qualification as
-  non-ISTD Targeted, for every supported smoothing window. Alternating low/high
+  CID-NL analyte Targeted, for every supported smoothing window. Alternating low/high
   acquired values can fail top continuity even
   when their smoothed contour looks like a peak. Short-interval curvature can
   inflate noise, and small ripples can deny a broad peak local relief; these
@@ -179,6 +179,16 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   evidence remains available for review; an available overlapping interval does
   not establish a pure constituent area. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity.
+
+- MS1-only Targeted uses `localized_total_envelope` after RT localization.
+  It retains the same canonical signal and tenth-height outer return, but does
+  not split shoulders or double tops at internal valleys above that return
+  level. It integrates the unresolved total rather than choosing a clean lobe.
+  Full acquired context and adjacent acquired support remain necessary; local
+  contrast, peak-top morphology and shape scores do not withdraw its numeric
+  area. These concerns remain review evidence. A reference more than 0.75 min
+  from every complete envelope gives no selected value, not a distant substitute.
+  The total does not establish constituent purity or chemical identification.
   Questions cannot cross profile-bound segment universes. Fresh evaluation uses
   the current policy and answer identity; unsupported boundary semantics are
   rejected, and saved answers are never rewritten in place.

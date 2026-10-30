@@ -27,9 +27,21 @@ CrossSample, Backfill, or selected-value implementation.
 A blank `cid_nl_tag` declares an MS1-only target. Intake retains the shared
 20 ppm precursor tolerance and sets the neutral loss and its tolerances to
 unconfigured. The existing MS1-only capture and cell-decision owners apply;
-this does not treat missing MS2 as chemical identity support. Expected RT
-remains an identity reference, not an acquisition crop. Nonblank tags must
-still name a supported CID-NL recipe.
+this does not treat missing MS2 as chemical identity support. Full-acquisition
+signal preparation is retained, but selection is localized: an envelope must
+contain the reference RT or have its nearest boundary within 0.75 minutes.
+No eligible envelope gives no numeric result; a distant peak cannot substitute.
+Localization precedes quality scoring and uses envelope distance, then apex
+distance, area and measured bounds to resolve ties deterministically.
+
+MS1-only uses `localized_total_envelope`: shoulders and split tops remain one
+quantity until the signal returns to the tenth-height boundary level. The
+integration is the complete envelope, not an RT-window crop or a single selected
+lobe. Top shape and local contrast remain review evidence, not numeric vetoes.
+Complete acquired context and adjacent acquired signal are still required; a
+Gaussian contour from a single impulse is not a measured chromatographic peak.
+This measures an unresolved total, not a pure constituent or chemical identity.
+Nonblank tags retain their existing CID-NL recipes and selection rules.
 
 ### Reference input diagnostics
 
@@ -103,7 +115,7 @@ For an ISTD with a known reference RT, the shared physical owner uses
 ripple. The [physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
 owns its support requirements and unchanged quantitative values. Candidate
 enumeration and physical answers use the same policy, retained in the physical
-question for replay. Other Targeted candidates, Discovery and Backfill keep
+question for replay. CID-NL analyte candidates, Discovery and Backfill keep
 their existing local-valley qualification.
 
 For named Target identity, own CID-NL support requires a compatible recorded

@@ -33,6 +33,73 @@ _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 _active_nl_fixture_results: list[NLResult] = []
 
 
+@pytest.mark.parametrize(
+    "signal_kind",
+    ["far_only", "double_top", "rippled_top", "single_scan", "broad", "separate"],
+)
+def test_ms1_only_localizes_then_integrates_without_shape_veto(
+    tmp_path, monkeypatch, signal_kind
+):
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_bytes(b"raw placeholder")
+    target = _target("MS1", neutral_loss_da=None, rt_min=9.0, rt_max=9.0)
+    rt = np.linspace(0, 20, 2001)
+    remote = 500.0 * np.exp(-0.5 * ((rt - 3.0) / 0.10) ** 2)
+    if signal_kind == "far_only":
+        intensity = 10.0 + remote
+    elif signal_kind == "double_top":
+        intensity = (
+            10.0
+            + remote
+            + 1000.0
+            * (
+                np.exp(-0.5 * ((rt - 8.6) / 0.22) ** 2)
+                + np.exp(-0.5 * ((rt - 9.4) / 0.22) ** 2)
+            )
+        )
+    elif signal_kind == "rippled_top":
+        intensity = 10.0 + 1000.0 * np.exp(-0.5 * ((rt - 9.0) / 0.5) ** 2) * (
+            1 + 0.05 * np.cos(rt * 60)
+        )
+    elif signal_kind == "broad":
+        intensity = 10.0 + 1000.0 * np.exp(-0.5 * ((rt - 10.5) / 0.8) ** 2)
+    elif signal_kind == "separate":
+        target = replace(target, rt_min=9.4, rt_max=9.4)
+        intensity = 10.0 + 1000.0 * (
+            np.exp(-0.5 * ((rt - 8.6) / 0.08) ** 2)
+            + np.exp(-0.5 * ((rt - 9.4) / 0.08) ** 2)
+        )
+    else:
+        intensity = np.full_like(rt, 10.0)
+        intensity[900] = 10000.0
+    raw = _FakeRaw()
+    monkeypatch.setattr(raw, "extract_xic", lambda *_args: (rt, intensity))
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
+    output = _run(config, [target])
+    result = output.file_results[0].results[target.label]
+    if signal_kind in {"far_only", "single_scan"}:
+        assert result.reported_peak_area is None
+        assert result.reported_rt is None
+    else:
+        assert result.reported_peak_area is not None
+        assert result.reported_peak_area > 0
+        if signal_kind == "broad":
+            assert result.reported_rt > 10.0
+            assert result.reported_peak_start < 9.0
+        else:
+            assert 8.0 < result.reported_rt < 10.0
+        if signal_kind == "separate":
+            assert result.reported_rt == pytest.approx(9.4, abs=0.02)
+            assert result.reported_peak_start > 9.1
+        if signal_kind == "double_top":
+            assert result.reported_peak_start < 8.6
+            assert result.reported_peak_end > 9.4
+            # Both known lobes, not a single chosen apex. Even one whole
+            # Gaussian's analytical area cannot satisfy this lower bound.
+            one_lobe_area = 1000.0 * 0.22 * math.sqrt(2 * math.pi) * 60.0
+            assert result.reported_peak_area > 1.5 * one_lobe_area
+
+
 @pytest.fixture(autouse=True)
 def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     global _active_nl_fixture_results
@@ -158,7 +225,7 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     assert result.reported_peak_area > 0
 
 
-def test_peak_only_outside_selection_still_answers_physical_question(
+def test_ms1_only_outside_reference_retains_context_without_a_numeric_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -175,15 +242,17 @@ def test_peak_only_outside_selection_still_answers_physical_question(
     output = _run(config, [target])
     result = output.file_results[0].results["Empty"]
 
-    assert result.reported_rt == pytest.approx(6.0, abs=0.002)
+    assert result.reported_rt is None
     evaluation = result.physical_evaluation
     assert evaluation is not None
     assert evaluation.segment_universe.state == "available"
-    assert evaluation.state == "available"
-    assert evaluation.question.query_rt_min == pytest.approx(6.0)
-    known_area = 5000.0 * 0.04 * np.sqrt(2 * np.pi) * 60
-    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
-    assert result.targeted_product_projection.counted_detection is True
+    assert evaluation.state == "unavailable"
+    assert any(
+        s.apex_rt_min == pytest.approx(6.0)
+        for s in evaluation.segment_universe.segments
+    )
+    assert result.reported_peak_area is None
+    assert result.targeted_product_projection.counted_detection is False
 
 
 @pytest.mark.parametrize("with_supported_main", [True, False])
@@ -235,8 +304,8 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
-        # The interrupted component fails the stronger local contrast gate;
-        # only the supported main peak participates in ranking and shape review.
+        # The distant interrupted component is not the reference envelope;
+        # only the localized main peak participates in shape review.
         assert projection.product_state == "detected_flagged"
         assert projection.counted_detection is True
         assert "trace_morphology_review" in projection.review_reasons
@@ -246,16 +315,15 @@ def test_formal_target_ranks_only_physically_supported_signal(
         ) == pytest.approx([4.7], abs=0.04)
         assert long_rows[0]["Counted Detection"] == "TRUE"
     else:
-        # A dense hit cluster with empty flanks is acquired censored support.
-        # Its intensity interruptions do not justify an unavailable answer.
+        # MS1-only measures the canonical total envelope even with interrupted
+        # acquired support; it does not switch to censored-cluster quantitation.
         assert result.reported_rt == pytest.approx(6.0, abs=0.04)
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert evaluation.integration is not None
         assert evaluation.facts.area_source == (
-            "trapezoid_counts_seconds_on_observed_censored_signal"
+            "trapezoid_counts_seconds_on_canonical_signal"
         )
-        assert "near_detection_limit" in evaluation.integration.boundary_sources
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
         assert result.reported_peak_area > 0
         assert projection.counted_detection is True

@@ -30,6 +30,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_BACKFILL_POLICY,
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
@@ -236,6 +237,15 @@ def enumerate_physical_segment_universe(
                 prepared.profile.segment_min_prominence_fraction
             ),
         )
+        if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
+            # Resolve a known target's total envelope. Interior shoulders and
+            # split tops do not establish separate quantities until the signal
+            # returns to the same tenth-height level that closes its boundaries.
+            segment_policy = replace(
+                segment_policy,
+                clear_valley_max_fraction=segment_policy.baseline_return_fraction,
+                min_prominence_noise_sigma=0.0,
+            )
         enumeration = enumerate_chrom_peak_segments(
             rt,
             signal,
@@ -288,7 +298,10 @@ def enumerate_physical_segment_universe(
             physical_segments = tuple(
                 _physical_segment_from_chrom(segment) for segment in segments
             )
-            physical_segments = _censoring_aware_segments(prepared, physical_segments)
+            if selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY:
+                physical_segments = _censoring_aware_segments(
+                    prepared, physical_segments
+                )
             if len(physical_segments) > prepared.profile.segment_universe_limit:
                 state = "unavailable"
                 reason = "segment_universe_too_large"
@@ -649,6 +662,14 @@ def _physical_segment_support_failure(
         ),
         0.0,
     )
+    if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
+        # Require acquired signal, not a Gaussian envelope manufactured from
+        # one impulse. Top shape/contrast cannot veto a supported total envelope.
+        if np.count_nonzero(original) < 2:
+            return "insufficient_original_xic_support"
+        if not np.any((original[:-1] > 0) & (original[1:] > 0)):
+            return "insufficient_original_xic_continuity"
+        return ""
     left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
     signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
     apex_offset = apex - left

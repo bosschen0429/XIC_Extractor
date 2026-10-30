@@ -18,6 +18,7 @@ from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
+MS1_REFERENCE_MAX_GAP_MIN = 0.75
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,12 @@ def strategy_receipt() -> dict:
         "strategy": TARGETED_STRATEGY,
         "candidate_coverage": "complete_acquisition_exact_mass",
         "expected_rt_usage": "identity_reference_not_acquisition_window",
+        "ms1_only": {
+            "selection": "nearest_reference_envelope",
+            "max_reference_to_envelope_gap_min": MS1_REFERENCE_MAX_GAP_MIN,
+            "integration": "total_tenth_height_envelope",
+            "shape_quality": "review_not_numeric_veto",
+        },
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "cid_nl_evidence_scope": "target_mass_and_physical_peak",
         "cid_nl_ranking_priority": "positive_support_only",

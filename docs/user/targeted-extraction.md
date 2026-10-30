@@ -58,6 +58,10 @@ an ISTD row or leave the pair blank; an ISTD does not reference another row. The
 Leave the tag blank for MS1-only extraction; no neutral-loss evidence is required
 and the shared 20 ppm precursor tolerance applies. Names such as `D1` or `R1`
 are identifiers, not chemistry tags. Tagged and MS1-only rows may share a batch.
+MS1-only first localizes a continuous envelope at the expected RT (or within
+0.75 minutes of its boundary), then integrates its complete area. Unresolved
+shoulders and double tops are retained with review notes. No nearby envelope
+means ND; a cleaner peak at another RT is not a replacement.
 
 Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths

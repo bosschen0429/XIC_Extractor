@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REFERENCE
+from xic_extractor.configuration.targeted_strategy import (
+    MS1_REFERENCE_MAX_GAP_MIN,
+    TARGETED_PRECURSOR_REFERENCE,
+)
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
@@ -34,9 +37,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     evaluate_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
-from xic_extractor.peak_detection.evidence_facts import (
-    decision_semantics_from_candidate_facts,
-)
 from xic_extractor.peak_detection.hypotheses import (
     CandidateMS2EvidenceMap,
     PeakHypothesis,
@@ -58,13 +58,14 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
+from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
@@ -119,11 +120,7 @@ class TargetedCandidateAssessment:
             evidence_role="ISTD" if self.target.is_istd else "Analyte",
             istd_pair=self.target.istd_pair,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
-            evidence_selector=(
-                _select_no_nl_candidate_by_reference
-                if self.target.neutral_loss_da is None
-                else select_candidate_by_evidence
-            ),
+            evidence_selector=select_candidate_by_evidence,
         )
 
     def complete_result(
@@ -170,6 +167,19 @@ class TargetedCandidateAssessment:
         )
 
 
+def targeted_physical_peak_policy(target: Target, reference_rt: float | None) -> str:
+    if target.neutral_loss_da is None:
+        return PHYSICAL_PEAK_ENVELOPE_POLICY
+    if target.is_istd and reference_rt is not None:
+        return PHYSICAL_PEAK_REFERENCE_POLICY
+    return PHYSICAL_PEAK_POINT_POLICY
+
+
+def _reference_to_candidate_gap(candidate: PeakCandidate, reference_rt: float) -> float:
+    peak = candidate.peak
+    return max(peak.peak_start - reference_rt, reference_rt - peak.peak_end, 0.0)
+
+
 def assess_targeted_candidate_population(
     *,
     target: Target,
@@ -184,14 +194,48 @@ def assess_targeted_candidate_population(
     method_seeds: tuple | None = None,
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
-    physical_policy = (
-        PHYSICAL_PEAK_REFERENCE_POLICY
-        if target.is_istd and preferred_rt is not None
-        else PHYSICAL_PEAK_POINT_POLICY
-    )
+    physical_policy = targeted_physical_peak_policy(target, preferred_rt)
     candidates = physical_candidates_result(
         prepared_result, universe, selection_policy_version=physical_policy
     )
+    if target.neutral_loss_da is None:
+        preferred_rt = (
+            preferred_rt
+            if preferred_rt is not None
+            else target.expected_rt_min
+            if target.expected_rt_min is not None
+            else (target.rt_min + target.rt_max) / 2
+        )
+        localized = tuple(
+            candidate
+            for candidate in candidates.candidates
+            if _reference_to_candidate_gap(candidate, preferred_rt)
+            <= MS1_REFERENCE_MAX_GAP_MIN
+        )
+        # RT selects the envelope before any quality scoring. Scoring may
+        # describe this measurement, but cannot replace it with a cleaner peak.
+        selected = (
+            (
+                min(
+                    localized,
+                    key=lambda candidate: (
+                        _reference_to_candidate_gap(candidate, preferred_rt),
+                        abs(candidate.selection_apex_rt - preferred_rt),
+                        -candidate.peak.area,
+                        candidate.peak.peak_start,
+                        candidate.peak.peak_end,
+                    ),
+                ),
+            )
+            if localized
+            else ()
+        )
+        candidates = replace(
+            candidates,
+            candidates=selected,
+            status="OK" if selected else "PEAK_NOT_FOUND",
+            n_prominent_peaks=len(selected),
+        )
     evaluations = {
         candidate: answer_selected_physical_candidate(
             prepared_result,
@@ -277,46 +321,6 @@ def assess_targeted_candidate_population(
         method_products=products,
         method_receipt=receipt,
         method_relations=relations,
-    )
-
-
-def _select_no_nl_candidate_by_reference(
-    scored: list[ScoredCandidate],
-    *,
-    selection_rt: float | None = None,
-    strict_selection_rt: bool = False,
-) -> ScoredCandidate:
-    """Rank supported physical components by reference without changing facts."""
-    supported = []
-    for item in scored:
-        facts = item.evidence_facts
-        evidence = item.evidence_score
-        if (
-            facts is not None
-            and not facts.chemical.neutral_loss_required
-            and not facts.trace.quality_flags
-            and not facts.trace.hard_quality_flags
-            and evidence is not None
-            and "local_sn_strong" in evidence.support_labels
-            and set(evidence.concern_labels) <= {"shape_poor", "shape_borderline"}
-            and not decision_semantics_from_candidate_facts(
-                facts, count_no_ms2_as_detected=False
-            ).ambiguity_reasons
-        ):
-            supported.append(item)
-    if supported and selection_rt is not None:
-
-        def reference_key(item: ScoredCandidate) -> tuple[bool, float]:
-            peak = item.candidate.peak
-            return (
-                not peak.peak_start <= selection_rt <= peak.peak_end,
-                abs(item.candidate.selection_apex_rt - selection_rt),
-            )
-
-        nearest = min(reference_key(item) for item in supported)
-        scored = [item for item in supported if reference_key(item) == nearest]
-    return select_candidate_by_evidence(
-        scored, selection_rt=selection_rt, strict_selection_rt=strict_selection_rt
     )
 
 
