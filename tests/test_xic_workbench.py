@@ -24,15 +24,16 @@ from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 
-def test_workbench_startup_does_not_load_scipy(tmp_path):
-    """scipy costs most of cold start; the first page load does not need it."""
+def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
+    """These packages dominate cold start; the first page load does not need them."""
     script = (
         "import sys; from pathlib import Path; import xic_workbench.cli; "
         "from xic_workbench.workspace import ReviewWorkspace; "
         f"workspace = ReviewWorkspace(config_dir=Path({str(tmp_path)!r})); "
         "workspace.analysis.bootstrap(); workspace.analysis.state(); "
         "workspace.state(); workspace.close(); "
-        "assert 'scipy' not in sys.modules"
+        "loaded = {'scipy', 'openpyxl'} & set(sys.modules); "
+        "assert not loaded, loaded"
     )
     completed = subprocess.run(
         [sys.executable, "-c", script],
