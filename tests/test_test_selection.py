@@ -495,6 +495,16 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
         ("push", (), None, "parallel", 11, 11),
         ("push", (), None, "parallel", 5, 5),
         ("push", (), None, "browser", 12, 12),
+        ("push", (), None, "browser", 5, 5),
+        ("push", (), None, "browser_install", 14, 14),
+        (
+            "pull_request",
+            ("tests/test_workbench_browser.py",),
+            ("tests/test_workbench_browser.py",),
+            "browser",
+            5,
+            5,
+        ),
         ("push", (), None, "serial", 13, 13),
     ),
 )
@@ -513,9 +523,12 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         pytest.skip("PowerShell is required to exercise the Windows CI step")
 
     workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))
-    step = next(
-        step for step in workflow["jobs"]["test"]["steps"] if step.get("name") == "Test"
-    )
+    steps = [
+        next(
+            step for step in workflow["jobs"][job]["steps"] if step.get("name") == name
+        )
+        for job, name in (("python-tests", "Test"), ("browser", "Browser test"))
+    ]
     selection = (
         " and ".join(
             [
@@ -527,8 +540,9 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         else test_selection.CI_BASE_MARKER_EXPRESSION
     )
     plan_lines = [selection, *(files if files is not None else ("ALL",))]
-    for name, value in step["env"].items():
-        monkeypatch.setenv(name, str(value))
+    for step in steps:
+        for name, value in step["env"].items():
+            monkeypatch.setenv(name, str(value))
     calls_path = tmp_path / "calls.jsonl"
     monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
     monkeypatch.setenv("XIC_CI_TEST_PLAN", "\n".join(plan_lines))
@@ -546,6 +560,10 @@ function .\.venv\Scripts\python.exe {
     $global:LASTEXITCODE = 0
     if ($args[1] -eq 'tools.testing.test_selection') {
         $env:XIC_CI_TEST_PLAN -split "`n" | Where-Object { $_ } | Write-Output
+    } elseif ($args[1] -eq 'playwright') {
+        if ($env:XIC_CI_TEST_FAILED_PHASE -eq 'browser_install') {
+            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
+        }
     } elseif ($args[1] -eq 'pytest') {
         $pytestArgs = $args | Select-Object -Skip 2
         $phase = if ($pytestArgs -contains '4') { 'parallel' }
@@ -555,34 +573,41 @@ function .\.venv\Scripts\python.exe {
         }
     }
 }
-""" + step["run"].replace("${{ github.event_name }}", event).replace(
-        "${{ github.event.pull_request.base.sha }}", "base"
-    ).replace("${{ github.event.pull_request.head.sha }}", "head")
-    script_path = tmp_path / "ci-step.ps1"
-    script_path.write_text(script, encoding="utf-8")
-    result = subprocess.run(
-        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
+"""
+    results = []
+    for index, step in enumerate(steps):
+        actual_script = script + step["run"].replace(
+            "${{ github.event_name }}", event
+        ).replace("${{ github.event.pull_request.base.sha }}", "base").replace(
+            "${{ github.event.pull_request.head.sha }}", "head"
+        )
+        script_path = tmp_path / f"ci-step-{index}.ps1"
+        script_path.write_text(actual_script, encoding="utf-8")
+        results.append(
+            subprocess.run(
+                [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+                cwd=tmp_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        )
+    assert next((r.returncode for r in results if r.returncode), 0) == expected_exit, (
+        "\n".join(r.stdout + r.stderr for r in results)
     )
-    assert result.returncode == expected_exit, result.stdout + result.stderr
     calls = [
         json.loads(line) for line in calls_path.read_text("utf-8-sig").splitlines()
     ]
     pytest_calls = [call for call in calls if call[:2] == ["-m", "pytest"]]
     runs_selection = files is None or len(files) > 0
-    browser_selected = runs_selection and "not browser_e2e" not in selection
+    browser_selected = "not browser_e2e" not in selection
     packaging_selected = "not packaging_build" not in selection
-    assert len(pytest_calls) == runs_selection + browser_selected + packaging_selected
+    browser_ran = browser_selected and failed_phase != "browser_install"
+    assert len(pytest_calls) == runs_selection + browser_ran + packaging_selected
     assert any(call[:2] == ["-m", "playwright"] for call in calls) == browser_selected
     if packaging_selected:
-        assert "-n" not in pytest_calls[-1]
-        assert (
-            sum("tests/test_pyinstaller_spec.py::" in arg for arg in pytest_calls[-1])
-            == 3
-        )
+        serial = next(call for call in pytest_calls if "-n" not in call)
+        assert sum("tests/test_pyinstaller_spec.py::" in arg for arg in serial) == 3
     if not runs_selection:
         return
 
@@ -592,10 +617,10 @@ function .\.venv\Scripts\python.exe {
     assert parallel[len(parallel) - len(selected_files) :] == selected_files
     parallel_expression = Expression.compile(parallel[parallel.index("-m", 2) + 1])
     browser_expression = None
-    if browser_selected:
-        browser = pytest_calls[1]
+    if browser_ran:
+        browser = next(call for call in pytest_calls if "0" in call)
         assert browser[browser.index("-n") + 1] == "0"
-        assert browser[len(browser) - len(selected_files) :] == selected_files
+        assert not any(arg.startswith("tests/") for arg in browser)
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
     # The original selection must be partitioned exactly once, including the
@@ -619,8 +644,52 @@ function .\.venv\Scripts\python.exe {
             if browser_expression is not None
             else False
         )
-        assert int(in_parallel) + int(in_browser) == int(
-            selected_expression.evaluate(marked.__contains__)
-        ), marked
+        if failed_phase != "browser_install":
+            assert int(in_parallel) + int(in_browser) == int(
+                selected_expression.evaluate(marked.__contains__)
+            ), marked
         assert not (in_parallel and "browser_e2e" in marked)
         assert not (in_browser and "browser_e2e" not in marked)
+
+
+@pytest.mark.parametrize(
+    "python_result", ("success", "failure", "cancelled", "skipped")
+)
+@pytest.mark.parametrize(
+    "browser_result", ("success", "failure", "cancelled", "skipped")
+)
+def test_ci_required_check_rejects_either_unsuccessful_lane(
+    tmp_path, monkeypatch, python_result, browser_result
+):
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required to exercise the Windows CI gate")
+    jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
+    gate = jobs["test"]
+    assert gate["name"] == "test (Python 3.12)"
+    assert set(gate["needs"]) == {"python-tests", "browser"}
+    assert gate["if"] == "${{ always() }}"
+    assert jobs["browser"]["runs-on"] == "windows-latest"
+    assert "needs" not in jobs["browser"]
+    monkeypatch.setenv(
+        "TEST_LANE_RESULTS",
+        json.dumps(
+            {
+                "python-tests": {"result": python_result},
+                "browser": {"result": browser_result},
+            }
+        ),
+    )
+    step = gate["steps"][0]
+    assert step["env"]["TEST_LANE_RESULTS"] == "${{ toJSON(needs) }}"
+    script_path = tmp_path / "gate.ps1"
+    script_path.write_text(step["run"], encoding="utf-8")
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert (result.returncode == 0) == (python_result == browser_result == "success"), (
+        result.stdout + result.stderr
+    )

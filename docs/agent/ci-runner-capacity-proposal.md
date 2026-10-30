@@ -8,9 +8,11 @@ and the retained validation boundary.
 | Work | Runner |
 | --- | --- |
 | Lint, static contracts, architecture census, typecheck | GitHub-hosted Ubuntu |
-| `master` / `main` push tests | GitHub-hosted Windows |
-| PR tests, by default | Self-hosted |
-| PR tests with `ci:hosted-windows` label | GitHub-hosted Windows |
+| `master` / `main` Python and packaging tests | GitHub-hosted Windows |
+| PR Python and packaging tests, by default | Self-hosted |
+| PR Python and packaging tests with `ci:hosted-windows` label | GitHub-hosted Windows |
+| Browser lane | Independent GitHub-hosted Windows VM |
+| Required test result aggregation | GitHub-hosted Ubuntu |
 | Release packaging | GitHub-hosted Windows (unchanged) |
 
 To run two independent PRs concurrently, put `ci:hosted-windows` on one and leave
@@ -22,15 +24,19 @@ is no automatic busy-runner fallback or reservation service. Re-running an old
 workflow run retains its original event payload; use a fresh label event or push
 to change routing.
 
-The required check name `test (Python 3.12)`, Python 3.12 lockfile install, four
-pytest workers, serial packaging tests and 30-minute job timeout are unchanged.
+The required `test (Python 3.12)` check aggregates the Python and browser jobs;
+both must succeed. Python tests retain the Python 3.12 lockfile install, four
+pytest workers, serial packaging tests and 30-minute job timeout. Browser tests
+run serially on a separate VM so they do not inherit Winsock and resource state
+from scientific or build tests. Browser relevance still comes from the selection
+owner; when relevant, the complete browser lane runs.
 Master no longer consumes self-hosted PR capacity. Hosted PRs and master can still
 compete for organization-hosted concurrency and billable minutes. No billing,
 runner registration, permissions or branch-protection settings are changed.
 
 ## What needs self-hosted infrastructure?
 
-The normal CI test job does not provision private RAW data or Thermo DLLs.
+The normal CI test jobs do not provision private RAW data or Thermo DLLs.
 Browser tests use installed Playwright Chromium; packaging already has a hosted
 Windows consumer in `build.yml`. Moving CI does not move or certify scientific
 RAW/DLL validation: runs requiring those private inputs remain on their configured
@@ -60,8 +66,9 @@ Use its labeled hosted run to inspect clean-image installation, test counts/skip
 packaging and browser results. Required hosted checks on the final remote SHA
 remain merge authority; a routing change alone is not a portability proof.
 
-If hosted capacity or compatibility fails, remove the PR label for a fresh
-self-hosted PR run. To restore all previous routing, revert the workflow routing
+If hosted Python-test capacity or compatibility fails, remove the PR label for a
+fresh self-hosted Python-test run; the browser job still uses its own hosted VM.
+To restore all previous routing, revert the workflow routing
 change (including label event triggers); keep the test commands and check names.
 
 GitHub reference: [runner labels select matching capacity](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow).

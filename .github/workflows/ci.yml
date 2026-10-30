@@ -66,8 +66,8 @@ jobs:
       - run: uv sync --locked --all-extras --dev
       - run: uv run mypy xic_extractor scripts xic_workbench xic_inspector tools
 
-  test:
-    name: test (Python 3.12)
+  python-tests:
+    name: Python tests (3.12)
     # Keep post-merge work off the PR runner. Label an independent PR to use
     # hosted capacity too; this is explicit routing, not an idle-runner probe.
     runs-on: ${{ (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:hosted-windows')) && 'windows-latest' || 'self-hosted' }}
@@ -98,13 +98,9 @@ jobs:
         shell: pwsh
         working-directory: repo-3.12-tests
         env:
-          XIC_PLAYWRIGHT_CHANNEL: ""
           # xdist owns parallelism; native BLAS pools must not multiply its
-          # worker budget and starve browser actions or subprocess deadlines.
+          # worker budget and starve subprocess deadlines.
           OPENBLAS_NUM_THREADS: "1"
-          # Runner VMs stall for several seconds; browser deadlines are hang
-          # watchdogs, so CI widens all of them by one factor.
-          XIC_BROWSER_DEADLINE_SCALE: "3"
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
@@ -131,14 +127,6 @@ jobs:
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $runSelected = -not $selectedSubset -or $testTargets.Count -gt 0
           $started = Get-Date
-          $runBrowser = $runSelected -and $markerExpression -notmatch 'not browser_e2e'
-          if ($runBrowser) {
-            $browserStarted = Get-Date
-            & .\.venv\Scripts\python.exe -m playwright install chromium
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $browserElapsed = [math]::Round(((Get-Date) - $browserStarted).TotalSeconds, 1)
-            "- browser_install_seconds=$browserElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          }
           $parallelStarted = Get-Date
           $parallelMarkers = "($markerExpression) and not browser_e2e"
           $parallelExitCode = 0
@@ -151,19 +139,6 @@ jobs:
           $parallelElapsed = [math]::Round(((Get-Date) - $parallelStarted).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-
-          # Browser deadlines cover Chromium plus its in-process HTTP server.
-          # Give them a fresh process without competing scientific-test workers.
-          $browserStarted = Get-Date
-          $browserExitCode = 0
-          if ($runBrowser) {
-            $browserMarkers = "($markerExpression) and browser_e2e"
-            & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10 @testTargets
-            $browserExitCode = $LASTEXITCODE
-            if ($selectedSubset -and $browserExitCode -eq 5) { $browserExitCode = 0 }
-          }
-          $browserElapsed = [math]::Round(((Get-Date) - $browserStarted).TotalSeconds, 1)
-          "- browser_test_seconds=$browserElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
           $serialTargets = @()
           if ($runPackagingBuild) {
@@ -182,10 +157,73 @@ jobs:
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
-          if ($browserExitCode -ne 0) { exit $browserExitCode }
           exit $serialExitCode
       - name: Runner load on failure
         # Name the processes and socket states behind a machine stall.
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 Name, Id, CPU, WorkingSet64 | Format-Table -AutoSize
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
+
+  browser:
+    name: Browser (Windows Chromium)
+    # A fresh pytest process still inherits the VM's Winsock/resource state.
+    # Keep Chromium and loopback HTTP off the scientific/build-test machine.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: repo-3.12-browser
+          submodules: false
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.12"
+          working-directory: repo-3.12-browser
+      - name: Install
+        shell: pwsh
+        working-directory: repo-3.12-browser
+        run: uv sync --locked --extra dev --group dev --python 3.12
+      - name: Browser test
+        shell: pwsh
+        working-directory: repo-3.12-browser
+        env:
+          XIC_PLAYWRIGHT_CHANNEL: ""
+          OPENBLAS_NUM_THREADS: "1"
+          XIC_BROWSER_DEADLINE_SCALE: "3"
+        run: |
+          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
+          $env:PATH = "$venvScripts;$env:PATH"
+          $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $baseSha = "${{ github.event.pull_request.base.sha }}"
+            $headSha = "${{ github.event.pull_request.head.sha }}"
+            $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $markerExpression = $plan[0]
+          }
+          "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          if ($markerExpression -match 'not browser_e2e') {
+            "- browser_tests=not relevant to this change" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            exit 0
+          }
+          $started = Get-Date
+          & .\.venv\Scripts\python.exe -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          "- browser_install_seconds=$installElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          $started = Get-Date
+          # Relevance decides whether to run; every relevant change gets the
+          # complete lane. Zero collected tests is a failure, never a green gate.
+          $browserMarkers = "($markerExpression) and browser_e2e"
+          & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10
+          $browserExitCode = $LASTEXITCODE
+          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          exit $browserExitCode
+      - name: Runner load on failure
         if: failure()
         shell: pwsh
         run: |
@@ -197,8 +235,29 @@ jobs:
         with:
           name: workbench-browser-traces
           path: |
-            repo-3.12-tests/tmp_runtime/**/browser-trace.zip
-            repo-3.12-tests/output/browser-failures/**/browser-trace.zip
-            repo-3.12-tests/output/browser-failures/**/browser-events.json
+            repo-3.12-browser/tmp_runtime/**/browser-trace.zip
+            repo-3.12-browser/output/browser-failures/**/browser-trace.zip
+            repo-3.12-browser/output/browser-failures/**/browser-events.json
           if-no-files-found: ignore
           retention-days: 7
+
+  test:
+    # Preserve the required check's name while both independent lanes report.
+    name: test (Python 3.12)
+    needs: [python-tests, browser]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both test lanes
+        shell: pwsh
+        env:
+          TEST_LANE_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          $lanes = $env:TEST_LANE_RESULTS | ConvertFrom-Json
+          foreach ($lane in $lanes.PSObject.Properties) {
+            if ($lane.Value.result -ne 'success') {
+              Write-Error "$($lane.Name): $($lane.Value.result)"
+              exit 1
+            }
+          }

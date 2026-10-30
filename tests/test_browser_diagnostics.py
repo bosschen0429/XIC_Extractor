@@ -29,6 +29,23 @@ def test_transport(workbench):
     ):
         workbench.evaluate("fetch('/diagnostic-probe?token=private').catch(() => {})")
 
+@pytest.fixture(params=["transport", "http"])
+def broken_asset(request, browser, monkeypatch):
+    new_context = browser.new_context
+    def context(**kwargs):
+        result = new_context(**kwargs)
+        def fail(route):
+            if request.param == "transport":
+                route.abort("failed")
+            else:
+                route.fulfill(status=503, body="asset unavailable")
+        result.route("**/assets/analysis.css", fail)
+        return result
+    monkeypatch.setattr(browser, "new_context", context)
+
+def test_asset(broken_asset, workbench):
+    assert workbench.title()
+
 def test_console(workbench):
     workbench.evaluate("console.error('diagnostic console probe')")
 
@@ -74,9 +91,9 @@ def test_both_success(workbench, review_page):
         timeout=120,
     )
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "8 passed, 5 errors" in result.stdout, result.stdout + result.stderr
+    assert "10 passed, 7 errors" in result.stdout, result.stdout + result.stderr
     traces = sorted(artifacts.rglob("browser-trace.zip"))
-    assert len(traces) == 6, result.stdout + result.stderr
+    assert len(traces) == 8, result.stdout + result.stderr
     records = {}
     for trace in traces:
         # A readable Playwright archive needs actual trace and network entries.
@@ -85,7 +102,7 @@ def test_both_success(workbench, review_page):
             assert any(name.endswith(".trace") for name in archive.namelist())
             assert any(name.endswith(".network") for name in archive.namelist())
     reports = list(artifacts.rglob("browser-events.json"))
-    assert len(reports) == 5
+    assert len(reports) == 7
     for path in reports:
         report = json.loads(path.read_text("utf-8"))
         assert report["outcomes"] == {
@@ -104,6 +121,18 @@ def test_both_success(workbench, review_page):
     assert failed["failure"] == "net::ERR_FAILED"
     assert failed["url"].endswith("/diagnostic-probe")
     assert "private" not in json.dumps(records)
+    asset_events = records["test_asset[transport]"]
+    assert any(
+        e["kind"] == "requestfailed"
+        and e["phase"] == "setup"
+        and e["resource_type"] == "stylesheet"
+        and e["url"].endswith("/assets/analysis.css")
+        for e in asset_events
+    )
+    assert any(
+        e["kind"] == "console" and "503" in e["text"]
+        for e in records["test_asset[http]"]
+    )
     assert any(e["kind"] == "console" for e in records["test_console"])
     assert any(e["kind"] == "pageerror" for e in records["test_exception"])
     for name in ("test_inspector_exception", "test_both_contexts"):
