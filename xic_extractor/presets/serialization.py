@@ -83,7 +83,7 @@ def serialize_preset(
             field
             for field in _NL_DISCOVERY_FIELDS
             if field != "mass_recalibration"
-            or recalibration is not MassRecalibration.EASY_IC_PROBE
+            or recalibration is not MassRecalibration.EASY_IC_RESTORE
         )
         discovery_values = {
             field: (

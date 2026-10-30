@@ -824,7 +824,7 @@ def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw
         )
 
 
-@pytest.mark.parametrize("saved", (False, True))
+@pytest.mark.parametrize("saved", (None, "easy_ic_probe", "easy_ic_restore"))
 def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch, saved):
     from xic_extractor.configuration.mass_recalibration import (
         MassRecalibration,
@@ -835,7 +835,7 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
 
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
     summary = read_cid_nl_explanation(review)
-    policies = {"S1": "easy_ic_probe" if saved else "none", "S2": "none"}
+    policies = {"S1": saved or "none", "S2": "none"}
     if saved:
         _write_metadata_json(
             tmp_path / "alignment_run_metadata.json",

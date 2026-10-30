@@ -30,8 +30,10 @@ def test_preset_rollback_roundtrip_and_identity(tmp_path, policy):
     content = path.read_text(encoding="utf-8")
     if policy is MassRecalibration.NONE:
         assert 'mass_recalibration = "none"' in content
-    else:
+    elif policy is MassRecalibration.EASY_IC_RESTORE:
         assert "mass_recalibration" not in content
+    else:
+        assert 'mass_recalibration = "easy_ic_probe"' in content
     fields = discovery_settings_identity_fields(settings)
     method = json.loads(
         canonical_cid_nl_method_bytes(CidNlDiscoveryMethodSpec(settings))
@@ -57,18 +59,14 @@ def test_receipt_roundtrip_preserves_each_raw_probe_and_legacy_none(tmp_path):
 
     csv = tmp_path / "candidates.csv"
     csv.write_text("candidate_id\n", encoding="utf-8")
-    for sample, a, b in [("A", -0.4, 2.0), ("B", 0.6, 1.8)]:
+    for sample, baseline in [("A", -0.4), ("B", 0.6)]:
         raw = tmp_path / (sample + ".raw")
         raw.write_bytes(sample.encode())
         result = MassRecalibrationResult(
             "applied",
-            a=a,
-            b=b,
-            n_fit=60,
-            n_val=55,
-            val_raw_p95=25.0,
-            val_corrected_p95=1.5,
-            policy=MassRecalibration.EASY_IC_PROBE,
+            baseline_lm=baseline,
+            n_anchor=60,
+            policy=MassRecalibration.EASY_IC_RESTORE,
         )
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample,
@@ -154,6 +152,11 @@ def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
         == b"vendor masses"
     )
     assert probe.read("xic", b"same-query") == b"corrected masses"
+    restored = _FactCache(tmp_path, "same-source", MassRecalibration.EASY_IC_RESTORE)
+    assert restored.read("xic", b"same-query") is None
+    restored.write("xic", b"same-query", b"baseline masses")
+    assert probe.read("xic", b"same-query") == b"corrected masses"
+    assert restored.read("xic", b"same-query") == b"baseline masses"
 
 
 def test_corrected_ms2_cache_reacquires_legacy_precursors_but_reuses_xic(tmp_path):
@@ -195,13 +198,9 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     for row, a in zip(rows, (-0.4, 0.7), strict=True):
         result = MassRecalibrationResult(
             "applied",
-            a=a,
-            b=2.0,
-            n_fit=60,
-            n_val=60,
-            val_raw_p95=25,
-            val_corrected_p95=1,
-            policy=MassRecalibration.EASY_IC_PROBE,
+            baseline_lm=a,
+            n_anchor=60,
+            policy=MassRecalibration.EASY_IC_RESTORE,
         )
         row["mass_recalibration"] = serialize_mass_recalibration_result(result)
         expected[row["sample_stem"]] = json.loads(row["mass_recalibration"])
@@ -242,8 +241,8 @@ def test_standalone_discovery_publishes_readable_probe_receipt(tmp_path):
     raw = _FakeRawHandle(events=[])
     raw.mass_recalibration_result = MassRecalibrationResult(
         "unavailable",
-        "insufficient_references",
-        policy=MassRecalibration.EASY_IC_PROBE,
+        "no_ms1_lock_mass_anchor",
+        policy=MassRecalibration.EASY_IC_RESTORE,
     )
     path = tmp_path / "sample.raw"
     output = _run_discovery(

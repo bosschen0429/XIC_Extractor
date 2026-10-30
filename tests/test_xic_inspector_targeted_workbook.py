@@ -790,7 +790,7 @@ def test_samples_carry_their_recorded_group_colour(workbook):
     ]
 
 
-@pytest.mark.parametrize("policy", (None, "none", "easy_ic_probe"))
+@pytest.mark.parametrize("policy", (None, "none", "easy_ic_probe", "easy_ic_restore"))
 def test_targeted_review_replays_saved_mass_policy(
     workbook, tmp_path, monkeypatch, policy
 ):

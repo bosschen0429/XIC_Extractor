@@ -74,6 +74,7 @@ _DOTNET_RUNTIME_CONFIG = Path(__file__).parent.joinpath(
 THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
 THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
 _LM_CORRECTION_TRAILER = "lm correction (ppm)"
+_LM_FOUND_TRAILER = "number of lm found"
 # MS2 headers round the selected precursor to 1e-4 m/z.
 _RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
 _CARBON_ISOTOPE_SPACING_DA = 1.0033548
@@ -84,7 +85,7 @@ _ASSEMBLY_LOAD_LOCK = Lock()
 
 @dataclass(frozen=True, slots=True)
 class PreparedRawMassRecalibration:
-    """One run's fitted result for an already identified RAW source."""
+    """One run's mass result for an already identified RAW source."""
 
     acquisition: AcquisitionSourceExpectation
     result: MassRecalibrationResult
@@ -162,6 +163,7 @@ class RawFileHandle:
         "_acquisition_rt_bounds",
         "_mass_recalibration",
         "_lm_trailer_index",
+        "_lm_found_trailer_index",
         "_mass_recalibration_result",
         "_mass_scale_by_scan",
         "_recalibrated_ms1",
@@ -180,6 +182,7 @@ class RawFileHandle:
         self._acquisition_rt_bounds: tuple[float, float] | None = None
         self._mass_recalibration = resolve_mass_recalibration(mass_recalibration)
         self._lm_trailer_index: int | None = None
+        self._lm_found_trailer_index: int | None = None
         self._mass_recalibration_result: MassRecalibrationResult | None = None
         self._mass_scale_by_scan: dict[int, float] = {}
         # Per MS1 scan: RT, recalibrated sorted masses and their intensities.
@@ -203,67 +206,49 @@ class RawFileHandle:
             self._mass_recalibration_result = (
                 MassRecalibrationResult(outcome="none")
                 if self._mass_recalibration is MassRecalibration.NONE
-                else self._probe_mass_recalibration()
+                else self._prepare_mass_restoration()
             )
         return self._mass_recalibration_result
 
-    def _probe_mass_recalibration(self) -> MassRecalibrationResult:
-        """Frozen per-RAW EASY-IC probe: fit siloxane, independently validate DIOP."""
-        raw = self._raw_file
-        lm_values: list[float | None] = []
-        fit: list[tuple[float | None, float]] = []
-        val: list[tuple[float | None, float]] = []
+    def _prepare_mass_restoration(self) -> MassRecalibrationResult:
+        """Anchor each RAW to its finite MS1 lock-mass finds, without spectra."""
+        if self._mass_recalibration is MassRecalibration.EASY_IC_PROBE:
+            raise RawReaderError(
+                "easy_ic_probe is replay-only; use a saved result, "
+                "easy_ic_restore or none"
+            )
         self._load_lm_trailer_index()
+        result = MassRecalibrationResult("unavailable", policy=self._mass_recalibration)
+        lm_index, found_index = self._lm_trailer_index, self._lm_found_trailer_index
+        if lm_index is None or found_index is None:
+            return replace(result, reason="missing_lock_mass_trailers")
+        if self._thermo.ms1_order is None:
+            raise RawReaderError("mass restoration requires the vendor MS1 order")
+        raw = self._raw_file
+        anchors: list[float] = []
         for scan in range(
             raw.RunHeaderEx.FirstSpectrum, raw.RunHeaderEx.LastSpectrum + 1
         ):
-            if (
-                getattr(raw.GetFilterForScanNumber(scan), "MSOrder", None)
-                != self._thermo.ms1_order
-            ):
+            if raw.GetFilterForScanNumber(scan).MSOrder != self._thermo.ms1_order:
                 continue
-            lm = self._scan_lm(scan) if self._lm_trailer_index is not None else None
-            lm_values.append(lm)
-            stream = raw.GetCentroidStream(scan, False)
-            masses = np.asarray(getattr(stream, "Masses", None) or [], dtype=float)
-            intensities = np.asarray(
-                getattr(stream, "Intensities", None) or [], dtype=float
-            )
-            for reference, observations in ((371.101233, fit), (391.284286, val)):
-                errors = (masses - reference) / reference * 1e6
-                inside = (np.abs(errors) <= 40.0) & np.isfinite(intensities)
-                if inside.any():
-                    error = float(errors[inside][np.argmax(intensities[inside])])
-                    observations.append((lm, error))
-        result = MassRecalibrationResult(
-            "unavailable",
-            n_fit=len(fit),
-            n_val=len(val),
-            policy=self._mass_recalibration,
+            values = raw.GetTrailerExtraInformation(scan).Values
+            if max(lm_index, found_index) >= len(values):
+                continue
+            lm = _finite_float_or_none(values[lm_index])
+            found = _finite_float_or_none(values[found_index])
+            if lm is not None and found is not None and found > 0:
+                anchors.append(lm)
+        if not anchors:
+            return replace(result, reason="no_ms1_lock_mass_anchor")
+        return replace(
+            result,
+            outcome="applied",
+            baseline_lm=float(np.median(anchors)),
+            n_anchor=len(anchors),
         )
-        if len(fit) < 50 or len(val) < 50:
-            return replace(result, reason="insufficient_references")
-        val_errors = np.array([error for _, error in val])
-        raw_p95 = float(np.percentile(np.abs(val_errors), 95))
-        result = replace(result, val_raw_p95=raw_p95)
-        if raw_p95 <= 3.0:
-            return replace(result, outcome="not_needed")
-        if (
-            any(lm is None for lm in lm_values)
-            or np.ptp(np.array(lm_values, dtype=float)) == 0
-        ):
-            return replace(result, reason="no_correction_signal")
-        design = np.column_stack((np.ones(len(fit)), [lm for lm, _ in fit]))
-        a, b = np.linalg.lstsq(design, [error for _, error in fit], rcond=None)[0]
-        residuals = val_errors - (a + b * np.array([lm for lm, _ in val]))
-        corrected_p95 = float(np.percentile(np.abs(residuals), 95))
-        result = replace(result, val_corrected_p95=corrected_p95)
-        if corrected_p95 <= 3.0 and corrected_p95 < raw_p95:
-            return replace(result, outcome="applied", a=float(a), b=float(b))
-        return replace(result, reason="validation_failed")
 
     def use_mass_recalibration_result(self, result: MassRecalibrationResult) -> None:
-        """Initialize a fresh handle from its run's source-bound probe result."""
+        """Initialize a fresh handle from its run's source-bound mass result."""
         self._mass_recalibration_result = result
         if result.outcome == "applied":
             self._load_lm_trailer_index()
@@ -277,6 +262,9 @@ class RawFileHandle:
             labels.index(_LM_CORRECTION_TRAILER)
             if _LM_CORRECTION_TRAILER in labels
             else None
+        )
+        self._lm_found_trailer_index = (
+            labels.index(_LM_FOUND_TRAILER) if _LM_FOUND_TRAILER in labels else None
         )
 
     def _scan_lm(self, scan_number: int) -> float | None:
@@ -603,7 +591,7 @@ class RawFileHandle:
                 )
 
     def _mass_scale(self, scan_number: int) -> float:
-        """Measured m/z divided by true m/z for one scan under the policy."""
+        """Recorded m/z divided by baseline m/z (legacy replay uses its fit)."""
         scale = self._mass_scale_by_scan.get(scan_number)
         if scale is not None:
             return scale
@@ -613,15 +601,21 @@ class RawFileHandle:
             raise RawReaderError(
                 f"scan {scan_number} lacks a finite 'LM Correction (ppm)' value"
             )
-        assert result.a is not None and result.b is not None
-        scale = 1.0 + (result.a + result.b * correction_ppm) * 1e-6
+        if result.policy is MassRecalibration.EASY_IC_RESTORE:
+            assert result.baseline_lm is not None
+            # Mechanism-supported ppm approximation, not absolute recalibration.
+            shift_ppm = 2.0 * (correction_ppm - result.baseline_lm)
+        else:
+            assert result.a is not None and result.b is not None
+            shift_ppm = result.a + result.b * correction_ppm
+        scale = 1.0 + shift_ppm * 1e-6
         self._mass_scale_by_scan[scan_number] = scale
         return scale
 
     def _recalibrated_ms1_spectrum(
         self, scan_number: int
     ) -> tuple[float, np.ndarray, np.ndarray] | None:
-        """Cache one MS1 centroid spectrum on true m/z; None for other scans."""
+        """Cache a policy-adjusted MS1 spectrum; None for other scans."""
         if scan_number in self._recalibrated_ms1:
             return self._recalibrated_ms1[scan_number]
         raw = self._raw_file
@@ -653,7 +647,7 @@ class RawFileHandle:
         return spectrum
 
     def _recalibrated_xic(self, request: XICRequest) -> XICTrace:
-        """Sum MS1 centroids per scan, as the vendor XIC does, on true m/z."""
+        """Sum policy-adjusted MS1 centroids per scan within the XIC window."""
         start_scan, end_scan = self.scan_window_for_request(request)
         tolerance = request.mz * request.ppm_tol / 1e6
         rts: list[float] = []
@@ -883,7 +877,7 @@ def prepare_batch_mass_recalibration(
     backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, PreparedRawMassRecalibration]:
-    """Probe once per sample, close every handle, and share only small results."""
+    """Prepare once per sample, close every handle, and share only small results."""
     if policy is MassRecalibration.NONE:
         return {}
 
