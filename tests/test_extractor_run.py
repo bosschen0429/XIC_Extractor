@@ -182,9 +182,23 @@ def test_run_no_nl_reference_selects_each_samples_component(
     areas = {}
     for file in output.file_results:
         result = file.results[target.label]
-        assert result.reported_rt == pytest.approx(
-            expected[file.sample_name][0], abs=0.03
+        reference_apex = expected[file.sample_name][0]
+        # The paired reference localizes the unresolved total; it does not
+        # isolate its weaker constituent from an overlapping fourfold lobe.
+        measured_apex = (
+            reference_apex - 0.3 if pair_state == "credible" else reference_apex
         )
+        assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
+        if pair_state == "credible":
+            assert result.peak_result.selection_reference_rt == pytest.approx(
+                reference_apex
+            )
+            assert result.reported_peak_start < measured_apex
+            assert result.reported_peak_end > reference_apex
+            single_lobe_area = (
+                expected[file.sample_name][1] * 0.06 * np.sqrt(2 * np.pi) * 60
+            )
+            assert result.reported_peak_area > 4.1 * single_lobe_area
         if pair_state == "shape_review":
             projection = result.targeted_product_projection
             assert projection is not None and projection.counted_detection
