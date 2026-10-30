@@ -122,7 +122,12 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. Browser deadlines are hang watchdogs: CI sets
+explicit local opt-in. The browser lane runs on its own GitHub-hosted Windows
+VM, independently of the scientific and packaging tests. Relevance selects the
+lane; a selected lane runs every browser test. The required `test (Python 3.12)`
+check succeeds only when both the Python and browser jobs succeed. Failures,
+cancellations, and skipped jobs fail that check. Browser deadlines are hang
+watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
 while local runs keep Playwright's defaults. Browser failures retain
 `browser-trace.zip` and `browser-events.json` in unique directories under ignored
