@@ -836,6 +836,7 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
     bound = extraction_pipeline._bind_acquisition_sources(
         output,
         {"SampleA": expectation},
+        resolver_mode=config.resolver_mode,
     )
 
     bound_candidate = bound.file_results[0].results[target.label].candidate_ms2_evidence

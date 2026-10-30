@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import unquote
 
 MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
     {
@@ -34,6 +35,24 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "targeted_retention_context_unavailable": "跨 target RT 證據不足；目前對應為暫定",
+    "targeted_competing_regions": ("有多個具實質訊號的候選區段；依整批上下文暫定對應"),
+    "targeted_reference_displacement": (
+        "所選區段偏離 RT 參考；依完整峰與批次證據暫定對應"
+    ),
+    "targeted_retention_transfer_uncertain": (
+        "RT 超出直接支持的位移區間；仍在本批變異尺度內，暫定保留"
+    ),
+    "targeted_acquired_signal_gaps": (
+        "原始正訊號有內部缺口；面積包含平滑估計的不確定性"
+    ),
+    "targeted_unresolved_substructure": (
+        "積分包含多個未能確定歸屬的峰瓣；面積可能混合"
+    ),
+    "targeted_no_plausible_measurable_region": "沒有可量測且 RT 對應合理的區段",
+    "targeted_shared_ion_region": (
+        "多個 target 暫定共用同一離子區段；面積不可視為獨立定量"
+    ),
     "paired_istd_position_mismatch": "峰偏離配對 ISTD 位置",
     "targeted_rt_conflict": "峰位置與 RT 參考或範圍衝突",
     "targeted_rt_review": "RT 位置需檢查",
@@ -218,7 +237,29 @@ def display_nl_evidence(token: str | None, *, configured: bool) -> str:
 
 
 def reason_text(reason: str) -> str:
+    if reason.startswith("targeted_shared_ion_region:"):
+        labels = "、".join(
+            unquote(label) for label in reason.partition(":")[2].split(",")
+        )
+        return f"與 {labels} 暫定共用同一離子區段；面積不可視為獨立定量"
     return _REASON_TEXT.get(reason, reason.replace("_", " "))
+
+
+def targeted_context_review_texts(row: Mapping[str, object]) -> tuple[str, ...]:
+    prefixes = (
+        "targeted_retention_",
+        "targeted_reference_",
+        "targeted_acquired_",
+        "targeted_competing_",
+        "targeted_unresolved_",
+        "targeted_shared_",
+        "targeted_no_plausible_",
+    )
+    return tuple(
+        reason_text(reason)
+        for reason in sorted(reasons(row, "Projection Review Reasons"))
+        if reason.startswith(prefixes)
+    )
 
 
 def _conflict_text(reason: str, concerns: str) -> str:

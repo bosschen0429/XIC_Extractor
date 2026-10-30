@@ -58,7 +58,9 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         calls.append((config_arg, targets_arg, [path.name for path in raw_paths]))
         assert progress_callback is _progress
         assert should_stop is _should_stop
@@ -183,11 +185,9 @@ def test_run_no_nl_reference_selects_each_samples_component(
     for file in output.file_results:
         result = file.results[target.label]
         reference_apex = expected[file.sample_name][0]
-        # The paired reference localizes the unresolved total; it does not
-        # isolate its weaker constituent from an overlapping fourfold lobe.
-        measured_apex = (
-            reference_apex - 0.3 if pair_state == "credible" else reference_apex
-        )
+        # The generated lobes have a sustained, resolved valley. A credible
+        # paired reference selects its own region, not the stronger interferent.
+        measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":
             assert result.peak_result.selection_reference_rt == pytest.approx(
@@ -198,7 +198,10 @@ def test_run_no_nl_reference_selects_each_samples_component(
             single_lobe_area = (
                 expected[file.sample_name][1] * 0.06 * np.sqrt(2 * np.pi) * 60
             )
-            assert result.reported_peak_area > 4.1 * single_lobe_area
+            assert result.reported_peak_start > reference_apex - 0.15
+            assert result.reported_peak_area == pytest.approx(
+                single_lobe_area, rel=0.08
+            )
         if pair_state == "shape_review":
             projection = result.targeted_product_projection
             assert projection is not None and projection.counted_detection
@@ -362,7 +365,9 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["SampleA.raw"]
@@ -425,7 +430,9 @@ def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]

@@ -70,9 +70,11 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_REFERENCE_POLICY,
     )
-    assert reference.state == expected
-    if expected == "unavailable":
-        assert reference.reason == "insufficient_reference_peak_contrast"
+    # Targeted reference availability records a measurable body, not a
+    # Discovery/background detection claim. Weak contrast remains uncertainty
+    # for contextual identity and review; it does not erase the measurement.
+    assert reference.state == "available"
+    assert reference.integration is not None
     backfill = evaluate_physical_peak(
         prepared,
         **question,

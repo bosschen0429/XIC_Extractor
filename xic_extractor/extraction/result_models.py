@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_peak_selection import (
+        TargetedCandidateAssessment,
+    )
 
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
@@ -67,6 +73,10 @@ class ExtractionResult:
     cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = ()
     selected_cid_nl_candidate_index: int | None = None
     targeted_product_projection: TargetedProductProjection | None = None
+    # Capture retains alternatives until the complete batch is available. No
+    # RAW handle, callback or scoring closure crosses the worker boundary.
+    targeted_candidate_assessment: TargetedCandidateAssessment | None = None
+    context_admissible_candidate_indexes: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.selected_hypothesis is not None:

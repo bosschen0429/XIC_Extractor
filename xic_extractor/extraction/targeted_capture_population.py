@@ -416,9 +416,15 @@ def build_targeted_capture_population(
                 )
             )
             continue
+        admissible_evaluations = tuple(
+            evaluation
+            for index, evaluation in enumerate(result.candidate_physical_evaluations)
+            if result.context_admissible_candidate_indexes is None
+            or index in result.context_admissible_candidate_indexes
+        )
         alternate_evaluations = tuple(
             evaluation
-            for evaluation in result.candidate_physical_evaluations
+            for evaluation in admissible_evaluations
             if evaluation is not result.physical_evaluation
             or selected_observation is None
         )
@@ -439,7 +445,7 @@ def build_targeted_capture_population(
             if evaluation is result.physical_evaluation
             and selected_observation is not None
             else next(alternate_observations)
-            for evaluation in result.candidate_physical_evaluations
+            for evaluation in admissible_evaluations
         )
         entries.append(
             TargetedSampleCapture(

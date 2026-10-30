@@ -46,6 +46,7 @@ def run_pipeline(
         output = run_process(
             config,
             targets,
+            defer_analyte_selection=True,
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
@@ -58,6 +59,7 @@ def run_pipeline(
         output = run_serial(
             config,
             targets,
+            defer_analyte_selection=True,
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
@@ -65,14 +67,23 @@ def run_pipeline(
             **acquisition_kwargs,
         )
 
+    from xic_extractor.extraction.targeted_batch_selection import (
+        complete_targeted_candidate_batch,
+    )
+
+    output = complete_targeted_candidate_batch(output, config)
     if acquisition_sources_by_sample is not None:
-        output = _bind_acquisition_sources(output, acquisition_sources_by_sample)
+        output = _bind_acquisition_sources(
+            output, acquisition_sources_by_sample, resolver_mode=config.resolver_mode
+        )
     return output
 
 
 def _bind_acquisition_sources(
     output: RunOutput,
     sources_by_sample: Mapping[str, AcquisitionSourceExpectation],
+    *,
+    resolver_mode: str,
 ) -> RunOutput:
     file_results = []
     seen_samples: set[str] = set()
@@ -142,6 +153,14 @@ def _bind_acquisition_sources(
                     for candidate in result.cid_nl_candidate_evidence
                 ),
             )
-            results[target_label] = result
+            from xic_extractor.extraction.result_assembly import (
+                prepare_acquired_observation,
+            )
+
+            results[target_label] = prepare_acquired_observation(
+                result,
+                acquisition_source_id=source.acquisition_source_id,
+                resolver_mode=resolver_mode,
+            )
         file_results.append(replace(file_result, results=results))
     return replace(output, file_results=file_results)

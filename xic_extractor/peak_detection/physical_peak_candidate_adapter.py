@@ -16,8 +16,10 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     qualified_physical_segments,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegment,
     PhysicalSegmentUniverse,
@@ -92,10 +94,15 @@ def physical_candidates_result(
         )
     candidates = tuple(
         _physical_segment_candidate(prepared_result, segment)
-        for segment in qualified_physical_segments(
-            prepared,
-            universe.segments,
-            selection_policy_version=selection_policy_version,
+        for segment in (
+            universe.segments
+            if selection_policy_version
+            in {PHYSICAL_PEAK_ENVELOPE_POLICY, PHYSICAL_PEAK_REFERENCE_POLICY}
+            else qualified_physical_segments(
+                prepared,
+                universe.segments,
+                selection_policy_version=selection_policy_version,
+            )
         )
     )
     if not candidates:

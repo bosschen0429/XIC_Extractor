@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.targeted_strategy import (
-    MS1_REFERENCE_MAX_GAP_MIN,
     TARGETED_PRECURSOR_REFERENCE,
 )
 from xic_extractor.evidence.neutral_loss import (
@@ -20,15 +18,15 @@ from xic_extractor.evidence.neutral_loss import (
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import selected_candidate
-from xic_extractor.extraction.targeted_peak_evidence import build_targeted_peak_evidence
+from xic_extractor.extraction.targeted_peak_evidence import (
+    build_targeted_peak_evidence,
+    targeted_trigger_events,
+)
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.peak_detection.baseline import BaselineMethod
-from xic_extractor.peak_detection.candidate_selection import (
-    select_candidate_by_evidence,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlCandidateInterval,
     CidNlEvaluationReceipt,
@@ -57,9 +55,11 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     answer_selected_physical_candidate,
     physical_candidates_result,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    qualified_physical_segments,
+)
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_ENVELOPE_POLICY,
-    PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegmentUniverse,
@@ -69,6 +69,11 @@ from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
+)
+from xic_extractor.peak_detection.targeted_context import (
+    TargetedBatchContext,
+    TargetedPopulationContext,
+    describe_targeted_region,
 )
 from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
@@ -102,6 +107,53 @@ class TargetedCandidateAssessment:
     method_products: tuple[MS2ProductEvidence, ...]
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
+    method_trigger_events: tuple[tuple[int, float], ...] = ()
+    regional_universe: PhysicalSegmentUniverse | None = None
+    paired_istd_fwhm: float | None = None
+    istd_confidence_note: str | None = None
+    paired_istd_anchor_rt: float | None = None
+
+    def population_context(self) -> TargetedPopulationContext:
+        prepared = self.prepared_result.prepared
+        constituents = (
+            qualified_physical_segments(
+                prepared,
+                (self.regional_universe or self.universe).segments,
+                selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY,
+            )
+            if prepared is not None
+            else ()
+        )
+        return TargetedPopulationContext(
+            sample_name=self.trace_group.sample_name,
+            target_label=self.target.label,
+            mz=self.target.mz,
+            ppm_tol=self.target.ppm_tol,
+            reference_rt_min=self.preferred_rt
+            if self.preferred_rt is not None
+            else (
+                self.target.expected_rt_min
+                if self.target.expected_rt_min is not None
+                else (self.target.rt_min + self.target.rt_max) / 2
+            ),
+            regions=tuple(
+                describe_targeted_region(
+                    prepared,
+                    candidate.physical_segment,
+                    measurement_available=evaluation.state == "available",
+                    constituent_segments=constituents,
+                    chemical_support=(
+                        self.method_relations is not None
+                        and index in self.method_relations.supported_candidate_indexes
+                    ),
+                )
+                for index, (candidate, evaluation) in enumerate(
+                    self.candidate_evaluations.items()
+                )
+                if prepared is not None and candidate.physical_segment is not None
+            ),
+            reference_istd_rt_min=self.paired_istd_anchor_rt,
+        )
 
     def rank_candidates(
         self,
@@ -109,18 +161,73 @@ class TargetedCandidateAssessment:
         scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
         istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
+        batch_context: TargetedBatchContext | None = None,
     ) -> PeakDetectionResult:
-        return select_peak_and_area(
+        population = (
+            batch_context.population_by_cell[
+                (self.trace_group.sample_name, self.target.label)
+            ]
+            if batch_context is not None
+            else self.population_context()
+        )
+        context = batch_context or TargetedBatchContext((population,))
+        selected_region = context.select(population, is_istd=self.target.is_istd)
+        selected = next(
+            (
+                candidate
+                for candidate, evaluation in self.candidate_evaluations.items()
+                if evaluation.state == "available"
+                and selected_region is not None
+                and candidate.physical_segment == selected_region.segment
+            ),
+            None,
+        )
+        if selected is None:
+            return PeakDetectionResult(
+                status="PEAK_NOT_FOUND",
+                peak=None,
+                n_points=self.candidates.n_points,
+                max_smoothed=self.candidates.max_smoothed,
+                n_prominent_peaks=0,
+            )
+        # Score and retain the complete measurable population. Quality describes
+        # the selected measurement; it does not get another vote on its identity.
+        measurable = (
+            tuple(
+                candidate
+                for candidate, evaluation in self.candidate_evaluations.items()
+                if evaluation.state == "available"
+            )
+            if selected is not None
+            else ()
+        )
+        candidate_population = replace(
             self.candidates,
+            candidates=measurable,
+            status="OK" if measurable else "PEAK_NOT_FOUND",
+            n_prominent_peaks=len(context.competing_regions(population)),
+        )
+
+        def context_selector(scored, **_kwargs):
+            return next(item for item in scored if item.candidate == selected)
+
+        return select_peak_and_area(
+            candidate_population,
             self.config,
-            preferred_rt=self.preferred_rt,
-            strict_preferred_rt=self.strict_preferred_rt,
+            preferred_rt=(
+                selected.selection_apex_rt
+                if selected is not None and scoring_context_builder is None
+                else self.preferred_rt
+            ),
+            strict_preferred_rt=(
+                True if scoring_context_builder is None else self.strict_preferred_rt
+            ),
             scoring_context_builder=scoring_context_builder,
             istd_confidence_note=istd_confidence_note,
             evidence_role="ISTD" if self.target.is_istd else "Analyte",
             istd_pair=self.target.istd_pair,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
-            evidence_selector=select_candidate_by_evidence,
+            evidence_selector=context_selector,
         )
 
     def complete_result(
@@ -142,7 +249,7 @@ class TargetedCandidateAssessment:
             candidate_evaluations=self.candidate_evaluations,
         )
         candidate = selected_candidate(selection.peak_result)
-        return build_extraction_result(
+        result = build_extraction_result(
             peak_result=selection.peak_result,
             nl_result=None,
             candidate_ms2_evidence=selection.candidate_ms2_evidence,
@@ -165,19 +272,15 @@ class TargetedCandidateAssessment:
             ),
             sample_name=self.trace_group.sample_name,
         )
+        return replace(result, targeted_candidate_assessment=self)
 
 
 def targeted_physical_peak_policy(target: Target, reference_rt: float | None) -> str:
-    if target.neutral_loss_da is None:
-        return PHYSICAL_PEAK_ENVELOPE_POLICY
+    # Targeted MS1 and CID-NL share measurable-body admission. Method support and
+    # reference identity are assessed after the full region population exists.
     if target.is_istd and reference_rt is not None:
         return PHYSICAL_PEAK_REFERENCE_POLICY
-    return PHYSICAL_PEAK_POINT_POLICY
-
-
-def _reference_to_candidate_gap(candidate: PeakCandidate, reference_rt: float) -> float:
-    peak = candidate.peak
-    return max(peak.peak_start - reference_rt, reference_rt - peak.peak_end, 0.0)
+    return PHYSICAL_PEAK_ENVELOPE_POLICY
 
 
 def assess_targeted_candidate_population(
@@ -192,50 +295,16 @@ def assess_targeted_candidate_population(
     strict_preferred_rt: bool,
     method_window: Ms2Window | None,
     method_seeds: tuple | None = None,
+    retained_method_products: tuple[MS2ProductEvidence, ...] | None = None,
+    retained_method_receipt: CidNlEvaluationReceipt | None = None,
+    retained_trigger_events: tuple[tuple[int, float], ...] | None = None,
+    regional_universe: PhysicalSegmentUniverse | None = None,
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
     physical_policy = targeted_physical_peak_policy(target, preferred_rt)
     candidates = physical_candidates_result(
         prepared_result, universe, selection_policy_version=physical_policy
     )
-    if target.neutral_loss_da is None:
-        preferred_rt = (
-            preferred_rt
-            if preferred_rt is not None
-            else target.expected_rt_min
-            if target.expected_rt_min is not None
-            else (target.rt_min + target.rt_max) / 2
-        )
-        localized = tuple(
-            candidate
-            for candidate in candidates.candidates
-            if _reference_to_candidate_gap(candidate, preferred_rt)
-            <= MS1_REFERENCE_MAX_GAP_MIN
-        )
-        # RT selects the envelope before any quality scoring. Scoring may
-        # describe this measurement, but cannot replace it with a cleaner peak.
-        selected = (
-            (
-                min(
-                    localized,
-                    key=lambda candidate: (
-                        _reference_to_candidate_gap(candidate, preferred_rt),
-                        abs(candidate.selection_apex_rt - preferred_rt),
-                        -candidate.peak.area,
-                        candidate.peak.peak_start,
-                        candidate.peak.peak_end,
-                    ),
-                ),
-            )
-            if localized
-            else ()
-        )
-        candidates = replace(
-            candidates,
-            candidates=selected,
-            status="OK" if selected else "PEAK_NOT_FOUND",
-            n_prominent_peaks=len(selected),
-        )
     evaluations = {
         candidate: answer_selected_physical_candidate(
             prepared_result,
@@ -251,10 +320,16 @@ def assess_targeted_candidate_population(
     relations = None
     products: tuple[MS2ProductEvidence, ...] = ()
     candidate_ms2 = {}
+    trigger_events: tuple[tuple[int, float], ...] = ()
     if target.neutral_loss_da is not None:
-        if method_window is None:
-            raise ValueError("CID-NL candidate assessment requires its acquired window")
-        products = _discovery_method_products(method_window, target, method_seeds)
+        if retained_method_products is None:
+            if method_window is None:
+                raise ValueError(
+                    "CID-NL candidate assessment requires its acquired window"
+                )
+            products = _discovery_method_products(method_window, target, method_seeds)
+        else:
+            products = retained_method_products
         policy = DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
             neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
@@ -267,13 +342,26 @@ def assess_targeted_candidate_population(
             for product in products
             if abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
         )
-        receipt = CidNlEvaluationReceipt(
-            query_rt_min=min(method_window.rt_min, selection_window[0]),
-            query_rt_max=max(method_window.rt_max, selection_window[1]),
-            support_policy=policy,
-            acquisition_supported=True,
-            search_completed=True,
-            reason_code=None,
+        if retained_method_receipt is not None:
+            receipt = retained_method_receipt
+        else:
+            assert method_window is not None
+            receipt = CidNlEvaluationReceipt(
+                query_rt_min=min(method_window.rt_min, selection_window[0]),
+                query_rt_max=max(method_window.rt_max, selection_window[1]),
+                support_policy=policy,
+                acquisition_supported=True,
+                search_completed=True,
+                reason_code=None,
+            )
+        trigger_events = (
+            retained_trigger_events
+            if retained_trigger_events is not None
+            else targeted_trigger_events(
+                method_window,
+                target=target,
+                precursor_tolerance_da=policy.precursor_tolerance_da,
+            )
         )
         relations = evaluate_cid_nl_method_relations(
             candidate_intervals=tuple(
@@ -299,6 +387,7 @@ def assess_targeted_candidate_population(
         answers = build_targeted_peak_evidence(
             target=target,
             window=method_window,
+            trigger_events=trigger_events,
             products=products,
             relations=relations,
             candidate_apex_rts=tuple(
@@ -316,11 +405,13 @@ def assess_targeted_candidate_population(
         selection_window=selection_window,
         preferred_rt=preferred_rt,
         strict_preferred_rt=strict_preferred_rt or target.neutral_loss_da is None,
-        candidate_evaluations=MappingProxyType(evaluations),
-        candidate_ms2_evidence=MappingProxyType(candidate_ms2),
+        candidate_evaluations=evaluations,
+        candidate_ms2_evidence=candidate_ms2,
         method_products=products,
         method_receipt=receipt,
         method_relations=relations,
+        method_trigger_events=trigger_events,
+        regional_universe=regional_universe or universe,
     )
 
 

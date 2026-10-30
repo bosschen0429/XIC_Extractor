@@ -44,6 +44,8 @@ class ChromPeakSegmentPolicy:
     morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_sigma: float = 0.0
     min_prominence_fraction_of_envelope: float = 0.04
+    min_prominence_fraction_of_apex: float = 0.0
+    valley_min_duration_min: float | None = None
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -410,6 +412,21 @@ def _apex_seeds(
         max_context * policy.min_apex_fraction_of_context,
     )
     peaks = _local_peak_indices(context)
+    if policy.min_prominence_fraction_of_apex > 0:
+        # Remove small surface ripples before asking which adjacent lobes a
+        # valley separates. Their height cannot hide a larger sustained trough.
+        interior = [index for index in peaks if 0 < index < len(context) - 1]
+        prominences = peak_prominences(context, interior)[0]
+        supported = {
+            index
+            for index, prominence in zip(interior, prominences, strict=True)
+            if prominence >= policy.min_prominence_fraction_of_apex * context[index]
+        }
+        peaks = tuple(
+            index
+            for index in peaks
+            if index in supported or index in {0, len(context) - 1}
+        )
     seeds = tuple(
         _ApexSeed(
             index=context_interval.start_index + local_index,
@@ -641,7 +658,11 @@ def _sustained_canonical_valley(
     while end < right.index and signal[end + 1] <= threshold:
         end += 1
     spacing = float(np.median(np.diff(rt[left.index : right.index + 1])))
-    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
+    footprint = (
+        policy.valley_min_duration_min
+        if policy.valley_min_duration_min is not None
+        else spacing * max(0, policy.morphology_trace_window_points - 1)
+    )
     return bool(rt[end] - rt[start] >= footprint)
 
 

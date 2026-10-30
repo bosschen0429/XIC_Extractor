@@ -13,12 +13,12 @@ from xic_extractor.configuration.cid_nl_profile import (
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    LOCALIZED_VALLEY_MIN_DROP_FRACTION,
 )
 from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
-MS1_REFERENCE_MAX_GAP_MIN = 0.75
 
 
 @dataclass(frozen=True)
@@ -49,9 +49,15 @@ def strategy_receipt() -> dict:
         "candidate_coverage": "complete_acquisition_exact_mass",
         "expected_rt_usage": "identity_reference_not_acquisition_window",
         "ms1_only": {
-            "selection": "nearest_reference_envelope",
-            "max_reference_to_envelope_gap_min": MS1_REFERENCE_MAX_GAP_MIN,
-            "integration": "total_tenth_height_envelope",
+            "selection": "contextual_provisional_mapping",
+            "integration": "valley_bounded_envelope_with_tenth_height_outer_return",
+            "min_valley_drop_fraction": LOCALIZED_VALLEY_MIN_DROP_FRACTION,
+            "min_valley_duration_min": (
+                DEFAULT_SIGNAL_PROCESSING_PROFILE.boundary_min_sigma_rt
+            ),
+            "same_mass_localization": (
+                "valley_and_reference_order_with_shared_region_review"
+            ),
             "shape_quality": "review_not_numeric_veto",
         },
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,

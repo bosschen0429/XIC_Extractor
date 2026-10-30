@@ -22,13 +22,32 @@ if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult
 
 
+def targeted_trigger_events(
+    window: Ms2Window | None, *, target: Target, precursor_tolerance_da: float
+) -> tuple[tuple[int, float], ...]:
+    """Retain scan/RT opportunity facts, not complete spectra or RAW handles."""
+    if window is None:
+        raise ValueError("CID-NL opportunity assessment needs an acquired window")
+    return tuple(
+        (event.scan_number, event.scan.rt)
+        for event in window.events
+        if event.scan is not None
+        and event.parse_error is None
+        and any(
+            abs(mz - target.mz) <= precursor_tolerance_da
+            for mz, _basis in recorded_precursor_references(event.scan, target.ppm_tol)
+        )
+    )
+
+
 def build_targeted_peak_evidence(
     *,
     target: Target,
-    window: Ms2Window,
+    window: Ms2Window | None,
     products: tuple[MS2ProductEvidence, ...],
     relations: CidNlMethodRelations,
     candidate_apex_rts: tuple[float, ...],
+    trigger_events: tuple[tuple[int, float], ...] | None = None,
 ) -> tuple[CandidateMS2Evidence, ...]:
     """Keep acquisition opportunity separate from positive, peak-owned support.
 
@@ -36,14 +55,13 @@ def build_targeted_peak_evidence(
     not a successful fragmentation or chemical absence. Inferred/coisolated
     products remain inspectable but cannot become this target's own CID signal.
     """
-    triggers = tuple(
-        (event.scan_number, event.scan.rt)
-        for event in window.events
-        if event.scan is not None
-        and event.parse_error is None
-        and any(
-            abs(mz - target.mz) <= relations.policy.precursor_tolerance_da
-            for mz, _basis in recorded_precursor_references(event.scan, target.ppm_tol)
+    triggers = (
+        trigger_events
+        if trigger_events is not None
+        else targeted_trigger_events(
+            window,
+            target=target,
+            precursor_tolerance_da=relations.policy.precursor_tolerance_da,
         )
     )
     answers = []

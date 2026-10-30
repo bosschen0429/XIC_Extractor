@@ -28,6 +28,7 @@ def run_serial(
     | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
+    defer_analyte_selection: bool = False,
 ) -> RunOutput:
     from xic_extractor.extraction import result_models
 
@@ -42,6 +43,8 @@ def run_serial(
             break
 
         extraction_kwargs: dict[str, Any] = {}
+        if defer_analyte_selection:
+            extraction_kwargs["defer_analyte_selection"] = True
         if mass_recalibration_by_sample:
             extraction_kwargs["prepared_mass_recalibration"] = (
                 mass_recalibration_by_sample[raw_path.stem]

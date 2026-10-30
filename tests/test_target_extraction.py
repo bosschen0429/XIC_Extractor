@@ -827,7 +827,9 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    assert result.reported_rt == pytest.approx(17.5 if is_istd else 10.9, abs=0.05)
+    # Poor local relief cannot erase the reference-supported broad body in
+    # either Targeted role. The clean 10.9-minute peak is not a substitute.
+    assert result.reported_rt == pytest.approx(17.5, abs=0.05)
     assert result.selected_cid_nl_supported
     selected = next(
         evaluation

@@ -162,36 +162,40 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   relative to fluctuations. The fixed factor 4 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   For these qualified-peak policies, these are lower bounds, not proof of chemical
-  identity or quantification readiness. An ISTD with a known reference RT uses
-  `reference_localized_contour_peak`: the same acquired-support, continuity,
-  complete-context and four-MAD floor, with full contour prominence instead of
-  nearest-valley relief. A broad contour with small ripples remains eligible for
-  reference-first identity selection; its apex, bounds and area are unchanged.
-  Insufficient contrast gives `insufficient_reference_peak_contrast`. The
-  physical question records this policy; broadness and overlap remain review
-  evidence, not permission to claim a pure constituent area.
-  Discovery uses the same original-support and local-contrast qualification as
-  CID-NL analyte Targeted, for every supported smoothing window. Alternating low/high
-  acquired values can fail top continuity even
-  when their smoothed contour looks like a peak. Short-interval curvature can
-  inflate noise, and small ripples can deny a broad peak local relief; these
-  accepted limitations do not establish chemical absence. Existing overlap and provisional-quality
-  evidence remains available for review; an available overlapping interval does
-  not establish a pure constituent area. Qualification neither
-  changes integration nor removes weak segments to resolve ambiguity.
+  identity or quantification readiness. Discovery and bounded Backfill keep
+  these local-contrast policies; they do not establish chemical absence.
 
-- MS1-only Targeted uses `localized_total_envelope` after RT localization.
-  It retains the same canonical signal and tenth-height outer return, but does
-  not split shoulders or double tops at internal valleys above that return
-  level. It integrates the unresolved total rather than choosing a clean lobe.
-  Full acquired context and adjacent acquired support remain necessary; local
-  contrast, peak-top morphology and shape scores do not withdraw its numeric
-  area. These concerns remain review evidence. A reference more than 0.75 min
-  from every complete envelope gives no selected value, not a distant substitute.
-  The total does not establish constituent purity or chemical identification.
-  Questions cannot cross profile-bound segment universes. Fresh evaluation uses
-  the current policy and answer identity; unsupported boundary semantics are
-  rejected, and saved answers are never rewritten in place.
+- Targeted analytes (both MS1-only and CID-NL) use
+  `localized_total_envelope` measurements. Known ISTDs retain
+  `reference_localized_contour_peak` geometry. Both use complete-region acquired
+  support rather than requiring an ideal half-prominence top. Two acquired
+  positive observations are a minimal measurement condition, not a calibrated
+  detection significance. Missing or imperfect top observations, local-valley
+  contrast and shape scores do not by themselves withdraw supported body area.
+  Physical measurements and method relations remain retained before the final
+  identity interpretation. An acquired single impulse cannot manufacture a
+  quantitative chromatographic body through Gaussian smoothing.
+
+  Targeted's batch owner then distinguishes an observed chromatographic body
+  from baseline curvature on constant/monotonic raw background. It uses the
+  complete regions, raw support and contours, cross-sample evidence and ordered
+  mass-compatible references. A retained physical measurement is not by itself
+  target identity. Reference-compatible uncertainty can retain provisional area;
+  a retention-incompatible interpretation is not a license to select a smaller
+  residual elsewhere. The original regions remain inspectable.
+
+  Valleys propose separate regions; only touching acquired bodies with a common
+  reference interpretation can be joined. The complete canonical total is
+  integrated, never an expected-RT crop. Disconnected regions are not joined.
+  Shared or unresolved totals carry review explanations and do not establish
+  pure-constituent area. See [Targeted Selection](product/targeted-selection.md)
+  for contextual selection and the distinction between plausible and directly
+  supported RT transfer. Discovery and bounded Backfill are not silently
+  migrated to this Targeted interpretation policy.
+
+  Questions cannot cross profile-bound segment universes. Changed regional
+  interpretations mint current physical questions; saved answers are never
+  rewritten in place.
 - The canonical public profile fields are `signal_processing_method`
   (`gaussian` only) and `signal_processing_window_points` (default 9; non-bool
   odd integer 3–999). The legacy settings spelling
