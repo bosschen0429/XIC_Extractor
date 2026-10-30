@@ -211,7 +211,7 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
 
     _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets)
     monkeypatch.setattr(
-        module,
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         lambda _runner: Service(),
     )
@@ -272,7 +272,7 @@ def test_targeted_run_raises_cancellation_before_publication(
 
     _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
-        module,
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         lambda _runner: Service(),
     )
@@ -327,7 +327,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
 
     _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [target])
     monkeypatch.setattr(
-        module,
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         lambda _runner: Service(),
     )
@@ -364,7 +364,7 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
 
     _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
-        module,
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         lambda _runner: Service(),
     )

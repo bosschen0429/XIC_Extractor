@@ -6,21 +6,18 @@ import statistics
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
-from xic_extractor import extractor
 from xic_extractor.analysis_set import discover_raw_files
-from xic_extractor.applications.targeted.application import (
-    build_canonical_targeted_application_service,
-    build_targeted_application_request,
-)
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
 )
+
+if TYPE_CHECKING:
+    from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 
 
 class _TargetSummary(TypedDict):
@@ -84,6 +81,12 @@ class TargetedRun:
         ):
             raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
         config, targets = self._config, self._targets
+        # Scoring loads scipy; keep it out of the settings page's startup path.
+        from xic_extractor import extractor
+        from xic_extractor.applications.targeted.application import (
+            build_canonical_targeted_application_service,
+            build_targeted_application_request,
+        )
         from xic_workbench.samples import load_samples
 
         self.stage = "讀取 Targeted 樣本與上機資訊"

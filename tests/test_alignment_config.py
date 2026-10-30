@@ -23,7 +23,7 @@ def test_alignment_public_import_avoids_pipeline_and_raw_reader():
 def test_alignment_public_type_hints_resolve_without_raw_reader_import():
     before = set(sys.modules)
 
-    from xic_extractor.alignment import AlignedCell
+    from xic_extractor.alignment.matrix import AlignedCell
 
     hints = get_type_hints(AlignedCell)
 

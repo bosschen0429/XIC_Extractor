@@ -670,7 +670,8 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
             )
 
     monkeypatch.setattr(
-        "xic_workbench.targeted.build_canonical_targeted_application_service",
+        "xic_extractor.applications.targeted.application."
+        "build_canonical_targeted_application_service",
         lambda _: Service(),
     )
     page.locator("#t-injection_order_source").fill(str(sequence))
