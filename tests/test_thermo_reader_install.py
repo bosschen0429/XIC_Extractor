@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -93,3 +94,34 @@ def test_tampered_download_leaves_the_existing_install_untouched(
 
     assert [path.name for path in tmp_path.iterdir()] == ["reader"]
     assert (target / "Reader.dll").read_bytes() == b"working"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows denies replacing an open DLL")
+@pytest.mark.parametrize("installed_reader", [b"reader", b"outdated"])
+def test_reinstall_handles_dlls_in_use_on_windows(tmp_path, packages, installed_reader):
+    target = tmp_path / "reader"
+    target.mkdir()
+    reader = target / "Reader.dll"
+    reader.write_bytes(installed_reader)
+    (target / "Data.dll").write_bytes(b"data")
+
+    with reader.open("rb") as in_use:
+        if installed_reader == b"reader":
+            assert (
+                install.install_thermo_reader(
+                    target, accept_license=True, fetch=packages.__getitem__
+                )
+                == target
+            )
+        else:
+            with pytest.raises(
+                install.ThermoReaderInstallError, match="正在使用|寫入權限"
+            ) as error:
+                install.install_thermo_reader(
+                    target, accept_license=True, fetch=packages.__getitem__
+                )
+            assert isinstance(error.value.__cause__, PermissionError)
+        assert in_use.read() == installed_reader
+
+    assert reader.read_bytes() == installed_reader
+    assert (target / "Data.dll").read_bytes() == b"data"

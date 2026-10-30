@@ -21,6 +21,7 @@ from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.presets import PresetError
 from xic_inspector.api import InspectorError, read_evidence_summary, resolve_source
 from xic_workbench.analysis_workspace import json_value
+from xic_workbench.browser_lifetime import BrowserLifetime
 from xic_workbench.native_picker import PickerBusy, choose_path
 from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
 
@@ -44,8 +45,25 @@ class _WorkbenchHTTPServer(ThreadingHTTPServer):
     # default backlog of five can reject that burst before the accept loop runs.
     request_queue_size = socket.SOMAXCONN
 
+    browser_lifetime: BrowserLifetime | None = None
+    workspace: ReviewWorkspace
 
-def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTPServer:
+    def service_actions(self) -> None:
+        if (
+            self.browser_lifetime is not None
+            and self.browser_lifetime.should_exit()
+            and self.workspace.request_shutdown(preserve_unseen_completion=True)
+        ):
+            threading.Thread(target=self.shutdown, daemon=True).start()
+
+
+def create_server(
+    workspace: ReviewWorkspace,
+    *,
+    port: int = 0,
+    desktop_key: str | None = None,
+    browser_lifetime: BrowserLifetime | None = None,
+) -> ThreadingHTTPServer:
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
@@ -169,7 +187,10 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             elif url.path == "/api/session":
                 self._send(
                     200,
-                    {"defaults": workspace.defaults},
+                    {
+                        "defaults": workspace.defaults,
+                        "desktop_key": None if workspace.closing else desktop_key,
+                    },
                     Set_Cookie=(
                         f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
                     ),
@@ -183,7 +204,11 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             elif url.path == "/api/config":
                 self._send(200, workspace.analysis.bootstrap())
             elif url.path == "/api/analysis":
-                self._send(200, workspace.analysis.state())
+                state = workspace.analysis.state()
+                self._send(200, state)
+                job = state.get("job")
+                if job and job["status"] not in {"running", "cancelling"}:
+                    workspace.analysis.jobs.acknowledge_completion(job["job_id"])
             elif match := re.fullmatch(r"/files/([a-f0-9]{32})", url.path):
                 path = workspace.analysis.artifact_path(match[1])
                 data = path.read_bytes()
@@ -229,7 +254,20 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             if not isinstance(values, dict):
                 raise ValueError("要求必須是 JSON 物件。")
             path = urlsplit(self.path).path
-            if path == "/api/open":
+            if path == "/api/window":
+                window, closed = values.get("window"), values.get("closed", False)
+                if (
+                    set(values) - {"window", "closed"}
+                    or not isinstance(window, str)
+                    or not 1 <= len(window) <= 80
+                    or not isinstance(closed, bool)
+                ):
+                    raise ValueError("請提供瀏覽分頁識別。")
+                if browser_lifetime is not None:
+                    browser_lifetime.update(window, closed=closed)
+                self._send(200, {"ok": True})
+                return
+            elif path == "/api/open":
                 if set(values) != {"source"}:
                     raise ValueError("請提供結果位置。")
                 result = workspace.open(values["source"])
@@ -263,10 +301,8 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             elif path == "/api/evidence-summary":
                 result = read_evidence_summary(resolve_source(Path(values["source"])))
             elif path == "/api/shutdown":
-                with workspace._lock:
-                    workspace._require_idle()
-                    if workspace.analysis.jobs.busy:
-                        raise WorkspaceBusy("請先停止或等待目前工作完成。")
+                if not workspace.request_shutdown():
+                    raise WorkspaceBusy("請先停止或等待目前工作完成。")
                 self.close_connection = True
                 self._send(200, {"message": "工作區已結束。"})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -292,6 +328,8 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "istd/copy",
                 "open-local",
                 "thermo-reader/install",
+                "thermo-reader/use-installed",
+                "thermo-reader/status",
             }:
                 result = workspace.analysis_action(path.removeprefix("/api/"), values)
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})/cancel", path):
@@ -302,5 +340,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             self._send(200, result)
 
     server = _WorkbenchHTTPServer(("127.0.0.1", port), Handler)
+    server.workspace = workspace
+    server.browser_lifetime = browser_lifetime
     server.daemon_threads = True
     return server

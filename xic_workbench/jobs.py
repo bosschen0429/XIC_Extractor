@@ -26,6 +26,21 @@ class AnalysisJobs:
         self._cancel = threading.Event()
         self._runner: Any = None
         self._results: dict[str, dict[str, Any]] = {}
+        self._observed_completion: str | None = None
+
+    @property
+    def has_unseen_completion(self) -> bool:
+        with self._lock:
+            return bool(
+                self._current
+                and not self.busy
+                and self._current["job_id"] != self._observed_completion
+            )
+
+    def acknowledge_completion(self, job_id: str) -> None:
+        with self._lock:
+            if self._current and self._current["job_id"] == job_id and not self.busy:
+                self._observed_completion = job_id
 
     @property
     def busy(self) -> bool:

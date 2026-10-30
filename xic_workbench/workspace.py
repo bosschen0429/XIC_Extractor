@@ -63,6 +63,7 @@ class ReviewWorkspace:
         self._temporary = TemporaryDirectory(prefix="xic-workbench-")
         self._folder = Path(self._temporary.name)
         self._lock = threading.RLock()
+        self._closing = False
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="xic-review"
         )
@@ -86,8 +87,30 @@ class ReviewWorkspace:
             )
 
     def _require_idle(self) -> None:
+        if self._closing:
+            raise WorkspaceBusy("工作區正在結束，請重新開啟。")
         if self._job and self._job["status"] in {"running", "cancelling"}:
             raise WorkspaceBusy("曲線仍在載入；請等待完成或先取消。")
+
+    @property
+    def closing(self) -> bool:
+        with self._lock:
+            return self._closing
+
+    def request_shutdown(self, *, preserve_unseen_completion: bool = False) -> bool:
+        with self._lock:
+            if (
+                self._closing
+                or (self._job and self._job["status"] in {"running", "cancelling"})
+                or self.analysis.jobs.busy
+                or (
+                    preserve_unseen_completion
+                    and self.analysis.jobs.has_unseen_completion
+                )
+            ):
+                return False
+            self._closing = True
+            return True
 
     def start_analysis(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -103,6 +126,7 @@ class ReviewWorkspace:
                 "targeted/method",
                 "istd",
                 "targets/import",
+                "thermo-reader/status",
             }:
                 if self.analysis.jobs.busy:
                     raise WorkspaceBusy("分析仍在執行；完成或停止後才能修改設定。")

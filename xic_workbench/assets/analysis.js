@@ -18,6 +18,8 @@
     seenJob: null,
     offlineCount: 0,
   };
+  let readerValidation = 0;
+  let readerTimer;
   const roles = [
     "study_sample",
     "qc",
@@ -344,13 +346,23 @@
       usable,
     );
   }
+  function readerItem(id) {
+    const item = pathItem("RawFileReader DLL 資料夾", id, "尚未選擇資料夾");
+    if (item.tone !== "ok") return item;
+    const reader = state.config.thermo_reader;
+    if (reader.dll_dir.trim() !== $(id).value.trim())
+      return checkItem("info", item.label, "尚未驗證", id);
+    return reader.dll_errors.length
+      ? checkItem("todo", item.label, "DLL 尚未備妥", id)
+      : item;
+  }
   function checklist(kind) {
     if (!state.config) return;
     const items = [];
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
       items.push(pathItem("輸出資料夾", "t-output_dir", "尚未選擇資料夾"));
-      items.push(pathItem("RawFileReader DLL 資料夾", "t-dll_dir", "尚未選擇資料夾"));
+      items.push(readerItem("t-dll_dir"));
       const istd = state.targets.filter(
         (row) => row.role === "istd",
       ).length;
@@ -380,7 +392,7 @@
       if (mode !== "discovery_only")
         items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
       items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
-      items.push(pathItem("RawFileReader DLL 資料夾", "u-dll_dir", "尚未選擇資料夾"));
+      items.push(readerItem("u-dll_dir"));
       const preset = $("u-preset");
       items.push(
         checkItem(
@@ -2050,6 +2062,7 @@
     });
     if (!accepted) return;
     await api("/api/shutdown", {});
+    stopWindowTracking?.();
     state.closed = true;
     const screen = el("div", undefined, "closed-screen");
     const inner = el("div");
@@ -2064,6 +2077,8 @@
     document.body.append(screen);
   }
   function setDllDir(value) {
+    readerValidation++;
+    clearTimeout(readerTimer);
     state.config.settings.dll_dir = value;
     state.config.untargeted.dll_dir = value;
     for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
@@ -2076,21 +2091,27 @@
     $("reader-setup").hidden = !dotnetMissing && !dllMissing;
     $("reader-setup-dotnet").hidden = !dotnetMissing;
     $("reader-setup-dll").hidden = !dllMissing;
+    $("reader-setup-existing").hidden = !reader.installed_dir;
+    $("reader-setup-use").title = reader.installed_dir;
+    $("reader-setup-download").hidden = !!reader.installed_dir;
     $("reader-setup-command").textContent = reader.dotnet_install_command;
     $("reader-setup-version").textContent = reader.version;
     $("reader-setup-license").href = reader.license_url;
     $("reader-setup-detail").replaceChildren(
       ...[...reader.dotnet_errors, ...reader.dll_errors].map((text) => el("li", text)),
     );
+    checklist("targeted");
+    checklist("untargeted");
   }
-  async function installThermoReader() {
-    const button = $("reader-setup-install");
+  async function installThermoReader(useInstalled = false) {
+    const button = $(useInstalled ? "reader-setup-use" : "reader-setup-install");
     button.disabled = true;
-    button.textContent = "下載中…";
+    button.textContent = useInstalled ? "設定中…" : "下載中…";
     try {
-      const result = await api("/api/thermo-reader/install", {
-        accept_license: $("reader-setup-accept").checked,
-      });
+      const result = await api(
+        `/api/thermo-reader/${useInstalled ? "use-installed" : "install"}`,
+        useInstalled ? {} : { accept_license: $("reader-setup-accept").checked },
+      );
       setDllDir(result.dll_dir);
       state.config.thermo_reader = result.thermo_reader;
       renderReaderSetup(result.thermo_reader);
@@ -2098,8 +2119,8 @@
     } catch (error) {
       status(error.message, true);
     } finally {
-      button.textContent = "下載並設定 RawFileReader";
-      button.disabled = !$("reader-setup-accept").checked;
+      button.textContent = useInstalled ? "使用已安裝版本" : "下載並設定 RawFileReader";
+      button.disabled = !useInstalled && !$("reader-setup-accept").checked;
     }
   }
   function bind() {
@@ -2108,11 +2129,24 @@
       setDllDir(event.target.value);
       dirty("targeted");
       dirty("untargeted");
+      const version = readerValidation;
+      const dllDir = event.target.value.trim();
+      readerTimer = setTimeout(async () => {
+        try {
+          const reader = await api("/api/thermo-reader/status", { dll_dir: dllDir });
+          if (version !== readerValidation) return;
+          state.config.thermo_reader = reader;
+          renderReaderSetup(reader);
+        } catch (error) {
+          if (version === readerValidation) status(error.message, true);
+        }
+      }, 250);
     });
     $("reader-setup-accept").addEventListener("change", (event) => {
       $("reader-setup-install").disabled = !event.target.checked;
     });
-    $("reader-setup-install").addEventListener("click", installThermoReader);
+    $("reader-setup-install").addEventListener("click", () => installThermoReader());
+    $("reader-setup-use").addEventListener("click", () => installThermoReader(true));
     $("reader-setup-copy").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("reader-setup-command").textContent);
       done("已複製安裝指令。");
@@ -2528,12 +2562,14 @@
     document.body.classList.toggle("offline", offline);
     $("offline-banner").hidden = !offline;
   }
+  let stopWindowTracking;
   try {
     const response = await fetch("/assets/analysis.html");
     if (!response.ok) throw new Error("分析頁面無法載入。");
     $("analysis-root").innerHTML = await response.text();
     mountSampleSteps();
     await api("/api/session");
+    stopWindowTracking = ui.trackWindow();
     state.config = await api("/api/config");
     state.targets = state.config.targets;
     ui.setTheme(state.config.preferences.theme || "light");

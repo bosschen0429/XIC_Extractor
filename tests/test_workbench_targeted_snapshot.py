@@ -25,7 +25,6 @@ def _record_receipts(monkeypatch) -> list[Path]:
 
 def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch):
     """A queued run must not read a later batch/method edit or publish its receipt."""
-    from xic_workbench import targeted
 
     raw = tmp_path / "raw"
     dll = tmp_path / "dll"
@@ -64,7 +63,9 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
             )
 
     monkeypatch.setattr(
-        targeted, "build_canonical_targeted_application_service", lambda _: Service()
+        "xic_extractor.applications.targeted.application."
+        "build_canonical_targeted_application_service",
+        lambda _: Service(),
     )
     jobs = AnalysisJobs(config_dir)
     monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
@@ -130,7 +131,6 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
     from tests.raw_header_fakes import install_fake_raw_headers
     from xic_extractor.extraction import targeted_inputs
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
-    from xic_workbench import targeted
 
     order_source = tmp_path / "samples.csv"
 
@@ -189,7 +189,9 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
             )
 
     monkeypatch.setattr(
-        targeted, "build_canonical_targeted_application_service", lambda _: Service()
+        "xic_extractor.applications.targeted.application."
+        "build_canonical_targeted_application_service",
+        lambda _: Service(),
     )
     jobs = AnalysisJobs(config_dir)
     monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
@@ -216,15 +218,13 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
 def test_queued_targeted_changed_raw_file_set_requires_resubmission(
     tmp_path, monkeypatch, mutation
 ):
-    from xic_workbench import targeted
-
     config_dir, settings, targets = _snapshot_workspace(tmp_path)
     raw_path = tmp_path / "raw" / "changed.raw"
     if mutation == "remove":
         raw_path.write_bytes(b"original acquisition")
     submitted = []
     monkeypatch.setattr(
-        targeted,
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         lambda _: (_ for _ in ()).throw(AssertionError("analysis must not start")),
     )
@@ -267,7 +267,9 @@ def test_relative_workbench_config_uses_absolute_temporary_inputs(
             )
 
     monkeypatch.setattr(
-        targeted, "build_canonical_targeted_application_service", lambda _: Service()
+        "xic_extractor.applications.targeted.application."
+        "build_canonical_targeted_application_service",
+        lambda _: Service(),
     )
     run = targeted.TargetedRun(
         Path("config"),

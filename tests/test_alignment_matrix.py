@@ -1,6 +1,6 @@
 import pickle
 
-from xic_extractor.alignment import AlignedCell
+from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 

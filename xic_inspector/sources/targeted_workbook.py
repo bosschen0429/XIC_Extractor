@@ -10,9 +10,6 @@ from typing import Any, cast
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
-from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
-
 from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
@@ -57,6 +54,10 @@ class TargetedWorkbookSource:
     """A self-contained saved-result source; labels are not RAW identities."""
 
     def __init__(self, path: Path) -> None:
+        # openpyxl is the largest workbench startup import; load it on first open.
+        from openpyxl import load_workbook
+        from openpyxl.utils.exceptions import InvalidFileException
+
         path = path.resolve()
         with path.open("rb") as handle:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()

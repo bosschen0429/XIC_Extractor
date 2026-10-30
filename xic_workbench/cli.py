@@ -9,6 +9,9 @@ import os
 import webbrowser
 from pathlib import Path
 
+from xic_workbench.browser_lifetime import BrowserLifetime
+from xic_workbench.config_io import CONFIG_DIR
+from xic_workbench.desktop_instance import DesktopInstance
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -43,29 +46,41 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
     logging.basicConfig(level=logging.WARNING)
-    workspace = ReviewWorkspace(
-        defaults={
-            "source": args.source or "",
-            "raw_dir": args.raw_dir,
-            "dll_dir": args.dll_dir,
-        },
-        config_dir=args.config_dir,
-    )
-    try:
-        server = create_server(workspace, port=args.port)
-    except OSError as exc:
-        workspace.close()
-        parser.exit(1, f"Unable to start the local workspace: {exc}\n")
-    url = f"http://127.0.0.1:{server.server_port}/"
-    print(f"XIC Workbench: {url}", flush=True)
-    print("Press Ctrl+C to stop the local workspace.", flush=True)
-    if not args.no_open:
-        webbrowser.open(url)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
-        workspace.close()
+    defaults = {
+        "source": args.source or "",
+        "raw_dir": args.raw_dir,
+        "dll_dir": args.dll_dir,
+    }
+    with DesktopInstance(args.config_dir or CONFIG_DIR, defaults, args.port) as desktop:
+        if desktop.url:
+            print(f"XIC Workbench: {desktop.url}", flush=True)
+            if not args.no_open:
+                webbrowser.open(desktop.url)
+            return 0
+        workspace = ReviewWorkspace(defaults=defaults, config_dir=args.config_dir)
+        try:
+            server = create_server(
+                workspace,
+                port=args.port,
+                desktop_key=desktop.key,
+                browser_lifetime=BrowserLifetime(
+                    startup_timeout=None if args.no_open else 60
+                ),
+            )
+        except OSError as exc:
+            workspace.close()
+            parser.exit(1, f"Unable to start the local workspace: {exc}\n")
+        url = f"http://127.0.0.1:{server.server_port}/"
+        desktop.publish(url)
+        print(f"XIC Workbench: {url}", flush=True)
+        print("Press Ctrl+C to stop the local workspace.", flush=True)
+        if not args.no_open:
+            webbrowser.open(url)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+            workspace.close()
     return 0

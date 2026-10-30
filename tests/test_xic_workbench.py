@@ -8,6 +8,8 @@ import json
 import re
 import socket
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import weakref
@@ -20,6 +22,27 @@ from tests.test_cid_nl_explanation import _summary_fixture
 from tests.test_xic_inspector_api import _create_mock_db
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
+
+
+def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
+    """These packages dominate cold start; the first page load does not need them."""
+    script = (
+        "import sys; from pathlib import Path; import xic_workbench.cli; "
+        "from xic_workbench.workspace import ReviewWorkspace; "
+        f"workspace = ReviewWorkspace(config_dir=Path({str(tmp_path)!r})); "
+        "workspace.analysis.bootstrap(); workspace.analysis.state(); "
+        "workspace.state(); workspace.close(); "
+        "loaded = {'scipy', 'openpyxl'} & set(sys.modules); "
+        "assert not loaded, loaded"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):

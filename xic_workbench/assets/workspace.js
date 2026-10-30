@@ -123,7 +123,34 @@ window.XicUi = (() => {
       } finally { restoring = false; }
     }, 0);
   });
-  return { icon, toast, confirm, setTheme, formatDuration, navigation };
+  function trackWindow() {
+    const windowId = crypto.randomUUID();
+    let timer;
+    const notify = (closed = false) => fetch("/api/window", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-XIC-Client": "workbench" },
+      body: JSON.stringify({ window: windowId, closed }),
+      keepalive: true,
+    }).catch(() => {}); // Closing/crashed tabs are also covered by lease expiry.
+    const resume = () => {
+      clearInterval(timer);
+      notify();
+      timer = setInterval(() => notify(), 30000);
+    };
+    const leave = () => { clearInterval(timer); notify(true); };
+    const visible = () => { if (!document.hidden) notify(); };
+    window.addEventListener("pageshow", resume);
+    window.addEventListener("pagehide", leave);
+    document.addEventListener("visibilitychange", visible);
+    resume();
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pageshow", resume);
+      window.removeEventListener("pagehide", leave);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }
+  return { icon, toast, confirm, setTheme, formatDuration, navigation, trackWindow };
 })();
 
 (() => {
