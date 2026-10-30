@@ -152,7 +152,9 @@ def test_ms1_diagnostics_retain_competition_without_replacing_selected_body() ->
     assert [
         candidate.peak.rt for candidate in result.peak_result.candidates
     ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
-    assert result.peak_result.n_prominent_peaks == 3
+    # The two larger bodies exceed the prominence competition floor; the
+    # weaker reference-supported body is retained without pretending it is tall.
+    assert result.peak_result.n_prominent_peaks == 2
     # The observed body at the supplied reference remains the provisional
     # answer. Without calibrated RT context, the stronger alternatives remain
     # visible competition rather than being erased by a fixed local window.
