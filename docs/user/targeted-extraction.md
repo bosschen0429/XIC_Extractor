@@ -55,6 +55,9 @@ The normal flow is **select samples → choose method/targets → run → review
 The target table specifies name, m/z, expected RT in minutes, CID-NL tag
 (`dR`, `R`, `MeR`), role and an optional ISTD relationship. An analyte may reference
 an ISTD row or leave the pair blank; an ISTD does not reference another row. The tag is the single chemistry input.
+Leave the tag blank for MS1-only extraction; no neutral-loss evidence is required
+and the shared 20 ppm precursor tolerance applies. Names such as `D1` or `R1`
+are identifiers, not chemistry tags. Tagged and MS1-only rows may share a batch.
 
 Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths

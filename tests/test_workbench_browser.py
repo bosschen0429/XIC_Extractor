@@ -695,7 +695,10 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
     expect(page.locator("#target-samples-conflicts")).to_contain_text("Blank_bad.raw")
 
 
-def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
+@pytest.mark.parametrize("tag", ["R", ""])
+def test_targeted_exposes_intent_only_and_editor_round_trips(
+    workbench, config_dir, tag
+):
     page = workbench
     expect(page.locator("#target-method-state")).not_to_be_visible()
     page.locator("summary", has_text="處理策略與設定來源").click()
@@ -720,7 +723,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
     )
     page.get_by_role(
         "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-    ).fill("R")
+    ).fill(tag)
     page.locator("#target-editor-save").click()
     expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
@@ -732,7 +735,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
         page.get_by_role(
             "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
         )
-    ).to_have_value("R")
+    ).to_have_value(tag)
     assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
     expect(page.locator("#t-parallel_workers")).to_have_value("2")
 

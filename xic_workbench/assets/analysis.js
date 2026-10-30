@@ -748,6 +748,7 @@
           input.value = value;
         } else {
           input.value = row[key] || "";
+          if (key === "cid_nl_tag") input.placeholder = "留空：MS1-only";
           if (
             ["mz", "expected_rt_min"].includes(
               key,

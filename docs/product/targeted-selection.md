@@ -22,6 +22,15 @@ CrossSample, Backfill, or selected-value implementation.
 
 ## Contract
 
+### MS1-only target intent
+
+A blank `cid_nl_tag` declares an MS1-only target. Intake retains the shared
+20 ppm precursor tolerance and sets the neutral loss and its tolerances to
+unconfigured. The existing MS1-only capture and cell-decision owners apply;
+this does not treat missing MS2 as chemical identity support. Expected RT
+remains an identity reference, not an acquisition crop. Nonblank tags must
+still name a supported CID-NL recipe.
+
 ### Reference input diagnostics
 
 `tools.diagnostics.check_reference_consistency` checks target CSV references

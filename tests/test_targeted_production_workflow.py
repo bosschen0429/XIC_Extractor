@@ -609,16 +609,25 @@ def test_assessment_handoff_is_independent_of_injection_order(tmp_path: Path) ->
 
 
 def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) -> None:
+    from xic_extractor.configuration.targets import parse_target_rows
+
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
     )
-    target = replace(
-        target,
-        neutral_loss_da=None,
-        nl_ppm_warn=None,
-        nl_ppm_max=None,
-    )
+    target = parse_target_rows(
+        [
+            {
+                "label": target.label,
+                "mz": str(target.mz),
+                "expected_rt_min": "1.5",
+                "cid_nl_tag": "",
+                "role": "analyte",
+                "istd_pair": "",
+            }
+        ]
+    )[0]
 
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
@@ -645,6 +654,7 @@ def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) 
         output.file_results[0].results[target.label].reported_peak_area,
         output.file_results[1].results[target.label].reported_peak_area,
     )
+    assert decision_values[1] == pytest.approx(decision_values[0] * 2.0)
 
 
 def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(

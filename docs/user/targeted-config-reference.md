@@ -30,7 +30,7 @@ policy and actual resource allocation.
 | `label` | Unique target name; becomes a public output identifier |
 | `mz` | Positive precursor m/z |
 | `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
-| `cid_nl_tag` | `dR`, `R`, or `MeR`; chemistry and tolerances resolve from the corresponding shared built-in Discovery recipe |
+| `cid_nl_tag` | `dR`, `R`, or `MeR` selects a shared built-in Discovery recipe; blank selects MS1-only, with no neutral-loss requirement and the shared 20 ppm precursor tolerance |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
@@ -40,6 +40,9 @@ Additional descriptive metadata is retained. Retired scientific fields such as
 `is_istd` are not metadata and are rejected. There is no automatic conversion.
 Expected RT guides identity, including the declared analyte–ISTD offset; it does
 not crop the acquired candidate universe.
+MS1-only rows retain their declared name, m/z and expected RT. They do not
+require an ISTD pair and do not acquire CID-NL support from their label or a
+missing tag. A table may mix MS1-only and tagged targets.
 
 ## Portable method
 
