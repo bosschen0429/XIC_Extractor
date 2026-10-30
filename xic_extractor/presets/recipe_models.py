@@ -20,4 +20,3 @@ class BoundCidNlRecipe:
     route: CidNlRecipeRoute
     discovery_settings: DiscoverySettings
     alignment_config: AlignmentConfig
-    owner_build_xic_backend: Literal["raw", "raw_superwindow", "ms1_index"]

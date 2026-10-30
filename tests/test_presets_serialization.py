@@ -79,7 +79,7 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
         "rt_min",
         "mass_recalibration",
     }
-    assert parsed["alignment"]["owner_build_xic_backend"] == "raw"
+    assert "alignment" not in parsed
 
 
 def test_auto_range_export_omits_bounds_and_can_clear_explicit_crop(
@@ -103,7 +103,7 @@ def test_auto_range_export_omits_bounds_and_can_clear_explicit_crop(
     assert settings.rt_min is None and settings.rt_max is None
 
 
-def test_custom_multi_tag_union_and_owner_backend_roundtrip(tmp_path: Path) -> None:
+def test_custom_multi_tag_union_roundtrip(tmp_path: Path) -> None:
     original = Preset(
         name="A/B custom",
         description="Union with explicit tuning",
@@ -113,7 +113,7 @@ def test_custom_multi_tag_union_and_owner_backend_roundtrip(tmp_path: Path) -> N
         ),
         combine_mode="union",
         discovery_overrides={"nl_tolerance_ppm": 12.0},
-        alignment_overrides={"owner_build_xic_backend": "ms1-index"},
+        alignment_overrides={},
         source="test",
     )
 

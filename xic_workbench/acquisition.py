@@ -45,7 +45,7 @@ from xic_inspector.sources.curve_bundle import (
     write_curve_bundle,
 )
 
-_SOURCE_BINDING_BASIS = "report_sample_stem+report_acquisition_source_content"
+_SOURCE_BINDING_BASIS = "report_sample_stem+report_acquisition_source_identity"
 
 
 class CurveAcquisitionCancelled(Exception):
@@ -313,8 +313,22 @@ def _report_acquisition_sources(
             "Report does not retain acquisition source identities; "
             "selected RAW files cannot be verified"
         )
+    if any(not isinstance(row, dict) for row in rows):
+        raise ExplanationError("Report acquisition source identities are malformed")
     try:
-        sources = tuple(AcquisitionSourceIdentity(**row) for row in rows)
+        sources = tuple(
+            AcquisitionSourceIdentity(
+                **{
+                    **row,
+                    "local_file_revision": (
+                        tuple(row["local_file_revision"])
+                        if row.get("local_file_revision") is not None
+                        else None
+                    ),
+                }
+            )
+            for row in rows
+        )
     except (TypeError, IdentityContractError) as exc:
         raise ExplanationError(
             "Report acquisition source identities are malformed"
@@ -343,6 +357,23 @@ def _resolve_report_source(
         and stat_identity(before) == known.path_identity
     ):
         return known
+    local_matches = tuple(
+        source
+        for source in sources
+        if source.local_file_revision == stat_identity(before)
+    )
+    if len(local_matches) == 1:
+        _check_cancel(is_cancelled)
+        return AcquisitionSourceExpectation(local_matches[0], stat_identity(before))
+    # Older result reports can retain explicit content identities. A local-only
+    # report never falls back to reading RAW bytes when its revision differs.
+    content_sources = tuple(
+        source for source in sources if source.content_sha256 is not None
+    )
+    if not content_sources:
+        raise ExplanationError(
+            f"{raw_path.name} 與這份結果分析時使用的 RAW 內容不同，無法對應樣本。"
+        )
     try:
         fingerprint = fingerprint_file_content(
             raw_path,
@@ -357,7 +388,7 @@ def _resolve_report_source(
         raise ExplanationError(f"{raw_path.name} 在核對內容時被修改，請稍後再試。")
     matches = tuple(
         source
-        for source in sources
+        for source in content_sources
         if source.content_sha256 == fingerprint.content_sha256
         and source.byte_size == fingerprint.byte_size
     )

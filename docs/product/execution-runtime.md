@@ -8,9 +8,8 @@ It does not decide what the evidence means or what the product publishes.
 
 | Surface | Current support and limit |
 | --- | --- |
-| `AttemptRuntime`, required-work manifest, resource settlement, finalization result, and status marker | Executable owner contracts in [execution](../../xic_extractor/execution/attempt.py), consumed by Targeted and Untargeted application paths. A result covers its declared work, not automatically the entire product run. |
+| `AttemptRuntime`, required-work manifest, resource settlement, and finalization result | Executable owner contracts in [execution](../../xic_extractor/execution/attempt.py), consumed by Targeted and Untargeted application paths. A result covers its declared work, not automatically the entire product run. |
 | Observability ledger | The owner derives ordered lifecycle facts and mechanical counts from accepted receipts; callers supply measured timing, RSS, and runtime-mediated I/O. This is not a general public `RuntimeEvent` API or an external telemetry backend. |
-| Failed-attempt marker rollover | `OwnerPathRuntimeMarker.allow_failed_attempt_retry` can retain the old finalized failed/cancelled marker when a new attempt starts at the same location. |
 | Dependency reuse and resume | `ValidatedDependencyToken` and cross-attempt work reuse are not implemented. Their reserved contract is separated under [Retry and resume](#retry-and-resume). |
 | Product publication | Remains with workflow projection and writer owners. Runtime completion does not grant selected-value, counted-detection, Matrix, workbook, Backfill-write, or export authority. |
 
@@ -18,6 +17,9 @@ The lifecycle validation boundary remains `diagnostic_only`. Executable wiring,
 synthetic failure coverage, and scientific/product readiness are different
 claims. [Workflow integration](#workflow-integration) describes the actual
 coverage of each consumer.
+Runtime returns its settled completion directly; it does not persist an attempt
+marker or block a later attempt on a marker left on disk. Workbench's busy state
+and application output-collision checks protect their existing boundaries.
 
 ## Ownership
 
@@ -89,7 +91,7 @@ Alignment defaults to the `process` RAW worker backend
 threads in one process. `--raw-worker-backend thread` remains available.
 The process backend runs the CPU-heavy sidecar parsers in separate
 processes; only compact indices and private spool ownership cross that boundary.
-Source fingerprinting uses the same worker budget with threads. These input
+Local source revision binding uses the same worker budget with threads. These input
 phases finish before RAW runtime, so their pools do not multiply the RAW worker
 budget. A value of one keeps serial behavior; concurrency does not change
 scientific identity or sample order.
@@ -184,8 +186,7 @@ acknowledgements.
 Without a verified source expectation, the existing native-open source check
 remains in force. This cache does
 not preserve completed grouping graphs or turn an old failed attempt into a
-successful result. The Alignment entry point archives a finalized failed or
-cancelled runtime marker before launching a new attempt in the same directory.
+successful result.
 
 Targeted and Untargeted CID-NL close through the shared scientific workflow.
 `applications.untargeted.application.run_untargeted_application` adapts pure CID-NL inputs to that workflow
@@ -367,26 +368,6 @@ resource cleanup, and artifact dispositions close. The supervisor validates that
 outcome and the observability facts, then produces a typed finalization result.
 No token or content digest authenticates internal Python construction.
 
-When an entry point uses `OwnerPathRuntimeMarker`, it writes a compact
-`execution_runtime_status_marker.v2` JSON status before launch and atomically
-replaces it after finalization. The marker records request and attempt identities,
-artifact namespace, manifest work keys, terminal outcome, and artifact dispositions.
-It does not serialize the coordinator or observability ledger, and it is not a
-proof of scientific output or a ProductWriter artifact.
-
-An exclusive sibling lock serializes read/validate/replace. Concurrent writers
-wait and revalidate; an unresolved stale lock fails rather than being auto-deleted.
-The write fsyncs a temporary file before replacement. A failed persister cannot
-be reported as accepted finalization, even if it failed after its durable write.
-The caller owns the path, namespace, retention, and publication policy.
-
-A launched marker identifies an unfinished attempt. There is no production
-coordinator-loss recovery API or in-place resume. A finalized marker retains the
-terminal status, not a reconstructable resource registry or telemetry history.
-Identical final status is idempotent; conflicting finalization and a different
-active or successful attempt at the same path are rejected. Unsupported marker
-formats require rerunning in a new output directory.
-
 `raw_open_count` counts only opened `acquisition_session` reservations. Opened
 `process_worker` reservations still emit complete resource lifecycle facts but
 cannot inflate acquisition-session telemetry.
@@ -454,20 +435,17 @@ sibling failures, and a traceback must not be the only failure contract.
 ### Callback failures
 
 `execution.attempt.execute_runtime_attempt(...)` also owns the exception
-boundary for its three direct callbacks. A thrown `Exception` is classified as
+boundary for its two direct callbacks. A thrown `Exception` is classified as
 one `RuntimeExecutionPhaseError` carrying the exact owner-issued
 `ProcessingAttemptIdentity` and one closed `RuntimeExecutionPhase`:
-`worker_batch_provider`, `telemetry_provider`, or `persister`. The original
+`worker_batch_provider` or `telemetry_provider`. The original
 exception remains available only as Python `__cause__`; its message and type do
-not become runtime facts. A worker failure skips telemetry and persistence, a
-telemetry failure skips persistence, and a persister failure returns no
-accepted receipt even when the persister's own marker side effect is later
-readable. Invalid callback returns continue through the existing
+not become runtime facts. A worker failure skips telemetry; a telemetry failure
+returns no completed receipt. Invalid callback returns continue through the existing
 `RuntimeFinalizationContractError` validation path, and `BaseException` is not
 wrapped. The owner invokes each callback at most once and adds no retry or
-cleanup authority. Only an exact-equal persister return reaches
-`accept_runtime_finalization_receipt`, which is the sole runtime result that a
-workflow consumer may treat as accepted finalization.
+cleanup authority. A completed receipt carries the owner-derived terminal
+outcome and settled resource facts directly.
 
 ## Retry And Resume
 
@@ -478,14 +456,6 @@ Retry never reopens a terminal attempt. The lineage owner:
 - records the predecessor/retry relationship;
 - validates immutable artifact dependencies for integrity, staleness, source,
   schema, and semantic-role compatibility.
-
-For a caller that enables `OwnerPathRuntimeMarker.allow_failed_attempt_retry`,
-launching a new attempt in the same output directory first archives the prior
-finalized failed/cancelled marker under its existing attempt key. The compact
-terminal status remains available; replacing the current marker does not promote old
-artifacts or change the predecessor's outcome. Active and successful attempts
-are not replaced. Without this option, a different attempt at the same marker
-path continues to be rejected.
 
 ### Reserved dependency-reuse contract
 
@@ -554,7 +524,7 @@ monotonic offset from the runtime origin established by `attempt_queued`, event
 kind, and work-unit/resource reference where applicable. The coordinator ledger
 ends at `terminal_proposal`. The supervisor finalization continues from the last
 coordinator sequence and adds acknowledgement, committed artifact
-dispositions, and outcome. The optional durable marker stores the terminal status. The
+dispositions, and outcome. The
 queued-to-terminal manifest-preflight path omits `attempt_started`; events
 listed below as started exist only after successful preflight. The minimum
 event set covers:
@@ -673,8 +643,7 @@ Only an opened `PROCESS_WORKER` reservation creates `worker_started` and require
 worker RSS. Unopened, inactive conditional, and failed-open reservations do not
 invent a worker. Monotonic offsets, RSS, and runtime-mediated I/O remain external
 samples; provenance for owner-derived facts is fixed to
-`execution_runtime_owner:v1`. The ledger remains an in-memory typed result;
-marker persistence stores only the completed attempt status and dispositions.
+`execution_runtime_owner:v1`. The ledger remains an in-memory typed result.
 
 
 ## Verification and limits
@@ -685,9 +654,7 @@ Executable contract coverage lives with the owner:
   preflight failure, ordered cancellation, and terminal-state rules.
 - [Owner tests](../../tests/test_execution_runtime_owner.py) and
   [finalization tests](../../tests/test_execution_runtime_finalization.py):
-  work/resource/artifact closure, callback failure, and exact receipt acceptance.
-- [Marker tests](../../tests/test_execution_runtime_marker.py):
-  launch/finalization status, failed-attempt retry, and competing writes.
+  work/resource/artifact closure, callback failure, and terminal outcomes.
 - [Observability tests](../../tests/test_execution_runtime_observability.py):
   event ordering, metric availability, provenance, and receipt binding.
 

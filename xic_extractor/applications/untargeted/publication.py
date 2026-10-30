@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
     prepare_alignment_explanation,
@@ -62,7 +60,6 @@ def publish_untargeted_outputs(
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
     should_cancel: Callable[[], bool] | None,
-    owner_build_route_receipt: OwnerBuildRouteReceipt,
 ) -> AlignmentRunOutputs:
     """Publish completed owner results and close their private stores on every exit."""
     with closing(completed), ExitStack() as output_stack:
@@ -136,22 +133,14 @@ def publish_untargeted_outputs(
             and outputs.matrix_tsv is not None
             and (outputs.matrix_tsv.is_file())
         ):
-            with outputs.matrix_tsv.open("rb") as handle:
-                matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
-
             evidence = EvidenceLocator(
                 report_path=db_path,
                 matrix_path=outputs.matrix_tsv,
-                matrix_sha256=matrix_sha256,
                 processing_attempt_id=completed.processing_attempt_id,
-                schema_version="alignment_explanation"
-                if policy.explanation_full_audit
-                else "alignment_explanation_review",
             )
 
         return replace(
             outputs,
-            owner_build_route_receipt=owner_build_route_receipt,
             evidence=evidence,
         )
 

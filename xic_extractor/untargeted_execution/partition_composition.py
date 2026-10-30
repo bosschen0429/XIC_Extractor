@@ -38,9 +38,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
-    UntargetBatchApplicationResultRequest,
     UntargetedCandidateExclusion,
-    finalize_alignment_result,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
@@ -237,18 +235,13 @@ def compose_untargeted_batch(
                 (ordered_children[index][2],),
             ),
         )
-    return cast(
-        FinalizedUntargetBatchApplicationResult,
-        finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=scope,
-                processing_request=owners.request,
-                processing_attempt=owners.attempt,
-                children=children,
-                excluded_candidates=_ordered_exclusions(
-                    store, exclusion_positions, plan.excluded_candidates
-                ),
-            )
+    return FinalizedUntargetBatchApplicationResult(
+        scope=scope,
+        processing_request=owners.request,
+        processing_attempt=owners.attempt,
+        children=children,
+        excluded_candidates=_ordered_exclusions(
+            store, exclusion_positions, plan.excluded_candidates
         ),
     )
 

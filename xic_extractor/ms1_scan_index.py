@@ -22,28 +22,6 @@ class MS1Scan:
     intensities: NDArray[np.float64]
 
 
-@dataclass(frozen=True)
-class MS1ScanIndexProvenance:
-    """Identity of the sample and source artifact used to build an NPZ index."""
-
-    sample_stem: str
-    source_path: str
-    source_sha256: str
-
-    def __post_init__(self) -> None:
-        if not self.sample_stem.strip():
-            raise ValueError("MS1 index provenance sample_stem must be non-empty")
-        if not self.source_path.strip():
-            raise ValueError("MS1 index provenance source_path must be non-empty")
-        digest = self.source_sha256.strip()
-        if len(digest) != 64 or any(
-            character not in "0123456789abcdefABCDEF" for character in digest
-        ):
-            raise ValueError(
-                "MS1 index provenance source_sha256 must be a sha256 hex digest"
-            )
-
-
 class MS1ScanReadError(RuntimeError):
     """A RAW scan could not be read into an auditable MS1 index."""
 
@@ -138,8 +116,6 @@ def build_ms1_scan_index_for_rt_window(
 def write_ms1_scan_index_npz(
     path: Path,
     index: tuple[MS1Scan, ...],
-    *,
-    provenance: MS1ScanIndexProvenance | None = None,
 ) -> Path:
     validate_ms1_scan_index(index)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,15 +150,6 @@ def write_ms1_scan_index_npz(
         offsets=offsets,
         masses=masses_concat,
         intensities=intensities_concat,
-        provenance_sample_stem=np.asarray(
-            [provenance.sample_stem if provenance is not None else ""]
-        ),
-        provenance_source_path=np.asarray(
-            [provenance.source_path if provenance is not None else ""]
-        ),
-        provenance_source_sha256=np.asarray(
-            [provenance.source_sha256 if provenance is not None else ""]
-        ),
     )
     return path
 
@@ -243,39 +210,6 @@ def read_ms1_scan_index_npz(path: Path) -> tuple[MS1Scan, ...]:
     result = tuple(scans)
     validate_ms1_scan_index(result)
     return result
-
-
-def read_ms1_scan_index_provenance(path: Path) -> MS1ScanIndexProvenance | None:
-    """Read optional source binding from an MS1 index cache.
-
-    Legacy caches without these fields remain readable by the generic index
-    reader, but callers producing source-attributed evidence must reject a
-    missing result rather than infer identity from the filename.
-    """
-
-    fields = (
-        "provenance_sample_stem",
-        "provenance_source_path",
-        "provenance_source_sha256",
-    )
-    with np.load(path, allow_pickle=False) as payload:
-        present = tuple(field in payload.files for field in fields)
-        if not any(present):
-            return None
-        if not all(present):
-            raise ValueError("MS1 index cache source provenance is incomplete")
-        if any(payload[field].shape != (1,) for field in fields):
-            raise ValueError("MS1 index cache source provenance is incomplete")
-        values = tuple(str(payload[field][0]).strip() for field in fields)
-    if not any(values):
-        return None
-    if not all(values):
-        raise ValueError("MS1 index cache source provenance is incomplete")
-    return MS1ScanIndexProvenance(
-        sample_stem=values[0],
-        source_path=values[1],
-        source_sha256=values[2],
-    )
 
 
 def extract_index_xic(

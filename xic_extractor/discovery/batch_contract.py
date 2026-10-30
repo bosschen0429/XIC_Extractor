@@ -1,13 +1,11 @@
 """Owner-backed Discovery candidate-universe receipts.
 
-The receipt binds one sample's exact candidate CSV bytes and complete scientific
-candidate payload to the acquisition content that Discovery inspected.  Paths
-remain locators only and may change when the same content is replayed.
+The receipt binds a sample's candidate CSV and physical-facts files to the
+local acquisition revision that Discovery inspected.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -20,9 +18,7 @@ from xic_extractor.configuration.mass_recalibration import (
     deserialize_mass_recalibration_result,
     serialize_mass_recalibration_result,
 )
-from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.models import (
-    DISCOVERY_CANDIDATE_COLUMNS,
     DiscoveryCandidate,
 )
 from xic_extractor.processing_identity import (
@@ -39,21 +35,19 @@ from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
 )
 
-DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index"
+DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_local_source"
 DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv"
-DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
-CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe"
+CANDIDATE_UNIVERSE_SCHEMA_VERSION = "discovery_candidate_file_universe"
 ALIGNMENT_FEATURE_INPUT_KEY = "alignment_feature_candidate_ids"
 
 DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "candidate_artifact_schema_version",
     "candidate_artifact_sha256",
     "candidate_artifact_byte_size",
-    "candidate_payload_sha256",
     "physical_facts_sha256",
     "physical_facts_byte_size",
-    "acquisition_content_sha256",
+    "acquisition_local_file_revision",
     "acquisition_byte_size",
     "acquisition_format",
     "observation_namespace",
@@ -70,7 +64,6 @@ class DiscoveryCandidateUniverseReceipt:
     candidate_artifact_schema_version: str
     candidate_artifact_sha256: str
     candidate_artifact_byte_size: int
-    candidate_payload_sha256: str
     physical_facts_sha256: str
     physical_facts_byte_size: int
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
@@ -108,10 +101,6 @@ class DiscoveryCandidateUniverseReceipt:
             raise IdentityContractError(
                 "candidate_artifact_byte_size must be a non-negative integer"
             )
-        _validate_digest(
-            self.candidate_payload_sha256,
-            field="candidate_payload_sha256",
-        )
         _validate_digest(
             self.physical_facts_sha256,
             field="physical_facts_sha256",
@@ -151,7 +140,6 @@ def mint_discovery_candidate_universe_receipt(
         )
     ordered = _canonical_candidates(candidates, sample_stem=stem)
     artifact = fingerprint_file_content(candidate_csv)
-    payload_sha256 = discovery_candidate_payload_sha256(ordered)
     return DiscoveryCandidateUniverseReceipt(
         sample_stem=stem,
         acquisition_source=acquisition_source,
@@ -159,7 +147,6 @@ def mint_discovery_candidate_universe_receipt(
         candidate_artifact_schema_version=(DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION),
         candidate_artifact_sha256=artifact.content_sha256,
         candidate_artifact_byte_size=artifact.byte_size,
-        candidate_payload_sha256=payload_sha256,
         physical_facts_sha256=physical_facts.content_sha256,
         physical_facts_byte_size=physical_facts.byte_size,
         mass_recalibration_result=mass_recalibration_result,
@@ -206,7 +193,7 @@ def validate_discovery_candidate_universe(
     acquisition_source: AcquisitionSourceIdentity,
     candidates: Sequence[DiscoveryCandidate],
 ) -> tuple[DiscoveryCandidate, ...]:
-    """Close parsed candidates and replay RAW content against one receipt."""
+    """Check the parsed population and acquisition against its file receipt."""
 
     _require_receipt(receipt)
     if acquisition_source != receipt.acquisition_source:
@@ -218,41 +205,7 @@ def validate_discovery_candidate_universe(
         raise IdentityContractError(
             "candidate count does not match the Discovery receipt"
         )
-    if discovery_candidate_payload_sha256(ordered) != receipt.candidate_payload_sha256:
-        raise IdentityContractError(
-            "candidate payload does not match the Discovery receipt"
-        )
     return ordered
-
-
-def discovery_candidate_payload_sha256(
-    candidates: Sequence[DiscoveryCandidate],
-) -> str:
-    """Return the path-independent digest of complete candidate facts."""
-
-    canonical: list[dict[str, str]] = []
-    for candidate in sorted(candidates, key=lambda item: item.candidate_id):
-        canonical.append(
-            {
-                column: format_discovery_csv_value(
-                    column,
-                    getattr(candidate, column),
-                )
-                for column in DISCOVERY_CANDIDATE_COLUMNS
-                if column != "raw_file"
-            }
-        )
-    encoded = json.dumps(
-        {
-            "schema_version": DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION,
-            "candidates": canonical,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def discovery_receipt_index_fields(
@@ -262,18 +215,22 @@ def discovery_receipt_index_fields(
 
     _require_receipt(receipt)
     source = receipt.acquisition_source
-    if source.content_sha256 is None:
-        raise ValueError("Discovery batch indexes require a content-bound source")
+    if source.local_file_revision is None:
+        raise ValueError(
+            "Discovery batch indexes require a local source revision; "
+            "regenerate Discovery"
+        )
     return {
         "candidate_artifact_schema_version": (
             receipt.candidate_artifact_schema_version
         ),
         "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
         "candidate_artifact_byte_size": str(receipt.candidate_artifact_byte_size),
-        "candidate_payload_sha256": receipt.candidate_payload_sha256,
         "physical_facts_sha256": receipt.physical_facts_sha256,
         "physical_facts_byte_size": str(receipt.physical_facts_byte_size),
-        "acquisition_content_sha256": source.content_sha256,
+        "acquisition_local_file_revision": json.dumps(
+            source.local_file_revision, separators=(",", ":")
+        ),
         "acquisition_byte_size": str(source.byte_size),
         "acquisition_format": source.acquisition_format,
         "observation_namespace": source.observation_namespace,
@@ -298,8 +255,14 @@ def discovery_receipt_from_index_fields(
     """Reconstruct and self-validate one batch-index receipt."""
 
     try:
+        revision = json.loads(row["acquisition_local_file_revision"])
+        if not isinstance(revision, list):
+            raise IdentityContractError(
+                "acquisition_local_file_revision must be an array"
+            )
         source = AcquisitionSourceIdentity(
-            content_sha256=row["acquisition_content_sha256"],
+            content_sha256=None,
+            local_file_revision=tuple(revision),
             byte_size=_nonnegative_int(
                 row["acquisition_byte_size"],
                 field="acquisition_byte_size",
@@ -319,7 +282,6 @@ def discovery_receipt_from_index_fields(
                 row["candidate_artifact_byte_size"],
                 field="candidate_artifact_byte_size",
             ),
-            candidate_payload_sha256=row["candidate_payload_sha256"],
             physical_facts_sha256=row["physical_facts_sha256"],
             physical_facts_byte_size=_nonnegative_int(
                 row["physical_facts_byte_size"],
@@ -428,7 +390,6 @@ def validate_candidate_universe_payload(
             "sample_stem",
             "candidate_count",
             "candidate_ids",
-            "candidate_payload_sha256",
             "candidate_artifact_schema_version",
             "candidate_artifact_sha256",
             "candidate_artifact_byte_size",
@@ -440,7 +401,6 @@ def validate_candidate_universe_payload(
         stem = entry.get("sample_stem")
         count = entry.get("candidate_count")
         ids = entry.get("candidate_ids")
-        digest = entry.get("candidate_payload_sha256")
         if not isinstance(stem, str) or not stem.strip() or stem != stem.strip():
             raise IdentityContractError("candidate universe sample stem is invalid")
         if (
@@ -453,8 +413,6 @@ def validate_candidate_universe_payload(
             or any(not isinstance(item, str) or not item.strip() for item in ids)
         ):
             raise IdentityContractError("candidate universe IDs are invalid")
-        if not is_lower_sha256(digest):
-            raise IdentityContractError("candidate universe digest is invalid")
         if (
             not isinstance(entry.get("candidate_artifact_schema_version"), str)
             or entry["candidate_artifact_schema_version"]
@@ -552,7 +510,6 @@ __all__ = (
     "DISCOVERY_BATCH_RECEIPT_COLUMNS",
     "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
     "DiscoveryCandidateUniverseReceipt",
-    "discovery_candidate_payload_sha256",
     "discovery_receipt_from_index_fields",
     "discovery_receipt_index_fields",
     "mint_discovery_candidate_universe_receipt",

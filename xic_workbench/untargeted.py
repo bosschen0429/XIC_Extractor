@@ -362,7 +362,6 @@ class UntargetedRun:
                     emit_cid_nl_explanation=True,
                 ),
                 legacy=RetainedAlignmentOptions(
-                    owner_build_xic_backend=recipe.owner_build_xic_backend,
                     audit_evidence_mode="none",
                 ),
             ),
@@ -464,13 +463,11 @@ def _alignment_summary(outputs: Any) -> dict[str, Any]:
         if (value := getattr(outputs, attr, None)) is not None
     }
     matrix = getattr(outputs, "matrix_tsv", None)
-    receipt = getattr(outputs, "owner_build_route_receipt", None)
     return {
         "alignment_outputs": alignment_outputs,
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "run_metadata_json": alignment_outputs.get("run_metadata_json"),
         "evidence": getattr(outputs, "evidence", None),
-        "owner_build_route": receipt.as_dict() if receipt is not None else None,
     }
 
 

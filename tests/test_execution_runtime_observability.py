@@ -218,7 +218,6 @@ def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> N
             ),
         ),
     )
-    persisted = []
 
     def nonmonotonic_telemetry(coordinator):
         samples = build_runtime_telemetry_samples_from_coordinator(coordinator)
@@ -236,9 +235,7 @@ def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> N
         _finalize_runtime_attempt(
             aggregate,
             telemetry_provider=nonmonotonic_telemetry,
-            persister=lambda proposed: persisted.append(proposed),
         )
-    assert persisted == []
 
 
 def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(

@@ -93,15 +93,17 @@ human-facing boundary and no natural key suffices
 objects are compared by content and ordered by raw measured facts.
 Its current content boundary is:
 
-- normal Targeted acquisition binds the local filesystem revision (device,
+- normal Targeted and Discovery-to-Alignment acquisition bind the local filesystem revision (device,
   file identity, byte size, modification and creation/change timestamps),
   acquisition format, and adapter-readable observation namespace. Preparation
   does not scan RAW content. The adapter checks the revision before and after
   opening the vendor handle, and the workflow rejects input changes before
   finalization. This identifies a local file revision, not portable byte
   equality: copies are distinct sources and no full-content digest is claimed;
-- persisted Discovery sources and explicit content fingerprinting bind the
-  full-file SHA-256, byte size, acquisition format, and observation namespace;
+- persisted Discovery sources retain that local revision. Re-analysis of old
+  source schemas requires regenerating Discovery. Candidate and physical-facts
+  files retain their own boundary checksums; explicit content fingerprinting
+  still binds exact bytes where a file consumer requires them;
 - target keys, exact definitions, and ordered snapshots come from the
   [target-list owner](../../xic_extractor/configuration/target_identity.py);
   changing a definition or order creates a new snapshot, not a mutation of the
@@ -122,9 +124,9 @@ Its current content boundary is:
   predecessor attempt. Retry always issues a new attempt. Terminal
   outcome and cancellation/failure events remain append-only facts owned by the
   execution-runtime contract and never rewrite identity.
-- a written evidence report is located by its path, the Matrix path and file
-  SHA-256, the attempt UUID, and the schema version; there is no separate
-  artifact-instance identity;
+- a written evidence report is located by its path, the Matrix path, and the
+  attempt UUID. The reader admits the report schema and checks the Matrix
+  SHA-256 stored in the report; the locator carries no duplicate checksum;
 - Delta Mass runs detection, matching, and trace confirmation in one pass.
   Its diagnostic CSV/sidecar outputs do not create processing-attempt
   authority;
@@ -135,8 +137,8 @@ Its current content boundary is:
 The Targeted adapter currently names the existing Thermo MS-controller-1
 namespace explicitly. A different controller, acquisition adapter, or
 observation namespace therefore creates a different source identity rather
-than silently reusing a bare scan number. The resolver performs one sequential
-full-file read per source, but opens no vendor RAW handle and makes no XIC call.
+than silently reusing a bare scan number. Local source preparation reads file
+metadata, not RAW bytes, and opens no vendor RAW handle or XIC call.
 
 ### Owner-reference composition
 

@@ -23,7 +23,7 @@ from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     IdentityContractError,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
 )
 from xic_extractor.processing_run_spec import (
     CidNlDiscoveryMethodSpec,
@@ -55,7 +55,7 @@ def compile_discovery_processing_run_spec(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> ProcessingRunSpec:
-    """Validate method/profile, fingerprint each path once, then compile."""
+    """Validate method/profile, bind each local file revision, then compile."""
 
     spec, _expectations = compile_discovery_processing_run_spec_with_expectations(
         raw_paths,
@@ -76,7 +76,7 @@ def compile_discovery_processing_run_spec_with_expectations(
     verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> tuple[ProcessingRunSpec, tuple[AcquisitionSourceExpectation, ...]]:
-    """Compile a run spec and retain each fingerprint's exact local path state."""
+    """Compile a run spec and retain each source's exact local path state."""
 
     if not isinstance(raw_paths, tuple) or not raw_paths:
         raise ValueError("raw_paths must be a non-empty Path tuple")
@@ -103,7 +103,7 @@ def compile_discovery_processing_run_spec_with_expectations(
             )
             return expectation
         before = stat_identity(path.stat())
-        source = build_acquisition_source_identity(
+        source = build_local_acquisition_source_identity(
             path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

@@ -50,7 +50,6 @@ from xic_extractor.execution.partitions import (
     ProcessingOwners,
     WorkPartition,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker, RuntimeMarkerState
 from xic_extractor.execution.result_store import (
     StreamedResultStore,
     _OwnerUnpickler,
@@ -471,7 +470,6 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-scheduler")
 
     progress_events: list[dict[str, Any]] = []
 
@@ -479,7 +477,6 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
         adapter,
         output_dir=output_dir,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         progress_callback=progress_events.append,
         retain_partition_memory=False,
         pipeline_overlap=False,
@@ -527,7 +524,6 @@ def test_scheduler_does_not_force_full_gc_after_partition(
         adapter,
         output_dir=tmp_path / "gc-output",
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "gc-marker.json", "gc"),
         pipeline_overlap=pipeline_overlap,
     )
 
@@ -542,23 +538,24 @@ def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
         tmp_path, sample_stems=("sample-1",)
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2)
-    marker = OwnerPathRuntimeMarker(tmp_path / "cleanup-marker.json", "cleanup")
-    cleanup_states: list[RuntimeMarkerState] = []
+    cleanup_calls: list[bool] = []
 
     def cleanup() -> None:
-        cleanup_states.append(marker.read().state)
+        cleanup_calls.append(True)
+
+    def telemetry(coordinator):
+        assert cleanup_calls == [True]
+        return build_runtime_telemetry_samples_from_coordinator(coordinator)
 
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=tmp_path / "cleanup-output",
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
+        telemetry_provider=telemetry,
         acquisition_cleanup=cleanup,
     )
 
     assert result["application_result"]["total_children"] == 2
-    assert cleanup_states == [RuntimeMarkerState.LAUNCHED]
-    assert marker.read().state is RuntimeMarkerState.FINALIZED
+    assert cleanup_calls == [True]
 
 
 def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
@@ -568,9 +565,6 @@ def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
         tmp_path, sample_stems=("sample-1",)
     )
     adapter = MockAdapter(fixture.owners, num_partitions=1)
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "cleanup-failure-marker.json", "cleanup-failure"
-    )
     cleanup_calls = 0
 
     def cleanup() -> None:
@@ -583,12 +577,10 @@ def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
             adapter,
             output_dir=tmp_path / "cleanup-failure-output",
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             acquisition_cleanup=cleanup,
         )
 
     assert cleanup_calls == 1
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> None:
@@ -597,13 +589,11 @@ def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> No
     )
     adapter = MockAdapter(fixture.owners, num_partitions=1)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-retained")
 
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         retain_partition_memory=True,
     )
 
@@ -617,7 +607,6 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cancel")
 
     call_count = 0
     cleanup_calls = 0
@@ -640,7 +629,6 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             should_cancel=should_cancel,
             acquisition_cleanup=cleanup,
         )
@@ -657,7 +645,6 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2, fail_acquisition_index=0)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-acq-fail")
     cleanup_calls = 0
 
     def cleanup() -> None:
@@ -672,7 +659,6 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             acquisition_cleanup=cleanup,
         )
 
@@ -690,7 +676,6 @@ def test_scheduler_composition_failure_retains_completed_results(
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2, fail_composition_index=1)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-fail")
 
     with pytest.raises(
         RuntimeError,
@@ -700,7 +685,6 @@ def test_scheduler_composition_failure_retains_completed_results(
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
@@ -719,7 +703,6 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
     )
     adapter = MockAdapter(fixture.owners, num_partitions=2, fail_finalize=True)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-final-fail")
 
     with pytest.raises(
         RuntimeError,
@@ -729,7 +712,6 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
@@ -737,7 +719,6 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
     retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
     assert tuple(retained.sequence("children")) == ("child-0", "child-1")
     assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
-    assert marker.read().state == RuntimeMarkerState.FINALIZED
 
 
 def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
@@ -766,14 +747,12 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
         on_composition=on_composition,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-overlap")
     events: list[dict[str, Any]] = []
 
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         progress_callback=events.append,
         pipeline_overlap=True,
     )
@@ -808,14 +787,12 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
     )
     adapter = MockAdapter(fixture.owners, num_partitions=1)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-single")
     events: list[dict[str, Any]] = []
 
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
         progress_callback=events.append,
         pipeline_overlap=True,
     )
@@ -864,14 +841,12 @@ def test_pipeline_overlap_backpressure(
         on_composition=on_comp,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-backpressure")
 
     if acquisition_workers == 1:
         result = PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -886,7 +861,6 @@ def test_pipeline_overlap_backpressure(
                         adapter,
                         output_dir=output_dir,
                         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-                        recovery_marker=marker,
                         pipeline_overlap=True,
                         acquisition_workers=acquisition_workers,
                     )
@@ -937,7 +911,6 @@ def test_pipeline_bilateral_abort_consumer_failure(
         acquisition_delay=0.03,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-abort")
 
     with pytest.raises(
         RuntimeError,
@@ -947,7 +920,6 @@ def test_pipeline_bilateral_abort_consumer_failure(
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -971,18 +943,15 @@ def test_parallel_partition_acquisition_cancellation_closes_all_producers(
 
     adapter = MockAdapter(fixture.owners, on_acquisition=cancel_acquisitions)
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "parallel-cancel")
     with pytest.raises(RuntimeError, match="before batch publication"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             should_cancel=cancelled.is_set,
             pipeline_overlap=True,
             acquisition_workers=2,
         )
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
     assert not list(output_dir.glob(".partition_spool-*"))
 
 
@@ -1000,7 +969,6 @@ def test_pipeline_bilateral_abort_producer_failure(
         fail_acquisition_index=1,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-prod-abort")
 
     with pytest.raises(
         RuntimeError,
@@ -1010,7 +978,6 @@ def test_pipeline_bilateral_abort_producer_failure(
             adapter,
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -1031,8 +998,6 @@ def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
         work_unit_keys=("wu:1", "wu:2"),
         owner_completeness_attestation="test-attestation",
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-ingress")
-    marker.record_launch(runtime)
 
     def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
         accepted = ingress.request_cancellation(
@@ -1073,12 +1038,9 @@ def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
         reservations=(),
         worker_batch_provider=provide_worker_batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=marker,
         cancellation_ingress=ingress,
     )
     assert receipt.supervisor.terminal_outcome is AttemptTerminalOutcome.CANCELLED
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.CANCELLED
 
 
 def test_r386_01_global_closure_failure_retains_prior_success(
@@ -1098,7 +1060,6 @@ def test_r386_01_global_closure_failure_retains_prior_success(
         fail_finalize=True,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-closure-fail")
 
     with pytest.raises(
         RuntimeError,
@@ -1108,12 +1069,9 @@ def test_r386_01_global_closure_failure_retains_prior_success(
             adapter,
             output_dir=output_dir,
             telemetry_provider=_record_terminal_telemetry(terminal_records),
-            recovery_marker=marker,
             pipeline_overlap=True,
         )
 
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert len(terminal_records) == 1
     coordinator = terminal_records[0]
     settlements = coordinator.state.runtime.settlements
@@ -1148,8 +1106,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
         work_unit_keys=("wu:1",),
         owner_completeness_attestation="test-attestation",
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cutoff")
-    marker.record_launch(runtime)
 
     def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
         return RuntimeWorkerBatchReceipt(
@@ -1169,7 +1125,6 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
         reservations=(),
         worker_batch_provider=provide_worker_batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=marker,
         cancellation_ingress=ingress,
     )
     late_accepted = ingress.request_cancellation(
@@ -1206,7 +1161,6 @@ def test_r386_01_consumer_composition_failure_settled_failed(
         on_composition=compose,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-fail-settled")
     events: list[dict[str, Any]] = []
 
     with pytest.raises(
@@ -1217,13 +1171,10 @@ def test_r386_01_consumer_composition_failure_settled_failed(
             adapter,
             output_dir=output_dir,
             telemetry_provider=_record_terminal_telemetry(terminal_records),
-            recovery_marker=marker,
             progress_callback=events.append,
             pipeline_overlap=True,
         )
 
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert len(terminal_records) == 1
     coordinator = terminal_records[0]
     settlements = coordinator.state.runtime.settlements
@@ -1254,18 +1205,14 @@ def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
         fail_composition_index=1,
         opaque_partition_bindings=True,
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "opaque-work-units.json", "opaque")
 
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=tmp_path / "opaque-work-units",
             telemetry_provider=_record_terminal_telemetry(terminal_records),
-            recovery_marker=marker,
         )
 
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert len(terminal_records) == 1
     coordinator = terminal_records[0]
     outcomes = {
@@ -1298,18 +1245,14 @@ def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_lo
         opaque_partition_bindings=True,
         on_acquisition=lose_acquisition,
     )
-    marker = OwnerPathRuntimeMarker(tmp_path / "opaque-resource.json", "opaque")
 
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=tmp_path / "opaque-resource",
             telemetry_provider=_record_terminal_telemetry(terminal_records),
-            recovery_marker=marker,
         )
 
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert len(terminal_records) == 1
     coordinator = terminal_records[0]
     resources = {
@@ -1339,7 +1282,6 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
         declare_global_closure=True,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-closure-cancel")
     events: list[dict[str, Any]] = []
     cancel = False
 
@@ -1357,14 +1299,11 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
             adapter,
             output_dir=output_dir,
             telemetry_provider=_record_terminal_telemetry(terminal_records),
-            recovery_marker=marker,
             progress_callback=progress,
             should_cancel=lambda: cancel,
             pipeline_overlap=True,
         )
 
-    snapshot = marker.read()
-    assert snapshot.terminal_outcome is AttemptTerminalOutcome.CANCELLED
     assert len(terminal_records) == 1
     coordinator = terminal_records[0]
     settlements = coordinator.state.runtime.settlements
@@ -1855,7 +1794,6 @@ def test_scheduler_phase_barrier_preserves_global_order(
         ),
         output_dir=tmp_path / "output",
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "marker.json", "phases"),
         progress_callback=progress_events.append,
         pipeline_overlap=pipeline_overlap,
         acquisition_workers=2,
@@ -1907,7 +1845,6 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
         return execute_runtime_attempt(*args, **kwargs)
 
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "phase-abort")
     with pytest.raises(RuntimeError, match="before batch publication"):
         PartitionPipelineScheduler.execute(
             adapter,
@@ -1917,7 +1854,6 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
             ),
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=marker,
             should_cancel=cancelled.is_set,
             pipeline_overlap=pipeline_overlap,
             execute_runtime_attempt=execute_and_capture,
@@ -1932,8 +1868,6 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
         ]
         assert len(failures) == 1
         assert failures[0].failure_detail.stage == "freeze-hints"
-    else:
-        assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
     preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
     assert len(preserved) == 1
 

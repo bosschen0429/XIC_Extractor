@@ -38,26 +38,9 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
 
     assert metadata["schema_version"] == "alignment-results"
-    assert (
-        metadata["cross_sample_peak_group_policy"]
-        == "cross_sample_peak_group_hypothesis"
-    )
     assert metadata["feature_id_policy"] == "report_scoped_measured_member_order"
-    assert (
-        metadata["group_delivery_policy"] == "owner_group_delivery_successor_projection"
-    )
-    assert metadata["gap_fill_policy"] == "missing_observation_gap_fill"
-    assert (
-        metadata["legacy_owner_backfill_role"]
-        == "owner_backfill_as_gap_fill_materialization"
-    )
-    assert (
-        metadata["pre_backfill_projection_policy"]
-        == "pre_backfill_successor_projection_required_when_enabled"
-    )
     assert metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
     assert metadata["baseline_integration_method"] == "asls"
-    assert metadata["owner_build_xic_backend"] == "raw"
     assert metadata["backfill_scope"] == "full-audit"
     assert metadata["output_scope"] == "full-audit"
     assert metadata["selected_family_source"] == ""
@@ -74,20 +57,6 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
     assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
-
-
-def test_alignment_metadata_records_owner_build_xic_backend() -> None:
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        owner_build_xic_backend="ms1_index",
-        owner_backfill_xic_backend="raw",
-        output_level="validation",
-        peak_config=_peak_config(),
-    )
-
-    assert metadata["owner_build_xic_backend"] == "ms1_index"
 
 
 def test_alignment_metadata_records_baseline_integration_method() -> None:
@@ -241,49 +210,6 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         row["value"] is not None and row["availability"] == "measured"
         for row in by_metric["writer_rename_time_sec"]
     )
-    assert all(
-        row["value"] is not None and row["availability"] == "measured"
-        for row in by_metric["writer_hash_time_sec"]
-    )
-
-
-@pytest.mark.parametrize(
-    "timing_recorder",
-    [None, TimingRecorder("alignment")],
-)
-def test_writer_hashing_requires_instrumentation_opt_in(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    timing_recorder: TimingRecorder | None,
-) -> None:
-    outputs = output_paths(
-        tmp_path / "out",
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-
-    def reject_fingerprint(*_args, **_kwargs):
-        raise AssertionError("writer fingerprinting must remain opt-in")
-
-    monkeypatch.setattr(
-        pipeline_outputs_module,
-        "fingerprint_file_content",
-        reject_fingerprint,
-    )
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
-
-    pipeline_outputs_module.write_outputs_atomic(
-        outputs,
-        matrix,
-        metadata={},
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
-        timing_recorder=timing_recorder,
-    )
-
-    assert outputs.matrix_tsv is not None and outputs.matrix_tsv.exists()
 
 
 def test_writer_instrumentation_preserves_output_bytes(
@@ -316,19 +242,13 @@ def test_writer_instrumentation_preserves_output_bytes(
         **writer_kwargs,
     )
 
-    original_fingerprint = pipeline_outputs_module.fingerprint_file_content
-    fingerprint_calls = 0
+    import xic_extractor.processing_identity as identity
 
-    def counted_fingerprint(*args, **kwargs):
-        nonlocal fingerprint_calls
-        fingerprint_calls += 1
-        return original_fingerprint(*args, **kwargs)
+    def reject_diagnostic_hash(*_args, **_kwargs):
+        raise OSError("diagnostic hash unavailable")
 
-    monkeypatch.setattr(
-        pipeline_outputs_module,
-        "fingerprint_file_content",
-        counted_fingerprint,
-    )
+    monkeypatch.setattr(identity, "fingerprint_file_content", reject_diagnostic_hash)
+
     pipeline_outputs_module.write_outputs_atomic(
         candidate_outputs,
         *writer_args,
@@ -346,7 +266,6 @@ def test_writer_instrumentation_preserves_output_bytes(
         for path in candidate_outputs.__dict__.values()
         if isinstance(path, Path)
     }
-    assert fingerprint_calls == len(candidate_files)
     assert baseline_files.keys() == candidate_files.keys()
     assert all(
         baseline_files[name].read_bytes() == candidate_files[name].read_bytes()
@@ -412,57 +331,6 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
     production_bytes = production_outputs.matrix_tsv.read_bytes()
     assert production_bytes.splitlines()[-1].endswith(b"\t")
     assert production_bytes == machine_outputs.matrix_tsv.read_bytes()
-
-
-def test_writer_instrumentation_failure_rolls_back(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    outputs = output_paths(
-        tmp_path / "out",
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-    output_files = tuple(
-        path for path in outputs.__dict__.values() if isinstance(path, Path)
-    )
-    for path in output_files:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"prior output")
-
-    original_fingerprint = pipeline_outputs_module.fingerprint_file_content
-    fingerprint_calls = 0
-
-    def fail_second_fingerprint(*args, **kwargs):
-        nonlocal fingerprint_calls
-        fingerprint_calls += 1
-        if fingerprint_calls == 2:
-            raise RuntimeError("fingerprint failed")
-        return original_fingerprint(*args, **kwargs)
-
-    monkeypatch.setattr(
-        pipeline_outputs_module,
-        "fingerprint_file_content",
-        fail_second_fingerprint,
-    )
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
-
-    with pytest.raises(RuntimeError, match="fingerprint failed"):
-        pipeline_outputs_module.write_outputs_atomic(
-            outputs,
-            matrix,
-            metadata={},
-            alignment_config=config,
-            production_decisions=build_production_decisions(matrix, config),
-            timing_recorder=TimingRecorder("alignment", instrument_writers=True),
-        )
-
-    assert fingerprint_calls == 2
-    assert all(path.read_bytes() == b"prior output" for path in output_files)
-    assert not tuple((tmp_path / "out").glob("*.tmp"))
-    assert not tuple((tmp_path / "out").glob("*.bak"))
 
 
 def test_writer_binds_provenance_row_count_into_persisted_metadata(

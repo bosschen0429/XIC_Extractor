@@ -1265,14 +1265,6 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
     # the frozen Trace's ndarray payload is deeply immutable.
     for item in adapter.capture_inputs:
         item.trace.intensity.fill(0.0)
-    for value_type in (capture_owner.SampleLocalCapture,):
-        monkeypatch.setattr(
-            value_type,
-            "__post_init__",
-            lambda *_args, **_kwargs: pytest.fail(
-                "completion revalidated an unchanged owner-issued input"
-            ),
-        )
     result = complete(request, adapter)
     expected_values = tuple(
         file_result.results[target.label].reported_peak_area

@@ -31,10 +31,8 @@ from xic_extractor.alignment.backfill.scope import (
 from xic_extractor.alignment.config import (
     AlignmentConfig,
     BackfillXicBackend,
-    OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.matrix import AlignmentMatrix
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
@@ -62,7 +60,6 @@ from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_status_matrix_tsv,
     write_alignment_tsv_row_batches,
 )
-from xic_extractor.processing_identity import fingerprint_file_content
 
 
 @dataclass(frozen=True)
@@ -75,7 +72,6 @@ class AlignmentRunOutputs:
     backfill_seed_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
-    owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
     # No live workflow result is published. The run closes its partition
     # store before returning, so a result handed back here would load its
@@ -148,7 +144,6 @@ def alignment_metadata(
     raw_dir: Path,
     dll_dir: Path,
     owner_backfill_xic_backend: BackfillXicBackend,
-    owner_build_xic_backend: OwnerBuildXicBackend = "raw",
     output_level: AlignmentOutputLevel,
     peak_config: ExtractionConfig,
     owner_backfill_window_strategy: str = "exact",
@@ -184,7 +179,6 @@ def alignment_metadata(
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
-        "owner_build_xic_backend": owner_build_xic_backend,
         "owner_backfill_xic_backend": owner_backfill_xic_backend,
         "owner_backfill_window_strategy": owner_backfill_window_strategy,
         "owner_backfill_superwindow_span_factor": str(
@@ -205,18 +199,11 @@ def alignment_metadata(
         "audit_evidence_mode_reason": audit_evidence_mode_reason,
         "scope_warning": scope_warning,
         "skipped_evidence_predicate_version": skipped_evidence_predicate_version,
-        "cross_sample_peak_group_policy": "cross_sample_peak_group_hypothesis",
         "feature_id_policy": "report_scoped_measured_member_order",
         "matrix_split_evaluation_status": "complete_no_product_ready_split",
         "matrix_projection_status": "not_projection",
         "matrix_center_rt_basis": "cross_sample_owner_arithmetic_mean",
         "matrix_center_weight_basis": "unique_owner_observations_equal_weight",
-        "group_delivery_policy": "owner_group_delivery_successor_projection",
-        "gap_fill_policy": "missing_observation_gap_fill",
-        "legacy_owner_backfill_role": ("owner_backfill_as_gap_fill_materialization"),
-        "pre_backfill_projection_policy": (
-            "pre_backfill_successor_projection_required_when_enabled"
-        ),
         "matrix_value_policy": "canonical_signal_profile_selected_area",
         "signal_processing_profile_json": serialize_signal_processing_profile(
             signal_processing_profile
@@ -583,21 +570,6 @@ def _write_artifacts_atomic(
                 source="alignment.pipeline_outputs",
             )
             replaced_paths.append(final_path)
-        if recorder.instrument_writers:
-            for final_path, _writer in output_paths_and_writers:
-                artifact = _writer_artifact_name(final_path)
-
-                def observe_fingerprint(
-                    event: Mapping[str, object], artifact: str = artifact
-                ) -> None:
-                    _record_fingerprint_observation(recorder, event, scope=artifact)
-
-                with recorder.stage(f"writer.{artifact}.hash") as stage:
-                    fingerprint = fingerprint_file_content(
-                        final_path,
-                        observation=observe_fingerprint,
-                    )
-                    stage.metrics["bytes"] = fingerprint.byte_size
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
@@ -684,46 +656,3 @@ def _writer_artifact_name(path: Path) -> str:
     elif name.endswith(".html"):
         name = name[:-5]
     return name.replace(".", "_").replace("-", "_")
-
-
-def _record_fingerprint_observation(
-    recorder: TimingRecorder,
-    event: Mapping[str, object],
-    *,
-    scope: str,
-) -> None:
-    availability = str(event.get("availability", "unavailable"))
-    reason = str(event.get("reason", ""))
-    source = "processing_identity.fingerprint_file_content"
-    for metric, value, unit in (
-        ("fingerprint_calls", event.get("calls"), "calls"),
-        ("fingerprint_bytes", event.get("bytes"), "bytes"),
-        ("fingerprint_time_sec", event.get("elapsed_sec"), "seconds"),
-    ):
-        recorder.observe(
-            metric,
-            value=value,
-            scope=scope,
-            unit=unit,
-            source=source,
-            availability=availability,
-            reason=reason,
-        )
-    recorder.observe(
-        "writer_hash_time_sec",
-        value=event.get("elapsed_sec"),
-        scope=scope,
-        unit="seconds",
-        source="processing_identity.fingerprint_file_content",
-        availability=availability,
-        reason=reason,
-    )
-    recorder.observe(
-        "writer_hash_bytes",
-        value=event.get("bytes"),
-        scope=scope,
-        unit="bytes",
-        source="processing_identity.fingerprint_file_content",
-        availability=availability,
-        reason=reason,
-    )

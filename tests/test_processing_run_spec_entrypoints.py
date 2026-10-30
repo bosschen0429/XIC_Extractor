@@ -179,7 +179,7 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
     raw_path.write_bytes(b"sample")
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid preset"),
     )
     monkeypatch.setattr(
@@ -212,7 +212,7 @@ def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
     dll_dir.mkdir()
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
     )
     monkeypatch.setattr(
@@ -241,7 +241,7 @@ def test_adapter_rejects_invalid_method_before_fingerprinting(
     raw_paths = _raws(tmp_path)
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
     )
     with pytest.raises(TypeError, match="DiscoverySettings"):
@@ -297,7 +297,7 @@ def test_adapter_rejects_invalid_profile_before_fingerprinting(
     )
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter.build_acquisition_source_identity",
+        "xic_extractor.discovery.processing_run_spec_adapter.build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
     )
     with pytest.raises(TypeError, match="SignalProcessingProfile"):

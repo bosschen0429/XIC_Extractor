@@ -21,7 +21,6 @@ from tests.test_discovery_pipeline import (
 from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
-from xic_extractor.discovery.batch_contract import discovery_candidate_payload_sha256
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
@@ -258,12 +257,6 @@ def test_physical_bindings_match_published_candidates_by_id(
     reordered_candidates = tuple(reversed(canonical_candidates))
     assert tuple(binding.candidate.candidate_id for binding in bindings) != tuple(
         candidate.candidate_id for candidate in reordered_candidates
-    )
-
-    assert discovery_candidate_payload_sha256(
-        reordered_candidates
-    ) == discovery_candidate_payload_sha256(
-        tuple(binding.candidate for binding in bindings)
     )
 
 

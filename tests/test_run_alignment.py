@@ -15,9 +15,6 @@ from tests.alignment_pipeline_helpers import (
     physical_facts_fingerprint_beside,
     write_csv,
 )
-from xic_extractor.alignment.owner_build_route_receipt import (
-    _mint_retained_untargeted_cid_nl_route_receipt,
-)
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
@@ -30,9 +27,9 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.output.alignment.pipeline_outputs import (
-    AlignmentRunOutputs as _AlignmentRunOutputs,
+    AlignmentRunOutputs,
 )
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import build_local_acquisition_source_identity
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -72,19 +69,6 @@ def _write_owner_closed_batch_index(
             *DISCOVERY_BATCH_RECEIPT_COLUMNS,
         ),
         batch_rows,
-    )
-
-
-def AlignmentRunOutputs(  # noqa: N802 - test factory mirrors the product type
-    *,
-    _owner_build_xic_backend: str = "raw",
-    **kwargs: Any,
-) -> _AlignmentRunOutputs:
-    return _AlignmentRunOutputs(
-        **kwargs,
-        owner_build_route_receipt=_mint_retained_untargeted_cid_nl_route_receipt(
-            configured_backend=_owner_build_xic_backend,
-        ),
     )
 
 
@@ -590,7 +574,6 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             **paths,
-            _owner_build_xic_backend=request.legacy.owner_build_xic_backend,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -619,68 +602,11 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
         is False
     )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
-    assert (
-        captured_alignment["request"].legacy.owner_build_xic_backend
-        == "raw_superwindow"
-    )
     stdout = capsys.readouterr().out
     assert "Backfill expansion productization summary JSON:" not in stdout
     assert "Product-ready preset publication summary JSON:" not in stdout
-    assert "Configured owner-build XIC backend: raw_superwindow" in stdout
-    assert "Effective owner-build route: retained_untargeted_cid_nl_batch" in stdout
-    assert "Effective route validation: owner_validated" in stdout
     assert "ProcessingRunSpec" not in stdout
     assert "Preset readiness authority: not_evaluated" in stdout
-
-
-def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "alignment"
-    captured_alignment = {}
-
-    def fake_run_alignment(request, context=None):
-        captured_alignment.update(request=request, context=context)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return AlignmentRunOutputs(
-            review_tsv=output_dir / "alignment_review.tsv",
-            matrix_tsv=output_dir / "alignment_matrix.tsv",
-            backfill_cell_evidence_tsv=(
-                output_dir / "alignment_backfill_cell_evidence.tsv"
-            ),
-            backfill_seed_audit_tsv=(
-                output_dir / "alignment_owner_backfill_seed_audit.tsv"
-            ),
-        )
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-
-    code = run_alignment.main(
-        [
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(output_dir),
-            "--preset",
-            "dna_dr_product_ready",
-            "--owner-build-xic-backend",
-            "raw",
-        ]
-    )
-
-    assert code == 0
-    assert captured_alignment["request"].legacy.owner_build_xic_backend == "raw"
 
 
 def test_run_alignment_cli_rejects_explicit_retired_backfill_replay_preset(
@@ -840,80 +766,6 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
         is False
     )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
-
-
-def test_run_alignment_cli_passes_owner_build_xic_backend(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    captured = {}
-
-    def fake_run_alignment(request, context=None):
-        captured.update(request=request, context=context)
-        return AlignmentRunOutputs()
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--owner-build-xic-backend",
-            "ms1-index",
-        ],
-    )
-
-    assert code == 0
-    assert captured["request"].legacy.owner_build_xic_backend == "ms1_index"
-
-
-def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_empty_batch_index(batch_index)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    captured = {}
-
-    def fake_run_alignment(request, context=None):
-        captured.update(request=request, context=context)
-        return AlignmentRunOutputs()
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--owner-build-xic-backend",
-            "raw-super-window",
-        ],
-    )
-
-    assert code == 0
-    assert captured["request"].legacy.owner_build_xic_backend == "raw_superwindow"
 
 
 def test_run_alignment_cli_writes_timing_json(
@@ -1364,7 +1216,7 @@ def _write_owner_closed_preflight_batch(
         raw_path.write_bytes(b"")
         candidate_csv = tmp_path / f"{sample_stem.lower()}.csv"
         candidate_csv.write_bytes(b"")
-        acquisition_source = build_acquisition_source_identity(
+        acquisition_source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -1496,8 +1348,6 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Alignment worker budget: 4" in stdout
     assert "Input indexing / RAW backend: process" in stdout
     assert "Source fingerprint backend: thread" in stdout
-    assert "Effective owner-build route: <not executed>" in stdout
-    assert "Effective route validation: not_executed" in stdout
     assert "owner_validated" not in stdout
     assert "FULL COHORT canonical contract: not requested" in stdout
     assert "Python executable:" in stdout
@@ -1991,7 +1841,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     )
     captured: dict[str, Any] = {}
 
-    def fake_application(request, context=None) -> _AlignmentRunOutputs:
+    def fake_application(request, context=None) -> AlignmentRunOutputs:
         captured.update(request=request, context=context)
         return AlignmentRunOutputs(
             review_tsv=None,

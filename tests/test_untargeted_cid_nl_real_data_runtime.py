@@ -49,7 +49,6 @@ from xic_extractor.execution.attempt import (
     execute_runtime_attempt,
     start_runtime_attempt,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -57,7 +56,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.processing_identity import (
     IdentityContractError,
-    build_acquisition_source_identity,
+    build_local_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
@@ -735,10 +734,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.json",
-            "untargeted-cid-nl-real-data-runtime:test",
-        ),
     )
 
     assert result.succeeded is True, (
@@ -788,10 +783,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         warm_runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.warm.json",
-            "untargeted-cid-nl-real-data-runtime:warm-test",
-        ),
     )
     assert warm_result.succeeded is True, (
         warm_result.finalization.coordinator.proposed_outcome,
@@ -918,10 +909,6 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         runtime,
         (job,),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.unsupported.json",
-            "untargeted-cid-nl-real-data-runtime:test",
-        ),
     )
 
     assert result.succeeded is True, (
@@ -1137,10 +1124,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.recovery.json",
-            "untargeted-cid-nl-real-data-runtime-recovery:test",
-        ),
     )
 
     if backfill_stop is not None:
@@ -1186,77 +1169,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
 
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
-
-
-def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
-    tmp_path: Path,
-) -> None:
-    physical_records = {}
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"real-data-runtime-request-pin:S1")
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    source_raw = _FakeRaw((8.0,))
-    candidates = _current_candidates(
-        source_raw,
-        raw_file=raw_path,
-        settings=settings,
-        physical_records=physical_records,
-    )
-    subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
-    context = build_partition_context(
-        raw_paths=(raw_path,),
-        sample_metadata=(
-            SampleMetadata(
-                sample_name="S1",
-                raw_stem="S1",
-                injection_order=1,
-                sample_role="study_sample",
-            ),
-        ),
-        method_subject=subject,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": candidates},
-        ),
-        sample_identity_namespace="study:real-data-runtime-request-pin-test",
-        signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in ({"S1": candidates}).values()
-            for c in values
-        },
-    )
-
-    with pytest.raises(
-        UntargetedPartitionError,
-        match="candidate universe does not match the processing request",
-    ):
-        UntargetedPartitionJob(
-            processing_owners=context.processing_owners,
-            sample=context.samples[0],
-            method_subject=context.method_subject,
-            candidates=(replace(candidates[0], reason="tampered-after-request"),),
-            discovery_receipt=context.discovery_receipts_by_sample["S1"],
-            settings=context.settings,
-            peak_config=context.peak_config,
-            raw_path=raw_path,
-            dll_dir=tmp_path,
-            work_unit_key="untargeted-cid-nl:S1",
-            signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in ((replace(candidates[0], reason="tampered-after-request"),))
-            ),
-        )
 
 
 def test_batch_candidate_selection_preserves_order_and_request_sample_membership(
@@ -1749,7 +1661,6 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
         *,
         worker_batch_provider,
         telemetry_provider,
-        persister,
     ):
         def provide_and_capture(aggregate):
             batch = worker_batch_provider(aggregate)
@@ -1761,7 +1672,6 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             reservations,
             worker_batch_provider=provide_and_capture,
             telemetry_provider=telemetry_provider,
-            persister=persister,
         )
 
     monkeypatch.setattr(runtime_module, "execute_runtime_attempt", capture_worker_batch)
@@ -1774,10 +1684,6 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "runtime.phase-acquisitions.json",
-            "runtime-phase-acquisition-seal:test",
-        ),
     )
 
     assert result.succeeded
@@ -1970,10 +1876,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.conditional.json",
-            "real-data-runtime-conditional-resource:test",
-        ),
     )
 
     assert result.succeeded is True
@@ -2006,7 +1908,7 @@ def _discovery_receipts(
         candidates = candidates_by_sample[raw_path.stem]
         candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
         write_discovery_candidates_csv(candidate_csv, candidates)
-        source = build_acquisition_source_identity(
+        source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,

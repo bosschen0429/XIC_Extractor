@@ -560,7 +560,6 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
     stale_output = tmp_path / "stale-inspector.html"
     jobs = AnalysisJobs(tmp_path / "config")
     assert expected_source.matrix_path == current_matrix.resolve()
-    assert expected_source.matrix_sha256 == current_hash
     jobs._results["untargeted"] = {"evidence": expected_source}
     try:
         jobs.start(

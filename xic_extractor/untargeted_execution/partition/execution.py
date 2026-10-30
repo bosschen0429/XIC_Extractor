@@ -44,7 +44,6 @@ from xic_extractor.execution.attempt import (
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.processing_identity import (
     resolve_request_acquisition_source,
@@ -141,7 +140,6 @@ def execute_attempt(
     jobs: tuple[UntargetedPartitionJob, ...],
     *,
     telemetry_provider: RuntimeTelemetryProvider,
-    recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     prepare_grouping: Callable[
@@ -160,8 +158,6 @@ def execute_attempt(
         raise UntargetedPartitionError(
             "jobs must contain Untargeted CID-NL runtime jobs"
         )
-    if not isinstance(recovery_marker, OwnerPathRuntimeMarker):
-        raise UntargetedPartitionError("recovery_marker must be OwnerPathRuntimeMarker")
     attempt = jobs[0].processing_owners.attempt
     if any(job.processing_owners.attempt != attempt for job in jobs):
         raise UntargetedPartitionError(
@@ -184,13 +180,11 @@ def execute_attempt(
         progress_callback=progress_callback,
         prepare_grouping=prepare_grouping,
     )
-    recovery_marker.record_launch(runtime)
     finalization = execute_runtime_attempt(
         runtime,
         work.reservations,
         worker_batch_provider=work.provide_worker_batch,
         telemetry_provider=telemetry_provider,
-        persister=recovery_marker,
     )
     _validate_finalized_acquisition_metrics(
         finalization,

@@ -188,15 +188,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         trace=untargeted_trace,
     )
 
-    with pytest.raises(
-        capture_owner.SampleLocalCaptureError,
-        match="issued by the shared capture owner",
-    ):
-        replace(
-            targeted_capture,
-            selected_hypothesis=untargeted_capture.selected_hypothesis,
-        )
-
     assert targeted_capture.selected_hypothesis is not None
     assert untargeted_capture.selected_hypothesis is not None
     assert targeted_capture.selected_hypothesis.evidence.common is not None
@@ -1310,12 +1301,12 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         )
     assert capture.physical_evaluation is original_capture.physical_evaluation
     assert (
-        capture._owner_seal.physical_observation_content
-        is original_capture._owner_seal.physical_observation_content
+        capture.physical_observation_content
+        is original_capture.physical_observation_content
     )
     assert (
-        capture._owner_seal.physical_observation_provenance
-        is original_capture._owner_seal.physical_observation_provenance
+        capture.physical_observation_provenance
+        is original_capture.physical_observation_provenance
     )
     observation = capture_owner.mint_captured_peak_observation(
         capture,

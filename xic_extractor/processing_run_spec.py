@@ -51,7 +51,7 @@ from xic_extractor.validation_primitives import (
     require_text,
 )
 
-PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec"
+PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_source_revision"
 PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope"
 CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method"
 
@@ -73,6 +73,7 @@ _ACQUISITION_INPUT_KEYS = (
 )
 _ACQUISITION_SOURCE_KEYS = (
     "content_sha256",
+    "local_file_revision",
     "byte_size",
     "acquisition_format",
     "observation_namespace",
@@ -162,10 +163,6 @@ class ProcessingAcquisitionInput:
         _required_text(self.sample_stem, field="sample_stem")
         if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
             raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
-        if self.acquisition_source.content_sha256 is None:
-            raise ValueError(
-                "Persisted Discovery inputs require a content-bound source"
-            )
         require_optional_lower_sha256(
             self.blank_library_sha256, field="blank_library_sha256"
         )
@@ -220,7 +217,10 @@ class ProcessingRunSpec:
 
     def __post_init__(self) -> None:
         if self.schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
-            raise ValueError("unsupported ProcessingRunSpec schema_version")
+            raise ValueError(
+                "unsupported ProcessingRunSpec schema_version; "
+                "regenerate Discovery with the current version"
+            )
         if (
             not isinstance(self.acquisition_inputs, tuple)
             or not self.acquisition_inputs
@@ -352,6 +352,7 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
                 "sample_stem": item.sample_stem,
                 "acquisition_source": {
                     "content_sha256": item.acquisition_source.content_sha256,
+                    "local_file_revision": item.acquisition_source.local_file_revision,
                     "byte_size": item.acquisition_source.byte_size,
                     "acquisition_format": item.acquisition_source.acquisition_format,
                     "observation_namespace": (
@@ -616,7 +617,10 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
     _require_keys(content, _RUN_CONTENT_KEYS, label="ProcessingRunSpec content")
     schema_version = _text(content["schema_version"], field="schema_version")
     if schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
-        raise ValueError("unsupported ProcessingRunSpec schema_version")
+        raise ValueError(
+            "unsupported ProcessingRunSpec schema_version; "
+            "regenerate Discovery with the current version"
+        )
     input_values = _list(content["acquisition_inputs"], label="acquisition_inputs")
     inputs: list[ProcessingAcquisitionInput] = []
     for value in input_values:
@@ -638,8 +642,22 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
                 ),
                 sample_stem=_text(item["sample_stem"], field="sample_stem"),
                 acquisition_source=AcquisitionSourceIdentity(
-                    content_sha256=_text(
+                    content_sha256=_optional_text(
                         source_value["content_sha256"], field="content_sha256"
+                    ),
+                    local_file_revision=(
+                        cast(
+                            tuple[int, int, int, int, int],
+                            tuple(
+                                _integer(value, field="local_file_revision")
+                                for value in _list(
+                                    source_value["local_file_revision"],
+                                    label="local_file_revision",
+                                )
+                            ),
+                        )
+                        if source_value["local_file_revision"] is not None
+                        else None
                     ),
                     byte_size=_integer(source_value["byte_size"], field="byte_size"),
                     acquisition_format=_text(

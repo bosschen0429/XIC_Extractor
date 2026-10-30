@@ -113,7 +113,7 @@ See [local validation commands](../agent/parameter-settings.md#validation-scale)
 
 A CID-NL preset is bound once, before expensive work, to one immutable
 in-memory recipe. The recipe contains the existing typed Discovery and
-Alignment settings plus the preset-owned owner-build choice. The recipe has no
+Alignment settings. The recipe has no
 Standard Peak or Backfill-expansion post-stage choice. The recipe does not
 contain RAW/output paths, sample metadata, worker counts, review inputs, a
 persisted recipe identity, or a second invocation schema.
@@ -134,9 +134,6 @@ presets, including multi-tag `union` (OR) and `intersection` (AND).
 - Alignment and Backfill use the same method requirement.
 - Different tag hits across samples can share a row when the existing physical
   peak compatibility gates pass. Labels alone do not establish identity.
-- The route receipt of the batch preserves any configured legacy owner-build
-  backend for compatibility. The route receipt reports no effective legacy
-  backend.
 
 Other routes and retained artifacts:
 

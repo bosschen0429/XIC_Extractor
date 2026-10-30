@@ -139,6 +139,11 @@ def read_discovery_batch_index(
         raise ValueError(
             f"{path}: {DISCOVERY_BATCH_INDEX_SCHEMA_VERSION} owner closure is required"
         )
+    if "acquisition_local_file_revision" not in fieldnames:
+        raise ValueError(
+            f"{path}: unsupported Discovery source schema; "
+            "regenerate Discovery with the current version"
+        )
     _require_columns(path, fieldnames, _BATCH_OWNER_REQUIRED_COLUMNS)
 
     sample_order: list[str] = []
@@ -167,7 +172,7 @@ def read_discovery_batch_index(
         if schema_version != DISCOVERY_BATCH_INDEX_SCHEMA_VERSION:
             raise ValueError(
                 f"{path}: row {row_number}: unsupported schema_version "
-                f"{schema_version!r}"
+                f"{schema_version!r}; regenerate Discovery with the current version"
             )
         candidate_count = _batch_nonnegative_int(
             path,

@@ -300,7 +300,7 @@ def test_discovery_cli_reports_unreadable_preset_before_execution(
     assert "Traceback" not in output.err
 
 
-def test_run_discovery_main_rejects_duplicate_acquisition_content_before_pipeline(
+def test_run_discovery_main_rejects_duplicate_local_source_before_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -308,7 +308,7 @@ def test_run_discovery_main_rejects_duplicate_acquisition_content_before_pipelin
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     (raw_dir / "A.raw").write_bytes(b"duplicate acquisition")
-    (raw_dir / "B.raw").write_bytes(b"duplicate acquisition")
+    (raw_dir / "B.raw").hardlink_to(raw_dir / "A.raw")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     pipeline_calls = 0
@@ -348,7 +348,7 @@ def test_run_discovery_main_propagates_unexpected_pipeline_value_error(
         run_discovery.main(["--raw", str(raw_path), "--dll-dir", str(dll_dir)])
 
 
-def test_run_discovery_cli_records_failed_compile_and_hashes_each_input_once(
+def test_run_discovery_cli_records_failed_compile_and_binds_each_input_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -358,14 +358,14 @@ def test_run_discovery_cli_records_failed_compile_and_hashes_each_input_once(
     first = raw_dir / "A.raw"
     second = raw_dir / "B.raw"
     first.write_bytes(b"duplicate acquisition")
-    second.write_bytes(b"duplicate acquisition")
+    second.hardlink_to(first)
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     timing_path = tmp_path / "diagnostics" / "discovery_timing.json"
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
 
     fingerprinted_paths: list[Path] = []
-    owner = adapter.build_acquisition_source_identity
+    owner = adapter.build_local_acquisition_source_identity
 
     def counted_fingerprint(path: Path, **kwargs):
         fingerprinted_paths.append(path)
@@ -376,7 +376,7 @@ def test_run_discovery_cli_records_failed_compile_and_hashes_each_input_once(
 
     monkeypatch.setattr(
         adapter,
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         counted_fingerprint,
     )
     monkeypatch.setattr(run_discovery, "run_discovery_batch", unexpected_pipeline)

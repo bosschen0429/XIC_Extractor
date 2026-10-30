@@ -265,7 +265,7 @@ class SupervisorFinalizationEvent:
 
 @dataclass(frozen=True, slots=True)
 class SupervisorFinalizationRecord:
-    """Terminal acknowledgement facts for owner-supplied persistence."""
+    """Terminal acknowledgement facts for a settled runtime attempt."""
 
     attempt: ProcessingAttemptIdentity
     terminal_outcome: AttemptTerminalOutcome

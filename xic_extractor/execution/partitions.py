@@ -46,7 +46,6 @@ from xic_extractor.execution.attempt import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
@@ -197,7 +196,6 @@ class PartitionPipelineScheduler:
         *,
         output_dir: Path,
         telemetry_provider: RuntimeTelemetryProvider,
-        recovery_marker: OwnerPathRuntimeMarker,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         pipeline_overlap: bool = True,
@@ -891,7 +889,6 @@ class PartitionPipelineScheduler:
             )
 
         try:
-            recovery_marker.record_launch(runtime)
 
             def provide_worker_batch_and_cleanup(
                 aggregate: object,
@@ -938,7 +935,6 @@ class PartitionPipelineScheduler:
                 resource_reservations,
                 worker_batch_provider=provide_worker_batch_and_cleanup,
                 telemetry_provider=telemetry_provider,
-                persister=recovery_marker,
                 cancellation_ingress=cancellation_ingress,
             )
             if failure is not None:

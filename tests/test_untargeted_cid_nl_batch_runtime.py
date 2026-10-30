@@ -24,7 +24,6 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution.attempt import start_runtime_attempt
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
@@ -137,10 +136,6 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.batch.json",
-            "untargeted-cid-nl-real-data-runtime-batch:test",
-        ),
     )
 
     assert result.succeeded is True, tuple(
@@ -340,10 +335,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "real_data_runtime.batch.recovery.json",
-            "untargeted-cid-nl-real-data-runtime-batch-recovery:test",
-        ),
     )
 
     assert result.succeeded is True, tuple(

@@ -111,7 +111,7 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
     expected = adapter.compile_discovery_processing_run_spec_with_expectations(
         paths, discovery_settings=_settings()
     )
-    original = adapter.build_acquisition_source_identity
+    original = adapter.build_local_acquisition_source_identity
     barrier = threading.Barrier(2)
     thread_ids: set[int] = set()
     lock = threading.Lock()
@@ -123,7 +123,7 @@ def test_parallel_fingerprints_preserve_identity_order_and_overlap(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
-        adapter, "build_acquisition_source_identity", concurrent_fingerprint
+        adapter, "build_local_acquisition_source_identity", concurrent_fingerprint
     )
     actual = adapter.compile_discovery_processing_run_spec_with_expectations(
         paths, discovery_settings=_settings(), fingerprint_workers=2
@@ -147,7 +147,7 @@ def test_run_spec_reuses_verified_sources_without_rehashing(
     }
     monkeypatch.setattr(
         adapter,
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("rehashed a verified source"),
     )
     actual = adapter.compile_discovery_processing_run_spec_with_expectations(
@@ -169,7 +169,7 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
     from xic_extractor.processing_identity import IdentityContractError
 
     paths = _raws(tmp_path)
-    original = adapter.build_acquisition_source_identity
+    original = adapter.build_local_acquisition_source_identity
 
     def mutate_after_fingerprint(path, **kwargs):
         source = original(path, **kwargs)
@@ -178,7 +178,7 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
         return source
 
     monkeypatch.setattr(
-        adapter, "build_acquisition_source_identity", mutate_after_fingerprint
+        adapter, "build_local_acquisition_source_identity", mutate_after_fingerprint
     )
     with pytest.raises(IdentityContractError, match="changed during"):
         adapter.compile_discovery_processing_run_spec_with_expectations(
@@ -211,21 +211,52 @@ def test_run_spec_rejects_unknown_partial_tampered_and_cross_content(
         )
 
 
-def test_run_spec_with_changed_source_content_no_longer_equals_original(
+def test_run_spec_with_changed_source_revision_no_longer_equals_original(
     tmp_path: Path,
 ) -> None:
     spec = _compile_paths(_raws(tmp_path))
     value = json.loads(serialize_processing_run_spec(spec))
-    value["content"]["acquisition_inputs"][0]["acquisition_source"][
-        "content_sha256"
-    ] = "0" * 64
+    revision = value["content"]["acquisition_inputs"][0]["acquisition_source"][
+        "local_file_revision"
+    ]
+    revision[3] += 1
 
     changed = deserialize_processing_run_spec(
         json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     )
 
-    assert changed.acquisition_inputs[0].acquisition_source.content_sha256 == "0" * 64
+    assert changed.acquisition_inputs[
+        0
+    ].acquisition_source.local_file_revision == tuple(revision)
     assert changed != spec
+
+
+def test_discovery_preparation_binds_local_revision_without_reading_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _raws(tmp_path)
+    original_open = Path.open
+
+    def forbid_raw_read(path, *args, **kwargs):
+        if path in paths:
+            pytest.fail("Discovery source preparation read RAW bytes")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", forbid_raw_read)
+    spec = _compile_paths(paths)
+    assert all(
+        item.acquisition_source.content_sha256 is None
+        and item.acquisition_source.local_file_revision is not None
+        for item in spec.acquisition_inputs
+    )
+    assert deserialize_processing_run_spec(serialize_processing_run_spec(spec)) == spec
+
+
+def test_old_discovery_run_spec_requires_regeneration(tmp_path: Path) -> None:
+    value = json.loads(serialize_processing_run_spec(_compile_paths(_raws(tmp_path))))
+    value["content"]["schema_version"] = "processing_run_spec"
+    with pytest.raises(ValueError, match="regenerate Discovery"):
+        deserialize_processing_run_spec(json.dumps(value))
 
 
 def test_run_spec_rejects_duplicate_and_reordered_json_fields(tmp_path: Path) -> None:
@@ -284,24 +315,24 @@ def test_run_spec_pure_owner_compiles_typed_inputs(tmp_path: Path) -> None:
     assert pure_spec == adapter_spec
 
 
-def test_run_spec_rejects_duplicate_acquisition_content_aliases_once(
+def test_run_spec_rejects_duplicate_local_file_aliases_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first = tmp_path / "first.raw"
     alias = tmp_path / "alias.raw"
     first.write_bytes(b"identical acquisition")
-    alias.write_bytes(b"identical acquisition")
+    alias.hardlink_to(first)
     calls: list[Path] = []
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
 
-    owner = adapter.build_acquisition_source_identity
+    owner = adapter.build_local_acquisition_source_identity
 
     def counted(path: Path, **kwargs):
         calls.append(path)
         return owner(path, **kwargs)
 
-    monkeypatch.setattr(adapter, "build_acquisition_source_identity", counted)
+    monkeypatch.setattr(adapter, "build_local_acquisition_source_identity", counted)
 
     with pytest.raises(ValueError, match="duplicate.*acquisition_source_id"):
         compile_discovery_processing_run_spec(
@@ -439,7 +470,7 @@ def test_neutral_loss_mass_is_rejected_before_fingerprint(
     )
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
     )
 
@@ -475,7 +506,7 @@ def test_invalid_method_population_is_rejected_before_fingerprint(
     raw_path.write_bytes(b"not fingerprinted")
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
+        "build_local_acquisition_source_identity",
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
     )
 

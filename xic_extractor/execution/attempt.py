@@ -61,7 +61,6 @@ from xic_extractor.execution._receipts import (
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
-    RuntimeFinalizationPersister,
     RuntimeFinalizationReceipt,
     RuntimeProcessTreePeakRssSample,
     RuntimeRawOpenMetrics,
@@ -73,7 +72,6 @@ from xic_extractor.execution._receipts import (
     RuntimeWorkerPeakRssSample,
     _acquisition_receipts_match,
     _required_text,
-    accept_runtime_finalization_receipt,
     compact_runtime_acquisition_receipt,
     derive_runtime_acquisition_metrics,
     derive_runtime_raw_open_metrics,
@@ -365,9 +363,8 @@ def _finalize_runtime_attempt(
     aggregate: RuntimeAttemptAggregate,
     *,
     telemetry_provider: RuntimeTelemetryProvider,
-    persister: RuntimeFinalizationPersister,
 ) -> RuntimeFinalizationReceipt:
-    """Derive, persist, and accept one canonical terminal receipt."""
+    """Derive one terminal receipt from settled work and resource facts."""
 
     if not isinstance(aggregate, RuntimeAttemptAggregate):
         raise RuntimeFinalizationContractError(
@@ -375,8 +372,6 @@ def _finalize_runtime_attempt(
         )
     if not callable(telemetry_provider):
         raise RuntimeFinalizationContractError("telemetry_provider must be callable")
-    if not callable(persister):
-        raise RuntimeFinalizationContractError("persister must be callable")
     coordinator = propose_attempt_terminal(aggregate.state)
     terminal_aggregate = RuntimeAttemptAggregate(
         state=coordinator.state,
@@ -398,18 +393,10 @@ def _finalize_runtime_attempt(
         coordinator,
         observability_ledger=ledger,
     )
-    proposed = RuntimeFinalizationReceipt(
+    return RuntimeFinalizationReceipt(
         coordinator=coordinator,
         supervisor=supervisor,
     )
-    try:
-        submitted = persister(proposed)
-    except Exception as exc:
-        raise RuntimeExecutionPhaseError(
-            coordinator.state.runtime.manifest.attempt,
-            RuntimeExecutionPhase.PERSISTER,
-        ) from exc
-    return accept_runtime_finalization_receipt(proposed, submitted)
 
 
 def _accept_cancellation_into_aggregate(
@@ -443,14 +430,13 @@ def execute_runtime_attempt(
     *,
     worker_batch_provider: RuntimeWorkerBatchProvider,
     telemetry_provider: RuntimeTelemetryProvider,
-    persister: RuntimeFinalizationPersister,
     cancellation_ingress: RuntimeCancellationIngress | None = None,
 ) -> RuntimeFinalizationReceipt:
     """Prepare, optionally dispatch, settle, and finalize one runtime attempt.
 
     Rejected manifest preflight remains a first-class owner state: the worker
     provider is not invoked, no resources are reserved, and the same terminal
-    receipt/persistence path closes the attempt. Accepted pre-dispatch
+    receipt path closes the attempt. Accepted pre-dispatch
     cancellation likewise skips the worker provider; the owner settles every
     manifest work unit as cancelled and closes reserved resources as not
     opened. Consumers therefore cannot split preparation or settlement from
@@ -536,7 +522,6 @@ def execute_runtime_attempt(
     return _finalize_runtime_attempt(
         aggregate,
         telemetry_provider=telemetry_provider,
-        persister=persister,
     )
 
 
@@ -1091,7 +1076,6 @@ __all__ = [
     "RuntimeCancellationRequest",
     "RuntimeExecutionPhase",
     "RuntimeExecutionPhaseError",
-    "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimeProcessTreePeakRssSample",
     "RuntimeRawOpenMetrics",
@@ -1101,7 +1085,6 @@ __all__ = [
     "RuntimeWorkerBatchReceipt",
     "RuntimeWorkerBatchProvider",
     "RuntimeWorkerPeakRssSample",
-    "accept_runtime_finalization_receipt",
     "compact_runtime_acquisition_receipt",
     "derive_runtime_acquisition_metrics",
     "derive_runtime_raw_open_metrics",

@@ -94,12 +94,11 @@ def serialize_preset(
             for field in discovery_fields
         }
 
-    _, runtime_options = apply_to_alignment(effective_preset)
+    apply_to_alignment(effective_preset)
     rendered = _render_preset(
         effective_preset,
         discovery_values=discovery_values,
         discovery_fields=discovery_fields,
-        owner_build_xic_backend=runtime_options["owner_build_xic_backend"],
     )
     raw = rendered.encode("utf-8")
 
@@ -187,7 +186,6 @@ def _render_preset(
     *,
     discovery_values: Mapping[str, object],
     discovery_fields: tuple[str, ...],
-    owner_build_xic_backend: object,
 ) -> str:
     lines = [
         f"name = {_toml_string(preset.name, field='name')}",
@@ -219,18 +217,7 @@ def _render_preset(
         if field in {"rt_min", "rt_max"} and discovery_values[field] is None:
             continue
         lines.append(f"{field} = {_toml_value(discovery_values[field], field=field)}")
-    lines.extend(
-        (
-            "",
-            "[alignment]",
-            "owner_build_xic_backend = "
-            + _toml_string(
-                owner_build_xic_backend,
-                field="owner_build_xic_backend",
-            ),
-            "",
-        )
-    )
+    lines.append("")
     return "\n".join(lines)
 
 

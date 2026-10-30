@@ -6,13 +6,9 @@ from pathlib import Path
 
 from xic_extractor.alignment.config import (
     AlignmentConfig,
-    OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
-)
-from xic_extractor.alignment.owner_build_route_receipt import (
-    _validate_owner_build_xic_backend,
 )
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
@@ -38,7 +34,6 @@ from xic_extractor.untargeted_execution.input_planning import (
 class RetainedAlignmentOptions:
     """Accepted advanced overrides for the retained single-provider route."""
 
-    owner_build_xic_backend: OwnerBuildXicBackend = "raw"
     audit_evidence_mode: str = "auto"
 
     def __post_init__(self) -> None:
@@ -90,7 +85,6 @@ class UntargetedRequest:
                 "use scripts.run_alignment --preset dna_dr with an "
                 "owner-closed discovery batch index"
             )
-        _validate_owner_build_xic_backend(self.legacy.owner_build_xic_backend)
         profile = resolve_signal_processing_profile(
             signal_processing_method=self.peak_config.signal_processing_method,
             signal_processing_window_points=self.peak_config.signal_processing_window_points,

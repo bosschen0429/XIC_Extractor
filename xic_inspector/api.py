@@ -385,7 +385,6 @@ def prepare_report(
             "target_names": source.target_names_for_role(selection.target_role),
         }
 
-    schema_version = summary["schema_version"]
     att_id = summary.get("processing_attempt_id", "")
     if isinstance(source, (CurveBundleSource, TargetedWorkbookSource)):
         source_locator: (
@@ -420,9 +419,7 @@ def prepare_report(
         source_locator = EvidenceLocator(
             report_path=report_path,
             matrix_path=matrix_file,
-            matrix_sha256=actual_matrix_sha256,
             processing_attempt_id=att_id,
-            schema_version=schema_version,
         )
     if expected_source is not None and isinstance(source_locator, EvidenceLocator):
         if not isinstance(expected_source, EvidenceLocator):
@@ -431,9 +428,7 @@ def prepare_report(
         if (
             expected_source.report_path.resolve() != src.report_path
             or expected_source.matrix_path.resolve() != src.matrix_path
-            or expected_source.matrix_sha256 != src.matrix_sha256
             or expected_source.processing_attempt_id != src.processing_attempt_id
-            or expected_source.schema_version != src.schema_version
         ):
             raise InspectorError(4, "Source does not match expected_source contract")
 

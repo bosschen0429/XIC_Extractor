@@ -52,7 +52,6 @@ from xic_extractor.execution.attempt import (
     runtime_started_worker_keys,
 )
 from xic_extractor.execution.process_memory import ProcessMemoryPeak
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -586,11 +585,6 @@ def execute_prepared_alignment(
             output_dir=output_dir,
             telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
                 coordinator, runtime_peak
-            ),
-            recovery_marker=OwnerPathRuntimeMarker(
-                output_dir / ".cid_nl_runtime.json",
-                _RUNTIME_ARTIFACT_NAMESPACE,
-                allow_failed_attempt_retry=True,
             ),
             progress_callback=runtime_progress,
             alignment_config=alignment_config,

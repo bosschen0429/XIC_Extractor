@@ -28,7 +28,6 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.capture import capture_physical_backfill_observation
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
@@ -199,9 +198,6 @@ def test_review_rows_never_become_alignment_roots(
             output_dir=tmp_path / "alignment",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=OwnerPathRuntimeMarker(
-                tmp_path / "runtime.json", "admission"
-            ),
             raw_workers=1,
         )
         assert set(result.application_result.candidate_ids) == expected_ids
