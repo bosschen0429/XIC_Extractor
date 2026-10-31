@@ -27,7 +27,10 @@ from xic_extractor.output.targeted_product_model import TargetedProductContext
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     reference_region_envelopes,
 )
-from xic_extractor.peak_detection.targeted_context import TargetedBatchContext
+from xic_extractor.peak_detection.targeted_context import (
+    TargetedBatchContext,
+    TargetedPopulationContext,
+)
 
 
 def _overlapping_measured_regions(
@@ -89,32 +92,19 @@ def _with_context_reasons(
 
 def _reference_interpretation(
     assessment: TargetedCandidateAssessment,
-    sample_assessments: tuple[TargetedCandidateAssessment, ...],
+    population: TargetedPopulationContext,
+    reference_rts: tuple[float, ...],
 ) -> TargetedCandidateAssessment:
     prepared = assessment.prepared_result.prepared
     regional = assessment.regional_universe or assessment.universe
     if prepared is None or assessment.target.is_istd:
         return assessment
     target = assessment.target
-    references = tuple(
-        sorted(
-            {
-                other.preferred_rt
-                for other in sample_assessments
-                if other.preferred_rt is not None
-                and abs(target.mz - other.target.mz)
-                <= min(
-                    target.mz * target.ppm_tol, other.target.mz * other.target.ppm_tol
-                )
-                / 1e6
-            }
-        )
-    )
-    # Only now propose an interpretation of touching lobes using all declared
-    # references. The original valley regions and method facts remain retained.
+    # Propose totals in the batch-supported reference frame. The original
+    # regions remain alternatives; this proposal does not select an ion band.
     merge_eligible = frozenset(
         region.segment
-        for region in assessment.population_context().regions
+        for region in population.regions
         if region.independent_body_supported
     )
     interpreted = (
@@ -123,11 +113,11 @@ def _reference_interpretation(
             segments=reference_region_envelopes(
                 prepared,
                 regional.segments,
-                references,
+                reference_rts,
                 merge_eligible_segments=merge_eligible,
             ),
         )
-        if references
+        if reference_rts
         else regional
     )
     if interpreted.segments == assessment.universe.segments:
@@ -158,26 +148,65 @@ def _reference_interpretation(
 def complete_targeted_candidate_batch(
     output: RunOutput, config: ExtractionConfig
 ) -> RunOutput:
-    sample_populations = {
-        file.sample_name: tuple(
-            result.targeted_candidate_assessment
-            for result in file.results.values()
-            if result.targeted_candidate_assessment is not None
-        )
-        for file in output.file_results
-    }
     assessments = {
-        (sample, assessment.target.label): _reference_interpretation(
-            assessment, population
-        )
-        for sample, population in sample_populations.items()
-        for assessment in population
+        (file.sample_name, label): assessment
+        for file in output.file_results
+        for label, result in file.results.items()
+        if (assessment := result.targeted_candidate_assessment) is not None
     }
     if not assessments:
         return output
-    batch = TargetedBatchContext(
+    regional_batch = TargetedBatchContext(
         tuple(assessment.population_context() for assessment in assessments.values())
     )
+    interpretations = {}
+    comparison_populations = []
+    for key, assessment in assessments.items():
+        population = regional_batch.population_by_cell[key]
+        interpreted = _reference_interpretation(
+            assessment, population, regional_batch.reference_rts(population)
+        )
+        interpretations[key] = interpreted
+        if interpreted is not assessment:
+            # Each interpretation keeps its own method relation. Combining
+            # their physical intervals into one CID-NL universe would invent
+            # overlap and erase valid individual/total support.
+            regions = {region.segment: region for region in population.regions}
+            regions.update(
+                (region.segment, region)
+                for region in interpreted.population_context().regions
+            )
+            population = replace(population, regions=tuple(regions.values()))
+        comparison_populations.append(population)
+    batch = TargetedBatchContext(tuple(comparison_populations))
+    selections = {}
+    for file in output.file_results:
+        for label, result in file.results.items():
+            key = (file.sample_name, label)
+            if (assessment := assessments.get(key)) is None:
+                continue
+            population = batch.population_by_cell[key]
+            if assessment.target.is_istd:
+                # Consume the established standard anchor, not a new batch
+                # choice, when interpreting another assay of the same ion.
+                evaluation = result.physical_evaluation
+                selections[key] = next(
+                    (
+                        region
+                        for region in population.regions
+                        if evaluation is not None
+                        and region.segment == evaluation.answer.selected_segment
+                    ),
+                    None,
+                )
+            else:
+                selections[key] = batch.select(population)
+    for key, choice in selections.items():
+        if (
+            choice is not None
+            and choice.segment in interpretations[key].universe.segments
+        ):
+            assessments[key] = interpretations[key]
     factory = build_scoring_context_factory(config=config)
     files = []
     replaced_keys = {
@@ -214,16 +243,22 @@ def complete_targeted_candidate_batch(
                 target_reference_rt=assessment.preferred_rt,
                 candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
             )
-            peak_result = assessment.rank_candidates(
+            population = assessment.population_context()
+            selected_region = selections[(file.sample_name, label)]
+            peak_result = assessment.score_selected_segment(
+                selected_segment=selected_region.segment if selected_region else None,
+                competing_region_count=len(
+                    batch.competing_regions(
+                        batch.population_by_cell[(file.sample_name, label)]
+                    )
+                ),
                 scoring_context_builder=builder,
                 istd_confidence_note=assessment.istd_confidence_note,
                 paired_istd_anchor_rt=captured.peak_result.paired_istd_anchor_rt,
-                batch_context=batch,
             )
             result = assessment.complete_result(
                 peak_result, scoring_context_builder=builder
             )
-            population = batch.population_by_cell[(file.sample_name, label)]
             result = replace(
                 result,
                 context_admissible_candidate_indexes=tuple(

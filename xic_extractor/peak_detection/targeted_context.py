@@ -40,6 +40,13 @@ class TargetedRegionContext:
     def independent_body_supported(self) -> bool:
         return self.measurement_available and self.acquired_modulation_observed
 
+    def contains_acquired_rt(self, rt_min: float) -> bool:
+        return (
+            self.acquired_rt_start_min is not None
+            and self.acquired_rt_end_min is not None
+            and self.acquired_rt_start_min <= rt_min <= self.acquired_rt_end_min
+        )
+
 
 def describe_targeted_region(
     prepared: PreparedSignal,
@@ -113,12 +120,16 @@ class TargetedPopulationContext:
     reference_istd_rt_min: float | None = None
 
     @cached_property
-    def competitors(self) -> tuple[TargetedRegionContext, ...]:
+    def comparison_regions(self) -> tuple[TargetedRegionContext, ...]:
         measurable = tuple(r for r in self.regions if r.independent_body_supported)
-        if not measurable:
-            return ()
         positive = tuple(r for r in measurable if r.chemical_support)
-        population = positive or measurable
+        return _noncontained_regions(positive or measurable)
+
+    @cached_property
+    def competitors(self) -> tuple[TargetedRegionContext, ...]:
+        population = self.comparison_regions
+        if not population:
+            return ()
         maximum = max(r.body_support for r in population)
         return tuple(
             r
@@ -135,6 +146,21 @@ class TargetedPopulationContext:
         # An unresolved total remains measurable, but its changing mixture of
         # lobes is not a localized homologue or a precise RT calibration point.
         return region if region.observed_component_count == 1 else None
+
+
+def _noncontained_regions(
+    regions: tuple[TargetedRegionContext, ...],
+) -> tuple[TargetedRegionContext, ...]:
+    """Prefer complete measurements within the remaining identity alternatives."""
+    outer = []
+    rightmost = -1
+    for region in sorted(
+        regions, key=lambda r: (r.segment.start_index, -r.segment.end_index)
+    ):
+        if region.segment.end_index > rightmost:
+            outer.append(region)
+            rightmost = region.segment.end_index
+    return tuple(outer)
 
 
 def _same_ion(
@@ -278,13 +304,7 @@ class TargetedBatchContext:
             # reference. A derived batch model must not overrule that stronger
             # input before the canonical coelution assessment is performed.
             return True
-        if (
-            region.acquired_rt_start_min is not None
-            and region.acquired_rt_end_min is not None
-            and region.acquired_rt_start_min
-            <= population.reference_rt_min
-            <= region.acquired_rt_end_min
-        ):
+        if region.contains_acquired_rt(population.reference_rt_min):
             return True
         intervals = self.retention_intervals(population)
         if not intervals:
@@ -341,13 +361,27 @@ class TargetedBatchContext:
         return max((*widths, *(max(v) - min(v) for v in offsets.values())), default=0.0)
 
     @cached_property
-    def _peer_region_transfers_by_cell(
+    def _conflicting_segments_by_cell(
         self,
-    ) -> dict[tuple[str, str], tuple[TargetedPeerRegionTransfer, ...]]:
+    ) -> dict[tuple[str, str], frozenset[PhysicalSegment]]:
         return {
-            (p.sample_name, p.target_label): self._peer_region_transfers(p)
+            (p.sample_name, p.target_label): self._conflicting_segments(p)
             for p in self.populations
         }
+
+    def _conflicting_segments(
+        self, population: TargetedPopulationContext
+    ) -> frozenset[PhysicalSegment]:
+        # Consume one cell's pairwise evidence, then retain its answer rather
+        # than every sample-pair/anchor tuple for the lifetime of the batch.
+        transfers = self._peer_region_transfers(population)
+        return frozenset(
+            region.segment
+            for region in population.regions
+            if region.independent_body_supported
+            and self.plausible(population, region)
+            and self._conflicts_with_peers(region, transfers)
+        )
 
     def _peer_region_transfers(
         self, population: TargetedPopulationContext
@@ -413,9 +447,18 @@ class TargetedBatchContext:
     def cross_sample_region_conflict(
         self, population: TargetedPopulationContext, region: TargetedRegionContext
     ) -> bool:
-        transfers = self._peer_region_transfers_by_cell[
-            (population.sample_name, population.target_label)
-        ]
+        return (
+            region.segment
+            in self._conflicting_segments_by_cell[
+                (population.sample_name, population.target_label)
+            ]
+        )
+
+    @staticmethod
+    def _conflicts_with_peers(
+        region: TargetedRegionContext,
+        transfers: tuple[TargetedPeerRegionTransfer, ...],
+    ) -> bool:
         if not transfers:
             return False
         for transfer in transfers:
@@ -468,16 +511,9 @@ class TargetedBatchContext:
             if (r := self._local_choices[(p.sample_name, p.target_label)]) is not None
             and self._identity_specific(p, r)
         )
-        reference = population.reference_rt_min
+        reference = self.reference_rt(population)
         if not peers:
-            positive = tuple(r for r in plausible if r.chemical_support)
-            direct = tuple(
-                r
-                for r in (positive or plausible)
-                if r.acquired_rt_start_min is not None
-                and r.acquired_rt_end_min is not None
-                and r.acquired_rt_start_min <= reference <= r.acquired_rt_end_min
-            )
+            direct = tuple(r for r in candidates if r.contains_acquired_rt(reference))
             if direct:
                 # Without a homologous peer, an actually observed body at the
                 # supplied RT is stronger identity evidence than an unrelated
@@ -485,9 +521,8 @@ class TargetedBatchContext:
                 # bracketed by acquired observations.
                 candidates = direct
         if peers:
-            reference += self._sample_center(population) + median(
-                r.segment.apex_rt_min - p.reference_rt_min - self._sample_center(p)
-                for p, r in peers
+            reference += median(
+                r.segment.apex_rt_min - self.reference_rt(p) for p, r in peers
             )
         return min(
             candidates,
@@ -517,39 +552,64 @@ class TargetedBatchContext:
             ),
         )
         candidates = self._reference_competitors(population)
+        reference = self.reference_rt(population)
+        direct = tuple(r for r in candidates if r.contains_acquired_rt(reference))
         return min(
-            candidates,
+            direct or candidates,
             key=lambda r: (
-                abs(r.segment.apex_rt_min - population.reference_rt_min),
+                abs(r.segment.apex_rt_min - reference),
                 -r.body_support,
                 r.segment.apex_rt_min,
             ),
             default=None,
         )
 
-    def _sample_center(self, population: TargetedPopulationContext) -> float:
-        intervals = self.retention_intervals(population)
-        return (
-            median((left + right) / 2 for left, right in intervals)
-            if intervals
-            else 0.0
-        )
+    @cached_property
+    def _reference_rts_by_cell(self) -> dict[tuple[str, str], float]:
+        references = {}
+        for population in self.populations:
+            # The supplied paired reference is already sample-local.
+            intervals = (
+                self.retention_intervals(population)
+                if population.reference_istd_rt_min is None
+                else ()
+            )
+            displacement = (
+                median((left + right) / 2 for left, right in intervals)
+                if intervals
+                else 0.0
+            )
+            references[(population.sample_name, population.target_label)] = (
+                population.reference_rt_min + displacement
+            )
+        return references
 
-    def _reference_competitors(
-        self, population: TargetedPopulationContext
-    ) -> tuple[TargetedRegionContext, ...]:
-        references = tuple(
+    def reference_rt(self, population: TargetedPopulationContext) -> float:
+        """A sample-local ranking prior, not a hard admissibility window."""
+        return self._reference_rts_by_cell[
+            (population.sample_name, population.target_label)
+        ]
+
+    def reference_rts(self, population: TargetedPopulationContext) -> tuple[float, ...]:
+        """Same-ion references in the sample's supported retention frame."""
+        return tuple(
             sorted(
                 {
-                    p.reference_rt_min
+                    self.reference_rt(p)
                     for p in self._populations_by_sample[population.sample_name]
                     if _same_ion(p, population)
                 }
             )
         )
+
+    def _reference_competitors(
+        self, population: TargetedPopulationContext
+    ) -> tuple[TargetedRegionContext, ...]:
+        references = self.reference_rts(population)
         regions = tuple(r for r in population.regions if r.independent_body_supported)
         positive = tuple(r for r in regions if r.chemical_support)
         regions = positive or regions
+        reference = self.reference_rt(population)
         if len(references) > 1:
             # A large lobe better explained by another declared RT must not set
             # the abundance floor for this target. This is an interpretation
@@ -562,11 +622,34 @@ class TargetedBatchContext:
                 if min(
                     references, key=lambda ref: (abs(ref - r.segment.apex_rt_min), ref)
                 )
-                == population.reference_rt_min
+                == reference
             )
             if own:
                 regions = own
-        return replace(population, regions=regions).competitors
+            # A total spanning several references cannot erase an available
+            # valley-bounded interpretation specific to this target. If no
+            # such interpretation exists, retain the shared total with review.
+            specific = tuple(
+                r
+                for r in regions
+                if r.contains_acquired_rt(reference)
+                and sum(
+                    r.segment.left_rt_min <= ref <= r.segment.right_rt_min
+                    for ref in references
+                )
+                == 1
+            )
+            if specific:
+                regions = specific
+        eligible = replace(population, regions=regions)
+        prominent = eligible.competitors
+        # A weaker body at the reference remains an identity alternative when
+        # another sample consumes this population; abundance is not a veto.
+        return tuple(
+            r
+            for r in eligible.comparison_regions
+            if r in prominent or r.contains_acquired_rt(reference)
+        )
 
     def competing_regions(
         self, population: TargetedPopulationContext
@@ -583,15 +666,10 @@ class TargetedBatchContext:
     def _identity_specific(
         self, population: TargetedPopulationContext, region: TargetedRegionContext
     ) -> bool:
-        references = {
-            p.reference_rt_min
-            for p in self._populations_by_sample[population.sample_name]
-            if _same_ion(p, population)
-        }
         return (
             sum(
                 region.segment.left_rt_min <= ref <= region.segment.right_rt_min
-                for ref in references
+                for ref in self.reference_rts(population)
             )
             < 2
         )

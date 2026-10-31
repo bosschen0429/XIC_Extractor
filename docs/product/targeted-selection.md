@@ -83,11 +83,24 @@ position remains with its established owner.
 
 Valleys remain regional evidence even above baseline. The current Targeted
 proposal policy uses a 15% sustained valley drop and the profile's minimum
-boundary duration. After method assessment, touching acquired bodies may form
-a total interpretation within an ordered reference region. Baseline-separated
-bodies stay separate. The original regions remain retained; target count does
-not force peak count. If different reference targets can only share one
-observed ion region, both provisional values may remain, with linked review
+boundary duration. Original regions and a batch-reference-based total proposal
+remain alternatives until selection. Each interpretation receives its own method
+relation: a CID-NL event on a valley can support the total without being assigned
+to either individual lobe. Both local peer proposals and final selection retain weaker
+reference-supported bodies alongside prominent alternatives; adding a duplicate
+sample cannot turn an abundance filter into an identity veto. Supported sample
+displacement informs reference order as a ranking prior, not a hard RT window.
+
+An available valley-bounded interpretation at one target's sample-local reference
+is not replaced by a total spanning multiple target references. Within the
+remaining identity alternatives, a complete total is preferred to its contained
+lobes, preserving poor-top measurement rather than forcing an apex-only answer.
+Scoring describes the chosen interpretation without selecting again. Regional
+and total alternatives are compared in memory, not combined into an overlapping
+physical CID-NL universe or an exhaustive search of all segment combinations.
+Baseline-separated bodies stay separate. The original regions remain retained;
+target count does not force peak count. If different reference targets can only
+share one observed ion region, both provisional values may remain, with linked review
 reasons and no independent counted assignments. Duplicate assays with the same
 RT retain a shared-quantitation warning without inventing an identity conflict.
 
@@ -144,11 +157,12 @@ an individual peak; boundary and overlapping relations remain set-level.
 Selection consumes this answer rather than treating a candidate-local best
 MS2 product as proof of unique support.
 
-`peak_detection.targeted_context` compares the retained populations;
+`peak_detection.targeted_context` compares the retained populations and reuses
+sample/target groupings and ion-level retention uncertainty across cells;
 `extraction.targeted_peak_selection` scores the chosen measurement without
 letting review-blocker count select a cleaner substitute. Scores and confidence
-remain descriptive evidence. `extraction.targeted_batch_selection` supplies the
-batch context and coalesced interpretations before formal capture/grouping.
+remain descriptive evidence. `extraction.targeted_batch_selection` compares
+regional and total interpretations before formal capture/grouping.
 It neither reopens RAW nor refits the baseline.
 
 The exact-mass MS1 scope is the complete acquisition, including targets without

@@ -43,11 +43,13 @@ not crop the acquired candidate universe.
 MS1-only rows retain their declared name, m/z and expected RT. They do not
 require an ISTD pair and do not acquire CID-NL support from their label or a
 missing tag. A table may mix MS1-only and tagged targets.
-For MS1-only, the reference must lie inside an envelope or no farther than
-0.75 minutes from its nearest boundary. Otherwise the result is ND, even if
-another peak exists elsewhere. The complete localized envelope is integrated;
-the 0.75-minute limit does not crop its area. Shoulders and double tops can
-require review without suppressing the total area.
+Selection compares retained regions across the batch, using the reference RT,
+supported sample drift, same-ion target order, and acquired signal. There is no
+fixed 0.75-minute acceptance window. A plausible but uncertain correspondence
+can retain a provisional area with review; an incompatible correspondence is
+ND. Touching lobes can propose a total area alongside the original regions,
+without erasing the valleys needed to distinguish other targets. Shoulders and
+double tops can require review without suppressing the measured total.
 
 ## Portable method
 

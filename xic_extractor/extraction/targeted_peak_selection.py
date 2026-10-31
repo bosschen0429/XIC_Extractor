@@ -62,6 +62,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_ENVELOPE_POLICY,
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PhysicalPeakEvaluation,
+    PhysicalSegment,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
@@ -71,7 +72,6 @@ from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.targeted_context import (
-    TargetedBatchContext,
     TargetedPopulationContext,
     describe_targeted_region,
 )
@@ -155,30 +155,22 @@ class TargetedCandidateAssessment:
             reference_istd_rt_min=self.paired_istd_anchor_rt,
         )
 
-    def rank_candidates(
+    def score_selected_segment(
         self,
         *,
+        selected_segment: PhysicalSegment | None,
+        competing_region_count: int,
         scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
         istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
-        batch_context: TargetedBatchContext | None = None,
     ) -> PeakDetectionResult:
-        population = (
-            batch_context.population_by_cell[
-                (self.trace_group.sample_name, self.target.label)
-            ]
-            if batch_context is not None
-            else self.population_context()
-        )
-        context = batch_context or TargetedBatchContext((population,))
-        selected_region = context.select(population, is_istd=self.target.is_istd)
         selected = next(
             (
                 candidate
                 for candidate, evaluation in self.candidate_evaluations.items()
                 if evaluation.state == "available"
-                and selected_region is not None
-                and candidate.physical_segment == selected_region.segment
+                and selected_segment is not None
+                and candidate.physical_segment == selected_segment
             ),
             None,
         )
@@ -192,20 +184,16 @@ class TargetedCandidateAssessment:
             )
         # Score and retain the complete measurable population. Quality describes
         # the selected measurement; it does not get another vote on its identity.
-        measurable = (
-            tuple(
-                candidate
-                for candidate, evaluation in self.candidate_evaluations.items()
-                if evaluation.state == "available"
-            )
-            if selected is not None
-            else ()
+        measurable = tuple(
+            candidate
+            for candidate, evaluation in self.candidate_evaluations.items()
+            if evaluation.state == "available"
         )
         candidate_population = replace(
             self.candidates,
             candidates=measurable,
             status="OK" if measurable else "PEAK_NOT_FOUND",
-            n_prominent_peaks=len(context.competing_regions(population)),
+            n_prominent_peaks=competing_region_count,
         )
 
         def context_selector(scored, **_kwargs):
@@ -216,7 +204,7 @@ class TargetedCandidateAssessment:
             self.config,
             preferred_rt=(
                 selected.selection_apex_rt
-                if selected is not None and scoring_context_builder is None
+                if scoring_context_builder is None
                 else self.preferred_rt
             ),
             strict_preferred_rt=(

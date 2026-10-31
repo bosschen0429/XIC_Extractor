@@ -369,7 +369,14 @@ def extract_one_target(
             n_prominent_peaks=0,
         )
     else:
-        peak_result = candidate_assessment.rank_candidates(
+        from xic_extractor.peak_detection.targeted_context import TargetedBatchContext
+
+        population = candidate_assessment.population_context()
+        context = TargetedBatchContext((population,))
+        selected_region = context.select(population, is_istd=target.is_istd)
+        peak_result = candidate_assessment.score_selected_segment(
+            selected_segment=selected_region.segment if selected_region else None,
+            competing_region_count=len(context.competing_regions(population)),
             scoring_context_builder=scoring_context_builder,
             istd_confidence_note=istd_confidence_note,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
