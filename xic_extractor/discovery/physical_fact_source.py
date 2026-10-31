@@ -7,6 +7,7 @@ import pickle
 import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
@@ -177,7 +178,10 @@ class PhysicalFactSource:
                     ijson.parse(
                         source,
                         buf_size=_CHUNK_BYTES,
-                        use_float=True,
+                        # Windows file identities can exceed signed 64-bit values.
+                        # Parse integers losslessly; normalize decimals at the
+                        # object-builder boundary to preserve JSON float types.
+                        use_float=False,
                     )
                 )
                 if next(events, None) != ("", "start_map", None):
@@ -382,6 +386,8 @@ def _consume_value(
 
 def _feed_builder(builder: Any, event: tuple[str, str, Any]) -> None:
     _prefix, event_name, value = event
+    if event_name == "number" and isinstance(value, Decimal):
+        value = float(value)
     builder.event(event_name, value)
 
 

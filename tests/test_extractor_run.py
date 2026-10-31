@@ -195,9 +195,8 @@ def test_run_no_nl_reference_selects_each_samples_component(
             assert result.peak_result.candidate_scores
             for score in result.peak_result.candidate_scores:
                 assert score.evidence_facts is not None
-                assert score.evidence_facts.rt.paired_istd_anchor_rt_min == pytest.approx(
-                    anchor_rt
-                )
+                rt_facts = score.evidence_facts.rt
+                assert rt_facts.paired_istd_anchor_rt_min == pytest.approx(anchor_rt)
             assert result.peak_result.selection_reference_rt == pytest.approx(
                 reference_apex
             )
