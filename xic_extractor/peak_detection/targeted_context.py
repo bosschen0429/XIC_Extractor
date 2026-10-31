@@ -112,7 +112,7 @@ class TargetedPopulationContext:
     regions: tuple[TargetedRegionContext, ...]
     reference_istd_rt_min: float | None = None
 
-    @property
+    @cached_property
     def competitors(self) -> tuple[TargetedRegionContext, ...]:
         measurable = tuple(r for r in self.regions if r.independent_body_supported)
         if not measurable:
@@ -126,7 +126,7 @@ class TargetedPopulationContext:
             if r.body_support >= maximum * ANCHOR_SELECTION_MIN_INTENSITY_RATIO
         )
 
-    @property
+    @cached_property
     def calibration_region(self) -> TargetedRegionContext | None:
         regions = self.competitors
         if len(regions) != 1:
@@ -196,6 +196,20 @@ class TargetedBatchContext:
         return {(p.sample_name, p.target_label): p for p in self.populations}
 
     @cached_property
+    def _populations_by_sample(self) -> dict[str, list[TargetedPopulationContext]]:
+        samples: dict[str, list[TargetedPopulationContext]] = {}
+        for population in self.populations:
+            samples.setdefault(population.sample_name, []).append(population)
+        return samples
+
+    @cached_property
+    def _populations_by_target(self) -> dict[str, list[TargetedPopulationContext]]:
+        targets: dict[str, list[TargetedPopulationContext]] = {}
+        for population in self.populations:
+            targets.setdefault(population.target_label, []).append(population)
+        return targets
+
+    @cached_property
     def _seeded_targets(self) -> frozenset[str]:
         return frozenset(
             p.target_label
@@ -230,9 +244,8 @@ class TargetedBatchContext:
         # false RT-shift mode (including several different precursor masses).
         anchors = tuple(
             p
-            for p in self.populations
-            if p.sample_name == population.sample_name
-            and p.target_label in self._seeded_targets
+            for p in self._populations_by_sample[population.sample_name]
+            if p.target_label in self._seeded_targets
             and not _same_ion(p, population)
             and p.calibration_region is not None
         )
@@ -286,15 +299,16 @@ class TargetedBatchContext:
         return _overlaps(_offset_bounds(population, region), limits)
 
     def retention_uncertainty_min(self, population: TargetedPopulationContext) -> float:
-        return self._retention_uncertainty_by_cell[
-            (population.sample_name, population.target_label)
-        ]
+        return self._retention_uncertainty_by_ion[(population.mz, population.ppm_tol)]
 
     @cached_property
-    def _retention_uncertainty_by_cell(self) -> dict[tuple[str, str], float]:
+    def _retention_uncertainty_by_ion(self) -> dict[tuple[float, float], float]:
+        # The batch-wide uncertainty excludes this ion, not a particular cell.
+        # All samples/assays with the same mass window consume the same answer.
+        ions = {(p.mz, p.ppm_tol): p for p in self.populations}
         return {
-            (p.sample_name, p.target_label): self._retention_uncertainty(p)
-            for p in self.populations
+            ion: self._retention_uncertainty(population)
+            for ion, population in ions.items()
         }
 
     def _retention_uncertainty(self, population: TargetedPopulationContext) -> float:
@@ -303,26 +317,27 @@ class TargetedBatchContext:
         # bodies into plausibility. Supplied references remain uncertain priors.
         offsets: dict[str, list[float]] = {}
         widths = []
-        external = tuple(
-            (p, region)
-            for p in self.populations
-            if p.target_label in self._seeded_targets and not _same_ion(p, population)
-            if (region := p.calibration_region) is not None
-        )
-        for p, region in external:
-            if not any(
-                other.sample_name == p.sample_name
-                and not _same_ion(p, other)
-                and _overlaps(
-                    _offset_bounds(p, region), _offset_bounds(other, other_region)
-                )
-                for other, other_region in external
-            ):
-                continue
-            offsets.setdefault(p.target_label, []).append(
-                region.segment.apex_rt_min - p.reference_rt_min
+        for sample in self._populations_by_sample.values():
+            external = tuple(
+                (p, region)
+                for p in sample
+                if p.target_label in self._seeded_targets
+                and not _same_ion(p, population)
+                if (region := p.calibration_region) is not None
             )
-            widths.append(region.width_min)
+            for p, region in external:
+                if not any(
+                    not _same_ion(p, other)
+                    and _overlaps(
+                        _offset_bounds(p, region), _offset_bounds(other, other_region)
+                    )
+                    for other, other_region in external
+                ):
+                    continue
+                offsets.setdefault(p.target_label, []).append(
+                    region.segment.apex_rt_min - p.reference_rt_min
+                )
+                widths.append(region.width_min)
         return max((*widths, *(max(v) - min(v) for v in offsets.values())), default=0.0)
 
     @cached_property
@@ -342,23 +357,18 @@ class TargetedBatchContext:
         supported = self.retention_intervals(population)
         anchors = tuple(
             (p, region)
-            for p in self.populations
-            if p.sample_name == population.sample_name
-            and p.target_label in self._seeded_targets
-            and not _same_ion(p, population)
+            for p in self._populations_by_sample[population.sample_name]
+            if p.target_label in self._seeded_targets and not _same_ion(p, population)
             if (region := p.calibration_region) is not None
             and any(
                 _overlaps(_offset_bounds(p, region), interval) for interval in supported
             )
         )
         transfers = []
-        for peer in self.populations:
-            if (
-                peer.sample_name == population.sample_name
-                or peer.target_label != population.target_label
-            ):
+        for peer in self._populations_by_target[population.target_label]:
+            if peer.sample_name == population.sample_name:
                 continue
-            chosen = self._local_choice(peer)
+            chosen = self._local_choices[(peer.sample_name, peer.target_label)]
             peer_supported = self.retention_intervals(peer)
             # An uncertain remote assignment must not teach other samples its
             # identity. Require direct corroboration, not the broad fallback
@@ -453,10 +463,9 @@ class TargetedBatchContext:
         candidates = self._reference_competitors(population)
         peers = tuple(
             (p, r)
-            for p in self.populations
-            if p.target_label == population.target_label
-            and p.sample_name != population.sample_name
-            if (r := self._local_choice(p)) is not None
+            for p in self._populations_by_target[population.target_label]
+            if p.sample_name != population.sample_name
+            if (r := self._local_choices[(p.sample_name, p.target_label)]) is not None
             and self._identity_specific(p, r)
         )
         reference = population.reference_rt_min
@@ -490,6 +499,13 @@ class TargetedBatchContext:
                 r.segment.right_rt_min,
             ),
         )
+
+    @cached_property
+    def _local_choices(self) -> dict[tuple[str, str], TargetedRegionContext | None]:
+        return {
+            (p.sample_name, p.target_label): self._local_choice(p)
+            for p in self.populations
+        }
 
     def _local_choice(
         self, population: TargetedPopulationContext
@@ -526,9 +542,8 @@ class TargetedBatchContext:
             sorted(
                 {
                     p.reference_rt_min
-                    for p in self.populations
-                    if p.sample_name == population.sample_name
-                    and _same_ion(p, population)
+                    for p in self._populations_by_sample[population.sample_name]
+                    if _same_ion(p, population)
                 }
             )
         )
@@ -570,8 +585,8 @@ class TargetedBatchContext:
     ) -> bool:
         references = {
             p.reference_rt_min
-            for p in self.populations
-            if p.sample_name == population.sample_name and _same_ion(p, population)
+            for p in self._populations_by_sample[population.sample_name]
+            if _same_ion(p, population)
         }
         return (
             sum(
