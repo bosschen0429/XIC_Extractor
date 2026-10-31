@@ -190,6 +190,14 @@ def test_run_no_nl_reference_selects_each_samples_component(
         measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":
+            anchor_rt = reference_apex - 1.0
+            assert result.peak_result.paired_istd_anchor_rt == pytest.approx(anchor_rt)
+            assert result.peak_result.candidate_scores
+            for score in result.peak_result.candidate_scores:
+                assert score.evidence_facts is not None
+                assert score.evidence_facts.rt.paired_istd_anchor_rt_min == pytest.approx(
+                    anchor_rt
+                )
             assert result.peak_result.selection_reference_rt == pytest.approx(
                 reference_apex
             )
