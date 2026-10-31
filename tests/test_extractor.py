@@ -187,6 +187,124 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+@pytest.mark.parametrize("control_signal", ["absent", "one_scan", "body"])
+def test_peer_alternate_band_cannot_replace_unquantifiable_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    neutral_loss: float | None,
+    control_signal: str,
+) -> None:
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    config = replace(
+        _config(tmp_path),
+        signal_processing_method="gaussian",
+        signal_processing_window_points=9,
+    )
+    samples = ("Control", "Treated", "Dose")
+    for sample in samples:
+        (config.data_dir / f"{sample}.raw").write_bytes(b"raw placeholder")
+    targets = list(
+        parse_target_rows(
+            [
+                dict(
+                    label=label,
+                    mz=str(mz),
+                    expected_rt_min=str(reference),
+                    cid_nl_tag="dR" if label == "Main" and neutral_loss else "",
+                    role="analyte",
+                    istd_pair="",
+                )
+                for label, mz, reference in (
+                    ("Main", 258.1085, 10.2),
+                    ("ShiftA", 400, 20),
+                    ("ShiftB", 500, 30),
+                    ("StableA", 600, 5),
+                    ("StableB", 700, 35),
+                )
+            ]
+        )
+    )
+
+    class Raw(_FakeRaw):
+        def __init__(self, sample):
+            super().__init__()
+            self.sample = sample
+            self.shift = {"Control": 0, "Treated": 0.3, "Dose": 0.5}[sample]
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 40.0
+
+        def extract_xic(self, mz, *_args):
+            rt = np.arange(0.0, 40.01, 0.02)
+            center = 10 + self.shift
+            if mz != 258.1085:
+                reference = {400: 20, 500: 30, 600: 5, 700: 35}[round(mz)]
+                offset = (
+                    {"Control": -3, "Treated": 0, "Dose": 0.3}[self.sample]
+                    if mz < 600
+                    else self.shift
+                )
+                return rt, 20000 * np.exp(-0.5 * ((rt - reference - offset) / 0.1) ** 2)
+            amplitude = {"Control": 10000, "Treated": 12000, "Dose": 18000}[self.sample]
+            signal = amplitude * np.exp(-0.5 * ((rt - center) / 0.1) ** 2)
+            if self.sample == "Control" and control_signal != "body":
+                signal[:] = 0
+                if control_signal == "one_scan":
+                    signal[np.argmin(abs(rt - center))] = amplitude
+            # This second band exists in every sample but is not the target
+            # chosen in the peers. Its single peer detections still carry RT
+            # correspondence evidence, even though they cannot carry quantity.
+            if self.sample == "Control":
+                signal += 7000 * np.exp(-0.5 * ((rt - 13) / 0.1) ** 2)
+            else:
+                signal[np.argmin(abs(rt - (13 + self.shift)))] += 5000
+            return rt, signal
+
+        def iter_ms2_scans(self, _rt_min, _rt_max):
+            if neutral_loss is None:
+                return
+            for number, center in enumerate((10, 13), start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=center + self.shift,
+                    precursor_mz=258.1085,
+                    masses=np.array([258.1085 - neutral_loss]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_a, **_kw: Raw(path.stem))
+    output = _run(config, targets)
+    results = {f.sample_name: f.results["Main"] for f in output.file_results}
+    for sample, center, amplitude in (("Treated", 10.3, 12000), ("Dose", 10.5, 18000)):
+        assert results[sample].reported_rt == pytest.approx(center, abs=0.03)
+        expected_area = amplitude * 0.1 * np.sqrt(2 * np.pi) * 60
+        assert results[sample].reported_peak_area == pytest.approx(
+            expected_area, rel=0.08
+        )
+    control = results["Control"]
+    if control_signal != "body":
+        assert control.reported_peak_area is None
+        assert control.reported_rt is None
+        assert not control.targeted_product_projection.counted_detection
+        assert (
+            "targeted_cross_sample_region_conflict"
+            in control.targeted_product_projection.review_reasons
+        )
+        assert "targeted_cross_sample_region_conflict" in (
+            control.targeted_product_projection.conflict_reasons
+        )
+        if neutral_loss is not None:
+            assert control.cid_nl_relations.supported_candidate_indexes
+    else:
+        assert control.reported_rt == pytest.approx(10.0, abs=0.03)
+        expected_area = 10000 * 0.1 * np.sqrt(2 * np.pi) * 60
+        assert control.reported_peak_area == pytest.approx(expected_area, rel=0.08)
+
+
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
 def test_many_background_regions_do_not_erase_a_clear_targeted_body(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, neutral_loss: float | None
 ) -> None:

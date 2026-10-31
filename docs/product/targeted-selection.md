@@ -69,6 +69,18 @@ that RT plausibility has not been established. There is no universal
 0.75-minute or 20-minute acceptance rule. This is an operational model, not a
 chemical-identification or universally calibrated detection claim.
 
+Cross-sample correspondence also consumes unselected acquired regions. Signed
+sample-pair displacement intervals come from matched, independently corroborated
+reference-linked bodies, retaining multiple drift modes and observed boundary
+uncertainty. Do not add the same between-sample drift again as a symmetric
+allowance. If every directly supported peer comparison places a candidate in
+an alternate ion band, not the peer's assigned target band, that candidate
+cannot substitute for an absent or unquantifiable target. Fail closed with no
+numeric main result and a cross-sample correspondence explanation. A single
+acquired point can locate an alternate band without becoming MS1 quantity.
+Missing transfer evidence alone does not trigger this rejection; paired ISTD
+position remains with its established owner.
+
 Valleys remain regional evidence even above baseline. The current Targeted
 proposal policy uses a 15% sustained valley drop and the profile's minimum
 boundary duration. After method assessment, touching acquired bodies may form

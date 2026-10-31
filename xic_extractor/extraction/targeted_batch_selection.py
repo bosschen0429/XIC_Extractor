@@ -279,9 +279,26 @@ def complete_targeted_candidate_batch(
                     if selected_context.observed_component_count > 1:
                         review.append("targeted_unresolved_substructure")
             elif assessment.candidates.candidates:
-                review.append("targeted_no_plausible_measurable_region")
+                if any(
+                    region.independent_body_supported
+                    and batch.plausible(population, region)
+                    and batch.cross_sample_region_conflict(population, region)
+                    for region in population.regions
+                ):
+                    review.append("targeted_cross_sample_region_conflict")
+                else:
+                    review.append("targeted_no_plausible_measurable_region")
             if projection is not None and review:
-                result = _with_context_reasons(result, assessment.target, review)
+                result = _with_context_reasons(
+                    result,
+                    assessment.target,
+                    review,
+                    conflicts=tuple(
+                        reason
+                        for reason in review
+                        if reason == "targeted_cross_sample_region_conflict"
+                    ),
+                )
             source_trace = captured.acquisition_trace
             if source_trace is not None and source_trace.acquisition_source_id:
                 result = prepare_acquired_observation(

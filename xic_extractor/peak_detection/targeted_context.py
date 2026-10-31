@@ -160,6 +160,34 @@ def _offset_bounds(
 
 
 @dataclass(frozen=True)
+class TargetedPeerRegionTransfer:
+    peer: TargetedPopulationContext
+    assigned_region: TargetedRegionContext
+    displacement_intervals_min: tuple[tuple[float, float], ...]
+
+    def matches(
+        self, region: TargetedRegionContext, peer_region: TargetedRegionContext
+    ) -> bool:
+        if (
+            region.acquired_rt_start_min is None
+            or region.acquired_rt_end_min is None
+            or peer_region.acquired_rt_start_min is None
+            or peer_region.acquired_rt_end_min is None
+        ):
+            return False
+        return any(
+            _overlaps(
+                (region.acquired_rt_start_min, region.acquired_rt_end_min),
+                (
+                    peer_region.acquired_rt_start_min + left,
+                    peer_region.acquired_rt_end_min + right,
+                ),
+            )
+            for left, right in self.displacement_intervals_min
+        )
+
+
+@dataclass(frozen=True)
 class TargetedBatchContext:
     populations: tuple[TargetedPopulationContext, ...]
 
@@ -297,13 +325,114 @@ class TargetedBatchContext:
             widths.append(region.width_min)
         return max((*widths, *(max(v) - min(v) for v in offsets.values())), default=0.0)
 
+    @cached_property
+    def _peer_region_transfers_by_cell(
+        self,
+    ) -> dict[tuple[str, str], tuple[TargetedPeerRegionTransfer, ...]]:
+        return {
+            (p.sample_name, p.target_label): self._peer_region_transfers(p)
+            for p in self.populations
+        }
+
+    def _peer_region_transfers(
+        self, population: TargetedPopulationContext
+    ) -> tuple[TargetedPeerRegionTransfer, ...]:
+        if population.reference_istd_rt_min is not None:
+            return ()  # The paired-position owner governs this stronger prior.
+        supported = self.retention_intervals(population)
+        anchors = tuple(
+            (p, region)
+            for p in self.populations
+            if p.sample_name == population.sample_name
+            and p.target_label in self._seeded_targets
+            and not _same_ion(p, population)
+            if (region := p.calibration_region) is not None
+            and any(
+                _overlaps(_offset_bounds(p, region), interval) for interval in supported
+            )
+        )
+        transfers = []
+        for peer in self.populations:
+            if (
+                peer.sample_name == population.sample_name
+                or peer.target_label != population.target_label
+            ):
+                continue
+            chosen = self._local_choice(peer)
+            peer_supported = self.retention_intervals(peer)
+            # An uncertain remote assignment must not teach other samples its
+            # identity. Require direct corroboration, not the broad fallback
+            # uncertainty hull used to preserve provisional measurements.
+            if (
+                chosen is None
+                or not self._identity_specific(peer, chosen)
+                or not any(
+                    _overlaps(_offset_bounds(peer, chosen), interval)
+                    for interval in peer_supported
+                )
+            ):
+                continue
+            displacements = []
+            for anchor, region in anchors:
+                other = self.population_by_cell.get(
+                    (peer.sample_name, anchor.target_label)
+                )
+                other_region = other.calibration_region if other is not None else None
+                if other is None or other_region is None:
+                    continue
+                if not any(
+                    _overlaps(_offset_bounds(other, other_region), interval)
+                    for interval in peer_supported
+                ):
+                    continue
+                # Preserve signed sample-pair modes and observed boundary
+                # uncertainty. Between-sample drift is already accounted for
+                # here; do not add that same spread as a symmetric RT allowance.
+                displacements.append(
+                    (
+                        region.segment.left_rt_min - other_region.segment.right_rt_min,
+                        region.segment.right_rt_min - other_region.segment.left_rt_min,
+                    )
+                )
+            if displacements:
+                transfers.append(
+                    TargetedPeerRegionTransfer(peer, chosen, tuple(displacements))
+                )
+        return tuple(transfers)
+
+    def cross_sample_region_conflict(
+        self, population: TargetedPopulationContext, region: TargetedRegionContext
+    ) -> bool:
+        transfers = self._peer_region_transfers_by_cell[
+            (population.sample_name, population.target_label)
+        ]
+        if not transfers:
+            return False
+        for transfer in transfers:
+            if transfer.matches(region, transfer.assigned_region):
+                return False
+            # A single acquired peer detection cannot mint quantity, but it
+            # still locates an alternate ion band. Do not discard it before
+            # asking whether the current candidate belongs to that other band.
+            if not any(
+                other != transfer.assigned_region
+                and other.acquired_positive_count > 0
+                and other.acquired_modulation_observed
+                and transfer.matches(region, other)
+                for other in transfer.peer.regions
+            ):
+                return False
+        return True
+
     def select(
         self, population: TargetedPopulationContext, *, is_istd: bool = False
     ) -> TargetedRegionContext | None:
         plausible = tuple(
             r
             for r in population.regions
-            if r.independent_body_supported and self.plausible(population, r)
+            if r.independent_body_supported
+            and self.plausible(population, r)
+            and (is_istd or not self.cross_sample_region_conflict(population, r))
         )
         if not plausible:
             return None

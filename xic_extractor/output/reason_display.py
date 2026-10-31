@@ -35,6 +35,7 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "targeted_cross_sample_region_conflict": "跨樣本峰對應衝突；不給定量值",
     "targeted_retention_context_unavailable": "跨 target RT 證據不足；目前對應為暫定",
     "targeted_competing_regions": ("有多個具實質訊號的候選區段；依整批上下文暫定對應"),
     "targeted_reference_displacement": (
