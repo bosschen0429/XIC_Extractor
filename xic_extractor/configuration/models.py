@@ -51,7 +51,7 @@ class ExtractionConfig:
     signal_processing_window_points: int = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     )
-    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_PROBE
+    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_RESTORE
 
     def __post_init__(self) -> None:
         object.__setattr__(

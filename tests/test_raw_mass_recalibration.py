@@ -1,4 +1,4 @@
-"""Per-RAW probe and independent analytical mass/path oracles."""
+"""Per-RAW restoration and independent analytical mass/path oracles."""
 
 from dataclasses import replace
 from types import SimpleNamespace
@@ -19,16 +19,24 @@ RT_BY_SCAN = {1: 10.0, 2: 10.01, 3: 10.02}
 
 
 def _recorded(true_mz: float, scan: int) -> float:
-    return true_mz * (1.0 + (0.7 + 1.9 * LM_BY_SCAN[scan]) * 1e-6)
+    return true_mz * (1.0 + (2.0 * (LM_BY_SCAN[scan] - 1.0)) * 1e-6)
 
 
 class _Vendor:
-    def __init__(self, *, trailer_labels=("LM Correction (ppm):",), ms2=None):
+    def __init__(
+        self,
+        *,
+        trailer_labels=("LM Correction (ppm):", "Number of LM Found:"),
+        ms2=None,
+    ):
         self.trailer_labels = list(trailer_labels)
         self.ms2 = ms2 or {}
         self.chromatogram_calls = 0
         self.RunHeaderEx = SimpleNamespace(FirstSpectrum=1, LastSpectrum=63)
         self.centroid_reads = 0
+        self.trailer_reads = 0
+        self.found = {1: 1, 4: 1, 5: 1}
+        self.polarity = "Positive"
         self.centroids = {
             # The analyte at its recorded mass, plus a neighbour 20 ppm above
             # the true analyte mass that a 5 ppm window must exclude.
@@ -37,12 +45,9 @@ class _Vendor:
         }
 
         for scan in range(4, 64):
-            LM_BY_SCAN[scan] = float(scan % 14)
+            LM_BY_SCAN[scan] = 1.0 if scan in (4, 5) else float(scan % 14)
             RT_BY_SCAN[scan] = 11.0 + scan * 0.01
             self.centroids[scan] = ([], [])
-        for scan, (masses, intensities) in self.centroids.items():
-            masses.extend([_recorded(371.101233, scan), _recorded(391.284286, scan)])
-            intensities.extend([1000.0, 2000.0])
 
     def ScanNumberFromRetentionTime(self, rt):
         return 1 if rt <= 10.0 else 3
@@ -51,7 +56,9 @@ class _Vendor:
         return RT_BY_SCAN[scan]
 
     def GetFilterForScanNumber(self, scan):
-        return SimpleNamespace(MSOrder="Ms2" if scan == 2 else "Ms1")
+        return SimpleNamespace(
+            MSOrder="Ms2" if scan == 2 else "Ms1", Polarity=self.polarity
+        )
 
     def GetCentroidStream(self, scan, _refresh):
         self.centroid_reads += 1
@@ -66,12 +73,14 @@ class _Vendor:
         return [SimpleNamespace(Label=label) for label in self.trailer_labels]
 
     def GetTrailerExtraInformation(self, scan):
+        self.trailer_reads += 1
         return SimpleNamespace(
-            Labels=self.trailer_labels, Values=[str(LM_BY_SCAN[scan])]
+            Labels=self.trailer_labels,
+            Values=[str(LM_BY_SCAN[scan]), str(self.found.get(scan, 0))],
         )
 
 
-def _handle(vendor, policy=MassRecalibration.EASY_IC_PROBE):
+def _handle(vendor, policy=MassRecalibration.EASY_IC_RESTORE):
     thermo = SimpleNamespace(ms1_order="Ms1", ms2_order="Ms2")
     return RawFileHandle(vendor, thermo, policy)
 
@@ -100,7 +109,7 @@ def test_recalibrated_ms1_centroid_reads_return_true_masses():
     assert observations[1] is None
 
 
-@pytest.mark.parametrize("outcome", ["applied", "not_needed", "unavailable"])
+@pytest.mark.parametrize("outcome", ["applied", "unavailable"])
 def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
     vendor = _Vendor()
     first = _handle(vendor)
@@ -110,7 +119,7 @@ def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
     reopened_vendor = _Vendor()
     reopened_vendor.trailer_labels.insert(0, "Other trailer:")
     reopened_vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
-        Values=["999", str(LM_BY_SCAN[scan])]
+        Values=["999", str(LM_BY_SCAN[scan]), "0"]
     )
     reopened = _handle(reopened_vendor)
     reopened.use_mass_recalibration_result(result)
@@ -156,7 +165,7 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
         opened.append(path.stem)
         vendor = _Vendor()
         if path.stem == "unavailable":
-            vendor.centroids = {scan: ([], []) for scan in vendor.centroids}
+            vendor.found = {}
         vendor.Dispose = lambda: closed.append(path.stem)
         return _handle(vendor, mass_recalibration)
 
@@ -164,15 +173,15 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
     prepared = raw_reader.prepare_batch_mass_recalibration(
         inputs,
         tmp_path,
-        MassRecalibration.EASY_IC_PROBE,
+        MassRecalibration.EASY_IC_RESTORE,
         workers=2,
     )
     assert sorted(opened) == sorted(closed) == ["applied", "unavailable"]
     for path, source in inputs:
         assert prepared[path.stem].acquisition.source == source
         assert prepared[path.stem].result.outcome == path.stem
-    assert prepared["applied"].result.a == pytest.approx(0.7)
-    assert prepared["applied"].result.b == pytest.approx(1.9)
+    assert prepared["applied"].result.baseline_lm == 1.0
+    assert prepared["applied"].result.n_anchor == 3
     assert (
         raw_reader.prepare_batch_mass_recalibration(
             inputs, tmp_path, MassRecalibration.NONE
@@ -182,7 +191,7 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
     assert len(opened) == 2
 
 
-@pytest.mark.parametrize("outcome", ("applied", "none", "unavailable", "not_needed"))
+@pytest.mark.parametrize("outcome", ("applied", "none", "unavailable"))
 @pytest.mark.parametrize("isotope_number,charge", ((0, 1), (1, 1), (2, 1), (1, 2)))
 def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
     outcome, isotope_number, charge, monkeypatch
@@ -193,6 +202,7 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         "Monoisotopic M/Z:",
         "Master Scan Number:",
         "Charge State:",
+        "Number of LM Found:",
     )
     true_precursor, true_product = 500.0, 383.9526
     selected_true = true_precursor + isotope_number * 1.0033548 / charge
@@ -204,6 +214,7 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         vendor = _Vendor(trailer_labels=labels)
         vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
             MSOrder="Ms2" if scan == 2 else "Ms1",
+            Polarity="Positive",
             Filter=SimpleNamespace(
                 Reactions=[SimpleNamespace(PrecursorMass=filter_precursor)]
             ),
@@ -211,11 +222,14 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
             Masses=[product_reading], Intensities=[50.0]
         )
-        values = {s: [str(lm), "0", "0"] for s, lm in LM_BY_SCAN.items()}
+        values = {
+            s: [str(lm), "0", "0", "1", str(vendor.found.get(s, 0))]
+            for s, lm in LM_BY_SCAN.items()
+        }
         values.update(
             {
-                1: [str(LM_BY_SCAN[1]), "0", "0"],
-                2: [str(LM_BY_SCAN[2]), str(parent_reading), "1", str(charge)],
+                1: [str(LM_BY_SCAN[1]), "0", "0", "1", "1"],
+                2: [str(LM_BY_SCAN[2]), str(parent_reading), "1", str(charge), "1"],
             }
         )
         vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
@@ -223,15 +237,13 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
         )
         vendor.ScanNumberFromRetentionTime = lambda rt: 2
         if outcome == "unavailable":
-            vendor.RunHeaderEx.LastSpectrum = 3
-        elif outcome == "not_needed":
-            for masses, _ in vendor.centroids.values():
-                masses[-1] = 391.284286 * (1 + 2e-6)
+            for value in values.values():
+                value[-1] = "0"
         handle = _handle(
             vendor,
             MassRecalibration.NONE
             if outcome == "none"
-            else MassRecalibration.EASY_IC_PROBE,
+            else MassRecalibration.EASY_IC_RESTORE,
         )
         return next(iter(handle.iter_ms2_scan_subset(9.0, 11.0, frozenset({2})))).scan
 
@@ -264,29 +276,38 @@ def test_ms2_fragments_use_their_scan_and_precursors_use_the_parent_ms1(
 
 
 @pytest.mark.parametrize(
-    ("case", "outcome", "reason"),
+    "case,reason",
     [
-        ("clean", "not_needed", None),
-        ("few", "unavailable", "insufficient_references"),
-        ("missing_lm", "unavailable", "no_correction_signal"),
-        ("constant_lm", "unavailable", "no_correction_signal"),
-        ("bad_validation", "unavailable", "validation_failed"),
+        ("missing_lm", "missing_lock_mass_trailers"),
+        ("missing_found", "missing_lock_mass_trailers"),
+        ("no_finds", "no_ms1_lock_mass_anchor"),
+        ("nonfinite", "no_ms1_lock_mass_anchor"),
+        ("negative", "negative_polarity"),
+        ("mixed", "unsupported_or_mixed_polarity"),
+        ("unknown", "unsupported_or_mixed_polarity"),
     ],
 )
-def test_probe_fallback_preserves_every_vendor_mass_path(case, outcome, reason):
+def test_unavailable_preserves_vendor_mass_paths(case, reason):
     vendor = _Vendor()
-    if case == "clean":
-        for masses, _ in vendor.centroids.values():
-            masses[-1] = 391.284286 * (1 + 2e-6)
-    elif case == "few":
-        vendor.RunHeaderEx.LastSpectrum = 3
-    elif case == "missing_lm":
-        vendor.trailer_labels = ["Charge State:"]
-    elif case == "constant_lm":
-        vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(Values=["1"])
-    elif case == "bad_validation":
-        for masses, _ in vendor.centroids.values():
-            masses[-1] = 391.284286 * (1 + 38e-6)
+    if case == "missing_lm":
+        vendor.trailer_labels = ["Other:", "Number of LM Found:"]
+    elif case == "missing_found":
+        vendor.trailer_labels = ["LM Correction (ppm):"]
+    elif case == "no_finds":
+        vendor.found = {}
+    elif case == "nonfinite":
+        vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+            Values=["nan", "1"]
+        )
+    elif case == "negative":
+        vendor.polarity = "Negative"
+    elif case == "unknown":
+        vendor.polarity = "Any"
+    elif case == "mixed":
+        vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
+            MSOrder="Ms2" if scan == 2 else "Ms1",
+            Polarity="Negative" if scan == 2 else "Positive",
+        )
     probe = _handle(vendor)
     vendor_handle = _handle(vendor, MassRecalibration.NONE)
     for handle in (probe, vendor_handle):
@@ -312,39 +333,61 @@ def test_probe_fallback_preserves_every_vendor_mass_path(case, outcome, reason):
         ((3, 499, 501),)
     ) == vendor_handle.read_ms1_mass_windows(((3, 499, 501),))
     result = probe.mass_recalibration_result
-    assert (result.outcome, result.reason) == (outcome, reason)
-    assert result.a is None and result.b is None
+    assert (result.outcome, result.reason) == (
+        "not_applicable" if case == "negative" else "unavailable",
+        reason,
+    )
+    assert result.baseline_lm is None
 
 
-def test_probe_fits_this_raw_once_and_exposes_coefficients():
+def test_anchor_uses_only_finite_ms1_finds_and_reads_no_spectra():
     vendor = _Vendor()
+    # MS2 finds and non-finds never enter the baseline. A finite MS1 outlier
+    # is deliberately retained; the median, not an invented cutoff, is the model.
+    vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+        Values={
+            1: ["0.9", "1"],
+            2: ["-20", "1"],
+            3: ["30", "0"],
+            4: ["1.1", "1"],
+            5: ["50", "1"],
+            6: ["nan", "1"],
+            7: ["inf", "1"],
+            8: ["1", "nan"],
+        }.get(scan, ["1", "0"])
+    )
     handle = _handle(vendor)
     result = handle.mass_recalibration_result
     assert result.outcome == "applied"
-    assert result.a == pytest.approx(0.7)
-    assert result.b == pytest.approx(1.9)
-    assert result.n_fit == result.n_val == 62
-    reads = vendor.centroid_reads
+    assert result.baseline_lm == 1.1
+    assert result.n_anchor == 3
+    assert vendor.centroid_reads == 0
     assert handle.mass_recalibration_result is result
-    assert vendor.centroid_reads == reads
 
 
-def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monkeypatch):
+@pytest.mark.parametrize("mono_present", (True, False))
+@pytest.mark.parametrize("measured_precursor", (True, False))
+def test_parent_centroid_classifies_selected_mass_without_reliable_mono(
+    mono_present, measured_precursor, monkeypatch
+):
     monkeypatch.setitem(LM_BY_SCAN, 1, 12.5)
     labels = (
         "LM Correction (ppm):",
         "Monoisotopic M/Z:",
         "Master Scan Number:",
         "Charge State:",
+        "Number of LM Found:",
     )
     true_product = TRUE_MZ - 116.0474
-    selected = _recorded(TRUE_MZ, 1)
-    # The selected ion is an exact parent centroid. The vendor's separate
-    # monoisotopic estimate need not predict its M+1 mass to four decimals.
+    selected = _recorded(TRUE_MZ, 1) if measured_precursor else TRUE_MZ
+    # The vendor's mono estimate may be missing or fail to predict M+1 to four
+    # decimals. Only an exact parent centroid proves this is a measured mass;
+    # a nonmatching inclusion-list setpoint must stay unchanged.
     mono = _recorded(TRUE_MZ - 1.0033548, 1) - 0.0003
     vendor = _Vendor(trailer_labels=labels)
     vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
         MSOrder="Ms2" if scan == 2 else "Ms1",
+        Polarity="Positive",
         Filter=SimpleNamespace(Reactions=[SimpleNamespace(PrecursorMass=selected)]),
     )
     vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
@@ -352,7 +395,13 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
     )
     vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
         Labels=list(labels),
-        Values=[str(LM_BY_SCAN[scan]), str(mono), "1", "1"],
+        Values=[
+            str(LM_BY_SCAN[scan]),
+            str(mono) if mono_present else "0",
+            "1",
+            "1" if mono_present else "0",
+            str(vendor.found.get(scan, 0)),
+        ],
     )
     vendor.ScanNumberFromRetentionTime = lambda rt: 2
     handle = _handle(vendor)
@@ -368,6 +417,8 @@ def test_parent_centroid_calibrates_a_selected_isotope_with_imprecise_mono(monke
         116.0474, abs=1e-8
     )
     assert scans[1].precursor_mz == scans[0].precursor_mz
+    if not mono_present:
+        assert scans[0].precursor_metadata.monoisotopic_mz is None
     assert vendor.centroid_reads - reads == 1
 
 
@@ -394,3 +445,84 @@ def test_default_policy_keeps_the_vendor_xic():
     )[0]
     assert np.array_equal(trace.intensity, [1.0])
     assert handle.mass_recalibration is MassRecalibration.NONE
+
+
+@pytest.mark.parametrize("polarity", ("Positive", "Negative"))
+def test_ms2_only_shift_is_restored_only_in_positive_mode(polarity):
+    vendor = _Vendor()
+    vendor.GetFilterForScanNumber = lambda scan: SimpleNamespace(
+        MSOrder="Ms2" if scan == 2 else "Ms1",
+        Polarity=polarity,
+        Filter=SimpleNamespace(Reactions=[SimpleNamespace(PrecursorMass=500.0)]),
+    )
+    vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+        Labels=vendor.trailer_labels,
+        Values=["-6" if scan == 2 else "1", "1"],
+    )
+    # MS1 is at baseline. Negative-mode product readings must remain vendor data.
+    vendor.GetSimplifiedScan = lambda scan: SimpleNamespace(
+        Masses=[250.0 * (1 - 14e-6)], Intensities=[50.0]
+    )
+    vendor.ScanNumberFromRetentionTime = lambda rt: 2
+    handle = _handle(vendor)
+    event = next(handle.iter_ms2_scan_subset(9, 11, frozenset({2})))
+    assert event.parse_error is None
+    assert event.scan.masses == pytest.approx(
+        [250.0 if polarity == "Positive" else 250.0 * (1 - 14e-6)], abs=1e-9
+    )
+    assert event.scan.precursor_mz == 500.0
+    result = handle.mass_recalibration_result
+    if polarity == "Positive":
+        assert result.baseline_lm == 1.0
+        assert result.outcome == "applied"
+    else:
+        assert result.baseline_lm is None
+        assert (result.outcome, result.reason) == (
+            "not_applicable",
+            "negative_polarity",
+        )
+    assert vendor.centroid_reads == 0
+
+
+def test_saved_legacy_fit_replays_its_formula_without_new_preparation():
+    from xic_extractor.configuration.mass_recalibration import (
+        deserialize_mass_recalibration_result,
+    )
+
+    # Actual pre-restoration JSON shape: do not generate it via today's writer.
+    saved = deserialize_mass_recalibration_result(
+        '{"outcome":"applied","reason":null,"a":0.7,"b":1.9,'
+        '"n_fit":60,"n_val":60,"val_raw_p95":25.0,'
+        '"val_corrected_p95":1.0,"policy":"easy_ic_probe"}'
+    )
+    vendor = _Vendor()
+    vendor.centroids[3] = ([500.0 * (1 + 24.45e-6)], [100.0])
+    vendor.found = {}  # No baseline is needed to replay the saved fit.
+    handle = _handle(vendor, MassRecalibration.EASY_IC_PROBE)
+    handle.use_mass_recalibration_result(saved)
+    result = handle.read_ms1_mass_windows(((3, 499.999, 500.001),))[0]
+    assert result.centroid_mzs == pytest.approx((500.0,), abs=1e-9)
+    assert vendor.trailer_reads == 1
+    assert vendor.centroid_reads == 1
+
+
+def test_legacy_policy_without_saved_fit_does_not_silently_run_a_new_model():
+    from xic_extractor.raw_reader import RawReaderError
+
+    with pytest.raises(RawReaderError, match="replay-only"):
+        _ = _handle(
+            _Vendor(), MassRecalibration.EASY_IC_PROBE
+        ).mass_recalibration_result
+
+
+def test_missing_scan_lm_is_not_inferred_from_baseline():
+    from xic_extractor.raw_reader import RawReaderError
+
+    vendor = _Vendor()
+    handle = _handle(vendor)
+    assert handle.mass_recalibration_result.outcome == "applied"
+    vendor.GetTrailerExtraInformation = lambda scan: SimpleNamespace(
+        Values=["nan", "0"]
+    )
+    with pytest.raises(RawReaderError, match="finite 'LM Correction"):
+        handle.read_ms1_mass_windows(((3, 499, 501),))

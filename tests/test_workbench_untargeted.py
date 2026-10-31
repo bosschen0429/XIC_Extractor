@@ -759,7 +759,7 @@ def test_invalid_module_switches_fail_before_execution(tmp_path):
         parse_request(values)
 
 
-@pytest.mark.parametrize("policy", ("none", "easy_ic_probe"))
+@pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
 def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
     from dataclasses import replace
 

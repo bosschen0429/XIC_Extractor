@@ -183,7 +183,7 @@ class DiscoverySettings:
     blank_library_path: str | None = None
     blank_ppm_tol: float = 10.0
     blank_fold_change_threshold: float = 3.0
-    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_PROBE
+    mass_recalibration: MassRecalibration = MassRecalibration.EASY_IC_RESTORE
 
     def __post_init__(self) -> None:
         object.__setattr__(

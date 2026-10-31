@@ -824,7 +824,9 @@ def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw
         )
 
 
-@pytest.mark.parametrize("saved", (False, True))
+@pytest.mark.parametrize(
+    "saved", (None, "easy_ic_probe", "easy_ic_restore", "negative")
+)
 def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch, saved):
     from xic_extractor.configuration.mass_recalibration import (
         MassRecalibration,
@@ -835,7 +837,11 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
 
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
     summary = read_cid_nl_explanation(review)
-    policies = {"S1": "easy_ic_probe" if saved else "none", "S2": "none"}
+    policies = {
+        "S1": "easy_ic_restore" if saved == "negative" else saved or "none",
+        "S2": "none",
+    }
+    saved_outcome = "not_applicable" if saved == "negative" else "unavailable"
     if saved:
         _write_metadata_json(
             tmp_path / "alignment_run_metadata.json",
@@ -847,7 +853,8 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
                         s: json.loads(
                             serialize_mass_recalibration_result(
                                 MassRecalibrationResult(
-                                    "unavailable", policy=MassRecalibration(p)
+                                    saved_outcome if s == "S1" else "none",
+                                    policy=MassRecalibration(p),
                                 )
                             )
                         )
@@ -893,7 +900,7 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
     assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
     assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
     # A saved probe result is replayed; the RAW is not probed again.
-    assert replayed == {"S1": "unavailable" if saved else None, "S2": None}
+    assert replayed == {"S1": saved_outcome if saved else None, "S2": None}
 
     if saved:
         sidecar = tmp_path / "alignment_run_metadata.json"

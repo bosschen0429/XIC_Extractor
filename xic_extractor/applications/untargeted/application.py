@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -21,7 +21,10 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
 )
-from xic_extractor.configuration.mass_recalibration import MassRecalibration
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    serialize_mass_recalibration_result,
+)
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -125,11 +128,13 @@ def run_untargeted_application(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
         ),
     )
-    # Source-bound Discovery receipts carry each RAW's fitted probe result.
-    # Publication renders these facts; it never rescans RAW or refits coefficients.
+    # Source-bound Discovery receipts carry each RAW's mass result.
+    # Publication renders these facts; it never recomputes a mass policy.
     metadata["mass_recalibration_by_sample"] = json.dumps(
         {
-            sample: asdict(receipt.mass_recalibration_result)
+            sample: json.loads(
+                serialize_mass_recalibration_result(receipt.mass_recalibration_result)
+            )
             for sample, receipt in batch.candidate_receipts.items()
         },
         sort_keys=True,

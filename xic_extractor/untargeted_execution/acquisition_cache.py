@@ -323,13 +323,13 @@ class _FactCache:
         )
         self._root = root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
         self._source_id = source_id
-        # Calibrated MS2 facts include parent-centroid precursor recognition.
+        # Calibrated MS2 recognizes parent centroids even without mono metadata.
         # Keep XICs and vendor-mass facts reusable without admitting older MS2
         # entries whose fragments and selected precursor may use different scales.
         self._ms2_kind = (
             "ms2"
             if mass_recalibration is MassRecalibration.NONE
-            else "ms2_parent_centroid"
+            else "ms2_parent_centroid_optional_mono"
         )
 
     def _path(self, kind: str, key: bytes) -> Path:

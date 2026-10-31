@@ -253,9 +253,10 @@ class _FakeThermoRaw:
     def GetFilterForScanNumber(self, scan_number: int):
         scan = self.scans.get(scan_number)
         if scan is None:
-            return SimpleNamespace(MSOrder="Ms1")
+            return SimpleNamespace(MSOrder="Ms1", Polarity="Positive")
         return SimpleNamespace(
             MSOrder="Ms2",
+            Polarity="Positive",
             Filter=SimpleNamespace(
                 Reactions=[
                     SimpleNamespace(PrecursorMass=scan.precursor_mz),

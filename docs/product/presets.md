@@ -40,28 +40,48 @@ surfaces. Presets are not product authority by themselves.
 
 ## RAW Mass Recalibration
 
-CID-NL Discovery presets default to the per-RAW EASY-IC probe when
+CID-NL Discovery presets default to `easy_ic_restore` when
 `[discovery].mass_recalibration` is absent. `DiscoverySettings` and
-`ExtractionConfig` use this same new-execution default. The RAW adapter probes
-each file independently and corrects masses only after independent validation;
-unavailable or unnecessary corrections preserve the vendor read paths.
+`ExtractionConfig` use this same new-execution default. The RAW adapter takes
+the median finite LM Correction from MS1 scans with Number of LM Found > 0
+as each file's baseline. Each scan's shift in ppm is twice its LM minus twice
+the baseline. The adapter divides recorded masses by `1 + shift_ppm * 1e-6`.
+The mechanism-supported ppm approximation applies only to positive-polarity RAWs,
+including MS2-only excursions. No background-ion threshold gates MS2 correction.
+Negative-polarity RAWs retain all vendor mass paths and explicitly report
+`outcome=not_applicable`, `reason=negative_polarity`; restoration is not attempted.
+Mixed or unknown polarities report `unavailable` and retain vendor mass paths.
+Missing trailers or an absent baseline produce `unavailable` and retain vendor
+read paths. Missing finite LM in a scan under an applied policy is a read error.
 Downstream algorithms receive masses, not a second correction policy.
 
+The fixed baseline also moves normal scan-to-scan fluctuations. Restoration is
+not absolute mass recalibration and does not remove background ions' native bias.
+Measured precursors use the parent MS1 scale; fragments use their own MS2 scale.
+Inclusion-list setpoints remain unchanged.
+
 To restore vendor masses, set `mass_recalibration = "none"` in `[discovery]`.
-Preset export preserves explicit `none`; it omits the default probe value.
+Preset export preserves explicit `none`; it omits the default restoration value.
 Persisted method/request identities have a different compatibility rule: an
 absent mass policy means legacy `none`, and explicit `none` is non-canonical.
-Probe executions intentionally have a different scientific identity.
+Restoration executions have a different scientific identity from both legacy
+`easy_ic_probe` and `none` executions.
 
-Discovery sample receipts carry each RAW's probe result in the optional
+Discovery sample receipts carry each RAW's mass result in the optional
 `mass_recalibration` column of `discovery_batch_index.csv` (including standalone
 Discovery). Alignment always publishes `alignment_run_metadata.json` and copies
 these source-bound results into `mass_recalibration_by_sample`. Workbench review
 curves replay the saved policy, not today's default. Keep the Alignment metadata
 beside its review report; their request and attempt IDs must match. Targeted
 workbooks save `mass_recalibration` in Run Metadata for the same purpose. Legacy
-results without a saved policy retain `none`. Probe telemetry does not grant
-writer authority; cache namespaces separate probe facts from vendor facts.
+results without a saved policy retain `none`. New results store `baseline_lm`
+and `n_anchor`; saved `easy_ic_probe` results retain their original `a + b * LM`
+formula. New execution no longer fits background ions. A legacy policy without
+its saved fitted result cannot replay the old correction and raises a read error;
+this includes old Targeted workbooks that recorded only the probe policy.
+Re-analysis must explicitly select restoration or `none`, not silently reinterpret
+the old method. Mass telemetry does not grant writer authority; cache namespaces
+separate restoration, legacy probe, and vendor facts.
 Direct `open_raw` callers still default to `none`; Delta Mass, QC, and blank-library
 acquisition are unchanged.
 
