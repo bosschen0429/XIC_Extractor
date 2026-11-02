@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-27
+**Last updated:** 2026-11-02
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,50 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-11-02 Untargeted RT, Height, Shape And Envelope Ablations
+
+Evidence: `diagnostic_only`; baseline `878c6a8b2`. A fresh 8RAW `dna_dr`
+Discovery and formal `--stop-after grouping` run retained 2,587 owners in 707
+worksets, all with shape descriptors. Snapshot SHA-256:
+`d201d3ac2f0c7299cc55230fcfa00acdd773f560816e5f23314201bac44a3597`.
+This is one CID-NL fixture, not a method-independent readiness claim.
+
+- With the frozen calibration and candidates, RT-first and no-relative-height
+  matching each changed 31 of 5,475 pattern comparisons (28 in raw matching),
+  but no final membership. Removing shape changed memberships involving 11
+  owners: a merge near m/z 268.105 and an eight-member group splitting near
+  348.212. Both changes cancel in the total of 857 groups. All five variants
+  preserved owners, areas, sample exclusivity and membership under input-order
+  reversal and owner-ID renaming. This does not test changed bootstrap fitting.
+- For 183 non-anchor-workset features / 840 observations, the current frozen
+  map reduced median absolute peer-prediction error from 13.74 to 3.04 seconds;
+  p95 remained 56.16 seconds. Median in-fit spread was 1.78 seconds. Removing
+  exact co-apex worksets left a harder 46-feature subset with 21.83-second
+  median error. These are conditional on inferred correspondence, not
+  independent chemical truth or calibrated probabilities.
+- Replacing only membership RT/region-gap cost scales with the observed median
+  or p90 error increased groups from 857 to 1,190 or 874. Neither variant was
+  adopted. Synthetic cases also show opposite height-vs-RT preferences under
+  abundance change and genuine drift; independent calibration resolves the
+  constructed ambiguity, whereas changing rank order alone cannot.
+- A fixed-query physical-stage envelope prototype recovered a split body
+  (98.4% of generated area), but selected regions in all 20 noise-only cases
+  versus none under the current physical Backfill question. The lowest-signal
+  case had a 27.14-fold median area overestimate. This is not a final Backfill
+  false-positive rate: method mapping, membership and writing were excluded.
+  Direct transplantation failed this stress test; no admission relaxation was
+  adopted.
+- The actual Discovery admission predicate accepted 2,632 of 5,084 rows;
+  839 rejected rows already retain available physical evaluations and traces.
+  Retained evidence, anchor qualification and group identity are distinct.
+
+Artifacts: `output/untarget-evidence-experiments/report.md`, the `grouping/`,
+`rt/`, `rt-cost/`, `backfill/`, and `admission/` summaries, and offline Inspector
+reports under `review/`. Bounded RAW review acquired 11 traces in eight samples;
+it did not reselect peaks or change areas. No production default changed.
+Repeat for a different method/cohort, changed candidate or calibration owners,
+or an independent identity oracle—not merely to restate these counterexamples.
 
 ### 2026-10-27 One Mass-Recalibration Probe Per RAW In Alignment
 
