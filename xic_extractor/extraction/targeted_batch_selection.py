@@ -238,7 +238,7 @@ def complete_targeted_candidate_batch(
                 rt=trace.rt,
                 intensity=trace.intensity,
                 prepared_result=assessment.prepared_result,
-                istd_rt_in_this_sample=captured.peak_result.paired_istd_anchor_rt,
+                istd_rt_in_this_sample=assessment.paired_istd_anchor_rt,
                 paired_istd_fwhm=assessment.paired_istd_fwhm,
                 target_reference_rt=assessment.preferred_rt,
                 candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
@@ -254,7 +254,7 @@ def complete_targeted_candidate_batch(
                 ),
                 scoring_context_builder=builder,
                 istd_confidence_note=assessment.istd_confidence_note,
-                paired_istd_anchor_rt=captured.peak_result.paired_istd_anchor_rt,
+                paired_istd_anchor_rt=assessment.paired_istd_anchor_rt,
             )
             result = assessment.complete_result(
                 peak_result, scoring_context_builder=builder
@@ -351,7 +351,7 @@ def complete_targeted_candidate_batch(
                 file.sample_name,
                 assessment.target,
                 result.peak_result,
-                reference_rt=captured.peak_result.paired_istd_anchor_rt,
+                reference_rt=assessment.paired_istd_anchor_rt,
                 anchor_rt=assessment.preferred_rt,
                 strict_preferred_rt=assessment.strict_preferred_rt,
             )

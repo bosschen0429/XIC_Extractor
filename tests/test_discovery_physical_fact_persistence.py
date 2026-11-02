@@ -613,10 +613,21 @@ def _physical_source_payload(
     ).encode("utf-8")
 
 
+@pytest.mark.parametrize("device_id", [2**63 - 1, 2**63, 2**64 - 1])
 def test_physical_fact_source_indexes_existing_canonical_sidecar(
     tmp_path: Path,
+    device_id: int,
 ) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
+    source = acquisition_input.acquisition_source
+    assert source.local_file_revision is not None
+    # Windows st_dev is unsigned; the canonical writer must retain every bit.
+    source = replace(
+        source,
+        local_file_revision=(device_id, *source.local_file_revision[1:]),
+    )
+    acquisition_input = replace(acquisition_input, acquisition_source=source)
+    spec = replace(spec, acquisition_inputs=(acquisition_input,))
     manifest, records = _population(spec, acquisition_input)
     payload = serialize_discovery_physical_fact_sidecar(
         run_spec=spec,

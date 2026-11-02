@@ -177,6 +177,26 @@ def test_run_no_nl_reference_selects_each_samples_component(
             pytest.fail("no-NL must not query MS2")
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem))
+    if pair_state == "credible":
+        acquire = extractor.acquire
+
+        def acquire_with_anchor_evidence(*args, **kwargs):
+            acquired = acquire(*args, **kwargs)
+            # Publication intentionally drops candidate details. Inspect the
+            # real batch-completed result at the acquisition API boundary.
+            for file in acquired.file_results:
+                peak_result = file.results[target.label].peak_result
+                anchor_rt = expected[file.sample_name][0] - 1.0
+                assert peak_result.candidate_scores
+                for score in peak_result.candidate_scores:
+                    assert score.evidence_facts is not None
+                    rt_facts = score.evidence_facts.rt
+                    assert rt_facts.paired_istd_anchor_rt_min == pytest.approx(
+                        anchor_rt
+                    )
+            return acquired
+
+        monkeypatch.setattr(extractor, "acquire", acquire_with_anchor_evidence)
     output = extractor.run(config, targets)
 
     assert {file.sample_name for file in output.file_results} == set(expected)
@@ -190,6 +210,8 @@ def test_run_no_nl_reference_selects_each_samples_component(
         measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":
+            anchor_rt = reference_apex - 1.0
+            assert result.peak_result.paired_istd_anchor_rt == pytest.approx(anchor_rt)
             assert result.peak_result.selection_reference_rt == pytest.approx(
                 reference_apex
             )
