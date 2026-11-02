@@ -183,13 +183,20 @@ class MembershipComparison:
                 or rules.support_level(owner, owner, config) == "weak"
             ):
                 self.weak.add(owner.owner_id)
-        self.density = {
-            key: sum(
-                abs(rt - other) * 60 <= min(120.0, config.max_rt_sec)
-                for other in self.rts.values()
-            )
-            for key, rt in self.rts.items()
-        }
+        ordered_rts = sorted(self.rts.items(), key=lambda item: item[1])
+        radius_sec = min(120.0, config.max_rt_sec)
+        self.density = {}
+        left = right = 0
+        for key, rt in ordered_rts:
+            # Keep the original closed-radius arithmetic at floating-point
+            # boundaries; forming rt +/- radius in minutes can round differently.
+            while (rt - ordered_rts[left][1]) * 60 > radius_sec:
+                left += 1
+            while right < len(ordered_rts) and (
+                abs(rt - ordered_rts[right][1]) * 60 <= radius_sec
+            ):
+                right += 1
+            self.density[key] = right - left
         self.pairs: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
         self.group_costs: dict[tuple[str, ...], float] = {}
         self.population_gaps: dict[tuple[str, ...], bool] = {}
