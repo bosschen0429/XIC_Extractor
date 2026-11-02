@@ -116,11 +116,24 @@ This is one CID-NL fixture, not a method-independent readiness claim.
 - The actual Discovery admission predicate accepted 2,632 of 5,084 rows;
   839 rejected rows already retain available physical evaluations and traces.
   Retained evidence, anchor qualification and group identity are distinct.
+- Final fixed-group follow-up at `d3da193d7` used physical localization,
+  production Backfill admission and cell composition in 24 typed-path cases.
+  Existing occupancy and joint assignment already leave A blank when the
+  available peak belongs to a known competing B. A local peer-RT envelope
+  rejected an unknown interferer but also rejected an observationally identical
+  genuine target shift. In an owner-level leave-one-out recovery stress test,
+  it accepted 716 of 840 original observations versus 840 for the current
+  policy. The 124 additional rejections are not independently adjudicated
+  chemical errors. No supported net benefit was established; the prototype was
+  not adopted and this bounded exploration was stopped. Full writer and RAW
+  Backfill end-to-end effects were not claimed.
 
 Artifacts: `output/untarget-evidence-experiments/report.md`, the `grouping/`,
 `rt/`, `rt-cost/`, `backfill/`, and `admission/` summaries, and offline Inspector
 reports under `review/`. Bounded RAW review acquired 11 traces in eight samples;
 it did not reselect peaks or change areas. No production default changed.
+The final follow-up is under `output/fixed-group-final-attempt/`, including
+`report.md`, typed-path results and the conditional recovery replay.
 Repeat for a different method/cohort, changed candidate or calibration owners,
 or an independent identity oracle—not merely to restate these counterexamples.
 
