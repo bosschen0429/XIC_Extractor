@@ -118,6 +118,9 @@ class TargetedPopulationContext:
     reference_rt_min: float
     regions: tuple[TargetedRegionContext, ...]
     reference_istd_rt_min: float | None = None
+    # Capture's sample-local prior is the fallback when batch transfer has no
+    # independent support; it is not the origin for another displacement.
+    sample_reference_rt_min: float | None = None
 
     @cached_property
     def comparison_regions(self) -> tuple[TargetedRegionContext, ...]:
@@ -574,13 +577,13 @@ class TargetedBatchContext:
                 if population.reference_istd_rt_min is None
                 else ()
             )
-            displacement = (
-                median((left + right) / 2 for left, right in intervals)
-                if intervals
-                else 0.0
-            )
             references[(population.sample_name, population.target_label)] = (
-                population.reference_rt_min + displacement
+                population.reference_rt_min
+                + median((left + right) / 2 for left, right in intervals)
+                if intervals
+                else population.sample_reference_rt_min
+                if population.sample_reference_rt_min is not None
+                else population.reference_rt_min
             )
         return references
 

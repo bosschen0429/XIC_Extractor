@@ -129,8 +129,11 @@ class TargetedCandidateAssessment:
             target_label=self.target.label,
             mz=self.target.mz,
             ppm_tol=self.target.ppm_tol,
+            # Batch displacement is measured from method RTs, not from the
+            # sample-drift-adjusted selection prior. Paired transfer remains
+            # governed by its existing sample-local anchor.
             reference_rt_min=self.preferred_rt
-            if self.preferred_rt is not None
+            if self.paired_istd_anchor_rt is not None and self.preferred_rt is not None
             else (
                 self.target.expected_rt_min
                 if self.target.expected_rt_min is not None
@@ -153,6 +156,7 @@ class TargetedCandidateAssessment:
                 if prepared is not None and candidate.physical_segment is not None
             ),
             reference_istd_rt_min=self.paired_istd_anchor_rt,
+            sample_reference_rt_min=self.preferred_rt,
         )
 
     def score_selected_segment(
