@@ -29,11 +29,20 @@ class PublishedCell:
     row_mz: float
     sample: str
     direct: bool
-    apex_rt_min: float
+    # None when no peak apex is recorded for the cell, as for a Backfill
+    # without its ledger.
+    apex_rt_min: float | None
+    feature_id: str = ""
+    value: float | None = None
 
 
 def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
-    """Published Matrix cells with the apex of the peak each one quantifies."""
+    """Published Matrix cells with their value and the apex each one quantifies.
+
+    Direct detections take their apex from the explanation's observations.
+    Backfilled cells take it from the backfill ledger or ``alignment_cells.tsv``
+    when the output level wrote one; otherwise their apex is unavailable.
+    """
     identity = _read_tsv(alignment_dir / "alignment_review.tsv")
     rows = {
         record["feature_id"]: (
@@ -43,14 +52,16 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
         for record in identity
         if record["matrix_row_index"]
     }
-    cell_ledger = alignment_dir / "alignment_backfill_cell_evidence.tsv"
-    if not cell_ledger.is_file():
-        cell_ledger = alignment_dir / "alignment_cells.tsv"
-    backfill_apex = {
-        (record["feature_id"], record["sample_stem"]): float(record["apex_rt"])
-        for record in _read_tsv(cell_ledger)
-        if record["apex_rt"] and record["feature_id"] in rows
-    }
+    backfill_apex: dict[tuple[str, str], float] = {}
+    for name in ("alignment_backfill_cell_evidence.tsv", "alignment_cells.tsv"):
+        cell_ledger = alignment_dir / name
+        if cell_ledger.is_file():
+            backfill_apex = {
+                (record["feature_id"], record["sample_stem"]): float(record["apex_rt"])
+                for record in _read_tsv(cell_ledger)
+                if record["apex_rt"] and record["feature_id"] in rows
+            }
+            break
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
     metadata = read_explanation_metadata(
         explanation, selection_only=True, query_only=True
@@ -75,17 +86,19 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
                 if cell["value"] is None:
                     continue
                 sample = samples[cell["sample_key"]]
-                apex = _cell_apex(cell, observation_apex, backfill_apex, group, sample)
-                if apex is not None:
-                    cells.append(
-                        PublishedCell(
-                            row=row,
-                            row_mz=row_mz,
-                            sample=sample,
-                            direct=cell["support_origin"] in _DIRECT_ORIGINS,
-                            apex_rt_min=apex,
-                        )
+                cells.append(
+                    PublishedCell(
+                        row=row,
+                        row_mz=row_mz,
+                        sample=sample,
+                        direct=cell["support_origin"] in _DIRECT_ORIGINS,
+                        apex_rt_min=_cell_apex(
+                            cell, observation_apex, backfill_apex, group, sample
+                        ),
+                        feature_id=group,
+                        value=float(cell["value"]),
                     )
+                )
     return tuple(cells)
 
 
@@ -104,6 +117,7 @@ def summarize_duplicate_quantification(
     with a shared Backfill; both rows directly detecting one apex is a
     duplicate view.
     """
+    cells = [cell for cell in cells if cell.apex_rt_min is not None]
     pairs = _duplicate_pairs(cells, max_ppm=max_ppm, max_apex_sec=max_apex_sec)
     by_row: dict[int, dict[str, PublishedCell]] = defaultdict(dict)
     for cell in cells:
@@ -157,7 +171,7 @@ def _duplicate_pairs(
                     break
                 if (
                     left.row != right.row
-                    and abs(left.apex_rt_min - right.apex_rt_min) * 60.0 <= max_apex_sec
+                    and abs(_apex(left) - _apex(right)) * 60.0 <= max_apex_sec
                 ):
                     pairs.append((left, right))
     return pairs
@@ -177,14 +191,19 @@ def _row_pair_category(
     separated = [
         sample
         for sample in both_direct
-        if abs(left[sample].apex_rt_min - right[sample].apex_rt_min) * 60.0
-        > distinct_apex_sec
+        if abs(_apex(left[sample]) - _apex(right[sample])) * 60.0 > distinct_apex_sec
     ]
     if len(separated) < len(both_direct):
         return "view_duplicate"
     if separated:
         return "distinct_peaks_shared_backfill"
     return "complementary_split"
+
+
+def _apex(cell: PublishedCell) -> float:
+    if cell.apex_rt_min is None:
+        raise ValueError("cell has no recorded apex")
+    return cell.apex_rt_min
 
 
 def _cell_apex(

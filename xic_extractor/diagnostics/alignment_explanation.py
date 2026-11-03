@@ -806,6 +806,19 @@ def read_review_row_samples(
         return rows
 
 
+def read_explanation_summary(path: Path) -> dict[str, Any]:
+    """Read only the validated completion summary, without records or cells."""
+    if not path.is_file():
+        raise ExplanationUnavailableError(f"explanation unavailable: {path}")
+    try:
+        with closing(
+            sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as connection:
+            return _read_completed_summary(connection)
+    except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
+        raise ExplanationError(f"malformed explanation: {exc}") from exc
+
+
 def read_explanation_metadata(
     path: str | Path,
     *,

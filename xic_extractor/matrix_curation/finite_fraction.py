@@ -9,8 +9,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from xic_extractor.matrix_curation.steps import (
+    CurationInputs,
     CurationMatrix,
-    SampleBinding,
     StepParameter,
     StepResult,
 )
@@ -92,7 +92,10 @@ class FiniteFractionStep:
         ),
     )
 
-    def unavailable_reason(self, samples: SampleBinding) -> str:
+    needs_cell_evidence = False
+
+    def unavailable_reason(self, inputs: CurationInputs) -> str:
+        samples = inputs.sample_binding
         if samples.samples is None:
             return samples.problem
         if not any(_eligible(samples.samples)):

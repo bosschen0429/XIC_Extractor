@@ -12,9 +12,12 @@ from xic_extractor.matrix_curation.export import (
     describe_steps,
     export_matrix_curation,
     locate_curation_source,
+    read_run_istd,
     read_run_samples,
     read_sample_metadata_file,
 )
+from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
+from xic_extractor.matrix_curation.same_compound import RELATIONS_NAME, REVIEW_NAME
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.samples import from_payload, sample_annotations_path
 
@@ -55,6 +58,19 @@ def resolve_samples(
     return None, None
 
 
+def resolve_istd(
+    source: CurationSource, *, istd_path: str = ""
+) -> tuple[tuple[IstdWindow, ...] | None, dict[str, str] | None]:
+    """Pick the internal standard list: a chosen file, else the run's own list."""
+    if istd_path.strip():
+        path = Path(istd_path.strip())
+        return read_istd_file(path), {"kind": "file", "label": str(path)}
+    windows = read_run_istd(source)
+    if windows:
+        return windows, {"kind": "run", "label": "本次分析宣告的內標清單"}
+    return None, None
+
+
 def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
     """What the page needs before a run: inputs found and which steps can run."""
     source = locate_curation_source(Path(str(values.get("source_dir") or "")))
@@ -64,11 +80,16 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         sample_metadata_path=str(values.get("sample_metadata_path") or ""),
         samples=values.get("samples"),
     )
+    istd, istd_source = resolve_istd(
+        source, istd_path=str(values.get("istd_path") or "")
+    )
     return {
         "source_dir": str(source.source_dir),
         "matrix_path": str(source.matrix_path),
         "review_path": str(source.review_path),
         "sample_source": sample_source,
+        "istd_source": istd_source,
+        "istd_count": len(istd or ()),
         "steps": describe_steps(source, metadata, missing_samples=MISSING_SAMPLES),
         "output_dir": str(default_output_dir(source)),
     }
@@ -87,12 +108,17 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("請至少啟用一個整理步驟。")
     output_text = str(values.get("output_dir") or "").strip()
     output_dir = Path(output_text) if output_text else default_output_dir(source)
+    istd, istd_source = resolve_istd(
+        source, istd_path=str(values.get("istd_path") or "")
+    )
     summary = export_matrix_curation(
         source=source,
         sample_metadata=metadata,
         sample_source=_summary_label(sample_source),
         steps=steps,
         output_dir=output_dir,
+        istd_windows=istd,
+        istd_source=_istd_label(source, istd_source),
     )
     counts = json.loads(summary.read_text(encoding="utf-8"))
     return {
@@ -106,6 +132,8 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
             for path in (
                 output_dir / "analysis_matrix.tsv",
                 output_dir / "feature_decisions.tsv",
+                output_dir / RELATIONS_NAME,
+                output_dir / REVIEW_NAME,
                 output_dir / "sample_metadata.tsv",
                 summary,
             )
@@ -120,3 +148,11 @@ def _summary_label(sample_source: dict[str, str] | None) -> str:
     if sample_source["kind"] == "raw":
         return f"RAW headers: {sample_source['label']}"
     return sample_source["label"]
+
+
+def _istd_label(source: CurationSource, istd_source: dict[str, str] | None) -> str:
+    if istd_source is None:
+        return ""
+    if istd_source["kind"] == "run":
+        return f"run explanation: {source.explanation_path}"
+    return istd_source["label"]

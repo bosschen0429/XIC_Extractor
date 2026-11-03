@@ -81,7 +81,9 @@ by itself:
   normalization.
 - Blank/background subtraction as a writer rule.
 - Sample-matrix-effect correction as a product claim.
-- Broad artifact/adduct/isotope/in-source fragment deconvolution.
+- Broad artifact/adduct/isotope/in-source fragment deconvolution. The optional
+  post-Alignment [same-compound collapse](matrix-curation.md#same-compound-collapse)
+  removes isotope, adduct and dimer rows from a curated copy of the Matrix only.
 - Treating review-only candidates as product matrix values.
 
 ## Promotion Rule

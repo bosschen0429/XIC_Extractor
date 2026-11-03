@@ -151,12 +151,14 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
         "feature_id",
         "Mz",
         "RT",
+        "istd_label",
         "finite_count",
         "eligible_sample_count",
         "finite_fraction",
         "finite_fraction_decision",
         "finite_fraction_reason",
         "decision",
+        "decision_reason",
     )
     assert [row["source_matrix_row_index"] for row in decisions] == [
         "1",
@@ -186,6 +188,14 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
         "finite_fraction_below_minimum",
     ]
     assert [row["decision"] for row in decisions] == ["keep", "drop", "keep", "drop"]
+    assert [row["decision_reason"] for row in decisions] == [
+        "kept_by_all_steps",
+        "dropped_by:finite_fraction",
+        "kept_by_all_steps",
+        "dropped_by:finite_fraction",
+    ]
+    # The fixture run declared no internal standards.
+    assert {row["istd_label"] for row in decisions} == {""}
     _, matched = read_tsv_with_header(output / "sample_metadata.tsv")
     assert [row["matrix_column"] for row in matched] == list(SAMPLES)
     assert [row["sample_name"] for row in matched] == [
@@ -202,6 +212,11 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
             "eligible_matrix_columns": ["S1", "S2", "S3"],
         }
     ]
+    assert summary["istd"] == {
+        "source": "",
+        "standard_count": 0,
+        "protected_feature_count": 0,
+    }
     assert summary["inputs"]["sample_metadata"] == str(samples)
     assert (summary["feature_count"], summary["kept_feature_count"]) == (4, 2)
     assert summary["sample_count"] == len(SAMPLES)
