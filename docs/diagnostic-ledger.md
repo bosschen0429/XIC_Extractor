@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-03
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,45 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-11-03 Bootstrap-To-Matrix Evidence Ablations
+
+Evidence: `diagnostic_only`; Untargeted source `23c613623`. Reused the prior
+8RAW `dna_dr` Discovery and acquisition cache, but reran the formal Alignment
+CLI through calibration, final grouping, Backfill and Matrix publication.
+Only bootstrap evidence changed; final grouping and Backfill policies stayed
+unchanged. This closes the earlier fixed-calibration experiment's causal gap,
+not the remaining weak-candidate admission or local-uncertainty research.
+
+- No-height and RT-first each changed 48 bootstrap pattern comparisons and
+  memberships of 17 owners. Four calibration observation groups were replaced
+  by five. Fitted coordinates differed by at most 0.282 seconds over the common
+  calibrated ranges. Final membership stayed at the same 857 groups; the 234
+  published rows retained 842 detected and 535 backfilled cells. Six backfilled
+  areas changed by at most 0.00481%; no recall or identity gain was demonstrated.
+- Removing shape only during bootstrap changed 280 owners' initial membership.
+  Refitting then changed 76 owners across 11 mass worksets in final grouping:
+  11 old groups split and six new groups combined old groups; total groups rose
+  from 857 to 863. The 234 published rows do not imply unchanged membership.
+  Among 221 rows retaining the same detected members, 13 Backfill cells appeared,
+  14 disappeared, and 331 cells changed presence or area. These are unresolved
+  changes, not proven corrections or chemical false splits.
+- On a common held-out set excluding every variant's calibration-anchor mass
+  worksets (156 features / 672 observations), median absolute peer-prediction
+  error was 3.271 s baseline, 3.263 s no-height/RT-first, and 3.004 s no-shape.
+  After additionally excluding exact co-apex worksets (39 features / 147
+  observations), no-shape worsened the median from 16.919 to 17.892 s and p95
+  from 66.663 to 67.374 s. This conditional correspondence oracle does not
+  independently establish chemical identity; the small aggregate improvement
+  does not justify the additional splitting and changed quantitation.
+
+Disposition: do not adopt these bootstrap substitutions. All variants preserve
+the 2,587 acquired owner measurements and per-group sample exclusivity. No new
+production policy or readiness claim follows. Artifacts and reproduction scripts
+are under `output/bootstrap-full-chain/`; `comparison.json` carries stage and
+cell differences, `holdout-summary.json` the shared test-set comparison. Reopen
+for an independently adjudicated changed case or a distinct evidence hypothesis,
+not to repeat fixed-calibration or whole-bootstrap removal as the same experiment.
 
 ### 2026-11-02 Untargeted RT, Height, Shape And Envelope Ablations
 
