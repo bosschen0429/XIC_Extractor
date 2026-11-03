@@ -28,6 +28,7 @@ def run_process(
     | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
+    defer_analyte_selection: bool = False,
 ) -> RunOutput:
     from xic_extractor.extraction import result_models
 
@@ -35,6 +36,7 @@ def run_process(
         config,
         tuple(targets),
         raw_paths,
+        defer_analyte_selection=defer_analyte_selection,
         progress_callback=progress_callback,
         should_stop=should_stop,
         acquisition_sources_by_sample=acquisition_sources_by_sample,
@@ -61,6 +63,7 @@ def collect_raw_file_results_process(
     runner: Callable[..., list[Any]] | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
+    defer_analyte_selection: bool = False,
 ) -> list[RawFileExtractionResult]:
     from xic_extractor.extraction.jobs import (
         RawFileJob,
@@ -72,6 +75,7 @@ def collect_raw_file_results_process(
         return []
     jobs = [
         RawFileJob(
+            defer_analyte_selection=defer_analyte_selection,
             raw_index=index,
             raw_path=raw_path,
             config=config,

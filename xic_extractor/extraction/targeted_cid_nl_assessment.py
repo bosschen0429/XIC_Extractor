@@ -99,7 +99,13 @@ def _assess_sample(
         evidence_refs=evidence_refs,
         candidate_peaks=candidate_peaks,
         policy=result.cid_nl_evaluation_receipt.support_policy,
-        relations=result.cid_nl_relations,
+        # Context and physical availability can both narrow this population.
+        # Rebind retained events through the method owner for that exact subset.
+        relations=(
+            result.cid_nl_relations
+            if len(candidate_peaks) == len(result.candidate_physical_evaluations)
+            else None
+        ),
     )
     return mint_cid_nl_method_assessment_ref(
         processing_owners=processing_owners,

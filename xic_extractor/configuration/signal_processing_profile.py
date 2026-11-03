@@ -6,6 +6,7 @@ from typing import Any
 
 SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION = "signal_processing_profile"
 DEFAULT_SIGNAL_PROCESSING_WINDOW_POINTS = 9
+LOCALIZED_VALLEY_MIN_DROP_FRACTION = 0.15
 
 _PROFILE_KEYS = (
     "schema_version",

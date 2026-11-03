@@ -427,7 +427,17 @@ def build_targeted_product_projection(
         support = _merge_reasons(support, (identity,))
         # Identity from Backfill or the paired ISTD resolves missing direct
         # NL/MS2; independent morphology or overlap concerns remain actionable.
-        review = tuple(r for r in review if r not in _MISSING_DIRECT_NL_REVIEW)
+        resolved_identity_reviews = {
+            "targeted_retention_context_unavailable",
+            "targeted_reference_displacement",
+            "targeted_retention_transfer_uncertain",
+            "targeted_competing_regions",
+        }
+        review = tuple(
+            r
+            for r in review
+            if r not in _MISSING_DIRECT_NL_REVIEW and r not in resolved_identity_reviews
+        )
         not_counted = tuple(
             r for r in not_counted if r not in _MISSING_DIRECT_NL_NOT_COUNTED
         )

@@ -25,6 +25,7 @@ class RawFileJob:
     targets: tuple[Target, ...]
     expected_acquisition_source: AcquisitionSourceExpectation | None = None
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None
+    defer_analyte_selection: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,8 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
     try:
         scoring_context_factory = build_scoring_context_factory(config=job.config)
         extraction_kwargs: dict[str, Any] = {}
+        if job.defer_analyte_selection:
+            extraction_kwargs["defer_analyte_selection"] = True
         if job.prepared_mass_recalibration is not None:
             extraction_kwargs["prepared_mass_recalibration"] = (
                 job.prepared_mass_recalibration

@@ -9,12 +9,14 @@ from xic_extractor.output.reason_display import (
     decision_basis,
     reason_text,
     reasons,
+    targeted_context_review_texts,
 )
 
 # The check that could overturn a counted result resting on its MS1 peak.
 CONFIRM_COUNTED_PEAK = "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
 # The check that could overturn each uncounted basis.
 _NOT_COUNTED_ACTION: dict[BasisKind, str] = {
+    "not_quantifiable": "在原始 XIC 檢查訊噪比、缺點與連續訊號支持；不要只看平滑線",
     "ms1_shape_failed": "在 XIC 看峰形為什麼未通過",
     "paired_istd_not_counted": "先看配對 ISTD 在此樣本的結果",
     "istd_without_identity": "在 XIC 比較同批樣本的 ISTD 峰",
@@ -140,6 +142,7 @@ def _review_evidence(row: dict[str, str], diagnostics: list[dict[str, str]]) -> 
         parts = [_diagnostic_tag(diagnostic) for diagnostic in diagnostics]
     else:
         parts = [_row_review_issue(row)]
+    parts.extend(targeted_context_review_texts(row))
     return "; ".join(_dedupe_text(part for part in parts if part))
 
 
@@ -311,6 +314,9 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
     if issue == "PRODUCT_NOT_COUNTED":
         return "證據不足以計入"
     if issue == "PROJECTION_FLAGGED":
+        context = targeted_context_review_texts(row)
+        if context:
+            return "；".join(context)
         review = reasons(row, "Projection Review Reasons")
         if "physical_shoulder_overlap" in review:
             return "肩峰重疊需檢查"
@@ -336,6 +342,10 @@ def _projection_action(issue: str, row: dict[str, str]) -> str:
     if issue in {"PROJECTION_CONFLICT", "PRODUCT_AMBIGUOUS"}:
         return "在 XIC 確認所選峰是不是目標"
     review = reasons(row, "Projection Review Reasons")
+    if targeted_context_review_texts(row):
+        return (
+            "比較完整 XIC、原始訊號點、同批樣本與 target 順序，確認暫定對應及積分範圍"
+        )
     if row.get("Counted Detection", "").upper() == "TRUE":
         if "physical_shoulder_overlap" in review:
             return "在 XIC 看肩峰是否影響積分範圍"

@@ -109,6 +109,21 @@ class CidNlMethodRelations:
     def supported_candidate_indexes(self) -> frozenset[int]:
         return frozenset(candidate for _event, candidate in self.individual_relations)
 
+    @property
+    def set_related_candidate_indexes(self) -> frozenset[int]:
+        """Candidates still possible under set evidence, without individual SUPPORT."""
+        return frozenset(
+            index
+            for event_index in self.set_relation_event_indexes
+            for event in (self.event_queries[event_index],)
+            for index, peak in enumerate(self.candidate_intervals)
+            if event.precursor.reference_mz is not None
+            and abs(event.precursor.reference_mz - peak.mz)
+            <= self.policy.precursor_tolerance_da
+            and peak.rt_left_min <= event.support_rt_min
+            and event.scan_rt_min <= peak.rt_right_min
+        )
+
 
 def evaluate_cid_nl_method_relations(
     *,

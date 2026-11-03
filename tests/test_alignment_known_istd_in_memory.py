@@ -215,7 +215,9 @@ def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatc
         scoring_context_factory,
         expected_acquisition_source,
         prepared_mass_recalibration,
+        defer_analyte_selection,
     ):
+        assert defer_analyte_selection is False
         assert targets == [target]
         assert config.dll_dir == tmp_path / "dll"
         projection = (

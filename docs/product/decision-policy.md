@@ -101,6 +101,24 @@ TargetKey or matching search window alone does not mint Group membership or a
 Backfill receipt. Actual observation origins remain explicit rather than being
 renamed to imply an operation that did not run.
 
+### Targeted quantitative support
+
+For a Target cell, an observed integral is not automatically fit for numeric
+publication. The cell-decision owner returns `not_quantifiable` when all three
+facts hold: the retained `SignalQuality` reports low S/N, fewer than half of the
+selected raw XIC scans are nonzero, and no continuous run contains at least half
+of those nonzero scans. Low S/N alone, sparse outer flanks around a continuous
+body, or missing quality metadata do not establish this combined failure.
+These majority conditions are an operational support policy, not a calibrated
+LOD/LOQ or chemical-absence claim.
+
+The selected integration, original trace, and method evidence remain retained.
+NL or an ISTD identity cannot override inadequate MS1 quantitative support.
+The rule applies only to Target decisions; completed Untargeted group-cell
+decisions retain their existing policy. The writer renders this no-write as
+blank numeric cells with an explicit not-quantifiable explanation, not zero or
+ND. It does not re-evaluate the signal.
+
 ## Targeted Confidence / Reason / Counted Detection Precedence
 
 Targeted workbook rows present the retained RT, area, integration boundaries,

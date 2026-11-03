@@ -38,7 +38,10 @@ def build_area_matrix_sheet(ws, rows) -> None:
     )
     ws["A1"] = "峰面積（counts·s）"
     ws["A1"].font = _font(INK, bold=True, size=14)
-    ws["A2"] = "灰字＝未計入（保留已保存數值）· ND＝未偵測 · 灰色欄名＝ISTD"
+    ws["A2"] = (
+        "灰字＝未計入（保留已保存數值）· ND＝未偵測 · "
+        "空白＝未提供定量值（原因見 XIC Results）· 灰色欄名＝ISTD"
+    )
     ws["A2"].font = _font(SOFT, size=9)
     _write_header(
         ws,

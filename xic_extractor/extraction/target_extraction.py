@@ -31,6 +31,7 @@ from xic_extractor.extraction.targeted_peak_selection import (
     discovery_settings_for_tag,
     prepare_targeted_method_seeds,
     targeted_ms2_precursor_scope,
+    targeted_physical_peak_policy,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.ms2_scan_models import Ms2Window
@@ -63,6 +64,7 @@ def extract_raw_file_result(
     scoring_context_factory: Callable[..., Any] | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
+    defer_analyte_selection: bool = False,
 ) -> RawFileExtractionResult:
     from xic_extractor.extraction import result_models
 
@@ -71,6 +73,7 @@ def extract_raw_file_result(
         targets,
         raw_path,
         scoring_context_factory=scoring_context_factory,
+        defer_analyte_selection=defer_analyte_selection,
         expected_acquisition_source=expected_acquisition_source,
         prepared_mass_recalibration=prepared_mass_recalibration,
     )
@@ -104,6 +107,7 @@ def process_file(
     scoring_context_factory: Callable[..., Any] | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
+    defer_analyte_selection: bool = False,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor.extraction import result_models
 
@@ -205,6 +209,7 @@ def process_file(
                     results=results,
                     diagnostics=diagnostics,
                     scoring_context_factory=scoring_context_factory,
+                    defer_selection=defer_analyte_selection,
                     istd_confidence_note=istd_confidence_note(
                         istd_confidence_by_label.get(target.istd_pair)
                     ),
@@ -245,6 +250,7 @@ def extract_one_target(
     istd_rt_in_this_sample: float | None = None,
     paired_istd_fwhm: float | None = None,
     shape_metrics_by_label: dict[str, tuple[float, float | None]] | None = None,
+    defer_selection: bool = False,
 ) -> float | None:
     selection_config = replace(
         config,
@@ -297,6 +303,7 @@ def extract_one_target(
     prepared = prepare_physical_signal(rt_array, intensity, profile=profile)
     universe = enumerate_physical_segment_universe(
         prepared,
+        selection_policy_version=targeted_physical_peak_policy(target, anchor_rt),
         request_context_rt_start_min=(
             float(rt_array[0])
             if rt_array.ndim == 1 and rt_array.size
@@ -331,9 +338,15 @@ def extract_one_target(
         method_window=method_window,
         method_seeds=method_seeds,
     )
+    candidate_assessment = replace(
+        candidate_assessment,
+        paired_istd_fwhm=paired_istd_fwhm,
+        istd_confidence_note=istd_confidence_note,
+        paired_istd_anchor_rt=istd_rt_in_this_sample,
+    )
 
     scoring_context_builder = None
-    if scoring_context_factory is not None:
+    if scoring_context_factory is not None and not defer_selection:
         scoring_context_builder = scoring_context_factory(
             target=target,
             sample_name=sample_name,
@@ -345,11 +358,29 @@ def extract_one_target(
             candidate_ms2_evidence_builder=candidate_assessment.candidate_ms2_evidence.get,
             prepared_result=prepared,
         )
-    peak_result = candidate_assessment.rank_candidates(
-        scoring_context_builder=scoring_context_builder,
-        istd_confidence_note=istd_confidence_note,
-        paired_istd_anchor_rt=istd_rt_in_this_sample,
-    )
+    if defer_selection:
+        from xic_extractor.peak_detection.models import PeakDetectionResult
+
+        peak_result = PeakDetectionResult(
+            status="PEAK_NOT_FOUND",
+            peak=None,
+            n_points=len(rt),
+            max_smoothed=candidate_assessment.candidates.max_smoothed,
+            n_prominent_peaks=0,
+        )
+    else:
+        from xic_extractor.peak_detection.targeted_context import TargetedBatchContext
+
+        population = candidate_assessment.population_context()
+        context = TargetedBatchContext((population,))
+        selected_region = context.select(population, is_istd=target.is_istd)
+        peak_result = candidate_assessment.score_selected_segment(
+            selected_segment=selected_region.segment if selected_region else None,
+            competing_region_count=len(context.competing_regions(population)),
+            scoring_context_builder=scoring_context_builder,
+            istd_confidence_note=istd_confidence_note,
+            paired_istd_anchor_rt=istd_rt_in_this_sample,
+        )
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -373,7 +404,10 @@ def extract_one_target(
         shape_metrics_by_label[target.label] = shape_metrics
 
     results[target.label] = result
-    diagnostics.extend(build_diagnostic_records(sample_name, target, result, config))
+    if not defer_selection:
+        diagnostics.extend(
+            build_diagnostic_records(sample_name, target, result, config)
+        )
     if paired_rejection is not None:
         diagnostics.append(paired_rejection)
     return anchor_rt

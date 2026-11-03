@@ -55,6 +55,15 @@ The normal flow is **select samples → choose method/targets → run → review
 The target table specifies name, m/z, expected RT in minutes, CID-NL tag
 (`dR`, `R`, `MeR`), role and an optional ISTD relationship. An analyte may reference
 an ISTD row or leave the pair blank; an ISTD does not reference another row. The tag is the single chemistry input.
+Leave the tag blank for MS1-only extraction; no neutral-loss evidence is required
+and the shared 20 ppm precursor tolerance applies. Names such as `D1` or `R1`
+are identifiers, not chemistry tags. Tagged and MS1-only rows may share a batch.
+MS1-only compares retained regions using the reference RT, supported batch drift,
+and same-ion target order before deciding which touching lobes to integrate
+together. There is no fixed RT acceptance window. Plausible uncertain matches,
+shoulders, and double tops can retain area with review notes; incompatible
+correspondence means ND. A cleaner or larger peak elsewhere is not automatically
+a replacement for a reference-supported body.
 
 Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths

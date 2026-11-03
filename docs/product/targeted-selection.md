@@ -22,6 +22,99 @@ CrossSample, Backfill, or selected-value implementation.
 
 ## Contract
 
+### MS1-only target intent
+
+A blank `cid_nl_tag` declares an MS1-only target. Intake retains the shared
+20 ppm precursor tolerance and leaves neutral loss and its tolerances
+unconfigured. Missing MS2 is not chemical identity evidence.
+
+### Retained candidate context
+
+Targeted MS1-only and CID-NL analytes retain complete acquired curves, physical
+regions and method evidence until batch comparison. RAW acquisition and signal
+preparation occur once for each requested trace; batch interpretation reuses
+those arrays and retained precursor/product and scan-opportunity facts.
+Analyte selection is deferred until all acquired samples are available. Known
+ISTD anchoring remains sample-local and supplies the existing paired-reference
+transfer; batch interpretation does not silently replace an established anchor.
+
+Targeted retains its finite full-acquisition region universe even when the
+number of background lobes exceeds the generic capture budget. Background
+complexity must not turn every observed body into an empty candidate set.
+Discovery and Backfill keep their own bounded-enumeration policy.
+
+Measurement availability, identity plausibility, and integration uncertainty
+are different decisions. Complete regions with acquired body support remain
+measurable despite a ragged, flat or split top. A smoothed single impulse is
+not acquired chromatographic support. Constant or monotonic raw background
+cannot become an independent chromatographic body merely because baseline
+subtraction produces an arch. Rejected interpretations retain their curves,
+region geometry, method products and physical evaluations for inspection.
+
+The comparison uses whole-body acquired support, normalized contours,
+half-height spans, cross-sample positions, and mass-compatible target-reference
+order. Positive peak-owned CID-NL remains evidence, not permission to accept
+an incompatible chromatographic interpretation. Supplied RTs are identity
+priors rather than verified truths or acquisition windows. Independently
+corroborated, reference-linked bodies support multiple possible displacement
+modes. Their observed widths and between-sample spread preserve uncertainty;
+being outside a directly supported mode does not itself mean impossibility.
+Unresolved multi-body totals are measurements, not precise RT calibrators.
+
+A body incompatible with that conservative retention context is not replaced
+by a small background residual. Plausible but uncertain mappings retain a
+provisional value and specific review reasons. Without enough RT calibration,
+a measurable candidate can remain provisional; the result explicitly reports
+that RT plausibility has not been established. There is no universal
+0.75-minute or 20-minute acceptance rule. This is an operational model, not a
+chemical-identification or universally calibrated detection claim.
+
+Cross-sample correspondence also consumes unselected acquired regions. Signed
+sample-pair displacement intervals come from matched, independently corroborated
+reference-linked bodies, retaining multiple drift modes and observed boundary
+uncertainty. Do not add the same between-sample drift again as a symmetric
+allowance. If every directly supported peer comparison places a candidate in
+an alternate ion band, not the peer's assigned target band, that candidate
+cannot substitute for an absent or unquantifiable target. Fail closed with no
+numeric main result and a cross-sample correspondence explanation. A single
+acquired point can locate an alternate band without becoming MS1 quantity.
+Missing transfer evidence alone does not trigger this rejection; paired ISTD
+position remains with its established owner.
+
+Valleys remain regional evidence even above baseline. The current Targeted
+proposal policy uses a 15% sustained valley drop and the profile's minimum
+boundary duration. The batch compares these retained regions without joining
+touching lobes merely because they share a target reference. A CID-NL event on
+a valley remains set-level evidence: its possible members remain candidates,
+but neither lobe receives individual support from that event. Both local peer
+proposals and final selection retain weaker
+reference-supported bodies alongside prominent alternatives; adding a duplicate
+sample cannot turn an abundance filter into an identity veto. Supported sample
+displacement informs reference order as a ranking prior, not a hard RT window.
+
+An available valley-bounded region is not replaced by a sum of its neighbors.
+Scoring describes the chosen region without selecting again. A physical region
+that the signal owner has not resolved into separate lobes remains a complete
+measurement, including a poor or irregular top. Selection does not search
+combinations of regions or change their physical CID-NL universe.
+The original regions remain retained;
+target count does not force peak count. If different reference targets can only
+share one observed ion region, both provisional values may remain, with linked review
+reasons and no independent counted assignments. Duplicate assays with the same
+RT retain a shared-quantitation warning without inventing an identity conflict.
+
+Integration remains the physical owner's complete canonical region, in
+counts-seconds, not a reference-window crop. Top quality describes risk rather
+than erasing area. Neither a shared total nor a positive NL establishes pure
+constituent area. Existing workbook columns carry the values, counting state,
+and explicit review explanations; no additional output columns are required.
+
+Retaining a measured region does not guarantee numeric publication. The
+[Targeted quantitative-support policy](decision-policy.md#targeted-quantitative-support)
+can withhold an unreliable low-S/N, sparsely and discontinuously acquired value
+while retaining its trace and diagnostic integral. This does not change selection,
+integration boundaries, or the method's individual/set-level evidence attribution.
+
 ### Reference input diagnostics
 
 `tools.diagnostics.check_reference_consistency` checks target CSV references
@@ -69,33 +162,27 @@ an individual peak; boundary and overlapping relations remain set-level.
 Selection consumes this answer rather than treating a candidate-local best
 MS2 product as proof of unique support.
 
-`peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
-candidate once from typed
-candidate evidence and physical eligibility. Chemical support precedes
-localization hints and trace quality; contextual RT and deterministic abundance
-break ties within the supported evidence ordering. Expected RT and paired-ISTD shifts guide identity, not acquisition. Exact-mass
-MS1 candidate coverage spans the sample acquisition interval, including targets
-without MS2. The complete scan population is read once per sample; each tag is
-parsed once by Discovery, with shared parent-MS1 verification and scan-event
-resolution within each target’s m/z population before candidate-local CID-NL
-assessment. Different recorded precursors from one scan remain available to
-their respective targets.
+`peak_detection.targeted_context` compares the retained populations and reuses
+sample/target groupings and ion-level retention uncertainty across cells;
+`extraction.targeted_peak_selection` scores the chosen measurement without
+letting review-blocker count select a cleaner substitute. Scores and confidence
+remain descriptive evidence. `extraction.targeted_batch_selection` selects
+among the retained regions before formal capture/grouping.
+It neither reopens RAW nor refits the baseline.
 
-Within the same chemical-support tier, ISTD selection checks anchor
-completeness, then continuous distance from the known reference before
-morphology, review-blocker count, MS2 trace strength or abundance. Drifting
-outside a fixed proximity radius does not erase that identity preference.
-A matching NL at another chromatographic position does not make the two peaks
-interchangeable. This does not crop acquisition or confirm an unsupported
-nearby peak.
+The exact-mass MS1 scope is the complete acquisition, including targets without
+MS2. Scan acquisition, tag parsing and parent-MS1 verification retain their
+existing shared owners. Batch selection reuses the retained CID-NL relation
+answer over those same regions. No candidate-local best product replaces the
+complete method relation.
 
-For an ISTD with a known reference RT, the shared physical owner uses
-`reference_localized_contour_peak` to qualify a full contour, not each surface
-ripple. The [physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-owns its support requirements and unchanged quantitative values. Candidate
-enumeration and physical answers use the same policy, retained in the physical
-question for replay. Other Targeted candidates, Discovery and Backfill keep
-their existing local-valley qualification.
+Known ISTDs retain reference-first localization and
+`reference_localized_contour_peak` geometry. Their acquired support is assessed
+on the body, not a half-prominence apex core. Both Targeted roles preserve
+measurable poor-top contours; Discovery and bounded Backfill retain their
+separate qualification policies. The
+[physical measurement contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+owns quantitative signal and units.
 
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
@@ -117,19 +204,24 @@ reported monoisotopic isolation membership remains `outside_nominal`; eligibilit
 does not rewrite geometry or prove exclusive fragment parentage. Existing
 product/NL mass, intensity, target attribution, and peak-local checks still apply.
 
-Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
+Retention-compatible, recorded-precursor-supported, quantifiable peaks remain
+available despite poor top shape or uncertain moderate RT displacement.
 This does not override a counted paired ISTD: a peak outside its paired-position
 tolerance is ND, even with neutral-loss support. Chemical support alone does not
 resolve that positional contradiction.
-RT-prior disagreement and legacy confidence labels alone do not create product
-review actions. Unresolved morphology or overlap concerns can require quality
+Legacy RT/score labels alone do not create product review actions. Explicit
+batch-context displacement, missing calibration, viable competition and
+uncertain transfer are separate actionable explanations. A finalized paired
+ISTD identity can resolve those localization concerns; it does not clear
+independent morphology, signal-gap or mixed-area concerns. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source
 evidence; they do not start a second candidate ranking.
 
 The Targeted handoff retains all candidate physical evaluations, acquired
 method products, the search receipt and the relation answer. Production binds
-that same answer to exact sample/event/peak provenance without another relation
-decision. Only the selected candidate enters the fixed Target row; the method
+the compatible answer to exact sample/event/peak provenance. If contextual
+admission changes the observation population, the method owner recomputes its
+relation from the retained events rather than reusing stale interval indexes. Only the selected candidate enters the fixed Target row; the method
 assessment still records its complete candidate and event universe.
 
 `extraction.targeted_peak_selection` owns this ordered candidate assessment,

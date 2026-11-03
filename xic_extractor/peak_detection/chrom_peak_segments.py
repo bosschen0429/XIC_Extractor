@@ -44,6 +44,11 @@ class ChromPeakSegmentPolicy:
     morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_sigma: float = 0.0
     min_prominence_fraction_of_envelope: float = 0.04
+    min_prominence_fraction_of_apex: float = 0.0
+    valley_min_duration_min: float | None = None
+    # Restore a coarse-basin split from each connected group's representative
+    # rather than requiring the whole group inside the basin.
+    localize_split_representatives: bool = False
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -410,6 +415,21 @@ def _apex_seeds(
         max_context * policy.min_apex_fraction_of_context,
     )
     peaks = _local_peak_indices(context)
+    if policy.min_prominence_fraction_of_apex > 0:
+        # Remove small surface ripples before asking which adjacent lobes a
+        # valley separates. Their height cannot hide a larger sustained trough.
+        interior = [index for index in peaks if 0 < index < len(context) - 1]
+        prominences = peak_prominences(context, interior)[0]
+        supported = {
+            index
+            for index, prominence in zip(interior, prominences, strict=True)
+            if prominence >= policy.min_prominence_fraction_of_apex * context[index]
+        }
+        peaks = tuple(
+            index
+            for index in peaks
+            if index in supported or index in {0, len(context) - 1}
+        )
     seeds = tuple(
         _ApexSeed(
             index=context_interval.start_index + local_index,
@@ -560,14 +580,15 @@ def _restore_rt_envelope_clear_splits(
         group = []
     if not connected_groups:
         return envelope_seeds
+    representatives = tuple(
+        max(connected, key=lambda seed: (seed.height, -seed.index))
+        for connected in connected_groups
+    )
     if not envelope_seeds:
         # Coarse smoothing can lower a supported narrow peak below the seed
         # height floor. Its canonical group still reaches ordinary qualification,
         # including when no unrelated coarse maximum exists in the context.
-        return tuple(
-            max(connected, key=lambda seed: (seed.height, -seed.index))
-            for connected in connected_groups
-        )
+        return representatives
 
     group_boundaries = (
         context.start_index,
@@ -593,9 +614,15 @@ def _restore_rt_envelope_clear_splits(
             else envelope_relations[index].valley_index + 1
         )
         enclosed = tuple(
-            (group_index, connected)
-            for group_index, connected in enumerate(connected_groups)
-            if left <= connected[0].index <= connected[-1].index < right
+            (group_index, representative)
+            for group_index, (connected, representative) in enumerate(
+                zip(connected_groups, representatives, strict=True)
+            )
+            if (
+                left <= representative.index < right
+                if policy.localize_split_representatives
+                else left <= connected[0].index <= connected[-1].index < right
+            )
         )
         if len(enclosed) < 2:
             continue
@@ -609,11 +636,10 @@ def _restore_rt_envelope_clear_splits(
         ):
             continue
         restored.pop(envelope_seed.index)
-        for _, connected in enclosed:
-            representative = max(
-                connected,
-                key=lambda seed: (seed.height, -seed.index),
-            )
+        # With localized representatives, remote brief ripples connected to a
+        # lobe neither veto a sustained split inside this coarse basin nor
+        # become additional representatives in neighboring coarse basins.
+        for _, representative in enclosed:
             restored[representative.index] = representative
     return tuple(restored[index] for index in sorted(restored))
 
@@ -641,7 +667,11 @@ def _sustained_canonical_valley(
     while end < right.index and signal[end + 1] <= threshold:
         end += 1
     spacing = float(np.median(np.diff(rt[left.index : right.index + 1])))
-    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
+    footprint = (
+        policy.valley_min_duration_min
+        if policy.valley_min_duration_min is not None
+        else spacing * max(0, policy.morphology_trace_window_points - 1)
+    )
     return bool(rt[end] - rt[start] >= footprint)
 
 

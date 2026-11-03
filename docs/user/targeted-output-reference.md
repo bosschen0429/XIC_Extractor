@@ -33,6 +33,9 @@ Saved Area per sample (rows, in injection order) and target (columns).
 Analytes sharing an ISTD sit together, followed by that ISTD, so a ratio is one
 formula, for example `=B5/D5`. Grey text is a value the saved decision did not count; it is
 kept so the reader can judge it. `ND` is text and is skipped by `AVERAGE`.
+Blank numeric cells can indicate a finalized not-quantifiable observation;
+read `XIC Results` `Reason` for the decision. Such a blank is not zero or a
+claim that the compound is absent. The original XIC remains available for review.
 
 ## XIC Results
 

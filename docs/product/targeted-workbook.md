@@ -43,6 +43,10 @@ values or decisions.
   not for reading the batch.
 - `面積` projects every saved Area, including zero, ND and blank, independent of
   counted detection. It calculates no ratio.
+- A finalized `not_quantifiable` decision leaves the numeric cells blank and
+  explains that signal was observed but cannot support reliable quantity.
+  It is not rendered as zero or ND. The original XIC remains reviewable;
+  its diagnostic integral is not substituted for the withheld value.
 - A review reason names the evidence the saved decision rests on, and the
   suggested check names the one thing that could overturn it. A counted analyte
   rests on its MS1 peak at the paired ISTD position (or on observed neutral

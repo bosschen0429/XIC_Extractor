@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-27
+**Last updated:** 2026-11-03
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,161 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-11-03 Remaining Evidence Directions And Independent Oracles
+
+Evidence: `diagnostic_only`; source `b58ac1e2d`. The reference discussion's
+remaining concrete evidence policies were tested, without production activation.
+These decisions close the bounded hypotheses, not all possible future models.
+
+- Weak admission, with the exact baseline RT calibration frozen: adding 175
+  resolved rescued rows changed published Matrix rows from 234 to 225, including
+  reweighted nominal masses and changed integrations; it was not merely extra
+  retention. Admitting and actually capturing 339 resolved coisolation rows
+  produced 956 versus 857 final groups and 272 published rows, but also split
+  two old groups. More output did not establish independent identity gain.
+  An earlier front-end-only coisolation trial still excluded captures downstream;
+  its unchanged output is not evidence that the observations participated.
+- A separate fixed-group observation-only probe gave no candidate anchor,
+  direct SUPPORT or writer authority. Of 57 selected attachments, 47 bodies were
+  already formal Backfills, two cells already had another apex, three groups
+  were not published, and five empty cells still had unresolved method mapping.
+  Assignment alone did not establish five recovered quantitative measurements.
+  Retain the existing Discovery review evidence; do not widen formal admission.
+- A nested five-fold error model used per-sample nearest-RT training residuals,
+  never outer-test errors, to estimate local p90 scales. Across 1,960 held-out
+  observations it narrowed median half-width from 39.89 to 32.58 seconds; on the
+  stricter 346-observation no-exact-co-apex set, coverage fell from 85.26% to
+  82.08%. Local/global rescaling of the existing membership cost changed 63
+  owners and increased groups from 857 to 859. Do not activate these scales or
+  render them as calibrated probabilities.
+- Quality-qualified shape preserved real-data membership while reducing 5,838
+  final pair-cost shape comparisons to 4,208; adding a competition-only condition
+  reduced calls to 1,199 but changed 11 owners' membership. The initially favorable
+  synthetic weak-shape cases assumed independent peaks where the physical owner
+  found unresolved mixtures. A subsequent 96-case test used 1,086 actual,
+  independently component-labeled physical measurements. Quality/competitive
+  shape corrected 48 split pairs and 61 merge pairs but introduced 21 new split
+  pairs and 29 new merge pairs; local RT introduced 66 and 62 respectively.
+  These are paired stress-test outcomes, not real-data error rates. Reject the
+  substitutions under the accepted no-new-false-splitting trade-off.
+- Restricting relative-height matching to the two named pooled QCs changed 45
+  bootstrap comparisons but reproduced the no-height calibration and Matrix.
+  It established no additional benefit, so no cohort-role branch was added.
+- A separate current Targeted acquisition/batch-selection run used the existing
+  manual-2RAW standard-mixture workbook: all 100 scored positive peaks were found,
+  with 2.2358% median absolute area error and 91/94 within 10%/20%. Six area
+  errors exceeded 20%; two also disagreed substantially in RT (maximum 47.68 s).
+  The existing manual guardrail is **FAIL**, not a readiness pass. Legacy targets
+  were translated using their prior window midpoints and existing loss/ISTD
+  declarations; explicit validation-QC annotations selected the otherwise
+  system-suitability RAWs. Source files were unchanged. Four manual ND targets
+  were not requested, so this does not measure false-positive transfer. No
+  before/after run attributes the six exceptions to this PR.
+
+No new scientific default, writer, schema or confidence UI was activated.
+Artifacts: `output/remaining-directions/report.md`, `weak-summary.json`,
+`weak-companions.json`, `local-rt/error-model.json`,
+`independent-truth/measured-summary.json`, and `manual-2raw-qc/score.json`.
+Reopen for a distinct discriminating signal, an independently adjudicated
+changed case or integration unit, or a new method/cohort—not another nearby
+threshold on the same data. Do not expand these rejected candidates to 85RAW.
+
+### 2026-11-03 Bootstrap-To-Matrix Evidence Ablations
+
+Evidence: `diagnostic_only`; Untargeted source `23c613623`. Reused the prior
+8RAW `dna_dr` Discovery and acquisition cache, but reran the formal Alignment
+CLI through calibration, final grouping, Backfill and Matrix publication.
+Only bootstrap evidence changed; final grouping and Backfill policies stayed
+unchanged. This closes the earlier fixed-calibration experiment's causal gap.
+Weak admission and local-uncertainty follow-ups are recorded separately above.
+
+- No-height and RT-first each changed 48 bootstrap pattern comparisons and
+  memberships of 17 owners. Four calibration observation groups were replaced
+  by five. Fitted coordinates differed by at most 0.282 seconds over the common
+  calibrated ranges. Final membership stayed at the same 857 groups; the 234
+  published rows retained 842 detected and 535 backfilled cells. Six backfilled
+  areas changed by at most 0.00481%; no recall or identity gain was demonstrated.
+- Removing shape only during bootstrap changed 280 owners' initial membership.
+  Refitting then changed 76 owners across 11 mass worksets in final grouping:
+  11 old groups split and six new groups combined old groups; total groups rose
+  from 857 to 863. The 234 published rows do not imply unchanged membership.
+  Among 221 rows retaining the same detected members, 13 Backfill cells appeared,
+  14 disappeared, and 331 cells changed presence or area. These are unresolved
+  changes, not proven corrections or chemical false splits.
+- On a common held-out set excluding every variant's calibration-anchor mass
+  worksets (156 features / 672 observations), median absolute peer-prediction
+  error was 3.271 s baseline, 3.263 s no-height/RT-first, and 3.004 s no-shape.
+  After additionally excluding exact co-apex worksets (39 features / 147
+  observations), no-shape worsened the median from 16.919 to 17.892 s and p95
+  from 66.663 to 67.374 s. This conditional correspondence oracle does not
+  independently establish chemical identity; the small aggregate improvement
+  does not justify the additional splitting and changed quantitation.
+
+Disposition: do not adopt these bootstrap substitutions. All variants preserve
+the 2,587 acquired owner measurements and per-group sample exclusivity. No new
+production policy or readiness claim follows. Artifacts and reproduction scripts
+are under `output/bootstrap-full-chain/`; `comparison.json` carries stage and
+cell differences, `holdout-summary.json` the shared test-set comparison. Reopen
+for an independently adjudicated changed case or a distinct evidence hypothesis,
+not to repeat fixed-calibration or whole-bootstrap removal as the same experiment.
+
+### 2026-11-02 Untargeted RT, Height, Shape And Envelope Ablations
+
+Evidence: `diagnostic_only`; baseline `878c6a8b2`. A fresh 8RAW `dna_dr`
+Discovery and formal `--stop-after grouping` run retained 2,587 owners in 707
+worksets, all with shape descriptors. Snapshot SHA-256:
+`d201d3ac2f0c7299cc55230fcfa00acdd773f560816e5f23314201bac44a3597`.
+This is one CID-NL fixture, not a method-independent readiness claim.
+
+- With the frozen calibration and candidates, RT-first and no-relative-height
+  matching each changed 31 of 5,475 pattern comparisons (28 in raw matching),
+  but no final membership. Removing shape changed memberships involving 11
+  owners: a merge near m/z 268.105 and an eight-member group splitting near
+  348.212. Both changes cancel in the total of 857 groups. All five variants
+  preserved owners, areas, sample exclusivity and membership under input-order
+  reversal and owner-ID renaming. This does not test changed bootstrap fitting.
+- For 183 non-anchor-workset features / 840 observations, the current frozen
+  map reduced median absolute peer-prediction error from 13.74 to 3.04 seconds;
+  p95 remained 56.16 seconds. Median in-fit spread was 1.78 seconds. Removing
+  exact co-apex worksets left a harder 46-feature subset with 21.83-second
+  median error. These are conditional on inferred correspondence, not
+  independent chemical truth or calibrated probabilities.
+- Replacing only membership RT/region-gap cost scales with the observed median
+  or p90 error increased groups from 857 to 1,190 or 874. Neither variant was
+  adopted. Synthetic cases also show opposite height-vs-RT preferences under
+  abundance change and genuine drift; independent calibration resolves the
+  constructed ambiguity, whereas changing rank order alone cannot.
+- A fixed-query physical-stage envelope prototype recovered a split body
+  (98.4% of generated area), but selected regions in all 20 noise-only cases
+  versus none under the current physical Backfill question. The lowest-signal
+  case had a 27.14-fold median area overestimate. This is not a final Backfill
+  false-positive rate: method mapping, membership and writing were excluded.
+  Direct transplantation failed this stress test; no admission relaxation was
+  adopted.
+- The actual Discovery admission predicate accepted 2,632 of 5,084 rows;
+  839 rejected rows already retain available physical evaluations and traces.
+  Retained evidence, anchor qualification and group identity are distinct.
+- Final fixed-group follow-up at `d3da193d7` used physical localization,
+  production Backfill admission and cell composition in 24 typed-path cases.
+  Existing occupancy and joint assignment already leave A blank when the
+  available peak belongs to a known competing B. A local peer-RT envelope
+  rejected an unknown interferer but also rejected an observationally identical
+  genuine target shift. In an owner-level leave-one-out recovery stress test,
+  it accepted 716 of 840 original observations versus 840 for the current
+  policy. The 124 additional rejections are not independently adjudicated
+  chemical errors. No supported net benefit was established; the prototype was
+  not adopted and this bounded exploration was stopped. Full writer and RAW
+  Backfill end-to-end effects were not claimed.
+
+Artifacts: `output/untarget-evidence-experiments/report.md`, the `grouping/`,
+`rt/`, `rt-cost/`, `backfill/`, and `admission/` summaries, and offline Inspector
+reports under `review/`. Bounded RAW review acquired 11 traces in eight samples;
+it did not reselect peaks or change areas. No production default changed.
+The final follow-up is under `output/fixed-group-final-attempt/`, including
+`report.md`, typed-path results and the conditional recovery replay.
+Repeat for a different method/cohort, changed candidate or calibration owners,
+or an independent identity oracle—not merely to restate these counterexamples.
 
 ### 2026-10-27 One Mass-Recalibration Probe Per RAW In Alignment
 

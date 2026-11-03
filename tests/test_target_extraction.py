@@ -369,6 +369,117 @@ def _strategy_config(tmp_path):
     return build_extraction_config(parsed, values, tmp_path / "settings.csv", tmp_path)
 
 
+@pytest.mark.parametrize("paired", [False, True])
+@pytest.mark.parametrize("anchor_count", [1, 2])
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+@pytest.mark.parametrize("paired_reference_count", [0, 2])
+def test_batch_applies_sample_drift_once(
+    tmp_path, paired, anchor_count, neutral_loss, paired_reference_count
+):
+    from xic_extractor.extraction.result_models import FileResult, RunOutput
+    from xic_extractor.extraction.targeted_batch_selection import (
+        complete_targeted_candidate_batch,
+    )
+    from xic_extractor.peak_detection.targeted_context import TargetedBatchContext
+
+    config = _strategy_config(tmp_path)
+    analyte = replace(
+        _intent_target(10.0),
+        label="analyte",
+        mz=500.0,
+        is_istd=False,
+        istd_pair="standard-0" if paired else "",
+        neutral_loss_da=neutral_loss,
+    )
+    standards = [
+        replace(
+            analyte,
+            label=f"standard-{i}",
+            mz=600.0 + i * 100,
+            is_istd=True,
+            istd_pair="",
+            expected_rt_min=5.0 + i * 2,
+        )
+        for i in range(anchor_count)
+    ]
+    paired_references = [
+        replace(
+            analyte,
+            label=f"paired-{i}",
+            mz=800.0 + i * 100,
+            istd_pair="standard-0",
+            expected_rt_min=3.0 + i * 3,
+        )
+        for i in range(paired_reference_count)
+    ]
+    rt = np.linspace(0, 18, 1801)
+
+    class Raw:
+        def __init__(self, intensity):
+            self.intensity = intensity
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 18.0
+
+        def extract_xic(self, *args):
+            return rt, self.intensity
+
+        def iter_ms2_scans(self, low, high):
+            return iter(())
+
+    files = []
+    # The unshifted sample links standards to their declared RTs. In the
+    # shifted sample the distractor exposes either double displacement or a
+    # method-frame drift diluted by already sample-local paired references.
+    for sample, drift in (("reference", 0.0), ("shifted", 2.0)):
+        results = {}
+        for target in [*standards, *paired_references, analyte]:
+            center = target.expected_rt_min + drift
+            intensity = 10 + 1000 * np.exp(-(((rt - center) / 0.08) ** 2))
+            if target is analyte:
+                distractor_offset = -1 if paired_reference_count else 2
+                intensity += 1000 * np.exp(
+                    -(((rt - center - distractor_offset) / 0.08) ** 2)
+                )
+
+            target_extraction.extract_one_target(
+                Raw(intensity),
+                config,
+                sample,
+                target,
+                reference_rt=5.0 + drift if target.istd_pair else None,
+                paired_target=standards[0] if target.istd_pair else None,
+                istd_rt_in_this_sample=(5.0 + drift if target.istd_pair else None),
+                sample_drift=drift if not target.is_istd else 0.0,
+                results=results,
+                diagnostics=[],
+                defer_selection=not target.is_istd,
+            )
+        files.append(FileResult(sample, results))
+    batch = TargetedBatchContext(
+        tuple(
+            result.targeted_candidate_assessment.population_context()
+            for file in files
+            for result in file.results.values()
+            if result.targeted_candidate_assessment is not None
+        )
+    )
+    assert [
+        batch.reference_rt(batch.population_by_cell[(sample, "analyte")])
+        for sample in ("reference", "shifted")
+    ] == pytest.approx([10.0, 12.0], abs=0.02)
+    completed = complete_targeted_candidate_batch(RunOutput(files, []), config)
+    assert [f.results["analyte"].reported_rt for f in completed.file_results] == (
+        pytest.approx([10.0, 12.0], abs=0.02)
+    )
+    for target in paired_references:
+        assert [
+            f.results[target.label].reported_rt for f in completed.file_results
+        ] == pytest.approx(
+            [target.expected_rt_min, target.expected_rt_min + 2], abs=0.02
+        )
+
+
 @pytest.mark.parametrize("expected_rt", [2.0, 8.0])
 def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected_rt):
     target = _intent_target(expected_rt)
@@ -827,7 +938,9 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    assert result.reported_rt == pytest.approx(17.5 if is_istd else 10.9, abs=0.05)
+    # Poor local relief cannot erase the reference-supported broad body in
+    # either Targeted role. The clean 10.9-minute peak is not a substitute.
+    assert result.reported_rt == pytest.approx(17.5, abs=0.05)
     assert result.selected_cid_nl_supported
     selected = next(
         evaluation

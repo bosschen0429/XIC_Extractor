@@ -30,7 +30,7 @@ policy and actual resource allocation.
 | `label` | Unique target name; becomes a public output identifier |
 | `mz` | Positive precursor m/z |
 | `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
-| `cid_nl_tag` | `dR`, `R`, or `MeR`; chemistry and tolerances resolve from the corresponding shared built-in Discovery recipe |
+| `cid_nl_tag` | `dR`, `R`, or `MeR` selects a shared built-in Discovery recipe; blank selects MS1-only, with no neutral-loss requirement and the shared 20 ppm precursor tolerance |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
@@ -40,6 +40,16 @@ Additional descriptive metadata is retained. Retired scientific fields such as
 `is_istd` are not metadata and are rejected. There is no automatic conversion.
 Expected RT guides identity, including the declared analyte–ISTD offset; it does
 not crop the acquired candidate universe.
+MS1-only rows retain their declared name, m/z and expected RT. They do not
+require an ISTD pair and do not acquire CID-NL support from their label or a
+missing tag. A table may mix MS1-only and tagged targets.
+Selection compares retained regions across the batch, using the reference RT,
+supported sample drift, same-ion target order, and acquired signal. There is no
+fixed 0.75-minute acceptance window. A plausible but uncertain correspondence
+can retain a provisional area with review; an incompatible correspondence is
+ND. Touching lobes can propose a total area alongside the original regions,
+without erasing the valleys needed to distinguish other targets. Shoulders and
+double tops can require review without suppressing the measured total.
 
 ## Portable method
 

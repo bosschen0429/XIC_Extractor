@@ -52,13 +52,15 @@ def prepare_acquired_observation(
     """Finish sample-local trace provenance in the acquisition worker."""
     trace = result.acquisition_trace
     evaluation = result.physical_evaluation
-    if trace is None or evaluation is None or evaluation.state != "available":
+    if trace is None:
         return result
     trace = replace(
         trace,
         source=TARGETED_ACQUISITION_TRACE_SOURCE,
         acquisition_source_id=acquisition_source_id,
     )
+    if evaluation is None or evaluation.state != "available":
+        return replace(result, acquisition_trace=trace)
     provenance = prepare_peak_observation_provenance(
         trace=trace,
         selected_indices=physical_peak_observation_integration(

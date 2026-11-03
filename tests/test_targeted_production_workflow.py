@@ -96,6 +96,145 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     )
 
 
+@pytest.mark.parametrize(
+    "neutral_loss,boundary_event", [(None, False), (116.0474, False), (116.0474, True)]
+)
+def test_unavailable_istd_alternate_does_not_block_workbook_publication(
+    tmp_path: Path, monkeypatch, neutral_loss: float | None, boundary_event: bool
+) -> None:
+    from contextlib import nullcontext
+
+    from openpyxl import load_workbook
+
+    from xic_extractor.applications.targeted.application import (
+        TargetedApplicationService,
+    )
+
+    config = _config(tmp_path)
+    config.data_dir.mkdir()
+    (config.data_dir / "SampleA.raw").write_bytes(b"placeholder")
+    target = replace(
+        _target(),
+        label="ISTD",
+        is_istd=True,
+        rt_min=8.5,
+        rt_max=9.5,
+        neutral_loss_da=neutral_loss,
+        nl_ppm_warn=20.0 if neutral_loss is not None else None,
+        nl_ppm_max=40.0 if neutral_loss is not None else None,
+        cid_nl_tag="dR" if neutral_loss is not None else "",
+    )
+
+    class Raw:
+        scan_rt = 9.0
+
+        def acquisition_rt_bounds(self):
+            return 8.5, 9.5
+
+        def extract_xic(self, *_args):
+            rt = np.linspace(8.5, 9.5, 1001)
+            raw = 10.0 + 1000.0 * np.exp(-0.5 * ((rt - 9.0) / 0.2) ** 2)
+            raw[3] += 10000.0
+            return rt, raw
+
+        def iter_ms2_scans(self, *_args):
+            if neutral_loss is not None:
+                yield Ms2ScanEvent(
+                    scan=Ms2Scan(
+                        scan_number=1,
+                        rt=self.scan_rt,
+                        precursor_mz=target.mz,
+                        masses=np.array([target.mz - neutral_loss]),
+                        intensities=np.array([1000.0]),
+                        base_peak=1000.0,
+                    ),
+                    parse_error=None,
+                    scan_number=1,
+                )
+
+    monkeypatch.setattr(extraction_pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        "xic_extractor.extraction.target_extraction.open_raw",
+        lambda *_args, **_kwargs: nullcontext(Raw()),
+    )
+    if boundary_event:
+        baseline = extraction_pipeline.run_pipeline(config, [target])
+        evaluation = baseline.file_results[0].results[target.label].physical_evaluation
+        assert evaluation is not None and evaluation.integration is not None
+        Raw.scan_rt = evaluation.integration.rt_left_min
+
+    acquired = []
+    assessments = []
+    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        assessment = mint_assessment(**kwargs)
+        assessments.append(assessment)
+        return assessment
+
+    monkeypatch.setattr(
+        targeted_cid_nl_assessment,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
+    )
+
+    def acquire(*args, **kwargs):
+        output = extraction_pipeline.run_pipeline(*args, **kwargs)
+        acquired.append(output.file_results[0].results[target.label])
+        return output
+
+    workbook_path = tmp_path / "istd.xlsx"
+    execution = TargetedApplicationService(runner=acquire).execute_application(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+            excel_output_path=workbook_path,
+        )
+    )
+    source = acquired[0]
+    assert source.context_admissible_candidate_indexes is None
+    assert any(e.state != "available" for e in source.candidate_physical_evaluations)
+    published = execution.active_output.file_results[0].results[target.label]
+    assert published.reported_rt == pytest.approx(9.0, abs=0.01)
+    assert published.reported_peak_area == pytest.approx(source.reported_peak_area)
+    # Publication must retain unavailable diagnostics, not manufacture numeric
+    # observations for them or remove them from the acquisition result.
+    assert (
+        published.candidate_physical_evaluations
+        == source.candidate_physical_evaluations
+    )
+    assert published.cid_nl_relations == source.cid_nl_relations
+    if neutral_loss is None:
+        assert assessments == []
+    else:
+        assessment = assessments[0]
+        assert len(assessment.candidate_peaks) == sum(
+            e.state == "available" for e in source.candidate_physical_evaluations
+        )
+        assert all(
+            peak.physical_evaluation.state == "available"
+            for peak in assessment.candidate_peaks
+        )
+        assert len(assessment.evidence_refs) == 1
+        if boundary_event:
+            assert source.cid_nl_relations.set_relation_event_indexes == (0,)
+            assert assessment.individual_support_refs == ()
+            assert len(assessment.set_relation_refs) == 1
+            assert assessment.content.method_result == "HOLD"
+            assert not published.selected_cid_nl_supported
+        else:
+            assert len(assessment.individual_support_refs) == 1
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    try:
+        rows = list(workbook["XIC Results"].values)
+    finally:
+        workbook.close()
+    row = dict(zip(rows[0], rows[1], strict=True))
+    assert row["Area"] == round(published.reported_peak_area, 2)
+    assert row["RT"] == round(published.reported_rt, 4)
+
+
 def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_path):
     from xic_extractor.output.messages import DiagnosticRecord
 
@@ -609,16 +748,25 @@ def test_assessment_handoff_is_independent_of_injection_order(tmp_path: Path) ->
 
 
 def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) -> None:
+    from xic_extractor.configuration.targets import parse_target_rows
+
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
     )
-    target = replace(
-        target,
-        neutral_loss_da=None,
-        nl_ppm_warn=None,
-        nl_ppm_max=None,
-    )
+    target = parse_target_rows(
+        [
+            {
+                "label": target.label,
+                "mz": str(target.mz),
+                "expected_rt_min": "1.5",
+                "cid_nl_tag": "",
+                "role": "analyte",
+                "istd_pair": "",
+            }
+        ]
+    )[0]
 
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
@@ -645,6 +793,7 @@ def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) 
         output.file_results[0].results[target.label].reported_peak_area,
         output.file_results[1].results[target.label].reported_peak_area,
     )
+    assert decision_values[1] == pytest.approx(decision_values[0] * 2.0)
 
 
 def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
@@ -826,6 +975,7 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
     bound = extraction_pipeline._bind_acquisition_sources(
         output,
         {"SampleA": expectation},
+        resolver_mode=config.resolver_mode,
     )
 
     bound_candidate = bound.file_results[0].results[target.label].candidate_ms2_evidence

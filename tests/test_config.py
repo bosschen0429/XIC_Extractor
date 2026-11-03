@@ -158,6 +158,18 @@ def test_target_chemistry_resolves_from_shared_recipe(tag):
     assert target.nl_ppm_max == policy.nl_tolerance_ppm
 
 
+def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
+    target = parse_target_rows([_target_row(mz="100", cid_nl_tag=" ", role="analyte")])[
+        0
+    ]
+    assert target.cid_nl_tag == ""
+    assert target.neutral_loss_da is None
+    assert target.nl_ppm_warn is None and target.nl_ppm_max is None
+    assert target.ppm_tol == 20.0
+    assert target.expected_rt_min == target.rt_min == target.rt_max == 9.0
+    assert not target.is_istd and target.istd_pair == ""
+
+
 @pytest.mark.parametrize(
     "key,value",
     [

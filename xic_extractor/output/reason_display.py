@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import unquote
 
 MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
     {
@@ -34,6 +35,25 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "targeted_cross_sample_region_conflict": "跨樣本峰對應衝突；不給定量值",
+    "targeted_retention_context_unavailable": "跨 target RT 證據不足；目前對應為暫定",
+    "targeted_competing_regions": ("有多個具實質訊號的候選區段；依整批上下文暫定對應"),
+    "targeted_reference_displacement": (
+        "所選區段偏離 RT 參考；依完整峰與批次證據暫定對應"
+    ),
+    "targeted_retention_transfer_uncertain": (
+        "RT 超出直接支持的位移區間；仍在本批變異尺度內，暫定保留"
+    ),
+    "targeted_acquired_signal_gaps": (
+        "原始正訊號有內部缺口；面積包含平滑估計的不確定性"
+    ),
+    "targeted_unresolved_substructure": (
+        "積分包含多個未能確定歸屬的峰瓣；面積可能混合"
+    ),
+    "targeted_no_plausible_measurable_region": "沒有可量測且 RT 對應合理的區段",
+    "targeted_shared_ion_region": (
+        "多個 target 暫定共用同一離子區段；面積不可視為獨立定量"
+    ),
     "paired_istd_position_mismatch": "峰偏離配對 ISTD 位置",
     "targeted_rt_conflict": "峰位置與 RT 參考或範圍衝突",
     "targeted_rt_review": "RT 位置需檢查",
@@ -85,6 +105,7 @@ BasisKind = Literal[
     "no_paired_istd",
     "other_not_counted",
     "insufficient_evidence",
+    "not_quantifiable",
 ]
 # Bases that already judge the MS1 peak shape, so a shape review restates them.
 _SHAPE_BASES: frozenset[BasisKind] = frozenset(
@@ -102,6 +123,10 @@ class DecisionBasis:
 
 def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
     """Name the evidence the saved decision rests on, for a reader to test."""
+    if row.get("Projection Reason") == "finalized_not_quantifiable":
+        return DecisionBasis(
+            "not_quantifiable", "觀察到 MS1 訊號，但量測支持不足；面積留白"
+        )
     support = reasons(row, "Projection Support Reasons")
     not_counted = reasons(row, "Projection Not Counted Reasons")
     if str(row.get("Counted Detection", "")).upper() == "TRUE":
@@ -186,6 +211,8 @@ def display_measurement_reason(
     if basis.kind == "off_paired_istd_position":
         return f"{basis.text}，報 ND。"
     if not has_quantifiable_peak:
+        if row.get("Projection Reason") == "finalized_not_quantifiable":
+            return "觀察到 MS1 訊號，但不足以可靠定量；面積留白，不代表化合物不存在。"
         return "搜尋範圍內沒有可定量的 MS1 峰。"
     covered = _SHAPE_REVIEW if basis.kind in _SHAPE_BASES else frozenset()
     saved = str(row.get("Projection Review Reasons") or "")
@@ -218,7 +245,29 @@ def display_nl_evidence(token: str | None, *, configured: bool) -> str:
 
 
 def reason_text(reason: str) -> str:
+    if reason.startswith("targeted_shared_ion_region:"):
+        labels = "、".join(
+            unquote(label) for label in reason.partition(":")[2].split(",")
+        )
+        return f"與 {labels} 暫定共用同一離子區段；面積不可視為獨立定量"
     return _REASON_TEXT.get(reason, reason.replace("_", " "))
+
+
+def targeted_context_review_texts(row: Mapping[str, object]) -> tuple[str, ...]:
+    prefixes = (
+        "targeted_retention_",
+        "targeted_reference_",
+        "targeted_acquired_",
+        "targeted_competing_",
+        "targeted_unresolved_",
+        "targeted_shared_",
+        "targeted_no_plausible_",
+    )
+    return tuple(
+        reason_text(reason)
+        for reason in sorted(reasons(row, "Projection Review Reasons"))
+        if reason.startswith(prefixes)
+    )
 
 
 def _conflict_text(reason: str, concerns: str) -> str:

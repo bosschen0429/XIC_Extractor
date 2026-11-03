@@ -11,6 +11,7 @@ from scipy.stats import fisher_exact
 
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    LOCALIZED_VALLEY_MIN_DROP_FRACTION,
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.baseline import (
@@ -30,6 +31,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_BACKFILL_POLICY,
+    PHYSICAL_PEAK_ENVELOPE_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
@@ -236,6 +238,17 @@ def enumerate_physical_segment_universe(
                 prepared.profile.segment_min_prominence_fraction
             ),
         )
+        if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
+            # Valleys carry separation evidence even above the baseline. Keep
+            # sustained lobes separate, while small top ripples stay together.
+            segment_policy = replace(
+                segment_policy,
+                clear_valley_max_fraction=1 - LOCALIZED_VALLEY_MIN_DROP_FRACTION,
+                min_prominence_fraction_of_apex=LOCALIZED_VALLEY_MIN_DROP_FRACTION,
+                valley_min_duration_min=prepared.profile.boundary_min_sigma_rt,
+                min_prominence_noise_sigma=0.0,
+                localize_split_representatives=True,
+            )
         enumeration = enumerate_chrom_peak_segments(
             rt,
             signal,
@@ -288,8 +301,17 @@ def enumerate_physical_segment_universe(
             physical_segments = tuple(
                 _physical_segment_from_chrom(segment) for segment in segments
             )
-            physical_segments = _censoring_aware_segments(prepared, physical_segments)
-            if len(physical_segments) > prepared.profile.segment_universe_limit:
+            if selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY:
+                physical_segments = _censoring_aware_segments(
+                    prepared, physical_segments
+                )
+            # Targeted retains the full acquired context for later batch
+            # selection. Global background complexity cannot erase a clear
+            # local body; the acquisition itself bounds this finite universe.
+            if (
+                selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY
+                and len(physical_segments) > prepared.profile.segment_universe_limit
+            ):
                 state = "unavailable"
                 reason = "segment_universe_too_large"
                 physical_segments = ()
@@ -649,6 +671,15 @@ def _physical_segment_support_failure(
         ),
         0.0,
     )
+    if selection_policy_version in {
+        PHYSICAL_PEAK_ENVELOPE_POLICY,
+        PHYSICAL_PEAK_REFERENCE_POLICY,
+    }:
+        # Require acquired signal, not a Gaussian envelope manufactured from
+        # one impulse. Top shape/contrast cannot veto a supported total envelope.
+        if np.count_nonzero(original) < 2:
+            return "insufficient_original_xic_support"
+        return ""
     left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
     signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
     apex_offset = apex - left
@@ -676,12 +707,7 @@ def _physical_segment_support_failure(
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
     # establish the absence of an already observed morphology peak.
-    # A known-reference search localizes an existing contour, rather than
-    # discovering each local maximum. Surface ripples cannot erase that
-    # contour's acquired support and full rise/fall. Discovery and Backfill
-    # retain their nearest-valley contrast requirement.
-    if selection_policy_version != PHYSICAL_PEAK_REFERENCE_POLICY:
-        prominence = local_apex_prominence(signal, apex_offset)
+    prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
     minimum_contrast = (
@@ -691,8 +717,6 @@ def _physical_segment_support_failure(
         else DISCOVERY_MIN_CONTRAST_SIGMA
     )
     if prominence < minimum_contrast * noise_sigma:
-        if selection_policy_version == PHYSICAL_PEAK_REFERENCE_POLICY:
-            return "insufficient_reference_peak_contrast"
         return (
             "insufficient_backfill_peak_contrast"
             if selection_policy_version

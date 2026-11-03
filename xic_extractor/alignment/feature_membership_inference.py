@@ -646,6 +646,7 @@ def _accepted_final_memberships(
                     sample_owners,
                     candidates,
                     counts,
+                    assess_ambiguity=False,
                     owner_order={
                         o.owner_id: measured_owner_key(o) for o in sample_owners
                     },
@@ -2343,6 +2344,7 @@ def _solve_sample_assignment(
     *,
     ambiguity_margin: float = _AMBIGUITY_EPSILON,
     owner_order: Mapping[str, tuple[object, ...]] | None = None,
+    assess_ambiguity: bool = True,
 ) -> tuple[dict[str, str], frozenset[str]]:
     arcs = {
         owner.owner_id: {
@@ -2388,7 +2390,9 @@ def _solve_sample_assignment(
         )
         if len(rows) == len(columns) == 1:
             assignments[rows[0]] = columns[0]
-            if _UNASSIGNED_COST <= arcs[rows[0]][columns[0]] + ambiguity_margin:
+            if assess_ambiguity and (
+                _UNASSIGNED_COST <= arcs[rows[0]][columns[0]] + ambiguity_margin
+            ):
                 ambiguous.add(rows[0])
             continue
         counts["competition_components"] += 1
@@ -2396,13 +2400,15 @@ def _solve_sample_assignment(
             owner_id = rows[0]
             feature_key = min(columns, key=lambda key: (arcs[owner_id][key], key))
             assignments[owner_id] = feature_key
+            counts["trivial_assignment_components"] += 1
+            if not assess_ambiguity:
+                continue
             alternative = min(
                 _UNASSIGNED_COST,
                 min(arcs[owner_id][key] for key in columns if key != feature_key),
             )
             if alternative <= arcs[owner_id][feature_key] + ambiguity_margin:
                 ambiguous.add(owner_id)
-            counts["trivial_assignment_components"] += 1
             continue
         if len(columns) == 1:
             feature_key = columns[0]
@@ -2413,6 +2419,10 @@ def _solve_sample_assignment(
                     owner_order[key] if owner_order else key,
                 ),
             )
+            assignments[owner_id] = feature_key
+            counts["trivial_assignment_components"] += 1
+            if not assess_ambiguity:
+                continue
             best = arcs[owner_id][feature_key]
             alternative = min(
                 _UNASSIGNED_COST,
@@ -2420,21 +2430,22 @@ def _solve_sample_assignment(
             )
             # The stable ID breaks only the diagnostic representation tie.
             # Equal/near-equal optima remain ambiguous and cannot add membership.
-            assignments[owner_id] = feature_key
             if alternative <= best + ambiguity_margin:
                 ambiguous.add(owner_id)
-            counts["trivial_assignment_components"] += 1
             continue
         matrix = _assignment_matrix(rows, columns, arcs)
         row_indexes, column_indexes = linear_sum_assignment(matrix)
         counts["assignment_solver_calls"] += 1
-        optimum = float(matrix[row_indexes, column_indexes].sum())
         column_by_index = dict(enumerate(columns))
         selected = {
             rows[row_index]: column_by_index[column_index]
             for row_index, column_index in zip(row_indexes, column_indexes, strict=True)
             if column_index < len(columns)
         }
+        assignments.update(selected)
+        if not assess_ambiguity:
+            continue
+        optimum = float(matrix[row_indexes, column_indexes].sum())
         row_index_by_id = {owner_id: index for index, owner_id in enumerate(rows)}
         column_index_by_key = {key: index for index, key in enumerate(columns)}
         for owner_id, feature_key in selected.items():
@@ -2446,7 +2457,6 @@ def _solve_sample_assignment(
             counts["alternative_solver_calls"] += 1
             alternative = float(matrix[alternative_rows, alternative_columns].sum())
             matrix[row_index, column_index] = saved
-            assignments[owner_id] = feature_key
             if alternative <= optimum + ambiguity_margin:
                 ambiguous.add(owner_id)
     counts["ambiguous_assignments"] += len(ambiguous)

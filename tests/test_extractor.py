@@ -33,6 +33,387 @@ _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 _active_nl_fixture_results: list[NLResult] = []
 
 
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+def test_duplicate_samples_preserve_reference_supported_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, neutral_loss: float | None
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "A.raw").write_bytes(b"A")
+    target = replace(
+        _target("Main", neutral_loss_da=neutral_loss, rt_min=10, rt_max=10),
+        cid_nl_tag="dR" if neutral_loss is not None else "",
+        expected_rt_min=10,
+        nl_ppm_max=20 if neutral_loss is not None else None,
+    )
+
+    class Raw(_FakeRaw):
+        def extract_xic(self, *_args):
+            rt = np.linspace(0, 20, 2001)
+            signal = sum(
+                height * np.exp(-0.5 * ((rt - center) / 0.1) ** 2)
+                for center, height in ((10, 1000), (12, 10000))
+            )
+            return rt, 10 + signal
+
+        def iter_ms2_scans(self, *_args):
+            if neutral_loss is None:
+                return
+            for number, center in enumerate((10, 12), start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=center,
+                    precursor_mz=target.mz,
+                    masses=np.array([target.mz - neutral_loss]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_a, **_kw: Raw())
+    single = _run_formal_selection(config, [target])
+    (config.data_dir / "B.raw").write_bytes(b"B")
+    repeated = _run_formal_selection(config, [target])
+    expected_area = 1000 * 0.1 * math.sqrt(2 * math.pi) * 60
+    first = single.file_results[0].results[target.label]
+    assert first.reported_rt == pytest.approx(10, abs=0.03)
+    assert first.reported_peak_area == pytest.approx(expected_area, rel=0.08)
+    for file in repeated.file_results:
+        result = file.results[target.label]
+        assert result.reported_rt == pytest.approx(10, abs=0.03)
+        assert result.reported_peak_area == pytest.approx(first.reported_peak_area)
+        assert result.selected_cid_nl_supported is (neutral_loss is not None)
+
+
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, neutral_loss: float | None
+) -> None:
+    config = _config(tmp_path)
+    for sample in ("Shifted", "Reference"):
+        (config.data_dir / f"{sample}.raw").write_bytes(sample.encode())
+    targets = [
+        replace(
+            _target(
+                label,
+                neutral_loss_da=neutral_loss if mz == 500 else None,
+                rt_min=reference,
+                rt_max=reference,
+            ),
+            mz=mz,
+            expected_rt_min=reference,
+            cid_nl_tag="dR" if mz == 500 and neutral_loss is not None else "",
+            nl_ppm_max=20 if mz == 500 and neutral_loss is not None else None,
+        )
+        for label, mz, reference in (
+            ("T0", 500, 10),
+            ("T1", 500, 12),
+            ("AnchorA", 600, 16),
+            ("AnchorB", 700, 22),
+        )
+    ]
+
+    class Raw(_FakeRaw):
+        def __init__(self, sample):
+            super().__init__()
+            self.shift = -2 if sample == "Shifted" else 0
+            self.scale = 2 if sample == "Shifted" else 1
+
+        def acquisition_rt_bounds(self):
+            return 0, 30
+
+        def extract_xic(self, mz, *_args):
+            rt = np.linspace(0, 30, 3001)
+            centers = (10, 12) if mz == 500 else (16,) if mz == 600 else (22,)
+            sigma = 0.7 if mz == 500 else 0.2
+            signal = sum(
+                self.scale * 10000 * np.exp(-0.5 * ((rt - c - self.shift) / sigma) ** 2)
+                for c in centers
+            )
+            return rt, 10 + signal
+
+        def iter_ms2_scans(self, *_args):
+            if neutral_loss is None:
+                return
+            for number, center in enumerate((10, 12), start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=center + self.shift,
+                    precursor_mz=500,
+                    masses=np.array([500 - neutral_loss]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_a, **_kw: Raw(path.stem))
+    workbook = tmp_path / "output" / "correspondence.xlsx"
+    output = _run_formal_selection(config, targets, workbook_path=workbook)
+    results = {file.sample_name: file.results for file in output.file_results}
+    # Equal analytical Gaussians separated by their midpoint valley. The
+    # broad-body baseline and outer truncation are not an identity oracle.
+    unit_area = 10000 * 0.7 * math.sqrt(2 * math.pi) * 60
+    for sample, shift, scale in (("Reference", 0, 1), ("Shifted", -2, 2)):
+        left, right = results[sample]["T0"], results[sample]["T1"]
+        assert left.reported_rt == pytest.approx(10 + shift, abs=0.1)
+        assert right.reported_rt == pytest.approx(12 + shift, abs=0.1)
+        assert left.reported_peak_end == pytest.approx(11 + shift, abs=0.1)
+        assert left.reported_peak_end <= right.reported_peak_start
+        for result in (left, right):
+            assert result.reported_peak_area == pytest.approx(
+                unit_area * scale, rel=0.2
+            )
+            assert (
+                "targeted_shared_ion_region"
+                not in result.targeted_product_projection.conflict_reasons
+            )
+            assert result.selected_cid_nl_supported is (neutral_loss is not None)
+    for label in ("T0", "T1"):
+        assert results["Shifted"][label].reported_peak_area == pytest.approx(
+            results["Reference"][label].reported_peak_area * 2, rel=0.02
+        )
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    saved = {
+        (row["SampleName"], row["Target"]): row
+        for row in TargetedWorkbookSource(workbook).records
+    }
+    for sample in ("Reference", "Shifted"):
+        for label in ("T0", "T1"):
+            row = saved[(sample, label)]
+            assert row["RT"] == pytest.approx(
+                results[sample][label].reported_rt, abs=5e-5
+            )
+            assert row["Area"] == pytest.approx(
+                results[sample][label].reported_peak_area, rel=1e-8
+            )
+    reversed_output = _run_formal_selection(
+        config, list(reversed(targets)), reverse_samples=True
+    )
+    assert {
+        (file.sample_name, label): (result.reported_rt, result.reported_peak_area)
+        for file in reversed_output.file_results
+        for label, result in file.results.items()
+    } == {
+        (file.sample_name, label): (result.reported_rt, result.reported_peak_area)
+        for file in output.file_results
+        for label, result in file.results.items()
+    }
+
+
+def test_boundary_cid_nl_keeps_possible_lobes_without_merging_or_individual_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "Sample.raw").write_bytes(b"raw placeholder")
+    target = replace(
+        _target("Main", rt_min=9, rt_max=9),
+        mz=500,
+        expected_rt_min=9,
+        nl_ppm_max=20,
+    )
+
+    class Raw(_FakeRaw):
+        def extract_xic(self, *_args):
+            rt = np.linspace(0, 20, 2001)
+            signal = sum(
+                10000 * np.exp(-0.5 * ((rt - center) / 0.22) ** 2)
+                for center in (3, 8.6, 9.4)
+            )
+            return rt, 10 + signal
+
+        def iter_ms2_scans(self, *_args):
+            # One event is unique to a remote peak. The other lies at the
+            # shared valley, not strictly inside either target lobe.
+            for number, center in enumerate((3, 9), start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=center,
+                    precursor_mz=target.mz,
+                    masses=np.array([target.mz - target.neutral_loss_da]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_a, **_kw: Raw())
+    result = _run_formal_selection(config, [target]).file_results[0].results["Main"]
+    assert 8 < result.reported_rt < 10
+    assert not (result.reported_peak_start < 8.6 and result.reported_peak_end > 9.4)
+    expected_lobe = 10000 * 0.22 * math.sqrt(2 * math.pi) * 60
+    assert result.reported_peak_area == pytest.approx(expected_lobe, rel=0.08)
+    assert not result.selected_cid_nl_supported
+    assert result.cid_nl_relations.set_relation_event_indexes
+    assert result.selected_cid_nl_candidate_index in (
+        result.cid_nl_relations.set_related_candidate_indexes
+    )
+
+
+def _run_formal_selection(
+    config, targets, *, reverse_samples=False, workbook_path=None
+):
+    from xic_extractor.applications.targeted.application import (
+        build_canonical_targeted_application_service,
+        build_targeted_application_request,
+    )
+
+    injection_order = {
+        path.stem: index + 1
+        for index, path in enumerate(
+            sorted(config.data_dir.glob("*.raw"), reverse=reverse_samples)
+        )
+    }
+    request = build_targeted_application_request(
+        config,
+        targets,
+        injection_order=injection_order,
+        excel_output_path=workbook_path,
+    )
+    return build_canonical_targeted_application_service(_run).execute(request)
+
+
+@pytest.mark.parametrize("lobes", [2, 3])
+def test_ms1_same_mass_targets_use_valleys_and_reference_order(
+    tmp_path, monkeypatch, lobes
+):
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_bytes(b"raw placeholder")
+    rt = np.linspace(0, 20, 2001)
+    centers = [9.0, 11.0, 13.0] if lobes == 3 else [10.0, 13.0]
+    references = [8.9, 11.1, 13.2] if lobes == 3 else [9.4, 10.4, 13.2]
+    intensity = 10.0 + sum(
+        1000.0 * np.exp(-0.5 * ((rt - c) / 0.7) ** 2) for c in centers
+    )
+    targets = [
+        replace(
+            _target(f"T{i}", neutral_loss_da=None, rt_min=ref, rt_max=ref),
+            mz=500.0 + i * 0.0001,
+        )
+        for i, ref in enumerate(references)
+    ]
+    raw = _FakeRaw()
+    monkeypatch.setattr(raw, "extract_xic", lambda *_args: (rt, intensity))
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
+    output = _run(config, targets)
+    results = output.file_results[0].results
+    numeric = [
+        results[t.label]
+        for t in targets
+        if results[t.label].reported_peak_area is not None
+    ]
+    assert len(numeric) == 3
+    distinct = list(
+        {(r.reported_peak_start, r.reported_peak_end): r for r in numeric}.values()
+    )
+    assert [r.reported_rt for r in distinct] == pytest.approx(centers, abs=0.1)
+    assert all(
+        left.reported_peak_end <= right.reported_peak_start
+        for left, right in zip(distinct, distinct[1:], strict=False)
+    )
+    if lobes == 3:
+        assert numeric[0].reported_peak_end == pytest.approx(10.0, abs=0.2)
+        assert numeric[1].reported_peak_end == pytest.approx(12.0, abs=0.2)
+    else:
+        assert results["T0"].reported_peak_area == results["T1"].reported_peak_area
+        for label in ("T0", "T1"):
+            projection = results[label].targeted_product_projection
+            assert "targeted_shared_ion_region" in projection.conflict_reasons
+            assert projection.counted_detection is False
+    reversed_results = _run(config, list(reversed(targets))).file_results[0].results
+    assert {
+        label: (r.reported_rt, r.reported_peak_area)
+        for label, r in reversed_results.items()
+    } == {label: (r.reported_rt, r.reported_peak_area) for label, r in results.items()}
+
+
+@pytest.mark.parametrize(
+    "signal_kind",
+    ["far_only", "double_top", "rippled_top", "single_scan", "broad", "separate"],
+)
+def test_ms1_only_localizes_then_integrates_without_shape_veto(
+    tmp_path, monkeypatch, signal_kind
+):
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_bytes(b"raw placeholder")
+    target = _target("MS1", neutral_loss_da=None, rt_min=9.0, rt_max=9.0)
+    rt = np.linspace(0, 20, 2001)
+    remote = 500.0 * np.exp(-0.5 * ((rt - 3.0) / 0.10) ** 2)
+    if signal_kind == "far_only":
+        intensity = 10.0 + remote
+    elif signal_kind == "double_top":
+        intensity = (
+            10.0
+            + remote
+            + 1000.0
+            * (
+                np.exp(-0.5 * ((rt - 8.6) / 0.22) ** 2)
+                + np.exp(-0.5 * ((rt - 9.4) / 0.22) ** 2)
+            )
+        )
+    elif signal_kind == "rippled_top":
+        intensity = 10.0 + 1000.0 * np.exp(-0.5 * ((rt - 9.0) / 0.5) ** 2) * (
+            1 + 0.05 * np.cos(rt * 60)
+        )
+    elif signal_kind == "broad":
+        intensity = 10.0 + 1000.0 * np.exp(-0.5 * ((rt - 10.5) / 0.8) ** 2)
+    elif signal_kind == "separate":
+        target = replace(target, rt_min=9.4, rt_max=9.4)
+        intensity = 10.0 + 1000.0 * (
+            np.exp(-0.5 * ((rt - 8.6) / 0.08) ** 2)
+            + np.exp(-0.5 * ((rt - 9.4) / 0.08) ** 2)
+        )
+    else:
+        intensity = np.full_like(rt, 10.0)
+        intensity[900] = 10000.0
+    raw = _FakeRaw()
+
+    def extract(mz, *_args):
+        if mz == target.mz:
+            return rt, intensity
+        center = 4.0 if mz == 400.0 else 15.0
+        return rt, 10.0 + 1000.0 * np.exp(-0.5 * ((rt - center) / 0.2) ** 2)
+
+    monkeypatch.setattr(raw, "extract_xic", extract)
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
+    targets = [target]
+    if signal_kind == "far_only":
+        # Independent reference-linked bodies establish the sample's RT frame.
+        # A single target alone does not supply a scientifically justified
+        # universal maximum RT error.
+        targets += [
+            replace(
+                _target("AnchorA", neutral_loss_da=None, rt_min=4, rt_max=4), mz=400
+            ),
+            replace(
+                _target("AnchorB", neutral_loss_da=None, rt_min=15, rt_max=15), mz=500
+            ),
+        ]
+    output = _run(config, targets)
+    result = output.file_results[0].results[target.label]
+    if signal_kind in {"far_only", "single_scan"}:
+        assert result.reported_peak_area is None
+        assert result.reported_rt is None
+    else:
+        assert result.reported_peak_area is not None
+        assert result.reported_peak_area > 0
+        if signal_kind == "broad":
+            assert result.reported_rt > 10.0
+            assert result.reported_peak_start < 9.0
+        else:
+            assert 8.0 < result.reported_rt < 10.0
+        if signal_kind == "separate":
+            assert result.reported_rt == pytest.approx(9.4, abs=0.02)
+            assert result.reported_peak_start > 9.1
+        if signal_kind == "double_top":
+            # One target reference does not authorize adding two resolved
+            # observed peaks. The selected value is one complete lobe.
+            assert min(abs(result.reported_rt - center) for center in (8.6, 9.4)) < 0.02
+            assert not (
+                result.reported_peak_start < 8.6 and result.reported_peak_end > 9.4
+            )
+            one_lobe_area = 1000.0 * 0.22 * math.sqrt(2 * math.pi) * 60.0
+            assert result.reported_peak_area == pytest.approx(one_lobe_area, rel=0.08)
+
+
 @pytest.fixture(autouse=True)
 def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     global _active_nl_fixture_results
@@ -43,6 +424,363 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         raising=False,
     )
     install_fake_raw_headers(monkeypatch)
+
+
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+@pytest.mark.parametrize("control_signal", ["absent", "one_scan", "body"])
+def test_peer_alternate_band_cannot_replace_unquantifiable_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    neutral_loss: float | None,
+    control_signal: str,
+) -> None:
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    config = replace(
+        _config(tmp_path),
+        signal_processing_method="gaussian",
+        signal_processing_window_points=9,
+    )
+    samples = ("Control", "Treated", "Dose")
+    for sample in samples:
+        (config.data_dir / f"{sample}.raw").write_bytes(b"raw placeholder")
+    targets = list(
+        parse_target_rows(
+            [
+                dict(
+                    label=label,
+                    mz=str(mz),
+                    expected_rt_min=str(reference),
+                    cid_nl_tag="dR" if label == "Main" and neutral_loss else "",
+                    role="analyte",
+                    istd_pair="",
+                )
+                for label, mz, reference in (
+                    ("Main", 258.1085, 10.2),
+                    ("ShiftA", 400, 20),
+                    ("ShiftB", 500, 30),
+                    ("StableA", 600, 5),
+                    ("StableB", 700, 35),
+                )
+            ]
+        )
+    )
+
+    class Raw(_FakeRaw):
+        def __init__(self, sample):
+            super().__init__()
+            self.sample = sample
+            self.shift = {"Control": 0, "Treated": 0.3, "Dose": 0.5}[sample]
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 40.0
+
+        def extract_xic(self, mz, *_args):
+            rt = np.arange(0.0, 40.01, 0.02)
+            center = 10 + self.shift
+            if mz != 258.1085:
+                reference = {400: 20, 500: 30, 600: 5, 700: 35}[round(mz)]
+                offset = (
+                    {"Control": -3, "Treated": 0, "Dose": 0.3}[self.sample]
+                    if mz < 600
+                    else self.shift
+                )
+                return rt, 20000 * np.exp(-0.5 * ((rt - reference - offset) / 0.1) ** 2)
+            amplitude = {"Control": 10000, "Treated": 12000, "Dose": 18000}[self.sample]
+            signal = amplitude * np.exp(-0.5 * ((rt - center) / 0.1) ** 2)
+            if self.sample == "Control" and control_signal != "body":
+                signal[:] = 0
+                if control_signal == "one_scan":
+                    signal[np.argmin(abs(rt - center))] = amplitude
+            # This second band exists in every sample but is not the target
+            # chosen in the peers. Its single peer detections still carry RT
+            # correspondence evidence, even though they cannot carry quantity.
+            if self.sample == "Control":
+                signal += 7000 * np.exp(-0.5 * ((rt - 13) / 0.1) ** 2)
+            else:
+                signal[np.argmin(abs(rt - (13 + self.shift)))] += 5000
+            return rt, signal
+
+        def iter_ms2_scans(self, _rt_min, _rt_max):
+            if neutral_loss is None:
+                return
+            for number, center in enumerate((10, 13), start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=center + self.shift,
+                    precursor_mz=258.1085,
+                    masses=np.array([258.1085 - neutral_loss]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_a, **_kw: Raw(path.stem))
+    output = _run(config, targets)
+    results = {f.sample_name: f.results["Main"] for f in output.file_results}
+    for sample, center, amplitude in (("Treated", 10.3, 12000), ("Dose", 10.5, 18000)):
+        assert results[sample].reported_rt == pytest.approx(center, abs=0.03)
+        expected_area = amplitude * 0.1 * np.sqrt(2 * np.pi) * 60
+        assert results[sample].reported_peak_area == pytest.approx(
+            expected_area, rel=0.08
+        )
+    control = results["Control"]
+    if control_signal != "body":
+        assert control.reported_peak_area is None
+        assert control.reported_rt is None
+        assert not control.targeted_product_projection.counted_detection
+        assert (
+            "targeted_cross_sample_region_conflict"
+            in control.targeted_product_projection.review_reasons
+        )
+        assert "targeted_cross_sample_region_conflict" in (
+            control.targeted_product_projection.conflict_reasons
+        )
+        if neutral_loss is not None:
+            assert control.cid_nl_relations.supported_candidate_indexes
+    else:
+        assert control.reported_rt == pytest.approx(10.0, abs=0.03)
+        expected_area = 10000 * 0.1 * np.sqrt(2 * np.pi) * 60
+        assert control.reported_peak_area == pytest.approx(expected_area, rel=0.08)
+
+
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+def test_many_background_regions_do_not_erase_a_clear_targeted_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, neutral_loss: float | None
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    target = replace(
+        _target("Main", rt_min=29.0, rt_max=31.0),
+        expected_rt_min=30.0,
+        neutral_loss_da=neutral_loss,
+    )
+
+    class Raw(_FakeRaw):
+        def acquisition_rt_bounds(self):
+            return 0.0, 60.0
+
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.arange(0.0, 60.005, 0.01)
+            # More background lobes than the generic universe budget. Their
+            # count cannot delete a clearly observed, unrelated main body.
+            background = sum(
+                50.0 * np.exp(-0.5 * ((rt - center) / 0.025) ** 2)
+                for center in np.arange(1.0, 59.0, 0.32)
+            )
+            main = 20000.0 * np.exp(-0.5 * ((rt - 30.0) / 0.16) ** 2)
+            return rt, background + main
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            if neutral_loss is None:
+                return
+            scan = Ms2Scan(
+                scan_number=1,
+                rt=30.0,
+                precursor_mz=target.mz,
+                masses=np.array([target.mz - neutral_loss]),
+                intensities=np.array([1000.0]),
+                base_peak=1000.0,
+            )
+            yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=1)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
+    result = _run(config, [target]).file_results[0].results["Main"]
+    assert result.reported_rt == pytest.approx(30.0, abs=0.03)
+    # Independent Gaussian area oracle, with truncated boundary/baseline room.
+    expected_area = 20000.0 * 0.16 * np.sqrt(2 * np.pi) * 60
+    assert result.reported_peak_area == pytest.approx(expected_area, rel=0.08)
+    assert len(result.candidate_physical_evaluations) > 128
+    if neutral_loss is not None:
+        assert result.selected_cid_nl_supported
+
+
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+@pytest.mark.parametrize("reference_bias", [0.0, 2.5, 22.5])
+def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
+    tmp_path, monkeypatch, neutral_loss, reference_bias
+):
+    config = _config(tmp_path)
+    for sample in ("Control", "Treated"):
+        (config.data_dir / f"{sample}.raw").write_bytes(b"raw placeholder")
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    targets = list(
+        parse_target_rows(
+            [
+                {
+                    "label": label,
+                    "mz": str(mz),
+                    "expected_rt_min": str(reference),
+                    "cid_nl_tag": "dR"
+                    if label == "Main" and neutral_loss is not None
+                    else "",
+                    "role": "analyte",
+                    "istd_pair": "",
+                }
+                for label, mz, reference in (
+                    ("Main", 258.1085, 10 + reference_bias),
+                    ("AnchorA", 400, 20),
+                    ("AnchorB", 500, 30),
+                )
+            ]
+        )
+    )
+    acquisitions = []
+
+    class Raw(_FakeRaw):
+        def __init__(self, sample):
+            super().__init__()
+            self.shift = -2 if sample == "Control" else 0
+            self.amplitude = 10000 if sample == "Control" else 20000
+
+        def acquisition_rt_bounds(self):
+            return 0, 40
+
+        def extract_xic(self, mz, *_args):
+            acquisitions.append((self.shift, mz))
+            rt = np.linspace(0, 40, 8001)
+            reference = 10 if mz == targets[0].mz else 20 if mz == 400 else 30
+            center = reference + self.shift
+            signal = self.amplitude * np.exp(-0.5 * ((rt - center) / 0.4) ** 2)
+            signal = np.minimum(signal, self.amplitude / 2)
+            if mz == targets[0].mz:
+                signal += 100 * np.exp(-0.5 * ((rt - reference) / 0.02) ** 2)
+            return rt, 10 + signal
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            if neutral_loss is None:
+                return
+            scan = Ms2Scan(
+                scan_number=1,
+                rt=10 + self.shift,
+                precursor_mz=targets[0].mz,
+                masses=np.array([targets[0].mz - neutral_loss]),
+                intensities=np.array([1000.0]),
+                base_peak=1000.0,
+            )
+            yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=1)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, *_args, **_kwargs: Raw(path.stem))
+    from xic_extractor.applications.targeted.application import (
+        build_targeted_application_request,
+    )
+    from xic_extractor.applications.targeted.production_workflow import (
+        execute_targeted_production_workflow,
+        snapshot_targeted_production_inputs,
+    )
+
+    request = build_targeted_application_request(
+        config, targets, injection_order={"Control": 1, "Treated": 2}
+    )
+    snapshot = snapshot_targeted_production_inputs(request)
+    output = _run(
+        config,
+        targets,
+        acquisition_sources_by_sample=snapshot.acquisition_sources_by_sample(),
+    )
+    results = {f.sample_name: f.results["Main"] for f in output.file_results}
+    sigma = 0.4
+    plateau_edge = sigma * math.sqrt(2 * math.log(2))
+    unit_area = plateau_edge + sigma * math.sqrt(2 * math.pi) * math.erfc(
+        plateau_edge / (sigma * math.sqrt(2))
+    )
+    for sample, center, amplitude in (("Control", 8, 10000), ("Treated", 10, 20000)):
+        result = results[sample]
+        if reference_bias == 22.5:
+            assert result.reported_peak_area is None
+            assert result.reported_rt is None
+            if neutral_loss is not None:
+                # The acquired event still supports the regional population.
+                # An event at a retained valley is set-level evidence, not
+                # individual support manufactured by merging before selection.
+                relations = result.cid_nl_relations
+                assert (
+                    relations.supported_candidate_indexes
+                    or relations.set_relation_event_indexes
+                )
+                assert not result.selected_cid_nl_supported
+            continue
+        assert result.reported_rt == pytest.approx(center, abs=0.55)
+        assert result.reported_peak_start < center < result.reported_peak_end
+        assert result.reported_peak_area == pytest.approx(
+            amplitude * unit_area * 60, rel=0.15
+        )
+        assert result.selected_cid_nl_supported is (neutral_loss is not None)
+        # Batch selection consumes the retained candidate population.
+        assert result.targeted_candidate_assessment is None
+    if reference_bias != 22.5:
+        assert results["Treated"].reported_peak_area / results[
+            "Control"
+        ].reported_peak_area == pytest.approx(2, rel=0.1)
+        assert (
+            "targeted_reference_displacement"
+            in results["Control"].targeted_product_projection.review_reasons
+        )
+    finalized = execute_targeted_production_workflow(
+        request, output, expected_inputs=snapshot
+    )
+    main = next(
+        result
+        for result in finalized
+        if result.completed_projection.row_binding.target.definition.target.label
+        == "Main"
+    )
+    assert main.completed_projection.accepted_cell_count == (
+        0 if reference_bias == 22.5 else 2
+    )
+    assert main.completed_projection.no_write_count == (
+        2 if reference_bias == 22.5 else 0
+    )
+    assert tuple(d.value for d in main.completed_projection.decisions) == (
+        results["Control"].reported_peak_area,
+        results["Treated"].reported_peak_area,
+    )
+    assert len(acquisitions) == len(set(acquisitions)) == 6
+
+
+def test_positive_cid_nl_cannot_manufacture_area_from_one_acquired_impulse(
+    tmp_path, monkeypatch
+):
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_bytes(b"raw placeholder")
+    target = _target("Impulse")
+    rt = np.linspace(0, 20, 2001)
+    intensity = np.zeros_like(rt)
+    intensity[900] = 10000
+    raw = _FakeRaw()
+    monkeypatch.setattr(raw, "extract_xic", lambda *_args: (rt, intensity))
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
+    from xic_extractor.applications.targeted.application import (
+        build_targeted_application_request,
+    )
+    from xic_extractor.applications.targeted.production_workflow import (
+        execute_targeted_production_workflow,
+        snapshot_targeted_production_inputs,
+    )
+
+    request = build_targeted_application_request(
+        config, [target], injection_order={"SampleA": 1}
+    )
+    snapshot = snapshot_targeted_production_inputs(request)
+    output = _run(
+        config,
+        [target],
+        acquisition_sources_by_sample=snapshot.acquisition_sources_by_sample(),
+    )
+    result = output.file_results[0].results[target.label]
+    assert result.cid_nl_products
+    assert result.cid_nl_relations.supported_candidate_indexes
+    assert result.reported_peak_area is None
+    assert not result.targeted_product_projection.counted_detection
+    assert result.candidate_physical_evaluations
+    assert all(e.state != "available" for e in result.candidate_physical_evaluations)
+    finalized = execute_targeted_production_workflow(
+        request, output, expected_inputs=snapshot
+    )
+    assert finalized[0].completed_projection.accepted_cell_count == 0
+    assert finalized[0].completed_projection.no_write_count == 1
 
 
 def test_run_raises_before_processing_when_reader_preflight_fails(
@@ -104,7 +842,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     no_nl_projection = results["NoNL"].targeted_product_projection
     assert no_nl_projection is not None
     assert no_nl_projection.conflict_reasons == ()
-    assert [_core_long_row(row) for row in long_rows] == [
+    expected_rows = [
         {
             **_formatted_long_success_row("NoNL", results["NoNL"], nl=""),
             "Confidence": "LOW",
@@ -114,8 +852,13 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "Confidence": "LOW",
         },
     ]
+    for row, expected in zip(long_rows, expected_rows, strict=True):
+        actual = _core_long_row(row)
+        assert actual.pop("Reason").startswith(expected.pop("Reason").rstrip("。"))
+        assert actual == expected
+        assert "targeted_shared_ion_region:" in row["Projection Review Reasons"]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
-    assert [row["Product State"] for row in long_rows] == ["detected_clean"] * 2
+    assert [row["Product State"] for row in long_rows] == ["detected_flagged"] * 2
     assert all(not row["Projection Conflict Reasons"] for row in long_rows)
     assert results["WithNL"].candidate_ms2_evidence is not None
     assert results["WithNL"].candidate_ms2_evidence.nl_match is True
@@ -158,7 +901,7 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     assert result.reported_peak_area > 0
 
 
-def test_peak_only_outside_selection_still_answers_physical_question(
+def test_ms1_only_without_rt_calibration_keeps_provisional_measurement_and_risk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -175,15 +918,24 @@ def test_peak_only_outside_selection_still_answers_physical_question(
     output = _run(config, [target])
     result = output.file_results[0].results["Empty"]
 
-    assert result.reported_rt == pytest.approx(6.0, abs=0.002)
+    assert result.reported_rt == pytest.approx(6.0)
     evaluation = result.physical_evaluation
     assert evaluation is not None
     assert evaluation.segment_universe.state == "available"
     assert evaluation.state == "available"
-    assert evaluation.question.query_rt_min == pytest.approx(6.0)
-    known_area = 5000.0 * 0.04 * np.sqrt(2 * np.pi) * 60
-    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
-    assert result.targeted_product_projection.counted_detection is True
+    assert any(
+        s.apex_rt_min == pytest.approx(6.0)
+        for s in evaluation.segment_universe.segments
+    )
+    assert result.reported_peak_area > 0
+    assert (
+        "targeted_retention_context_unavailable"
+        in result.targeted_product_projection.review_reasons
+    )
+    assert (
+        "targeted_reference_displacement"
+        in result.targeted_product_projection.review_reasons
+    )
 
 
 @pytest.mark.parametrize("with_supported_main", [True, False])
@@ -235,27 +987,26 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
-        # The interrupted component fails the stronger local contrast gate;
-        # only the supported main peak participates in ranking and shape review.
+        # The distant interrupted component is not the reference envelope;
+        # only the localized main peak participates in shape review.
         assert projection.product_state == "detected_flagged"
         assert projection.counted_detection is True
         assert "trace_morphology_review" in projection.review_reasons
         assert projection.conflict_reasons == ()
         assert sorted(
             candidate.selection_apex_rt for candidate in result.peak_result.candidates
-        ) == pytest.approx([4.7], abs=0.04)
+        ) == pytest.approx([4.7, 6.0], abs=0.04)
         assert long_rows[0]["Counted Detection"] == "TRUE"
     else:
-        # A dense hit cluster with empty flanks is acquired censored support.
-        # Its intensity interruptions do not justify an unavailable answer.
+        # MS1-only measures the canonical total envelope even with interrupted
+        # acquired support; it does not switch to censored-cluster quantitation.
         assert result.reported_rt == pytest.approx(6.0, abs=0.04)
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert evaluation.integration is not None
         assert evaluation.facts.area_source == (
-            "trapezoid_counts_seconds_on_observed_censored_signal"
+            "trapezoid_counts_seconds_on_canonical_signal"
         )
-        assert "near_detection_limit" in evaluation.integration.boundary_sources
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
         assert result.reported_peak_area > 0
         assert projection.counted_detection is True
@@ -715,6 +1466,7 @@ def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
     ]
     assert long_rows[0]["Projection Reason"] == (
         "decision: not_counted; support: trace_coherent; "
+        "review: targeted_no_plausible_measurable_region; "
         "not_counted: missing_positive_ms1_peak"
     )
     assert long_rows[0]["Product State"] == "not_counted"
@@ -1305,7 +2057,8 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     assert analyte_row["Confidence"] == "LOW"
-    assert analyte_row["Product State"] == "detected_clean"
+    assert analyte_row["Product State"] == "detected_flagged"
+    assert "targeted_reference_displacement" in analyte_row["Projection Review Reasons"]
     assert analyte_row["Counted Detection"] == "TRUE"
     assert analyte_row["Projection Conflict Reasons"] == ""
     assert output.file_results[0].results["Analyte"].confidence == "LOW"

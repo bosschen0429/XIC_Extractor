@@ -58,7 +58,9 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         calls.append((config_arg, targets_arg, [path.name for path in raw_paths]))
         assert progress_callback is _progress
         assert should_stop is _should_stop
@@ -175,6 +177,26 @@ def test_run_no_nl_reference_selects_each_samples_component(
             pytest.fail("no-NL must not query MS2")
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem))
+    if pair_state == "credible":
+        acquire = extractor.acquire
+
+        def acquire_with_anchor_evidence(*args, **kwargs):
+            acquired = acquire(*args, **kwargs)
+            # Publication intentionally drops candidate details. Inspect the
+            # real batch-completed result at the acquisition API boundary.
+            for file in acquired.file_results:
+                peak_result = file.results[target.label].peak_result
+                anchor_rt = expected[file.sample_name][0] - 1.0
+                assert peak_result.candidate_scores
+                for score in peak_result.candidate_scores:
+                    assert score.evidence_facts is not None
+                    rt_facts = score.evidence_facts.rt
+                    assert rt_facts.paired_istd_anchor_rt_min == pytest.approx(
+                        anchor_rt
+                    )
+            return acquired
+
+        monkeypatch.setattr(extractor, "acquire", acquire_with_anchor_evidence)
     output = extractor.run(config, targets)
 
     assert {file.sample_name for file in output.file_results} == set(expected)
@@ -182,9 +204,26 @@ def test_run_no_nl_reference_selects_each_samples_component(
     areas = {}
     for file in output.file_results:
         result = file.results[target.label]
-        assert result.reported_rt == pytest.approx(
-            expected[file.sample_name][0], abs=0.03
-        )
+        reference_apex = expected[file.sample_name][0]
+        # The generated lobes have a sustained, resolved valley. A credible
+        # paired reference selects its own region, not the stronger interferent.
+        measured_apex = reference_apex
+        assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
+        if pair_state == "credible":
+            anchor_rt = reference_apex - 1.0
+            assert result.peak_result.paired_istd_anchor_rt == pytest.approx(anchor_rt)
+            assert result.peak_result.selection_reference_rt == pytest.approx(
+                reference_apex
+            )
+            assert result.reported_peak_start < measured_apex
+            assert result.reported_peak_end > reference_apex
+            single_lobe_area = (
+                expected[file.sample_name][1] * 0.06 * np.sqrt(2 * np.pi) * 60
+            )
+            assert result.reported_peak_start > reference_apex - 0.15
+            assert result.reported_peak_area == pytest.approx(
+                single_lobe_area, rel=0.08
+            )
         if pair_state == "shape_review":
             projection = result.targeted_product_projection
             assert projection is not None and projection.counted_detection
@@ -348,7 +387,9 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["SampleA.raw"]
@@ -411,7 +452,9 @@ def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
+        defer_analyte_selection=False,
     ) -> RunOutput:
+        assert defer_analyte_selection is True
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]

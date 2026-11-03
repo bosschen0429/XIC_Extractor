@@ -1,4 +1,4 @@
-"""Short-scale measurement quality is descriptive, never a peak/write gate."""
+"""Short-scale measurement-quality facts and their numerical semantics."""
 
 import math
 

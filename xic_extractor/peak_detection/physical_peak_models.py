@@ -14,6 +14,7 @@ PhysicalPeakState = Literal["available", "unavailable", "failed"]
 PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
 PHYSICAL_PEAK_REFERENCE_POLICY = "reference_localized_contour_peak"
+PHYSICAL_PEAK_ENVELOPE_POLICY = "localized_total_envelope"
 PHYSICAL_PEAK_NO_SELECTION_POLICY = "no_selected_physical_segment"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
 # The group RT resolves several peaks in the context, and a tail that settles
@@ -26,6 +27,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_REFERENCE_POLICY,
+        PHYSICAL_PEAK_ENVELOPE_POLICY,
         PHYSICAL_PEAK_NO_SELECTION_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,

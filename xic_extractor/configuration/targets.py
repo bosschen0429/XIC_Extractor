@@ -3,7 +3,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.configuration.cid_nl_profile import (
+    DEFAULT_CID_NL_MASS_POLICY,
+    NeutralLossProfile,
+)
 from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
@@ -116,9 +119,11 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
         raise _config_error(
             path, row_number, "role", values["role"], "must be analyte or istd"
         )
-    policy = targeted_tag_profile(values["cid_nl_tag"])
-    loss = policy.neutral_loss_profiles[0].neutral_loss_da
-    if loss >= mz:
+    tag = values["cid_nl_tag"]
+    tag_profile = targeted_tag_profile(tag) if tag else None
+    policy = tag_profile or DEFAULT_CID_NL_MASS_POLICY
+    loss = tag_profile.neutral_loss_profiles[0].neutral_loss_da if tag_profile else None
+    if loss is not None and loss >= mz:
         raise _config_error(
             path, row_number, "mz", values["mz"], "must exceed the selected CID-NL mass"
         )
@@ -130,8 +135,8 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
         rt_max=expected_rt,
         ppm_tol=policy.precursor_mz_tolerance_ppm,
         neutral_loss_da=loss,
-        nl_ppm_warn=policy.nl_tolerance_ppm,
-        nl_ppm_max=policy.nl_tolerance_ppm,
+        nl_ppm_warn=policy.nl_tolerance_ppm if tag else None,
+        nl_ppm_max=policy.nl_tolerance_ppm if tag else None,
         is_istd=values["role"] == "istd",
         istd_pair=values["istd_pair"],
         expected_rt_min=expected_rt,

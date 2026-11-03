@@ -1868,7 +1868,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 "sample_review" in rendered.targeted_product_projection.review_reasons
             )
         elif counted:
-            assert row["Review"] is None
+            assert row["Review"] is None, (row["Review Reason"], row["Review Evidence"])
             assert row["Review Reason"] is None
             assert row["Review Evidence"] is None
         else:
@@ -2022,7 +2022,10 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Far"]["RT"] == "ND"
     assert rows["Far"]["Review"] is None
     assert rows["Far"]["Review Reason"] is None
-    assert rows["Near"]["Review"] is None
+    assert rows["Near"]["Review"] is None, (
+        rows["Near"]["Review Reason"],
+        rows["Near"]["Review Evidence"],
+    )
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
     assert rows["Spike"]["Review"] is None

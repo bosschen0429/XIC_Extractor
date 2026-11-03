@@ -412,6 +412,29 @@ def test_one_by_many_assignment_uses_sorted_feature_tie_break(
     )
 
 
+@pytest.mark.parametrize("size", [1, 2, 5])
+def test_assignment_only_preserves_tied_solution_without_alternative_solves(size):
+    owners = tuple(_owner("a", str(i)) for i in range(size))
+    candidates = {
+        owner.owner_id: tuple(
+            _Candidate(f"feature-{i}", 0.25, "supported", "probe", ())
+            for i in range(size + 1)
+        )
+        for owner in owners
+    }
+    complete_counts, assignment_counts = Counter(), Counter()
+    expected, ambiguous = _solve_sample_assignment(owners, candidates, complete_counts)
+    actual, omitted = _solve_sample_assignment(
+        owners, candidates, assignment_counts, assess_ambiguity=False
+    )
+    assert actual == expected
+    assert len(set(actual.values())) == size
+    assert ambiguous == frozenset(actual)
+    assert omitted == frozenset()
+    assert assignment_counts["alternative_solver_calls"] == 0
+    assert complete_counts["alternative_solver_calls"] == (size if size > 1 else 0)
+
+
 @pytest.mark.parametrize(
     ("delta", "selected_owner", "ambiguous"),
     [

@@ -29,6 +29,48 @@ def infer(owners, **kwargs):
     )
 
 
+@pytest.mark.parametrize("max_rt_sec", [30.0, 120.0, 180.0])
+@pytest.mark.parametrize("corrected", [False, True])
+def test_local_density_preserves_closed_radius_and_duplicate_coordinates(
+    max_rt_sec, corrected
+):
+    from xic_extractor.alignment.membership_selection import MembershipComparison
+    from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+
+    radius = min(120.0, max_rt_sec) / 60
+    edge = 10.0 + radius
+    rts = [
+        10.0,
+        10.0,
+        edge,
+        np.nextafter(edge, -np.inf),
+        np.nextafter(edge, np.inf),
+        10.0 - radius,
+        20.0,
+    ]
+    owners = tuple(_owner(str(i), str(i), apex_rt=rt) for i, rt in enumerate(rts))
+    frame = SampleRtFrame()
+    if corrected:
+        frame = frame.with_coordinate_override(lambda owner: owner.owner_apex_rt / 2)
+    for population in (owners, owners[::-1], ()):
+        comparison = MembershipComparison(
+            population,
+            rules=CID_NL_GROUPING_RULES,
+            config=AlignmentConfig(max_rt_sec=max_rt_sec, preferred_rt_sec=30.0),
+            rt_frame=frame,
+            trajectories=PeakTrajectories(),
+        )
+        # Independent direct definition retains subtraction/multiplication
+        # order: rounded rt +/- radius bounds can change edge inclusion.
+        assert comparison.density == {
+            key: sum(
+                abs(rt - other) * 60 <= min(120.0, max_rt_sec)
+                for other in comparison.rts.values()
+            )
+            for key, rt in comparison.rts.items()
+        }
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected_sizes"),
     [

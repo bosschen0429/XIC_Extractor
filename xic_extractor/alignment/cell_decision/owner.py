@@ -251,7 +251,37 @@ def _decide_target(
             "Target observed terminal requires an owner-backed PeakHypothesis"
         )
     integration = hypothesis.integration
+    if _target_has_fragmented_low_signal(
+        integration, hypothesis.peak_observation_refs[0].content.intensity
+    ):
+        return NoWriteCellDecision("not_quantifiable"), integration
     return _payload_from_integration(integration), integration
+
+
+def _target_has_fragmented_low_signal(
+    integration: IntegrationResult, acquired_intensity: tuple[float, ...]
+) -> bool:
+    """Do not quantify a low-S/N body made mostly of missing, scattered scans.
+
+    Low S/N alone is not a veto. A compact continuous body also remains usable
+    when its outer interval contains zero-valued scans. These majority rules
+    describe acquired support, not a calibrated LOD or chemical absence.
+    """
+    quality = integration.signal_quality
+    if quality is None or not quality.low_signal_to_noise:
+        return False
+    positive_count = longest_run = run = 0
+    for intensity in acquired_intensity:
+        if intensity > 0:
+            positive_count += 1
+            run += 1
+            longest_run = max(longest_run, run)
+        else:
+            run = 0
+    return (
+        positive_count * 2 < len(acquired_intensity)
+        and longest_run * 2 < positive_count
+    )
 
 
 def _decide_group(

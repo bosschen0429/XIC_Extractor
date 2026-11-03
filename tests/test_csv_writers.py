@@ -455,6 +455,25 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     assert long_row["NL"] == "NO_MS2"
 
 
+def test_not_quantifiable_row_is_blank_not_zero_or_absence():
+    result = _result()
+    result = replace(
+        result,
+        peak_result=replace(result.peak_result, peak=None, candidates=()),
+        targeted_product_projection=TargetedProductProjection(
+            "not_counted", False, "review_required", "finalized_not_quantifiable"
+        ),
+    )
+    row = _long_output_rows(
+        FileResult(sample_name="SampleA", results={"WithNL": result}),
+        [_target("WithNL")],
+    )[0]
+    assert row["Area"] == ""
+    assert row["RT"] == ""
+    assert "不足以可靠定量" in row["Reason"]
+    assert "不代表化合物不存在" in row["Reason"]
+
+
 class _Config:
     resolver_mode = "local_minimum"
 

@@ -116,7 +116,7 @@ def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
     assert "quadrature window at 50 ppm per ion" in records[1].reason
 
 
-def test_multi_peak_diagnostic_reports_formally_selected_lower_peak() -> None:
+def test_ms1_diagnostics_retain_competition_without_replacing_selected_body() -> None:
     target = replace(
         _target("NoNL"), neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None
     )
@@ -152,11 +152,16 @@ def test_multi_peak_diagnostic_reports_formally_selected_lower_peak() -> None:
     assert [
         candidate.peak.rt for candidate in result.peak_result.candidates
     ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
+    # Both prominent alternatives and the weaker reference-supported body
+    # remain in the identity comparison; this is not a tallest-peak count.
     assert result.peak_result.n_prominent_peaks == 3
-    record = next(record for record in diagnostics if record.issue == "MULTI_PEAK")
-    assert "3 qualified physical candidates in retained trace context" in record.reason
-    assert f"selected RT {result.reported_rt:.4f} min" in record.reason
-    assert "tallest" not in record.reason
+    # The observed body at the supplied reference remains the provisional
+    # answer. Without calibrated RT context, the stronger alternatives remain
+    # visible competition rather than being erased by a fixed local window.
+    assert [
+        s.apex_rt_min for s in result.physical_evaluation.segment_universe.segments
+    ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
+    assert any(record.issue == "MULTI_PEAK" for record in diagnostics)
 
 
 def test_build_diagnostic_records_reports_selected_candidate_observed_loss() -> None:
