@@ -599,9 +599,25 @@ def _ion_family_decisions(
             witnesses[index].update(family.witnesses)
             protonated[index].update(root for root in mh if coelutes(root, index))
     excluded = {index for index, models in forms.items() if "[M+H]+" not in models}
+    conflicting_forms = {
+        index: models
+        for index, models in forms.items()
+        if "[M+H]+" in models and len(models) > 1
+    }
     result = list(decisions)
+    for index, models in conflicting_forms.items():
+        decision = result[index]
+        # A competing family form cannot independently prove this row unwanted.
+        # Other derivative evidence, such as an isotope relation, still applies.
+        if not decision.keep and all(key in models for key in decision.relations):
+            result[index] = RowDecision(
+                keep=True,
+                reason="ion_family_form_undetermined",
+                undetermined=True,
+                ion_form=UNCONFIRMED,
+            )
     for index in excluded:
-        roots = {root for root in protonated[index] - excluded if decisions[root].keep}
+        roots = {root for root in protonated[index] - excluded if result[root].keep}
         root = next(iter(roots)) if len(roots) == 1 else None
         result[index] = RowDecision(
             keep=False,
@@ -664,10 +680,9 @@ def _ion_family_decisions(
             features[index].feature_id,
             sorted(features[w].feature_id for w in witnesses[index] - {index}),
             relation="|".join(sorted(models)),
-            decision="keep_candidate_mh",
+            decision="keep_candidate_mh" if result[index].keep else "drop",
         )
-        for index, models in forms.items()
-        if "[M+H]+" in models and len(models) > 1
+        for index, models in conflicting_forms.items()
     )
     return result, reviews
 

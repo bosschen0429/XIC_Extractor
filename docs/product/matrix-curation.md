@@ -183,6 +183,9 @@ A row compatible with [M+H]⁺ in a supported family is not excluded solely by
 another family's non-[M+H]⁺ interpretation; this classification conflict is
 marked undetermined, not confirmed [M+H]⁺, and reviewed. Family evidence does not merge
 distinct neutral-mass hypotheses or invent an unmeasured protonated row.
+An earlier adduct exclusion that only expresses these competing family forms
+is withdrawn; independent derivative evidence, such as an isotope relation,
+still applies. The conflict review records the actual keep/drop decision.
 
 Absence from the Matrix is not proof that an ion was not formed. In particular,
 an expected [M+H]⁺ outside the acquisition's MS1 mass range was not measured,

@@ -420,12 +420,18 @@ def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
     assert decisions["Na"][0] is True
 
 
-def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity():
+@pytest.mark.parametrize(
+    ("protonated", "independent_isotope"),
+    [(False, False), (True, False), (True, True)],
+)
+def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity(
+    protonated, independent_isotope
+):
     # An isobaric [N+H]+ can share the [M+Na]+ feature. Unlike Na vs K
     # attribution, this changes whether the row contains a wanted ion form.
     neutral_n = 227.09060590 + 22.989220702091 - 1.007276452321
-    decisions, result = decide(
-        *sodium_family(),
+    rows = [
+        *sodium_family(protonated=protonated),
         row("N_Na", neutral_n + 22.989220702091),
         row("N_MgFA", neutral_n + 68.982147388461, scale=0.5),
         row("N_MgAc", neutral_n + 82.997797452921, scale=0.6),
@@ -435,10 +441,27 @@ def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity(
             neutral_n + 68.982147388461 + 1.997551271,
             scale=0.5 * 0.1101 / 0.7899,
         ),
+    ]
+    if independent_isotope:
+        rows.append(row("OtherRoot", 250.079826602091 - 1.003355, scale=10.0))
+    decisions, result = decide(*rows)
+    assert decisions["Na"][0] is (not independent_isotope)
+    if not independent_isotope:
+        assert decisions["Na"][4] == UNCONFIRMED
+        assert result.decisions[0].undetermined is True
+        assert decisions["N_Na"][2] == "Na"
+    review = next(
+        r
+        for r in result.review_rows
+        if r["review_kind"] == "ion_family_form_undetermined"
+        and r["feature_id"] == "Na"
     )
-    assert decisions["Na"][0] is True
-    assert decisions["Na"][4] == UNCONFIRMED
-    assert ("ion_family_form_undetermined", "Na") in review_kinds(result)
+    assert review["detail"] == (
+        "decision=drop" if independent_isotope else "decision=keep_candidate_mh"
+    )
+    assert all(d[2] is None or decisions[d[2]][0] for d in decisions.values())
+    reversed_decisions, _ = decide(*reversed(rows))
+    assert reversed_decisions == decisions
 
 
 def test_family_never_assigns_a_removed_protonated_candidate_as_representative():
