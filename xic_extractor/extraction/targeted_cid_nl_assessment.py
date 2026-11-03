@@ -99,10 +99,11 @@ def _assess_sample(
         evidence_refs=evidence_refs,
         candidate_peaks=candidate_peaks,
         policy=result.cid_nl_evaluation_receipt.support_policy,
+        # Context and physical availability can both narrow this population.
+        # Rebind retained events through the method owner for that exact subset.
         relations=(
             result.cid_nl_relations
-            if result.context_admissible_candidate_indexes
-            in (None, tuple(range(len(result.candidate_physical_evaluations))))
+            if len(candidate_peaks) == len(result.candidate_physical_evaluations)
             else None
         ),
     )

@@ -416,11 +416,16 @@ def build_targeted_capture_population(
                 )
             )
             continue
+        # Unavailable alternatives remain acquisition diagnostics; only an
+        # available physical evaluation can supply a numeric observation.
         admissible_evaluations = tuple(
             evaluation
             for index, evaluation in enumerate(result.candidate_physical_evaluations)
-            if result.context_admissible_candidate_indexes is None
-            or index in result.context_admissible_candidate_indexes
+            if evaluation.state == "available"
+            and (
+                result.context_admissible_candidate_indexes is None
+                or index in result.context_admissible_candidate_indexes
+            )
         )
         alternate_evaluations = tuple(
             evaluation
