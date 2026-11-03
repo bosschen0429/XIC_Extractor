@@ -707,8 +707,8 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
             amplitude * unit_area * 60, rel=0.15
         )
         assert result.selected_cid_nl_supported is (neutral_loss is not None)
-        assert result.targeted_candidate_assessment is not None
-        assert len(result.targeted_candidate_assessment.universe.segments) >= 1
+        # Batch selection consumes the retained candidate population.
+        assert result.targeted_candidate_assessment is None
     if reference_bias != 22.5:
         assert results["Treated"].reported_peak_area / results[
             "Control"

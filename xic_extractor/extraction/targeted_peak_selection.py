@@ -74,6 +74,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.targeted_context import (
     TargetedPopulationContext,
     describe_targeted_region,
+    observed_component_apex_rts,
 )
 from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
@@ -119,11 +120,14 @@ class TargetedCandidateAssessment:
             if self.method_relations is not None
             else frozenset()
         )
-        constituents = (
-            qualified_physical_segments(
+        components = (
+            observed_component_apex_rts(
                 prepared,
-                self.universe.segments,
-                selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY,
+                qualified_physical_segments(
+                    prepared,
+                    self.universe.segments,
+                    selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY,
+                ),
             )
             if prepared is not None
             else ()
@@ -148,7 +152,7 @@ class TargetedCandidateAssessment:
                     prepared,
                     candidate.physical_segment,
                     measurement_available=evaluation.state == "available",
-                    constituent_segments=constituents,
+                    component_apex_rts=components,
                     chemical_support=(
                         self.method_relations is not None
                         and index in self.method_relations.supported_candidate_indexes

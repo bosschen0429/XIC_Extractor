@@ -247,6 +247,7 @@ def enumerate_physical_segment_universe(
                 min_prominence_fraction_of_apex=LOCALIZED_VALLEY_MIN_DROP_FRACTION,
                 valley_min_duration_min=prepared.profile.boundary_min_sigma_rt,
                 min_prominence_noise_sigma=0.0,
+                localize_split_representatives=True,
             )
         enumeration = enumerate_chrom_peak_segments(
             rt,
@@ -706,12 +707,7 @@ def _physical_segment_support_failure(
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
     # establish the absence of an already observed morphology peak.
-    # A known-reference search localizes an existing contour, rather than
-    # discovering each local maximum. Surface ripples cannot erase that
-    # contour's acquired support and full rise/fall. Discovery and Backfill
-    # retain their nearest-valley contrast requirement.
-    if selection_policy_version != PHYSICAL_PEAK_REFERENCE_POLICY:
-        prominence = local_apex_prominence(signal, apex_offset)
+    prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
     minimum_contrast = (
@@ -721,8 +717,6 @@ def _physical_segment_support_failure(
         else DISCOVERY_MIN_CONTRAST_SIGMA
     )
     if prominence < minimum_contrast * noise_sigma:
-        if selection_policy_version == PHYSICAL_PEAK_REFERENCE_POLICY:
-            return "insufficient_reference_peak_contrast"
         return (
             "insufficient_backfill_peak_contrast"
             if selection_policy_version

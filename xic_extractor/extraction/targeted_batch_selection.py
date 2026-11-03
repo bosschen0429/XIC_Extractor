@@ -98,28 +98,6 @@ def complete_targeted_candidate_batch(
     batch = TargetedBatchContext(
         tuple(assessment.population_context() for assessment in assessments.values())
     )
-    selections = {}
-    for file in output.file_results:
-        for label, result in file.results.items():
-            key = (file.sample_name, label)
-            if (assessment := assessments.get(key)) is None:
-                continue
-            population = batch.population_by_cell[key]
-            if assessment.target.is_istd:
-                # Consume the established standard anchor, not a new batch
-                # choice, when interpreting another assay of the same ion.
-                evaluation = result.physical_evaluation
-                selections[key] = next(
-                    (
-                        region
-                        for region in population.regions
-                        if evaluation is not None
-                        and region.segment == evaluation.answer.selected_segment
-                    ),
-                    None,
-                )
-            else:
-                selections[key] = batch.select(population)
     factory = build_scoring_context_factory(config=config)
     files = []
     replaced_keys = {
@@ -156,15 +134,11 @@ def complete_targeted_candidate_batch(
                 target_reference_rt=assessment.preferred_rt,
                 candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
             )
-            population = assessment.population_context()
-            selected_region = selections[(file.sample_name, label)]
+            population = batch.population_by_cell[(file.sample_name, label)]
+            selected_region = batch.select(population)
             peak_result = assessment.score_selected_segment(
                 selected_segment=selected_region.segment if selected_region else None,
-                competing_region_count=len(
-                    batch.competing_regions(
-                        batch.population_by_cell[(file.sample_name, label)]
-                    )
-                ),
+                competing_region_count=len(batch.competing_regions(population)),
                 scoring_context_builder=builder,
                 istd_confidence_note=assessment.istd_confidence_note,
                 paired_istd_anchor_rt=assessment.paired_istd_anchor_rt,
@@ -307,5 +281,13 @@ def complete_targeted_candidate_batch(
                     (reason,),
                     ("targeted_shared_ion_region",) if different_reference else (),
                 )
+        # Retained signals and alternatives serve batch selection only. Do not
+        # carry every candidate's arrays and evaluations into publication.
+        results = {
+            label: replace(result, targeted_candidate_assessment=None)
+            if result.targeted_candidate_assessment is not None
+            else result
+            for label, result in results.items()
+        }
         files.append(replace(file, results=results))
     return RunOutput(file_results=files, diagnostics=diagnostics)

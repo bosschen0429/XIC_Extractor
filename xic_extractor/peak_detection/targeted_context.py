@@ -7,6 +7,7 @@ retention-time calibrator merely because it dominates its own XIC.
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, replace
 from functools import cached_property
 from statistics import median
@@ -56,7 +57,7 @@ def describe_targeted_region(
     measurement_available: bool,
     chemical_support: bool = False,
     chemical_set_membership: bool = False,
-    constituent_segments: tuple[PhysicalSegment, ...] | None = None,
+    component_apex_rts: tuple[float, ...] | None = None,
 ) -> TargetedRegionContext:
     """Retain body support and shape, not just the apex's quality category."""
     left, right = segment.start_index, segment.end_index
@@ -84,14 +85,9 @@ def describe_targeted_region(
         acquired_rt_end_min=float(rt[acquired][-1]) if np.any(acquired) else None,
         acquired_modulation_observed=_acquired_modulation_observed(raw),
         observed_component_count=(
-            sum(
-                segment.left_rt_min <= child.apex_rt_min <= segment.right_rt_min
-                and _acquired_modulation_observed(
-                    np.asarray(prepared.raw[child.start_index : child.end_index])
-                )
-                for child in constituent_segments
-            )
-            if constituent_segments is not None
+            bisect_right(component_apex_rts, segment.right_rt_min)
+            - bisect_left(component_apex_rts, segment.left_rt_min)
+            if component_apex_rts is not None
             else 1
         ),
         body_support=segment.height * coverage * longest_fraction,
@@ -100,6 +96,21 @@ def describe_targeted_region(
         measurement_available=measurement_available,
         chemical_support=chemical_support,
         chemical_set_membership=chemical_set_membership,
+    )
+
+
+def observed_component_apex_rts(
+    prepared: PreparedSignal, constituents: tuple[PhysicalSegment, ...]
+) -> tuple[float, ...]:
+    """Sorted apexes of constituents with acquired modulation, assessed once."""
+    return tuple(
+        sorted(
+            child.apex_rt_min
+            for child in constituents
+            if _acquired_modulation_observed(
+                np.asarray(prepared.raw[child.start_index : child.end_index])
+            )
+        )
     )
 
 

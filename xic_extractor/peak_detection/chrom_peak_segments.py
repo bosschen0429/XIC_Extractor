@@ -46,6 +46,9 @@ class ChromPeakSegmentPolicy:
     min_prominence_fraction_of_envelope: float = 0.04
     min_prominence_fraction_of_apex: float = 0.0
     valley_min_duration_min: float | None = None
+    # Restore a coarse-basin split from each connected group's representative
+    # rather than requiring the whole group inside the basin.
+    localize_split_representatives: bool = False
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -612,8 +615,14 @@ def _restore_rt_envelope_clear_splits(
         )
         enclosed = tuple(
             (group_index, representative)
-            for group_index, representative in enumerate(representatives)
-            if left <= representative.index < right
+            for group_index, (connected, representative) in enumerate(
+                zip(connected_groups, representatives, strict=True)
+            )
+            if (
+                left <= representative.index < right
+                if policy.localize_split_representatives
+                else left <= connected[0].index <= connected[-1].index < right
+            )
         )
         if len(enclosed) < 2:
             continue
@@ -627,8 +636,8 @@ def _restore_rt_envelope_clear_splits(
         ):
             continue
         restored.pop(envelope_seed.index)
-        # The representative locates the lobe. Remote, brief ripples connected
-        # to it must not veto a sustained split inside this coarse basin, nor
+        # With localized representatives, remote brief ripples connected to a
+        # lobe neither veto a sustained split inside this coarse basin nor
         # become additional representatives in neighboring coarse basins.
         for _, representative in enclosed:
             restored[representative.index] = representative

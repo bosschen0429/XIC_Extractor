@@ -443,6 +443,7 @@ def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
             morphology_min_sigma_rt=0.08,
             min_prominence_fraction_of_apex=0.15,
             valley_min_duration_min=0.08,
+            localize_split_representatives=True,
         ),
     )
 
