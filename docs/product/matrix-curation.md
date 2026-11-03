@@ -41,8 +41,13 @@ it.
 
 ### Same-compound collapse
 
-`same_compound` keeps one row per compound when isotope, adduct and dimer rows
-of it are separate Matrix rows. It has no parameters; its thresholds are fixed
+`same_compound` excludes supported isotope, adduct and dimer derivatives from
+the statistical Matrix. The analysis aims to retain [M+H]⁺, not substitute a
+stronger Na/K or other adduct as the quantitative representative. Classifying
+a row as a derivative is separate from identifying its element or assigning
+it to exactly one parent. An unresolved element or parent does not rescue a
+supported derivative; an unclassified feature is not assumed to be an artifact.
+It has no parameters; its thresholds are fixed
 and recorded in the summary. It needs the run's `cid_nl_explanation.sqlite` in
 the current compact review format and is unavailable without it.
 
@@ -79,22 +84,42 @@ The heavier row is removed when it relates to the lighter one by:
 | `13C2_M+2` | +2.006710 |
 | `13C_z2` | +0.501678 (z=2) |
 | `41K` | +1.998119, with light/heavy median 11–18 and ≥80% of samples within 0.5–2× of 13.857 |
+| `M+2_unassigned` | +1.997551; intensity-compatible with one/two Mg or two K, without assigning the element |
 | `[M+Na]+` | +21.981944 |
 | `[M+K]+` | +37.955882 |
 | `[M+NH4]+` | +17.026549 |
 | `[2M+H]+` | 2x − 1.00727647, x the lighter row's m/z |
+| `[M+Mg+HCOO]+` | +67.974871 |
+| `[M+Mg+CH3COO]+` | +81.990521 |
+| `[M+Ca+HCOO]+` | +83.952420 |
+| `[M+Ca+CH3COO]+` | +97.968070 |
+
+`M+2_unassigned` requires the isotope MAD limit above plus a light/heavy
+median within 0.8–1.3× one of 7.1744 (one Mg), 3.5872 (two Mg) or 6.9285
+(two K), and ≥80% of ratio samples within 0.5–2× that **same** model.
+The ratios use [NIST Mg](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Mg)
+and [K](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=K)
+abundances. This is an intensity- and mass-compatible isotope classification,
+not an elemental identification; overlapping envelopes or other elements may
+give the same evidence. Its relation is always marked undetermined. These
+thresholds have local 8RAW evidence, not cross-batch validation. Mg/Ca relation
+names likewise describe compatible mass models, not confirmed chemical identities.
 
 +CH₂, +H₂, +CH₂O, +CH₃OH and H₂O loss are only reviewed; they may be real
 chemical differences. +116.04734 (a second dR) is only annotated in the
-relation table. Other ≈1.998 pairs (65Cu, 37Cl or unknown) are reviewed.
+relation table. ≈1.998 pairs not explained by either isotope rule are reviewed.
 
 Representatives are rows that no folding relation derives from another row. A
 row is removed when folding relations, each passing its own checks, reach it
-from exactly one representative and it co-elutes directly with that
-representative by the rule above. A sodium adduct's 13C isotope is therefore
+from at least one root and it co-elutes directly with that root by the rule
+above. With one directly co-eluting root its representative is recorded. With
+several, it is still excluded: its representative field is blank, its reason
+is `derived_representative_undetermined`, and its candidate roots are recorded
+in the review with `decision=drop`. The candidate roots are not merged or
+arbitrarily selected. A sodium adduct's 13C isotope is therefore
 removed into the protonated row through the adduct, while a row that co-elutes
 with the representative only through other rows (A–B and B–C 2.4 s apart, A–C
-4.8 s) is kept and reviewed, as is a row reached from two representatives. When
+4.8 s) is kept and reviewed. When
 several relations fit one pair they are all recorded and
 `same_compound_relation_undetermined` is TRUE. Results depend on m/z and cell
 evidence only, never on row order, `feature_id` or the order of the relation
@@ -103,7 +128,8 @@ list.
 A representative's ion form is `confirmed_[M+H]+` when an adduct or dimer row
 derived directly from it was removed into it, and `unconfirmed` otherwise.
 Isotopes are not evidence of the ion form, and no other form is inferred.
-`unconfirmed` is not reviewed.
+`unconfirmed` is not reviewed. Retained unclassified roots are not claimed to
+be known [M+H]⁺; this step does not perform complete ion identification.
 
 A representative removed by another enabled step is not replaced by one of its
 members, so the whole group may leave the curated Matrix. The review lists each
@@ -157,8 +183,8 @@ the source folder.
 | --- | --- |
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
-| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, `center_mz_basis`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it removed a row |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 not 41K, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, competing representatives, no direct co-elution with the representative, representative dropped while a member passes, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, `center_mz_basis`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), no direct co-elution with a root, representative dropped while a member passes, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
@@ -168,12 +194,15 @@ the source folder.
 `same_compound_representative_feature_id` (removed rows),
 `same_compound_relation` and `same_compound_via_feature_ids` (the relations
 from the rows it derives from, and those rows when they are not the
-representative), `same_compound_relation_undetermined`,
+representative, or all direct parents when attribution is unresolved),
+`same_compound_relation_undetermined` (also TRUE for `M+2_unassigned` or an
+unassigned parent),
 `same_compound_ion_form` and `same_compound_supporting_relations` (kept rows:
 how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
-relation, removals through the group, review counts and `empty_group_count` (groups with no row left), and
+relation, removals through the group, `removed_representative_undetermined_count`,
+review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.
 `source_matrix_row_index` is the 1-based row position in the source Matrix;
 `feature_id` is scoped by that Matrix and does not assert identity across
@@ -205,9 +234,9 @@ headers. The module entry is `python -m scripts.run_matrix_curation`.
 
 `tests/test_same_compound.py` checks each folding relation, the dr95
 counterexamples (15N-like pairs with too strong heavier rows, +116.047, ≈1.998
-pairs at ratio 7–10), per-sample abundance, direct co-elution with the
+pairs incompatible with the intensity models), per-sample abundance, direct co-elution with the
 representative, removal through the group, ion-form
-labels, rule-order, row-order and ID invariance, backfill exclusion, internal
+labels, unassigned isotope and parent exclusion, rule-order, row-order and ID invariance, backfill exclusion, internal
 standard matching and step independence. Its thresholds come from a read-only
 dr95 diagnostic, not cross-batch validation.
 `tests/test_matrix_curation.py` checks independently calculated fractions and

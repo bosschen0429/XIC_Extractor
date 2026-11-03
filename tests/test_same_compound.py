@@ -105,6 +105,10 @@ def review_kinds(result):
         ("[M+K]+", 300.0, 337.955882, 0.5, CONFIRMED_MH),
         ("[M+NH4]+", 300.0, 317.026549, 0.5, CONFIRMED_MH),
         ("[2M+H]+", 300.0, 2 * 300.0 - 1.00727647, 0.3, CONFIRMED_MH),
+        ("[M+Mg+HCOO]+", 300.0, 367.974871, 0.3, CONFIRMED_MH),
+        ("[M+Mg+CH3COO]+", 300.0, 381.990521, 0.3, CONFIRMED_MH),
+        ("[M+Ca+HCOO]+", 300.0, 383.952420, 0.3, CONFIRMED_MH),
+        ("[M+Ca+CH3COO]+", 300.0, 397.968070, 0.3, CONFIRMED_MH),
     ],
 )
 def test_each_folding_relation_removes_the_heavier_row(
@@ -165,7 +169,6 @@ def test_dr116_difference_is_only_annotated():
 @pytest.mark.parametrize(
     "ratios",
     [
-        (1 / 8,) * 6,
         (1 / 10,) * 6,
         # Median 14, but only four of six samples lie within 0.5-2x 13.857.
         (1 / 14, 1 / 14, 1 / 14, 1 / 14, 1 / 3, 1 / 3),
@@ -177,6 +180,47 @@ def test_1998_pairs_without_potassium_ratio_are_reviewed_not_folded(ratios):
     assert decisions["H"][:2] == (True, "no_folding_relation")
     assert outcome(result, "41K") == {"ratio_not_41K"}
     assert review_kinds(result) == [("unexplained_1998_not_41K", "H")]
+
+
+@pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93])
+def test_unassigned_m_plus_2_is_removed_without_claiming_an_element(light_heavy):
+    # 24Mg/26Mg = 7.174; two Mg give 3.587; two K give 6.929.
+    # The latter overlaps one Mg: identity ambiguity is not a keep decision.
+    decisions, result = decide(
+        row("L", 343.118794),
+        row("H", 345.116345, scale=1 / light_heavy),
+    )
+
+    assert decisions["H"][:4] == (
+        False,
+        "derived_from_representative",
+        "L",
+        ("M+2_unassigned",),
+    )
+    assert result.decisions[1].undetermined is True
+    assert decisions["L"][4] == UNCONFIRMED
+    assert outcome(result, "41K") == {"ratio_not_41K"}
+    assert result.review_rows == ()
+
+
+def test_unassigned_isotope_checks_individual_ratios_not_just_median_and_mad():
+    # Median 7.2 and MAD zero must not hide two samples 10x too abundant.
+    decisions, result = decide(
+        row("L", 343.118794),
+        row("H", 345.116345, ratios=(1 / 7.2,) * 4 + (1 / 0.72,) * 2),
+    )
+    assert decisions["H"][0] is True
+    assert outcome(result, "M+2_unassigned") == {"isotope_ratio_incompatible"}
+
+
+def test_element_uncertainty_follows_a_derivative_path():
+    decisions, result = decide(
+        row("L", 300.0),
+        row("M2", 301.997551, scale=1 / 7.174),
+        row("M3", 303.000906, scale=0.1 / 7.174),
+    )
+    assert decisions["M3"][:3] == (False, "derived_through_group", "L")
+    assert result.decisions[2].undetermined is True
 
 
 def test_removed_row_coelutes_directly_with_its_representative():
@@ -261,7 +305,7 @@ def test_several_passing_mass_hypotheses_do_not_depend_on_rule_order():
     )
 
 
-def test_competing_representatives_keep_the_row_for_review():
+def test_competing_representatives_do_not_rescue_a_supported_derivative():
     # H is A's 13C isotope and B's sodium adduct.
     decisions, result = decide(
         row("A", 300.0),
@@ -269,9 +313,37 @@ def test_competing_representatives_keep_the_row_for_review():
         row("H", 301.003355, scale=0.15),
     )
 
-    assert decisions["H"][:2] == (True, "competing_representatives")
-    assert ("competing_representatives", "H") in review_kinds(result)
-    assert decisions["A"][:2] == decisions["B"][:2] == (True, "no_folding_relation")
+    assert decisions["H"][:3] == (False, "derived_representative_undetermined", None)
+    assert result.decisions[2].undetermined is True
+    assert ("derived_representative_undetermined", "H") in review_kinds(result)
+    assert decisions["A"][0] is decisions["B"][0] is True
+    assert all(r["used_for_collapse"] == "TRUE" for r in result.relation_rows)
+
+
+def test_mg_ca_family_keeps_protonated_row_and_removes_unassigned_isotope():
+    decisions, result = decide(
+        row("MH", 261.127824),
+        row("Mg", 343.118345, scale=0.43),
+        row("Ca", 359.095894, scale=0.1),
+        row("Mg_M2", 345.115896, scale=0.43 / 7.174),
+    )
+    assert decisions["MH"][0] is True
+    assert decisions["MH"][4] == CONFIRMED_MH
+    assert all(not decisions[f][0] for f in ("Mg", "Ca", "Mg_M2"))
+    assert decisions["Mg_M2"][:3] == (False, "derived_through_group", "MH")
+    assert result.decisions[3].undetermined is True
+
+
+def test_competing_paths_still_need_direct_coelution_with_a_root():
+    decisions, result = decide(
+        row("A", 300.0),
+        row("B", 279.021411),
+        row("P", 301.003355, scale=0.15, shift_sec=2.4),
+        row("H", 302.006710, scale=0.0225, shift_sec=4.8),
+    )
+    assert decisions["P"][:3] == (False, "derived_representative_undetermined", None)
+    assert decisions["H"][:2] == (True, "no_direct_coelution_with_representative")
+    assert ("no_direct_coelution_with_representative", "H") in review_kinds(result)
 
 
 def test_backfilled_cells_never_count_toward_coelution():
@@ -355,6 +427,11 @@ def _scenario():
         row("X", 900.0, base_rt=30.0),
         row("Y", 901.000195, scale=0.1, base_rt=30.0),
         row("Z", 500.0, base_rt=40.0),
+        row("root1", 600.0, base_rt=50.0),
+        row("root2", 579.021411, base_rt=50.0),
+        row("artifact", 601.003355, scale=0.15, base_rt=50.0),
+        row("Mg", 343.118794, base_rt=60.0),
+        row("M2", 345.116345, scale=1 / 7.174, base_rt=60.0),
     )
 
 
@@ -555,6 +632,59 @@ def _export(tmp_path, name, steps, istd=None):
         {row["feature_id"]: row for row in decisions},
         json.loads(summary.read_text(encoding="utf-8")),
     )
+
+
+def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "alignment"
+    source.mkdir()
+    feature_rows = (
+        row("F000001", 300.0, samples=STUDY),
+        row("F000002", 279.021411, samples=STUDY),
+        row("F000003", 301.003355, samples=STUDY, scale=0.15),
+    )
+    matrix, review = [], []
+    for index, (feature, cells) in enumerate(feature_rows, 1):
+        sample_values = {sample: str(cells[sample].value) for sample in STUDY}
+        matrix.append(
+            {
+                "Mz": public_matrix_mz_text(repr(feature.matrix_mz)),
+                "RT": "10.0",
+                **sample_values,
+            }
+        )
+        review.append(
+            current_matrix_review_row(
+                index=index,
+                mz=repr(feature.matrix_mz),
+                rt="10.0",
+                feature_id=feature.feature_id,
+                sample_values=sample_values,
+            )
+        )
+    write_tsv(source / "alignment_matrix.tsv", matrix, ("Mz", "RT", *STUDY))
+    write_tsv(source / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    _samples(tmp_path / "samples.tsv")
+    monkeypatch.setattr(
+        "xic_extractor.matrix_curation.export.cell_evidence_problem", lambda source: ""
+    )
+    monkeypatch.setattr(
+        "xic_extractor.matrix_curation.export.load_cell_evidence",
+        lambda source, features: tuple(cells for _, cells in feature_rows),
+    )
+
+    output, decisions, summary = _export(tmp_path, "curated", {"same_compound": {}})
+    assert decisions["F000003"]["decision"] == "drop"
+    assert decisions["F000003"]["same_compound_representative_feature_id"] == ""
+    assert decisions["F000003"]["same_compound_via_feature_ids"] == "F000001;F000002"
+    _, kept = read_tsv_with_header(output / "analysis_matrix.tsv")
+    assert [r["Mz"] for r in kept] == ["300.0000", "279.0214"]
+    _, reviews = read_tsv_with_header(output / "same_compound_review.tsv")
+    assert reviews[0]["related_feature_ids"] == "F000001;F000002"
+    assert reviews[0]["detail"] == "decision=drop"
+    assert summary["steps"][0]["removed_representative_undetermined_count"] == 1
+    assert summary["steps"][0]["confirmed_mh_count"] == 1
 
 
 def test_steps_judge_independently_and_istd_overrides_their_conjunction(

@@ -1,9 +1,9 @@
 """Fold Matrix rows of one compound into one representative row.
 
-Isotope, adduct and dimer rows are removed only when they relate directly to
-the row kept for them, with co-elution and a stable intensity ratio in samples
-where both rows were detected directly. Mass relations compare row-center m/z;
-they are not per-sample mass evidence.
+Isotope, adduct and dimer rows are excluded when supported derivation paths
+reach them from a directly co-eluting root. Neither an exact element identity
+nor a unique root is required to exclude a derivative. Mass relations compare
+row-center m/z; they are not per-sample mass evidence.
 """
 
 from __future__ import annotations
@@ -38,8 +38,12 @@ MIN_SUPPORT_FRACTION = 0.8
 ISOTOPE_MAX_LOG_MAD = 0.1
 OTHER_MAX_LOG_MAD = 0.15
 K41_MEDIAN_RANGE = (11.0, 18.0)
-K41_SAMPLE_FACTOR = 2.0
-K41_SAMPLE_FRACTION = 0.8
+ISOTOPE_RATIO_SAMPLE_FACTOR = 2.0
+ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
+# NIST: one 26Mg substitution in one/two Mg atoms, or one 41K in two K.
+# These overlapping models classify a derivative, not its element identity.
+UNASSIGNED_ISOTOPE_RATIOS = (0.7899 / 0.1101, 0.7899 / (2 * 0.1101), K39_PER_K41 / 2)
+UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
 # A kept representative this much weaker than a removed member is reviewed.
 WEAK_REPRESENTATIVE_RATIO = 0.1
 RECURRING_DELTA_WIDTH = 0.005
@@ -88,10 +92,15 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("13C2_M+2", "isotope", 2.006710, abundance=(12.0, C13_PER_C12, 2)),
     Relation("13C_z2", "isotope", 0.501678, charge=2, abundance=(12.0, C13_PER_C12, 1)),
     Relation("41K", "isotope", 1.998119),
+    Relation("M+2_unassigned", "isotope", 1.997551),
     Relation("[M+Na]+", "adduct", 21.981944),
     Relation("[M+K]+", "adduct", 37.955882),
     Relation("[M+NH4]+", "adduct", 17.026549),
     Relation("[2M+H]+", "adduct", None),
+    Relation("[M+Mg+HCOO]+", "adduct", 67.974871),
+    Relation("[M+Mg+CH3COO]+", "adduct", 81.990521),
+    Relation("[M+Ca+HCOO]+", "adduct", 83.952420),
+    Relation("[M+Ca+CH3COO]+", "adduct", 97.968070),
     Relation("+CH2", "review", 14.015650),
     Relation("+H2", "review", 2.015650),
     Relation("+CH2O", "review", 30.010565),
@@ -186,15 +195,32 @@ def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) ->
     if relation.key == "41K":
         low, high = K41_MEDIAN_RANGE
         within = sum(
-            K39_PER_K41 / K41_SAMPLE_FACTOR <= ratio <= K39_PER_K41 * K41_SAMPLE_FACTOR
+            K39_PER_K41 / ISOTOPE_RATIO_SAMPLE_FACTOR
+            <= ratio
+            <= K39_PER_K41 * ISOTOPE_RATIO_SAMPLE_FACTOR
             for ratio in pair.ratios
         )
         median = statistics.median(pair.ratios)
-        if not (low <= median <= high) or within < K41_SAMPLE_FRACTION * len(
+        if not (low <= median <= high) or within < ISOTOPE_RATIO_SAMPLE_FRACTION * len(
             pair.ratios
         ):
             return "ratio_not_41K"
         return "collapse"
+    if relation.key == "M+2_unassigned":
+        low, high = UNASSIGNED_ISOTOPE_MEDIAN_FACTORS
+        median = statistics.median(pair.ratios)
+        for expected in UNASSIGNED_ISOTOPE_RATIOS:
+            within = sum(
+                expected / ISOTOPE_RATIO_SAMPLE_FACTOR
+                <= ratio
+                <= expected * ISOTOPE_RATIO_SAMPLE_FACTOR
+                for ratio in pair.ratios
+            )
+            if low * expected <= median <= high * expected and (
+                within >= ISOTOPE_RATIO_SAMPLE_FRACTION * len(pair.ratios)
+            ):
+                return "collapse"
+        return "isotope_ratio_incompatible"
     ceiling = relation.abundance_ceiling(light_mz)
     if ceiling is not None and any(1.0 / ratio > ceiling for ratio in pair.ratios):
         return "isotope_abundance_exceeded"
@@ -210,7 +236,7 @@ class RowDecision:
     relations: tuple[str, ...] = ()
     # Those rows, when they are not the representative itself.
     via: tuple[int, ...] = ()
-    # A pair that several relations explain: e.g. 13C or 15N at high m/z.
+    # Element or attribution unresolved; this does not imply keep=True.
     undetermined: bool = False
     ion_form: str = ""
     member_count: int = 0
@@ -230,9 +256,10 @@ def collapse_same_compound(
 ) -> SameCompoundResult:
     """Decide which rows fold into which representative.
 
-    A removed row is reached from exactly one representative through folding
-    relations, each passing its own checks, and co-elutes directly with that
-    representative; rows that only co-elute through others are kept. Results
+    A removed row is reached from at least one directly co-eluting root through
+    folding relations, each passing its own checks. Multiple roots leave its
+    attribution blank, not its artifact classification undecided. Rows that
+    only co-elute through others are kept. Results
     depend only on m/z, cells and relations, never on row order, feature ID or
     the order of the relation list.
     """
@@ -274,48 +301,66 @@ def collapse_same_compound(
                     stack.append(child)
                     reached_from[child].add(root)
     representative: dict[int, int] = {}
+    ambiguous_roots: dict[int, set[int]] = {}
     unresolved: dict[int, str] = {}
     for heavy in parents:
-        candidates = reached_from[heavy]
-        if len(candidates) != 1:
-            unresolved[heavy] = "competing_representatives"
-            continue
-        root = next(iter(candidates))
-        if (root, heavy) not in evidence:
-            evidence[(root, heavy)] = pair_evidence(cells[root], cells[heavy])
-        if (root, heavy) in edges or evidence[(root, heavy)].coelutes:
-            representative[heavy] = root
+        coeluting_roots = set()
+        for root in reached_from[heavy]:
+            if (root, heavy) not in evidence:
+                evidence[(root, heavy)] = pair_evidence(cells[root], cells[heavy])
+            if evidence[(root, heavy)].coelutes:
+                coeluting_roots.add(root)
+        if len(coeluting_roots) == 1:
+            representative[heavy] = next(iter(coeluting_roots))
+        elif coeluting_roots:
+            ambiguous_roots[heavy] = coeluting_roots
         else:
             unresolved[heavy] = "no_direct_coelution_with_representative"
+    removed = representative.keys() | ambiguous_roots.keys()
     members: dict[int, list[int]] = defaultdict(list)
     for heavy, root in representative.items():
         members[root].append(heavy)
 
+    # Element/relationship uncertainty travels with the derivation path.
+    # A 13C child of an unassigned M+2 ion is not a confirmed 13C-only identity.
+    uncertain_paths: set[int] = set()
+    for index in sorted(parents, key=lambda index: mz[index]):
+        if index in ambiguous_roots or any(
+            parent in uncertain_paths
+            or len(edges[(parent, index)]) > 1
+            or "M+2_unassigned" in edges[(parent, index)]
+            for parent in parents[index]
+        ):
+            uncertain_paths.add(index)
+
     decisions = []
     for index in range(len(features)):
-        if index in representative:
-            root = representative[index]
+        if index in removed:
+            assigned_root = representative.get(index)
             sources = sorted(parents[index])
             labels = [edges[(parent, index)] for parent in sources]
             decisions.append(
                 RowDecision(
                     keep=False,
                     reason=(
-                        "derived_from_representative"
-                        if (root, index) in edges
+                        "derived_representative_undetermined"
+                        if assigned_root is None
+                        else "derived_from_representative"
+                        if (assigned_root, index) in edges
                         else "derived_through_group"
                     ),
-                    representative=root,
+                    representative=assigned_root,
                     relations=tuple(sorted({key for keys in labels for key in keys})),
-                    via=tuple(parent for parent in sources if parent != root),
-                    undetermined=any(len(keys) > 1 for keys in labels),
+                    via=tuple(parent for parent in sources if parent != assigned_root),
+                    undetermined=index in uncertain_paths,
                 )
             )
             continue
         confirmed = any(
             (index, member) in edges
             and all(by_key[key].kind == "adduct" for key in edges[(index, member)])
-            for member in members.get(index, ())
+            for member in children.get(index, ())
+            if member in removed
         )
         decisions.append(
             RowDecision(
@@ -330,7 +375,7 @@ def collapse_same_compound(
         )
 
     relation_rows = _relation_rows(
-        features, matches, outcomes, evidence, representative, by_key
+        features, matches, outcomes, evidence, removed, by_key
     )
     review_rows = _review_rows(
         features,
@@ -341,6 +386,8 @@ def collapse_same_compound(
         edges,
         representative,
         unresolved,
+        removed,
+        ambiguous_roots,
         parents,
     )
     return SameCompoundResult(tuple(decisions), relation_rows, review_rows)
@@ -375,7 +422,7 @@ def _relation_rows(
     matches: Mapping[tuple[int, int], Mapping[str, float]],
     outcomes: Mapping[tuple[int, int], Mapping[str, str]],
     evidence: Mapping[tuple[int, int], PairEvidence],
-    representative: Mapping[int, int],
+    removed: Container[int],
     by_key: Mapping[str, Relation],
 ) -> tuple[dict[str, object], ...]:
     rows = []
@@ -412,9 +459,7 @@ def _relation_rows(
                     "outcome": outcome,
                     "used_for_collapse": (
                         "TRUE"
-                        if outcome == "collapse"
-                        and heavy in representative
-                        and representative.get(light, light) == representative[heavy]
+                        if outcome == "collapse" and heavy in removed
                         else "FALSE"
                     ),
                 }
@@ -440,6 +485,8 @@ def _review_rows(
     edges: Mapping[tuple[int, int], tuple[str, ...]],
     representative: Mapping[int, int],
     unresolved: Mapping[int, str],
+    removed: Container[int],
+    ambiguous_roots: Mapping[int, set[int]],
     parents: Mapping[int, set[int]],
 ) -> tuple[dict[str, object], ...]:
     fid = [feature.feature_id for feature in features]
@@ -460,9 +507,13 @@ def _review_rows(
         same_group = representative.get(light, light) == representative.get(
             heavy, heavy
         )
-        both_removed = light in representative and heavy in representative
+        both_removed = light in removed and heavy in removed
         if same_group:
             continue
+        isotope_explained = any(
+            outcomes[(light, heavy)].get(label) == "collapse"
+            for label in ("41K", "M+2_unassigned")
+        )
         for key in sorted(matched):
             outcome = outcomes[(light, heavy)][key]
             if both_removed and key != "41K":
@@ -473,7 +524,7 @@ def _review_rows(
                 "median_light_heavy_ratio": _number(pair.median_ratio),
                 "log_ratio_mad": _number(pair.log_mad),
             }
-            if key == "41K" and pair.coelutes and outcome != "collapse":
+            if key == "41K" and pair.coelutes and not isotope_explained:
                 add("unexplained_1998_not_41K", heavy, [light], **detail)
             elif outcome in {"ratio_unstable", "ratio_unavailable"}:
                 add("unstable_ratio", heavy, [light], **detail)
@@ -504,6 +555,13 @@ def _review_rows(
             )
     for heavy, reason in unresolved.items():
         add(reason, heavy, sorted(parents[heavy], key=lambda index: fid[index]))
+    for heavy, candidates in ambiguous_roots.items():
+        add(
+            "derived_representative_undetermined",
+            heavy,
+            sorted(candidates, key=lambda index: fid[index]),
+            decision="drop",
+        )
     rows.sort(
         key=lambda row: (
             str(row["review_kind"]),
@@ -513,7 +571,7 @@ def _review_rows(
         )
     )
     # A frequency table, most frequent difference first.
-    rows.extend(_recurring_differences(features, cells, matches, representative))
+    rows.extend(_recurring_differences(features, cells, matches, removed))
     return tuple(rows)
 
 
@@ -692,8 +750,9 @@ class SameCompoundStep:
     key = "same_compound"
     label = "同化合物收斂"
     description = (
-        "同一化合物的同位素、Na⁺／K⁺／NH₄⁺ adduct 與 [2M+H]⁺ 列只留一列，"
-        "優先保留有 adduct 證據的 [M+H]⁺。只計直接偵測格：同一樣本 apex 差 "
+        "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct 與二聚體衍生列，"
+        "保留有證據的 [M+H]⁺，不改選較強的其他離子。元素或母列未定不阻擋排除。"
+        "只計直接偵測格：同一樣本 apex 差 "
         "≤3 秒、強度比穩定，同位素另檢查天然豐度。質量關係以列中心 m/z 比對。"
         "需要該次分析的 cid_nl_explanation.sqlite。"
     )
@@ -752,8 +811,14 @@ class SameCompoundStep:
                     "isotope_max_log_ratio_mad": ISOTOPE_MAX_LOG_MAD,
                     "other_max_log_ratio_mad": OTHER_MAX_LOG_MAD,
                     "k41_median_light_heavy_range": list(K41_MEDIAN_RANGE),
-                    "k41_sample_factor": K41_SAMPLE_FACTOR,
-                    "k41_sample_fraction": K41_SAMPLE_FRACTION,
+                    "k41_sample_factor": ISOTOPE_RATIO_SAMPLE_FACTOR,
+                    "k41_sample_fraction": ISOTOPE_RATIO_SAMPLE_FRACTION,
+                    "unassigned_isotope_light_heavy_ratios": list(
+                        UNASSIGNED_ISOTOPE_RATIOS
+                    ),
+                    "unassigned_isotope_median_factors": list(
+                        UNASSIGNED_ISOTOPE_MEDIAN_FACTORS
+                    ),
                 },
                 "removed_feature_count": sum(
                     not decision.keep for decision in result.decisions
@@ -762,11 +827,15 @@ class SameCompoundStep:
                     decision.member_count > 0 for decision in result.decisions
                 ),
                 "confirmed_mh_count": sum(
-                    decision.member_count > 0 and decision.ion_form == CONFIRMED_MH
+                    decision.keep and decision.ion_form == CONFIRMED_MH
                     for decision in result.decisions
                 ),
                 "removed_through_group_count": sum(
                     decision.reason == "derived_through_group"
+                    for decision in result.decisions
+                ),
+                "removed_representative_undetermined_count": sum(
+                    decision.reason == "derived_representative_undetermined"
                     for decision in result.decisions
                 ),
                 "removed_by_relation": dict(sorted(used.items())),
