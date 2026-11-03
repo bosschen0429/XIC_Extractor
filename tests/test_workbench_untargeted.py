@@ -625,6 +625,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         callback(*args)
         assert jobs.state()["results"]["untargeted"] == {
             "method_ppm": 12.5,
+            "samples": None,
             "review_paths": {
                 "raw_dir": str(tmp_path / "raws"),
                 "dll_dir": str(tmp_path / "dll"),
