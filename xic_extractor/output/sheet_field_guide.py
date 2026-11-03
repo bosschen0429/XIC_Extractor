@@ -28,13 +28,18 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "面積",
         "樣本 / （每個目標一欄）",
         "已保存峰面積；共用同一 ISTD 的 analyte 排在一起，後面接該 ISTD。"
-        "灰字＝未計入，數值保留；ND＝未偵測。",
+        "灰字＝未計入，數值保留；ND＝未偵測；空白＝未提供定量值，原因見 XIC Results。",
         "counts·s",
     ),
     ("XIC Results", "SampleName", "樣本名稱；與 Target 共同識別一筆結果。", ""),
     ("XIC Results", "Target", "目標名稱；對應 Targets 的 Label。", ""),
     ("XIC Results", "RT", "所選峰的頂點保留時間。", "min"),
-    ("XIC Results", "Area", "所選峰的面積。有數值不代表已計入。", "counts·s"),
+    (
+        "XIC Results",
+        "Area",
+        "所選峰的面積。有數值不代表已計入；不可可靠定量時留白，不代表化合物不存在。",
+        "counts·s",
+    ),
     ("XIC Results", "IntSmoothed", "平滑後的峰頂強度；不是峰面積。", "counts"),
     (
         "XIC Results",

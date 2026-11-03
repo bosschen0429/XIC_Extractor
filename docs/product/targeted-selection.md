@@ -109,6 +109,12 @@ than erasing area. Neither a shared total nor a positive NL establishes pure
 constituent area. Existing workbook columns carry the values, counting state,
 and explicit review explanations; no additional output columns are required.
 
+Retaining a measured region does not guarantee numeric publication. The
+[Targeted quantitative-support policy](decision-policy.md#targeted-quantitative-support)
+can withhold an unreliable low-S/N, sparsely and discontinuously acquired value
+while retaining its trace and diagnostic integral. This does not change selection,
+integration boundaries, or the method's individual/set-level evidence attribution.
+
 ### Reference input diagnostics
 
 `tools.diagnostics.check_reference_consistency` checks target CSV references

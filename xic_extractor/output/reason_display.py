@@ -105,6 +105,7 @@ BasisKind = Literal[
     "no_paired_istd",
     "other_not_counted",
     "insufficient_evidence",
+    "not_quantifiable",
 ]
 # Bases that already judge the MS1 peak shape, so a shape review restates them.
 _SHAPE_BASES: frozenset[BasisKind] = frozenset(
@@ -122,6 +123,10 @@ class DecisionBasis:
 
 def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
     """Name the evidence the saved decision rests on, for a reader to test."""
+    if row.get("Projection Reason") == "finalized_not_quantifiable":
+        return DecisionBasis(
+            "not_quantifiable", "觀察到 MS1 訊號，但量測支持不足；面積留白"
+        )
     support = reasons(row, "Projection Support Reasons")
     not_counted = reasons(row, "Projection Not Counted Reasons")
     if str(row.get("Counted Detection", "")).upper() == "TRUE":
@@ -206,6 +211,8 @@ def display_measurement_reason(
     if basis.kind == "off_paired_istd_position":
         return f"{basis.text}，報 ND。"
     if not has_quantifiable_peak:
+        if row.get("Projection Reason") == "finalized_not_quantifiable":
+            return "觀察到 MS1 訊號，但不足以可靠定量；面積留白，不代表化合物不存在。"
         return "搜尋範圍內沒有可定量的 MS1 峰。"
     covered = _SHAPE_REVIEW if basis.kind in _SHAPE_BASES else frozenset()
     saved = str(row.get("Projection Review Reasons") or "")

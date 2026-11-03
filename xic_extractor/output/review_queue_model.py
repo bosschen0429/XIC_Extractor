@@ -16,6 +16,7 @@ from xic_extractor.output.reason_display import (
 CONFIRM_COUNTED_PEAK = "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
 # The check that could overturn each uncounted basis.
 _NOT_COUNTED_ACTION: dict[BasisKind, str] = {
+    "not_quantifiable": "在原始 XIC 檢查訊噪比、缺點與連續訊號支持；不要只看平滑線",
     "ms1_shape_failed": "在 XIC 看峰形為什麼未通過",
     "paired_istd_not_counted": "先看配對 ISTD 在此樣本的結果",
     "istd_without_identity": "在 XIC 比較同批樣本的 ISTD 峰",

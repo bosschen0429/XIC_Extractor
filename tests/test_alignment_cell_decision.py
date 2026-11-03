@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 from copy import copy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +124,7 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     )
 
 
-def test_target_censored_observed_area_survives_public_decision_and_pickle(
+def test_target_fragmented_low_signal_keeps_evidence_without_numeric_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -147,18 +148,45 @@ def test_target_censored_observed_area_survives_public_decision_and_pickle(
     expected_area = integration.area_raw_counts_seconds
 
     assert expected_area > 0
-    assert decision.variant == "numeric"
-    assert decision.value == expected_area
-    assert decision.source == "trapezoid_counts_seconds_on_observed_censored_signal"
+    assert integration.signal_quality.low_signal_to_noise
+    assert decision.variant == "not_quantifiable"
+    assert decision.value is None
+    assert decision.source == ""
     assert decision.selected_integration is integration
     assert "near_detection_limit" in integration.boundary_sources
     restored = pickle.loads(pickle.dumps(decision))
-    assert restored.value == expected_area
+    assert restored.value is None
     assert restored.source == decision.source
     assert restored.subject.terminal_subject.hypothesis.integration == integration
     assert (
         restored.selected_integration
         is restored.subject.terminal_subject.hypothesis.integration
+    )
+
+
+@pytest.mark.parametrize(
+    "low_snr,acquired,blocked",
+    [
+        (True, (1, 0, 0, 1, 0, 0, 1, 0, 0), True),
+        (False, (1, 0, 0, 1, 0, 0, 1, 0, 0), False),
+        (True, (0, 0, 1, 1, 1, 0, 0, 0, 0), False),
+        (True, (1, 1, 0, 1, 1, 0, 1, 1, 0), False),
+    ],
+)
+def test_target_quantification_requires_joint_signal_and_support_failure(
+    low_snr, acquired, blocked
+):
+    from xic_extractor.peak_detection.integration_result import IntegrationResult
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    # A support-policy truth table, not a generated chromatographic oracle.
+    # Sparse scans alone and low S/N alone must not suppress a value.
+    integration = IntegrationResult(0, 4, 8, 4, 8, 1, 1, 120)
+    quality = SignalQuality("available", 1, 2 if low_snr else 20, low_snr)
+    integration = replace(integration, signal_quality=quality)
+    assert (
+        decision_owner._target_has_fragmented_low_signal(integration, acquired)
+        is blocked
     )
 
 

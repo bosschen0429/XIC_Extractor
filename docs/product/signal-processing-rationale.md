@@ -215,8 +215,11 @@ part of physical content identity. Existing `baseline_residual_mad` and area
 uncertainty retain their original AsLS-residual meaning.
 
 Cell review TSVs and Inspector retain the sample/observation attribution.
-A low-SNR hint does not blank or zero Matrix values, change headers, authorize
-writing, or change membership/disposition/counting. A short peak's curvature,
+A low-SNR hint alone does not blank or zero Matrix values, change headers,
+authorize writing, or change membership/disposition/counting. Targeted's
+[quantitative-support policy](decision-policy.md#targeted-quantitative-support)
+combines it with missing and fragmented acquired support before allowing a
+numeric write; Untargeted group-cell decisions are unchanged. A short peak's curvature,
 correlated noise and censored observations remain estimator limitations.
 
 ## What The Canonical Signal Establishes
