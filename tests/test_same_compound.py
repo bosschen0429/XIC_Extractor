@@ -709,3 +709,26 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
     assert sorted(review_kinds(result)) == [
         ("review_only_relation", f"Y{index}") for index in range(3)
     ]
+
+
+def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
+    # Three of five shared direct samples co-elute: below 80%.
+    samples = SAMPLES[:5]
+    shifts = (1.0, 1.0, 1.0, 10.0, 10.0)
+    rows = [
+        member
+        for index, base_rt in enumerate((10.0, 20.0, 30.0))
+        for member in (
+            row(f"L{index}", 300.0 + 50 * index, base_rt=base_rt, samples=samples),
+            row(
+                f"H{index}",
+                310.0 + 50 * index,
+                base_rt=base_rt,
+                samples=samples,
+                shifts=shifts,
+            ),
+        )
+    ]
+    _, result = decide(*rows)
+
+    assert result.review_rows == ()

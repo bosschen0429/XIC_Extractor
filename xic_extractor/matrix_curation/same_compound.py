@@ -529,32 +529,41 @@ def _recurring_differences(
     their representative's and would repeat it once per removed ion.
     """
     by_sample: dict[str, list[tuple[float, int]]] = defaultdict(list)
+    # Samples each row detected directly, as bits, for the co-elution share.
+    ordinal: dict[str, int] = {}
+    direct_mask = [0] * len(cells)
     for index, row in enumerate(cells):
         if index in removed:
             continue
         for sample, cell in row.items():
-            if cell.direct and cell.apex_rt_min is not None:
+            if not cell.direct:
+                continue
+            direct_mask[index] |= 1 << ordinal.setdefault(sample, len(ordinal))
+            if cell.apex_rt_min is not None:
                 by_sample[sample].append((cell.apex_rt_min, index))
+    # Supporting samples per pair: both direct, apices within the limit, as
+    # pair_evidence counts them.
     together: Counter[tuple[int, int]] = Counter()
-    window = MAX_APEX_SEC / 60.0
     for detections in by_sample.values():
         detections.sort()
         for position, (apex, index) in enumerate(detections):
-            for other_apex, other in detections[position + 1 :]:
-                if other_apex - apex > window:
+            for later in range(position + 1, len(detections)):
+                other_apex, other = detections[later]
+                if (other_apex - apex) * 60.0 > MAX_APEX_SEC:
                     break
                 together[(min(index, other), max(index, other))] += 1
     mz = [feature.matrix_mz for feature in features]
     deltas: list[tuple[float, str]] = []
-    for (first, second), count in together.items():
-        if count < MIN_SUPPORT_SAMPLES:
+    for (first, second), support in together.items():
+        if support < MIN_SUPPORT_SAMPLES:
             continue
         light, heavy = sorted((first, second), key=lambda index: (mz[index], index))
         if (light, heavy) in matches or (mz[heavy] - mz[light]) / mz[
             light
         ] * 1e6 <= MZ_PPM:
             continue
-        if not pair_evidence(cells[light], cells[heavy]).coelutes:
+        both_direct = (direct_mask[light] & direct_mask[heavy]).bit_count()
+        if support < MIN_SUPPORT_FRACTION * both_direct:
             continue
         pair_name = f"{features[light].feature_id}~{features[heavy].feature_id}"
         deltas.append((mz[heavy] - mz[light], pair_name))

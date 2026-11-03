@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import zlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
@@ -231,6 +231,33 @@ def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -
     return zlib.compress(
         json.dumps(values, separators=(",", ":"), allow_nan=False).encode(), 1
     )
+
+
+def iter_cell_values(
+    payload: bytes, *, sample_ids: Sequence[str]
+) -> Iterator[tuple[str, Any, Any, Any]]:
+    """Each cell's sample, published value, support origin and observations.
+
+    Only these fields are read; evidence reasons and membership risks are left
+    unparsed for callers that do not use them.
+    """
+    values = json.loads(zlib.decompress(payload))
+    if not isinstance(values, list):
+        raise ValueError("review cells must be an array; rerun Alignment")
+    for cell in values:
+        if not isinstance(cell, list) or len(cell) != 10:
+            raise ValueError(
+                "review cell fields do not match the schema; rerun Alignment"
+            )
+        sample = cell[0]
+        if (
+            isinstance(sample, bool)
+            or not isinstance(sample, int)
+            or not 0 <= sample < len(sample_ids)
+        ):
+            raise ValueError("review cell has an invalid sample ordinal")
+        # Field order as written by pack_cells.
+        yield sample_ids[sample], cell[2], cell[6], cell[7]
 
 
 def unpack_cells(

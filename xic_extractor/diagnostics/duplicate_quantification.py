@@ -15,9 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.diagnostics.alignment_explanation import (
-    open_review_population,
-    read_explanation_metadata,
+    ExplanationError,
+    read_explanation_summary,
+    read_observation_apices,
+    read_row_cell_values,
 )
+from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_extractor.output.alignment.output_levels import EXPLANATION_ARTIFACT_NAME
 
 _DIRECT_ORIGINS = frozenset({"discovery_support", "reacquired_support"})
@@ -63,42 +66,36 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
             }
             break
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
-    metadata = read_explanation_metadata(
-        explanation, selection_only=True, query_only=True
-    )
+    summary = read_explanation_summary(explanation)
+    if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
+        raise ExplanationError(
+            "published cells need the compact explanation format; rerun Alignment"
+        )
     samples = {
-        sample["sample_key"]: sample["sample_stem"]
-        for sample in metadata.summary["samples"]
+        sample["sample_key"]: sample["sample_stem"] for sample in summary["samples"]
     }
-    observation_apex = {
-        observation["physical_peak_key"]: observation["rt_apex_min"]
-        for subject in metadata.records.get("terminal_subjects", {}).values()
-        for observation in subject.get("observations") or ()
-    }
+    observation_apex = read_observation_apices(explanation)
     cells = []
-    with open_review_population(explanation, metadata.summary) as population:
-        for entry in population:
-            group = entry["row"]["feature_id"]
-            if group not in rows:
-                continue
-            row, row_mz = rows[group]
-            for cell in entry["cells"]:
-                if cell["value"] is None:
-                    continue
-                sample = samples[cell["sample_key"]]
-                cells.append(
-                    PublishedCell(
-                        row=row,
-                        row_mz=row_mz,
-                        sample=sample,
-                        direct=cell["support_origin"] in _DIRECT_ORIGINS,
-                        apex_rt_min=_cell_apex(
-                            cell, observation_apex, backfill_apex, group, sample
-                        ),
-                        feature_id=group,
-                        value=float(cell["value"]),
-                    )
-                )
+    for group, sample_key, value, origin, observations in read_row_cell_values(
+        explanation, summary, rows
+    ):
+        if value is None:
+            continue
+        row, row_mz = rows[group]
+        sample = samples[sample_key]
+        cells.append(
+            PublishedCell(
+                row=row,
+                row_mz=row_mz,
+                sample=sample,
+                direct=origin in _DIRECT_ORIGINS,
+                apex_rt_min=_cell_apex(
+                    observations, observation_apex, backfill_apex, group, sample
+                ),
+                feature_id=group,
+                value=float(value),
+            )
+        )
     return tuple(cells)
 
 
@@ -207,13 +204,13 @@ def _apex(cell: PublishedCell) -> float:
 
 
 def _cell_apex(
-    cell: Mapping[str, Any],
+    observations: Iterable[str],
     observation_apex: Mapping[str, float],
     backfill_apex: Mapping[tuple[str, str], float],
     group: str,
     sample: str,
 ) -> float | None:
-    for observation in cell["observation_ids"]:
+    for observation in observations:
         if observation in observation_apex:
             return float(observation_apex[observation])
     return backfill_apex.get((group, sample))
