@@ -18,8 +18,8 @@ user's language for someone judging intent and behavior without reading every
 line of the diff. Use familiar product terms; explain necessary internal terms
 at first use rather than making the reader decode owner/contract vocabulary.
 
-The [PR template](../../.github/pull_request_template.md) owns the body structure:
-Summary, Motivation, Testing, and Risks/Rollback. Before publishing, check that
+The `pr` skill owns the body structure: Summary, Evidence, and Merge Danger; the
+[PR template](../../.github/pull_request_template.md) mirrors it. Before publishing, check that
 the reader can explain what changes, why it matters, what supports the claim,
 and what happens if it is wrong. Use the smallest useful before/after view;
 plain prose is enough, and code or file trees are not mandatory.
