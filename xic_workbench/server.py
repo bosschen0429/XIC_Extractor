@@ -8,7 +8,6 @@ import mimetypes
 import re
 import secrets
 import socket
-import sqlite3
 import threading
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -146,7 +145,6 @@ def create_server(
                 ExplanationError,
                 ConfigError,
                 PresetError,
-                sqlite3.Error,
             ) as exc:
                 payload = {"error": str(exc)}
                 if exc.__cause__ is not None:
