@@ -336,9 +336,8 @@ that observation cannot resurrect a rejected candidate or create a new root.
   floats at full precision (the shortest text that reads back to the same
   value), because Alignment reads the candidate m/z and RT back; display
   rounding belongs to the final Matrix.
-- Discovery `feature_family_id` remains a public output header and dataclass
-  field, but its Discovery meaning is a per-sample peak anchor label for
-  candidates sharing the same discovered MS1 peak. Members must share the
+- Discovery `feature_id` is a per-sample peak anchor label for candidates
+  sharing the same discovered MS1 peak. Members must share the
   sample, RAW source and tag, have matching apexes and overlapping peak bounds,
   and stay within the configured precursor m/z tolerance of every other member.
   Intermediate masses cannot bridge separate peaks through chained matches;
@@ -358,12 +357,6 @@ that observation cannot resurrect a rejected candidate or create a new root.
   MS1 centroids read at the two apexes, each within its own window, agree within
   the tolerance (one ion). The merged candidate keeps the higher candidate's
   m/z, peak and area.
-- Current candidate/review outputs do not contain
-  `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
-  `feature_superfamily_role`, `feature_superfamily_confidence`, and
-  `feature_superfamily_evidence` columns. There is no compatibility adapter for those columns;
-  downstream consumers must read the current column constants or tolerate the
-  missing legacy fields.
 - Batch discovery handoff uses `discovery_batch_index`. For every sample,
   the Discovery owner binds the exact candidate CSV SHA-256/byte size, complete
   path-independent candidate payload/count, the physical-facts file

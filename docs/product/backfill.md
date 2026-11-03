@@ -159,7 +159,7 @@ retain their measured value and use `trajectory_observed`.
 For extrapolation, the fit's residual scale amplified by prediction leverage
 is compared with the configured Backfill half-window. If that risk proxy exceeds
 the window, the query uses the fitted RT at the nearest supported injection and
-its basis includes `at_support_boundary`; target-sample coordinate conversion
+its basis ends in `trajectory_fit_at_support_boundary`; target-sample coordinate conversion
 still applies. Interpolation and lower-risk extrapolation retain the local line.
 This guard is not a calibrated confidence interval or an identity decision.
 Missing injection order or same-cohort observations leaves only the median
@@ -267,9 +267,8 @@ move original members, split known ISTD bindings, or create new groups.
 Competing claims on the same physical content remain unresolved and supply no
 numeric value. Final cells retain the original cell for provenance and the
 completed Backfill assessment/observation for the final decision and integral.
-Cell evidence uses `cell_observation` and final-cell canonical bases use
-`final_group_cell_observation` to bind unresolved SUPPORT and Backfill
-provenance explicitly. Old diagnostic evidence remains historical; acquisition
+Cell evidence uses `cell_observation` and binds unresolved SUPPORT and
+Backfill provenance explicitly. Old diagnostic evidence remains historical; acquisition
 cache facts do not depend on these cell schemas.
 
 ### Final cell evidence

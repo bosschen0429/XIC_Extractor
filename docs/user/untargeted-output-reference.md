@@ -4,10 +4,7 @@ Column-level reference for all untargeted discovery and alignment output files.
 
 This page documents the current public schemas. Changing them is a public
 cutover that passes expected-diff, schema, downstream-consumer, and rollback
-gates. The reserved
-[Untargeted delivery contract](../product/processing-lineage.md#workflow-specific-delivery)
-is separate from these public schemas; it does not introduce per-cell delivery
-identities.
+gates.
 
 ## Discovery Outputs
 
@@ -279,8 +276,8 @@ report tables. It does not assert group identity across different input sets.
 
 ## Explanation format and reruns
 
-The SQLite explanation uses `alignment_explanation.v2` (full audit) or
-`alignment_explanation_review.v2` (compact review), with `curve_payload.v2`
+The SQLite explanation uses `alignment_explanation` (full audit) or
+`alignment_explanation_review` (compact review), with `curve_payload`
 for retained curves. Curve provenance records query and selection context,
 not full-trace or selection-trace SHA-256 values. Scientific values and
 curve arrays are unchanged. Artifact and curve identifiers are internal links

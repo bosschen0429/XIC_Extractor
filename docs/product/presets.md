@@ -30,9 +30,8 @@ surfaces. Presets are not product authority by themselves.
   identity.
 - The TOML format carries method intent. The format does not carry RAW/output
   paths, worker counts, or application state.
-- `dna_dr_product_ready` is a historical compatibility name for the
-  `raw_superwindow` Owner Build profile. A successful run does not assert
-  product readiness and does not invoke Standard Peak or a publication checker.
+- `dna_dr_product_ready` is a historical compatibility preset name. A
+  successful run does not assert product readiness and does not invoke Standard Peak or a publication checker.
 - Discovery method or preset labels can wrap strategy families for usability.
   For example, `pt_pattern` means `delta_mass(pattern_id=pt)`. The preset layer
   must not turn that label into a separate primitive strategy or ProductWriter
@@ -195,7 +194,7 @@ Code: `xic_extractor/presets/`; built-in TOML: `xic_extractor/presets/data/`.
 | Preset | Role |
 | --- | --- |
 | `dna_dr.toml` | DNA dR alignment preset |
-| `dna_dr_product_ready.toml` | Historical compatibility profile selecting `raw_superwindow` Owner Build; not readiness authority |
+| `dna_dr_product_ready.toml` | Historical compatibility profile name; not readiness authority |
 
 Rules:
 

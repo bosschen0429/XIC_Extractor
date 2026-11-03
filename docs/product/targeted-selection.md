@@ -535,13 +535,6 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Evidence spine](evidence-spine.md)
 - [Quantitation context](quantitation-context.md)
 - [Decision policy](decision-policy.md)
-
-## Retired candidate audit outputs
-
-`emit_peak_candidates` and its candidate, boundary, region shadow, selected-envelope,
-and target-pair RT auto-reselection TSV outputs are removed. Remove this key from
-existing settings CSVs; there is no compatibility alias. Candidate-sidecar
-verification and the dedicated shadow/pressure review commands are unavailable.
 Use [XIC Inspector](xic-inspector.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
 reselection comparison tables. Formal peak selection and numerical output remain

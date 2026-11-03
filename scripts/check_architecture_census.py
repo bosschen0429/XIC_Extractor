@@ -69,7 +69,7 @@ HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {
     ),
 }
 VERSIONED_IDENTIFIER = re.compile(
-    r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:_v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
+    r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:[_.]v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
 )
 
 # Pointers only. The referenced files retain authority for their claims.
@@ -358,6 +358,56 @@ def validate_architecture_census(
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
     problems.extend(validate_runtime_boundary_authority(repo_root))
     problems.extend(validate_semantic_identifiers(repo_root))
+    problems.extend(validate_documented_code_names(repo_root))
+    return problems
+
+
+DOCUMENTED_CODE_NAME = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
+DOCUMENTED_CODE_NAME_DOCS = ("docs/product/", "docs/user/")
+CODE_NAME_SOURCE_SUFFIXES = frozenset(
+    {".py", ".js", ".html", ".css", ".toml", ".json", ".yml", ".yaml", ".csv", ".tsv"}
+)
+
+
+def validate_documented_code_names(
+    repo_root: Path,
+    doc_paths: Sequence[Path] | None = None,
+    source_paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject backticked snake_case names in product docs that no source defines."""
+    tracked = (
+        repository_tracked_paths(repo_root)
+        if doc_paths is None or source_paths is None
+        else ()
+    )
+    if doc_paths is None:
+        doc_paths = tuple(
+            path
+            for path in tracked
+            if path.suffix == ".md"
+            and path.as_posix().startswith(DOCUMENTED_CODE_NAME_DOCS)
+        )
+    if source_paths is None:
+        source_paths = tuple(
+            path for path in tracked if path.suffix in CODE_NAME_SOURCE_SUFFIXES
+        )
+    known: set[str] = set()
+    for path in source_paths:
+        try:
+            text = (repo_root / path).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        known.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text))
+    problems: list[str] = []
+    for path in doc_paths:
+        source = (repo_root / path).read_text(encoding="utf-8")
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            for name in DOCUMENTED_CODE_NAME.findall(line):
+                if name not in known:
+                    problems.append(
+                        f"{path.as_posix()}:{line_number}: documented name {name} "
+                        "is not defined in any tracked source"
+                    )
     return problems
 
 

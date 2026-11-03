@@ -166,8 +166,9 @@ existing-group context. The two workflows define a missing cell differently:
 - Untargeted CID-NL: every activation-eligible sample without direct SUPPORT
   for a non-rejected group that passes the group support gate. A sample with a
   HOLD or REJECT assessment for that group is also a missing cell.
-- Targeted diagnostic: a `no_candidate` cell whose Target binds exactly one
-  group with owners. `ambiguous` and `failed` cells are not searched.
+- Targeted: a HOLD sample of a Target that is an internal standard or is
+  paired with one, backfilled from its direct CID-NL peers and the paired
+  internal standard's observation in that sample.
 
 Backfill can perform one bounded, context-directed RAW/evidence revisit.
 Backfill can produce the first usable observation for that cell. Backfill

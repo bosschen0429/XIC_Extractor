@@ -272,7 +272,7 @@ key in an owner-attested manifest settles exactly once. Manifest preflight
 failure terminalizes the attempt as `failed` before any work or resource
 reservation. It uses an explicit queued-to-terminal path: `attempt_queued` and
 `manifest_preflight_failed` are recorded, `attempt_started` is not fabricated,
-and the empty work, resource, and artifact registries permit an immediate
+and the empty work and resource registries permit an immediate
 terminal proposal. Dynamic manifest expansion and later-added stage manifests
 are unsupported. If a workflow cannot state its
 complete non-empty work universe up front, stop and redraw the seam rather than
@@ -328,8 +328,8 @@ uses two orthogonal axes:
 | Terminal outcome | `succeeded`, `failed`, `cancelled` |
 
 Cancellation intent is an ordered event, not a fourth outcome or another
-scientific status. Partial work is represented by settled work units and
-runtime artifact disposition, not by a `partial` attempt outcome.
+scientific status. Partial work is represented by settled work units, not by a `partial` attempt
+outcome.
 
 Terminal outcome is deterministic:
 
@@ -342,11 +342,10 @@ Terminal outcome is deterministic:
 3. otherwise, every manifest unit settling successfully makes it `succeeded`.
 
 An attempt can become terminal after every manifest unit has a terminal result
-and every reserved resource has exactly one terminal cleanup record, and every
-current-attempt runtime artifact has a proposed terminal disposition. Cleanup
-failure, worker loss, or artifact-disposition failure therefore blocks success,
-not terminalization. A manifest preflight failure has an empty work, resource,
-and artifact registry and can immediately propose `failed`.
+and every reserved resource has exactly one terminal cleanup record. Cleanup
+failure or worker loss therefore blocks success, not terminalization. A
+manifest preflight failure has an empty work and resource registry and can
+immediately propose `failed`.
 
 All state-changing events use one monotonic sequence per attempt. Appending a
 required lifecycle event and applying its state transition are one atomic
@@ -364,7 +363,7 @@ acknowledgement below.
 
 The runtime keeps the detailed reducer state, lifecycle events, and observability
 ledger in memory. The coordinator proposes a terminal outcome only after work,
-resource cleanup, and artifact dispositions close. The supervisor validates that
+and resource cleanup close. The supervisor validates that
 outcome and the observability facts, then produces a typed finalization result.
 No token or content digest authenticates internal Python construction.
 
@@ -387,13 +386,9 @@ After cancellation is accepted:
 - no artifact becomes deliverable merely because a unit finished before the
   cancellation request.
 
-Before scheduling, each worker declares `hard_cancel_supported`. Bounded hard
-cancel is available only across a killable process boundary. An in-process
-serial Thermo call may support cooperative cancellation but cannot claim
-bounded terminalization. If an entry point requires bounded cancellation, it
-must run that work in a dedicated process or fail preflight. A legacy serial
-consumer with `hard_cancel_supported=false` may be characterized for successful
-execution, but it does not satisfy the bounded-cancel acceptance gate.
+Bounded hard cancel is available only across a killable process boundary. An
+in-process serial Thermo call may support cooperative cancellation but cannot
+claim bounded terminalization.
 
 Worker termination cannot prove that child-owned cleanup such as vendor
 `Dispose()` ran. The contract therefore requires exactly one logical terminal
@@ -406,24 +401,6 @@ cleanup outcome per resource:
 Cleanup operations must be idempotent so parent-side reaping or retry does not
 double-apply destructive effects. Unknown or failed cleanup makes the attempt
 `failed` but still lets it reach terminal state.
-
-Every runtime-mediated artifact is registered before its first write. Artifacts
-produced by the current attempt remain `runtime_temporary` through the
-in-memory terminal proposal. Durable terminal acknowledgement atomically
-commits a successful attempt and every such artifact to `offered_to_owner`; a
-failed/cancelled acknowledgement, or coordinator loss before acknowledgement,
-logically changes every registered artifact, including partial bytes from a
-failed unit, to `quarantined_diagnostic`. The
-`SupervisorFinalizationRecord` contains exactly one
-`artifact_offered_to_owner` or `artifact_quarantined_diagnostic` event for each
-current-attempt artifact, in the same atomic finalization that commits the
-terminal outcome. Failure of an owner-supplied physical quarantine action is
-aggregated as cleanup failure, but never makes the artifact deliverable. These
-artifacts may support diagnosis or a later
-lineage-approved dependency, but they cannot silently become scientific
-`missing`, `absent`, selected values, or product output. An artifact referenced
-through `validated_dependency` keeps its prior producer-owned disposition; only
-this attempt's dependency-use record becomes non-deliverable.
 
 All failures are retained as typed records and aggregated at the attempt
 boundary. Each preserves the work-unit/resource key, stage, source reference,
@@ -488,34 +465,15 @@ Cache rules:
 - correctness is identical on cache hit and miss;
 - keys and compatibility predicates come from the owning identity/evidence
   contract;
-- hits, misses, rejected stale entries, reads, writes, rebuilds, and evictions
-  are runtime events;
-- a miss or stale rejection may trigger ordinary work execution; any resulting
-  cache rebuild is recorded once with `succeeded`, `failed`, or `not_attempted`
-  plus reason rather than becoming another attempt state;
-- an eviction request is recorded once with `succeeded`, `failed`, or
-  `rejected_pinned` plus reason; a rejected or failed eviction does not mutate
-  the existing entry;
+- a miss or stale rejection triggers ordinary work execution rather than
+  another attempt state;
 - every attempt-local volatile cache is registered as a runtime resource and
   released through the same terminal, idempotent cleanup contract on success,
   failure, cancellation, or worker loss;
 - persistent cache format, retention period, and eviction policy remain
   separate owner decisions.
 
-Runtime artifact disposition uses names that cannot be confused with delivery
-staging:
-
-- `runtime_temporary`;
-- `quarantined_diagnostic`;
-- `offered_to_owner`.
-
-`offered_to_owner` means only that execution completed and the owning lineage
-or projection layer may validate the artifact. It does not mean lineage
-acceptance, delivery `staged`, or sealing eligibility.
-
-The runtime must not delete immutable artifacts pinned by the
-[lineage retention contract](processing-lineage.md#delivery-retention). Physical
-deletion is limited to owner-supplied actions on registered temporary resources.
+Physical deletion is limited to owner-supplied actions on registered temporary resources.
 
 ## Minimum Observability
 
@@ -523,8 +481,7 @@ Every coordinator event carries the attempt identity, monotonic sequence,
 monotonic offset from the runtime origin established by `attempt_queued`, event
 kind, and work-unit/resource reference where applicable. The coordinator ledger
 ends at `terminal_proposal`. The supervisor finalization continues from the last
-coordinator sequence and adds acknowledgement, committed artifact
-dispositions, and outcome. The
+coordinator sequence and adds acknowledgement and outcome. The
 queued-to-terminal manifest-preflight path omits `attempt_started`; events
 listed below as started exist only after successful preflight. The minimum
 event set covers:
@@ -532,8 +489,8 @@ event set covers:
 For a running attempt, the owner normalizes causal facts into one canonical
 phase order: attempt start, all resource reservations, all resource open
 outcomes, started workers, manifest-order work submission/start/settlement,
-runtime artifact registration, all resource cleanup, terminal proposal, and
-then supervisor acknowledgement/dispositions/outcome. Monotonic offsets bind
+all resource cleanup, terminal proposal, and then supervisor
+acknowledgement/outcome. Monotonic offsets bind
 that logical topology; they do not claim to recover physical interleaving among
 concurrent workers inside a phase. A ledger that reorders these phases fails
 closed even when every individual resource or work-unit lifecycle is complete.
@@ -541,9 +498,7 @@ closed even when every individual resource or work-unit lifecycle is complete.
 - coordinator: `attempt_queued`, `manifest_preflight_failed` when applicable,
   `attempt_started` after successful preflight, cancellation accepted/rejected,
   and `terminal_proposal`;
-- supervisor finalization: `terminal_acknowledged`, exactly one
-  `artifact_offered_to_owner` or `artifact_quarantined_diagnostic` per
-  current-attempt artifact, and `terminal_outcome`;
+- supervisor finalization: `terminal_acknowledged` and `terminal_outcome`;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source
   (reserved with the unimplemented dependency-reuse contract);
@@ -587,8 +542,7 @@ explicitly unavailable elapsed/RSS records use the attempt scope and
 
 For a running attempt, resource lifecycle events use only the registered
 resource subject and contain exactly one reservation, one open outcome, and one
-cleanup outcome in that order. Each registered runtime artifact likewise has
-exactly one registration followed by one offered/quarantined disposition.
+cleanup outcome in that order.
 Elapsed metrics must equal their correlated monotonic event spans. A serial run
 with no child-worker event retains one attempt-scoped
 `worker_peak_rss_bytes=unsupported:not_applicable_serial` record; it does not

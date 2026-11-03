@@ -1,32 +1,23 @@
-<!-- Write for a reviewer who judges intent and behavior without reading every diff.
-Use the user's language and domain terms. Keep the main story self-contained;
-commands, SHAs, and detailed evidence belong in links or a collapsed details block.
-A short before/after sentence is enough; tables and diagrams are optional. -->
+<!-- Structure follows the `pr` skill. Write for a reviewer who judges intent and
+behavior without reading every diff, in the user's language and domain terms.
+Commands, SHAs, and detailed evidence belong in links or a collapsed details block. -->
 
 ## Summary
 
-<!-- What will improve? Show the important before/after behavior in a sentence,
-small table, or diagram. Mention unchanged behavior only where confusion is likely.
-Describe the final outcome, not a list of files or implementation steps. -->
+<!-- The smallest view that makes the change clear: pseudocode, call tree, file
+tree, Mermaid, or a diff of that shape, each beside one or two sentences. -->
 
-## Motivation
+## Evidence
 
-<!-- What problem or inconvenience makes this change worthwhile?
-Do not repeat Summary; keep this brief if the reason is already clear. -->
+<!-- Before and after. Screenshots for visual changes; otherwise the exact check
+that fails before and passes after, or the observed output. Do not invent a
+failing baseline; distinguish manual review from execution and keep gaps visible. -->
 
-## Testing
+## Merge Danger
 
-<!-- Explain what was checked and what was observed, tied to the behavior above.
-Use real before/after evidence where available; do not invent a failing baseline.
-Keep decision-relevant gaps visible. Counts alone are not a behavioral result.
-Put exact commands, CI links, and relevant producing/validated revisions in a
-linked receipt or <details> block; distinguish manual review from execution. -->
+**Door:** <!-- one-way or two-way -->
 
-## Risks/Rollback
-
-<!-- What could be affected? Can we undo this cheaply, and would existing data or
-outputs need repair or reprocessing? State breaking changes and irreversible
-steps plainly. Keep material risks here, not hidden in technical details. -->
+**Blast Radius:** <!-- one word, then what could break: outputs, consumers, data that needs reprocessing -->
 
 Issue linkage: <!-- Link the relevant issue, or state the user request if none.
 Use a closing keyword only when this PR completes the issue on the default branch. -->

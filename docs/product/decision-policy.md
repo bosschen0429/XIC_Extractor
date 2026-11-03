@@ -36,8 +36,7 @@ questions:
 ## Current Transition State
 
 The codebase is not fully `PeakHypothesis`-native yet. Legacy selectors,
-confidence fields, `raw_score`, `evidence_score`, `feature_family_id`, and
-string evidence fields still exist because they are public compatibility
+confidence fields, `raw_score`, `evidence_score`, and string evidence fields still exist because they are public compatibility
 surfaces or migration adapters.
 
 Treat those surfaces as compatibility or audit signals unless another owner
@@ -248,7 +247,7 @@ Untargeted-specific rules to keep explicit:
 - MS2/NL, MS1 pattern, QC reference, sample-matrix RT drift, and shape or region audit
   are typed facts. They strengthen or block decisions only through Backfill
   projection and authority fields.
-- `feature_family_id` and `feature_id` are display labels. The group and
+- `feature_id` is a display label. The group and
   hypothesis objects are the authority-ready identity handles when available.
 - Broad Backfill remains gated. Diagnostic sidecars and visual overlay
   evidence are not production readiness by themselves.

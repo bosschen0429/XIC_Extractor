@@ -162,7 +162,6 @@ validation notes are not matrix authority by themselves.
 | `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
 | `cell_provenance.tsv` | Cell-level provenance for accepted values |
 | `row_summary.tsv` | Matrix row identity and summary sidecar |
-| `expected_diff_summary` | Review gate for behavior-changing activation |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 | Productization status index / authority manifest | Current state and writer scope |

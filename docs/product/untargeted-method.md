@@ -29,9 +29,6 @@ linked owner pages.
   `provisional` groups stay in a compact machine archive/review surface;
   `unresolved` and `rejected` groups remain AuditTrail facts. Disposition and
   row inclusion are separate typed decisions.
-- The reserved Untargeted delivery contract specifies one output-level seal,
-  not per-cell delivery revisions; sealing is not implemented. See the
-  [Untargeted delivery decision](processing-lineage.md#workflow-specific-delivery).
 - `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
   compatibility/display facts, not canonical cell identity.
 - Exact equality to old upstream feature tables is not the success definition.
