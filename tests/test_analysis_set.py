@@ -226,6 +226,90 @@ def test_retained_alignment_keeps_full_root_injection_order(
         prepared.close()
 
 
+def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
+    tmp_path, monkeypatch
+):
+    """Workbench metadata keeps excluded rows; Discovery skipped those RAW."""
+    from tests.cid_nl_raw_fixture import (
+        TEST_PROFILE,
+        _current_candidates,
+        _FakeRaw,
+        _peak_config,
+        _settings,
+    )
+    from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from xic_extractor.untargeted_execution.alignment import (
+        prepare_untargeted_alignment_inputs,
+    )
+
+    paths = (tmp_path / "A.raw", tmp_path / "B.raw")
+    for path in paths:
+        path.write_bytes(path.name.encode())
+    settings, config = _settings(), _peak_config(tmp_path)
+    physical_records = {}
+    candidates = {
+        p.stem: _current_candidates(
+            _FakeRaw((7.98,)),
+            raw_file=p,
+            settings=settings,
+            physical_records=physical_records,
+        )
+        for p in paths
+    }
+    receipts = _discovery_receipts(tmp_path, paths, candidates)
+    batch = DiscoveryBatchInput(
+        sample_order=("A", "B"),
+        candidate_csvs={},
+        raw_files={p.stem: p for p in paths},
+        review_csvs={},
+        candidate_receipts=receipts,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
+        lambda **options: (
+            options["candidates_by_sample"],
+            physical_records,
+            tuple(
+                AcquisitionSourceExpectation(
+                    receipts[path.stem].acquisition_source, stat_identity(path.stat())
+                )
+                for path in options["raw_paths"]
+            ),
+        ),
+    )
+    metadata = (
+        SampleMetadata("A", "A", injection_order=1, sample_role="study_sample"),
+        SampleMetadata(
+            "C",
+            "C",
+            injection_order=2,
+            sample_role="study_sample",
+            excluded=True,
+            exclusion_reason="operator exclusion",
+        ),
+        SampleMetadata("B", "B", injection_order=3, sample_role="pooled_qc"),
+    )
+    prepared = prepare_untargeted_alignment_inputs(
+        signal_processing_profile=TEST_PROFILE,
+        discovery_batch=batch,
+        candidates_by_sample=candidates,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=config,
+        sample_metadata=metadata,
+    )
+    try:
+        assert [
+            (s.metadata.raw_stem, s.metadata.injection_order, s.metadata.sample_role)
+            for s in prepared.plan.context.samples
+        ] == [("A", 1, "study_sample"), ("B", 3, "pooled_qc")]
+    finally:
+        prepared.close()
+
+
 def test_copies_resolve_to_one_shallow_member() -> None:
     top = header("/b/Tumor_1.raw", 0)
     copy = replace(top, raw_path="/b/validation/Tumor_1.raw")
