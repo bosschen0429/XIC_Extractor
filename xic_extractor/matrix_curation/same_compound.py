@@ -1,4 +1,4 @@
-"""Fold Matrix rows of one compound into one representative row.
+"""Exclude supported derivative ion forms from a statistical Matrix.
 
 Isotope, adduct and dimer rows are excluded when supported derivation paths
 reach them from a directly co-eluting root. Neither an exact element identity
@@ -12,8 +12,8 @@ import math
 import statistics
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Container, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Container, Mapping, Sequence
+from dataclasses import dataclass, replace
 
 from xic_extractor.matrix_curation.steps import (
     CellEvidence,
@@ -48,6 +48,34 @@ UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
 WEAK_REPRESENTATIVE_RATIO = 0.1
 RECURRING_DELTA_WIDTH = 0.005
 RECURRING_MIN_PAIRS = 3
+FAMILY_MIN_MONOMER_FORMS = 3
+
+# Neutral molecule -> singly charged ion, using NIST monoisotopic masses.
+# Without [M+H]+, a family needs several monomer carriers AND a protonated
+# dimer AND a metal-isotope witness; one mass match never suffices.
+FAMILY_MONOMERS = (
+    ("[M+H]+", 1.007276452321),
+    ("[M+Na]+", 22.989220702091),
+    ("[M+K]+", 38.963157906491),
+    ("[M+NH4]+", 18.033825553441),
+    ("[M+Mg+HCOO]+", 68.982147388461),
+    ("[M+Mg+CH3COO]+", 82.997797452921),
+    ("[M+Ca+HCOO]+", 84.959696554461),
+    ("[M+Ca+CH3COO]+", 98.975346618921),
+)
+FAMILY_DIMER_H_OFFSET = 1.007276452321
+FAMILY_METAL_MULTIMER_COUNTS = (2, 3)
+MG_MINUS_H_ION_OFFSET = 22.976668084861
+CA_MINUS_H_ION_OFFSET = 38.954217250861
+# Extensions also require their own supported M+2 companion. Complex salt
+# combinations remain hypotheses, not an exhaustive formula search.
+FAMILY_METAL_DIMERS = (
+    ("[2M-H+Mg]+", MG_MINUS_H_ION_OFFSET),
+    ("[2M-H+Ca]+", CA_MINUS_H_ION_OFFSET),
+    ("[2M-2H+Na+Mg]+", 44.958612334631),
+    ("[2M-2H+2Mg+HCOO]+", 90.951539021001),
+    ("[2M-2H+2Mg+CH3COO]+", 104.967189085461),
+)
 
 CONFIRMED_MH = "confirmed_[M+H]+"
 UNCONFIRMED = "unconfirmed"
@@ -60,17 +88,17 @@ class Relation:
     key: str
     # isotope / adduct collapse; review is listed only; annotation is noted only.
     kind: str
-    delta: float | None
+    delta: float
     charge: int = 1
     # Isotopes with an abundance ceiling: (element mass, heavy/light per atom,
     # number of heavy atoms).
     abundance: tuple[float, float, int] | None = None
+    mz_factor: int = 1
+    # A neutral salt can attach to any ion; it does not establish its carrier.
+    confirms_mh: bool = True
 
     def predict(self, light_mz: float) -> float:
-        if self.delta is None:
-            # [2M+H]+ from [M+H]+.
-            return 2.0 * light_mz - PROTON
-        return light_mz + self.delta
+        return self.mz_factor * light_mz + self.delta
 
     def abundance_ceiling(self, light_mz: float) -> float | None:
         """Largest heavy/light ratio if every atom of the neutral were this element.
@@ -96,7 +124,11 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("[M+Na]+", "adduct", 21.981944),
     Relation("[M+K]+", "adduct", 37.955882),
     Relation("[M+NH4]+", "adduct", 17.026549),
-    Relation("[2M+H]+", "adduct", None),
+    Relation("[2M+H]+", "adduct", -PROTON, mz_factor=2),
+    Relation("[2M-H+Mg]+", "adduct", 20.962115180219, mz_factor=2),
+    Relation("[2M-H+Ca]+", "adduct", 36.939664346219, mz_factor=2),
+    Relation("+NaHCOO", "adduct", 67.987423553370, confirms_mh=False),
+    Relation("+NaCH3COO", "adduct", 82.003073617830, confirms_mh=False),
     Relation("[M+Mg+HCOO]+", "adduct", 67.974871),
     Relation("[M+Mg+CH3COO]+", "adduct", 81.990521),
     Relation("[M+Ca+HCOO]+", "adduct", 83.952420),
@@ -358,7 +390,10 @@ def collapse_same_compound(
             continue
         confirmed = any(
             (index, member) in edges
-            and all(by_key[key].kind == "adduct" for key in edges[(index, member)])
+            and all(
+                by_key[key].kind == "adduct" and by_key[key].confirms_mh
+                for key in edges[(index, member)]
+            )
             for member in children.get(index, ())
             if member in removed
         )
@@ -374,6 +409,18 @@ def collapse_same_compound(
             )
         )
 
+    decisions, family_reviews = _ion_family_decisions(
+        features, cells, decisions, evidence, outcomes
+    )
+    removed = {index for index, decision in enumerate(decisions) if not decision.keep}
+    representative = {
+        index: decision.representative
+        for index, decision in enumerate(decisions)
+        if decision.representative is not None
+    }
+    unresolved = {
+        index: reason for index, reason in unresolved.items() if index not in removed
+    }
     relation_rows = _relation_rows(
         features, matches, outcomes, evidence, removed, by_key
     )
@@ -390,7 +437,221 @@ def collapse_same_compound(
         ambiguous_roots,
         parents,
     )
-    return SameCompoundResult(tuple(decisions), relation_rows, review_rows)
+    return SameCompoundResult(
+        tuple(decisions), relation_rows, review_rows + family_reviews
+    )
+
+
+@dataclass(frozen=True)
+class _IonFamily:
+    neutral_mass: float
+    # (row index, compatible ion form); no chemical identity is asserted.
+    members: tuple[tuple[int, str], ...]
+    witnesses: frozenset[int]
+
+
+def _ion_family_decisions(
+    features: Sequence[FeatureIdentity],
+    cells: Sequence[Mapping[str, CellEvidence]],
+    decisions: Sequence[RowDecision],
+    evidence: dict[tuple[int, int], PairEvidence],
+    outcomes: Mapping[tuple[int, int], Mapping[str, str]],
+) -> tuple[list[RowDecision], tuple[dict[str, object], ...]]:
+    """Exclude supported non-[M+H]+ families, even without a protonated row.
+
+    Without an [M+H]+ row, the dimer independently constrains the neutral mass. A
+    sodium-containing neutral salt could be misread as a new protonated molecule.
+    With [M+H]+, parallel Mg/Ca multimers and a metal-isotope companion supply
+    the independent witnesses instead.
+    Cross-sample adduct ratios are not required to be constant in this joint
+    hypothesis; the isotope witness still passes its original abundance gates.
+    """
+    mz = [feature.matrix_mz for feature in features]
+
+    def coelutes(a: int, b: int) -> bool:
+        pair = (a, b) if mz[a] <= mz[b] else (b, a)
+        if pair not in evidence:
+            evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
+        return evidence[pair].coelutes
+
+    metal_isotopes = {
+        light
+        for (light, _), labels in outcomes.items()
+        if labels.get("M+2_unassigned") == "collapse"
+    }
+    if not metal_isotopes:
+        return list(decisions), ()
+    families = _find_ion_families(mz, coelutes, metal_isotopes)
+    forms: dict[int, set[str]] = defaultdict(set)
+    witnesses: dict[int, set[int]] = defaultdict(set)
+    protonated: dict[int, set[int]] = defaultdict(set)
+    for family in families:
+        mh = {index for index, model in family.members if model == "[M+H]+"}
+        for index, model in family.members:
+            forms[index].add(model)
+            witnesses[index].update(family.witnesses)
+            protonated[index].update(root for root in mh if coelutes(root, index))
+    excluded = {index for index, models in forms.items() if "[M+H]+" not in models}
+    result = list(decisions)
+    for index in excluded:
+        roots = {root for root in protonated[index] - excluded if decisions[root].keep}
+        root = next(iter(roots)) if len(roots) == 1 else None
+        result[index] = RowDecision(
+            keep=False,
+            reason="non_protonated_ion_family",
+            representative=root,
+            relations=tuple(sorted("ion_family:" + model for model in forms[index])),
+            via=tuple(sorted(witnesses[index] - {index, root})),
+            undetermined=True,
+        )
+    # Existing isotope/adduct descendants stay excluded, but a removed Na row
+    # must no longer be presented as a retained [M+H]+ representative.
+    for index, decision in enumerate(result):
+        old_root = decision.representative
+        if old_root is None or index in excluded or old_root not in excluded:
+            continue
+        new_root = result[old_root].representative
+        if new_root is not None and not coelutes(new_root, index):
+            new_root = None
+        result[index] = replace(
+            decision,
+            representative=new_root,
+            reason="derived_through_non_protonated_family",
+            via=tuple(sorted(set(decision.via) | {old_root})),
+            undetermined=True,
+        )
+    counts = Counter(d.representative for d in result if d.representative is not None)
+    for index, decision in enumerate(result):
+        if decision.keep:
+            result[index] = replace(
+                decision,
+                member_count=counts[index],
+                ion_form=(
+                    CONFIRMED_MH
+                    if forms.get(index) == {"[M+H]+"}
+                    else UNCONFIRMED
+                    if index in forms
+                    else decision.ion_form
+                ),
+                undetermined=decision.undetermined or len(forms.get(index, ())) > 1,
+            )
+    reviews = tuple(
+        review_row(
+            "non_protonated_ion_family",
+            "",
+            sorted(features[index].feature_id for index in family.witnesses),
+            neutral_mass=f"{family.neutral_mass:.8f}",
+            models="|".join(
+                sorted(
+                    features[index].feature_id + ":" + model
+                    for index, model in family.members
+                )
+            ),
+            decision="drop_non_mh",
+        )
+        for family in families
+    )
+    reviews += tuple(
+        review_row(
+            "ion_family_form_undetermined",
+            features[index].feature_id,
+            sorted(features[w].feature_id for w in witnesses[index] - {index}),
+            relation="|".join(sorted(models)),
+            decision="keep_candidate_mh",
+        )
+        for index, models in forms.items()
+        if "[M+H]+" in models and len(models) > 1
+    )
+    return result, reviews
+
+
+def _find_ion_families(
+    mz: Sequence[float],
+    coelutes: Callable[[int, int], bool],
+    metal_isotopes: Container[int],
+) -> tuple[_IonFamily, ...]:
+    """Joint neutral-mass hypotheses, not a transitive co-elution component."""
+    order = sorted(range(len(mz)), key=lambda index: mz[index])
+    ordered = [mz[index] for index in order]
+    tolerance = MZ_PPM * 1e-6
+
+    def matching(predicted: float, seed: int) -> list[int]:
+        return [
+            order[position]
+            for position in range(
+                bisect_left(ordered, predicted * (1 - tolerance)),
+                bisect_right(ordered, predicted * (1 + tolerance)),
+            )
+            if coelutes(seed, order[position])
+        ]
+
+    found: dict[tuple[tuple[int, str], ...], _IonFamily] = {}
+    for seed in order:
+        # A measured [M+H]+ plus parallel metal dimers/trimers is another joint
+        # hypothesis. No cross-sample adduct-ratio cutoff is substituted here.
+        neutral = mz[seed] - FAMILY_DIMER_H_OFFSET
+        if neutral > 0:
+            for count in FAMILY_METAL_MULTIMER_COUNTS:
+                mg = [
+                    index
+                    for index in matching(count * neutral + MG_MINUS_H_ION_OFFSET, seed)
+                    if index in metal_isotopes
+                ]
+                ca = matching(count * neutral + CA_MINUS_H_ION_OFFSET, seed)
+                for magnesium in mg:
+                    for calcium in ca:
+                        if not coelutes(magnesium, calcium):
+                            continue
+                        signature = tuple(
+                            sorted(
+                                (
+                                    (seed, "[M+H]+"),
+                                    (magnesium, f"[{count}M-H+Mg]+"),
+                                    (calcium, f"[{count}M-H+Ca]+"),
+                                )
+                            )
+                        )
+                        found[signature] = _IonFamily(
+                            neutral, signature, frozenset((seed, magnesium, calcium))
+                        )
+        for _, seed_offset in FAMILY_MONOMERS:
+            neutral = mz[seed] - seed_offset
+            if neutral <= 0:
+                continue
+            monomers = [
+                (index, model)
+                for model, offset in FAMILY_MONOMERS
+                for index in matching(neutral + offset, seed)
+            ]
+            if len({model for _, model in monomers}) < FAMILY_MIN_MONOMER_FORMS:
+                continue
+            for dimer in matching(2 * neutral + FAMILY_DIMER_H_OFFSET, seed):
+                core = [
+                    (i, model)
+                    for i, model in monomers
+                    if i != dimer and coelutes(i, dimer)
+                ]
+                if not any(i == seed for i, _ in core):
+                    continue
+                if len({model for _, model in core}) < FAMILY_MIN_MONOMER_FORMS:
+                    continue
+                if not any(
+                    index in metal_isotopes and model.startswith("[M+Mg+")
+                    for index, model in core
+                ):
+                    continue
+                members = core + [(dimer, "[2M+H]+")]
+                witnesses = frozenset(index for index, _ in members)
+                for model, offset in FAMILY_METAL_DIMERS:
+                    members.extend(
+                        (index, model)
+                        for index in matching(2 * neutral + offset, seed)
+                        if index in metal_isotopes and coelutes(index, dimer)
+                    )
+                signature = tuple(sorted(set(members)))
+                if signature not in found:
+                    found[signature] = _IonFamily(neutral, signature, witnesses)
+    return tuple(found.values())
 
 
 def _mass_matches(
@@ -750,10 +1011,12 @@ class SameCompoundStep:
     key = "same_compound"
     label = "同化合物收斂"
     description = (
-        "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct 與二聚體衍生列，"
+        "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct、鹽簇與聚集離子衍生列，"
         "保留有證據的 [M+H]⁺，不改選較強的其他離子。元素或母列未定不阻擋排除。"
         "只計直接偵測格：同一樣本 apex 差 "
-        "≤3 秒、強度比穩定，同位素另檢查天然豐度。質量關係以列中心 m/z 比對。"
+        "≤3 秒；單一關係需強度比穩定，同位素另檢查天然豐度。"
+        "多種加合物、聚集離子與金屬同位素共同支持的家族，不要求先看到 [M+H]⁺。"
+        "質量關係以列中心 m/z 比對。"
         "需要該次分析的 cid_nl_explanation.sqlite。"
     )
     parameters: tuple[StepParameter, ...] = ()
@@ -819,6 +1082,12 @@ class SameCompoundStep:
                     "unassigned_isotope_median_factors": list(
                         UNASSIGNED_ISOTOPE_MEDIAN_FACTORS
                     ),
+                    "ion_family_without_mh_min_monomer_forms": FAMILY_MIN_MONOMER_FORMS,
+                    "ion_family_without_mh_requires_protonated_dimer": True,
+                    "ion_family_requires_metal_isotope": True,
+                    "ion_family_metal_multimer_counts": list(
+                        FAMILY_METAL_MULTIMER_COUNTS
+                    ),
                 },
                 "removed_feature_count": sum(
                     not decision.keep for decision in result.decisions
@@ -836,6 +1105,10 @@ class SameCompoundStep:
                 ),
                 "removed_representative_undetermined_count": sum(
                     decision.reason == "derived_representative_undetermined"
+                    for decision in result.decisions
+                ),
+                "removed_non_protonated_family_count": sum(
+                    decision.reason == "non_protonated_ion_family"
                     for decision in result.decisions
                 ),
                 "removed_by_relation": dict(sorted(used.items())),

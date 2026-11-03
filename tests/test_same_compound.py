@@ -105,6 +105,12 @@ def review_kinds(result):
         ("[M+K]+", 300.0, 337.955882, 0.5, CONFIRMED_MH),
         ("[M+NH4]+", 300.0, 317.026549, 0.5, CONFIRMED_MH),
         ("[2M+H]+", 300.0, 2 * 300.0 - 1.00727647, 0.3, CONFIRMED_MH),
+        # M = 300 - proton; metal dimer is 2M - H + Mg/Ca (net charge +1).
+        ("[2M-H+Mg]+", 300.0, 620.962115180219, 0.3, CONFIRMED_MH),
+        ("[2M-H+Ca]+", 300.0, 636.939664346219, 0.3, CONFIRMED_MH),
+        # Neutral salt clusters can attach to any cation, not only [M+H]+.
+        ("+NaHCOO", 300.0, 367.987423553370, 0.3, UNCONFIRMED),
+        ("+NaCH3COO", 300.0, 382.003073617830, 0.3, UNCONFIRMED),
         ("[M+Mg+HCOO]+", 300.0, 367.974871, 0.3, CONFIRMED_MH),
         ("[M+Mg+CH3COO]+", 300.0, 381.990521, 0.3, CONFIRMED_MH),
         ("[M+Ca+HCOO]+", 300.0, 383.952420, 0.3, CONFIRMED_MH),
@@ -334,6 +340,159 @@ def test_mg_ca_family_keeps_protonated_row_and_removes_unassigned_isotope():
     assert result.decisions[3].undetermined is True
 
 
+def sodium_family(*, protonated=False):
+    # C9H13N3O4 neutral exact mass; independent NIST ion masses, not owner constants.
+    # Large changes in adduct response do not change this neutral-mass hypothesis.
+    neutral = 227.09060590
+    mg_response = (0.5, 2.0, 0.5, 2.0, 0.5, 2.0)
+    rows = [
+        row("Na", neutral + 22.989220702091),
+        row("MgFA", neutral + 68.982147388461, ratios=mg_response),
+        row("MgAc", neutral + 82.997797452921, scale=0.8),
+        row("DimerH", 2 * neutral + 1.007276452321, scale=0.3),
+        row(
+            "MgFA_M2",
+            neutral + 68.982147388461 + 1.997551271,
+            ratios=tuple(x * 0.1101 / 0.7899 for x in mg_response),
+        ),
+        row("MetalDimer", 2 * neutral + 44.958612334631, scale=0.4),
+        row(
+            "MetalDimer_M2",
+            2 * neutral + 44.958612334631 + 1.997551271,
+            scale=0.4 * 0.1101 / 0.7899,
+        ),
+        row("Na_13C", neutral + 22.989220702091 + 1.003355, scale=0.1),
+        # A complex without independent isotope support stays a candidate.
+        row("WeakComplex", neutral + 232.975742006891, scale=0.2),
+        row("BiologicalH2", neutral + 22.989220702091 + 2.015650, scale=0.6),
+    ]
+    if protonated:
+        rows.append(row("MH", neutral + 1.007276452321))
+    return rows
+
+
+@pytest.mark.parametrize("protonated", [False, True])
+def test_supported_ion_family_excludes_non_mh_without_requiring_a_protonated_row(
+    protonated,
+):
+    decisions, result = decide(*sodium_family(protonated=protonated))
+    for name in ("Na", "MgFA", "MgAc", "DimerH", "MetalDimer"):
+        assert decisions[name][0] is False
+        assert decisions[name][1] == "non_protonated_ion_family"
+        assert decisions[name][2] == ("MH" if protonated else None)
+    for name in ("Na_13C", "MgFA_M2", "MetalDimer_M2"):
+        assert decisions[name][0] is False
+        assert decisions[name][2] == ("MH" if protonated else None)
+    assert decisions["WeakComplex"][0] is True
+    assert decisions["BiologicalH2"][0] is True
+    if protonated:
+        assert decisions["MH"][0] is True
+    assert any(
+        r["review_kind"] == "non_protonated_ion_family" for r in result.review_rows
+    )
+
+
+@pytest.mark.parametrize("missing", ["DimerH", "MgFA_M2", "MgAc"])
+def test_mass_compatible_family_requires_independent_dimer_and_isotope_witnesses(
+    missing,
+):
+    rows = [r for r in sodium_family() if r[0].feature_id != missing]
+    decisions, _ = decide(*rows)
+    assert decisions["Na"][0] is True
+    assert all(d[1] != "non_protonated_ion_family" for d in decisions.values())
+
+
+@pytest.mark.parametrize("direct", [False, (True, True, False, False, False, False)])
+def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
+    rows = [r for r in sodium_family() if r[0].feature_id != "DimerH"]
+    rows.append(row("DimerH", 455.188488252321, scale=0.3, direct=direct))
+    decisions, _ = decide(*rows)
+    assert decisions["Na"][0] is True
+
+
+def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
+    rows = [r for r in sodium_family() if r[0].feature_id != "MgAc"]
+    # Na and DimerH are 4.8 s apart: the metal rows must not bridge that gap.
+    rows = [r for r in rows if r[0].feature_id != "DimerH"]
+    rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=4.8))
+    rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=2.4))
+    decisions, _ = decide(*rows)
+    assert decisions["Na"][0] is True
+
+
+def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity():
+    # An isobaric [N+H]+ can share the [M+Na]+ feature. Unlike Na vs K
+    # attribution, this changes whether the row contains a wanted ion form.
+    neutral_n = 227.09060590 + 22.989220702091 - 1.007276452321
+    decisions, result = decide(
+        *sodium_family(),
+        row("N_Na", neutral_n + 22.989220702091),
+        row("N_MgFA", neutral_n + 68.982147388461, scale=0.5),
+        row("N_MgAc", neutral_n + 82.997797452921, scale=0.6),
+        row("N_DimerH", 2 * neutral_n + 1.007276452321, scale=0.3),
+        row(
+            "N_MgFA_M2",
+            neutral_n + 68.982147388461 + 1.997551271,
+            scale=0.5 * 0.1101 / 0.7899,
+        ),
+    )
+    assert decisions["Na"][0] is True
+    assert decisions["Na"][4] == UNCONFIRMED
+    assert ("ion_family_form_undetermined", "Na") in review_kinds(result)
+
+
+def test_family_never_assigns_a_removed_protonated_candidate_as_representative():
+    # A co-eluting isobar can also satisfy another ion's isotope relation.
+    decisions, _ = decide(
+        *sodium_family(protonated=True),
+        row("OtherRoot", 228.097882352321 - 1.003355, scale=10.0),
+    )
+    assert decisions["MH"][0] is False
+    assert decisions["Na"][2] is None
+    assert all(d[2] is None or decisions[d[2]][0] for d in decisions.values())
+
+
+@pytest.mark.parametrize(
+    ("isotope_supported", "calcium_shift"), [(False, 0.0), (True, 0.0), (True, 4.8)]
+)
+def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
+    isotope_supported, calcium_shift
+):
+    # C10H13N5O4 neutral: two different metal carriers constrain the same trimer.
+    neutral = 267.09675390
+    rows = [
+        row("MH", neutral + 1.007276452321),
+        row(
+            "MgTrimer",
+            3 * neutral + 22.976668084861,
+            scale=0.3,
+            shift_sec=calcium_shift / 2,
+        ),
+        row(
+            "CaTrimer",
+            3 * neutral + 38.954217250861,
+            ratios=(0.1, 0.6, 0.1, 0.6, 0.1, 0.6),
+            shift_sec=calcium_shift,
+        ),
+    ]
+    if isotope_supported:
+        rows.append(
+            row(
+                "MgTrimer_M2",
+                3 * neutral + 22.976668084861 + 1.997551271,
+                scale=0.3 * 0.1101 / 0.7899,
+            )
+        )
+    decisions, _ = decide(*rows)
+    assert decisions["MH"][0] is True
+    qualified = isotope_supported and calcium_shift == 0.0
+    assert decisions["MgTrimer"][0] is (not qualified)
+    assert decisions["CaTrimer"][0] is (not qualified)
+    if qualified:
+        assert decisions["CaTrimer"][2] == "MH"
+        assert decisions["MgTrimer_M2"][2] == "MH"
+
+
 def test_competing_paths_still_need_direct_coelution_with_a_root():
     decisions, result = decide(
         row("A", 300.0),
@@ -432,6 +591,17 @@ def _scenario():
         row("artifact", 601.003355, scale=0.15, base_rt=50.0),
         row("Mg", 343.118794, base_rt=60.0),
         row("M2", 345.116345, scale=1 / 7.174, base_rt=60.0),
+    ) + tuple(
+        (
+            FeatureIdentity(
+                "family_" + feature.feature_id,
+                feature.matrix_mz,
+                feature.matrix_rt,
+                feature.center_mz_basis,
+            ),
+            cells,
+        )
+        for feature, cells in sodium_family()
     )
 
 
