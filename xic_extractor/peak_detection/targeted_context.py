@@ -142,6 +142,10 @@ class TargetedPopulationContext:
 
     @cached_property
     def calibration_region(self) -> TargetedRegionContext | None:
+        # Paired references already live in the sample frame. Their offsets
+        # cannot calibrate displacement from the method frame for other targets.
+        if self.reference_istd_rt_min is not None:
+            return None
         regions = self.competitors
         if len(regions) != 1:
             return None
