@@ -7,7 +7,14 @@ import math
 import os
 import sqlite3
 import zlib
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import (
+    Callable,
+    Container,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -18,6 +25,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.diagnostics.explanation_review import (
     REVIEW_SCHEMA_VERSION,
+    iter_cell_values,
     pack_cells,
     unpack_cells,
     validate_membership_risks,
@@ -804,6 +812,54 @@ def read_review_row_samples(
                 )
             rows[row_id] = cohorts[mask]
         return rows
+
+
+def read_explanation_summary(path: Path) -> dict[str, Any]:
+    """Read only the validated completion summary, without records or cells."""
+    if not path.is_file():
+        raise ExplanationUnavailableError(f"explanation unavailable: {path}")
+    try:
+        with closing(
+            sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as connection:
+            return _read_completed_summary(connection)
+    except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
+        raise ExplanationError(f"malformed explanation: {exc}") from exc
+
+
+def read_observation_apices(path: Path) -> dict[str, float]:
+    """Apex RT of each terminal observation, by physical peak key."""
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        return {
+            observation["physical_peak_key"]: float(observation["rt_apex_min"])
+            for (payload,) in db.execute(
+                "SELECT payload FROM records WHERE kind='terminal_subjects'"
+            )
+            for observation in _object(payload).get("observations") or ()
+        }
+
+
+def read_row_cell_values(
+    path: Path, summary: Mapping[str, Any], feature_ids: Container[str]
+) -> Iterator[tuple[str, str, Any, Any, Any]]:
+    """Value, support origin and observations of each cell of the named rows.
+
+    Yields ``(feature_id, sample_key, value, support_origin, observation_ids)``.
+    Other rows are skipped before their cells are decompressed.
+    """
+    samples = [sample["sample_key"] for sample in summary["samples"]]
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        for record, payload in db.execute(
+            "SELECT r.payload, c.payload FROM row_cells c "
+            "JOIN records r ON r.id=c.row_record_id"
+        ):
+            feature_id = _object(record)["feature_id"]
+            if feature_id not in feature_ids:
+                continue
+            for sample, value, origin, observations in iter_cell_values(
+                payload, sample_ids=samples
+            ):
+                yield feature_id, sample, value, origin, observations
 
 
 def read_explanation_metadata(

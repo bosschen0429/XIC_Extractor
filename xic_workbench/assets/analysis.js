@@ -1915,6 +1915,7 @@
     state.curation.samples = samples ?? null;
     $("curation-source_dir").value = sourceDir;
     $("curation-sample_metadata").value = "";
+    $("curation-istd").value = "";
     selectView("curation");
     return detectCuration();
   }
@@ -1933,6 +1934,7 @@
       const detection = await api("/api/matrix-curation/source", {
         source_dir: sourceDir,
         sample_metadata_path: $("curation-sample_metadata").value.trim(),
+        istd_path: $("curation-istd").value.trim(),
         samples:
           sourceDir === state.curation.runSource ? state.curation.samples : null,
       });
@@ -1974,6 +1976,14 @@
               confirmed: "RAW 資料夾已確認的樣本資訊",
               raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
             }[source.kind],
+      );
+      const istd = detection.istd_source;
+      item(
+        istd ? "ok" : "todo",
+        "內標清單",
+        !istd
+          ? "找不到；內標不受保護。需要時請在上方選擇目標清單"
+          : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
       );
     }
     $("curation-output").textContent = detection
@@ -2062,6 +2072,7 @@
     await startJob("curation", {
       source_dir: sourceDir,
       sample_metadata_path: $("curation-sample_metadata").value.trim(),
+      istd_path: $("curation-istd").value.trim(),
       samples:
         sourceDir === state.curation.runSource ? state.curation.samples : null,
       steps,
@@ -2636,7 +2647,20 @@
       "curation-",
       "只有找不到樣本資料，或要改用另一份時才需要選擇。",
     );
-    for (const id of ["curation-source_dir", "curation-sample_metadata"])
+    pathField(
+      $("curation-paths"),
+      "istd",
+      "內標清單（選填）",
+      "targets",
+      "",
+      "curation-",
+      "預設使用該次分析的內標清單；舊輸出找不到時才需要選擇。",
+    );
+    for (const id of [
+      "curation-source_dir",
+      "curation-sample_metadata",
+      "curation-istd",
+    ])
       $(id).addEventListener("change", () => act(detectCuration));
     renderCuration(null, "");
     $("curation-form").onsubmit = (event) => {

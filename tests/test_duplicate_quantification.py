@@ -53,10 +53,8 @@ def test_duplicate_quantification_classifies_row_pairs_by_direct_detections():
     assert summary["cell_pair_kinds"] == {"BD": 3, "DD": 1}
 
 
-@pytest.mark.parametrize("level", ("validation-minimal", "validation", "debug"))
-def test_duplicate_quantification_reads_published_output_levels(
-    tmp_path, monkeypatch, level
-):
+def publish_owner_run(tmp_path, monkeypatch, level):
+    """A published Alignment folder of one owner run, with its explanation."""
     completed, writer, candidates, _, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
@@ -82,10 +80,20 @@ def test_duplicate_quantification_reads_published_output_levels(
         matrix_path=outputs.matrix_tsv,
         alignment_config=config,
     )
+    return output_dir
 
-    cells = read_published_cells(output_dir)
+
+# Machine is what Workbench Untargeted publishes: no backfill ledger.
+@pytest.mark.parametrize(
+    "level", ("machine", "validation-minimal", "validation", "debug")
+)
+def test_duplicate_quantification_reads_published_output_levels(
+    tmp_path, monkeypatch, level
+):
+    cells = read_published_cells(publish_owner_run(tmp_path, monkeypatch, level))
 
     assert {(cell.sample, cell.direct, cell.apex_rt_min) for cell in cells} == {
         ("S1", True, 8.0),
         ("S2", True, 8.0),
     }
+    assert all(cell.value is not None and cell.value > 0 for cell in cells)

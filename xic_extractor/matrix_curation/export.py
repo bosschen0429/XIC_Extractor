@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -13,10 +14,26 @@ from typing import Any
 import numpy as np
 
 from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
+from xic_extractor.matrix_curation.istd import (
+    IstdWindow,
+    match_istd,
+    windows_from_explanation,
+)
+from xic_extractor.matrix_curation.same_compound import (
+    REVIEW_NAME as SAME_COMPOUND_REVIEW_NAME,
+)
+from xic_extractor.matrix_curation.same_compound import (
+    SAME_COMPOUND_STEP,
+    group_outcome_review,
+)
 from xic_extractor.matrix_curation.steps import (
+    CellEvidence,
+    CurationInputs,
     CurationMatrix,
     CurationStep,
+    FeatureIdentity,
     SampleBinding,
+    StepTable,
 )
 from xic_extractor.output.alignment.matrix_output_contract import matrix_review_rows
 from xic_extractor.sample_metadata import (
@@ -34,12 +51,19 @@ from xic_extractor.tabular_io import (
 )
 
 # A later step joins by adding itself here; the page and outputs follow.
-STEPS: tuple[CurationStep, ...] = (FINITE_FRACTION_STEP,)
+STEPS: tuple[CurationStep, ...] = (FINITE_FRACTION_STEP, SAME_COMPOUND_STEP)
 MATRIX_NAME = "alignment_matrix.tsv"
 REVIEW_NAME = "alignment_review.tsv"
 RUN_METADATA_NAME = "alignment_run_metadata.json"
+EXPLANATION_NAME = "cid_nl_explanation.sqlite"
 SUMMARY_NAME = "matrix_curation_summary.json"
-DECISION_KEY_COLUMNS = ("source_matrix_row_index", "feature_id", "Mz", "RT")
+DECISION_KEY_COLUMNS = (
+    "source_matrix_row_index",
+    "feature_id",
+    "Mz",
+    "RT",
+    "istd_label",
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +74,8 @@ class CurationSource:
     # Where the run read its RAW, from the Alignment run metadata when present.
     raw_dir: Path | None = None
     dll_dir: Path | None = None
+    # The run's per-cell explanation, when the folder has one.
+    explanation_path: Path | None = None
 
 
 def locate_curation_source(source_dir: Path) -> CurationSource:
@@ -73,7 +99,78 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         Path(value) if isinstance(value, str) and value.strip() else None
         for value in (run.get("raw_dir"), run.get("dll_dir"))
     )
-    return CurationSource(source_dir, matrix, review, raw_dir, dll_dir)
+    explanation = source_dir / EXPLANATION_NAME
+    return CurationSource(
+        source_dir,
+        matrix,
+        review,
+        raw_dir,
+        dll_dir,
+        explanation if explanation.is_file() else None,
+    )
+
+
+def cell_evidence_problem(source: CurationSource) -> str:
+    """Why per-cell detection evidence cannot be read, or an empty string."""
+    from xic_extractor.diagnostics.alignment_explanation import (
+        ExplanationError,
+        read_explanation_summary,
+    )
+    from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
+
+    if source.explanation_path is None:
+        return (
+            f"資料夾中沒有 {EXPLANATION_NAME}，無法取得每格的直接偵測證據；"
+            "請選擇 Workbench Untargeted 的輸出資料夾。"
+        )
+    try:
+        summary = read_explanation_summary(source.explanation_path)
+    except ExplanationError as exc:
+        return f"無法讀取 {EXPLANATION_NAME}：{exc}"
+    if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
+        return f"{EXPLANATION_NAME} 是舊格式；請重新執行 Alignment 產生新輸出。"
+    return ""
+
+
+def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
+    """The internal standards the run declared, or None when it cannot be read."""
+    if source.explanation_path is None:
+        return None
+    from xic_extractor.diagnostics.alignment_explanation import (
+        ExplanationError,
+        read_explanation_summary,
+    )
+
+    try:
+        return windows_from_explanation(
+            read_explanation_summary(source.explanation_path)
+        )
+    except (ExplanationError, ValueError):
+        return None
+
+
+def load_cell_evidence(
+    source: CurationSource, features: Sequence[FeatureIdentity]
+) -> tuple[dict[str, CellEvidence], ...]:
+    """Published cells of each Matrix row, keyed by explanation sample."""
+    from xic_extractor.diagnostics.duplicate_quantification import (
+        read_published_cells,
+    )
+
+    problem = cell_evidence_problem(source)
+    if problem:
+        raise ValueError(problem)
+    by_feature: dict[str, dict[str, CellEvidence]] = {
+        feature.feature_id: {} for feature in features
+    }
+    for cell in read_published_cells(source.source_dir):
+        row = by_feature.get(cell.feature_id)
+        if row is None or cell.value is None:
+            continue
+        row[cell.sample] = CellEvidence(
+            direct=cell.direct, value=cell.value, apex_rt_min=cell.apex_rt_min
+        )
+    return tuple(by_feature[feature.feature_id] for feature in features)
 
 
 def default_output_dir(source: CurationSource) -> Path:
@@ -148,14 +245,17 @@ def describe_steps(
     header, _ = read_tsv_with_header(
         source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
     )
-    binding = bind_samples(header[2:], metadata, missing=missing_samples)
+    inputs = CurationInputs(
+        bind_samples(header[2:], metadata, missing=missing_samples),
+        cell_evidence_problem(source),
+    )
     return [
         {
             "key": step.key,
             "label": step.label,
             "description": step.description,
             "parameters": [asdict(parameter) for parameter in step.parameters],
-            "unavailable_reason": step.unavailable_reason(binding),
+            "unavailable_reason": step.unavailable_reason(inputs),
         }
         for step in STEPS
     ]
@@ -192,11 +292,14 @@ def export_matrix_curation(
     sample_source: str,
     steps: Mapping[str, Mapping[str, object]],
     output_dir: Path,
+    istd_windows: Sequence[IstdWindow] | None = None,
+    istd_source: str = "",
 ) -> Path:
     """Write the curated Matrix and per-feature decisions into a new folder.
 
-    Each enabled step judges the original Matrix on its own; a feature is kept
-    only when every enabled step keeps it. Sources are never modified.
+    Each enabled step judges the original Matrix on its own. A feature is kept
+    when it is an internal standard or every enabled step keeps it. Sources are
+    never modified.
     """
     by_key = {step.key: step for step in STEPS}
     unknown = sorted(set(steps) - set(by_key))
@@ -221,11 +324,24 @@ def export_matrix_curation(
         review_columns=review_header,
         review_rows=review_rows,
     )
+    features = tuple(
+        FeatureIdentity(
+            feature_id=str(identity["feature_id"]),
+            matrix_mz=float(str(identity["matrix_mz"])),
+            matrix_rt=float(str(identity["matrix_rt"])),
+            center_mz_basis=str(identity.get("center_mz_basis", "")),
+        )
+        for identity in identities
+    )
     binding = bind_samples(
         header[2:], sample_metadata, missing="找不到樣本資料；請選擇樣本資料 TSV。"
     )
+    needs_cells = any(step.needs_cell_evidence for step in enabled)
+    inputs = CurationInputs(
+        binding, cell_evidence_problem(source) if needs_cells else ""
+    )
     for step in enabled:
-        reason = step.unavailable_reason(binding)
+        reason = step.unavailable_reason(inputs)
         if reason:
             raise ValueError(f"{step.label}無法執行：{reason}")
     samples = binding.columns
@@ -240,35 +356,87 @@ def export_matrix_curation(
                     f"matrix row {index + 1}, sample {column!r}: "
                     f"invalid numeric value {token!r}"
                 ) from exc
-    matrix = CurationMatrix(sample_binding=binding, values=values)
+    matrix = CurationMatrix(
+        sample_binding=binding,
+        values=values,
+        features=features,
+        cells=load_cell_evidence(source, features) if needs_cells else None,
+    )
     results = {
         step.key: step.evaluate(matrix, parameters[step.key]) for step in enabled
     }
+    windows = tuple(istd_windows or ())
+    istd_labels = [
+        match_istd(feature.matrix_mz, feature.matrix_rt, windows)
+        for feature in features
+    ]
+    final_keep = [
+        bool(label) or all(results[step.key].keep[index] for step in enabled)
+        for index, label in enumerate(istd_labels)
+    ]
+
+    tables: dict[str, StepTable] = {}
+    for step in enabled:
+        tables.update(results[step.key].tables)
+    step_extras: dict[str, dict[str, Any]] = {}
+    same_compound = results.get(SAME_COMPOUND_STEP.key)
+    if same_compound is not None:
+        others = [step for step in enabled if step is not SAME_COMPOUND_STEP]
+        group_review, empty_groups = group_outcome_review(
+            same_compound,
+            [feature.feature_id for feature in features],
+            [
+                all(results[step.key].keep[index] for step in others)
+                for index in range(len(features))
+            ],
+            final_keep,
+        )
+        review = tables[SAME_COMPOUND_REVIEW_NAME]
+        review_rows_all = (*review.rows, *group_review)
+        tables[SAME_COMPOUND_REVIEW_NAME] = StepTable(review.columns, review_rows_all)
+        step_extras[SAME_COMPOUND_STEP.key] = {
+            "empty_group_count": empty_groups,
+            "review_count": len(review_rows_all),
+            "review_by_kind": dict(
+                sorted(
+                    Counter(str(row["review_kind"]) for row in review_rows_all).items()
+                )
+            ),
+        }
 
     decision_columns = [*DECISION_KEY_COLUMNS]
     for step in enabled:
         decision_columns.extend(results[step.key].columns)
-    decision_columns.append("decision")
+    decision_columns.extend(("decision", "decision_reason"))
     decision_rows = []
     kept_rows = []
-    for index, (row, identity) in enumerate(zip(rows, identities, strict=True)):
-        keep = all(results[step.key].keep[index] for step in enabled)
+    for index, (row, feature) in enumerate(zip(rows, features, strict=True)):
         decision: dict[str, object] = {
             "source_matrix_row_index": index + 1,
-            "feature_id": identity["feature_id"],
+            "feature_id": feature.feature_id,
             "Mz": row["Mz"],
             "RT": row["RT"],
+            "istd_label": istd_labels[index],
         }
         for step in enabled:
             decision.update(results[step.key].rows[index])
-        decision["decision"] = "keep" if keep else "drop"
+        dropped_by = [step.key for step in enabled if not results[step.key].keep[index]]
+        decision["decision"] = "keep" if final_keep[index] else "drop"
+        if istd_labels[index]:
+            decision["decision_reason"] = "istd_protected"
+        elif dropped_by:
+            decision["decision_reason"] = "dropped_by:" + ",".join(dropped_by)
+        else:
+            decision["decision_reason"] = "kept_by_all_steps"
         decision_rows.append(decision)
-        if keep:
+        if final_keep[index]:
             kept_rows.append(row)
 
     output_dir.mkdir(parents=True, exist_ok=False)
     write_tsv(output_dir / "analysis_matrix.tsv", kept_rows, header)
     write_tsv(output_dir / "feature_decisions.tsv", decision_rows, decision_columns)
+    for name, table in tables.items():
+        write_tsv(output_dir / name, table.rows, table.columns)
     if binding.samples is not None:
         write_tsv(
             output_dir / "sample_metadata.tsv",
@@ -290,13 +458,24 @@ def export_matrix_curation(
                 "parameters": parameters[step.key],
                 "kept_feature_count": sum(results[step.key].keep),
                 **results[step.key].summary,
+                **step_extras.get(step.key, {}),
             }
             for step in enabled
         ],
+        "istd": {
+            "source": istd_source,
+            "standard_count": len(windows),
+            "protected_feature_count": sum(bool(label) for label in istd_labels),
+        },
         "inputs": {
             "source_dir": str(source.source_dir.resolve()),
             "matrix": str(source.matrix_path.resolve()),
             "review": str(source.review_path.resolve()),
+            "explanation": (
+                str(source.explanation_path.resolve())
+                if needs_cells and source.explanation_path is not None
+                else ""
+            ),
             "sample_metadata": sample_source,
         },
         "feature_count": len(rows),

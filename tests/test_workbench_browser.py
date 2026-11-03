@@ -3252,6 +3252,12 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     step = page.locator("#curation-step-finite_fraction")
     expect(step).to_be_enabled()
     expect(step).to_be_checked()
+    # This folder has no per-cell explanation: the step says why it cannot run.
+    expect(page.locator("#curation-step-same_compound")).to_be_disabled()
+    expect(page.locator(".curation-step[data-step=same_compound]")).to_contain_text(
+        "cid_nl_explanation.sqlite"
+    )
+    expect(page.locator("#curation-source")).to_contain_text("內標清單")
     page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
