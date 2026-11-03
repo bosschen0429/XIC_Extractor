@@ -23,6 +23,7 @@ MAX_UPLOAD_BYTES = 1024 * 1024
 
 def preview_target_upload(name: object, content: object, settings: dict) -> dict:
     """Decode browser bytes and delegate semantics; never persist a preview."""
+    from xic_extractor.configuration.delta_mass import delta_mass_methods_payload
     from xic_extractor.configuration.targeted_method_files import (
         apply_targeted_method,
         load_targeted_method,
@@ -43,6 +44,9 @@ def preview_target_upload(name: object, content: object, settings: dict) -> dict
             return {
                 "kind": "method",
                 "targets": [dict(row) for row in method.target_rows],
+                "delta_mass_methods": delta_mass_methods_payload(
+                    method.delta_mass_methods
+                ),
                 "settings": applied,
                 "summary": method_summary(applied),
             }

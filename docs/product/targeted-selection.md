@@ -24,9 +24,35 @@ CrossSample, Backfill, or selected-value implementation.
 
 ### MS1-only target intent
 
-A blank `cid_nl_tag` declares an MS1-only target. Intake retains the shared
+A blank `cid_nl_tag` without `delta_mass_method` declares an MS1-only target.
+Intake retains the shared
 20 ppm precursor tolerance and leaves neutral loss and its tolerances
 unconfigured. Missing MS2 is not chemical identity evidence.
+
+### Custom Delta Mass target intent
+
+With `delta_mass_method` set, a blank `cid_nl_tag` selects the named Delta Mass
+method instead of MS1-only. `quant_position` names the method position represented
+by the Target's m/z. The selected position supplies the reported peak and area;
+the lowest-mass position is not an implicit quantitation channel.
+
+Targeted acquires the declared positions' XIC windows over the sample's acquired
+RT coverage. The shared physical owner qualifies their peaks. The existing pure
+Delta Mass matcher assesses mass-window support, co-elution and configured shape
+correlations. The quantitation position alone seeds this bounded search.
+Height-ratio ranges remain evidence, not admission gates. Distinct positions
+must have non-overlapping m/z windows for that Target.
+
+Only pattern-supported quantitation candidates enter Targeted selection as
+available regions. An unmatched pattern cannot fall back to MS1-only, borrow
+another sample's pattern support or receive CID-NL Backfill. Shared completion
+consumes the admitted physical observation; no CID-NL event or support is invented.
+Targeted retains the pattern answers separately for publication and review.
+
+XIC windows establish bounded mass support, not measured centroid masses or
+zero mass error. Delta offsets are m/z differences; users convert neutral mass
+differences for their ion charge before entering them. This configurable route
+does not establish chemical identity or method readiness by itself.
 
 ### Retained candidate context
 

@@ -344,6 +344,17 @@ def extract_one_target(
         istd_confidence_note=istd_confidence_note,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
+    if target.delta_mass_settings is not None:
+        from xic_extractor.extraction.targeted_delta_mass import (
+            assess_targeted_delta_mass,
+        )
+
+        candidate_assessment = replace(
+            candidate_assessment,
+            delta_mass_assessments=assess_targeted_delta_mass(
+                raw, candidate_assessment
+            ),
+        )
 
     scoring_context_builder = None
     if scoring_context_factory is not None and not defer_selection:

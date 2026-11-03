@@ -274,4 +274,4 @@ def setting_fields() -> list[dict[str, Any]]:
 
 
 def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    return {"label": "共用 CID-NL 策略", "custom_keys": [], "differences": []}
+    return {"label": "共用 Targeted 策略", "custom_keys": [], "differences": []}

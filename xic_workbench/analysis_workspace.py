@@ -41,6 +41,7 @@ class AnalysisWorkspace:
         from xic_extractor.configuration.settings import (
             resolve_settings,
         )
+        from xic_extractor.configuration.workspace_state import read_workspace
         from xic_workbench.config_io import (
             read_settings,
             read_targets,
@@ -93,6 +94,9 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
+            "delta_mass_methods": read_workspace(self.config_dir).get(
+                "delta_mass_methods", {}
+            ),
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
                 **method_summary(settings),
@@ -191,6 +195,20 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
+        if action == "targeted/delta-mass/validate":
+            from xic_extractor.configuration.delta_mass import (
+                delta_mass_methods_payload,
+                parse_delta_mass_methods,
+            )
+
+            try:
+                methods = parse_delta_mass_methods(values["delta_mass_methods"])
+            except ValueError as exc:
+                return {"valid": False, "error": str(exc)}
+            return {
+                "valid": True,
+                "delta_mass_methods": delta_mass_methods_payload(methods),
+            }
         if action == "targeted/method/save":
             from xic_extractor.configuration.targeted_method_files import (
                 create_targeted_method,
@@ -219,7 +237,11 @@ class AnalysisWorkspace:
                 raise ValueError(
                     "方法名稱已存在；請使用新名稱另存版本，原方法不會被覆寫。"
                 )
-            method = create_targeted_method(values["settings"], values["targets"])
+            method = create_targeted_method(
+                values["settings"],
+                values["targets"],
+                delta_mass_methods=values.get("delta_mass_methods", {}),
+            )
             save_targeted_method(method, path)
             return {
                 "name": name,
@@ -227,6 +249,9 @@ class AnalysisWorkspace:
                 "message": f"已儲存方法：{name}",
             }
         if action == "targeted/method/load":
+            from xic_extractor.configuration.delta_mass import (
+                delta_mass_methods_payload,
+            )
             from xic_extractor.configuration.targeted_method_files import (
                 apply_targeted_method,
                 load_targeted_method,
@@ -238,6 +263,9 @@ class AnalysisWorkspace:
             return {
                 "settings": settings,
                 "targets": [dict(row) for row in method.target_rows],
+                "delta_mass_methods": delta_mass_methods_payload(
+                    method.delta_mass_methods
+                ),
                 "summary": method_summary(settings),
             }
         if action == "preferences":
@@ -252,7 +280,10 @@ class AnalysisWorkspace:
             from xic_workbench.targeted import method_summary
 
             settings = write_work(
-                values["settings"], values["targets"], config_dir=self.config_dir
+                values["settings"],
+                values["targets"],
+                config_dir=self.config_dir,
+                delta_mass_methods=values.get("delta_mass_methods"),
             )
             if values.get("output_dir"):
                 write_preferences(
@@ -280,11 +311,21 @@ class AnalysisWorkspace:
             return summary
         if action == "targets/export":
             from xic_extractor.configuration.targeted_method_files import (
+                create_targeted_method,
                 save_target_table,
+                save_targeted_method,
             )
 
             path = Path(values["path"])
-            save_target_table(values["targets"], path)
+            if any(row.get("delta_mass_method") for row in values["targets"]):
+                method = create_targeted_method(
+                    {},
+                    values["targets"],
+                    delta_mass_methods=values.get("delta_mass_methods", {}),
+                )
+                save_targeted_method(method, path)
+            else:
+                save_target_table(values["targets"], path)
             return {"message": f"已匯出目標表：{path}", "path": str(path)}
         if action == "targets/upload":
             from xic_workbench.target_import import preview_target_upload

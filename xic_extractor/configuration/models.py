@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.configuration.execution_profile import default_parallel_workers
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -84,6 +85,9 @@ class Target:
     sample_applicability: str = "all"
     expected_rt_min: float | None = None
     cid_nl_tag: str = ""
+    delta_mass_method: str = ""
+    quant_position: str = ""
+    delta_mass_settings: DeltaMassPatternSettings | None = None
 
 
 class ConfigError(Exception):

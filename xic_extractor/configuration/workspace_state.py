@@ -28,7 +28,7 @@ def read_workspace(config_dir: Path) -> dict:
         }
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict) or set(state) != {
+        if not isinstance(state, dict) or set(state) - {"delta_mass_methods"} != {
             "application",
             "batch",
             "targets",
@@ -51,6 +51,8 @@ def read_workspace(config_dir: Path) -> dict:
             for row in state["targets"]
         ):
             raise ValueError("invalid target rows")
+        if not isinstance(state.get("delta_mass_methods", {}), dict):
+            raise ValueError("invalid Delta Mass method map")
         return state
     except (OSError, ValueError, TypeError) as exc:
         raise ConfigError(
@@ -72,8 +74,11 @@ def save_workspace(
     *,
     settings: dict[str, str] | None = None,
     targets: list[dict[str, str]] | None = None,
+    delta_mass_methods: dict | None = None,
 ) -> None:
     state = read_workspace(config_dir)
+    if delta_mass_methods is not None:
+        state["delta_mass_methods"] = delta_mass_methods
     for key, value in (settings or {}).items():
         if key not in _SECTION:
             raise ConfigError(f"不支援工作設定：{key}")

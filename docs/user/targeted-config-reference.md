@@ -18,8 +18,9 @@ machine values and an empty target list. Read operations do not create files.
 | `injection_order_source` | Optional sample metadata (Word, Excel, CSV or TSV); RAW headers own injection order and sample names |
 | `parallel_workers` | Local worker count; blank uses the shared execution-profile default |
 
-Scientific policy is platform-owned. The normal GUI and Targeted CLI do not
-offer smoothing, tolerance, anchor-window, Dirty Matrix or backend controls.
+Shared physical and selection policy is platform-owned. The normal GUI and
+Targeted CLI do not offer smoothing, anchor-window, Dirty Matrix or backend
+controls. Custom Delta Mass methods own their mass and co-elution tolerances.
 The GUI execution-resources section can save the shared worker count. The run metadata records the effective
 policy and actual resource allocation.
 
@@ -30,7 +31,9 @@ policy and actual resource allocation.
 | `label` | Unique target name; becomes a public output identifier |
 | `mz` | Positive precursor m/z |
 | `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
-| `cid_nl_tag` | `dR`, `R`, or `MeR` selects a shared built-in Discovery recipe; blank selects MS1-only, with no neutral-loss requirement and the shared 20 ppm precursor tolerance |
+| `cid_nl_tag` | `dR`, `R`, or `MeR` selects a shared built-in Discovery recipe; blank without `delta_mass_method` selects MS1-only with the shared 20 ppm precursor tolerance |
+| `delta_mass_method` | Optional named custom Delta Mass method; requires a blank `cid_nl_tag` and an accompanying method definition |
+| `quant_position` | Required with Delta Mass: the position represented by `mz`, whose selected XIC supplies the area |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
@@ -54,8 +57,10 @@ double tops can require review without suppressing the measured total.
 ## Portable method
 
 A method `.xlsx` has exactly `Method` and `Targets` worksheets. `Method` uses
-`key,value` (optional `description`) and has exactly one row: `strategy,cid-nl`.
-The strategy is fixed; it is not an editable science override.
+`key,value` (optional `description`) and retains the compatibility row
+`strategy,cid-nl`. This format marker does not override each target's method.
+Custom methods add a `delta_mass_methods` row containing the named definitions
+as JSON. Edit these definitions in the workbench, rather than editing JSON cells.
 A target-table `.xlsx` has exactly one `Targets` worksheet with the columns above.
 Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.
@@ -64,6 +69,29 @@ Download [method XLSX](../../xic_extractor/configuration/data/targeted-method.xl
 or [target-table XLSX](../../xic_extractor/configuration/data/targets.xlsx), or use
 the links in the target-list card. Save a copy before editing. These are format
 examples, not evidence that the listed method is appropriate for your samples.
+
+### Design a Delta Mass method
+
+1. Select **設計 Delta Mass 方法** in Targeted's target-list card.
+2. Name the method. Add two or more uniquely named positions, with increasing
+   relative m/z offsets starting at zero. Ratios are relative to the zero position.
+3. Set ppm, co-elution and shape conditions. Check the positions requiring shape
+   comparison against the lowest-mass position. Ratio ranges do not reject peaks.
+4. Apply the method. In **檢視與編輯**, select that method and a quantitation
+   position for each target. The Target's m/z belongs to that position.
+5. Save the workspace or save a named XLSX method. Exporting targets that use
+   Delta Mass includes `Method` definitions, so reimport does not lose the method.
+
+Delta Mass offsets are m/z differences, not charge-independent neutral masses.
+The quantitation position may be any configured position. Overlapping position
+windows are rejected because one ion cannot establish two distinct positions.
+Two-position methods require a measured partner; a solitary peak is insufficient.
+Unmatched patterns do not fall back to MS1-only. Different targets in one list
+can use MS1-only, CID-NL or different custom Delta Mass methods.
+
+The workspace and queued run receipts retain method definitions alongside target
+bindings. Results preserve method definitions and per-position evidence in the
+XLSX; the Inspector exposes the saved evidence without rerunning the matcher.
 
 Drag a file into the target-list import area or use **選擇檔案**. XLSX content
 automatically distinguishes a method from a target table; CSV/TSV are target tables.

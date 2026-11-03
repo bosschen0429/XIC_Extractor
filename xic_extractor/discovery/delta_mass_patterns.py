@@ -9,7 +9,7 @@ from math import sqrt
 
 import numpy as np
 
-from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
+from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
 from xic_extractor.xic_models import XICRequest, XICTrace

@@ -307,12 +307,15 @@ def _validate_target(target: Target) -> None:
         "role": "istd" if target.is_istd else "analyte",
         "istd_pair": target.istd_pair,
         "sample_applicability": target.sample_applicability,
+        "delta_mass_method": target.delta_mass_method,
+        "quant_position": target.quant_position,
     }
     try:
         parsed = _parse_target_row(
             Path("<immutable-target-definition>"),
             2,
             row,
+            {target.delta_mass_method: target.delta_mass_settings},
         )
     except ConfigError as exc:
         raise TargetIdentityError(
@@ -334,11 +337,25 @@ def _target_list_content(
         "definitions": [
             {
                 "target_label": definition.target_key.target_label,
-                "target": asdict(definition.target),
+                "target": _target_payload(definition.target),
             }
             for definition in definitions
         ],
     }
+
+
+def _target_payload(target: Target) -> dict:
+    payload = asdict(target)
+    if target.delta_mass_settings is None:
+        for key in ("delta_mass_method", "quant_position", "delta_mass_settings"):
+            del payload[key]
+    else:
+        from xic_extractor.configuration.delta_mass import delta_mass_methods_payload
+
+        payload["delta_mass_settings"] = delta_mass_methods_payload(
+            {target.delta_mass_method: target.delta_mass_settings}
+        )[target.delta_mass_method]
+    return payload
 
 
 def _owner_normalized_text(value: object, *, field: str) -> str:

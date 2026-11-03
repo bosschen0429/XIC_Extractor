@@ -14,6 +14,7 @@ from xic_extractor.output.detection import (
 )
 from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
+from xic_extractor.output.sheet_delta_mass import build_delta_mass_sheets
 from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
 from xic_extractor.output.sheet_field_guide import build_field_guide_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
@@ -44,6 +45,7 @@ def write_workbook_from_rows(
     diagnostics: list[dict[str, str]],
     output_path: Path,
     require_projection: bool = True,
+    delta_mass_rows: list[dict] | None = None,
 ) -> Path:
     if require_projection:
         _require_product_projection(rows)
@@ -72,11 +74,15 @@ def write_workbook_from_rows(
     build_area_matrix_sheet(wb.create_sheet("面積"), rows)
     _build_data_sheet(wb.create_sheet("XIC Results"), rows, review_rows=review_rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
+    build_delta_mass_sheets(wb, targets, delta_mass_rows or [])
     _build_metadata_sheet(
         wb.create_sheet("Run Metadata"),
         config,
     )
-    build_field_guide_sheet(wb.create_sheet("欄位說明"))
+    build_field_guide_sheet(
+        wb.create_sheet("欄位說明"),
+        delta_mass=any(target.delta_mass_settings for target in targets),
+    )
     if diagnostics:
         build_diagnostic_events_sheet(wb.create_sheet("診斷事件"), diagnostics)
 

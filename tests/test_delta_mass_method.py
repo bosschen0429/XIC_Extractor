@@ -2,11 +2,11 @@
 
 import pytest
 
-from xic_extractor.discovery.delta_mass_patterns import prepare_delta_mass_candidates
-from xic_extractor.discovery.delta_mass_strategy import (
+from xic_extractor.configuration.delta_mass import (
     DeltaMassPatternSettings,
     DeltaMassPosition,
 )
+from xic_extractor.discovery.delta_mass_patterns import prepare_delta_mass_candidates
 from xic_extractor.discovery.detected_features import DetectedFeature
 
 

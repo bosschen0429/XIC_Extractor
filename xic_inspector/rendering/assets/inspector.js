@@ -403,6 +403,29 @@
         ['NL (Da)', target['NL (Da)']], ['NL 容差 warn / max (ppm)', `${value(target['NL ppm warn'])} / ${value(target['NL ppm max'])}`],
         ['樣本適用範圍', target['Sample applicability']],
       ]));
+      if (item.details.delta_mass_method) {
+        const pattern = item.details.delta_mass_method;
+        method.append(facts([
+          ['Delta Mass 方法', target['Delta Mass Method']], ['定量位置', target['Quant Position']],
+          ['質量容差 (ppm)', pattern.mz_tolerance_ppm], ['峰頂容差下限 (sec)', pattern.apex_floor_sec],
+          ['峰形相關性下限', pattern.min_shape_r],
+          ['位置（Δ m/z）', pattern.positions.map(position => `${position.label}: ${position.delta_da}`).join(' · ')],
+        ]));
+        const evidence = element('details', undefined, 'tgt-method');
+        evidence.append(element('summary', 'Delta Mass 配對證據'));
+        evidence.append(element('p', '各通道為設定的 m/z 容差視窗；不是零誤差的實測質量。強度比例只供參考。', 'tgt-note'));
+        const table = element('table'); const header = element('tr');
+        const fields = [['SampleName', '樣本'], ['Candidate RT', '定量峰 RT'], ['Selected', '已選'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Apex Delta sec', 'Δ RT (s)'], ['Height Ratio', '強度比例'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']];
+        for (const [, label] of fields) header.append(element('th', label));
+        table.append(header);
+        for (const record of item.details.delta_mass_evidence || []) {
+          const row = element('tr');
+          for (const [key] of fields) row.append(element('td', value(record[key])));
+          table.append(row);
+        }
+        const scroll = element('div', undefined, 'tgt-table-scroll'); scroll.append(table); evidence.append(scroll);
+        section.append(evidence);
+      }
       const labels = {
         signal_processing_method: '平滑方法', signal_processing_window_points: '平滑視窗 (points)',
         ms2_precursor_tol_da: 'MS2 precursor 容差 (Da)', nl_min_intensity_ratio: 'NL 最低相對強度',

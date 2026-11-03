@@ -71,13 +71,14 @@
               <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
             </div>
             <div class="actions list-actions">
+              <button id="target-delta-edit" type="button" data-analysis-idle>設計 Delta Mass 方法</button>
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
               <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
               <a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a>
               <a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a>
             </div>
           </div>
-          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
+          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 Targeted 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
           <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2></div></div>
@@ -455,6 +456,26 @@
     <div class="table-scroll"><table><thead><tr><th>目標</th><th>m/z</th><th>預期 RT</th><th>角色</th><th>ISTD 配對</th></tr></thead><tbody id="target-import-rows"></tbody></table></div>
   </div>
   <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
+</dialog>
+
+<dialog id="target-delta-editor" class="wide-dialog">
+  <div class="dialog-head"><h2>設計 Delta Mass 方法</h2><button type="button" class="dialog-close" data-close="target-delta-editor" aria-label="關閉 Delta Mass 方法">×</button></div>
+  <div class="dialog-body">
+    <p>設定相對最低質量位置的 <strong>m/z 差值</strong>，不是未換算電荷的中性分子質量差。Target 的 m/z 與面積對應「定量位置」。強度比例相對第一個位置，僅供參考，不淘汰候選。</p>
+    <div class="settings-grid">
+      <label>編輯方法<select id="target-delta-select"><option value="">新增方法</option></select></label>
+      <label>方法名稱<input id="target-delta-name" /></label>
+      <label>質量容差（ppm）<input id="target-delta-ppm" type="number" min="0" step="any" value="20" /></label>
+      <label>峰頂 RT 容差下限（秒）<input id="target-delta-apex" type="number" min="0" step="any" value="1" /></label>
+      <label>MS1 掃描間隔倍數<input id="target-delta-interval" type="number" min="0" step="any" value="1.25" /></label>
+      <label>峰形比較半窗（秒）<input id="target-delta-window" type="number" min="0" step="any" value="10" /></label>
+      <label>最低峰形相關性 r<input id="target-delta-shape" type="number" min="-1" max="1" step="any" value="0.9" /></label>
+    </div>
+    <p class="subtle">至少兩個位置，第一個差值為 0，其餘依序遞增。共洗脫容差取 RT 下限與掃描間隔倍數中較大者。兩位置方法必須量測到配對峰，不能只靠單一峰補出另一個。</p>
+    <div class="table-scroll editor-table"><table><thead><tr><th>位置名稱</th><th>Δ m/z</th><th>比例下限</th><th>比例上限</th><th>比對峰形</th><th></th></tr></thead><tbody id="target-delta-positions"></tbody></table></div>
+    <p id="target-delta-error" class="error" role="alert"></p>
+  </div>
+  <div class="dialog-foot"><button id="target-delta-add" type="button" class="spacer">新增位置</button><button type="button" data-close="target-delta-editor">取消</button><button id="target-delta-apply" type="button" class="primary">套用方法</button></div>
 </dialog>
 
 <dialog id="target-editor" class="wide-dialog">

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -80,6 +80,7 @@ from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
 
 if TYPE_CHECKING:
+    from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
     from xic_extractor.extraction.result_models import ExtractionResult
 
 _PRECURSOR_SCOPE_ROUNDOFF_DA = 1e-6
@@ -109,9 +110,18 @@ class TargetedCandidateAssessment:
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
     method_trigger_events: tuple[tuple[int, float], ...] = ()
+    delta_mass_assessments: Mapping[PeakCandidate, tuple[DeltaMassCandidate, ...]] = (
+        field(default_factory=dict)
+    )
     paired_istd_fwhm: float | None = None
     istd_confidence_note: str | None = None
     paired_istd_anchor_rt: float | None = None
+
+    def method_admits(self, candidate: PeakCandidate) -> bool:
+        return self.target.delta_mass_settings is None or any(
+            match.status == "candidate"
+            for match in self.delta_mass_assessments.get(candidate, ())
+        )
 
     def population_context(self) -> TargetedPopulationContext:
         prepared = self.prepared_result.prepared
@@ -151,10 +161,15 @@ class TargetedCandidateAssessment:
                 describe_targeted_region(
                     prepared,
                     candidate.physical_segment,
-                    measurement_available=evaluation.state == "available",
+                    measurement_available=evaluation.state == "available"
+                    and self.method_admits(candidate),
                     component_apex_rts=components,
                     chemical_support=(
-                        self.method_relations is not None
+                        (
+                            self.target.delta_mass_settings is not None
+                            and self.method_admits(candidate)
+                        )
+                        or self.method_relations is not None
                         and index in self.method_relations.supported_candidate_indexes
                     ),
                     chemical_set_membership=index in set_members,
@@ -182,6 +197,7 @@ class TargetedCandidateAssessment:
                 candidate
                 for candidate, evaluation in self.candidate_evaluations.items()
                 if evaluation.state == "available"
+                and self.method_admits(candidate)
                 and selected_segment is not None
                 and candidate.physical_segment == selected_segment
             ),
@@ -200,7 +216,7 @@ class TargetedCandidateAssessment:
         measurable = tuple(
             candidate
             for candidate, evaluation in self.candidate_evaluations.items()
-            if evaluation.state == "available"
+            if evaluation.state == "available" and self.method_admits(candidate)
         )
         candidate_population = replace(
             self.candidates,
@@ -272,6 +288,16 @@ class TargetedCandidateAssessment:
                 else None
             ),
             sample_name=self.trace_group.sample_name,
+            delta_mass_candidates=tuple(
+                match
+                for matches in self.delta_mass_assessments.values()
+                for match in matches
+            ),
+            selected_delta_mass_feature_id=(
+                f"{self.target.quant_position}:{tuple(self.candidate_evaluations).index(candidate)}"
+                if candidate is not None and self.target.delta_mass_settings is not None
+                else None
+            ),
         )
         return replace(result, targeted_candidate_assessment=self)
 

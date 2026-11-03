@@ -16,6 +16,8 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
 | `Targets` | Admitted target intent | Inspector, human |
+| `Delta Mass Methods` | Named pattern definitions; only with Delta Mass targets | Inspector, reproducibility |
+| `Delta Mass Evidence` | Per-position pattern answers, selected-candidate flags and unmatched searches; only with Delta Mass targets | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
 | `欄位說明` | Meaning and unit of every delivered column | Human |
 | `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
@@ -26,6 +28,12 @@ their named headers and the unversioned `targeted_output` format, not column
 positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
+
+Delta Mass runs append `Delta Mass Method` and `Quant Position` to `Targets`.
+Existing CID-NL/MS1-only runs keep their original sheets and columns. Pattern
+evidence records XIC query masses, not measured centroids. Height ratios remain
+reference evidence. The Inspector's **Delta Mass 配對證據** section reads these
+saved answers; neither the writer nor Inspector reruns the scientific matcher.
 
 ## Content rules
 

@@ -313,6 +313,7 @@ def create_server(
                 "targeted/method",
                 "targeted/method/save",
                 "targeted/method/load",
+                "targeted/delta-mass/validate",
                 "targets/import",
                 "targets/upload",
                 "targets/export",

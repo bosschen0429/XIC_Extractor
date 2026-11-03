@@ -7,8 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
-from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
 from xic_extractor.tabular_io import write_delimited_rows
 
 CANDIDATE_COLUMNS = (

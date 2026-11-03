@@ -5,6 +5,7 @@
   const state = {
     config: null,
     targets: [],
+    deltaMassMethods: {},
     sampleSets: { targeted: null, untargeted: null },
     pendingExclusions: new Set(),
     editing: "untargeted",
@@ -184,7 +185,7 @@
     checklist(kind);
   }
   function setMethodState(summary) {
-    const label = summary?.label || "共用 CID-NL 策略";
+    const label = summary?.label || "共用 Targeted 策略";
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;
@@ -533,7 +534,7 @@
     for (const panel of [data, method, execution]) panel.replaceChildren();
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
-    method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
+    method.append(el("p", "目標清單決定名稱、m/z、預期 RT、方法與 ISTD 配對。Delta Mass 方法另設計位置及比對條件；其餘沿用平台共用策略。", "settings-notice"), note);
     const grid = el("div", undefined, "settings-grid");
     execution.append(grid);
     // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
@@ -557,6 +558,7 @@
     lock();
   }
   function applyTargetedDraft(result) {
+    state.deltaMassMethods = result.delta_mass_methods || {};
     state.config.settings = result.settings;
     renderSettings(result.settings);
     setMethodState(result.summary);
@@ -646,7 +648,7 @@
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
     const output_dir = $("t-output_dir").value;
-    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir });
+    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir, delta_mass_methods: state.deltaMassMethods });
     state.config.settings = settings;
     state.config.targeted_output_dir = output_dir;
     state.config.settings_source = "workspace.json";
@@ -678,7 +680,7 @@
       ["名稱", ""],
       ["m/z", "num"],
       ["預期 RT (min)", "num"],
-      ["CID-NL tag", "num"],
+      ["方法", ""],
       ["ISTD 配對", ""],
     ])
       head.append(el("th", label, cls));
@@ -698,7 +700,7 @@
           row.expected_rt_min || "—",
           "num",
         ),
-        el("td", row.cid_nl_tag || "—", "num"),
+        el("td", row.delta_mass_method ? `Δ ${row.delta_mass_method} · ${row.quant_position || "未指定定量位置"}` : row.cid_nl_tag ? `CID-NL ${row.cid_nl_tag}` : "MS1-only"),
         el("td", row.istd_pair || "—"),
       );
       body.append(tr);
@@ -722,7 +724,8 @@
     ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
     ["expected_rt_min", "預期 RT（min）"],
-    ["cid_nl_tag", "CID-NL tag（dR / R / MeR）"],
+    ["method", "方法"],
+    ["quant_position", "定量位置"],
   ];
   function renderTargets() {
     const head = el("tr");
@@ -735,7 +738,7 @@
       const tr = el("tr");
       for (const [key, label] of targetColumns) {
         const td = el("td");
-        const input = el(key === "pairing" ? "select" : "input");
+        const input = el(["pairing", "method", "quant_position"].includes(key) ? "select" : "input");
         input.setAttribute("aria-label", `${label}（第 ${index + 1} 列）`);
         if (key === "pairing") {
           const choices = [["", "未配對"], ["role:istd", "此列是 ISTD"]];
@@ -751,9 +754,20 @@
             input.append(option);
           }
           input.value = value;
+        } else if (key === "method") {
+          input.add(new Option("MS1-only", ""));
+          for (const tag of ["dR", "R", "MeR"]) input.add(new Option(`CID-NL ${tag}`, `cid:${tag}`));
+          for (const name of Object.keys(state.deltaMassMethods)) input.add(new Option(`Delta Mass: ${name}`, `delta:${name}`));
+          const value = row.delta_mass_method ? `delta:${row.delta_mass_method}` : row.cid_nl_tag ? `cid:${row.cid_nl_tag}` : "";
+          if (![...input.options].some((option) => option.value === value)) input.add(new Option(`${value}（方法未定義）`, value));
+          input.value = value;
+        } else if (key === "quant_position") {
+          input.add(new Option("選擇定量位置", ""));
+          for (const position of state.deltaMassMethods[row.delta_mass_method]?.positions || []) input.add(new Option(position.label, position.label));
+          input.disabled = !row.delta_mass_method;
+          input.value = row.quant_position || "";
         } else {
           input.value = row[key] || "";
-          if (key === "cid_nl_tag") input.placeholder = "留空：MS1-only";
           if (
             ["mz", "expected_rt_min"].includes(
               key,
@@ -765,6 +779,11 @@
           if (key === "pairing") {
             row.role = input.value === "role:istd" ? "istd" : "analyte";
             row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
+            renderTargets();
+          } else if (key === "method") {
+            row.cid_nl_tag = input.value.startsWith("cid:") ? input.value.slice(4) : "";
+            row.delta_mass_method = input.value.startsWith("delta:") ? input.value.slice(6) : "";
+            row.quant_position = "";
             renderTargets();
           } else row[key] = input.value;
           dirty("targeted");
@@ -791,6 +810,67 @@
       body.append(tr);
     });
     targetCount();
+  }
+
+  let deltaDraft = null;
+  let deltaEditingName = "";
+  function loadDeltaDraft(name = "") {
+    deltaEditingName = name;
+    deltaDraft = structuredClone(state.deltaMassMethods[name] || {
+      positions: [
+        { label: "base", delta_da: 0, ratio_min: 1, ratio_max: 1 },
+        { label: "partner", delta_da: 1, ratio_min: 0.1, ratio_max: 10 },
+      ],
+      discriminating_positions: ["partner"],
+      mz_tolerance_ppm: 20, apex_floor_sec: 1, scan_interval_multiplier: 1.25,
+      shape_window_sec: 10, min_shape_r: 0.9,
+    });
+    $("target-delta-name").value = name;
+    for (const [id, key] of deltaFields) $(id).value = deltaDraft[key];
+    $("target-delta-error").textContent = "";
+    renderDeltaPositions();
+  }
+  const deltaFields = [
+    ["target-delta-ppm", "mz_tolerance_ppm"], ["target-delta-apex", "apex_floor_sec"],
+    ["target-delta-interval", "scan_interval_multiplier"], ["target-delta-window", "shape_window_sec"],
+    ["target-delta-shape", "min_shape_r"],
+  ];
+  function renderDeltaPositions() {
+    const body = $("target-delta-positions");
+    body.replaceChildren();
+    deltaDraft.positions.forEach((position, index) => {
+      const row = el("tr");
+      for (const [key, label] of [["label", "位置名稱"], ["delta_da", "Δ m/z"], ["ratio_min", "比例下限"], ["ratio_max", "比例上限"]]) {
+        const cell = el("td");
+        const input = el("input");
+        input.setAttribute("aria-label", `${label}（位置 ${index + 1}）`);
+        input.value = position[key];
+        if (key !== "label") { input.type = "number"; input.step = "any"; }
+        input.oninput = () => {
+          if (key === "label") {
+            deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.map((name) => name === position.label ? input.value : name);
+          }
+          position[key] = key === "label" ? input.value : input.value === "" ? null : Number(input.value);
+        };
+        cell.append(input); row.append(cell);
+      }
+      const shapeCell = el("td"); const shape = el("input"); shape.type = "checkbox";
+      shape.setAttribute("aria-label", `比對峰形（位置 ${index + 1}）`);
+      shape.checked = deltaDraft.discriminating_positions.includes(position.label);
+      shape.onchange = () => {
+        deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.filter((name) => name !== position.label);
+        if (shape.checked) deltaDraft.discriminating_positions.push(position.label);
+      };
+      shapeCell.append(shape); row.append(shapeCell);
+      const removeCell = el("td");
+      const remove = button("刪除", () => {
+        deltaDraft.positions.splice(index, 1);
+        deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.filter((name) => name !== position.label);
+        renderDeltaPositions();
+      });
+      remove.setAttribute("aria-label", `刪除位置 ${index + 1}`);
+      removeCell.append(remove); row.append(removeCell); body.append(row);
+    });
   }
 
   // Untargeted
@@ -2369,7 +2449,7 @@
     $("target-method-save").onclick = () => act(async () => {
       const name = await requestPath("另存目標清單", "", "清單名稱（不含 .xlsx）");
       if (!name) return;
-      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
+      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets, delta_mass_methods: state.deltaMassMethods });
       state.config.targeted_methods = result.methods;
       renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
       done(`已另存目標清單：${result.name}`);
@@ -2396,6 +2476,37 @@
       renderTargets();
       $("target-editor").showModal();
     };
+    $("target-delta-edit").onclick = () => {
+      const select = $("target-delta-select");
+      select.replaceChildren(new Option("新增方法", ""));
+      for (const name of Object.keys(state.deltaMassMethods)) select.add(new Option(name, name));
+      loadDeltaDraft();
+      $("target-delta-editor").showModal();
+    };
+    $("target-delta-select").onchange = () => loadDeltaDraft($("target-delta-select").value);
+    $("target-delta-add").onclick = () => {
+      deltaDraft.positions.push({ label: `position_${deltaDraft.positions.length + 1}`, delta_da: deltaDraft.positions.length, ratio_min: 0.1, ratio_max: 10 });
+      renderDeltaPositions();
+    };
+    $("target-delta-apply").onclick = async () => {
+      try {
+        const name = $("target-delta-name").value.trim();
+        if (name !== deltaEditingName && Object.hasOwn(state.deltaMassMethods, name)) throw new Error("方法名稱已存在，請選擇該方法編輯或使用新名稱。");
+        for (const [id, key] of deltaFields) deltaDraft[key] = $(id).value === "" ? null : Number($(id).value);
+        deltaDraft.anchor_positions = deltaDraft.positions.map((position) => position.label);
+        const methods = { ...state.deltaMassMethods, [name]: deltaDraft };
+        if (deltaEditingName && deltaEditingName !== name) delete methods[deltaEditingName];
+        const result = await api("/api/targeted/delta-mass/validate", { delta_mass_methods: methods });
+        if (!result.valid) throw new Error(result.error);
+        state.deltaMassMethods = result.delta_mass_methods;
+        if (deltaEditingName && deltaEditingName !== name) {
+          for (const target of state.targets) if (target.delta_mass_method === deltaEditingName) target.delta_mass_method = name;
+        }
+        dirty("targeted"); targetCount();
+        $("target-delta-editor").close();
+        done(`已套用 Delta Mass 方法「${name}」。請在目標清單選擇方法及定量位置，儲存後保留。`);
+      } catch (error) { $("target-delta-error").textContent = error.message; }
+    };
     $("target-add").onclick = () => {
       state.targets.push({
         label: "",
@@ -2417,7 +2528,7 @@
     $("target-export").onclick = () => act(async () => {
       const path = await requestPath("匯出目標清單（.xlsx）");
       if (!path) return;
-      const result = await api("/api/targets/export", { path, targets: state.targets });
+      const result = await api("/api/targets/export", { path, targets: state.targets, delta_mass_methods: state.deltaMassMethods });
       done(result.message);
     });
     bindListUpload("target", previewTargetFiles);
@@ -2767,6 +2878,7 @@
     stopWindowTracking = ui.trackWindow();
     state.config = await api("/api/config");
     state.targets = state.config.targets;
+    state.deltaMassMethods = state.config.delta_mass_methods || {};
     ui.setTheme(state.config.preferences.theme || "light");
     $("dll-dir").value = state.config.settings.dll_dir || "";
     applyThemeButton();

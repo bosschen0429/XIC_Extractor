@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from zipfile import BadZipFile
@@ -13,6 +14,11 @@ from zipfile import BadZipFile
 from xic_extractor.configuration.csv_io import (
     TARGET_FIELDS,
     TARGET_WRITE_FIELDS,
+)
+from xic_extractor.configuration.delta_mass import (
+    DeltaMassPatternSettings,
+    delta_mass_methods_payload,
+    parse_delta_mass_methods,
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
@@ -33,10 +39,16 @@ class TargetedMethod:
     settings: Mapping[str, str]
     targets: tuple[Target, ...]
     target_rows: tuple[Mapping[str, str], ...]
+    delta_mass_methods: Mapping[str, DeltaMassPatternSettings] = field(
+        default_factory=dict
+    )
 
 
 def create_targeted_method(
-    settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
+    settings: Mapping[str, str],
+    target_rows: Sequence[Mapping[str, str]],
+    *,
+    delta_mass_methods: Mapping | None = None,
 ) -> TargetedMethod:
     """Admit an editable method without reading files."""
     unknown = sorted(
@@ -48,8 +60,19 @@ def create_targeted_method(
     if strategy != TARGETED_STRATEGY:
         raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
     rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
-    targets = parse_target_rows(rows)
-    return TargetedMethod(MappingProxyType({"strategy": strategy}), targets, rows)
+    try:
+        methods = parse_delta_mass_methods(
+            {} if delta_mass_methods is None else delta_mass_methods
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    targets = parse_target_rows(rows, delta_mass_methods=methods)
+    return TargetedMethod(
+        MappingProxyType({"strategy": strategy}),
+        targets,
+        rows,
+        MappingProxyType(methods),
+    )
 
 
 def apply_targeted_method(
@@ -74,12 +97,18 @@ def load_targeted_method(path: Path) -> TargetedMethod:
             raise ConfigError(f"{path}: duplicate method setting {key!r}")
         settings[key] = row.get("value", "")
     missing = set(METHOD_KEYS) - settings.keys()
-    extra = settings.keys() - set(METHOD_KEYS)
+    extra = settings.keys() - set(METHOD_KEYS) - {"delta_mass_methods"}
     if missing or extra:
         raise ConfigError(
             f"{path}: 方法設定缺少 {sorted(missing)}；額外 {sorted(extra)}"
         )
-    return create_targeted_method(settings, tables["Targets"])
+    try:
+        methods = json.loads(settings.pop("delta_mass_methods", "{}"))
+    except ValueError as exc:
+        raise ConfigError(f"{path}: invalid delta_mass_methods JSON") from exc
+    return create_targeted_method(
+        settings, tables["Targets"], delta_mass_methods=methods
+    )
 
 
 def load_target_table(path: Path) -> list[dict[str, str]]:
@@ -91,6 +120,8 @@ def load_target_table(path: Path) -> list[dict[str, str]]:
 def load_workbook_targets(path: Path) -> tuple[Target, ...]:
     """Read shared target intent, ignoring optional Targeted method settings."""
     rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
+    if any(row.get("delta_mass_method") for row in rows):
+        return load_targeted_method(path).targets
     return parse_target_rows(rows, Path(path))
 
 
@@ -162,7 +193,23 @@ def save_targeted_method(method: TargetedMethod, path: Path) -> TargetedMethod:
                         "description": "Shared Targeted strategy",
                     }
                     for key in METHOD_KEYS
-                ],
+                ]
+                + (
+                    [
+                        {
+                            "key": "delta_mass_methods",
+                            "value": json.dumps(
+                                delta_mass_methods_payload(method.delta_mass_methods),
+                                ensure_ascii=False,
+                            ),
+                            "description": (
+                                "Custom Delta Mass definitions; edit in the workbench"
+                            ),
+                        }
+                    ]
+                    if method.delta_mass_methods
+                    else []
+                ),
             ),
             "Targets": (_target_fields(method.target_rows), method.target_rows),
         },

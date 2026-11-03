@@ -81,6 +81,13 @@ def project_targeted_result(
             ),
         )
     nl_status = result.nl_token or ""
+    if target.delta_mass_settings is not None:
+        if result.selected_delta_mass_supported:
+            support = _merge_reasons(support, ("delta_mass_pattern_supported",))
+        else:
+            not_counted = _merge_reasons(
+                not_counted, ("delta_mass_pattern_not_supported",)
+            )
     return build_targeted_product_projection(
         TargetedProductContext(
             role=result.role or ("ISTD" if target.is_istd else "Analyte"),

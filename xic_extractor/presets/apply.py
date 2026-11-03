@@ -21,9 +21,9 @@ from xic_extractor.presets.recipe_models import (
 from xic_extractor.settings_schema import RESOLVER_MODES, normalize_resolver_mode
 
 if TYPE_CHECKING:
+    from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
     from xic_extractor.discovery.delta_mass_strategy import (
         DeltaMassDiscoveryStrategy,
-        DeltaMassPatternSettings,
     )
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
@@ -202,7 +202,7 @@ def resolve_delta_mass_discovery(preset_name: str) -> DeltaMassDiscoveryStrategy
 
 def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
     """Admit preset positions and roles, without embedding a chemical pattern."""
-    from xic_extractor.discovery.delta_mass_strategy import (
+    from xic_extractor.configuration.delta_mass import (
         DeltaMassPatternSettings,
         DeltaMassPosition,
     )

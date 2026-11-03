@@ -42,14 +42,25 @@ def write_work(
     targets: list[dict[str, str]],
     *,
     config_dir: Path | None = None,
+    delta_mass_methods: dict | None = None,
 ) -> dict[str, str]:
     values, _parsed, _warnings = resolve_settings(
         read_settings(config_dir=config_dir), settings
     )
-    from xic_extractor.configuration.targets import parse_target_rows
+    from xic_extractor.configuration.targeted_method_files import create_targeted_method
 
-    parse_target_rows(targets)
-    save_workspace(_runtime_dir(config_dir), settings=values, targets=targets)
+    methods = (
+        delta_mass_methods
+        if delta_mass_methods is not None
+        else read_workspace(_runtime_dir(config_dir)).get("delta_mass_methods", {})
+    )
+    create_targeted_method({}, targets, delta_mass_methods=methods)
+    save_workspace(
+        _runtime_dir(config_dir),
+        settings=values,
+        targets=targets,
+        delta_mass_methods=methods,
+    )
     return values
 
 

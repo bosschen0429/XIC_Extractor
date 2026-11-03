@@ -87,6 +87,9 @@ this does not require introducing a new theme system.
 `configuration.targeted_method_files` owns strict Targeted XLSX exchange; the
 existing settings and target owners admit strategy and target intent.
 `configuration.workspace_state` owns local JSON application/batch/target persistence.
+`configuration.delta_mass` owns the shared pure pattern settings and named-method
+intake. Targeted's acquisition adapter reuses Discovery's pure Delta Mass matcher
+to qualify its bounded physical candidate universe before shared completion.
 Workbench and CLI consume that state; they do not discover legacy CSV workspaces.
 `prepare_targeted_config` freezes admitted inputs into private CSV run receipts;
 `load_config_snapshot` is an explicit diagnostic receipt reader, not a user-input

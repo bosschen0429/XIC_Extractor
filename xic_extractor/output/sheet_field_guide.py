@@ -93,12 +93,70 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ),
 )
 _HEADERS = ("工作表", "欄位", "意思", "單位")
+_DELTA_MASS_GUIDE = (
+    (
+        "Targets",
+        "Delta Mass Method / Quant Position",
+        "使用的命名方法，以及 Target m/z 與面積所對應的位置。",
+        "",
+    ),
+    (
+        "Delta Mass Methods",
+        "Method / Definition",
+        "本次實際使用的方法名稱與完整設定 JSON；可在 Inspector 查看。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "SampleName / Target / Method",
+        "這筆配對證據所屬的樣本、目標與方法。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Quant Position / Candidate RT",
+        "定量通道的位置名稱與候選峰頂 RT。",
+        "min",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Selected / Pattern Status / Reason",
+        "TRUE 為所選候選；pass＝符合、fail＝不符、"
+        "no_match＝沒有配對、error＝讀取失敗。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Position / Expected m/z",
+        "位置名稱與 XIC 查詢中心；不是實測質量或零誤差宣稱。",
+        "m/z",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Apex RT / Apex Delta sec",
+        "該位置的峰頂 RT，以及相對最低質量位置的峰頂時間差。",
+        "min / sec",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Height Ratio / Ratio Status",
+        "相對最低質量位置的強度比例；僅供參考，超出範圍不淘汰。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Shape r / Shape Threshold",
+        "設定位置與基準位置的峰形相關性及所用門檻；空白表示未評估。",
+        "",
+    ),
+)
 
 
-def build_field_guide_sheet(ws) -> None:
+def build_field_guide_sheet(ws, *, delta_mass: bool = False) -> None:
+    entries = FIELD_GUIDE + (_DELTA_MASS_GUIDE if delta_mass else ())
     _prepare_sheet(ws, landscape=False)
     _write_header(ws, 1, _HEADERS)
-    for row, entry in enumerate(FIELD_GUIDE, start=2):
+    for row, entry in enumerate(entries, start=2):
         for column, value in enumerate(entry, start=1):
             _style_body(ws.cell(row, column, value), wrap=column == 3)
         ws.row_dimensions[row].height = (
@@ -106,5 +164,5 @@ def build_field_guide_sheet(ws) -> None:
         )
     for letter, width in zip("ABCD", (14, 22, 60, 12), strict=True):
         ws.column_dimensions[letter].width = width
-    _add_table(ws, "FieldGuide", f"A1:D{len(FIELD_GUIDE) + 1}")
+    _add_table(ws, "FieldGuide", f"A1:D{len(entries) + 1}")
     ws.freeze_panes = "A2"

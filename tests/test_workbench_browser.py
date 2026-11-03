@@ -706,7 +706,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page = workbench
     expect(page.locator("#target-method-state")).not_to_be_visible()
     page.locator("summary", has_text="處理策略與設定來源").click()
-    expect(page.locator("#target-method-state")).to_have_text("共用 CID-NL 策略")
+    expect(page.locator("#target-method-state")).to_have_text("共用 Targeted 策略")
     expect(page.locator("#targeted-form")).not_to_contain_text("版本")
     page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
@@ -725,9 +725,9 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
         "2.75"
     )
-    page.get_by_role(
-        "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-    ).fill(tag)
+    page.get_by_role("combobox", name="方法（第 1 列）", exact=True).select_option(
+        f"cid:{tag}" if tag else ""
+    )
     page.locator("#target-editor-save").click()
     expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
@@ -736,12 +736,54 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
         page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
     ).to_have_value("2.75")
     expect(
-        page.get_by_role(
-            "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-        )
-    ).to_have_value(tag)
+        page.get_by_role("combobox", name="方法（第 1 列）", exact=True)
+    ).to_have_value(f"cid:{tag}" if tag else "")
     assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
     expect(page.locator("#t-parallel_workers")).to_have_value("2")
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_targeted_custom_delta_mass_editor_binds_and_persists(
+    workbench, config_dir, tmp_path, theme
+):
+    page = workbench
+    if theme == "dark":
+        with page.expect_response("**/api/preferences"):
+            page.locator("#theme-toggle").click()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    page.locator("#target-delta-edit").click()
+    page.locator("#target-delta-name").fill("Custom pair")
+    page.get_by_label("Δ m/z（位置 2）", exact=True).fill("0")
+    page.locator("#target-delta-apply").click()
+    expect(page.locator("#target-delta-error")).not_to_be_empty()
+    expect(page.locator("#target-delta-editor")).to_be_visible()
+    page.get_by_label("Δ m/z（位置 2）", exact=True).fill("2.002")
+    page.locator("#target-delta-ppm").fill("12")
+    page.locator("#target-delta-apply").click()
+    expect(page.locator("#target-delta-editor")).not_to_be_visible()
+    page.locator("#target-edit").click()
+    page.get_by_role("combobox", name="方法（第 1 列）", exact=True).select_option(
+        "delta:Custom pair"
+    )
+    page.get_by_role("combobox", name="定量位置（第 1 列）", exact=True).select_option(
+        "partner"
+    )
+    page.locator("#target-editor-save").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    expect(page.locator("#target-preview")).to_contain_text("Custom pair · partner")
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    assert state["targets"][0]["cid_nl_tag"] == ""
+    assert state["targets"][0]["quant_position"] == "partner"
+    assert state["delta_mass_methods"]["Custom pair"]["mz_tolerance_ppm"] == 12
+    page.locator("#target-delta-edit").click()
+    page.locator("#target-delta-select").select_option("Custom pair")
+    expect(page.get_by_label("Δ m/z（位置 2）", exact=True)).to_have_value("2.002")
+    expect(page.locator("#target-delta-ppm")).to_have_value("12")
+    page.locator("#target-delta-editor").screenshot(
+        path=str(tmp_path / f"delta-mass-{theme}.png")
+    )
 
 
 def test_target_list_save_and_load_preserves_batch(workbench):
@@ -1795,6 +1837,95 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
+
+
+def test_saved_delta_mass_evidence_is_visible_and_readonly(workbench, tmp_path):
+    from openpyxl import Workbook
+
+    from tests.test_targeted_delta_mass import pattern
+
+    book = Workbook()
+    targets = book.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "Delta Mass Method",
+            "Quant Position",
+        ]
+    )
+    targets.append(["Custom target", "Analyte", 302, 2, 2, "my pair", "heavy"])
+    results = book.create_sheet("XIC Results")
+    results.append(
+        [
+            "SampleName",
+            "Target",
+            "RT",
+            "Area",
+            "PeakStart",
+            "PeakEnd",
+            "Reason",
+            "Review",
+            "Review Reason",
+            "Counted Detection",
+        ]
+    )
+    results.append(
+        [
+            "Sample A",
+            "Custom target",
+            2,
+            123.5,
+            1.9,
+            2.1,
+            "Delta Mass 配對符合",
+            "",
+            "",
+            "TRUE",
+        ]
+    )
+    metadata = book.create_sheet("Run Metadata")
+    metadata.append(["Key", "Value"])
+    metadata.append(["targeted_output_schema_version", "targeted_output"])
+    definitions = book.create_sheet("Delta Mass Methods")
+    definitions.append(["Method", "Definition"])
+    definitions.append(["my pair", json.dumps(pattern())])
+    evidence = book.create_sheet("Delta Mass Evidence")
+    evidence.append(
+        [
+            "SampleName",
+            "Target",
+            "Method",
+            "Pattern Status",
+            "Position",
+            "Expected m/z",
+            "Shape r",
+        ]
+    )
+    evidence.append(
+        ["Sample A", "Custom target", "my pair", "pass", "heavy", 302, 0.987]
+    )
+    path = tmp_path / "delta-mass.xlsx"
+    book.save(path)
+    book.close()
+    original = path.read_bytes()
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Custom target").click()
+    page.locator("summary", has_text="Delta Mass 配對證據").click()
+    panel = page.locator("details").filter(
+        has=page.locator("summary", has_text="Delta Mass 配對證據")
+    )
+    expect(panel).to_contain_text("Sample A")
+    expect(panel).to_contain_text("heavy")
+    expect(panel).to_contain_text("0.987")
+    assert path.read_bytes() == original
 
 
 def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):

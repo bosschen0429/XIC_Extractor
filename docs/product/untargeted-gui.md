@@ -30,13 +30,18 @@ historical filename as the stable topic locator.
 ### Targeted
 
 - The primary path is samples, method/target intent, Run, then result review.
-- Target rows contain name, m/z, expected RT in minutes, CID-NL tag, role and
-  ISTD pairing. Tags use the same built-in chemistry recipes as Discovery.
-- A portable method saves the target intent and strategy version. There is no
-  advanced Targeted method panel, parameter reset, Dirty Matrix branch or user
+- Target rows contain name, m/z, expected RT in minutes, a method, role and
+  ISTD pairing. Methods select MS1-only, built-in CID-NL chemistry or a named
+  custom Delta Mass pattern with an explicit quantitation position.
+- **設計 Delta Mass 方法** edits positions, offsets, reference ratios and
+  co-elution/shape conditions. Applying edits changes the draft; workspace save,
+  named-method save or Run retains the definitions with the target bindings.
+- A portable method saves target intent and custom Delta Mass definitions.
+  There is no signal-processing override panel, parameter reset, Dirty Matrix branch or user
   worker/backend selector. Scientific policy is recorded in run metadata.
 - `workspace.json` stores application settings (DLL and worker count), batch
-  inputs (RAW and sample metadata), and target rows in one atomic generation.
+  inputs (RAW and sample metadata), target rows and named Delta Mass definitions
+  in one atomic generation.
   Reading configuration never writes it; unsupported settings are reported,
   not preserved as hidden effective overrides. No schema conversion is offered.
 - Explicit CSV/TSV and `Targets`-sheet XLSX imports produce editable target intent. Numeric text and
