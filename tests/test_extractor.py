@@ -200,7 +200,7 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
     }
 
 
-def test_boundary_cid_nl_support_is_compared_with_the_total_interpretation(
+def test_boundary_cid_nl_keeps_possible_lobes_without_merging_or_individual_support(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -223,7 +223,7 @@ def test_boundary_cid_nl_support_is_compared_with_the_total_interpretation(
 
         def iter_ms2_scans(self, *_args):
             # One event is unique to a remote peak. The other lies at the
-            # valley inside the target's two-lobed total, not inside one lobe.
+            # shared valley, not strictly inside either target lobe.
             for number, center in enumerate((3, 9), start=1):
                 scan = Ms2Scan(
                     scan_number=number,
@@ -238,11 +238,14 @@ def test_boundary_cid_nl_support_is_compared_with_the_total_interpretation(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_a, **_kw: Raw())
     result = _run_formal_selection(config, [target]).file_results[0].results["Main"]
     assert 8 < result.reported_rt < 10
-    assert result.reported_peak_start < 8.6
-    assert result.reported_peak_end > 9.4
-    expected_total = 2 * 10000 * 0.22 * math.sqrt(2 * math.pi) * 60
-    assert result.reported_peak_area == pytest.approx(expected_total, rel=0.08)
-    assert result.selected_cid_nl_supported
+    assert not (result.reported_peak_start < 8.6 and result.reported_peak_end > 9.4)
+    expected_lobe = 10000 * 0.22 * math.sqrt(2 * math.pi) * 60
+    assert result.reported_peak_area == pytest.approx(expected_lobe, rel=0.08)
+    assert not result.selected_cid_nl_supported
+    assert result.cid_nl_relations.set_relation_event_indexes
+    assert result.selected_cid_nl_candidate_index in (
+        result.cid_nl_relations.set_related_candidate_indexes
+    )
 
 
 def _run_formal_selection(
@@ -401,12 +404,14 @@ def test_ms1_only_localizes_then_integrates_without_shape_veto(
             assert result.reported_rt == pytest.approx(9.4, abs=0.02)
             assert result.reported_peak_start > 9.1
         if signal_kind == "double_top":
-            assert result.reported_peak_start < 8.6
-            assert result.reported_peak_end > 9.4
-            # Both known lobes, not a single chosen apex. Even one whole
-            # Gaussian's analytical area cannot satisfy this lower bound.
+            # One target reference does not authorize adding two resolved
+            # observed peaks. The selected value is one complete lobe.
+            assert min(abs(result.reported_rt - center) for center in (8.6, 9.4)) < 0.02
+            assert not (
+                result.reported_peak_start < 8.6 and result.reported_peak_end > 9.4
+            )
             one_lobe_area = 1000.0 * 0.22 * math.sqrt(2 * math.pi) * 60.0
-            assert result.reported_peak_area > 1.5 * one_lobe_area
+            assert result.reported_peak_area == pytest.approx(one_lobe_area, rel=0.08)
 
 
 @pytest.fixture(autouse=True)
@@ -640,7 +645,6 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
             signal = self.amplitude * np.exp(-0.5 * ((rt - center) / 0.4) ** 2)
             signal = np.minimum(signal, self.amplitude / 2)
             if mz == targets[0].mz:
-                signal[(np.abs(rt - center) < 0.06) & (np.arange(len(rt)) % 2 == 0)] = 0
                 signal += 100 * np.exp(-0.5 * ((rt - reference) / 0.02) ** 2)
             return rt, 10 + signal
 
@@ -704,7 +708,7 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
         )
         assert result.selected_cid_nl_supported is (neutral_loss is not None)
         assert result.targeted_candidate_assessment is not None
-        assert len(result.targeted_candidate_assessment.regional_universe.segments) >= 1
+        assert len(result.targeted_candidate_assessment.universe.segments) >= 1
     if reference_bias != 22.5:
         assert results["Treated"].reported_peak_area / results[
             "Control"

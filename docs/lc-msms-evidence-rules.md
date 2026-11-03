@@ -184,11 +184,13 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   a retention-incompatible interpretation is not a license to select a smaller
   residual elsewhere. The original regions remain inspectable.
 
-  Valleys propose separate regions; only touching acquired bodies with a common
-  reference interpretation can be joined. The complete canonical total is
-  integrated, never an expected-RT crop. Disconnected regions are not joined.
-  Shared or unresolved totals carry review explanations and do not establish
-  pure-constituent area. See [Targeted Selection](product/targeted-selection.md)
+  Supported valleys define separate observed regions. A common target reference
+  does not join their boundaries or add their areas. Targeted selects one
+  existing region and retains its complete canonical integral, never an
+  expected-RT crop. Set-level CID-NL evidence keeps possible members in the
+  identity comparison without granting individual support. An unresolved region
+  still carries review explanations and does not establish pure-constituent
+  area. See [Targeted Selection](product/targeted-selection.md)
   for contextual selection and the distinction between plausible and directly
   supported RT transfer. Discovery and bounded Backfill are not silently
   migrated to this Targeted interpretation policy.

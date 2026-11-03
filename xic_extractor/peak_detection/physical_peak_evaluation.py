@@ -204,7 +204,6 @@ def enumerate_physical_segment_universe(
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
-    reference_rts: tuple[float, ...] = (),
 ) -> PhysicalSegmentUniverse:
     if not isinstance(prepared_result, PreparedSignalResult):
         raise TypeError("prepared_result must be a PreparedSignalResult")
@@ -305,10 +304,6 @@ def enumerate_physical_segment_universe(
                 physical_segments = _censoring_aware_segments(
                     prepared, physical_segments
                 )
-            elif reference_rts:
-                physical_segments = reference_region_envelopes(
-                    prepared, physical_segments, reference_rts
-                )
             # Targeted retains the full acquired context for later batch
             # selection. Global background complexity cannot erase a clear
             # local body; the acquisition itself bounds this finite universe.
@@ -336,76 +331,6 @@ def enumerate_physical_segment_universe(
         reason=reason,
         segments=physical_segments,
     )
-
-
-def nearest_reference_rt(apex_rt_min: float, reference_rts: tuple[float, ...]) -> float:
-    """Assign an observed apex by measured RT, never label or input order."""
-    return min(
-        reference_rts, key=lambda reference: (abs(apex_rt_min - reference), reference)
-    )
-
-
-def reference_region_envelopes(
-    prepared: PreparedSignal,
-    segments: tuple[PhysicalSegment, ...],
-    reference_rts: tuple[float, ...],
-    *,
-    merge_eligible_segments: frozenset[PhysicalSegment] | None = None,
-) -> tuple[PhysicalSegment, ...]:
-    """Retain valleys between reference regions, whole contours within each.
-
-    Only intervals sharing a valley sample can be joined. A baseline-separated
-    peak stays separate even when its closest reference is the same target.
-    """
-    groups: list[list[PhysicalSegment]] = []
-    for segment in sorted(segments, key=lambda item: item.start_index):
-        if groups and (
-            groups[-1][-1].end_index - 1 == segment.start_index
-            and (
-                merge_eligible_segments is None
-                or (
-                    groups[-1][-1] in merge_eligible_segments
-                    and segment in merge_eligible_segments
-                )
-            )
-            and nearest_reference_rt(groups[-1][-1].apex_rt_min, reference_rts)
-            == nearest_reference_rt(segment.apex_rt_min, reference_rts)
-        ):
-            groups[-1].append(segment)
-        else:
-            groups.append([segment])
-    merged = []
-    for group in groups:
-        if len(group) == 1:
-            merged.append(group[0])
-            continue
-        left, right = group[0].start_index, group[-1].end_index
-        signal = np.asarray(prepared.positive_signal[left:right])
-        rt = np.asarray(prepared.rt[left:right])
-        apex = left + int(np.argmax(signal))
-        merged.append(
-            PhysicalSegment(
-                start_index=left,
-                end_index=right,
-                apex_index=apex,
-                left_rt_min=float(rt[0]),
-                right_rt_min=float(rt[-1]),
-                apex_rt_min=prepared.rt[apex],
-                height=float(np.max(signal)),
-                scan_support_count=right - left,
-                area_counts_seconds=float(np.trapezoid(signal, rt)) * 60.0,
-                segment_class="shoulder_candidate",
-                boundary_stop_reason="shoulder_overlap_review",
-                evidence_sources=tuple(
-                    dict.fromkeys(
-                        source
-                        for item in group
-                        for source in (*item.evidence_sources, "shoulder_overlap")
-                    )
-                ),
-            )
-        )
-    return tuple(merged)
 
 
 def _hit_enrichment(raw: np.ndarray, left: int, right: int) -> bool:

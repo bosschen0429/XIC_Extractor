@@ -35,6 +35,7 @@ class TargetedRegionContext:
     contour: tuple[float, ...]
     measurement_available: bool
     chemical_support: bool = False
+    chemical_set_membership: bool = False
 
     @property
     def independent_body_supported(self) -> bool:
@@ -54,6 +55,7 @@ def describe_targeted_region(
     *,
     measurement_available: bool,
     chemical_support: bool = False,
+    chemical_set_membership: bool = False,
     constituent_segments: tuple[PhysicalSegment, ...] | None = None,
 ) -> TargetedRegionContext:
     """Retain body support and shape, not just the apex's quality category."""
@@ -97,6 +99,7 @@ def describe_targeted_region(
         contour=tuple(float(v) for v in contour),
         measurement_available=measurement_available,
         chemical_support=chemical_support,
+        chemical_set_membership=chemical_set_membership,
     )
 
 
@@ -125,7 +128,9 @@ class TargetedPopulationContext:
     @cached_property
     def comparison_regions(self) -> tuple[TargetedRegionContext, ...]:
         measurable = tuple(r for r in self.regions if r.independent_body_supported)
-        positive = tuple(r for r in measurable if r.chemical_support)
+        positive = tuple(
+            r for r in measurable if r.chemical_support or r.chemical_set_membership
+        )
         return _noncontained_regions(positive or measurable)
 
     @cached_property
@@ -614,7 +619,11 @@ class TargetedBatchContext:
     ) -> tuple[TargetedRegionContext, ...]:
         references = self.reference_rts(population)
         regions = tuple(r for r in population.regions if r.independent_body_supported)
-        positive = tuple(r for r in regions if r.chemical_support)
+        # Set evidence keeps each possible lobe in the identity comparison;
+        # it does not give any lobe individual support or force their sum.
+        positive = tuple(
+            r for r in regions if r.chemical_support or r.chemical_set_membership
+        )
         regions = positive or regions
         reference = self.reference_rt(population)
         if len(references) > 1:

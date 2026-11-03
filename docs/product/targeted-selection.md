@@ -83,22 +83,21 @@ position remains with its established owner.
 
 Valleys remain regional evidence even above baseline. The current Targeted
 proposal policy uses a 15% sustained valley drop and the profile's minimum
-boundary duration. Original regions and a batch-reference-based total proposal
-remain alternatives until selection. Each interpretation receives its own method
-relation: a CID-NL event on a valley can support the total without being assigned
-to either individual lobe. Both local peer proposals and final selection retain weaker
+boundary duration. The batch compares these retained regions without joining
+touching lobes merely because they share a target reference. A CID-NL event on
+a valley remains set-level evidence: its possible members remain candidates,
+but neither lobe receives individual support from that event. Both local peer
+proposals and final selection retain weaker
 reference-supported bodies alongside prominent alternatives; adding a duplicate
 sample cannot turn an abundance filter into an identity veto. Supported sample
 displacement informs reference order as a ranking prior, not a hard RT window.
 
-An available valley-bounded interpretation at one target's sample-local reference
-is not replaced by a total spanning multiple target references. Within the
-remaining identity alternatives, a complete total is preferred to its contained
-lobes, preserving poor-top measurement rather than forcing an apex-only answer.
-Scoring describes the chosen interpretation without selecting again. Regional
-and total alternatives are compared in memory, not combined into an overlapping
-physical CID-NL universe or an exhaustive search of all segment combinations.
-Baseline-separated bodies stay separate. The original regions remain retained;
+An available valley-bounded region is not replaced by a sum of its neighbors.
+Scoring describes the chosen region without selecting again. A physical region
+that the signal owner has not resolved into separate lobes remains a complete
+measurement, including a poor or irregular top. Selection does not search
+combinations of regions or change their physical CID-NL universe.
+The original regions remain retained;
 target count does not force peak count. If different reference targets can only
 share one observed ion region, both provisional values may remain, with linked review
 reasons and no independent counted assignments. Duplicate assays with the same
@@ -161,15 +160,14 @@ MS2 product as proof of unique support.
 sample/target groupings and ion-level retention uncertainty across cells;
 `extraction.targeted_peak_selection` scores the chosen measurement without
 letting review-blocker count select a cleaner substitute. Scores and confidence
-remain descriptive evidence. `extraction.targeted_batch_selection` compares
-regional and total interpretations before formal capture/grouping.
+remain descriptive evidence. `extraction.targeted_batch_selection` selects
+among the retained regions before formal capture/grouping.
 It neither reopens RAW nor refits the baseline.
 
 The exact-mass MS1 scope is the complete acquisition, including targets without
 MS2. Scan acquisition, tag parsing and parent-MS1 verification retain their
-existing shared owners. A changed regional interpretation receives a new
-CID-NL relation answer from retained events; unchanged populations reuse the
-existing answer. No candidate-local best product is a replacement for the
+existing shared owners. Batch selection reuses the retained CID-NL relation
+answer over those same regions. No candidate-local best product replaces the
 complete method relation.
 
 Known ISTDs retain reference-first localization and

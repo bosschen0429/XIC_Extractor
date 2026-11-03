@@ -108,17 +108,21 @@ class TargetedCandidateAssessment:
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
     method_trigger_events: tuple[tuple[int, float], ...] = ()
-    regional_universe: PhysicalSegmentUniverse | None = None
     paired_istd_fwhm: float | None = None
     istd_confidence_note: str | None = None
     paired_istd_anchor_rt: float | None = None
 
     def population_context(self) -> TargetedPopulationContext:
         prepared = self.prepared_result.prepared
+        set_members = (
+            self.method_relations.set_related_candidate_indexes
+            if self.method_relations is not None
+            else frozenset()
+        )
         constituents = (
             qualified_physical_segments(
                 prepared,
-                (self.regional_universe or self.universe).segments,
+                self.universe.segments,
                 selection_policy_version=PHYSICAL_PEAK_ENVELOPE_POLICY,
             )
             if prepared is not None
@@ -149,6 +153,7 @@ class TargetedCandidateAssessment:
                         self.method_relations is not None
                         and index in self.method_relations.supported_candidate_indexes
                     ),
+                    chemical_set_membership=index in set_members,
                 )
                 for index, (candidate, evaluation) in enumerate(
                     self.candidate_evaluations.items()
@@ -290,7 +295,6 @@ def assess_targeted_candidate_population(
     retained_method_products: tuple[MS2ProductEvidence, ...] | None = None,
     retained_method_receipt: CidNlEvaluationReceipt | None = None,
     retained_trigger_events: tuple[tuple[int, float], ...] | None = None,
-    regional_universe: PhysicalSegmentUniverse | None = None,
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
     physical_policy = targeted_physical_peak_policy(target, preferred_rt)
@@ -403,7 +407,6 @@ def assess_targeted_candidate_population(
         method_receipt=receipt,
         method_relations=relations,
         method_trigger_events=trigger_events,
-        regional_universe=regional_universe or universe,
     )
 
 
