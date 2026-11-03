@@ -577,14 +577,15 @@ def _restore_rt_envelope_clear_splits(
         group = []
     if not connected_groups:
         return envelope_seeds
+    representatives = tuple(
+        max(connected, key=lambda seed: (seed.height, -seed.index))
+        for connected in connected_groups
+    )
     if not envelope_seeds:
         # Coarse smoothing can lower a supported narrow peak below the seed
         # height floor. Its canonical group still reaches ordinary qualification,
         # including when no unrelated coarse maximum exists in the context.
-        return tuple(
-            max(connected, key=lambda seed: (seed.height, -seed.index))
-            for connected in connected_groups
-        )
+        return representatives
 
     group_boundaries = (
         context.start_index,
@@ -610,9 +611,9 @@ def _restore_rt_envelope_clear_splits(
             else envelope_relations[index].valley_index + 1
         )
         enclosed = tuple(
-            (group_index, connected)
-            for group_index, connected in enumerate(connected_groups)
-            if left <= connected[0].index <= connected[-1].index < right
+            (group_index, representative)
+            for group_index, representative in enumerate(representatives)
+            if left <= representative.index < right
         )
         if len(enclosed) < 2:
             continue
@@ -626,11 +627,10 @@ def _restore_rt_envelope_clear_splits(
         ):
             continue
         restored.pop(envelope_seed.index)
-        for _, connected in enclosed:
-            representative = max(
-                connected,
-                key=lambda seed: (seed.height, -seed.index),
-            )
+        # The representative locates the lobe. Remote, brief ripples connected
+        # to it must not veto a sustained split inside this coarse basin, nor
+        # become additional representatives in neighboring coarse basins.
+        for _, representative in enclosed:
             restored[representative.index] = representative
     return tuple(restored[index] for index in sorted(restored))
 

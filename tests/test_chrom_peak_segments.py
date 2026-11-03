@@ -406,3 +406,55 @@ def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> N
     assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.002)
     assert len(answer.segment_universe.segments) == 2
     assert not answer.requires_overlap_review
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+@pytest.mark.parametrize("trailing_ripple", (False, True))
+def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
+    reverse: bool,
+    trailing_ripple: bool,
+) -> None:
+    rt = np.linspace(0.0, 5.0, 2501)
+    width = np.where(rt < 2.35, 0.10, 0.32)
+    signal = 100.0 * np.exp(-0.5 * ((rt - 2.08) / 0.055) ** 2) + 150.0 * np.exp(
+        -0.5 * ((rt - 2.35) / width) ** 2
+    )
+    if trailing_ripple:
+        # Brief tail troughs keep these fine-scale maxima connected to the
+        # second lobe, even across the next coarse basin's boundary.
+        signal *= 1.0 + (0.3 * np.cos(2 * np.pi * (rt - 2.35) / 0.04) * (rt > 2.8))
+        signal += 20.0 * np.exp(-0.5 * ((rt - 3.4) / 0.12) ** 2)
+    signal += 8.0 * np.exp(-0.5 * ((rt - 1.6) / 0.025) ** 2)
+    if reverse:
+        signal = signal[::-1]
+
+    result = enumerate_chrom_peak_segments(
+        rt,
+        signal,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            min_apex_fraction_of_context=0.0,
+            baseline_return_fraction=0.1,
+            baseline_return_min_residual=0.0,
+            include_baseline_return_samples=True,
+            clear_valley_max_fraction=0.85,
+            morphology_trace_method="rt_envelope",
+            morphology_trace_window_points=9,
+            morphology_min_sigma_rt=0.08,
+            min_prominence_fraction_of_apex=0.15,
+            valley_min_duration_min=0.08,
+        ),
+    )
+
+    apexes = [s.apex_rt_min for s in result.segments]
+    expected = [1.6, 2.08, 2.35] + ([3.4] if trailing_ripple else [])
+    if reverse:
+        expected = sorted(5.0 - center for center in expected)
+    # Restore the unresolved pair, not a candidate for every tail ripple.
+    # The independently generated weak peak is below 10% of the main peak;
+    # it must not be erased by a main-relative restoration cutoff.
+    assert apexes == pytest.approx(expected, abs=0.015)
+    weak_center = 3.4 if reverse else 1.6
+    weak = min(result.segments, key=lambda s: abs(s.apex_rt_min - weak_center))
+    analytic_weak_area = 8.0 * 0.025 * np.sqrt(2 * np.pi) * 60.0
+    assert weak.area_baseline_corrected == pytest.approx(analytic_weak_area, rel=0.04)
