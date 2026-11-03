@@ -69,7 +69,7 @@ class AnalysisJobs:
             return {"job": job, "results": copy.deepcopy(self._results)}
 
     def start(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
-        if kind not in {"targeted", "untargeted", "samples", "quality", "inspector"}:
+        if kind not in {"targeted", "untargeted", "samples", "curation", "inspector"}:
             raise ValueError("不支援此工作類型。")
         with self._lock:
             if self.busy:
@@ -249,6 +249,9 @@ class AnalysisJobs:
         if kind in {"targeted", "untargeted"}:
             result = self._runner.execute()
             inputs = values["settings"] if kind == "targeted" else values
+            if kind == "untargeted":
+                # Matrix curation starts from the samples this run used.
+                result["samples"] = values.get("samples")
             # Bind review acquisition to this run, not the next editable batch.
             result["review_paths"] = {
                 "raw_dir": str(
@@ -290,20 +293,10 @@ class AnalysisJobs:
             }
             result["page"] = values.get("page") or "untargeted"
             return result
-        if kind == "quality":
-            from xic_extractor.feature_quality_io import export_feature_quality
+        if kind == "curation":
+            from xic_workbench.matrix_curation import run_curation
 
-            quality_result = export_feature_quality(
-                matrix_path=Path(values["matrix_path"]),
-                review_path=Path(values["review_path"]),
-                sample_metadata_path=Path(values["sample_metadata_path"]),
-                output_dir=Path(values["output_dir"]),
-                min_finite_fraction=float(values["min_finite_fraction"]),
-            )
-            return {
-                "output_dir": values["output_dir"],
-                "manifest_path": str(quality_result),
-            }
+            return run_curation(self.config_dir, values)
         from dataclasses import asdict
 
         from xic_extractor.evidence_artifacts import EvidenceLocator

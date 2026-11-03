@@ -13,6 +13,7 @@ PICKER_KINDS: dict[str, tuple[str, str] | None] = {
     "csv": ("CSV", "*.csv"),
     "targets": ("目標清單", "*.csv *.tsv *.xlsx"),
     "metadata": ("上機資訊", "*.docx *.xlsx *.csv *.tsv"),
+    "samples": ("樣本資料", "*.tsv *.csv"),
     "preset": ("方法設定", "*.toml"),
     "file": ("設定檔", "*.csv *.tsv *.xlsx *.json *.toml *.txt"),
 }

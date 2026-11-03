@@ -402,6 +402,10 @@ class AnalysisWorkspace:
             from xic_workbench.samples import export_samples
 
             return export_samples(values["samples"], Path(values["path"]))
+        if action == "matrix-curation/source":
+            from xic_workbench.matrix_curation import describe_source
+
+            return describe_source(self.config_dir, values)
         if action in {"istd", "istd/upload"}:
             from xic_extractor.configuration.targets import read_istd_targets
             from xic_extractor.presets import apply_to_discovery

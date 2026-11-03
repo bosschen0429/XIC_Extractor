@@ -101,13 +101,15 @@ Start with the file that matches your review question:
 | `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Review output |
 | `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |
 
-To export an analysis set, use **匯出樣品資料** in the sample table and save TSV.
-Choose **篩選匯出…** in the completed results, select that TSV, specify a minimum
-valid-value fraction (0–1), and select a new output folder. Zero counts as a
-valid value; blanks do not. QC, blank and excluded samples are outside the
+To curate the Matrix, choose **整理矩陣** in the completed results. The
+**矩陣整理** page takes the run's folder and samples; enter a minimum valid-value
+fraction (0–1) and choose **開始整理**. Zero and finite backfilled values count
+as valid; blanks do not. QC, blank and excluded samples are outside the
 denominator. This is availability filtering, not detection-rate filtering.
-The export opens its new folder and preserves the source Matrix. See
-[Feature Quality](../product/feature-quality.md) for the output contract.
+Results go to a new `matrix_curation_<time>` folder inside the Alignment output,
+and the source Matrix is preserved. Earlier Alignment folders can be chosen on
+the same page. See [Matrix Curation](../product/matrix-curation.md) for the
+output contract.
 
 ## Further Reading
 

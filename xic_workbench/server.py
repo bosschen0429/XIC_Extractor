@@ -323,6 +323,7 @@ def create_server(
                 "samples/annotations",
                 "samples/exclude",
                 "samples/export",
+                "matrix-curation/source",
                 "istd",
                 "istd/upload",
                 "istd/copy",

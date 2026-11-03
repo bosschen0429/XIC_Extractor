@@ -58,10 +58,15 @@
     targeted: "Targeted 分析",
     untargeted: "Untargeted 分析",
     samples: "讀取樣本資訊",
-    quality: "Feature Quality 匯出",
+    curation: "矩陣整理",
     inspector: "Inspector 匯出",
   };
-  const jobPage = { targeted: "targeted" };
+  const jobPage = { targeted: "targeted", curation: "curation" };
+  const resultIds = {
+    targeted: "target-result",
+    untargeted: "untargeted-result",
+    curation: "curation-result",
+  };
   const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
   // One sample step for both flows; edits confirm the RAW folder's metadata.
   const samplePages = {
@@ -196,7 +201,7 @@
     if (persist && view !== state.view) window.XicUi.navigation.push();
     state.view = view;
     document.body.dataset.view = view;
-    for (const name of ["targeted", "untargeted", "review"])
+    for (const name of ["targeted", "untargeted", "curation", "review"])
       $(`workspace-${name}`).hidden = name !== view;
     document
       .querySelectorAll("[data-view]")
@@ -1689,7 +1694,7 @@
     $("analysis-job-time").textContent =
       `${progressText}${isRunning() ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
     const analysisDone =
-      job.status === "succeeded" && ["targeted", "untargeted"].includes(job.kind);
+      job.status === "succeeded" && job.kind in resultIds;
     $("analysis-job-output").hidden = !job.output_dir || analysisDone;
     $("analysis-job-output").textContent = job.output_dir || "";
     if (job.total > 0) {
@@ -1705,7 +1710,7 @@
         button(
           "查看結果",
           () =>
-            $(`${job.kind === "targeted" ? "target" : "untargeted"}-result`)
+            $(resultIds[job.kind])
               .scrollIntoView({ behavior: "smooth", block: "start" }),
           "",
           "chevron-right",
@@ -1730,10 +1735,8 @@
         applySampleResult(page, result);
         if (page === "untargeted") dirty("untargeted");
         done(`已讀取 ${result.samples.length} 個樣本。`);
-      } else if (job.kind === "quality")
-        done(
-          `Feature Quality 匯出完成：${state.analysis.results.quality.output_dir}`,
-        );
+      } else if (job.kind === "curation")
+        done(`矩陣整理完成：${state.analysis.results.curation.output_dir}`);
       else if (job.kind === "inspector") {
         done(`Inspector 匯出完成：${state.analysis.results.inspector.output}`);
         const artifact = state.analysis.results.inspector.artifacts?.[0];
@@ -1785,15 +1788,17 @@
     container.append(cell);
   }
   function resultBase(kind, result) {
-    const container = $(
-      `${kind === "targeted" ? "target" : "untargeted"}-result`,
-    );
+    const container = $(resultIds[kind]);
     container.hidden = false;
     const head = el("div", undefined, "result-head");
     const title = el("h2");
     title.append(
       ui.icon("check-circle"),
-      `${kind === "targeted" ? "Targeted" : "Untargeted"} 分析結果`,
+      {
+        targeted: "Targeted 分析結果",
+        untargeted: "Untargeted 分析結果",
+        curation: "矩陣整理結果",
+      }[kind],
     );
     const titleBlock = el("div");
     titleBlock.append(title);
@@ -1858,7 +1863,7 @@
       const evidence = result.evidence?.path || result.evidence?.report_path;
       if (evidence) {
         actions.append(
-          button("在結果檢閱開啟", () => openReview(evidence, result.review_paths), "primary", "review"),
+          button("在結果檢閱開啟", () => openReview(evidence, result.review_paths), "", "review"),
         );
         actions.append(
           button(
@@ -1877,15 +1882,24 @@
           ),
         );
       if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
-        actions.append(
+        actions.prepend(
           button(
-            "Feature Quality 篩選匯出",
-            () => openQuality(result),
-            "",
+            "整理矩陣",
+            () => openCuration(result.output_dir, result.samples),
+            "primary",
             "sliders",
           ),
         );
       container.append(actions, artifacts);
+    }
+    const curated = state.analysis.results.curation;
+    if (curated) {
+      const { container, artifacts } = resultBase("curation", curated);
+      const metrics = el("div", undefined, "result-metrics");
+      metric(metrics, curated.kept_feature_count, "保留 feature");
+      metric(metrics, curated.feature_count, "原始 feature");
+      container.append(metrics, artifacts);
+      container.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
     }
   }
   function openReview(source, reviewPaths) {
@@ -1894,25 +1908,164 @@
       new CustomEvent("xic:open-review", { detail: { source, reviewPaths } }),
     );
   }
-  function openQuality(result) {
-    $("quality-paths").replaceChildren();
-    pathField(
-      $("quality-paths"),
-      "metadata",
-      "樣本資料 TSV",
-      "metadata",
-      "",
-      "quality-",
-    );
-    pathField(
-      $("quality-paths"),
-      "output",
-      "新輸出資料夾",
-      "folder",
-      `${result.output_dir}/feature_quality`,
-      "quality-",
-    );
-    $("quality-dialog").showModal();
+  // Matrix curation
+  state.curation = { runSource: "", samples: null, detection: null, request: 0 };
+  function openCuration(sourceDir, samples) {
+    state.curation.runSource = sourceDir;
+    state.curation.samples = samples ?? null;
+    $("curation-source_dir").value = sourceDir;
+    $("curation-sample_metadata").value = "";
+    selectView("curation");
+    return detectCuration();
+  }
+  function curationPreferences() {
+    return state.config.preferences.matrix_curation?.steps || {};
+  }
+  async function detectCuration() {
+    const request = (state.curation.request += 1);
+    const sourceDir = $("curation-source_dir").value.trim();
+    state.curation.detection = null;
+    if (!sourceDir) {
+      renderCuration(null, "");
+      return;
+    }
+    try {
+      const detection = await api("/api/matrix-curation/source", {
+        source_dir: sourceDir,
+        sample_metadata_path: $("curation-sample_metadata").value.trim(),
+        samples:
+          sourceDir === state.curation.runSource ? state.curation.samples : null,
+      });
+      if (request !== state.curation.request) return;
+      state.curation.detection = detection;
+      renderCuration(detection, "");
+    } catch (error) {
+      if (request === state.curation.request) renderCuration(null, error.message);
+    }
+  }
+  function renderCuration(detection, error) {
+    const list = $("curation-source");
+    list.replaceChildren();
+    const item = (tone, label, detail) => {
+      const line = el("li", undefined, tone);
+      const body = el("div", undefined, "check-item");
+      body.title = detail;
+      body.append(
+        ui.icon(tone === "ok" ? "check-circle" : "dot"),
+        el("strong", label),
+        el("small", detail, "mono"),
+      );
+      line.append(body);
+      list.append(line);
+    };
+    if (error) item("todo", "Alignment 輸出", error);
+    else if (detection) {
+      item("ok", "Matrix", pathTail(detection.matrix_path));
+      item("ok", "Review", pathTail(detection.review_path));
+      const source = detection.sample_source;
+      item(
+        source ? "ok" : "todo",
+        "樣本資料",
+        !source
+          ? "找不到；需要時請在上方選擇樣本資料 TSV"
+          : {
+              file: `選擇的檔案 ${pathTail(source.label)}`,
+              run: source.label,
+              confirmed: "RAW 資料夾已確認的樣本資訊",
+              raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
+            }[source.kind],
+      );
+    }
+    $("curation-output").textContent = detection
+      ? `新資料夾：${detection.output_dir.replace(/_\d{8}_\d{6}$/, "_<開始時間>")}`
+      : "選擇 Alignment 輸出後顯示";
+    const container = $("curation-steps");
+    container.replaceChildren();
+    if (!detection) {
+      const note = el("p", undefined, error ? "result-warning" : "subtle");
+      if (error) note.append(ui.icon("alert"));
+      note.append(error || "選擇 Alignment 輸出資料夾後，會列出可用的整理步驟。");
+      container.append(note);
+      lock();
+      return;
+    }
+    const saved = curationPreferences();
+    for (const step of detection.steps) {
+      const remembered = saved[step.key] || {};
+      const unavailable = Boolean(step.unavailable_reason);
+      const block = el("div", undefined, "curation-step");
+      block.dataset.step = step.key;
+      const toggle = el("label", undefined, "field checkbox");
+      const input = el("input");
+      input.type = "checkbox";
+      input.id = `curation-step-${step.key}`;
+      // Unavailable controls stay disabled; lock() only manages idle ones.
+      if (unavailable) input.disabled = true;
+      else {
+        input.dataset.analysisIdle = "";
+        input.checked = remembered.enabled ?? true;
+      }
+      toggle.append(input, el("span", step.label));
+      block.append(toggle, el("p", step.description, "subtle"));
+      for (const parameter of step.parameters) {
+        const field = el("label", undefined, "field");
+        const value = el("input");
+        value.type = "number";
+        value.step = "any";
+        value.min = parameter.minimum;
+        value.max = parameter.maximum;
+        value.id = `curation-${step.key}-${parameter.key}`;
+        value.value = remembered.parameters?.[parameter.key] ?? "";
+        if (unavailable) value.disabled = true;
+        else value.dataset.analysisIdle = "";
+        field.append(
+          el("span", parameter.label),
+          value,
+          el("small", parameter.help),
+        );
+        block.append(field);
+      }
+      if (unavailable) {
+        const reason = el("p", undefined, "result-warning");
+        reason.append(ui.icon("alert"), `目前無法使用：${step.unavailable_reason}`);
+        block.append(reason);
+      }
+      container.append(block);
+    }
+    lock();
+  }
+  async function startCuration() {
+    const detection = state.curation.detection;
+    if (!detection) throw new Error("請先選擇可讀取的 Alignment 輸出資料夾。");
+    const steps = {};
+    const remembered = { ...curationPreferences() };
+    for (const step of detection.steps) {
+      if (step.unavailable_reason) continue;
+      const enabled = $(`curation-step-${step.key}`).checked;
+      const parameters = {};
+      for (const parameter of step.parameters) {
+        const input = $(`curation-${step.key}-${parameter.key}`);
+        if (enabled && input.value.trim() === "")
+          throw new Error(`請輸入「${step.label}」的${parameter.label}。`);
+        if (input.value.trim() !== "")
+          parameters[parameter.key] = Number(input.value);
+      }
+      remembered[step.key] = { enabled, parameters };
+      if (enabled) steps[step.key] = parameters;
+    }
+    if (!Object.keys(steps).length)
+      throw new Error("請至少啟用一個可用的整理步驟。");
+    state.config.preferences = await api("/api/preferences", {
+      matrix_curation: { steps: remembered },
+    });
+    const sourceDir = detection.source_dir;
+    await startJob("curation", {
+      source_dir: sourceDir,
+      sample_metadata_path: $("curation-sample_metadata").value.trim(),
+      samples:
+        sourceDir === state.curation.runSource ? state.curation.samples : null,
+      steps,
+    });
   }
   async function openInspectorExport(source) {
     state.exportSource = source;
@@ -2466,19 +2619,29 @@
     });
     $("sequence-source").addEventListener("change", () => dirty("untargeted"));
     $("analysis-stop").onclick = () => act(stopJob);
-    $("quality-form").onsubmit = (event) => {
+    pathField(
+      $("curation-paths"),
+      "source_dir",
+      "Alignment 輸出資料夾",
+      "folder",
+      "",
+      "curation-",
+    );
+    pathField(
+      $("curation-paths"),
+      "sample_metadata",
+      "樣本資料 TSV（選填）",
+      "samples",
+      "",
+      "curation-",
+      "只有找不到樣本資料，或要改用另一份時才需要選擇。",
+    );
+    for (const id of ["curation-source_dir", "curation-sample_metadata"])
+      $(id).addEventListener("change", () => act(detectCuration));
+    renderCuration(null, "");
+    $("curation-form").onsubmit = (event) => {
       event.preventDefault();
-      act(async () => {
-        const result = state.analysis.results.untargeted;
-        await startJob("quality", {
-          matrix_path: result.matrix_tsv,
-          review_path: result.alignment_outputs.review_tsv,
-          sample_metadata_path: $("quality-metadata").value,
-          output_dir: $("quality-output").value,
-          min_finite_fraction: Number($("quality-threshold").value),
-        });
-        $("quality-dialog").close();
-      });
+      act(startCuration);
     };
     $("export-strategy").onchange = () =>
       ($("export-query").hidden = $("export-strategy").value !== "query");
@@ -2537,16 +2700,23 @@
     document.addEventListener("keydown", (event) => {
       if (!(event.ctrlKey || event.metaKey) || document.querySelector("dialog[open]"))
         return;
-      if (["1", "2", "3"].includes(event.key)) {
+      if (["1", "2", "3", "4"].includes(event.key)) {
         event.preventDefault();
-        selectView({ 1: "targeted", 2: "untargeted", 3: "review" }[event.key]);
+        selectView(
+          { 1: "targeted", 2: "untargeted", 3: "curation", 4: "review" }[
+            event.key
+          ],
+        );
       } else if (event.key === ".") {
         event.preventDefault();
         act(stopJob);
       } else if (event.key === "Enter" && state.view !== "review") {
         event.preventDefault();
         if (!isBusy()) $(`${state.view}-form`).requestSubmit();
-      } else if (event.key.toLowerCase() === "s" && state.view !== "review") {
+      } else if (
+        event.key.toLowerCase() === "s" &&
+        ["targeted", "untargeted"].includes(state.view)
+      ) {
         event.preventDefault();
         if (!isBusy())
           act(() =>

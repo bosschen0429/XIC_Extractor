@@ -857,3 +857,19 @@
 #sample-rows .sample-empty button {
   margin-left: 12px;
 }
+.curation-step {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.curation-step:first-child {
+  padding-top: 0;
+}
+.curation-step:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.curation-step p {
+  margin: 0;
+}

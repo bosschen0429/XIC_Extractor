@@ -35,7 +35,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py)，進入同一 Targeted application |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) → [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) |
 | Untargeted 全流程、Alignment 與 Matrix | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py)、[`scripts/run_alignment.py`](../scripts/run_alignment.py) → [`applications/untargeted/application.py`](../xic_extractor/applications/untargeted/application.py) |
-| 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) → [`feature_quality.py`](../xic_extractor/feature_quality.py) |
+| 完成 Matrix 後的矩陣整理 | [`xic_workbench/matrix_curation.py`](../xic_workbench/matrix_curation.py)、[`scripts/run_matrix_curation.py`](../scripts/run_matrix_curation.py) → [`matrix_curation/export.py`](../xic_extractor/matrix_curation/export.py) |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) → [`xic_inspector/api.py`](../xic_inspector/api.py) |
 
 ### Finding The Right Owner
@@ -347,7 +347,7 @@ Cross-cutting owners remain focused:
 | Owner | Responsibility |
 | --- | --- |
 | `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
-| `feature_quality.py` / `feature_quality_io.py` | post-finalization feature availability and analysis-set export; never Alignment decisions or normalization |
+| `matrix_curation/` | post-Alignment curation steps over a published Matrix and their export; never Alignment decisions or normalization |
 | `evidence_artifacts.py` | completed-evidence locator: report and Matrix paths, Matrix file SHA-256, attempt UUID, schema version |
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority |

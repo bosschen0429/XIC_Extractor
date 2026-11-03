@@ -297,6 +297,7 @@ class FakeRuns:
     requests: list = field(default_factory=list)
     targeted_workbook: Path | None = None
     istd_warnings: list = field(default_factory=list)
+    result: dict = field(default_factory=dict)
 
 
 @pytest.fixture
@@ -353,6 +354,7 @@ def fake_runs(monkeypatch, tmp_path):
                 "targets": [{"label": "Browser target"}],
                 "sample_count": 1,
                 "candidate_counts": {"total": 1},
+                **control.result,
             }
 
     monkeypatch.setattr("xic_workbench.targeted.TargetedRun", FakeRun)
@@ -472,9 +474,9 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 
 def test_navigation_and_theme_survive_reload(workbench):
     page = workbench
-    for view in ("untargeted", "review", "targeted"):
+    for view in ("untargeted", "curation", "review", "targeted"):
         _view(page, view)
-        for other in {"targeted", "untargeted", "review"} - {view}:
+        for other in {"targeted", "untargeted", "curation", "review"} - {view}:
             expect(page.locator(f"#workspace-{other}")).to_be_hidden()
     _view(page, "untargeted")
     initial = page.locator("html").get_attribute("data-theme")
@@ -3213,3 +3215,72 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     assert (rows["S1"].excluded, rows["S1"].group) == (True, "New")
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
+
+
+def test_matrix_curation_from_a_run_and_from_an_existing_folder(
+    workbench, fake_runs, config_dir, tmp_path
+):
+    from tests.test_matrix_curation import (
+        alignment_output,
+        sample_payload,
+        sample_rows,
+    )
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+    from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
+
+    page = workbench
+    raw_dir = tmp_path / "run-raw"
+    run_output = alignment_output(tmp_path / "results", raw_dir=raw_dir)
+    save_batch_samples(config_dir, raw_dir, sample_payload())
+    fake_runs.result = {
+        "matrix_tsv": str(run_output / "alignment_matrix.tsv"),
+        "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
+    }
+    _view(page, "untargeted")
+    page.locator("input[name=u-mode][value=discovery_only]").check()
+    page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
+    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+    page.locator("#u-output_dir").fill(str(run_output))
+    _start(page, "untargeted")
+    fake_runs.release.set()
+    _wait_for_analysis_status(page, "已完成")
+
+    # After a run only the threshold is needed: folder and samples come along.
+    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
+    expect(page.locator("#workspace-curation")).to_be_visible()
+    expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
+    step = page.locator("#curation-step-finite_fraction")
+    expect(step).to_be_enabled()
+    expect(step).to_be_checked()
+    page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
+    page.locator("button[form=curation-form][type=submit]").click()
+    _wait_for_analysis_status(page, "已完成")
+    result = page.locator("#curation-result")
+    expect(result).to_contain_text("2保留 feature")
+    expect(result).to_contain_text("4原始 feature")
+    expect(result.get_by_role("link", name="analysis_matrix.tsv")).to_be_visible()
+    (curated,) = run_output.glob("matrix_curation_*")
+    _, kept = read_tsv_with_header(curated / "analysis_matrix.tsv")
+    assert [row["Mz"] for row in kept] == ["101.0000", "103.0000"]
+
+    # An existing folder without sample data names the reason; choosing a
+    # sample file makes the step available, and the last threshold returns.
+    page.reload()
+    expect(page.locator("#workspace-curation")).to_be_visible()
+    existing = alignment_output(tmp_path / "existing")
+    page.locator("#curation-source_dir").fill(str(existing))
+    page.locator("#curation-source_dir").press("Tab")
+    expect(step).to_be_disabled()
+    expect(page.locator("#curation-steps")).to_contain_text("找不到樣本資料")
+    samples = tmp_path / "samples.tsv"
+    write_tsv(samples, sample_rows(), SAMPLE_METADATA_COLUMNS)
+    page.locator("#curation-sample_metadata").fill(str(samples))
+    page.locator("#curation-sample_metadata").press("Tab")
+    expect(step).to_be_enabled()
+    expect(page.locator("#curation-finite_fraction-min_finite_fraction")).to_have_value(
+        "0.6"
+    )
+    page.locator("button[form=curation-form][type=submit]").click()
+    _wait_for_analysis_status(page, "已完成")
+    expect(result).to_contain_text(str(existing))
+    assert len(list(existing.glob("matrix_curation_*"))) == 1

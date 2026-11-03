@@ -290,7 +290,19 @@ def prepare_untargeted_alignment_inputs(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
     if sample_metadata is not None:
-        retained_sample_metadata = sample_metadata
+        # Supplied metadata also lists excluded and context injections, which
+        # Discovery did not analyze; align the samples in the batch.
+        by_stem = {row.raw_stem: row for row in sample_metadata}
+        missing_stems = [
+            stem for stem in discovery_batch.sample_order if stem not in by_stem
+        ]
+        if missing_stems:
+            raise ValueError(
+                "sample metadata has no row for: " + ", ".join(missing_stems)
+            )
+        retained_sample_metadata = tuple(
+            by_stem[stem] for stem in discovery_batch.sample_order
+        )
     else:
         from xic_extractor.raw_reader import read_analysis_set
 

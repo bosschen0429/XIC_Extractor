@@ -2,7 +2,7 @@
 
 The local HTML workbench is the human surface for Targeted and Untargeted
 analysis, result actions, and completed-evidence review. It orchestrates the
-existing application, writer, Feature Quality, and Inspector owners. It does
+existing application, writer, Matrix curation, and Inspector owners. It does
 not create another scientific or product-authority lane. This page keeps its
 historical filename as the stable topic locator.
 
@@ -16,12 +16,13 @@ historical filename as the stable topic locator.
   system, and the default browser opens the printed URL.
 - `--no-open` suppresses browser opening. `--port` selects the local port.
   `--config-dir` selects the writable settings directory.
-- The navigation exposes Targeted, Untargeted, and completed-result review in
-  one HTML application. Theme and last view are machine-local preferences.
+- The navigation exposes Targeted, Untargeted, Matrix curation (矩陣整理) and
+  completed-result review in one HTML application. Theme, last view, and the
+  last curation steps and thresholds are machine-local preferences.
 - One analysis or export job runs at a time. The workbench reports stage,
   progress, elapsed time, terminal status, and outputs.
 - Targeted, Untargeted, and Inspector jobs accept cooperative cancellation.
-  Feature Quality and sample export finish their active write.
+  Matrix curation and sample export finish their active write.
 - Completed results and the review header expose direct downloads of the
   published Targeted XLSX or bound Untargeted Matrix TSV. These links serve the
   existing files without rerunning analysis or rebuilding them from Inspector.
@@ -110,9 +111,10 @@ worker settings. Single-file Discovery ignores Alignment and Backfill.
 
 - Targeted and Untargeted results appear in the same HTML workbench that
   launched the run. Available artifacts remain links to owner-published files.
-- A completed Alignment result can start Feature Quality export with its bound
-  Matrix identity and an explicit sample-metadata file and threshold. The
-  source Matrix remains unchanged.
+- A completed Alignment result offers **整理矩陣** as its main action. It opens
+  the Matrix curation page with that run's folder and samples; only the step
+  thresholds are entered. The page can also curate an earlier Alignment folder.
+  The source Matrix remains unchanged.
 - A completed evidence locator opens the shared Inspector review view directly
   in the workbench, without an iframe or intermediate HTML. Saved results and
   loaded curves use the same renderer as standalone Inspector HTML.
@@ -171,10 +173,10 @@ worker settings. Single-file Discovery ignores Alignment and Backfill.
 - **Owns:** local navigation, form state, run/stop feedback, writable config,
   owner dispatch, and output presentation.
 - **Does not own:** peak selection, grouping, Backfill, counted detection,
-  Matrix publication, Feature Quality rules, Inspector evidence meaning,
+  Matrix publication, Matrix curation rules, Inspector evidence meaning,
   product maturity, or release readiness.
 - [Discovery](discovery.md), [Alignment](alignment.md),
-  [Targeted Selection](targeted-selection.md), [Feature Quality](feature-quality.md),
+  [Targeted Selection](targeted-selection.md), [Matrix Curation](matrix-curation.md),
   [XIC Inspector](xic-inspector.md), and [Productization](productization.md)
   remain the respective behavior and authority owners.
 
@@ -185,6 +187,7 @@ worker settings. Single-file Discovery ignores Alignment and Backfill.
 | Launch, loopback routes, and review | `tests/test_xic_workbench.py`, `tests/test_workbench_analysis.py` |
 | Targeted config, labels, reset, and execution adapter | `tests/test_workbench_config.py`, `tests/test_workbench_targeted.py`, `tests/test_targeted_service_contract.py` |
 | Untargeted config, methods, samples, and three modes | `tests/test_workbench_config.py`, `tests/test_workbench_untargeted.py`, `tests/test_processing_run_spec_entrypoints.py` |
+| Matrix curation page, sample data and job | `tests/test_matrix_curation.py`, `tests/test_workbench_browser.py` |
 | Frozen resource and entry-point contract | `tests/test_pyinstaller_spec.py` |
 
 Source tests verify the current Python and resource contract. Only a completed
@@ -202,5 +205,5 @@ artifact build and frozen smoke run verify the distributable application.
 
 - [XIC Inspector](xic-inspector.md)
 - [Presets](presets.md)
-- [Feature Quality](feature-quality.md)
+- [Matrix Curation](matrix-curation.md)
 - [Architecture contract](../architecture-contract.md)
