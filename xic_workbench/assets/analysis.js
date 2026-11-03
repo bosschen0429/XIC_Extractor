@@ -1962,12 +1962,18 @@
     else if (detection) {
       item("ok", "Matrix", pathTail(detection.matrix_path));
       item("ok", "Review", pathTail(detection.review_path));
+      const source = detection.sample_source;
       item(
-        detection.sample_source ? "ok" : "todo",
+        source ? "ok" : "todo",
         "樣本資料",
-        detection.sample_source
-          ? pathTail(detection.sample_source)
-          : "找不到；需要時請在上方選擇樣本資料 TSV",
+        !source
+          ? "找不到；需要時請在上方選擇樣本資料 TSV"
+          : {
+              file: `選擇的檔案 ${pathTail(source.label)}`,
+              run: source.label,
+              confirmed: "RAW 資料夾已確認的樣本資訊",
+              raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
+            }[source.kind],
       );
     }
     $("curation-output").textContent = detection

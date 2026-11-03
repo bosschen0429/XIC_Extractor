@@ -37,6 +37,7 @@ from xic_extractor.tabular_io import (
 STEPS: tuple[CurationStep, ...] = (FINITE_FRACTION_STEP,)
 MATRIX_NAME = "alignment_matrix.tsv"
 REVIEW_NAME = "alignment_review.tsv"
+RUN_METADATA_NAME = "alignment_run_metadata.json"
 SUMMARY_NAME = "matrix_curation_summary.json"
 DECISION_KEY_COLUMNS = ("source_matrix_row_index", "feature_id", "Mz", "RT")
 
@@ -46,10 +47,13 @@ class CurationSource:
     source_dir: Path
     matrix_path: Path
     review_path: Path
+    # Where the run read its RAW, from the Alignment run metadata when present.
+    raw_dir: Path | None = None
+    dll_dir: Path | None = None
 
 
 def locate_curation_source(source_dir: Path) -> CurationSource:
-    """Find the published Matrix and its bound Review; nothing is rerun."""
+    """Find the published Matrix, its bound Review and the run's RAW folder."""
     if not source_dir.is_dir():
         raise ValueError(f"找不到 Alignment 輸出資料夾：{source_dir}")
     matrix, review = source_dir / MATRIX_NAME, source_dir / REVIEW_NAME
@@ -59,7 +63,17 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         raise ValueError(
             f"資料夾中沒有 {REVIEW_NAME}；請以會輸出 Review 的層級重跑 Alignment。"
         )
-    return CurationSource(source_dir, matrix, review)
+    run: dict[str, Any] = {}
+    try:
+        loaded = json.loads((source_dir / RUN_METADATA_NAME).read_text("utf-8"))
+        run = loaded if isinstance(loaded, dict) else {}
+    except (OSError, ValueError):
+        pass
+    raw_dir, dll_dir = (
+        Path(value) if isinstance(value, str) and value.strip() else None
+        for value in (run.get("raw_dir"), run.get("dll_dir"))
+    )
+    return CurationSource(source_dir, matrix, review, raw_dir, dll_dir)
 
 
 def default_output_dir(source: CurationSource) -> Path:
@@ -75,6 +89,24 @@ def read_sample_metadata_file(path: Path) -> tuple[SampleMetadata, ...]:
             f"樣本資料需為含 schema_version 與 sample_name 欄的 TSV/CSV：{path}"
         )
     return load_sample_metadata(path)
+
+
+def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | None:
+    """Sample roles from the run's RAW headers, as Alignment reads them.
+
+    Used when no sample data was supplied; None when the RAW folder or the
+    reader is not available on this computer.
+    """
+    if source.raw_dir is None or source.dll_dir is None:
+        return None
+    if not source.raw_dir.is_dir():
+        return None
+    from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+
+    try:
+        return read_analysis_set(source.raw_dir, source.dll_dir).sample_metadata
+    except (OSError, RawReaderError, ValueError):
+        return None
 
 
 def bind_samples(

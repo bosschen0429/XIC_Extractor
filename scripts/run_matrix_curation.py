@@ -1,22 +1,29 @@
 """Curate a published Alignment Matrix with independently switchable steps.
 
-A step runs when its parameters are given. Without --sample-metadata, the
-Workbench's confirmed sample data for the run's RAW folder is used.
+A step runs when its parameters are given. Without --sample-metadata, sample
+roles are read from the run's RAW headers, as Alignment reads them.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.matrix_curation.export import STEPS
+from xic_extractor.matrix_curation.export import (
+    STEPS,
+    default_output_dir,
+    export_matrix_curation,
+    locate_curation_source,
+    read_run_samples,
+    read_sample_metadata_file,
+)
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    from xic_workbench.config_io import CONFIG_DIR
-
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -29,13 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--sample-metadata",
         type=Path,
-        help="Canonical sample_metadata TSV/CSV; roles are never inferred",
-    )
-    parser.add_argument(
-        "--config-dir",
-        type=Path,
-        default=CONFIG_DIR,
-        help="Workbench configuration holding confirmed sample data",
+        help="Canonical sample_metadata TSV/CSV (default: roles from the RAW headers)",
     )
     parser.add_argument(
         "--output-dir",
@@ -64,24 +65,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             steps[step.key] = given
     if not steps:
         parser.error("enable at least one step by giving its parameters")
-    from xic_workbench.matrix_curation import run_curation
-
     try:
-        result = run_curation(
-            args.config_dir,
-            {
-                "source_dir": str(args.source_dir),
-                "sample_metadata_path": str(args.sample_metadata or ""),
-                "output_dir": str(args.output_dir or ""),
-                "steps": steps,
-            },
+        source = locate_curation_source(args.source_dir)
+        metadata: tuple[SampleMetadata, ...] | None
+        if args.sample_metadata is not None:
+            metadata = read_sample_metadata_file(args.sample_metadata)
+            sample_source = str(args.sample_metadata)
+        else:
+            metadata = read_run_samples(source)
+            sample_source = f"RAW headers: {source.raw_dir}" if metadata else ""
+        output_dir = args.output_dir or default_output_dir(source)
+        summary = json.loads(
+            export_matrix_curation(
+                source=source,
+                sample_metadata=metadata,
+                sample_source=sample_source,
+                steps=steps,
+                output_dir=output_dir,
+            ).read_text(encoding="utf-8")
         )
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(
-        f"Matrix curation: kept {result['kept_feature_count']} of "
-        f"{result['feature_count']} features -> {result['output_dir']}"
+        f"Matrix curation: kept {summary['kept_feature_count']} of "
+        f"{summary['feature_count']} features -> {output_dir}"
     )
     return 0
 

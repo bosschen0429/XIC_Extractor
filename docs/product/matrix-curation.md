@@ -3,8 +3,8 @@
 Matrix curation runs independently switchable steps on a published Alignment
 Matrix and writes the result to a new folder. The workbench **矩陣整理** page
 and `xic-matrix-curation` share the same owner: `xic_extractor.matrix_curation`
-holds the steps and export, and `xic_workbench.matrix_curation` finds the
-sample data. Curation reads only the published files. It does not reopen RAW
+holds the steps, export and RAW-header sample reading, and
+`xic_workbench.matrix_curation` adds the workbench's own sample sources. Curation reads only the published files. It does not reopen RAW
 files, rerun Untargeted analysis, or change Alignment decisions, counted
 detection, peak identity, or the source Matrix.
 
@@ -24,10 +24,10 @@ divided by the number of eligible samples. Numeric zero and finite backfilled
 values count as available; blank and nonfinite cells do not. This is numeric
 availability, not a detection rate. Cell states are not inferred from numbers.
 
-Eligible samples have explicit `sample_role=study_sample` and `excluded=FALSE`.
-Sample names and raw-stem aliases must match the Matrix columns exactly,
-including the writer's formula escaping. Roles and groups are not inferred from
-names. QC, blank, unknown-role and excluded samples do not enter the
+Eligible samples have `sample_role=study_sample` and `excluded=FALSE` in the
+sample data (see [Inputs](#inputs)). Sample names and raw-stem aliases must
+match the Matrix columns exactly, including the writer's formula escaping. The
+step itself assigns no roles; it uses the roles its sample data carries. QC, blank, unknown-role and excluded samples do not enter the
 denominator, but their Matrix columns remain in the delivered tables. The step
 is unavailable when sample data is missing, does not cover every Matrix column,
 or has no eligible study sample.
@@ -53,7 +53,14 @@ Sample data is chosen in this order:
 2. the samples of the Untargeted run that produced the folder, when curation
    starts from that run's result;
 3. the workbench's confirmed sample data for the RAW folder named by
-   `alignment_run_metadata.json`.
+   `alignment_run_metadata.json`;
+4. the roles read from that RAW folder's headers with the same reader Alignment
+   uses when it is given no sample data (Thermo sample type and the QC, blank
+   and similar vocabulary in names). This needs the RAW folder and reader
+   recorded in the run metadata on this computer.
+
+The CLI uses only the first and last sources. When none applies, the steps that
+need samples are unavailable and a sample file must be selected.
 
 ## Outputs
 
@@ -88,9 +95,8 @@ computer. Untargeted runs never start curation automatically.
 
 For batches, `xic-matrix-curation --source-dir <folder> --min-finite-fraction
 <value>` runs the same owner; a step runs when its parameters are given.
-`--sample-metadata` selects a file; without it the workbench's confirmed sample
-data is used (`--config-dir` selects the workbench configuration). The module
-entry is `python -m scripts.run_matrix_curation`.
+`--sample-metadata` selects a file; without it roles are read from the run's RAW
+headers. The module entry is `python -m scripts.run_matrix_curation`.
 
 ## Verification
 

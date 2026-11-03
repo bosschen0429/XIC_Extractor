@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,7 +53,8 @@ def alignment_output(folder: Path, *, raw_dir: Path | None = None) -> Path:
     )
     if raw_dir is not None:
         (folder / "alignment_run_metadata.json").write_text(
-            json.dumps({"raw_dir": str(raw_dir)}), encoding="utf-8"
+            json.dumps({"raw_dir": str(raw_dir), "dll_dir": str(folder / "dll")}),
+            encoding="utf-8",
         )
     return folder
 
@@ -251,28 +253,48 @@ def test_cli_does_not_overwrite_existing_output(tmp_path):
     assert marker.read_text() == "existing result"
 
 
-def test_sample_data_comes_from_the_run_then_confirmed_folder_metadata(tmp_path):
+def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
+    tmp_path, monkeypatch
+):
     from xic_workbench.matrix_curation import describe_source
-    from xic_workbench.samples import save_batch_samples
+    from xic_workbench.samples import from_payload, save_batch_samples
 
     config = tmp_path / "config"
     raw_dir = tmp_path / "raw"
     source = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
+    header_reads = []
 
-    missing = describe_source(config, {"source_dir": str(source)})
-    assert missing["sample_source"] == ""
+    def read_analysis_set(root, dll_dir):
+        header_reads.append((root, dll_dir))
+        return SimpleNamespace(sample_metadata=from_payload(sample_payload()))
+
+    monkeypatch.setattr("xic_extractor.raw_reader.read_analysis_set", read_analysis_set)
+
+    def detect(**values):
+        return describe_source(config, {"source_dir": str(source), **values})
+
+    # The run's RAW folder is not on this computer: nothing to bind.
+    missing = detect()
+    assert missing["sample_source"] is None
     assert "找不到樣本資料" in missing["steps"][0]["unavailable_reason"]
+    assert header_reads == []
 
-    run_rows = sample_payload()
-    from_run = describe_source(config, {"source_dir": str(source), "samples": run_rows})
-    assert from_run["steps"][0]["unavailable_reason"] == ""
-    assert from_run["sample_source"] == "本次 Untargeted 執行的樣本資料"
+    raw_dir.mkdir()
+    from_headers = detect()
+    assert from_headers["sample_source"] == {"kind": "raw", "label": str(raw_dir)}
+    assert from_headers["steps"][0]["unavailable_reason"] == ""
+    assert header_reads == [(raw_dir, source / "dll")]
 
-    confirmed = save_batch_samples(config, raw_dir, run_rows)["path"]
-    detected = describe_source(config, {"source_dir": str(source)})
-    assert detected["sample_source"] == confirmed
-    assert detected["steps"][0]["unavailable_reason"] == ""
-    assert Path(detected["output_dir"]).parent == source
+    confirmed = save_batch_samples(config, raw_dir, sample_payload())["path"]
+    assert detect()["sample_source"] == {"kind": "confirmed", "label": confirmed}
+    run = detect(samples=sample_payload())
+    assert run["sample_source"]["kind"] == "run"
+    samples = tmp_path / "samples.tsv"
+    write_tsv(samples, sample_rows(), SAMPLE_METADATA_COLUMNS)
+    chosen = detect(samples=sample_payload(), sample_metadata_path=str(samples))
+    assert chosen["sample_source"] == {"kind": "file", "label": str(samples)}
+    assert len(header_reads) == 1
+    assert Path(chosen["output_dir"]).parent == source
 
 
 def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
@@ -303,10 +325,10 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
         4,
         2,
     )
+    samples = tmp_path / "samples.tsv"
+    write_tsv(samples, sample_rows(), SAMPLE_METADATA_COLUMNS)
     cli_output = tmp_path / "cli"
-    result = _run(
-        source, None, cli_output, "--config-dir", str(config), threshold="0.6"
-    )
+    result = _run(source, samples, cli_output, threshold="0.6")
     assert result.returncode == 0, result.stderr
     for name in OUTPUT_FILES - {"matrix_curation_summary.json"}:
         assert (output / name).read_bytes() == (cli_output / name).read_bytes()
