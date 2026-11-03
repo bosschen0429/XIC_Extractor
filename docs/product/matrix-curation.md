@@ -65,10 +65,11 @@ Evidence counts only directly detected cells (`discovery_support` or
   Both use the Review's `matrix_mz` (row-center m/z, recorded with
   `center_mz_basis`); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
-- **Stable ratio:** on supporting samples whose published values are finite
+- **Ratio screening:** on supporting samples whose published values are finite
   and positive, the median absolute deviation of `log10(light/heavy)` (no scale
   constant) is at most 0.1 for isotopes and 0.15 otherwise, over at least 3
-  samples.
+  samples. A variable monomer-adduct ratio can instead use the independently
+  supported carrier evidence below; isotope ratio checks are never waived.
 - **Isotope abundance:** every supporting sample's heavy/light ratio stays at
   or under `n·(p13/p12)` (13C), `C(n,2)·(p13/p12)²` (13C₂) or `n·(p15/p14)`
   (15N), with `n = floor(M/12)` or `floor(M/14)` and `M` the neutral mass at
@@ -113,6 +114,34 @@ derivatives are excluded by the single-pair checks, but they do not establish
 the lighter row as [M+H]⁺. They are not interchangeable with the Mg-formate/
 acetate mass differences.
 
+#### Variable monomer-adduct ratios
+
+A cross-sample adduct ratio above the MAD limit is not, by itself, evidence
+that the rows are different compounds. A Na/K/NH₄/Mg/Ca monomer-adduct pair
+that fails only ratio stability can still contribute to exclusion when:
+
+- the same reference has at least two **other, different** monomer carrier
+  forms that independently pass the original mass, co-elution and stable-ratio
+  checks;
+- the reference, candidate and those two witness rows all co-elute directly,
+  with at least three jointly supporting samples. Two rows of the same carrier
+  do not count as two forms; backfill and transitive co-elution do not count.
+
+The original single-pair outcomes supply the witnesses. A newly corroborated
+variable-ratio row cannot bootstrap another candidate. Neutral salt additions,
+dimers and isotopes do not use this exception; their existing single-pair or
+joint-family rules remain in force. The final direct-co-elution check with an
+ultimate root still applies, so corroboration does not rescue a row whose only
+connection to that root is through intervening rows.
+
+The relation outcome is `collapse_corroborated_adduct`; its actual ratio MAD
+remains in the table. Review kind `variable_ratio_adduct_supported` records
+the reference, witness feature IDs, ratio MAD and final step decision, including
+`decision=drop` when excluded. No output columns or RAW-reading path are added.
+This is multi-ion evidence from the published Matrix, not a claim that normal
+curation has read within-peak curves or MS2. Bounded 8RAW trace/mass checks
+support the rule, not cross-batch validation.
+
 #### Ion families without a detected [M+H]⁺
 
 A joint neutral-mass hypothesis can exclude non-[M+H]⁺ rows even when the
@@ -128,7 +157,7 @@ protonated monomer has no Matrix row. It requires all of:
   sufficient.
 
 Cross-sample adduct ratios need not be constant for this joint hypothesis;
-the single-pair rules and isotope thresholds are unchanged. A compatible
+the ratio screen and isotope thresholds are unchanged. A compatible
 metal dimer (`[2M-H+Mg]+`, `[2M-H+Ca]+`, `[2M-2H+Na+Mg]+`,
 `[2M-2H+2Mg+HCOO]+` or `[2M-2H+2Mg+CH3COO]+`) can join an established family
 only with its own supported `M+2_unassigned` companion and direct co-elution
@@ -259,7 +288,7 @@ how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
 relation, removals through the group, `removed_representative_undetermined_count`,
-`removed_non_protonated_family_count`,
+`removed_non_protonated_family_count`, `used_variable_ratio_adduct_pair_count`,
 review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.
 `source_matrix_row_index` is the 1-based row position in the source Matrix;

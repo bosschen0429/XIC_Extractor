@@ -140,7 +140,7 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("H2O_loss", "review", 18.010565),
     Relation("+116.047_dR", "annotation", 116.04734),
 )
-_COLLAPSE_KINDS = frozenset({"isotope", "adduct"})
+_COLLAPSE_OUTCOMES = frozenset({"collapse", "collapse_corroborated_adduct"})
 
 
 @dataclass(frozen=True)
@@ -303,14 +303,20 @@ def collapse_same_compound(
     evidence = {pair: pair_evidence(cells[pair[0]], cells[pair[1]]) for pair in matches}
 
     outcomes: dict[tuple[int, int], dict[str, str]] = {}
-    edges: dict[tuple[int, int], tuple[str, ...]] = {}
     for pair, matched in matches.items():
         outcomes[pair] = {
             key: relation_outcome(by_key[key], mz[pair[0]], evidence[pair])
             for key in matched
         }
+    corroboration = _corroborate_variable_adducts(mz, cells, evidence, outcomes, by_key)
+    edges: dict[tuple[int, int], tuple[str, ...]] = {}
+    for pair, pair_outcomes in outcomes.items():
         folding = tuple(
-            sorted(key for key, value in outcomes[pair].items() if value == "collapse")
+            sorted(
+                key
+                for key, value in pair_outcomes.items()
+                if value in _COLLAPSE_OUTCOMES
+            )
         )
         if folding:
             edges[pair] = folding
@@ -437,9 +443,109 @@ def collapse_same_compound(
         ambiguous_roots,
         parents,
     )
-    return SameCompoundResult(
-        tuple(decisions), relation_rows, review_rows + family_reviews
+    corroboration_reviews = tuple(
+        review_row(
+            "variable_ratio_adduct_supported",
+            features[heavy].feature_id,
+            [features[light].feature_id]
+            + sorted(features[index].feature_id for index in witnesses),
+            relation="|".join(
+                sorted(
+                    key
+                    for key, outcome in outcomes[(light, heavy)].items()
+                    if outcome == "collapse_corroborated_adduct"
+                )
+            ),
+            log_ratio_mad=_number(evidence[(light, heavy)].log_mad),
+            decision="drop" if heavy in removed else "keep",
+        )
+        for (light, heavy), witnesses in corroboration.items()
     )
+    return SameCompoundResult(
+        tuple(decisions),
+        relation_rows,
+        review_rows + family_reviews + corroboration_reviews,
+    )
+
+
+def _corroborate_variable_adducts(
+    mz: Sequence[float],
+    cells: Sequence[Mapping[str, CellEvidence]],
+    evidence: dict[tuple[int, int], PairEvidence],
+    outcomes: dict[tuple[int, int], dict[str, str]],
+    by_key: Mapping[str, Relation],
+) -> dict[tuple[int, int], tuple[int, ...]]:
+    """Replace an unstable monomer-adduct ratio with independent carrier evidence.
+
+    Two different other monomer carriers must already pass the single-pair
+    checks. The reference, candidate and both witnesses must co-elute directly,
+    including at least three jointly supporting samples. Promoted candidates
+    never become stable-ratio witnesses for further promotions. Isotopes,
+    neutral salt additions and multimers retain their own rules.
+    """
+    carriers = {
+        key
+        for key, _ in FAMILY_MONOMERS
+        if key in by_key
+        and by_key[key].kind == "adduct"
+        and by_key[key].confirms_mh
+        and by_key[key].mz_factor == 1
+    }
+    stable: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for (light, heavy), labels in outcomes.items():
+        stable[light].extend(
+            (heavy, key)
+            for key, value in labels.items()
+            if key in carriers and value == "collapse"
+        )
+
+    def get_pair(a: int, b: int) -> PairEvidence:
+        pair = (a, b) if mz[a] <= mz[b] else (b, a)
+        if pair not in evidence:
+            evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
+        return evidence[pair]
+
+    supported = {}
+    for (light, heavy), labels in outcomes.items():
+        if not any(
+            key in carriers and value == "ratio_unstable"
+            for key, value in labels.items()
+        ):
+            continue
+        candidate_support = set(evidence[(light, heavy)].support)
+        witnesses = []
+        for witness, key in stable[light]:
+            if witness == heavy:
+                continue
+            pair = get_pair(witness, heavy)
+            if not pair.coelutes:
+                continue
+            joint = (
+                candidate_support
+                & set(evidence[(light, witness)].support)
+                & set(pair.support)
+            )
+            if len(joint) >= MIN_SUPPORT_SAMPLES:
+                witnesses.append((witness, key, joint))
+        proof: set[int] = set()
+        for position, (first, first_key, first_support) in enumerate(witnesses):
+            for second, second_key, second_support in witnesses[position + 1 :]:
+                if first == second or first_key == second_key:
+                    continue
+                pair = get_pair(first, second)
+                if (
+                    pair.coelutes
+                    and len(first_support & second_support & set(pair.support))
+                    >= MIN_SUPPORT_SAMPLES
+                ):
+                    proof.update((first, second))
+        if proof:
+            supported[(light, heavy)] = tuple(sorted(proof))
+    for pair_key in supported:
+        for key, value in outcomes[pair_key].items():
+            if key in carriers and value == "ratio_unstable":
+                outcomes[pair_key][key] = "collapse_corroborated_adduct"
+    return supported
 
 
 @dataclass(frozen=True)
@@ -720,7 +826,7 @@ def _relation_rows(
                     "outcome": outcome,
                     "used_for_collapse": (
                         "TRUE"
-                        if outcome == "collapse" and heavy in removed
+                        if outcome in _COLLAPSE_OUTCOMES and heavy in removed
                         else "FALSE"
                     ),
                 }
@@ -1014,7 +1120,8 @@ class SameCompoundStep:
         "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct、鹽簇與聚集離子衍生列，"
         "保留有證據的 [M+H]⁺，不改選較強的其他離子。元素或母列未定不阻擋排除。"
         "只計直接偵測格：同一樣本 apex 差 "
-        "≤3 秒；單一關係需強度比穩定，同位素另檢查天然豐度。"
+        "≤3 秒；加合物比例不穩時可由另外兩種已支持的單體加合形式共同佐證，"
+        "同位素比例與天然豐度檢查不放寬。"
         "多種加合物、聚集離子與金屬同位素共同支持的家族，不要求先看到 [M+H]⁺。"
         "質量關係以列中心 m/z 比對。"
         "需要該次分析的 cid_nl_explanation.sqlite。"
@@ -1073,6 +1180,8 @@ class SameCompoundStep:
                     "min_support_fraction": MIN_SUPPORT_FRACTION,
                     "isotope_max_log_ratio_mad": ISOTOPE_MAX_LOG_MAD,
                     "other_max_log_ratio_mad": OTHER_MAX_LOG_MAD,
+                    "variable_adduct_min_other_carrier_forms": 2,
+                    "variable_adduct_min_joint_support_samples": MIN_SUPPORT_SAMPLES,
                     "k41_median_light_heavy_range": list(K41_MEDIAN_RANGE),
                     "k41_sample_factor": ISOTOPE_RATIO_SAMPLE_FACTOR,
                     "k41_sample_fraction": ISOTOPE_RATIO_SAMPLE_FRACTION,
@@ -1110,6 +1219,11 @@ class SameCompoundStep:
                 "removed_non_protonated_family_count": sum(
                     decision.reason == "non_protonated_ion_family"
                     for decision in result.decisions
+                ),
+                "used_variable_ratio_adduct_pair_count": sum(
+                    row["outcome"] == "collapse_corroborated_adduct"
+                    and row["used_for_collapse"] == "TRUE"
+                    for row in result.relation_rows
                 ),
                 "removed_by_relation": dict(sorted(used.items())),
             },

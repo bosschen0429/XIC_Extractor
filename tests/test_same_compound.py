@@ -549,6 +549,121 @@ def test_unstable_ratio_and_review_only_relations_are_reviewed():
     ]
 
 
+def variable_adduct_family(
+    *, potassium_direct=True, potassium_shift=0.0, magnesium_shift=0.0
+):
+    # Independent ion-mass differences from a common [M+H]+ reference.
+    return (
+        row("ratio_MH", 600.0, base_rt=80.0),
+        row("ratio_Na", 621.981944, scale=0.5, base_rt=80.0),
+        row(
+            "ratio_K",
+            637.955882,
+            scale=0.25,
+            base_rt=80.0,
+            direct=potassium_direct,
+            shift_sec=potassium_shift,
+        ),
+        row(
+            "ratio_Mg",
+            681.990521,
+            ratios=(0.5, 2.0, 0.5, 2.0, 0.5, 2.0),
+            base_rt=80.0,
+            shift_sec=magnesium_shift,
+        ),
+        row(
+            "ratio_Mg_M2",
+            683.988072,
+            ratios=tuple(x * 0.1101 / 0.7899 for x in (0.5, 2.0) * 3),
+            base_rt=80.0,
+        ),
+    )
+
+
+def test_two_supported_carriers_can_corroborate_a_variable_adduct_ratio():
+    decisions, result = decide(*variable_adduct_family())
+    assert decisions["ratio_MH"][0] is True
+    assert decisions["ratio_Mg"][:3] == (
+        False,
+        "derived_from_representative",
+        "ratio_MH",
+    )
+    assert decisions["ratio_Mg_M2"][:3] == (False, "derived_through_group", "ratio_MH")
+    assert outcome(result, "[M+Mg+CH3COO]+") == {"collapse_corroborated_adduct"}
+    relation = next(
+        r for r in result.relation_rows if r["relation"] == "[M+Mg+CH3COO]+"
+    )
+    assert relation["used_for_collapse"] == "TRUE"
+    proof = next(
+        r
+        for r in result.review_rows
+        if r["review_kind"] == "variable_ratio_adduct_supported"
+    )
+    assert proof["feature_id"] == "ratio_Mg"
+    assert set(str(proof["related_feature_ids"]).split(";")) == {
+        "ratio_MH",
+        "ratio_Na",
+        "ratio_K",
+    }
+
+
+@pytest.mark.parametrize(
+    ("direct", "shift"),
+    [
+        (False, 0.0),
+        ((True, True, False, False, False, False), 0.0),
+        (True, 4.8),
+    ],
+)
+def test_a_single_backfilled_or_noncoeluting_carrier_cannot_rescue_an_adduct(
+    direct, shift
+):
+    decisions, result = decide(
+        *variable_adduct_family(potassium_direct=direct, potassium_shift=shift)
+    )
+    assert decisions["ratio_Mg"][0] is True
+    assert outcome(result, "[M+Mg+CH3COO]+") == {"ratio_unstable"}
+
+
+def test_two_rows_of_the_same_carrier_are_not_independent_corroboration():
+    rows = [r for r in variable_adduct_family() if r[0].feature_id != "ratio_K"]
+    decisions, _ = decide(*rows, row("second_Na", 621.982, scale=0.4, base_rt=80.0))
+    assert decisions["ratio_Mg"][0] is True
+
+
+def test_carrier_corroboration_needs_mutual_not_only_reference_coelution():
+    decisions, _ = decide(
+        *variable_adduct_family(potassium_shift=2.4, magnesium_shift=-2.4)
+    )
+    # Each witness co-elutes with the reference, but K and Mg are 4.8 s apart.
+    assert decisions["ratio_Mg"][0] is True
+
+
+@pytest.mark.parametrize(
+    ("mz", "relation"),
+    [
+        (601.003355, "13C_M+1"),
+        (1198.99272353, "[2M+H]+"),
+        (682.00307361783, "+NaCH3COO"),
+    ],
+)
+def test_monomer_carriers_do_not_override_isotope_dimer_or_salt_ratio_checks(
+    mz, relation
+):
+    rows = variable_adduct_family()[:3]
+    decisions, result = decide(
+        *rows,
+        row(
+            "variable_other",
+            mz,
+            base_rt=80.0,
+            ratios=(0.05, 0.15, 0.05, 0.15, 0.05, 0.15),
+        ),
+    )
+    assert decisions["variable_other"][0] is True
+    assert outcome(result, relation) == {"ratio_unstable"}
+
+
 def test_representative_much_weaker_than_removed_member_is_reviewed():
     decisions, result = decide(row("L", 300.0), row("Na", 321.981944, scale=20.0))
 
@@ -576,32 +691,36 @@ def test_recurring_unexplained_difference_is_listed_by_frequency():
 def _scenario():
     """Several groups, kept apart in RT so they never co-elute."""
     return (
-        row("A", 300.0),
-        row("B", 301.003355, scale=0.15, shift_sec=2.4),
-        row("C", 302.006710, scale=0.0225, shift_sec=4.8),
-        row("MH", 400.0, base_rt=20.0),
-        row("MH_13C", 401.003355, scale=0.15, base_rt=20.0),
-        row("Na", 421.981944, scale=0.5, base_rt=20.0),
-        row("Na_13C", 422.985299, scale=0.075, base_rt=20.0),
-        row("X", 900.0, base_rt=30.0),
-        row("Y", 901.000195, scale=0.1, base_rt=30.0),
-        row("Z", 500.0, base_rt=40.0),
-        row("root1", 600.0, base_rt=50.0),
-        row("root2", 579.021411, base_rt=50.0),
-        row("artifact", 601.003355, scale=0.15, base_rt=50.0),
-        row("Mg", 343.118794, base_rt=60.0),
-        row("M2", 345.116345, scale=1 / 7.174, base_rt=60.0),
-    ) + tuple(
         (
-            FeatureIdentity(
-                "family_" + feature.feature_id,
-                feature.matrix_mz,
-                feature.matrix_rt,
-                feature.center_mz_basis,
-            ),
-            cells,
+            row("A", 300.0),
+            row("B", 301.003355, scale=0.15, shift_sec=2.4),
+            row("C", 302.006710, scale=0.0225, shift_sec=4.8),
+            row("MH", 400.0, base_rt=20.0),
+            row("MH_13C", 401.003355, scale=0.15, base_rt=20.0),
+            row("Na", 421.981944, scale=0.5, base_rt=20.0),
+            row("Na_13C", 422.985299, scale=0.075, base_rt=20.0),
+            row("X", 900.0, base_rt=30.0),
+            row("Y", 901.000195, scale=0.1, base_rt=30.0),
+            row("Z", 500.0, base_rt=40.0),
+            row("root1", 600.0, base_rt=50.0),
+            row("root2", 579.021411, base_rt=50.0),
+            row("artifact", 601.003355, scale=0.15, base_rt=50.0),
+            row("Mg", 343.118794, base_rt=60.0),
+            row("M2", 345.116345, scale=1 / 7.174, base_rt=60.0),
         )
-        for feature, cells in sodium_family()
+        + tuple(
+            (
+                FeatureIdentity(
+                    "family_" + feature.feature_id,
+                    feature.matrix_mz,
+                    feature.matrix_rt,
+                    feature.center_mz_basis,
+                ),
+                cells,
+            )
+            for feature, cells in sodium_family()
+        )
+        + variable_adduct_family()
     )
 
 
