@@ -53,9 +53,8 @@ complete lineage seal.
 ## Boundaries
 
 - Owns: run metadata keys, config hashes, and output schema version tracking.
-- Does not own: workflow-neutral processing identity, evidence retention,
-  delivery-cell lineage, or delivery sealing. The processing-lineage contract
-  owns these four concerns.
+- Does not own: workflow-neutral processing identity or evidence retention.
+  The processing-lineage contract owns these concerns.
 - Does not own: sample metadata role behavior, review action import, matrix activation authority, or
   productization tier decisions.
 
@@ -69,8 +68,7 @@ complete lineage seal.
 ## Pitfalls
 
 - Treating a config hash as a complete method record.
-- Treating a path, timestamp, or diagnostic `run_id` as a sealed delivery
-  lineage.
+- Treating a path, timestamp, or diagnostic `run_id` as processing identity.
 - Hiding run-critical command shape only in a branch diary.
 - Letting provenance sidecars recompute evidence or decisions.
 

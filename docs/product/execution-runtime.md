@@ -473,9 +473,7 @@ Cache rules:
 - persistent cache format, retention period, and eviction policy remain
   separate owner decisions.
 
-The runtime must not delete immutable artifacts pinned by the
-[lineage retention contract](processing-lineage.md#delivery-retention). Physical
-deletion is limited to owner-supplied actions on registered temporary resources.
+Physical deletion is limited to owner-supplied actions on registered temporary resources.
 
 ## Minimum Observability
 

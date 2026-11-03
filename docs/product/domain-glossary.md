@@ -297,9 +297,8 @@ contract says otherwise.
 
 ## Processing Lineage Terms
 
-These names describe both current identity models and reserved delivery
-contracts. See [Result Traceability](processing-lineage.md#current-status) for
-implementation status; defining a term does not establish product capability.
+These names describe the current identity models; see
+[Result Traceability](processing-lineage.md#current-status).
 
 - `AcquisitionSource`: immutable identity for one RAW, mzML, or other
   acquisition source and its native observation namespace. A path or sample
@@ -311,23 +310,10 @@ implementation status; defining a term does not establish product capability.
   new attempts and never overwrite earlier attempt identity.
 - `EvidenceArtifact`: one immutable typed evidence instance identified by its
   producer attempt, semantic role, schema, and content digest.
-- `DeliveryCellKey`: projection-owned stable Targeted cell position under the
-  [delivery identity contract](processing-lineage.md#delivery-identities), not
-  a kernel observation or an ordinal group label.
-- `TargetedDeliveryCellKey`: Targeted name for `DeliveryCellKey`. Exact
-  target-definition and projection-policy versions belong to the delivery
-  revision, not the stable cell position.
-- `UntargetedDeliveryCellKey`: not part of the planned delivery contract; see the
-  [Untargeted delivery decision](processing-lineage.md#workflow-specific-delivery).
-- `DeliveryRevision`: immutable proposed or sealed Targeted value/null, linked
-  to the producing attempt and kernel decision.
-- `DeliverySeal`: immutable authority-approved manifest for Targeted revisions
-  or a complete Untargeted Matrix and retained ledger; see
-  [delivery identities](processing-lineage.md#delivery-identities).
 
 These terms are internal lineage identities, not extra user-visible review
 states. Avoid the overloaded term `run_id` when the intended meaning is
-request, attempt, artifact bundle, or delivery revision.
+request, attempt, or artifact bundle.
 
 ## Lane Boundaries
 

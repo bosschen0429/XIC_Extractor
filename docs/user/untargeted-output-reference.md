@@ -4,10 +4,7 @@ Column-level reference for all untargeted discovery and alignment output files.
 
 This page documents the current public schemas. Changing them is a public
 cutover that passes expected-diff, schema, downstream-consumer, and rollback
-gates. The reserved
-[Untargeted delivery contract](../product/processing-lineage.md#workflow-specific-delivery)
-is separate from these public schemas; it does not introduce per-cell delivery
-identities.
+gates.
 
 ## Discovery Outputs
 
