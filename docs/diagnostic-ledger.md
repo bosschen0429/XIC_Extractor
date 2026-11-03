@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-11-03
+**Last updated:** 2026-11-04
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -79,6 +79,35 @@ entry remains useful. Retain the conclusion, decisive comparison, evidence
 locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
+
+### 2026-11-04 Alignment SQLite Scalar Reads And Scientific Detail Retention
+
+Evidence: `diagnostic_only`; baseline `05392193`, candidate `42372d7f`;
+optimization class `exact_safe`, verdict `optimized`. The comparison re-encoded
+the same retained 8RAW facts, with three interleaved baseline/candidate process
+pairs and six measured warm calls per process. It excludes imports, HTML
+rendering and RAW execution. Median Matrix-page preparation fell from 239.5 to
+120.8 ms; published-cell loading from 160.7 to 116.6 ms. Query and sampled-page
+times remained within observed noise. Reader-visible payloads match after
+excluding the explicitly retired availability/example/writer-count metadata.
+
+Keep scalar cells in named columns and decompress row-level scientific details
+only for detail consumers. Candidate coordinates and sample labels need one
+stored owner, not parallel query copies. Per-cell copies of complete detail
+JSON increased storage in the bounded probe; flattening every field is not a
+substitute for separating frequently read values from cold evidence.
+
+Separate fresh 8RAW runs preserved all four TSV files byte-for-byte, all retained
+scientific records, membership links and published cell values/origins/apices.
+The compact database changed from 12,083,200 to 10,645,504 bytes (16 to 13 user
+tables); 409 of 2,632 retained candidates had measured MS1 m/z, with the rest
+remaining null. This is storage/parity evidence, not new method readiness or
+an end-to-end speedup claim. No 85RAW inference follows from it.
+
+Artifacts: `output/sqlite-cleanup/{schema-benchmark.json,schema-verification.json}`
+and `8raw-schema/`. Rerun the bounded reader comparison when cell retention,
+index layout or selection changes; repeat RAW only when publication or
+scientific-result preservation needs new evidence.
 
 ### 2026-11-03 Remaining Evidence Directions And Independent Oracles
 
