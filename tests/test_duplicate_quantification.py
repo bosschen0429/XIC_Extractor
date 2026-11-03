@@ -1,12 +1,14 @@
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run
-from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_cid_nl_explanation,
-)
-from xic_extractor.diagnostics.duplicate_quantification import (
+from tests.test_alignment_explanation import _owner_run
+from xic_extractor.alignment_explanation.published_cells import (
     PublishedCell,
     read_published_cells,
+)
+from xic_extractor.diagnostics.alignment_explanation_projection import (
+    write_alignment_explanation,
+)
+from xic_extractor.diagnostics.duplicate_quantification import (
     summarize_duplicate_quantification,
 )
 from xic_extractor.output.alignment.output_levels import EXPLANATION_ARTIFACT_NAME
@@ -72,10 +74,9 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         alignment_config=config,
         production_decisions=writer.production_decisions,
     )
-    write_cid_nl_explanation(
+    write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=outputs.matrix_tsv,
         alignment_config=config,
@@ -90,7 +91,15 @@ def publish_owner_run(tmp_path, monkeypatch, level):
 def test_duplicate_quantification_reads_published_output_levels(
     tmp_path, monkeypatch, level
 ):
-    cells = read_published_cells(publish_owner_run(tmp_path, monkeypatch, level))
+    directory = publish_owner_run(tmp_path, monkeypatch, level)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("scalar cell reading decoded cold scientific details")
+
+    monkeypatch.setattr(
+        "xic_extractor.alignment_explanation.reader.decode_row_evidence", forbidden
+    )
+    cells = read_published_cells(directory)
 
     assert {(cell.sample, cell.direct, cell.apex_rt_min) for cell in cells} == {
         ("S1", True, 8.0),

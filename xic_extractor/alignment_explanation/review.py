@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import zlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
@@ -211,109 +211,69 @@ def selection_sample_facts(
     return flags
 
 
-def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -> bytes:
-    """Store a row's values once, with sample ordinals and shared field names."""
-    values = [
-        [
-            samples[cell["sample_key"]],
-            cell["variant"],
-            cell.get("value"),
-            cell.get("source"),
-            cell.get("evidence_states", []),
-            cell.get("reason_codes", []),
-            cell.get("support_origin", "unavailable"),
-            cell.get("observation_ids", []),
-            cell.get("signal_quality", []),
-            cell.get("membership_risks", []),
-        ]
+def encode_row_evidence(
+    cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]
+) -> bytes:
+    """Keep cold scientific details together; scalar values live only in cells."""
+    scalar = {
+        "feature_id",
+        "sample_key",
+        "variant",
+        "value",
+        "source",
+        "support_origin",
+        "observation_ids",
+    }
+    details = [
+        {
+            "sample": samples[cell["sample_key"]],
+            "evidence_states": [],
+            "reason_codes": [],
+            "signal_quality": [],
+            "membership_risks": [],
+            **{key: value for key, value in cell.items() if key not in scalar},
+        }
         for cell in cells
     ]
     return zlib.compress(
-        json.dumps(values, separators=(",", ":"), allow_nan=False).encode(), 1
+        json.dumps(details, separators=(",", ":"), allow_nan=False).encode(), 1
     )
 
 
-def iter_cell_values(
-    payload: bytes, *, sample_ids: Sequence[str]
-) -> Iterator[tuple[str, Any, Any, Any]]:
-    """Each cell's sample, published value, support origin and observations.
-
-    Only these fields are read; evidence reasons and membership risks are left
-    unparsed for callers that do not use them.
-    """
-    values = json.loads(zlib.decompress(payload))
-    if not isinstance(values, list):
-        raise ValueError("review cells must be an array; rerun Alignment")
-    for cell in values:
-        if not isinstance(cell, list) or len(cell) != 10:
-            raise ValueError(
-                "review cell fields do not match the schema; rerun Alignment"
-            )
-        sample = cell[0]
-        if (
-            isinstance(sample, bool)
-            or not isinstance(sample, int)
-            or not 0 <= sample < len(sample_ids)
-        ):
-            raise ValueError("review cell has an invalid sample ordinal")
-        # Field order as written by pack_cells.
-        yield sample_ids[sample], cell[2], cell[6], cell[7]
-
-
-def unpack_cells(
-    payload: bytes,
-    *,
-    row_id: str,
-    group_id: str,
-    sample_ids: Sequence[str],
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """Locate each cell by its group and canonical sample."""
-    values = json.loads(zlib.decompress(payload))
-    if not isinstance(values, list):
-        raise ValueError("review cells must be an array; rerun Alignment")
+def decode_row_evidence(
+    payload: bytes, *, sample_count: int
+) -> dict[int, dict[str, Any]]:
+    """Decode a selected row's details at the persisted evidence boundary."""
+    details = json.loads(zlib.decompress(payload))
+    if not isinstance(details, list):
+        raise ValueError("row evidence must be an array; rerun Alignment")
     result = {}
-    for cell in values:
-        if not isinstance(cell, list) or len(cell) != 10:
-            raise ValueError(
-                "review cell fields do not match the schema; rerun Alignment"
-            )
-        (
-            sample,
-            variant,
-            value,
-            source,
-            states,
-            reasons,
-            origin,
-            observations,
-            quality,
-            risks,
-        ) = cell
-        validate_membership_risks(risks)
+    for fact in details:
+        if not isinstance(fact, dict):
+            raise ValueError("row evidence must contain objects; rerun Alignment")
+        if (
+            not {
+                "evidence_states",
+                "reason_codes",
+                "signal_quality",
+                "membership_risks",
+            }
+            <= fact.keys()
+        ):
+            raise ValueError("row evidence is missing required fields; rerun Alignment")
+        sample = fact.pop("sample", None)
         if (
             isinstance(sample, bool)
             or not isinstance(sample, int)
-            or not 0 <= sample < len(sample_ids)
+            or not 0 <= sample < sample_count
         ):
-            raise ValueError("review cell has an invalid sample ordinal")
-        key = (group_id, sample_ids[sample])
-        if key in result:
+            raise ValueError("row evidence has an invalid sample ordinal")
+        if sample in result:
             raise ValueError(
                 "duplicate review cell for group and sample; rerun Alignment"
             )
-        result[key] = {
-            "feature_id": group_id,
-            "sample_key": sample_ids[sample],
-            "variant": variant,
-            "value": value,
-            "source": source,
-            "evidence_states": states,
-            "reason_codes": reasons,
-            "support_origin": origin,
-            "observation_ids": observations,
-            "signal_quality": quality,
-            "membership_risks": risks,
-        }
+        validate_membership_risks(fact.get("membership_risks", []))
+        result[sample] = fact
     return result
 
 

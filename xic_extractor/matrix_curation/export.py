@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
 from xic_extractor.matrix_curation.istd import (
     IstdWindow,
@@ -55,7 +56,6 @@ STEPS: tuple[CurationStep, ...] = (FINITE_FRACTION_STEP, SAME_COMPOUND_STEP)
 MATRIX_NAME = "alignment_matrix.tsv"
 REVIEW_NAME = "alignment_review.tsv"
 RUN_METADATA_NAME = "alignment_run_metadata.json"
-EXPLANATION_NAME = "cid_nl_explanation.sqlite"
 SUMMARY_NAME = "matrix_curation_summary.json"
 DECISION_KEY_COLUMNS = (
     "source_matrix_row_index",
@@ -99,7 +99,7 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         Path(value) if isinstance(value, str) and value.strip() else None
         for value in (run.get("raw_dir"), run.get("dll_dir"))
     )
-    explanation = source_dir / EXPLANATION_NAME
+    explanation = source_dir / EXPLANATION_ARTIFACT_NAME
     return CurationSource(
         source_dir,
         matrix,
@@ -112,23 +112,22 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
 
 def cell_evidence_problem(source: CurationSource) -> str:
     """Why per-cell detection evidence cannot be read, or an empty string."""
-    from xic_extractor.diagnostics.alignment_explanation import (
-        ExplanationError,
+    from xic_extractor.alignment_explanation.reader import (
         read_explanation_summary,
     )
-    from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
+    from xic_extractor.alignment_explanation.storage import (
+        ExplanationError,
+    )
 
     if source.explanation_path is None:
         return (
-            f"資料夾中沒有 {EXPLANATION_NAME}，無法取得每格的直接偵測證據；"
-            "請選擇 Workbench Untargeted 的輸出資料夾。"
+            f"資料夾中沒有 {EXPLANATION_ARTIFACT_NAME}，無法取得每格的直接偵測證據；"
+            "請重新執行 Alignment 產生新輸出。"
         )
     try:
-        summary = read_explanation_summary(source.explanation_path)
+        read_explanation_summary(source.explanation_path)
     except ExplanationError as exc:
-        return f"無法讀取 {EXPLANATION_NAME}：{exc}"
-    if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
-        return f"{EXPLANATION_NAME} 是舊格式；請重新執行 Alignment 產生新輸出。"
+        return f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
     return ""
 
 
@@ -136,9 +135,11 @@ def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
     """The internal standards the run declared, or None when it cannot be read."""
     if source.explanation_path is None:
         return None
-    from xic_extractor.diagnostics.alignment_explanation import (
-        ExplanationError,
+    from xic_extractor.alignment_explanation.reader import (
         read_explanation_summary,
+    )
+    from xic_extractor.alignment_explanation.storage import (
+        ExplanationError,
     )
 
     try:
@@ -153,7 +154,7 @@ def load_cell_evidence(
     source: CurationSource, features: Sequence[FeatureIdentity]
 ) -> tuple[dict[str, CellEvidence], ...]:
     """Published cells of each Matrix row, keyed by explanation sample."""
-    from xic_extractor.diagnostics.duplicate_quantification import (
+    from xic_extractor.alignment_explanation.published_cells import (
         read_published_cells,
     )
 

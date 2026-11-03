@@ -222,13 +222,13 @@ module entry point. Neither requires the local analysis server:
 
 ```console
 xic-inspector D:\data\run-output
-xic-inspector cid_nl_explanation.sqlite --strategy attention
+xic-inspector alignment_explanation.sqlite --strategy attention
 python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
 - The source is a completed feature-evidence SQLite report, a Targeted workbook,
   a versioned curve-bundle JSON file, or an output folder. A folder resolves to
-  its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  its `alignment_explanation.sqlite`, or to the one in its `alignment` subfolder.
   Without SQLite evidence, a single XLSX is accepted; multiple XLSX files
   require an explicit path.
   `--report` is an equivalent named form.
@@ -283,17 +283,18 @@ seed 0.
 
 New Alignment explanations default to `alignment_explanation_review`. They
 retain the full candidate/group population, grouping reasons, compact method
-conclusions and sample cell values. Cell values are stored once per row; full
+conclusions and sample cell values. Named cell columns store each sample's
+value, variant and support origin once; full
 artifact envelopes and curve arrays are not included by default. Query,
 attention and RT selection use the saved observation coordinates and decisions,
 so a report without curves remains selectable. Inspector builds detailed cell
 and grouping records for selected items after population selection.
 
-New review reports index candidate coordinates, membership and sample scope
+New review reports index the canonical candidate coordinates and sample scope
 at publication. SQLite applies query predicates, counts and offset/limit before
 Inspector loads the selected page's witnesses and details.
-New reports store row sample membership separately from the packed cell values,
-so checking scope does not require decoding all values. Sample and attention
+Cell membership and values can be queried without decompressing scientific
+details. Overview counts use those same scalar columns. Sample and attention
 selection use persisted per-sample fact masks, including observed coverage,
 attention, exclusion, null/zero values and support origins. Changing sample
 scope intersects these masks rather than decoding the retained records/cells.
@@ -344,6 +345,11 @@ itself remains acquisition-free.
 
 ### CID-NL execution explanations
 
+The shared artifact is `alignment_explanation.sqlite`, independent of the
+Discovery method. `--emit-alignment-explanation` requests it explicitly. The
+current CID-NL adapter contributes its completed method facts to that shared
+storage; the file's name does not grant a different method scientific support.
+
 Normal retained CID-NL execution preserves effective method assessments and the
 initial CrossSample groups and classified edges already used by composition.
 The completed batch carries these existing owner values for diagnostics; they
@@ -355,19 +361,59 @@ assessment states/reasons, exclusions, initial edge scores/reasons, group
 dispositions and final row/cell decisions. Multiple group relationships remain
 explicit. It does not infer membership from m/z or RT or recalculate a score.
 
-The SQLite artifact stores compact, indexed candidate records and deduplicated
-details. A summary does not load every candidate's details; a candidate lookup
+The SQLite artifact has three responsibilities: retained candidate/group/cell
+facts and their links; optional compressed curves; and a compact query index
+derived at publication for scoped paging. The index does not decide science.
+Both retention modes use the same sample, candidate and cell tables. Cold cell
+details are compressed together by row, without copying the scalar values;
+full audit additionally retains the observation envelopes and method receipts.
+These are retention choices, not separate scientific authorities.
+
+The sample catalog is stored once. Candidate coordinates are columns on the
+candidate table rather than a second query-candidate copy. Shared link sets
+reference database-local candidate row IDs; natural candidate/sample keys remain
+available through the read interface and `links` view. Query items carry their
+own selection flags instead of joining a one-to-one flag table. Candidate
+availability snapshots and the unused writer-population count are not retained;
+the Matrix count follows the finalized row destinations. CLI candidate examples
+are queried on demand rather than duplicated in the summary.
+
+For a scalar-only inspection, ordinary SQLite queries need no payload decoder:
+
+```sql
+SELECT r.record_id AS feature_id, s.sample_stem,
+       c.value, c.variant, c.support_origin
+FROM cells AS c
+JOIN records AS r ON r.id = c.row_record_id
+JOIN samples AS s ON s.id = c.sample
+WHERE r.record_id = 'F000002';
+```
+
+Complete grouping decisions, method reasons, membership risks and quality
+evidence remain available through the explanation reader. Scalar-only queries
+do not load or reinterpret them. Older table layouts require rerunning Alignment;
+there is no in-place migration or compatibility decoder.
+
+Candidate facts include `precursor_mz` and nullable `ms1_apex_mz`. The latter is
+the candidate's measured MS1 apex m/z in that sample, copied from the completed
+publication inputs. Missing measurements stay null, never substituted by the
+row center or precursor m/z. Query filtering and Matrix values retain their
+existing coordinate/value policies; downstream curation does not yet use this
+new measurement for mass-relation decisions.
+
+A summary does not load every candidate's details; a candidate lookup
 does not load unrelated records. The default compact report does not copy RAW traces, spectra or the live runtime
 object graph. Explicit curve retention follows the options above. The read-only interface is:
 
 ```text
-python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite
-python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite --candidate-id <id> --json
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/alignment_explanation.sqlite
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/alignment_explanation.sqlite --candidate-id <id> --json
 ```
 
 The query needs only the retained diagnostic artifact, without RAW or Thermo DLL
 access. Missing reports mean explanation unavailable, including runs interrupted
-before publication. Missing decision evidence is not converted into rejection or
+before publication. A folder containing only an older-named report must rerun
+Alignment; there is no filename or CLI alias. Missing decision evidence is not converted into rejection or
 zero; an unknown candidate and an unsupported/corrupt report are explicit errors.
 The artifact records request/attempt provenance, configuration and the published
 Matrix hash/count. Its `diagnostic_only` content cannot authorize a scientific

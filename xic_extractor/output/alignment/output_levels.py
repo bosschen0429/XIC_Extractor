@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Literal
 
+from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
+
 # The explanation report is a per-cell projection of results already written
 # elsewhere. Diagnostic and validation levels produce it; validation-minimal
 # keeps the compact form so a run can be scored without a rerun.
-EXPLANATION_ARTIFACT_NAME = "cid_nl_explanation.sqlite"
-
 AlignmentOutputLevel = Literal[
     "production",
     "machine",

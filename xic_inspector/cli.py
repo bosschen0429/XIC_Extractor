@@ -8,7 +8,9 @@ import webbrowser
 from pathlib import Path
 from typing import Sequence
 
-from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+from xic_extractor.alignment_explanation.storage import (
+    EXPLANATION_ARTIFACT_NAME,
+)
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -33,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "Feature evidence SQLite report, Targeted XLSX, curve-bundle JSON, or an "
-            f"alignment output folder containing {REPORT_FILENAME}."
+            f"alignment output folder containing {EXPLANATION_ARTIFACT_NAME}."
         ),
     )
     parser.add_argument(

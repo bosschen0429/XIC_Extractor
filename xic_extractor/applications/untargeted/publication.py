@@ -36,7 +36,7 @@ class UntargetedPublicationPolicy:
     output_level: AlignmentOutputLevel = "production"
     emit_alignment_cells: bool = False
     emit_alignment_status_matrix: bool = False
-    emit_cid_nl_explanation: bool = False
+    emit_alignment_explanation: bool = False
     explanation_full_audit: bool = False
     explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = ()
     emit_alignment_backfill_seed_audit: bool = False
@@ -85,14 +85,14 @@ def publish_untargeted_outputs(
                     child.scientific_core.grouping_result.backfill_membership_risks
                 )
             )
-            or policy.emit_cid_nl_explanation
+            or policy.emit_alignment_explanation
             or policy.explanation_full_audit
             or bool(policy.explanation_curve_mz_ranges)
             or EXPLANATION_ARTIFACT_NAME
             in (artifact_names_for_output_level(policy.output_level))
         )
         if write_explanation and matrix_path is None:
-            raise RuntimeError("CID-NL explanation requires the published Matrix")
+            raise RuntimeError("Alignment explanation requires the published Matrix")
         output_dir.mkdir(parents=True, exist_ok=True)
         explanation = None
         if write_explanation:
@@ -103,13 +103,14 @@ def publish_untargeted_outputs(
                         completed=completed,
                         candidates_by_sample=inputs.candidates_by_sample,
                         alignment_config=inputs.alignment_config,
+                        ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
                         known_istd_reference_provenance=inputs.known_istd_reference_provenance,
                         progress_callback=timing_recorder.heartbeat_event,
                         full_audit=policy.explanation_full_audit,
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
-        writer_row_count = write_completed_untargeted_outputs_atomic(
+        write_completed_untargeted_outputs_atomic(
             outputs,
             completed.application_result,
             metadata=metadata,
@@ -125,8 +126,8 @@ def publish_untargeted_outputs(
         db_path: Path | None = None
         if explanation is not None:
             assert matrix_path is not None
-            with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-                db_path = explanation.finalize(writer_row_count, matrix_path)
+            with timing_recorder.stage("alignment.write_alignment_explanation"):
+                db_path = explanation.finalize(matrix_path)
         evidence: EvidenceLocator | None = None
         if (
             db_path is not None

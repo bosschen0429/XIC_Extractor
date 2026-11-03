@@ -2,26 +2,25 @@
 
 from collections import Counter
 
-from xic_extractor.diagnostics.alignment_explanation import open_review_population
+from xic_extractor.alignment_explanation.reader import (
+    read_review_row_counts,
+)
 
 
 def review_overview(path, summary):
     rows = {}
     coverage: Counter[str] = Counter()
     sample_count = len(summary["samples"])
-    with open_review_population(path, summary) as population:
-        for record in population:
-            row, cells = record["row"], record["cells"]
-            numeric = {c["sample_key"] for c in cells if c["variant"] == "numeric"}
-            unresolved = sum(c["variant"] == "unresolved" for c in cells)
-            destination = row["route"]["destination"]
-            rows[row["feature_id"]] = {
-                "destination": destination,
-                "numeric_count": len(numeric),
-                "unresolved_count": unresolved,
-            }
-            if destination == "matrix":
-                coverage.update(numeric)
+    for record in read_review_row_counts(path, summary):
+        row, numeric = record["row"], record["numeric_samples"]
+        destination = row["route"]["destination"]
+        rows[row["feature_id"]] = {
+            "destination": destination,
+            "numeric_count": len(numeric),
+            "unresolved_count": record["unresolved_count"],
+        }
+        if destination == "matrix":
+            coverage.update(numeric)
     matrix = [r for r in rows.values() if r["destination"] == "matrix"]
     calibration = (summary["known_istd_reference"] or {}).get("calibration", {})
     return {
@@ -44,11 +43,9 @@ def review_overview(path, summary):
     }, rows
 
 
-def ordered_review_items(db, rows, scope):
+def ordered_review_items(headers, rows, scope):
     selected = []
-    for item, kind, identifier in db.execute(
-        "SELECT id,kind,identifier FROM query_items"
-    ):
+    for item, kind, identifier in headers:
         facts = rows.get(identifier, {})
         destination = facts.get("destination")
         if (

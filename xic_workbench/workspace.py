@@ -12,11 +12,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from xic_extractor.diagnostics.alignment_explanation import (
+from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
+from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
     ExplanationUnavailableError,
 )
-from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,

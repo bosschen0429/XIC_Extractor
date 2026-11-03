@@ -449,7 +449,7 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     )
     matrix = output / "alignment_matrix.tsv"
     review = output / "alignment_review.tsv"
-    evidence = output / "cid_nl_explanation.sqlite"
+    evidence = output / "alignment_explanation.sqlite"
     for path in (matrix, review, evidence):
         path.write_text("x", encoding="utf-8")
     locator = SimpleNamespace(report_path=evidence)
@@ -470,7 +470,7 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
         parse_request(values), progress=lambda *_args: None, should_cancel=lambda: False
     ).execute()
 
-    assert captured["request"].publication.emit_cid_nl_explanation is True
+    assert captured["request"].publication.emit_alignment_explanation is True
     assert captured["request"].alignment_config.backfill_enabled is backfill_enabled
     assert captured["request"].publication.explanation_full_audit is False
     assert summary["evidence"] is locator

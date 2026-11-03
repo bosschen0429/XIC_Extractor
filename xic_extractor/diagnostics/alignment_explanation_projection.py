@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 from collections import Counter, defaultdict
@@ -17,8 +16,10 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     UNLISTED_PAIR_DISPOSITION,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
-from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
-from xic_extractor.diagnostics.explanation_review import review_cell, review_record
+from xic_extractor.alignment_explanation.review import review_cell, review_record
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
@@ -28,9 +29,6 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
-    )
-    from xic_extractor.alignment.untargeted_finalized_matrix import (
-        CompletedUntargetBatchWriterInputs,
     )
     from xic_extractor.discovery.models import DiscoveryCandidate
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -215,17 +213,17 @@ class PreparedAlignmentExplanation:
     """Consume owner results now; publish only after the Matrix is available."""
 
     consume_child: Callable[[FinalizedUntargetApplicationResult], None]
-    finalize: Callable[[int, Path], Path]
+    finalize: Callable[[Path], Path]
 
 
-def write_cid_nl_explanation(
+def write_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
-    writer_inputs: CompletedUntargetBatchWriterInputs,
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     full_audit: bool = False,
@@ -237,6 +235,7 @@ def write_cid_nl_explanation(
         completed=completed,
         candidates_by_sample=candidates_by_sample,
         alignment_config=alignment_config,
+        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
         known_istd_reference_provenance=known_istd_reference_provenance,
         progress_callback=progress_callback,
         full_audit=full_audit,
@@ -244,7 +243,7 @@ def write_cid_nl_explanation(
     ) as explanation:
         for child in completed.application_result.children:
             explanation.consume_child(child)
-        return explanation.finalize(len(writer_inputs.matrix.clusters), matrix_path)
+        return explanation.finalize(matrix_path)
 
 
 @contextmanager
@@ -254,12 +253,14 @@ def prepare_alignment_explanation(
     completed: CompletedUntargetBatchWorkflowResult,
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     alignment_config: AlignmentConfig,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     full_audit: bool = False,
     curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[PreparedAlignmentExplanation]:
     """Keep one bounded transaction while outputs share the loaded children."""
+    measured_mz = ms1_apex_mz_by_candidate or {}
     with ExplanationReportWriter(
         path,
         review_only=not full_audit,
@@ -311,7 +312,7 @@ def prepare_alignment_explanation(
             if progress_callback is not None:
                 progress_callback(
                     {
-                        "event": "cid_nl_explanation_progress",
+                        "event": "alignment_explanation_progress",
                         "stage": f"alignment.explanation.{stage}",
                         "completed": completed,
                         "total": total,
@@ -373,13 +374,8 @@ def prepare_alignment_explanation(
                         ),
                         "sample_stem": stem,
                         "sample_key": sid,
+                        "ms1_apex_mz": measured_mz.get(candidate.candidate_id),
                         "method_subject_id": subject_id,
-                        "availability": {
-                            "method_assessments": "unavailable",
-                            "terminal": "unavailable",
-                            "initial_groups": "unavailable",
-                            "final_groups": "unavailable",
-                        },
                     },
                 )
 
@@ -404,6 +400,7 @@ def prepare_alignment_explanation(
                         "sample_key": sid,
                         "sample_stem": work.sample_stem,
                         "precursor_mz": work.precursor_mz,
+                        "ms1_apex_mz": measured_mz.get(record.candidate_id),
                         "physical_state": record.evaluation.state,
                         "reason": record.evaluation.reason,
                         "rt_apex_min": (
@@ -411,7 +408,6 @@ def prepare_alignment_explanation(
                             if record.evaluation.facts is not None
                             else None
                         ),
-                        "availability": {"terminal": "unavailable"},
                     },
                 )
             _emit_curve_payload(
@@ -550,8 +546,6 @@ def prepare_alignment_explanation(
                 },
                 related,
             )
-            for key in related:
-                sink.update_availability(key, method_assessments="recorded")
             emitted_assessments.add(content)
 
         for assessment in phase_items(
@@ -577,7 +571,6 @@ def prepare_alignment_explanation(
                 },
                 (key,),
             )
-            sink.update_availability(key, terminal="excluded")
             for assessment in refs:
                 emit_assessment(assessment)
 
@@ -633,10 +626,11 @@ def prepare_alignment_explanation(
 
         child_count = 0
         row_count = 0
+        matrix_row_count = 0
         report_progress("children", 0, len(application.children))
 
         def consume_child(child: FinalizedUntargetApplicationResult) -> None:
-            nonlocal child_count, row_count
+            nonlocal child_count, row_count, matrix_row_count
             core = child.scientific_core
             for terminal in core.terminal_subjects:
                 key = terminal.candidate_id, terminal.sample_key
@@ -675,11 +669,6 @@ def prepare_alignment_explanation(
                                 related=(key,),
                             )
                 add("terminal_subjects", _key(*key), payload, (key,))
-                sink.update_availability(
-                    key, terminal=terminal.variant, final_groups="recorded"
-                )
-                if completed.initial_groups:
-                    sink.update_availability(key, initial_groups="recorded")
 
             methods = {
                 provider.method_subject_id for provider in core.scope.evidence_providers
@@ -688,6 +677,7 @@ def prepare_alignment_explanation(
             feature_ids = {}
             for row in child.completed_projection.rows:
                 row_count += 1
+                matrix_row_count += row.route.destination == "matrix"
                 feature_ids[row.group.group_hypothesis_id] = feature_id_label(row_count)
             for group in core.final_population:
                 emit_group(
@@ -751,36 +741,17 @@ def prepare_alignment_explanation(
                     },
                     related,
                 )
-                if not full_audit:
-                    sink.add_row_cells(
-                        feature_id,
-                        cells,
-                        sample_ordinals,
-                    )
-                    continue
-                for decision, cell in zip(row.decisions, cells, strict=True):
-                    add(
-                        "cell_decisions",
-                        None,
-                        {
-                            **_fields(decision, "variant", "value", "source"),
-                            "signal_quality": review_cell(decision)["signal_quality"],
-                            "membership_risks": cell["membership_risks"],
-                            "feature_id": feature_id,
-                            "sample_key": (
-                                decision.subject.canonical_sample.identity.sample_key
-                            ),
-                            "observation": _final_cell_observation_payload(
-                                decision.evidence
-                            ),
-                        },
-                        related,
-                    )
+                if full_audit:
+                    for decision, cell in zip(row.decisions, cells, strict=True):
+                        cell["observation"] = _final_cell_observation_payload(
+                            decision.evidence
+                        )
+                sink.add_row_cells(feature_id, cells, sample_ordinals)
             child_count += 1
             if child_count % 256 == 0:
                 report_progress("children", child_count, len(application.children))
 
-        def finalize(writer_row_count: int, matrix_path: Path) -> Path:
+        def finalize(matrix_path: Path) -> Path:
             if child_count != len(application.children):
                 raise ValueError("explanation did not consume every finalized child")
             if child_count % 256:
@@ -810,12 +781,6 @@ def prepare_alignment_explanation(
             report_progress("finalizing", sum(sink.record_counts.values()), None)
             with Path(matrix_path).open("rb") as handle:
                 matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-            with Path(matrix_path).open(
-                encoding="utf-8-sig", newline=""
-            ) as matrix_handle:
-                matrix_rows = sum(
-                    1 for _ in csv.DictReader(matrix_handle, delimiter="\t")
-                )
             initial_group_member_count = sum(
                 len(group.member_subjects) for group in completed.initial_groups
             )
@@ -840,9 +805,7 @@ def prepare_alignment_explanation(
                     asdict(source) for source in request.acquisition_sources
                 ],
                 "candidate_count": sink.candidate_count,
-                "matrix_row_count": matrix_rows,
-                "candidate_examples": sink.candidate_examples(),
-                "writer_row_count": writer_row_count,
+                "matrix_row_count": matrix_row_count,
                 "matrix_path": str(matrix_path),
                 "matrix_sha256": matrix_hash,
                 "alignment_config": asdict(alignment_config),
@@ -895,4 +858,4 @@ def prepare_alignment_explanation(
         yield PreparedAlignmentExplanation(consume_child, finalize)
 
 
-write_alignment_explanation = write_cid_nl_explanation
+write_alignment_explanation = write_alignment_explanation

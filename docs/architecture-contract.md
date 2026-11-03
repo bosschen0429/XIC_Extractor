@@ -292,9 +292,14 @@ contract 沒有 ignore，並包含間接依賴。
   finalized result.
 - `diagnostics/` is an outer layer. Inner packages (`acquisition`, `alignment`,
   `configuration`, `discovery`, `evidence`, `execution`, `extraction`,
-  `untargeted_execution`, `output`, `peak_detection`) never import it; applications may compose its
-  explanation persistence. A schema that production reads lives with its
-  production reader, and diagnostic producers import it from there.
+  `untargeted_execution`, `output`, `peak_detection`) never import it. Applications
+  compose the method-specific explanation projection from completed owner facts.
+- `alignment_explanation/` owns the shared SQLite format, atomic writer and
+  acquisition-free readers. Inspector asks for indexed pages and scoped facts;
+  it owns presentation/sampling policy, not SQL or packed cell encodings. Matrix
+  curation and duplicate screening share the published-cell reader rather than
+  importing each other's algorithms. Readers do not import publication or
+  execution; curve validation is loaded only when curves are requested.
 - `applications/` is the outermost composition layer. The inner packages above
   and `diagnostics` never import it; `extractor.run` is the public root entry
   that calls into it.
@@ -337,7 +342,8 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, repair composition, Backfill and Alignment adapters | a second runtime owner, transport authority, or reading Targeted acquisition results |
 | `output/` | schema rendering and the Targeted product result model; `output/alignment/` writes Matrix artifacts | evidence recomputation, application store lifetime or RAW access |
-| `diagnostics/` | reusable diagnostic models, summaries, classification and explanation persistence | CLI parsing, production mutation, or domain recomputation |
+| `alignment_explanation/` | shared SQLite format, retention codecs, atomic publication and completed-evidence queries | scientific decisions, RAW acquisition, or Inspector presentation policy |
+| `diagnostics/` | reusable diagnostics and method-specific projections of completed facts | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | read-only review API/CLI, source adapters, selection and offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
 | root facades | current public compatibility and thin orchestration | new implementation detail |

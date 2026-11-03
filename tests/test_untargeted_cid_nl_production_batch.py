@@ -26,7 +26,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_alignment_explanation import _summary_fixture
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
@@ -487,14 +487,14 @@ for name in (
     'rehydrate_physical_peak_evaluation',
 ):
     setattr(evidence_facts, name, forbidden)
-from xic_extractor.diagnostics.alignment_explanation import (
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_curves,
+    read_alignment_explanation,
 )
-curves = read_cid_nl_curves(sys.argv[1])
+curves = read_alignment_curves(sys.argv[1])
 links = {
     candidate: [
-        record['payload_id'] for record in read_cid_nl_explanation(
+        record['payload_id'] for record in read_alignment_explanation(
             sys.argv[1], candidate_id=candidate
         )['records'].get('capture_evidence', [])
     ]
@@ -1435,14 +1435,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
 
-    write_cid_nl_explanation(
+    write_alignment_explanation(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -1865,7 +1864,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     # The actual recovery owner ran above under this request and attempt.
     # Exercise its production sink directly, without altering the completed
     # scientific population or manufacturing a new recovery identity.
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         _emit_curve_payload,
     )

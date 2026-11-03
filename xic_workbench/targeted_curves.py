@@ -6,6 +6,9 @@ import math
 from pathlib import Path
 from typing import Any, Callable, cast
 
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+)
 from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -14,7 +17,6 @@ from xic_extractor.configuration.mass_recalibration import (
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     physical_peak_support_failures_at_reference,

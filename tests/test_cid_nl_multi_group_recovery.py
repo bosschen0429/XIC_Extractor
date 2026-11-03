@@ -1522,11 +1522,11 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     import csv
     import json
 
-    from xic_extractor.diagnostics.alignment_explanation import (
+    from xic_extractor.alignment_explanation.reader import (
         read_explanation_metadata,
     )
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
     from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_tsv,
@@ -1548,11 +1548,10 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
             production_decisions=writer.production_decisions,
         )
     original = matrix.read_bytes()
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "backfill.sqlite",
         full_audit=False,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,

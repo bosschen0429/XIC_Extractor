@@ -359,7 +359,7 @@ class UntargetedRun:
                 ),
                 publication=UntargetedPublicationPolicy(
                     output_level="machine",
-                    emit_cid_nl_explanation=True,
+                    emit_alignment_explanation=True,
                 ),
                 legacy=RetainedAlignmentOptions(
                     audit_evidence_mode="none",

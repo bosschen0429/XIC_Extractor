@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_alignment_explanation import _summary_fixture
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
@@ -583,9 +583,11 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(14 * 1.125)
     assert interpolate_calibrated_rt_min(7, knots) is None
     assert interpolate_calibrated_rt_min(41, knots) is None
-    from xic_extractor.diagnostics.alignment_explanation import (
+    from xic_extractor.alignment_explanation.reader import (
+        read_alignment_explanation,
+    )
+    from xic_extractor.alignment_explanation.writer import (
         ExplanationReportWriter,
-        read_cid_nl_explanation,
     )
 
     with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
@@ -594,7 +596,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
                 {"known_istd_reference": receipt}, review_only=writer.review_only
             )
         )
-    saved = read_cid_nl_explanation(path)
+    saved = read_alignment_explanation(path)
     assert saved["schema_version"] == "alignment_explanation"
     assert saved["known_istd_reference"] == receipt
 

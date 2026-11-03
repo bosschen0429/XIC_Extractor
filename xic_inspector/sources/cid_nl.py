@@ -14,19 +14,17 @@ from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
-from xic_extractor.diagnostics.alignment_explanation import (
-    ExplanationError,
+from xic_extractor.alignment_explanation.query import recorded_observations
+from xic_extractor.alignment_explanation.reader import (
     ExplanationMetadata,
-    RecordKey,
     open_review_cells,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
+    read_alignment_curves,
+    read_alignment_explanation,
     read_explanation_metadata,
     read_explanation_selection,
     read_review_row_samples,
 )
-from xic_extractor.diagnostics.explanation_query import recorded_observations
-from xic_extractor.diagnostics.explanation_review import (
+from xic_extractor.alignment_explanation.review import (
     ATTENTION,
     EXCLUDED,
     NULL_CELL,
@@ -36,8 +34,12 @@ from xic_extractor.diagnostics.explanation_review import (
     ZERO_CELL,
     selection_sample_facts,
 )
-from xic_extractor.diagnostics.explanation_review import (
+from xic_extractor.alignment_explanation.review import (
     attention_reason as _attention_reason,
+)
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+    RecordKey,
 )
 from xic_inspector.selection.canonical import (
     CanonicalItem,
@@ -50,7 +52,7 @@ from xic_inspector.sources import cid_nl_presentation as presentation
 
 def read_summary(path: str | Path) -> dict[str, Any]:
     """Read compact metadata without retrieving curve payloads."""
-    return read_cid_nl_explanation(path)
+    return read_alignment_explanation(path)
 
 
 class CidNlSource:
@@ -74,9 +76,7 @@ class CidNlSource:
             and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
         )
         self._query_only = self._compact_selection and query_only
-        self._row_samples = (
-            read_review_row_samples(path, self.summary) if self._query_only else {}
-        )
+        self._row_samples = read_review_row_samples(path) if self._query_only else {}
         self._selection_cells: (
             Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
         ) = None
@@ -804,7 +804,7 @@ class CidNlSource:
                     continue
                 check_cancel()
                 raw_curves.extend(
-                    read_cid_nl_curves(
+                    read_alignment_curves(
                         self.path, sample_ids=(sid,), record_ids=tuple(sorted(refs))
                     )
                 )
@@ -873,6 +873,12 @@ class CidNlSource:
                     samples=samples,
                     projected_curves=projected_curves,
                     readable_records=self._readable_records(item, projected_curves),
+                    measured_mz_by_candidate={
+                        (w.candidate_id, w.sample_key): self.candidates[
+                            w.candidate_id, w.sample_key
+                        ].get("ms1_apex_mz")
+                        for w in item.witnesses
+                    },
                     relationship_members=self._relationship_members(item),
                     internal_pair_support=pair_support,
                     relationship_availability=relationship_availability,

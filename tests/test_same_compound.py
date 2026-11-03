@@ -1115,12 +1115,12 @@ def test_same_compound_is_unavailable_without_the_run_explanation(tmp_path):
         )["steps"]
     }
     assert steps["finite_fraction"] == ""
-    assert "cid_nl_explanation.sqlite" in steps["same_compound"]
+    assert "alignment_explanation.sqlite" in steps["same_compound"]
 
     output = tmp_path / "curated"
     result = _run(source, samples, output, "--same-compound", threshold=None)
     assert result.returncode == 2
-    assert "cid_nl_explanation.sqlite" in result.stderr
+    assert "alignment_explanation.sqlite" in result.stderr
     assert not output.exists()
 
 
@@ -1144,7 +1144,7 @@ def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch
     summary = json.loads(
         (output / "matrix_curation_summary.json").read_text(encoding="utf-8")
     )
-    assert summary["inputs"]["explanation"].endswith("cid_nl_explanation.sqlite")
+    assert summary["inputs"]["explanation"].endswith("alignment_explanation.sqlite")
 
 
 def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():

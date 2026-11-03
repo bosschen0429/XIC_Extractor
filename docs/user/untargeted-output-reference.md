@@ -276,6 +276,9 @@ report tables. It does not assert group identity across different input sets.
 
 ## Explanation format and reruns
 
+The file is `alignment_explanation.sqlite`, requested explicitly with
+`--emit-alignment-explanation`. Its candidate records retain each sample's
+measured `ms1_apex_mz`; missing measurements are null, not the row-center m/z.
 The SQLite explanation uses `alignment_explanation` (full audit) or
 `alignment_explanation_review` (compact review), with `curve_payload`
 for retained curves. Curve provenance records query and selection context,

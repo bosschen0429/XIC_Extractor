@@ -35,16 +35,20 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.diagnostics.alignment_explanation import (
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_curves,
+    read_alignment_explanation,
+    read_explanation_metadata,
+)
+from xic_extractor.alignment_explanation.storage import (
     CandidateNotFoundError,
     ExplanationError,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
-    read_explanation_metadata,
+)
+from xic_extractor.alignment_explanation.writer import (
     write_explanation_report,
 )
 from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_cid_nl_explanation,
+    write_alignment_explanation,
 )
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
@@ -65,8 +69,6 @@ def _summary_fixture(values, *, review_only=False):
         "acquisition_sources": [],
         "candidate_count": 0,
         "matrix_row_count": 0,
-        "candidate_examples": [],
-        "writer_row_count": 0,
         "matrix_path": "",
         "matrix_sha256": "",
         "alignment_config": {},
@@ -88,13 +90,58 @@ def _summary_fixture(values, *, review_only=False):
 
 
 def test_missing_report_is_unavailable(tmp_path):
-    from xic_extractor.diagnostics.alignment_explanation import (
+    from xic_extractor.alignment_explanation.reader import (
+        read_alignment_explanation,
+    )
+    from xic_extractor.alignment_explanation.storage import (
         ExplanationUnavailableError,
-        read_cid_nl_explanation,
     )
 
     with pytest.raises(ExplanationUnavailableError, match="unavailable"):
-        read_cid_nl_explanation(tmp_path / "missing.sqlite")
+        read_alignment_explanation(tmp_path / "missing.sqlite")
+
+
+@pytest.mark.parametrize("full_audit", (False, True))
+@pytest.mark.parametrize("second_measured_mz", (500.2022, None))
+def test_candidate_measured_mz_roundtrip_without_center_fallback(
+    tmp_path, monkeypatch, full_audit, second_measured_mz
+):
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    first = candidates["S1"][0].candidate_id
+    second = candidates["S2"][0].candidate_id
+    measured = {first: 500.2010}
+    if second_measured_mz is not None:
+        measured[second] = second_measured_mz
+    report = write_alignment_explanation(
+        tmp_path / "measured.sqlite",
+        completed=completed,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+        ms1_apex_mz_by_candidate=measured,
+        full_audit=full_audit,
+    )
+    for cid, stem, expected in (
+        (first, "S1", 500.2010),
+        (second, "S2", second_measured_mz),
+    ):
+        candidate = read_alignment_explanation(report, candidate_id=cid)["candidates"][
+            0
+        ]
+        assert candidate["sample_stem"] == stem
+        assert candidate["ms1_apex_mz"] == expected
+        assert candidate["precursor_mz"] == candidates[stem][0].precursor_mz
+
+
+def test_old_named_folder_requires_rerun_instead_of_fallback(tmp_path):
+    from xic_inspector.api import resolve_source
+
+    legacy = tmp_path / ("_".join(("cid", "nl", "explanation")) + ".sqlite")
+    legacy.touch()
+    with pytest.raises(FileNotFoundError, match="rerun Alignment"):
+        resolve_source(tmp_path)
 
 
 def _owner_run(tmp_path, monkeypatch, scenario):
@@ -180,16 +227,15 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, scenario
     )
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "report.sqlite",
         full_audit=True,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    summary = read_cid_nl_explanation(report)
+    summary = read_alignment_explanation(report)
     assert summary["diagnostic_only"] is True
     assert summary["initial_edge_coverage"] == {
         "policy": "feature-group-membership",
@@ -208,7 +254,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         )
     assert summary["candidate_count"] == sum(map(len, candidates.values()))
     candidate_id = candidates["S1"][0].candidate_id
-    detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
+    detail = read_alignment_explanation(report, candidate_id=candidate_id)
     records = detail["records"]
     assessment = next(
         item
@@ -277,7 +323,8 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         "import sys,runpy\n"
         "def guard(event,args):\n"
         " if event=='import' and any(x in args[0] "
-        "for x in ('raw_reader','clr','numpy')):\n"
+        "for x in ('raw_reader','clr','numpy','alignment_explanation.writer',"
+        "'alignment_explanation_projection')):\n"
         "  raise RuntimeError('forbidden scientific import')\n"
         " if event=='open' and str(args[0]).lower().endswith(('.raw','.synthetic')):\n"
         "  raise RuntimeError('forbidden acquisition')\n"
@@ -303,13 +350,12 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assert json.loads(process.stdout) == detail
     assert report.read_bytes() == before
     with pytest.raises(CandidateNotFoundError, match="not found"):
-        read_cid_nl_explanation(report, candidate_id="unknown")
+        read_alignment_explanation(report, candidate_id="unknown")
     with pytest.raises(FileExistsError):
-        write_cid_nl_explanation(
+        write_alignment_explanation(
             report,
             full_audit=True,
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -318,16 +364,17 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         missing_audit = replace(
             completed, method_assessments=(), initial_groups=(), initial_edges=()
         )
-        missing_audit_report = write_cid_nl_explanation(
+        missing_audit_report = write_alignment_explanation(
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
             completed=missing_audit,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
         )
-        assert read_cid_nl_explanation(missing_audit_report)["audit_availability"] == {
+        assert read_alignment_explanation(missing_audit_report)[
+            "audit_availability"
+        ] == {
             "method_assessments": "unavailable",
             "initial_groups": "unavailable",
             "initial_edges": "unavailable",
@@ -367,12 +414,11 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         tmp_path, monkeypatch, "all_hold"
     )
     kwargs = dict(
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    original = write_cid_nl_explanation(
+    original = write_alignment_explanation(
         tmp_path / "original.sqlite",
         completed=completed,
         **kwargs,
@@ -413,8 +459,8 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         events.append(event)
         recorder.heartbeat_event(event)
 
-    with recorder.stage("alignment.write_cid_nl_explanation"):
-        report = write_cid_nl_explanation(
+    with recorder.stage("alignment.write_alignment_explanation"):
+        report = write_alignment_explanation(
             tmp_path / "duplicated.sqlite",
             full_audit=True,
             completed=duplicated,
@@ -422,7 +468,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
             **kwargs,
         )
     assert loads == 1
-    assert read_cid_nl_explanation(report) == read_cid_nl_explanation(original)
+    assert read_alignment_explanation(report) == read_alignment_explanation(original)
     assert any(event["stage"] == "alignment.explanation.exclusions" for event in events)
     assert [event["records_written"] for event in events] == sorted(
         event["records_written"] for event in events
@@ -430,13 +476,15 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     heartbeat = json.loads(live.read_text())["heartbeat"]
     assert heartbeat["stage"] == "alignment.explanation.finalizing"
     assert heartbeat["records_written"] == sum(
-        read_cid_nl_explanation(report)["record_counts"].values()
+        read_alignment_explanation(report)["record_counts"].values()
     )
     for values in candidates.values():
         for candidate in values:
-            assert read_cid_nl_explanation(
+            assert read_alignment_explanation(
                 report, candidate_id=candidate.candidate_id
-            ) == read_cid_nl_explanation(original, candidate_id=candidate.candidate_id)
+            ) == read_alignment_explanation(
+                original, candidate_id=candidate.candidate_id
+            )
 
 
 @dataclass(frozen=True)
@@ -451,12 +499,11 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     )
     application = completed.application_result
     kwargs = dict(
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    original = write_cid_nl_explanation(
+    original = write_alignment_explanation(
         tmp_path / "memory.sqlite",
         completed=completed,
         **kwargs,
@@ -489,19 +536,21 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
         excluded_candidates=application.excluded_candidates,
     )
     loads = 0
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "stored.sqlite",
         full_audit=True,
         completed=replace(completed, application_result=restored),
         **kwargs,
     )
     assert loads == len(application.children), (loads, len(application.children))
-    assert read_cid_nl_explanation(report) == read_cid_nl_explanation(original)
+    assert read_alignment_explanation(report) == read_alignment_explanation(original)
     for values in candidates.values():
         for candidate in values:
-            assert read_cid_nl_explanation(
+            assert read_alignment_explanation(
                 report, candidate_id=candidate.candidate_id
-            ) == read_cid_nl_explanation(original, candidate_id=candidate.candidate_id)
+            ) == read_alignment_explanation(
+                original, candidate_id=candidate.candidate_id
+            )
 
 
 def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypatch):
@@ -515,11 +564,10 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
             raise OSError("progress unavailable")
 
     with pytest.raises(OSError, match="progress unavailable"):
-        write_cid_nl_explanation(
+        write_alignment_explanation(
             report,
             full_audit=True,
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -531,22 +579,26 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
 
 @pytest.mark.parametrize("flushed", [False, True])
 def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     report = tmp_path / "stream.sqlite"
     with ExplanationReportWriter(report) as writer:
-        writer.add_candidate("a", "s", {"candidate_id": "a", "availability": {}})
-        writer.update_availability(("a", "s"), terminal="excluded")
+        writer.add_candidate("a", "s", {"candidate_id": "a"})
         with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
         if flushed:
             writer._flush_records()
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
-    detail = read_cid_nl_explanation(report, candidate_id="a")
+        writer.finalize(
+            _summary_fixture(
+                {"samples": [{"sample_key": "s"}]}, review_only=writer.review_only
+            )
+        )
+    detail = read_alignment_explanation(report, candidate_id="a")
     assert detail["records"] == {"facts": [{"value": 1}]}
-    assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
     failed = tmp_path / "conflict.sqlite"
     with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
         with ExplanationReportWriter(failed) as writer:
@@ -559,7 +611,9 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed)
 
 
 def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
@@ -589,14 +643,18 @@ def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
             {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
         )
-        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
+        writer.finalize(
+            _summary_fixture(
+                {"samples": [{"sample_key": "S1"}]}, review_only=writer.review_only
+            )
+        )
 
     expected = {
         (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
     }
     assert set(read_explanation_metadata(report).links) == expected
     for candidate_id in ("C1", "C2", "C3"):
-        detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
+        detail = read_alignment_explanation(report, candidate_id=candidate_id)
         assert detail["records"] == {"facts": [{"value": 1}]}
 
     with sqlite3.connect(report) as connection:
@@ -611,10 +669,12 @@ def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
 
 
 def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     report = tmp_path / "missing-candidate.sqlite"
-    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+    with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
             writer.add_record("facts", "one", {"value": 1}, (("missing", "S1"),))
             writer.finalize(_summary_fixture({}))
@@ -654,15 +714,14 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 
     report = write_explanation_report(
         tmp_path / "bounded.sqlite",
-        summary=_summary_fixture({}),
+        summary=_summary_fixture({"samples": [{"sample_key": "s"}]}),
         candidates=rows(),
         records=Records(),
         links=(("199", "s", "facts", "199"),),
     )
-    assert read_cid_nl_explanation(report, candidate_id="199")["candidates"] == [
-        {"candidate_id": "199"}
-    ]
-    assert read_cid_nl_explanation(report, candidate_id="199")["records"] == {
+    candidate = read_alignment_explanation(report, candidate_id="199")["candidates"][0]
+    assert (candidate["candidate_id"], candidate["sample_key"]) == ("199", "s")
+    assert read_alignment_explanation(report, candidate_id="199")["records"] == {
         "facts": [{"value": 199}]
     }
 
@@ -670,7 +729,9 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
-        summary=_summary_fixture({"candidate_count": 2}),
+        summary=_summary_fixture(
+            {"candidate_count": 2, "samples": [{"sample_key": s} for s in ("s1", "s2")]}
+        ),
         candidates=(
             ("a", "s1", {"candidate_id": "a"}),
             ("b", "s2", {"candidate_id": "b"}),
@@ -697,19 +758,19 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
         connection.execute(
             "UPDATE records SET payload='invalid' WHERE kind='exclusions'"
         )
-    assert read_cid_nl_explanation(report)["candidate_count"] == 2
-    detail = read_cid_nl_explanation(report, candidate_id="a")
+    assert read_alignment_explanation(report)["candidate_count"] == 2
+    detail = read_alignment_explanation(report, candidate_id="a")
     assert len(detail["records"]["initial_groups"]) == 2
     assert len(detail["records"]["final_groups"]) == 1
     with pytest.raises(ExplanationError, match="malformed"):
-        read_cid_nl_explanation(report, candidate_id="b")
+        read_alignment_explanation(report, candidate_id="b")
 
 
 @pytest.mark.parametrize(
     "corruption",
     ("bytes", "schema_identity", "schema", "payload"),
 )
-@pytest.mark.parametrize("reader", (read_cid_nl_explanation, read_cid_nl_curves))
+@pytest.mark.parametrize("reader", (read_alignment_explanation, read_alignment_curves))
 def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader):
     report = tmp_path / "bad.sqlite"
     if corruption == "bytes":

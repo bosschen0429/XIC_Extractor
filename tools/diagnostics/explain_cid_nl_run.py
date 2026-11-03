@@ -7,16 +7,19 @@ import json
 import sys
 from pathlib import Path
 
-from xic_extractor.diagnostics.alignment_explanation import (
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_explanation,
+    read_candidate_examples,
+)
+from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
-    read_cid_nl_explanation,
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--report", required=True, help="Path to cid_nl_explanation.sqlite"
+        "--report", required=True, help="Path to alignment_explanation.sqlite"
     )
     parser.add_argument(
         "--candidate-id", help="Exact candidate ID; omit for run summary"
@@ -92,7 +95,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, indent=2))
             return 0
-        result = read_cid_nl_explanation(args.report, candidate_id=args.candidate_id)
+        result = read_alignment_explanation(args.report, candidate_id=args.candidate_id)
+        examples = (
+            read_candidate_examples(Path(args.report))
+            if args.candidate_id is None and not args.json
+            else []
+        )
     except (ExplanationError, OSError) as exc:
         if args.json:
             print(
@@ -116,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Matrix rows: {result['matrix_row_count']}"
         )
         print(f"Attempt: {result['processing_attempt_id']}")
-        for candidate in result.get("candidate_examples", ()):
+        for candidate in examples:
             print(f"  {candidate['sample_stem']}: {candidate['candidate_id']}")
         reasons = sorted(
             result["reason_counts"].items(), key=lambda item: (-item[1], item[0])

@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "source",
         nargs="?",
-        help="Batch output folder, Targeted XLSX, or cid_nl_explanation.sqlite",
+        help="Batch output folder, Targeted XLSX, or alignment_explanation.sqlite",
     )
     parser.add_argument("--raw-dir", default=os.environ.get("XIC_RAW_ROOT", ""))
     parser.add_argument(

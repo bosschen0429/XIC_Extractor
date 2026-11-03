@@ -315,7 +315,9 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
 def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
     workbook, tmp_path, monkeypatch
 ):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+    from xic_extractor.alignment_explanation.storage import (
+        ExplanationError,
+    )
     from xic_workbench.targeted_curves import export_targeted_curves
 
     raw_dir = tmp_path / "raw"
@@ -347,7 +349,9 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
     tmp_path,
     failure,
 ):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+    from xic_extractor.alignment_explanation.storage import (
+        ExplanationError,
+    )
     from xic_workbench.acquisition import CurveAcquisitionCancelled
     from xic_workbench.targeted_curves import export_targeted_curves
 

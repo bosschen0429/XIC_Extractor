@@ -8,16 +8,20 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run, _summary_fixture
-from xic_extractor.diagnostics.alignment_explanation import (
-    ExplanationError,
-    ExplanationReportWriter,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
+from tests.test_alignment_explanation import _owner_run, _summary_fixture
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_curves,
+    read_alignment_explanation,
     read_explanation_metadata,
 )
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+)
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
+)
 from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_cid_nl_explanation,
+    write_alignment_explanation,
 )
 from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_inspector.api import SelectionRequest, generate_report
@@ -34,10 +38,9 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    source = write_cid_nl_explanation(
+    source = write_alignment_explanation(
         tmp_path / "old.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -195,19 +198,18 @@ def test_default_review_keeps_values_and_query_without_curves(
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, scenario
     )
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "review.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    summary = read_cid_nl_explanation(report)
+    summary = read_alignment_explanation(report)
     assert summary["retention"] == "review"
     assert summary["plot_evidence_capability"] == "metadata_only"
     candidate_id = candidates["S1"][0].candidate_id
-    records = read_cid_nl_explanation(report, candidate_id=candidate_id)["records"]
+    records = read_alignment_explanation(report, candidate_id=candidate_id)["records"]
     assert "cell_observations" not in records
     assert all("artifact" not in row for row in records["method_assessments"])
     expected = sorted(
@@ -227,7 +229,7 @@ def test_default_review_keeps_values_and_query_without_curves(
         .values()
     )
     assert actual == expected
-    assert read_cid_nl_curves(report) == []
+    assert read_alignment_curves(report) == []
     with sqlite3.connect(report) as db:
         assert (
             db.execute(
@@ -267,7 +269,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     with monkeypatch.context() as query_patch:
         query_patch.setattr(CidNlSource, "_presentation_item", forbidden)
         query_patch.setattr(
-            "xic_extractor.diagnostics.alignment_explanation.unpack_cells", forbidden
+            "xic_extractor.alignment_explanation.reader.decode_row_evidence", forbidden
         )
         query_source = CidNlSource(report, query_only=True)
         query_items = query_source.load_items(scope)
@@ -281,7 +283,7 @@ def test_default_review_keeps_values_and_query_without_curves(
         ]
     # Missing required columns cannot be supplied by compatibility reading.
     with sqlite3.connect(report) as db:
-        db.execute("ALTER TABLE row_cells DROP COLUMN sample_mask")
+        db.execute("ALTER TABLE cells DROP COLUMN support_origin")
     with pytest.raises(ExplanationError, match="rerun"):
         CidNlSource(report, query_only=True)
 
@@ -294,24 +296,23 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     )
     arguments = dict(
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    selected = write_cid_nl_explanation(
+    selected = write_alignment_explanation(
         tmp_path / "selected.sqlite", curve_mz_ranges=((499, 501),), **arguments
     )
-    assert read_cid_nl_curves(selected)
-    assert read_cid_nl_explanation(selected)["curve_retention"] == "selected"
-    other = write_cid_nl_explanation(
+    assert read_alignment_curves(selected)
+    assert read_alignment_explanation(selected)["curve_retention"] == "selected"
+    other = write_alignment_explanation(
         tmp_path / "other.sqlite", curve_mz_ranges=((200, 201),), **arguments
     )
-    assert read_cid_nl_curves(other) == []
-    full = write_cid_nl_explanation(
+    assert read_alignment_curves(other) == []
+    full = write_alignment_explanation(
         tmp_path / "full.sqlite", full_audit=True, **arguments
     )
-    assert read_cid_nl_explanation(full)["retention"] == "full_audit"
+    assert read_alignment_explanation(full)["retention"] == "full_audit"
     assert full.stat().st_size > other.stat().st_size
 
 
@@ -319,10 +320,9 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    full = write_cid_nl_explanation(
+    full = write_alignment_explanation(
         tmp_path / "full.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -334,8 +334,8 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     assert full.read_bytes() == before
     assert result["review_bytes"] < result["source_bytes"]
     for candidate in (candidates["S1"][0], candidates["S2"][0]):
-        old = read_cid_nl_explanation(full, candidate_id=candidate.candidate_id)
-        new = read_cid_nl_explanation(review, candidate_id=candidate.candidate_id)
+        old = read_alignment_explanation(full, candidate_id=candidate.candidate_id)
+        new = read_alignment_explanation(review, candidate_id=candidate.candidate_id)
 
         def values(detail):
             return sorted(
@@ -371,10 +371,9 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    review = write_cid_nl_explanation(
+    review = write_alignment_explanation(
         tmp_path / "review.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -416,19 +415,18 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    review = write_cid_nl_explanation(
+    review = write_alignment_explanation(
         tmp_path / "two-sample-review.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
-    summary = read_cid_nl_explanation(review)
+    summary = read_alignment_explanation(review)
     sample_ids = {
         sample["sample_stem"]: sample["sample_key"] for sample in summary["samples"]
     }
-    detail = read_cid_nl_explanation(
+    detail = read_alignment_explanation(
         review, candidate_id=candidates["S1"][0].candidate_id
     )
     group_id = detail["records"]["final_groups"][0]["feature_id"]
@@ -836,7 +834,7 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
     from xic_extractor.output.alignment.pipeline_outputs import _write_metadata_json
 
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
-    summary = read_cid_nl_explanation(review)
+    summary = read_alignment_explanation(review)
     policies = {
         "S1": "easy_ic_restore" if saved == "negative" else saved or "none",
         "S2": "none",
@@ -917,11 +915,13 @@ def test_review_curves_use_each_samples_saved_mass_policy(tmp_path, monkeypatch,
             )
 
 
-def _quality_review_report(tmp_path, *, membership_risks=None):
+def _quality_review_report(
+    tmp_path, *, membership_risks=None, measured_mz_by_sample=None
+):
     """Two samples in one feature: advisory facts traverse the actual review store."""
     from types import SimpleNamespace as NS
 
-    from xic_extractor.diagnostics.explanation_review import review_cell
+    from xic_extractor.alignment_explanation.review import review_cell
     from xic_extractor.peak_detection.signal_quality import SignalQuality
 
     matrix = tmp_path / "quality-matrix.tsv"
@@ -973,6 +973,7 @@ def _quality_review_report(tmp_path, *, membership_risks=None):
                     "candidate_id": cid,
                     "sample_key": sid,
                     "precursor_mz": 500.0,
+                    "ms1_apex_mz": (measured_mz_by_sample or {}).get(sid),
                     "rt_apex_min": 1.0,
                 },
             )
@@ -1017,34 +1018,6 @@ def test_signal_quality_survives_review_storage_without_changing_results(tmp_pat
     assert rows["S2"]["quantitative_value"] == 2000.0
     assert rows["S1"]["status_kind"] == rows["S2"]["status_kind"] == "rest"
     assert matrix.read_bytes() == original
-
-
-@pytest.mark.parametrize("field_count", [8, 9, 11])
-def test_review_cell_encoding_rejects_missing_or_extra_fields(field_count):
-    import zlib
-
-    from xic_extractor.diagnostics.explanation_review import unpack_cells
-
-    cell = [
-        0,
-        "quantified",
-        123.0,
-        "raw_trapezoid",
-        [],
-        [],
-        "discovery_support",
-        ["obs"],
-        [],
-        [],
-        "unexpected",
-    ][:field_count]
-    with pytest.raises(ValueError, match="rerun Alignment"):
-        unpack_cells(
-            zlib.compress(json.dumps([cell]).encode()),
-            row_id="r",
-            group_id="g",
-            sample_ids=("S1",),
-        )
 
 
 def _competition_review_report(
@@ -1177,11 +1150,10 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         completed.application_result, membership_risks_by_owner=risks
     )
     original = matrix.read_bytes()
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "produced.sqlite",
         full_audit=full_audit,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -1227,11 +1199,11 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
 
     report, _ = _competition_review_report(tmp_path)
     with sqlite3.connect(report) as db:
-        payload = db.execute("SELECT payload FROM row_cells").fetchone()[0]
+        payload = db.execute("SELECT payload FROM row_evidence").fetchone()[0]
         cells = json.loads(zlib.decompress(payload))
-        cells[1][9][0][field] = value
+        cells[1]["membership_risks"][0][field] = value
         db.execute(
-            "UPDATE row_cells SET payload=?",
+            "UPDATE row_evidence SET payload=?",
             (zlib.compress(json.dumps(cells).encode()),),
         )
     with pytest.raises((ExplanationError, ValueError), match="membership risk"):
@@ -1272,41 +1244,59 @@ def test_production_publication_automatically_includes_recorded_risk(
     assert all(cell["value"] > 0 for cell in cells)
 
 
-def test_compact_cells_preserve_group_sample_location_across_payload_order():
-    from xic_extractor.diagnostics.explanation_review import pack_cells, unpack_cells
-
+@pytest.mark.parametrize("review_only", (False, True))
+def test_named_cells_preserve_values_and_details_across_input_order(
+    tmp_path, review_only
+):
     cells = [
-        {"sample_key": "S1", "variant": "quantified", "value": 11.0},
-        {"sample_key": "S2", "variant": "quantified", "value": 22.0},
+        {
+            "sample_key": "S1",
+            "variant": "numeric",
+            "value": 11.0,
+            "reason_codes": ["first"],
+        },
+        {
+            "sample_key": "S2",
+            "variant": "numeric",
+            "value": 22.0,
+            "reason_codes": ["second"],
+        },
     ]
-    sample_ordinals = {"S1": 0, "S2": 1}
-    outputs = [
-        unpack_cells(
-            pack_cells(ordered, sample_ordinals),
-            row_id="F000001",
-            group_id="F000001",
-            sample_ids=("S1", "S2"),
-        )
-        for ordered in (cells, cells[::-1])
-    ]
+    outputs = []
+    for index, ordered in enumerate((cells, cells[::-1])):
+        path = tmp_path / f"order-{index}.sqlite"
+        with ExplanationReportWriter(path, review_only=review_only) as writer:
+            writer.add_record("rows", "F1", {"feature_id": "F1"}, ())
+            writer.add_row_cells("F1", ordered, {"S1": 0, "S2": 1})
+            writer.finalize(
+                _summary_fixture(
+                    {"samples": [{"sample_key": "S1"}, {"sample_key": "S2"}]},
+                    review_only=review_only,
+                )
+            )
+        outputs.append(read_explanation_metadata(path).records["cell_decisions"])
+        with sqlite3.connect(path) as db:
+            assert db.execute(
+                "SELECT sample,value FROM cells ORDER BY sample"
+            ).fetchall() == [(0, 11.0), (1, 22.0)]
     assert outputs[0] == outputs[1]
-    assert {key: cell["value"] for key, cell in outputs[0].items()} == {
-        ("F000001", "S1"): 11.0,
-        ("F000001", "S2"): 22.0,
+    assert {k: (v["value"], v["reason_codes"]) for k, v in outputs[0].items()} == {
+        ("F1", "S1"): (11.0, ["first"]),
+        ("F1", "S2"): (22.0, ["second"]),
     }
 
 
-def test_compact_cells_reject_duplicate_group_sample_location():
-    from xic_extractor.diagnostics.explanation_review import pack_cells, unpack_cells
-
-    cells = [
-        {"sample_key": "S1", "variant": "quantified", "value": 11.0},
-        {"sample_key": "S1", "variant": "quantified", "value": 22.0},
-    ]
-    with pytest.raises(ValueError, match="duplicate review cell.*rerun Alignment"):
-        unpack_cells(
-            pack_cells(cells, {"S1": 0}),
-            row_id="F000001",
-            group_id="F000001",
-            sample_ids=("S1",),
-        )
+def test_named_cells_reject_duplicate_group_sample(tmp_path):
+    path = tmp_path / "duplicate.sqlite"
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+        with ExplanationReportWriter(path, review_only=True) as writer:
+            writer.add_record("rows", "F1", {"feature_id": "F1"}, ())
+            writer.add_row_cells(
+                "F1",
+                [
+                    {"sample_key": "S1", "variant": "numeric", "value": 11.0},
+                    {"sample_key": "S1", "variant": "numeric", "value": 22.0},
+                ],
+                {"S1": 0},
+            )
+    assert not path.exists()
