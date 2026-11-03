@@ -310,6 +310,30 @@ def test_semantic_identifier_gate_scans_python_values_and_maintained_docs(
     assert expected <= set(problems)
 
 
+def test_documented_code_name_gate_rejects_names_no_source_defines(
+    tmp_path: Path,
+) -> None:
+    doc_path = Path("docs/product/example.md")
+    source_path = Path("xic_extractor/example.py")
+    for path in (doc_path, source_path):
+        (tmp_path / path).parent.mkdir(parents=True)
+    (tmp_path / source_path).write_text("current_name = 1\n", encoding="utf-8")
+    retired = "retired" + "_name"
+    (tmp_path / doc_path).write_text(
+        f"Reads `current_name`.\nStill describes `{retired}`.\n",
+        encoding="utf-8",
+    )
+
+    problems = census.validate_documented_code_names(
+        tmp_path, (doc_path,), (source_path,)
+    )
+
+    assert problems == [
+        f"docs/product/example.md:2: documented name {retired} "
+        "is not defined in any tracked source"
+    ]
+
+
 def test_historical_identifier_exemption_is_exact_and_requires_a_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

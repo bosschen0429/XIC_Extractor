@@ -25,10 +25,9 @@ to regrouping and Backfill planning.
 
 ### Owners
 
-- `peak_anchor_id` (discovery `feature_family_id`) groups candidates that share
-  the same MS1 chromatographic peak within a single sample. `peak_anchor_id` is a
-  per-sample trace-identity label. `peak_anchor_id` is not a chemical identity
-  claim.
+- Discovery `feature_id` groups candidates that share the same MS1
+  chromatographic peak within a single sample. It is a per-sample
+  trace-identity label, not a chemical identity claim.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
   membership, feature inference evidence, identity constraints, review-only
   records, and group delivery metadata. In process the group object is the
@@ -97,7 +96,7 @@ standalone product truth.
 
 | Concept | Owns | Must not own |
 | --- | --- | --- |
-| Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
+| Discovery `feature_id` (per-sample peak anchor) | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `feature_id` (`F000001`) | Report-scoped label joining one published group across Review, Cells, Status, Seed audit, and SQLite | Cross-report identity, same-peak proof, or a Matrix column |
 | Internal `InitialGroupingScope` | m/z/RT evidence bounds and exact initial groups for the bootstrap-to-regroup handoff | Standalone identity, persistence, chemical identity, public row identity, or same-peak truth |
 | `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill or selected values |
@@ -109,12 +108,12 @@ standalone product truth.
 
 ## Output Labels
 
-Discovery outputs expose `feature_family_id` for per-sample peak anchors.
+Discovery outputs expose `feature_id` for per-sample peak anchors.
 Alignment outputs expose one report-scoped `feature_id` per published group;
 in-process group keys are not written. These labels follow these rules:
 
-1. Discovery `feature_family_id` is a public output contract. It is not a
-   grouping-scope identity.
+1. Discovery `feature_id` is a public output contract. It is not a
+   grouping-scope identity or the Alignment `feature_id`.
 2. A new written identifier needs a boundary that the object itself cannot
    cross and no sufficient natural key
    ([Change Locality](../architecture-contract.md#change-locality)).
@@ -146,15 +145,6 @@ in-process group keys are not written. These labels follow these rules:
 - Do not let `alignment_review.tsv` display tokens promote rows. Positive
   product support needs provenance-valid sidecars or explicit authority
   records.
-- Do not treat `family_projection` rows as canonical identity proof. A
-  `family_projection` row stays an unresolved projection row until one of
-  these events happens:
-  - explicit PeakHypothesis assignments replace the row;
-  - an approved product contract declares the row out of scope.
-- A helper that can emit or include `family_projection` rows must exclude them
-  by default. Any inclusion path needs an explicit diagnostic or compatibility
-  opt-in. Any inclusion path must keep canonical identity readiness
-  fail-closed.
 
 ## Codebase Smells To Audit
 
@@ -164,7 +154,7 @@ before refactor or promotion:
 - A peak-anchor assignment function writes `evidence_score`, `evidence_tier`,
   confidence, or product-like status.
 - A cross-sample alignment path keys product behavior only by a display label
-  (`feature_family_id` or `feature_id`) when the group or hypothesis object is
+  (`feature_id`) when the group or hypothesis object is
   available.
 - A diagnostic sidecar exposes supportive labels without product-authority
   provenance.

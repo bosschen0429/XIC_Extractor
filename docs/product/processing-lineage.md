@@ -209,11 +209,11 @@ Every retained record also belongs to one lifecycle class:
 
 | Class | Meaning |
 | --- | --- |
-| `essential` | Final result, delivery identity/seal, authority closure, and minimum evidence refs needed to explain a current value/null |
-| `reviewable_compact` | Queryable machine archive needed for bounded review, including provisional groups and final cell-decision evidence |
-| `diagnostic_heavy` | Candidate universes, traces, galleries, and debug payloads retained only for opt-in validation, active review, or failure forensics |
-| `reconstructable` | Derived cache/artifact whose exact source identity, algorithm contract, and rebuild capability remain available |
-| `compatibility` | Legacy schema/projection retained only for a named current consumer and removed when its consumer census reaches zero |
+| essential | Final result, delivery identity/seal, authority closure, and minimum evidence refs needed to explain a current value/null |
+| reviewable compact | Queryable machine archive needed for bounded review, including provisional groups and final cell-decision evidence |
+| diagnostic heavy | Candidate universes, traces, galleries, and debug payloads retained only for opt-in validation, active review, or failure forensics |
+| reconstructable | Derived cache/artifact whose exact source identity, algorithm contract, and rebuild capability remain available |
+| compatibility | Legacy schema/projection retained only for a named current consumer and removed when its consumer census reaches zero |
 
 ## Failure, Null, Stale, And Supersession
 
@@ -282,9 +282,9 @@ to delivery and review needs.
 
 | Identity | Required basis | Forbidden basis |
 | --- | --- | --- |
-| `delivery_cell_key` (Targeted) | `sample_metadata`-owned stable sample identity + target-list-owner identity | Acquisition-source identity, display name alone, column position, or output path |
-| `delivery_revision_id` (Targeted) | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state or Untargeted cell identity |
-| `delivery_seal_id` (planned) | Canonical sealed manifest content: Targeted revision and output-artifact identities, or Untargeted attempt, source, retained-ledger, and complete Matrix artifact identities | Directory existence, writer exit code, or a diagnostic candidate |
+| `DeliveryCellKey` (Targeted) | `sample_metadata`-owned stable sample identity + target-list-owner identity | Acquisition-source identity, display name alone, column position, or output path |
+| `DeliveryRevision` (Targeted) | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state or Untargeted cell identity |
+| `DeliverySeal` (planned) | Canonical sealed manifest content: Targeted revision and output-artifact identities, or Untargeted attempt, source, retained-ledger, and complete Matrix artifact identities | Directory existence, writer exit code, or a diagnostic candidate |
 
 ### Lineage Graph And Invariants
 

@@ -248,10 +248,6 @@ method evidence, not a counted detection or a physical isotope-envelope proof.
 
 - `candidate/audit universe`: rows that are visible for review, audit, or
   diagnosis. This is not the same as writable product output.
-- `write_ready`: a row-level `policy_decision` value in the Backfill
-  generated-policy artifact. It names rows a writer scope may cover; the
-  label grants no write authority unless that scope is registered in the
-  authority manifest.
 - `authority`: the permission boundary for matrix/workbook/value writes;
   [Writer Authority](productization.md#writer-authority) owns how it is granted.
 - `authority manifest`: machine-checkable record of the exact ProductWriter
@@ -267,9 +263,8 @@ method evidence, not a counted detection or a physical isotope-envelope proof.
 - `artifact contract validation ceiling`: owner-scoped invariant limiting what
   a typed artifact can claim. A fixed value such as `shadow_ready` paired with
   no product authority is not lane state or a promotion transition.
-- `owner-specific gate verdict`: a gate-local or compound token such as
-  `contract_ready_science_inconclusive`. It is interpreted only by its owner;
-  it is not a member of either shared status vocabulary.
+- `owner-specific gate verdict`: a gate-local or compound token interpreted
+  only by its owner; it is not a member of either shared status vocabulary.
 - `activation contract`: explicit evidence, tests, authority, and expected-diff
   conditions required before diagnostic or shadow behavior may affect product
   values.
@@ -411,13 +406,12 @@ Persisted and public exceptions retain their exact spelling:
 
 | Spelling | Why it remains |
 | --- | --- |
-| `preferred_rt_recovery`, `recovery_claim_label` | Existing proposal-source and oracle labels |
-| `xic.observation-repair-*`, `observation_repair_*`, `repair_epoch`, `no_repair`, `repaired` | Typed identity prefixes, schema names, fields, and hash inputs in retained revisit receipts |
+| `preferred_rt_recovery` | Existing proposal-source label |
 | `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor`, `owner_backfill_min_detected_samples` | Existing config and run-metadata keys |
-| `owner_backfill_cell_content_id`, `owner_backfill_peak_fact_provenance_row_count`, `owner_backfill_peak_fact_provenance_tsv`, `owner_backfill_evaluation_coverage`, `owner_backfill_candidate_audit_rows` | Content identity, metadata, and public run/output fields |
-| `owner_finalized_cell_decision`, `owner_finalized`, `owner_rehydrated`, `owner_bounded_continuity` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
+| `owner_backfill_peak_fact_provenance_row_count`, `owner_backfill_peak_fact_provenance_tsv`, `owner_backfill_evaluation_coverage` | Metadata and public run/output fields |
+| `owner_finalized_cell_decision`, `owner_finalized`, `owner_rehydrated` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
-| `rescue_quantifiable`, `rescued_cell_*`, `cross_mode_rescue_*`, `q_rescue` | Existing quality, diagnostic TSV/JSON, and decision-record keys |
+| `rescue_quantifiable`, `rescued_cell_*`, `cross_mode_rescue_*` | Existing quality, diagnostic TSV/JSON, and decision-record keys |
 | `ms1_feature_nl_rescued` | Discovery NL evidence state, not a Backfill cell status |
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection

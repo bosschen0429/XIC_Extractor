@@ -537,8 +537,8 @@ Inspector.
 - An explicit return beside the sample heading restores the all-sample view.
   The return does not reset the display settings of the item.
 - Viewing a candidate does not change the recorded decision.
-- Traces of one sample with distinct roles, such as Delta Mass `base` and
-  `plus_n` channels, are channels of that sample rather than competing
+- Traces of one sample with distinct roles, such as Delta Mass pattern
+  positions, are channels of that sample rather than competing
   candidates. They raise no multiple-candidate notice; the role names each
   channel and a line style tells the channels apart. Traces that share a role
   remain candidates.

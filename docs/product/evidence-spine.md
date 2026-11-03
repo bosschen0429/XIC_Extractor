@@ -269,7 +269,7 @@ eligibility filter. Its search receipt stays incomplete; it does not represent
 a completed method evaluation. Discovery eligibility exclusions remain owned by
 `UntargetedCandidateExclusion`.
 
-### Backfill of unsearched and rejected samples
+### Backfill of unsearched samples
 
 An existing owner-backed group can guide a bounded Backfill for a sample whose
 initial Discovery assessment is `not_evaluated` with
@@ -281,17 +281,6 @@ the candidate universe records a completed search, even when the Backfill finds
 no peaks or qualifying CID-NL evidence. That completed result remains `HOLD`.
 This completed `HOLD` result is distinct from an initial unsearched slot and
 does not prove method rejection.
-
-An evaluated `REJECT` with the exact reason
-`qualifying_nl_evidence_without_any_ms1_candidate_peak` remains the result of its
-original assessment. Retained CID-NL production can independently authorize one
-group-guided Backfill after the same frozen-group, direct-support, and
-sample-role gates. The adapter validates the original sample, acquisition source, method and
-processing lineage, reuses only its immutable qualifying MS2 evidence within the
-new local window, and assesses fresh MS1 peaks with the existing individual/set
-relation rules. A new `SUPPORT` may reach CrossSample and the final cell owner;
-MS1 presence alone cannot promote a cell. The original rejection, Discovery
-exclusions and new assessment remain queryable together in the explanation store.
 
 ### Evidence keys and relation rules
 
