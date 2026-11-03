@@ -7,16 +7,18 @@ import json
 import sys
 from pathlib import Path
 
-from xic_extractor.diagnostics.alignment_explanation import (
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_explanation,
+)
+from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
-    read_cid_nl_explanation,
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--report", required=True, help="Path to cid_nl_explanation.sqlite"
+        "--report", required=True, help="Path to alignment_explanation.sqlite"
     )
     parser.add_argument(
         "--candidate-id", help="Exact candidate ID; omit for run summary"
@@ -92,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, indent=2))
             return 0
-        result = read_cid_nl_explanation(args.report, candidate_id=args.candidate_id)
+        result = read_alignment_explanation(args.report, candidate_id=args.candidate_id)
     except (ExplanationError, OSError) as exc:
         if args.json:
             print(

@@ -1054,7 +1054,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             in eligible_subject_ids
         }
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
@@ -1065,7 +1065,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         alignment_config=config,
         production_decisions=writer.production_decisions,
     )
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
         writer_inputs=writer,
@@ -1263,9 +1263,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
 
 
 def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
-    from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
+    from xic_extractor.alignment_explanation.reader import (
+        read_alignment_explanation,
+    )
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
@@ -1282,7 +1284,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
             alignment_config=config,
             production_decisions=writer.production_decisions,
         )
-        report = write_cid_nl_explanation(
+        report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
             writer_inputs=writer,
@@ -1290,7 +1292,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
             matrix_path=matrix,
             alignment_config=config,
         )
-        detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
+        detail = read_alignment_explanation(report, candidate_id=candidate_id)
         records.append(detail["records"])
     assert records[0] == records[1]
 

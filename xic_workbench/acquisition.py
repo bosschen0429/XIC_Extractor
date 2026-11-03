@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import json
 import math
-import sqlite3
 import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_explanation,
+    read_group_candidate_ids,
+)
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -17,10 +23,6 @@ from xic_extractor.configuration.mass_recalibration import (
 )
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
-)
-from xic_extractor.diagnostics.alignment_explanation import (
-    ExplanationError,
-    read_cid_nl_explanation,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
@@ -81,7 +83,7 @@ def export_explanation_curves(
     if output.resolve() == report.resolve() or output.exists():
         raise FileExistsError(f"Curve output must be a new file: {output}")
 
-    summary = read_cid_nl_explanation(report)
+    summary = read_alignment_explanation(report)
     mass_results = _review_mass_results(report, summary)
     sample_labels = {
         row["sample_key"]: row["sample_stem"] for row in summary["samples"]
@@ -97,7 +99,7 @@ def export_explanation_curves(
     candidate_ids = _selected_candidate_ids(report, candidate_id, group_id)
     selected: dict[tuple[str, str], dict[str, Any]] = {}
     for cid in candidate_ids:
-        detail = read_cid_nl_explanation(report, candidate_id=cid)
+        detail = read_alignment_explanation(report, candidate_id=cid)
         for candidate in detail["candidates"]:
             sid = candidate["sample_key"]
             terminals = [
@@ -287,16 +289,7 @@ def _selected_candidate_ids(
     if group_id is None:
         assert candidate_id is not None
         return [candidate_id]
-    with sqlite3.connect(report.resolve().as_uri() + "?mode=ro", uri=True) as db:
-        db.execute("PRAGMA query_only = ON")
-        candidate_ids = [
-            row[0]
-            for row in db.execute(
-                "SELECT DISTINCT candidate_id FROM links "
-                "WHERE kind='final_groups' AND record_id=? ORDER BY candidate_id",
-                (group_id,),
-            )
-        ]
+    candidate_ids = read_group_candidate_ids(report, group_id)
     if not candidate_ids:
         raise ExplanationError(
             f"Group has no retained candidate observations: {group_id}"

@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+from xic_extractor.alignment_explanation.storage import (
+    EXPLANATION_ARTIFACT_NAME,
+)
 from xic_inspector.rendering.group_colors import group_colors
 from xic_inspector.rendering.html_builder import (
     build_report_html,
@@ -50,7 +52,10 @@ def resolve_source(path: Path) -> Path:
     """Resolve a saved evidence file or its batch/alignment output directory."""
     if not path.is_dir():
         return path
-    for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
+    for candidate in (
+        path / EXPLANATION_ARTIFACT_NAME,
+        path / "alignment" / EXPLANATION_ARTIFACT_NAME,
+    ):
         if candidate.is_file():
             return candidate
     # Excel keeps "~$name.xlsx" lock files beside workbooks that are open.
@@ -59,7 +64,10 @@ def resolve_source(path: Path) -> Path:
         return workbooks[0]
     if len(workbooks) > 1:
         raise ValueError("資料夾有多份 XLSX；請明確選擇 Targeted XLSX 檔案。")
-    raise FileNotFoundError(f"No Targeted XLSX or {REPORT_FILENAME} in {path}")
+    raise FileNotFoundError(
+        f"No Targeted XLSX or {EXPLANATION_ARTIFACT_NAME} in {path}; "
+        "rerun Alignment（請重新執行 Alignment 產生新輸出）。"
+    )
 
 
 StrategyKind = Literal["sample", "attention", "query"]

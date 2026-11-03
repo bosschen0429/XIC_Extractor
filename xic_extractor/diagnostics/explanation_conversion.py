@@ -9,15 +9,17 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from xic_extractor.diagnostics.alignment_explanation import (
-    ExplanationError,
-    ExplanationReportWriter,
-    _object,
-    _read_completed_summary,
-)
-from xic_extractor.diagnostics.explanation_review import (
+from xic_extractor.alignment_explanation.review import (
     REVIEW_SCHEMA_VERSION,
     review_record,
+)
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+    decode_object,
+    read_completed_summary,
+)
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
 )
 
 
@@ -34,7 +36,7 @@ def compact_explanation(
     destination.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        summary = _read_completed_summary(connection)
+        summary = read_completed_summary(connection)
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
             raise ExplanationError("Source is already a compact review")
         samples = {
@@ -58,7 +60,7 @@ def compact_explanation(
             for cid, sid, payload in connection.execute(
                 "SELECT candidate_id, sample_id, payload FROM candidates"
             ):
-                writer.add_candidate(cid, sid, _object(payload))
+                writer.add_candidate(cid, sid, decode_object(payload))
             excluded = "('cell_observations','cell_decisions','capture_evidence')"
             links = iter(
                 connection.execute(
@@ -78,7 +80,7 @@ def compact_explanation(
                     related.append((linked[2], linked[3]))
                     linked = next(links, None)
                 writer.add_record(
-                    kind, rid, review_record(kind, _object(payload)), related
+                    kind, rid, review_record(kind, decode_object(payload)), related
                 )
             if progress:
                 progress("Packing cell values and reasons by row")
@@ -102,8 +104,8 @@ def compact_explanation(
             cells = []
             cell_count = 0
             for decision_payload, observation_payload in rows:
-                decision = _object(decision_payload)
-                observation = _object(observation_payload)
+                decision = decode_object(decision_payload)
+                observation = decode_object(observation_payload)
                 row_id = decision["feature_id"]
                 if current_row is not None and row_id != current_row:
                     writer.add_row_cells(current_row, cells, samples)

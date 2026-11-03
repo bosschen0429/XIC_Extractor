@@ -7,8 +7,10 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.diagnostics.duplicate_quantification import (
+from xic_extractor.alignment_explanation.published_cells import (
     read_published_cells,
+)
+from xic_extractor.diagnostics.duplicate_quantification import (
     summarize_duplicate_quantification,
 )
 
@@ -31,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Screen a validation Alignment output (with cid_nl_explanation.sqlite) "
+            "Screen a validation Alignment output (with alignment_explanation.sqlite) "
             "for same-sample cells in different rows that quantify one apex."
         ),
     )

@@ -85,7 +85,7 @@ review/provenance tables from the `machine` output level. The identity supports
 the results panel's **篩選匯出…** action. The CLI still defaults to the Matrix-only
 `production` output level.
 
-Successful retained CID-NL publication also saves `cid_nl_explanation.sqlite`
+Successful retained CID-NL publication also saves `alignment_explanation.sqlite`
 alongside its runtime marker for Inspector evidence.
 
 Start with the file that matches your review question:
@@ -97,7 +97,7 @@ Start with the file that matches your review question:
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
 | `alignment_review.tsv` | Group review and bound Matrix row references | Input for traceable Matrix selection |
-| `cid_nl_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
+| `alignment_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
 | `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Review output |
 | `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |
 

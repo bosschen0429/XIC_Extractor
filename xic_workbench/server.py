@@ -16,8 +16,10 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+)
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.presets import PresetError
 from xic_inspector.api import InspectorError, read_evidence_summary, resolve_source
 from xic_workbench.analysis_workspace import json_value

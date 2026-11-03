@@ -10,7 +10,9 @@ from typing import Any, cast
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
-from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+from xic_extractor.alignment_explanation.storage import (
+    ExplanationError,
+)
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256

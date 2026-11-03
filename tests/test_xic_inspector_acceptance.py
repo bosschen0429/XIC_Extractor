@@ -10,16 +10,18 @@ from dataclasses import asdict
 
 import pytest
 
-from tests.test_cid_nl_explanation import _owner_run, _summary_fixture
+from tests.test_alignment_explanation import _owner_run, _summary_fixture
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_explanation,
+)
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
 )
-from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
 from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_cid_nl_explanation,
+    write_alignment_explanation,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
@@ -38,8 +40,8 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    report_path = write_cid_nl_explanation(
-        tmp_path / "cid_nl_explanation.sqlite",
+    report_path = write_alignment_explanation(
+        tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
         writer_inputs=writer,
@@ -58,7 +60,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     completed.close()
 
     # Re-read new DB
-    summary = read_cid_nl_explanation(report_path)
+    summary = read_alignment_explanation(report_path)
     assert summary["schema_version"] == "alignment_explanation"
     assert summary["plot_evidence_capability"] == "retained_curves"
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
@@ -68,9 +70,9 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         [
             sys.executable,
             "-c",
-            "import json,sys; from xic_extractor.diagnostics.alignment_explanation "
-            "import read_cid_nl_curves; "
-            "print(json.dumps(read_cid_nl_curves(sys.argv[1])))",
+            "import json,sys; from xic_extractor.alignment_explanation.reader "
+            "import read_alignment_curves; "
+            "print(json.dumps(read_alignment_curves(sys.argv[1])))",
             str(report_path),
         ],
         capture_output=True,
@@ -106,7 +108,9 @@ def test_missing_bound_matrix_rejects_generation(
     # 1. Illegal: missing matrix
     fake_db = tmp_path / "fake.sqlite"
     matrix_file = tmp_path / "missing_matrix.tsv"
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     with ExplanationReportWriter(fake_db) as writer:
         writer.finalize(
@@ -132,8 +136,8 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    report_path = write_cid_nl_explanation(
-        tmp_path / "cid_nl_explanation.sqlite",
+    report_path = write_alignment_explanation(
+        tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
         writer_inputs=writer,
@@ -144,7 +148,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     completed.close()
 
     # Metadata read: only summary dict, zero curve payloads
-    summary = read_cid_nl_explanation(report_path)
+    summary = read_alignment_explanation(report_path)
     assert "curves" not in summary
     assert summary["candidate_count"] > 0
 
@@ -164,8 +168,8 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    report_path = write_cid_nl_explanation(
-        tmp_path / "cid_nl_explanation.sqlite",
+    report_path = write_alignment_explanation(
+        tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
         writer_inputs=writer,
@@ -220,8 +224,8 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    report_path = write_cid_nl_explanation(
-        tmp_path / "cid_nl_explanation.sqlite",
+    report_path = write_alignment_explanation(
+        tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
         writer_inputs=writer,
@@ -291,12 +295,12 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
             discovery_settings=replace(
                 _settings(), mass_recalibration=MassRecalibration.NONE
             ),
-            publication=UntargetedPublicationPolicy(emit_cid_nl_explanation=True),
+            publication=UntargetedPublicationPolicy(emit_alignment_explanation=True),
         )
     )
     locator = outputs.evidence
     assert isinstance(locator, EvidenceLocator)
-    summary = read_cid_nl_explanation(locator.report_path)
+    summary = read_alignment_explanation(locator.report_path)
     assert locator.processing_attempt_id == summary["processing_attempt_id"]
 
     out_html = tmp_path / "handoff.html"

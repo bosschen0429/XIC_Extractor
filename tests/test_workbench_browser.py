@@ -435,14 +435,16 @@ def test_result_chooser_opens_batch_folders_and_report_files(
     from shutil import copyfile
 
     from tests.test_xic_workbench import _review_batch
-    from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
+    from xic_extractor.alignment_explanation.storage import (
+        EXPLANATION_ARTIFACT_NAME,
+    )
     from xic_workbench import server
 
     original, _ = _review_batch(tmp_path)
     batch = tmp_path / "completed-batch"
     alignment = batch / "alignment"
     alignment.mkdir(parents=True)
-    report = alignment / REPORT_FILENAME
+    report = alignment / EXPLANATION_ARTIFACT_NAME
     copyfile(original, report)
     chosen = str(batch if kind == "folder" else report)
     choices, calls = [chosen, ""], []
@@ -3255,7 +3257,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # This folder has no per-cell explanation: the step says why it cannot run.
     expect(page.locator("#curation-step-same_compound")).to_be_disabled()
     expect(page.locator(".curation-step[data-step=same_compound]")).to_contain_text(
-        "cid_nl_explanation.sqlite"
+        "alignment_explanation.sqlite"
     )
     expect(page.locator("#curation-source")).to_contain_text("內標清單")
     page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")

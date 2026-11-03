@@ -110,6 +110,24 @@ modules =
     xic_extractor.extraction
     xic_extractor.untargeted_execution
 
+[importlinter:contract:explanation-readers-stay-readonly]
+name = Completed explanation readers do not depend on writers or execution
+type = forbidden
+source_modules =
+    xic_extractor.alignment_explanation.reader
+    xic_extractor.alignment_explanation.query
+    xic_extractor.alignment_explanation.published_cells
+    xic_extractor.alignment_explanation.storage
+    xic_extractor.alignment_explanation.review
+forbidden_modules =
+    xic_extractor.alignment_explanation.writer
+    xic_extractor.diagnostics
+    xic_extractor.applications
+    xic_extractor.untargeted_execution
+    xic_extractor.extraction
+    xic_extractor.raw_reader
+allow_indirect_imports = False
+
 [importlinter:contract:main-chain-layers]
 name = Main processing chain layers
 type = layers

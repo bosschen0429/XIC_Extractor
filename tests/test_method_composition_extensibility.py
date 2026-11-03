@@ -9,19 +9,20 @@ from pathlib import Path
 from typing import Mapping
 
 from scripts.run_alignment import _parse_args, _resolve_preset
-from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_alignment_explanation import _summary_fixture
 from tests.test_processing_run_spec import _compile_paths, _raws
-from xic_extractor.diagnostics.alignment_explanation import (
-    GENERIC_REPORT_FILENAME,
-    ExplanationReportWriter,
+from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
+)
+from xic_extractor.alignment_explanation.storage import (
+    EXPLANATION_ARTIFACT_NAME,
+)
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
 )
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_alignment_explanation,
-    write_cid_nl_explanation,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets import PresetTag, load_preset
@@ -199,11 +200,11 @@ def test_run_alignment_script_resolves_supported_preset():
 
 
 def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
-    db_path = tmp_path / GENERIC_REPORT_FILENAME
-    assert GENERIC_REPORT_FILENAME == "alignment_explanation.sqlite"
-    assert read_alignment_explanation is read_cid_nl_explanation
-    assert read_alignment_curves is read_cid_nl_curves
-    assert write_alignment_explanation is write_cid_nl_explanation
+    db_path = tmp_path / EXPLANATION_ARTIFACT_NAME
+    assert EXPLANATION_ARTIFACT_NAME == "alignment_explanation.sqlite"
+    assert read_alignment_explanation is read_alignment_explanation
+    assert read_alignment_curves is read_alignment_curves
+    assert write_alignment_explanation is write_alignment_explanation
 
     with ExplanationReportWriter(db_path) as writer:
         writer.finalize(
@@ -214,7 +215,7 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
         )
 
     rows_generic = read_alignment_explanation(db_path)
-    rows_cid_nl = read_cid_nl_explanation(db_path)
+    rows_cid_nl = read_alignment_explanation(db_path)
     assert rows_generic == rows_cid_nl
     assert rows_generic["diagnostic_only"] is True
     assert rows_generic["processing_algorithm_version"] == "discovery"

@@ -18,7 +18,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from tests.test_cid_nl_explanation import _summary_fixture
+from tests.test_alignment_explanation import _summary_fixture
 from tests.test_xic_inspector_api import _create_mock_db
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
@@ -79,7 +79,9 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
 
 
 def _review_batch(tmp_path, sample_count=2):
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     sample_ids = tuple(f"S{i + 1}" for i in range(sample_count))
     matrix = tmp_path / "matrix.tsv"
@@ -157,7 +159,9 @@ def _review_batch(tmp_path, sample_count=2):
 
 def _nearest_review_batch(tmp_path):
     """Saved matrix rows whose review order differs from numeric proximity."""
-    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.alignment_explanation.writer import (
+        ExplanationReportWriter,
+    )
 
     matrix = tmp_path / "nearest-matrix.tsv"
     matrix.write_text("saved near-search fixture", encoding="utf-8")
@@ -270,7 +274,7 @@ def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path
 def test_review_overview_does_not_retain_decoded_cells_for_the_population(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.diagnostics import alignment_explanation
+    from xic_extractor.alignment_explanation import reader as alignment_explanation
     from xic_inspector.sources.untargeted_overview import review_overview
 
     sample_count = 32
@@ -522,7 +526,7 @@ def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
 
 
 def test_http_open_explains_unreadable_report_in_plain_language(tmp_path):
-    report = tmp_path / "cid_nl_explanation.sqlite"
+    report = tmp_path / "alignment_explanation.sqlite"
     with sqlite3.connect(report) as connection:
         connection.execute("CREATE TABLE unrelated (value TEXT)")
     with _client(ReviewWorkspace()) as request:

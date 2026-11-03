@@ -245,7 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             publication=UntargetedPublicationPolicy(
                 output_level=args.output_level,
                 emit_alignment_cells=args.emit_alignment_cells,
-                emit_cid_nl_explanation=args.emit_cid_nl_explanation,
+                emit_alignment_explanation=args.emit_alignment_explanation,
                 explanation_full_audit=args.explanation_full_audit,
                 explanation_curve_mz_ranges=tuple(args.explanation_curve_mz_range),
                 emit_alignment_status_matrix=args.emit_alignment_status_matrix,
@@ -580,7 +580,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--emit-cid-nl-explanation",
+        "--emit-alignment-explanation",
         action="store_true",
         help=(
             "write a compact decision review without full audit or curve arrays; "

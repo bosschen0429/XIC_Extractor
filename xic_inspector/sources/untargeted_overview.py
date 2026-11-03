@@ -2,7 +2,9 @@
 
 from collections import Counter
 
-from xic_extractor.diagnostics.alignment_explanation import open_review_population
+from xic_extractor.alignment_explanation.reader import (
+    open_review_population,
+)
 
 
 def review_overview(path, summary):
@@ -44,11 +46,9 @@ def review_overview(path, summary):
     }, rows
 
 
-def ordered_review_items(db, rows, scope):
+def ordered_review_items(headers, rows, scope):
     selected = []
-    for item, kind, identifier in db.execute(
-        "SELECT id,kind,identifier FROM query_items"
-    ):
+    for item, kind, identifier in headers:
         facts = rows.get(identifier, {})
         destination = facts.get("destination")
         if (

@@ -1292,6 +1292,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:inner-layers-do-not-import-diagnostics",
         "importlinter:contract:inner-layers-do-not-import-applications",
         "importlinter:contract:targeted-untargeted-independent",
+        "importlinter:contract:explanation-readers-stay-readonly",
         "importlinter:contract:main-chain-layers",
         "importlinter:contract:acquisition-stays-inner",
         "importlinter:contract:sample-metadata-no-instrument-qc",

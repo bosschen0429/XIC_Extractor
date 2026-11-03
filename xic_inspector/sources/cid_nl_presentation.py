@@ -7,13 +7,16 @@ source, reading payloads or validating scientific evidence.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from xic_inspector.selection.canonical import CanonicalItem
 
 if TYPE_CHECKING:
-    from xic_extractor.diagnostics.alignment_explanation import RecordKey
+    from xic_extractor.alignment_explanation.storage import (
+        RecordKey,
+    )
 
 _RECORD_TITLES = {
     "rows": "結果列與輸出去向",
@@ -933,6 +936,7 @@ def build_render_item(
     samples: list[dict[str, Any]],
     projected_curves: list[dict[str, Any]],
     readable_records: list[dict[str, Any]],
+    measured_mz_by_candidate: Mapping[tuple[str, str], float | None],
     relationship_members: list[dict[str, Any]],
     internal_pair_support: list[dict[str, Any]],
     relationship_availability: str,
@@ -956,7 +960,13 @@ def build_render_item(
         **_item_labels(item, samples, route),
         "samples": samples,
         "witnesses": [
-            {**asdict(w), "matched": w in item.matched_witnesses}
+            {
+                **asdict(w),
+                "matched": w in item.matched_witnesses,
+                "ms1_apex_mz": measured_mz_by_candidate.get(
+                    (w.candidate_id, w.sample_key)
+                ),
+            }
             for w in item.witnesses
         ],
         "matched_refs": [asdict(w) for w in item.matched_witnesses],

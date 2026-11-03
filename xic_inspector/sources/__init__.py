@@ -1,6 +1,6 @@
 """Current evidence source binding for the shared Inspector workflow."""
 
-from xic_extractor.diagnostics.alignment_explanation import (
+from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
     ExplanationUnavailableError,
 )
@@ -34,7 +34,7 @@ def open_source(path, *, query_only=False):
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 
     summary = read_summary(path)
-    from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
+    from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
 
     if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
         return IndexedCidNlSource(path, summary)

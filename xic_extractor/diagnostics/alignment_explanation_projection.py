@@ -17,8 +17,10 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     UNLISTED_PAIR_DISPOSITION,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
-from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
-from xic_extractor.diagnostics.explanation_review import review_cell, review_record
+from xic_extractor.alignment_explanation.review import review_cell, review_record
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
@@ -218,7 +220,7 @@ class PreparedAlignmentExplanation:
     finalize: Callable[[int, Path], Path]
 
 
-def write_cid_nl_explanation(
+def write_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
@@ -226,6 +228,7 @@ def write_cid_nl_explanation(
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     full_audit: bool = False,
@@ -237,6 +240,7 @@ def write_cid_nl_explanation(
         completed=completed,
         candidates_by_sample=candidates_by_sample,
         alignment_config=alignment_config,
+        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
         known_istd_reference_provenance=known_istd_reference_provenance,
         progress_callback=progress_callback,
         full_audit=full_audit,
@@ -254,12 +258,14 @@ def prepare_alignment_explanation(
     completed: CompletedUntargetBatchWorkflowResult,
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     alignment_config: AlignmentConfig,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     full_audit: bool = False,
     curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[PreparedAlignmentExplanation]:
     """Keep one bounded transaction while outputs share the loaded children."""
+    measured_mz = ms1_apex_mz_by_candidate or {}
     with ExplanationReportWriter(
         path,
         review_only=not full_audit,
@@ -311,7 +317,7 @@ def prepare_alignment_explanation(
             if progress_callback is not None:
                 progress_callback(
                     {
-                        "event": "cid_nl_explanation_progress",
+                        "event": "alignment_explanation_progress",
                         "stage": f"alignment.explanation.{stage}",
                         "completed": completed,
                         "total": total,
@@ -373,6 +379,7 @@ def prepare_alignment_explanation(
                         ),
                         "sample_stem": stem,
                         "sample_key": sid,
+                        "ms1_apex_mz": measured_mz.get(candidate.candidate_id),
                         "method_subject_id": subject_id,
                         "availability": {
                             "method_assessments": "unavailable",
@@ -404,6 +411,7 @@ def prepare_alignment_explanation(
                         "sample_key": sid,
                         "sample_stem": work.sample_stem,
                         "precursor_mz": work.precursor_mz,
+                        "ms1_apex_mz": measured_mz.get(record.candidate_id),
                         "physical_state": record.evaluation.state,
                         "reason": record.evaluation.reason,
                         "rt_apex_min": (
@@ -895,4 +903,4 @@ def prepare_alignment_explanation(
         yield PreparedAlignmentExplanation(consume_child, finalize)
 
 
-write_alignment_explanation = write_cid_nl_explanation
+write_alignment_explanation = write_alignment_explanation

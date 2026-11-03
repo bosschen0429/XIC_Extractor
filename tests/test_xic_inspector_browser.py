@@ -933,6 +933,40 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     assert matrix.read_bytes() == before
 
 
+def test_measured_mz_readout_keeps_sample_values_and_missing_measurements(
+    review_page, tmp_path
+):
+    from tests.test_explanation_review import _quality_review_report
+
+    report, matrix = _quality_review_report(
+        tmp_path, measured_mz_by_sample={"S1": 500.2010, "S2": None}
+    )
+    before = matrix.read_bytes()
+    payload = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload
+    assert {
+        witness["sample_key"]: witness["ms1_apex_mz"]
+        for witness in payload["items"][0]["witnesses"]
+    } == {"S1": 500.2010, "S2": None}
+    page = review_page
+    page.set_content('<div id="mass-view"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload => XicInspector.mount(document.getElementById('mass-view'), payload)",
+        payload,
+    )
+    page.locator('[data-focus="S1"]').click()
+    expect(page.locator('[data-readout="measured-mz"]')).to_have_text(
+        "實測 MS1 apex m/z：500.201000"
+    )
+    page.locator('[data-focus="S2"]').click()
+    expect(page.locator('[data-readout="measured-mz"]')).to_have_text(
+        "實測 MS1 apex m/z：未提供"
+    )
+    assert matrix.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     "phase,flag",
     [("initial", "accepted_competition"), ("backfill", "backfill_competition")],

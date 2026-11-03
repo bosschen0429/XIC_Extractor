@@ -24,7 +24,7 @@ def test_pipeline_rejects_stale_explanation_before_raw(
     batch_index = _write_batch(tmp_path, ("Sample_A",))
     output_dir = tmp_path / "out"
     output_dir.mkdir()
-    report = output_dir / f"cid_nl_explanation.sqlite{suffix}"
+    report = output_dir / f"alignment_explanation.sqlite{suffix}"
     report.write_bytes(b"retained report")
 
     def fail_completion(**kwargs):
@@ -33,7 +33,7 @@ def test_pipeline_rejects_stale_explanation_before_raw(
     monkeypatch.setattr(
         application_module, "complete_untargeted_alignment", fail_completion
     )
-    with pytest.raises(FileExistsError, match="cid_nl_explanation"):
+    with pytest.raises(FileExistsError, match="alignment_explanation"):
         application_module.run_untargeted_application(
             UntargetedRequest(
                 discovery_batch_index=batch_index,

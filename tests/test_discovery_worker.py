@@ -227,7 +227,7 @@ def test_alignment_modes_apply_product_ready_runtime(
         is False
     )
     assert captured_alignment["request"].legacy.audit_evidence_mode == "none"
-    assert captured_alignment["request"].publication.emit_cid_nl_explanation is True
+    assert captured_alignment["request"].publication.emit_alignment_explanation is True
     assert captured_alignment["request"].publication.explanation_full_audit is False
     assert captured_alignment["request"].publication.explanation_curve_mz_ranges == ()
     should_cancel = captured_alignment["context"].should_cancel

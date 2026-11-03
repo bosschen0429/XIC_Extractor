@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_cid_nl_explanation import _summary_fixture
-from tests.test_cid_nl_explanation_curves import _curve_provenance
-from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+from tests.test_alignment_explanation import _summary_fixture
+from tests.test_alignment_explanation_curves import _curve_provenance
+from xic_extractor.alignment_explanation.writer import (
+    ExplanationReportWriter,
+)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_inspector.api import (
     InspectorCancelled,
@@ -78,7 +80,7 @@ def _create_mock_db(
     attempt_id: str = "att-01",
     samples: list[dict[str, str]] | None = None,
 ) -> tuple[Path, Path, str]:
-    db_path = directory / "cid_nl_explanation.sqlite"
+    db_path = directory / "alignment_explanation.sqlite"
     matrix_path = directory / "alignment_matrix.tsv"
 
     matrix_content = (
@@ -209,10 +211,12 @@ def test_interactive_and_offline_review_share_sample_scope_and_values(tmp_path):
 
 
 def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path):
-    from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
+    from xic_extractor.alignment_explanation.reader import (
+        read_alignment_explanation,
+    )
 
     report, _, _ = _create_mock_db(tmp_path)
-    detail = read_cid_nl_explanation(report, candidate_id="C1")
+    detail = read_alignment_explanation(report, candidate_id="C1")
     output = tmp_path / "candidate-query.html"
     result = generate_report(
         report,
@@ -601,14 +605,14 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                 ("C1", "S1", "rows", rid),
             )
     reads = []
-    real_reader = cid_nl.read_cid_nl_curves
+    real_reader = cid_nl.read_alignment_curves
 
     def read(*args, **kwargs):
         result = real_reader(*args, **kwargs)
         reads.append((kwargs, len(result)))
         return result
 
-    monkeypatch.setattr(cid_nl, "read_cid_nl_curves", read)
+    monkeypatch.setattr(cid_nl, "read_alignment_curves", read)
     assert read_evidence_summary(report)["samples"][0]["sample_key"] == "S1"
     assert reads == []
     output = tmp_path / "shared.html"

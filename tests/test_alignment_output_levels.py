@@ -24,7 +24,7 @@ def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "cid_nl_explanation.sqlite",
+        "alignment_explanation.sqlite",
     )
 
 
@@ -34,7 +34,7 @@ def test_validation_output_level_adds_cells_and_explanation():
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "cid_nl_explanation.sqlite",
+        "alignment_explanation.sqlite",
     )
 
 

@@ -12,12 +12,16 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_cid_nl_explanation import _summary_fixture
-from xic_extractor.diagnostics.alignment_explanation import (
+from tests.test_alignment_explanation import _summary_fixture
+from xic_extractor.alignment_explanation.reader import (
+    read_alignment_curves,
+    read_alignment_explanation,
+)
+from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
+)
+from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
@@ -76,11 +80,11 @@ def test_curve_payload_write_and_read() -> None:
                 )
             )
 
-        summary = read_cid_nl_explanation(final_path)
+        summary = read_alignment_explanation(final_path)
         assert summary["schema_version"] == "alignment_explanation"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
-        curves = read_cid_nl_curves(final_path, record_ids=["C1"])
+        curves = read_alignment_curves(final_path, record_ids=["C1"])
         assert len(curves) == 1
         assert curves[0]["candidate_id"] == "C1"
         assert curves[0]["curves"]["raw"] == [0.0, 100.0, 5000.0, 200.0, 0.0]
@@ -115,9 +119,9 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
 
 
 def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
-    from tests.test_cid_nl_explanation import _owner_run
+    from tests.test_alignment_explanation import _owner_run
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
 
     completed, writer, candidates, matrix, config = _owner_run(
@@ -136,7 +140,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
                     for ref in hypothesis.peak_observation_refs
                 ]
     assert expected
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "metadata.sqlite",
         full_audit=True,
         completed=completed,
@@ -230,7 +234,7 @@ def test_curve_rowid_preserves_exact_payload_across_reopen(
         "zlib-json-utf8",
     )
     assert zlib.decompress(row[5]) == canonical
-    assert read_cid_nl_curves(report, record_ids=["obs-1"]) == [
+    assert read_alignment_curves(report, record_ids=["obs-1"]) == [
         {**payload, "payload_id": expected_payload_id}
     ]
 
@@ -253,7 +257,7 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
         assert (
             connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 2
         )
-    assert read_cid_nl_curves(report, record_ids=["obs-1"])[0] == {
+    assert read_alignment_curves(report, record_ids=["obs-1"])[0] == {
         **payload,
         "payload_id": 1,
     }
@@ -305,7 +309,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
             (zlib.compress(json.dumps(payload).encode()),),
         )
     with pytest.raises(ExplanationError):
-        read_cid_nl_curves(report, sample_ids=["S1"], record_ids=["obs-1"])
+        read_alignment_curves(report, sample_ids=["S1"], record_ids=["obs-1"])
 
 
 def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path):
@@ -338,7 +342,7 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
         report = writer.finalize(
             _summary_fixture({"samples": []}, review_only=writer.review_only)
         )
-    assert read_cid_nl_curves(report) == [{**payload, "payload_id": 1}]
+    assert read_alignment_curves(report) == [{**payload, "payload_id": 1}]
 
 
 @pytest.mark.parametrize("section", ["provenance", "integration", "signal_quality"])
@@ -388,4 +392,4 @@ def test_curve_reader_requires_complete_nested_fields(tmp_path, section, change)
             (zlib.compress(json.dumps(payload).encode()),),
         )
     with pytest.raises(ExplanationError, match="rerun"):
-        read_cid_nl_curves(report, record_ids=["obs-1"])
+        read_alignment_curves(report, record_ids=["obs-1"])

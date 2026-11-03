@@ -160,7 +160,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         matrix_path.parent.mkdir(parents=True, exist_ok=True)
         matrix_path.write_text("Mz\tRT\tS1\n", encoding="utf-8")
 
-    report = tmp_path / "out" / "cid_nl_explanation.sqlite"
+    report = tmp_path / "out" / "alignment_explanation.sqlite"
 
     @contextmanager
     def prepare_explanation(path: Path, **kwargs: object):
@@ -197,7 +197,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                     discovery_settings=_settings(),
                     execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
                     publication=UntargetedPublicationPolicy(
-                        emit_cid_nl_explanation=True
+                        emit_alignment_explanation=True
                     ),
                 )
             )
@@ -219,7 +219,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             if with_reference
             else None,
             execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
-            publication=UntargetedPublicationPolicy(emit_cid_nl_explanation=True),
+            publication=UntargetedPublicationPolicy(emit_alignment_explanation=True),
         )
     )
 
@@ -525,7 +525,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
-    from xic_extractor.diagnostics.alignment_explanation import (
+    from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
     )
     from xic_extractor.diagnostics.alignment_explanation_projection import (
@@ -555,7 +555,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     output_dir = tmp_path / "out"
     output_dir.mkdir()
     matrix_path = output_dir / "alignment_matrix.tsv"
-    report_path = output_dir / "cid_nl_explanation.sqlite"
+    report_path = output_dir / "alignment_explanation.sqlite"
     has_membership_risk = any(
         decision.accepted_risk is not None and decision.accepted_risk.risk_flags
         for group in completed.initial_groups
@@ -669,7 +669,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
                 publication=UntargetedPublicationPolicy(
-                    emit_cid_nl_explanation=emit_explanation
+                    emit_alignment_explanation=emit_explanation
                 ),
             )
         )
@@ -831,13 +831,15 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
 
 def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
     from tests.test_alignment_drift_evidence import _known_reference_workbook
-    from tests.test_cid_nl_explanation import _owner_run
+    from tests.test_alignment_explanation import _owner_run
+    from xic_extractor.alignment_explanation.reader import (
+        read_alignment_explanation,
+    )
     from xic_extractor.applications.untargeted.istd_reference import (
         read_known_istd_reference,
     )
-    from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
     from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_cid_nl_explanation,
+        write_alignment_explanation,
     )
 
     completed, writer, candidates, matrix, config = _owner_run(
@@ -850,26 +852,26 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         matrix_path=matrix,
         alignment_config=config,
     )
-    plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
-    plain_summary = read_cid_nl_explanation(plain)
+    plain = write_alignment_explanation(tmp_path / "plain.sqlite", **arguments)
+    plain_summary = read_alignment_explanation(plain)
     assert plain_summary["known_istd_reference"] is None
     matrix_bytes = matrix.read_bytes()
     reference_path = tmp_path / "reference.xlsx"
     _known_reference_workbook(reference_path)
     provenance = read_known_istd_reference(reference_path).provenance
     assert "definitions" in json.loads(provenance["target_snapshot"])
-    report = write_cid_nl_explanation(
+    report = write_alignment_explanation(
         tmp_path / "reference.sqlite",
         **arguments,
         known_istd_reference_provenance=provenance,
     )
-    assert read_cid_nl_explanation(report) == {
+    assert read_alignment_explanation(report) == {
         **plain_summary,
         "known_istd_reference": provenance,
     }
     candidate_id = candidates["S1"][0].candidate_id
-    assert read_cid_nl_explanation(report, candidate_id=candidate_id) == (
-        read_cid_nl_explanation(plain, candidate_id=candidate_id)
+    assert read_alignment_explanation(report, candidate_id=candidate_id) == (
+        read_alignment_explanation(plain, candidate_id=candidate_id)
     )
     assert matrix.read_bytes() == matrix_bytes
 

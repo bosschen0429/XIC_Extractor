@@ -222,13 +222,13 @@ module entry point. Neither requires the local analysis server:
 
 ```console
 xic-inspector D:\data\run-output
-xic-inspector cid_nl_explanation.sqlite --strategy attention
+xic-inspector alignment_explanation.sqlite --strategy attention
 python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
 - The source is a completed feature-evidence SQLite report, a Targeted workbook,
   a versioned curve-bundle JSON file, or an output folder. A folder resolves to
-  its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  its `alignment_explanation.sqlite`, or to the one in its `alignment` subfolder.
   Without SQLite evidence, a single XLSX is accepted; multiple XLSX files
   require an explicit path.
   `--report` is an equivalent named form.
@@ -344,6 +344,11 @@ itself remains acquisition-free.
 
 ### CID-NL execution explanations
 
+The shared artifact is `alignment_explanation.sqlite`, independent of the
+Discovery method. `--emit-alignment-explanation` requests it explicitly. The
+current CID-NL adapter contributes its completed method facts to that shared
+storage; the file's name does not grant a different method scientific support.
+
 Normal retained CID-NL execution preserves effective method assessments and the
 initial CrossSample groups and classified edges already used by composition.
 The completed batch carries these existing owner values for diagnostics; they
@@ -355,19 +360,32 @@ assessment states/reasons, exclusions, initial edge scores/reasons, group
 dispositions and final row/cell decisions. Multiple group relationships remain
 explicit. It does not infer membership from m/z or RT or recalculate a score.
 
-The SQLite artifact stores compact, indexed candidate records and deduplicated
-details. A summary does not load every candidate's details; a candidate lookup
+The SQLite artifact has three responsibilities: retained candidate/group/cell
+facts and their links; optional compressed curves; and a compact query index
+derived at publication for scoped paging. The index does not decide science.
+Compact review packs cells by row; full audit retains the detailed records.
+These are retention choices, not separate scientific authorities.
+
+Candidate facts include `precursor_mz` and nullable `ms1_apex_mz`. The latter is
+the candidate's measured MS1 apex m/z in that sample, copied from the completed
+publication inputs. Missing measurements stay null, never substituted by the
+row center or precursor m/z. Query filtering and Matrix values retain their
+existing coordinate/value policies; downstream curation does not yet use this
+new measurement for mass-relation decisions.
+
+A summary does not load every candidate's details; a candidate lookup
 does not load unrelated records. The default compact report does not copy RAW traces, spectra or the live runtime
 object graph. Explicit curve retention follows the options above. The read-only interface is:
 
 ```text
-python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite
-python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite --candidate-id <id> --json
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/alignment_explanation.sqlite
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/alignment_explanation.sqlite --candidate-id <id> --json
 ```
 
 The query needs only the retained diagnostic artifact, without RAW or Thermo DLL
 access. Missing reports mean explanation unavailable, including runs interrupted
-before publication. Missing decision evidence is not converted into rejection or
+before publication. A folder containing only an older-named report must rerun
+Alignment; there is no filename or CLI alias. Missing decision evidence is not converted into rejection or
 zero; an unknown candidate and an unsupported/corrupt report are explicit errors.
 The artifact records request/attempt provenance, configuration and the published
 Matrix hash/count. Its `diagnostic_only` content cannot authorize a scientific

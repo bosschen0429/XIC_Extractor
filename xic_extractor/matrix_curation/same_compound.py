@@ -1140,7 +1140,7 @@ class SameCompoundStep:
         "同位素比例與天然豐度檢查不放寬。"
         "多種加合物、聚集離子與金屬同位素共同支持的家族，不要求先看到 [M+H]⁺。"
         "質量關係以列中心 m/z 比對。"
-        "需要該次分析的 cid_nl_explanation.sqlite。"
+        "需要該次分析的 alignment_explanation.sqlite。"
     )
     parameters: tuple[StepParameter, ...] = ()
     needs_cell_evidence = True

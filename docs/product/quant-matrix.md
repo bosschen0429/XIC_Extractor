@@ -61,9 +61,10 @@ a second global row-by-sample key set. Cell and integration-audit TSV writers
 consume formatted rows incrementally instead of retaining a second complete
 population of cell dictionaries.
 
-The default `production` Matrix artifact is `alignment_matrix.tsv`. Retained
-CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
-publication, alongside their runtime marker; see
+The default `production` Matrix artifact is `alignment_matrix.tsv`. Alignment's
+method-neutral per-cell evidence artifact is `alignment_explanation.sqlite`.
+It is published after the Matrix when requested by the publication policy,
+output level, or retained membership risks; see
 [execution explanations](xic-inspector.md#cid-nl-execution-explanations).
 Identity, review, provenance, Backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
@@ -172,7 +173,7 @@ bound Matrix row references,
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.
 These are public schema surfaces, not independent scientific authority.
 The standard fast public validation profile remains `validation-minimal`;
-it also writes the compact `cid_nl_explanation.sqlite` so a run can be reviewed
+it also writes the compact `alignment_explanation.sqlite` so a run can be reviewed
 and scored without a rerun. It does not establish production readiness by itself.
 
 ## Boundaries

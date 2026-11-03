@@ -48,7 +48,7 @@ a row as a derivative is separate from identifying its element or assigning
 it to exactly one parent. An unresolved element or parent does not rescue a
 supported derivative; an unclassified feature is not assumed to be an artifact.
 It has no parameters; its thresholds are fixed
-and recorded in the summary. It needs the run's `cid_nl_explanation.sqlite` in
+and recorded in the summary. It needs the run's `alignment_explanation.sqlite` in
 the current compact review format and is unavailable without it.
 
 Evidence counts only directly detected cells (`discovery_support` or
@@ -232,7 +232,7 @@ listed standard and its `matrix_rt` lies in that standard's RT range
 standards are always kept; their step columns are recorded as judged and the
 final `decision_reason` is `istd_protected`. The list comes from a chosen
 target list file, or else from the standards the run declared in its
-`cid_nl_explanation.sqlite`. Without either, no row is protected.
+`alignment_explanation.sqlite`. Without either, no row is protected.
 
 ## Inputs
 
@@ -259,7 +259,7 @@ The CLI uses only the first and last sources. When none applies, the steps that
 need samples are unavailable and a sample file must be selected.
 
 `same_compound` reads per-cell detection, value and apex from the folder's
-`cid_nl_explanation.sqlite`. Direct detections take their apex from its
+`alignment_explanation.sqlite`. Direct detections take their apex from its
 observations; backfilled cells take theirs from the backfill ledger when the
 output level wrote one.
 
