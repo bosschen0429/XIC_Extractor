@@ -631,6 +631,44 @@ def test_two_rows_of_the_same_carrier_are_not_independent_corroboration():
     assert decisions["ratio_Mg"][0] is True
 
 
+@pytest.mark.parametrize("has_second_other_carrier", [False, True])
+def test_candidate_carrier_does_not_count_as_another_supported_form(
+    has_second_other_carrier,
+):
+    rows = [
+        *variable_adduct_family()[:3],
+        row("variable_Na", 621.984, ratios=(0.5, 2.0) * 3, base_rt=80.0),
+    ]
+    if has_second_other_carrier:
+        rows.append(row("stable_Mg", 681.990521, scale=0.4, base_rt=80.0))
+    decisions, result = decide(*rows)
+
+    assert decisions["variable_Na"][0] is (not has_second_other_carrier)
+    relation = next(
+        r for r in result.relation_rows if r["heavy_feature_id"] == "variable_Na"
+    )
+    assert relation["outcome"] == (
+        "collapse_corroborated_adduct" if has_second_other_carrier else "ratio_unstable"
+    )
+    assert relation["used_for_collapse"] == (
+        "TRUE" if has_second_other_carrier else "FALSE"
+    )
+    reviews = [
+        r
+        for r in result.review_rows
+        if r["review_kind"] == "variable_ratio_adduct_supported"
+        and r["feature_id"] == "variable_Na"
+    ]
+    if has_second_other_carrier:
+        assert set(reviews[0]["related_feature_ids"].split(";")) == {
+            "ratio_MH",
+            "ratio_K",
+            "stable_Mg",
+        }
+    else:
+        assert reviews == []
+
+
 def test_carrier_corroboration_needs_mutual_not_only_reference_coelution():
     decisions, _ = decide(
         *variable_adduct_family(potassium_shift=2.4, magnesium_shift=-2.4)

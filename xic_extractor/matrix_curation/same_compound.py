@@ -515,7 +515,8 @@ def _corroborate_variable_adducts(
         candidate_support = set(evidence[(light, heavy)].support)
         witnesses = []
         for witness, key in stable[light]:
-            if witness == heavy:
+            # Another row of the candidate's carrier is not another ion form.
+            if key in labels:
                 continue
             pair = get_pair(witness, heavy)
             if not pair.coelutes:
