@@ -12,7 +12,7 @@ import math
 import statistics
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Container, Mapping, Sequence
 from dataclasses import dataclass
 
 from xic_extractor.matrix_curation.steps import (
@@ -457,8 +457,16 @@ def _review_rows(
 
     for (light, heavy), matched in matches.items():
         pair = evidence[(light, heavy)]
+        same_group = representative.get(light, light) == representative.get(
+            heavy, heavy
+        )
+        both_removed = light in representative and heavy in representative
+        if same_group:
+            continue
         for key in sorted(matched):
             outcome = outcomes[(light, heavy)][key]
+            if both_removed and key != "41K":
+                continue
             detail = {
                 "relation": key,
                 "support_samples": len(pair.support),
@@ -505,7 +513,7 @@ def _review_rows(
         )
     )
     # A frequency table, most frequent difference first.
-    rows.extend(_recurring_differences(features, cells, matches))
+    rows.extend(_recurring_differences(features, cells, matches, representative))
     return tuple(rows)
 
 
@@ -513,10 +521,17 @@ def _recurring_differences(
     features: Sequence[FeatureIdentity],
     cells: Sequence[Mapping[str, CellEvidence]],
     matches: Mapping[tuple[int, int], Mapping[str, float]],
+    removed: Container[int],
 ) -> list[dict[str, object]]:
-    """Mass differences between co-eluting rows that no relation explains."""
+    """Mass differences between co-eluting kept rows that no relation explains.
+
+    Removed rows are left out: their differences to other rows follow from
+    their representative's and would repeat it once per removed ion.
+    """
     by_sample: dict[str, list[tuple[float, int]]] = defaultdict(list)
     for index, row in enumerate(cells):
+        if index in removed:
+            continue
         for sample, cell in row.items():
             if cell.direct and cell.apex_rt_min is not None:
                 by_sample[sample].append((cell.apex_rt_min, index))
@@ -528,7 +543,7 @@ def _recurring_differences(
             for other_apex, other in detections[position + 1 :]:
                 if other_apex - apex > window:
                     break
-                together[(index, other)] += 1
+                together[(min(index, other), max(index, other))] += 1
     mz = [feature.matrix_mz for feature in features]
     deltas: list[tuple[float, str]] = []
     for (first, second), count in together.items():

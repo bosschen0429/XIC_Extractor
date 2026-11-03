@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if given or (not step.parameters and getattr(args, step.key)):
             steps[step.key] = given
     if not steps:
-        parser.error("enable at least one step by giving its parameters")
+        parser.error("enable at least one step by its parameters or flag")
     try:
         source = locate_curation_source(args.source_dir)
         metadata: tuple[SampleMetadata, ...] | None

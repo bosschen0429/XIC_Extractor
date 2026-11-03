@@ -665,3 +665,47 @@ def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch
         (output / "matrix_curation_summary.json").read_text(encoding="utf-8")
     )
     assert summary["inputs"]["explanation"].endswith("cid_nl_explanation.sqlite")
+
+
+def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
+    # Each pair swaps elution order halfway through the samples.
+    flip = (1.0, 1.0, 1.0, -1.0, -1.0, -1.0)
+    rows = [
+        member
+        for index, base_rt in enumerate((10.0, 20.0, 30.0))
+        for member in (
+            row(f"L{index}", 300.0 + 50 * index, base_rt=base_rt),
+            row(f"H{index}", 310.0 + 50 * index, base_rt=base_rt, shifts=flip),
+        )
+    ]
+    _, result = decide(*rows)
+
+    assert [row["detail"] for row in result.review_rows] == ["pair_count=3"]
+
+
+def test_removed_ions_neither_repeat_differences_nor_review_pairs():
+    rows = [
+        member
+        for index, base_rt in enumerate((10.0, 20.0, 30.0))
+        for member in (
+            row(f"X{index}", 300.0 + 50 * index, base_rt=base_rt),
+            row(f"X{index}_13C", 301.003355 + 50 * index, base_rt=base_rt, scale=0.15),
+            # +CH2 relative to X: a possibly different compound to review.
+            row(f"Y{index}", 314.01565 + 50 * index, base_rt=base_rt, scale=0.5),
+            row(
+                f"Y{index}_13C",
+                315.019005 + 50 * index,
+                base_rt=base_rt,
+                scale=0.075,
+            ),
+        )
+    ]
+    decisions, result = decide(*rows)
+
+    assert {fid for fid, value in decisions.items() if not value[0]} == {
+        f"{name}{index}_13C" for name in "XY" for index in range(3)
+    }
+    # Only the kept rows' pair is reviewed, not the same pair of their isotopes.
+    assert sorted(review_kinds(result)) == [
+        ("review_only_relation", f"Y{index}") for index in range(3)
+    ]

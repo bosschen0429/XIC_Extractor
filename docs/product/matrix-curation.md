@@ -158,7 +158,7 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, `center_mz_basis`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it removed a row |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 not 41K, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, competing representatives, no direct co-elution with the representative, representative dropped while a member passes, and recurring unexplained mass differences, most frequent first |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 not 41K, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, competing representatives, no direct co-elution with the representative, representative dropped while a member passes, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
