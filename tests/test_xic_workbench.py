@@ -12,7 +12,6 @@ import subprocess
 import sys
 import threading
 import time
-import weakref
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 
@@ -280,24 +279,11 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
     sample_count = 32
     report, _ = _review_batch(tmp_path, sample_count=sample_count)
     summary = alignment_explanation.read_explanation_metadata(report).summary
-    live_cells = weakref.WeakValueDictionary()
-    peak_cells = 0
-    unpack = alignment_explanation.unpack_cells
 
-    class ObservedCell(dict):
-        pass
+    def forbidden(*args, **kwargs):
+        raise AssertionError("overview decoded cold scientific details")
 
-    def observe_cells(*args, **kwargs):
-        nonlocal peak_cells
-        # Run the real decoder; weak references observe retention, not its values.
-        cells = {
-            key: ObservedCell(value) for key, value in unpack(*args, **kwargs).items()
-        }
-        live_cells.update(cells)
-        peak_cells = max(peak_cells, len(live_cells))
-        return cells
-
-    monkeypatch.setattr(alignment_explanation, "unpack_cells", observe_cells)
+    monkeypatch.setattr(alignment_explanation, "decode_row_evidence", forbidden)
     overview, rows = review_overview(report, summary)
 
     assert overview["matrix_count"] == 3
@@ -306,9 +292,6 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
     assert overview["archive_count"] == 1
     assert [sample["numeric_count"] for sample in overview["samples"]] == [3] + [1] * 31
     assert rows["z-priority"]["unresolved_count"] == 31
-    # Only the current and next row may overlap while the iterator advances.
-    assert peak_cells <= 2 * sample_count
-    assert not live_cells
 
 
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):

@@ -283,17 +283,18 @@ seed 0.
 
 New Alignment explanations default to `alignment_explanation_review`. They
 retain the full candidate/group population, grouping reasons, compact method
-conclusions and sample cell values. Cell values are stored once per row; full
+conclusions and sample cell values. Named cell columns store each sample's
+value, variant and support origin once; full
 artifact envelopes and curve arrays are not included by default. Query,
 attention and RT selection use the saved observation coordinates and decisions,
 so a report without curves remains selectable. Inspector builds detailed cell
 and grouping records for selected items after population selection.
 
-New review reports index candidate coordinates, membership and sample scope
+New review reports index the canonical candidate coordinates and sample scope
 at publication. SQLite applies query predicates, counts and offset/limit before
 Inspector loads the selected page's witnesses and details.
-New reports store row sample membership separately from the packed cell values,
-so checking scope does not require decoding all values. Sample and attention
+Cell membership and values can be queried without decompressing scientific
+details. Overview counts use those same scalar columns. Sample and attention
 selection use persisted per-sample fact masks, including observed coverage,
 attention, exclusion, null/zero values and support origins. Changing sample
 scope intersects these masks rather than decoding the retained records/cells.
@@ -363,8 +364,35 @@ explicit. It does not infer membership from m/z or RT or recalculate a score.
 The SQLite artifact has three responsibilities: retained candidate/group/cell
 facts and their links; optional compressed curves; and a compact query index
 derived at publication for scoped paging. The index does not decide science.
-Compact review packs cells by row; full audit retains the detailed records.
+Both retention modes use the same sample, candidate and cell tables. Cold cell
+details are compressed together by row, without copying the scalar values;
+full audit additionally retains the observation envelopes and method receipts.
 These are retention choices, not separate scientific authorities.
+
+The sample catalog is stored once. Candidate coordinates are columns on the
+candidate table rather than a second query-candidate copy. Shared link sets
+reference database-local candidate row IDs; natural candidate/sample keys remain
+available through the read interface and `links` view. Query items carry their
+own selection flags instead of joining a one-to-one flag table. Candidate
+availability snapshots and the unused writer-population count are not retained;
+the Matrix count follows the finalized row destinations. CLI candidate examples
+are queried on demand rather than duplicated in the summary.
+
+For a scalar-only inspection, ordinary SQLite queries need no payload decoder:
+
+```sql
+SELECT r.record_id AS feature_id, s.sample_stem,
+       c.value, c.variant, c.support_origin
+FROM cells AS c
+JOIN records AS r ON r.id = c.row_record_id
+JOIN samples AS s ON s.id = c.sample
+WHERE r.record_id = 'F000002';
+```
+
+Complete grouping decisions, method reasons, membership risks and quality
+evidence remain available through the explanation reader. Scalar-only queries
+do not load or reinterpret them. Older table layouts require rerunning Alignment;
+there is no in-place migration or compatibility decoder.
 
 Candidate facts include `precursor_mz` and nullable `ms1_apex_mz`. The latter is
 the candidate's measured MS1 apex m/z in that sample, copied from the completed

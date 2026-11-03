@@ -110,7 +110,7 @@ def publish_untargeted_outputs(
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
-        writer_row_count = write_completed_untargeted_outputs_atomic(
+        write_completed_untargeted_outputs_atomic(
             outputs,
             completed.application_result,
             metadata=metadata,
@@ -127,7 +127,7 @@ def publish_untargeted_outputs(
         if explanation is not None:
             assert matrix_path is not None
             with timing_recorder.stage("alignment.write_alignment_explanation"):
-                db_path = explanation.finalize(writer_row_count, matrix_path)
+                db_path = explanation.finalize(matrix_path)
         evidence: EvidenceLocator | None = None
         if (
             db_path is not None

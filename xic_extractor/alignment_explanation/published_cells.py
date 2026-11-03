@@ -12,8 +12,7 @@ from .reader import (
     read_observation_apices,
     read_row_cell_values,
 )
-from .review import REVIEW_SCHEMA_VERSION
-from .storage import EXPLANATION_ARTIFACT_NAME, ExplanationError
+from .storage import EXPLANATION_ARTIFACT_NAME
 
 _DIRECT_ORIGINS = frozenset({"discovery_support", "reacquired_support"})
 
@@ -59,17 +58,13 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
             break
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
     summary = read_explanation_summary(explanation)
-    if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
-        raise ExplanationError(
-            "published cells need the compact explanation format; rerun Alignment"
-        )
     samples = {
         sample["sample_key"]: sample["sample_stem"] for sample in summary["samples"]
     }
     observation_apex = read_observation_apices(explanation)
     cells = []
     for group, sample_key, value, origin, observations in read_row_cell_values(
-        explanation, summary, rows
+        explanation, rows
     ):
         if value is None:
             continue

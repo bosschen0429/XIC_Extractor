@@ -171,8 +171,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             else None
         )
 
-        def finalize(row_count: int, matrix_path: Path) -> Path:
-            assert row_count == len(writer_inputs.matrix.clusters)
+        def finalize(matrix_path: Path) -> Path:
             assert matrix_path.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
             path.write_text("published", encoding="utf-8")
             return path
@@ -590,7 +589,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_explanation(
             reference,
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix_path,
             alignment_config=config,
@@ -847,7 +845,6 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     )
     arguments = dict(
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -949,7 +946,7 @@ def test_pure_cid_nl_targets_csv_integration(
         lambda path, **_kwargs: nullcontext(
             SimpleNamespace(
                 consume_child=None,
-                finalize=lambda _inputs, _matrix: path,
+                finalize=lambda _matrix: path,
             )
         ),
     )

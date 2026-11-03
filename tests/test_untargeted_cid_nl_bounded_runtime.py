@@ -1068,7 +1068,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
-        writer_inputs=writer,
         candidates_by_sample=plan.context.candidates_by_sample,
         matrix_path=matrix_path,
         alignment_config=config,
@@ -1287,7 +1286,6 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=plan.context.candidates_by_sample,
             matrix_path=matrix,
             alignment_config=config,

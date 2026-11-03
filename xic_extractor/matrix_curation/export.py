@@ -115,7 +115,6 @@ def cell_evidence_problem(source: CurationSource) -> str:
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_summary,
     )
-    from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
     from xic_extractor.alignment_explanation.storage import (
         ExplanationError,
     )
@@ -126,13 +125,9 @@ def cell_evidence_problem(source: CurationSource) -> str:
             "請重新執行 Alignment 產生新輸出。"
         )
     try:
-        summary = read_explanation_summary(source.explanation_path)
+        read_explanation_summary(source.explanation_path)
     except ExplanationError as exc:
         return f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
-    if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
-        return (
-            f"{EXPLANATION_ARTIFACT_NAME} 是舊格式；請重新執行 Alignment 產生新輸出。"
-        )
     return ""
 
 

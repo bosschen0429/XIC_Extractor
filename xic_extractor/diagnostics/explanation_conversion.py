@@ -1,48 +1,42 @@
-"""Reduce an existing completed full report without acquisition or alignment."""
+"""Reduce a completed full report without reacquisition or scientific reconstruction."""
 
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from xic_extractor.alignment_explanation.reader import read_review_cells
 from xic_extractor.alignment_explanation.review import (
     REVIEW_SCHEMA_VERSION,
     review_record,
 )
 from xic_extractor.alignment_explanation.storage import (
+    CANDIDATE_SELECT,
     ExplanationError,
+    decode_candidate,
     decode_object,
+    open_readonly,
     read_completed_summary,
 )
-from xic_extractor.alignment_explanation.writer import (
-    ExplanationReportWriter,
-)
+from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
 
 
 def compact_explanation(
-    source: Path,
-    destination: Path,
-    *,
-    progress: Callable[[str], None] | None = None,
+    source: Path, destination: Path, *, progress: Callable[[str], None] | None = None
 ) -> dict[str, Any]:
-    """Copy useful facts into review storage, preserving the source artifact."""
+    """Keep the same scalar cells and review facts; omit full-only receipts/curves."""
     started = perf_counter()
     if source.resolve() == destination.resolve():
         raise ExplanationError("Compact output must differ from the source")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
-        summary = read_completed_summary(connection)
+    with open_readonly(source) as db:
+        summary = read_completed_summary(db)
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
             raise ExplanationError("Source is already a compact review")
-        samples = {
-            sample["sample_key"]: index
-            for index, sample in enumerate(summary["samples"])
-        }
+        samples = {s["sample_key"]: i for i, s in enumerate(summary["samples"])}
         matrix = Path(summary["matrix_path"])
         if not matrix.is_file():
             matrix = source.parent / matrix.name
@@ -57,21 +51,21 @@ def compact_explanation(
         with ExplanationReportWriter(destination, review_only=True) as writer:
             if progress:
                 progress("Copying candidate and group review facts")
-            for cid, sid, payload in connection.execute(
-                "SELECT candidate_id, sample_id, payload FROM candidates"
-            ):
-                writer.add_candidate(cid, sid, decode_object(payload))
-            excluded = "('cell_observations','cell_decisions','capture_evidence')"
+            for row in db.execute(CANDIDATE_SELECT):
+                _, candidate = decode_candidate(row)
+                writer.add_candidate(
+                    candidate["candidate_id"], candidate["sample_key"], candidate
+                )
             links = iter(
-                connection.execute(
-                    "SELECT kind, record_id, candidate_id, sample_id FROM links "
-                    f"WHERE kind NOT IN {excluded} ORDER BY kind, record_id"
+                db.execute(
+                    "SELECT kind,record_id,candidate_id,sample_id FROM links "
+                    "WHERE kind!='capture_evidence' ORDER BY kind,record_id"
                 )
             )
             linked = next(links, None)
-            for kind, rid, payload in connection.execute(
-                "SELECT kind, record_id, payload FROM records "
-                f"WHERE kind NOT IN {excluded} ORDER BY kind, record_id"
+            for kind, rid, payload in db.execute(
+                "SELECT kind,record_id,payload FROM records "
+                "WHERE kind!='capture_evidence' ORDER BY kind,record_id"
             ):
                 related = []
                 while linked is not None and linked[:2] < (kind, rid):
@@ -83,86 +77,17 @@ def compact_explanation(
                     kind, rid, review_record(kind, decode_object(payload)), related
                 )
             if progress:
-                progress("Packing cell values and reasons by row")
-            capture_stages = {
-                (sid, oid): stage
-                for sid, oid, stage in connection.execute(
-                    "SELECT json_extract(payload,'$.sample_id'), "
-                    "json_extract(payload,'$.physical_peak_key'), "
-                    "json_extract(payload,'$.kind') "
-                    "FROM records WHERE kind='capture_evidence'"
-                )
-                if oid is not None
-            }
-            rows = connection.execute(
-                "SELECT d.payload, json_extract(d.payload, '$.observation') "
-                "FROM records d "
-                "WHERE d.kind='cell_decisions' "
-                "ORDER BY json_extract(d.payload,'$.feature_id'), d.record_id"
-            )
-            current_row = None
-            cells = []
-            cell_count = 0
-            for decision_payload, observation_payload in rows:
-                decision = decode_object(decision_payload)
-                observation = decode_object(observation_payload)
-                row_id = decision["feature_id"]
-                if current_row is not None and row_id != current_row:
-                    writer.add_row_cells(current_row, cells, samples)
-                    cells = []
-                current_row = row_id
-                effective = (
-                    [observation["backfill_cell"]]
-                    if observation.get("backfill_cell") is not None
-                    else observation.get("predecessor_cells", [])
-                )
-                contents = [cell["content"] for cell in effective]
-                sid = decision["sample_key"]
-                observation_ids = sorted(
-                    {
-                        content["physical_peak_key"]
-                        for content in contents
-                        if content.get("physical_peak_key")
-                    }
-                )
-                stages = {
-                    capture_stages.get((sid, content.get("physical_peak_key")))
-                    for content in contents
-                    if content.get("method_result") == "SUPPORT"
-                }
-                origin = (
-                    "backfill_support"
-                    if "backfill_observation" in stages or "method_backfill" in stages
-                    else "reacquired_support"
-                    if "reacquired_capture" in stages
-                    else "discovery_support"
-                    if "initial_capture" in stages
-                    else "unavailable"
-                )
-                cells.append(
-                    {
-                        **decision,
-                        "evidence_states": observation.get("evidence_states", []),
-                        "reason_codes": sorted(
-                            {
-                                reason
-                                for content in contents
-                                for reason in content.get("reason_codes", [])
-                            }
-                        ),
-                        "support_origin": origin,
-                        "observation_ids": observation_ids,
-                    }
-                )
-                cell_count += 1
-                if progress and cell_count % 100000 == 0:
-                    progress(f"Packed {cell_count} cells")
-            if current_row is not None:
-                writer.add_row_cells(current_row, cells, samples)
+                progress("Copying cell values and review evidence")
+            for (row_id,) in db.execute(
+                "SELECT record_id FROM records WHERE kind='rows'"
+            ):
+                cells = list(read_review_cells(db, summary, (row_id,)).values())
+                for cell in cells:
+                    cell.pop("observation", None)
+                writer.add_row_cells(row_id, cells, samples)
             summary.update(
                 matrix_path=str(matrix.resolve()),
                 retention="review",
-                selection_evidence_capability="recorded_decisions",
                 curve_retention="none",
                 curve_mz_ranges=[],
                 record_counts=dict(writer.record_counts),
@@ -172,9 +97,7 @@ def compact_explanation(
             "source_bytes": source.stat().st_size,
             "review_bytes": destination.stat().st_size,
             "candidate_count": summary["candidate_count"],
-            "cell_count": cell_count,
+            "cell_count": writer.record_counts.get("cell_decisions", 0),
             "elapsed_seconds": round(perf_counter() - started, 3),
             "output": str(destination.resolve()),
         }
-    finally:
-        connection.close()

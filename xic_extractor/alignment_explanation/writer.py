@@ -12,12 +12,11 @@ from typing import Any
 
 from .curves import validate_curve_payload
 from .query import build_query_index
-from .review import REVIEW_SCHEMA_VERSION, pack_cells
+from .review import REVIEW_SCHEMA_VERSION, encode_row_evidence
 from .storage import (
     SCHEMA_VERSION,
     ExplanationError,
     create_schema,
-    decode_object,
     encode_object,
 )
 
@@ -40,12 +39,12 @@ class ExplanationReportWriter:
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        self._candidate_rowids: dict[tuple[str, str], int] = {}
         self._record_rowids: dict[tuple[str, str | int], int] = {}
         self._buffered_records: dict[int, tuple[str, str | int, str | bytes]] = {}
         self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
-        self._buffered_link_members: list[tuple[int, str, str]] = []
+        self._buffered_link_members: list[tuple[int, int]] = []
         self._buffered_record_links: list[tuple[int, int]] = []
-        self._buffered_link_sets: list[tuple[int]] = []
         self._buffered_curve_payloads: list[tuple[int, str, str, str, str, bytes]] = []
         self._curve_rowids: dict[tuple[str, str, str, bytes], int] = {}
 
@@ -84,18 +83,9 @@ class ExplanationReportWriter:
         key = (cid, sid)
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")
-        p = dict(payload)
-        if "availability" in p and isinstance(p["availability"], Mapping):
-            p["availability"] = dict(p["availability"])
-        self._candidates[key] = p
+        self._candidates[key] = dict(payload)
+        self._candidate_rowids[key] = len(self._candidate_rowids) + 1
         self.candidate_count += 1
-
-    def update_availability(self, key: tuple[str, str], **values: str) -> None:
-        if key not in self._candidates:
-            raise KeyError(key)
-        payload = self._candidates[key]
-        avail = payload.setdefault("availability", {})
-        avail.update(values)
 
     def add_record(
         self,
@@ -141,16 +131,25 @@ class ExplanationReportWriter:
         cells: Sequence[Mapping[str, Any]],
         samples: Mapping[str, int],
     ) -> None:
-        self._connection().execute(
-            "INSERT INTO row_cells VALUES (?, ?, ?)",
+        record_id = self._record_rowids["rows", row_id]
+        evidence = encode_row_evidence(cells, samples)
+        self._connection().executemany(
+            "INSERT INTO cells VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                self._record_rowids["rows", row_id],
-                pack_cells(cells, samples),
-                sum(
-                    1 << ordinal
-                    for ordinal in {samples[cell["sample_key"]] for cell in cells}
-                ).to_bytes((len(samples) + 7) // 8, "little"),
+                (
+                    record_id,
+                    samples[cell["sample_key"]],
+                    cell["variant"],
+                    cell.get("value"),
+                    cell.get("source"),
+                    cell.get("support_origin", "unavailable"),
+                    json.dumps(cell.get("observation_ids", []), separators=(",", ":")),
+                )
+                for cell in cells
             ),
+        )
+        self._connection().execute(
+            "INSERT INTO row_evidence VALUES (?, ?)", (record_id, evidence)
         )
         self.record_counts["cell_decisions"] = self.record_counts.get(
             "cell_decisions", 0
@@ -168,9 +167,8 @@ class ExplanationReportWriter:
         if set_id is None:
             set_id = len(self._related_sets)
             self._related_sets[members] = set_id
-            self._buffered_link_sets.append((set_id,))
             self._buffered_link_members.extend(
-                (set_id, cid, sid) for cid, sid in members
+                (set_id, self._candidate_rowids[cid, sid]) for cid, sid in members
             )
         self._buffered_record_links.append(
             (set_id, self._record_rowids[kind, identity])
@@ -233,48 +231,54 @@ class ExplanationReportWriter:
         if self._buffered_record_links:
             self._flush_records()
             self._connection().executemany(
-                "INSERT INTO link_sets VALUES (?)", self._buffered_link_sets
-            )
-            self._connection().executemany(
-                "INSERT INTO link_members VALUES (?, ?, ?)",
+                "INSERT INTO link_members VALUES (?, ?)",
                 self._buffered_link_members,
             )
             self._connection().executemany(
                 "INSERT OR IGNORE INTO record_links VALUES (?, ?)",
                 self._buffered_record_links,
             )
-            self._buffered_link_sets.clear()
             self._buffered_link_members.clear()
             self._buffered_record_links.clear()
-
-    def candidate_examples(self) -> list[dict[str, Any]]:
-        if self._candidates:
-            sorted_keys = sorted(self._candidates.keys())[:5]
-            return [
-                decode_object(encode_object(self._candidates[k])) for k in sorted_keys
-            ]
-        return [
-            decode_object(row[0])
-            for row in self._connection().execute(
-                "SELECT payload FROM candidates "
-                "ORDER BY candidate_id, sample_id LIMIT 5"
-            )
-        ]
 
     def finalize(self, summary: Mapping[str, Any]) -> Path:
         self._flush_records()
         self._flush_links()
         self._flush_curve_payloads()
+        samples = {
+            sample["sample_key"]: i for i, sample in enumerate(summary["samples"])
+        }
+        self._connection().executemany(
+            "INSERT INTO samples VALUES (?, ?, ?)",
+            (
+                (i, sample["sample_key"], sample["sample_stem"])
+                for i, sample in enumerate(summary["samples"])
+            ),
+        )
         if self._candidates:
+            located_fields = {
+                "candidate_id",
+                "sample_key",
+                "sample_stem",
+                "precursor_mz",
+                "ms1_apex_mz",
+            }
             self._connection().executemany(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
+                "INSERT INTO candidates VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     (
+                        self._candidate_rowids[cid, sid],
                         cid,
-                        sid,
-                        zlib.compress(encode_object(payload).encode("utf-8"), 1)
-                        if self.review_only
-                        else encode_object(payload),
+                        samples[sid],
+                        payload.get("precursor_mz"),
+                        payload.get("ms1_apex_mz"),
+                        encode_object(
+                            {
+                                k: v
+                                for k, v in payload.items()
+                                if k not in located_fields
+                            }
+                        ),
                     )
                     for (cid, sid), payload in self._candidates.items()
                 ),
@@ -285,7 +289,11 @@ class ExplanationReportWriter:
             (
                 encode_object(
                     dict(
-                        summary,
+                        {
+                            key: value
+                            for key, value in summary.items()
+                            if key != "samples"
+                        },
                         schema_version=REVIEW_SCHEMA_VERSION
                         if self.review_only
                         else SCHEMA_VERSION,
@@ -303,11 +311,7 @@ class ExplanationReportWriter:
         if self.review_only:
             build_query_index(
                 self._connection(),
-                decode_object(
-                    self._connection()
-                    .execute("SELECT payload FROM metadata WHERE key='summary'")
-                    .fetchone()[0]
-                ),
+                dict(summary),
             )
         self._connection().commit()
         self._connection().close()
@@ -322,10 +326,10 @@ class ExplanationReportWriter:
             self._connection().close()
             self.connection = None
         self._candidates.clear()
+        self._candidate_rowids.clear()
         self._record_rowids.clear()
         self._buffered_records.clear()
         self._related_sets.clear()
-        self._buffered_link_sets.clear()
         self._buffered_link_members.clear()
         self._buffered_record_links.clear()
         self._buffered_curve_payloads.clear()

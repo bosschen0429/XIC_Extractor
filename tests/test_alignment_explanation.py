@@ -69,8 +69,6 @@ def _summary_fixture(values, *, review_only=False):
         "acquisition_sources": [],
         "candidate_count": 0,
         "matrix_row_count": 0,
-        "candidate_examples": [],
-        "writer_row_count": 0,
         "matrix_path": "",
         "matrix_sha256": "",
         "alignment_config": {},
@@ -119,7 +117,6 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
     report = write_alignment_explanation(
         tmp_path / "measured.sqlite",
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -234,7 +231,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         tmp_path / "report.sqlite",
         full_audit=True,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -360,7 +356,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             report,
             full_audit=True,
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -373,7 +368,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
             completed=missing_audit,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -420,7 +414,6 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         tmp_path, monkeypatch, "all_hold"
     )
     kwargs = dict(
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -506,7 +499,6 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     )
     application = completed.application_result
     kwargs = dict(
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -576,7 +568,6 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
             report,
             full_audit=True,
             completed=completed,
-            writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -594,18 +585,20 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed)
 
     report = tmp_path / "stream.sqlite"
     with ExplanationReportWriter(report) as writer:
-        writer.add_candidate("a", "s", {"candidate_id": "a", "availability": {}})
-        writer.update_availability(("a", "s"), terminal="excluded")
+        writer.add_candidate("a", "s", {"candidate_id": "a"})
         with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
             writer.add_candidate("a", "s", {"candidate_id": "a"})
         assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
         if flushed:
             writer._flush_records()
         assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
+        writer.finalize(
+            _summary_fixture(
+                {"samples": [{"sample_key": "s"}]}, review_only=writer.review_only
+            )
+        )
     detail = read_alignment_explanation(report, candidate_id="a")
     assert detail["records"] == {"facts": [{"value": 1}]}
-    assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
     failed = tmp_path / "conflict.sqlite"
     with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
         with ExplanationReportWriter(failed) as writer:
@@ -650,7 +643,11 @@ def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
             {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
         )
-        writer.finalize(_summary_fixture({}, review_only=writer.review_only))
+        writer.finalize(
+            _summary_fixture(
+                {"samples": [{"sample_key": "S1"}]}, review_only=writer.review_only
+            )
+        )
 
     expected = {
         (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
@@ -677,7 +674,7 @@ def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
     )
 
     report = tmp_path / "missing-candidate.sqlite"
-    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+    with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
             writer.add_record("facts", "one", {"value": 1}, (("missing", "S1"),))
             writer.finalize(_summary_fixture({}))
@@ -717,14 +714,13 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 
     report = write_explanation_report(
         tmp_path / "bounded.sqlite",
-        summary=_summary_fixture({}),
+        summary=_summary_fixture({"samples": [{"sample_key": "s"}]}),
         candidates=rows(),
         records=Records(),
         links=(("199", "s", "facts", "199"),),
     )
-    assert read_alignment_explanation(report, candidate_id="199")["candidates"] == [
-        {"candidate_id": "199"}
-    ]
+    candidate = read_alignment_explanation(report, candidate_id="199")["candidates"][0]
+    assert (candidate["candidate_id"], candidate["sample_key"]) == ("199", "s")
     assert read_alignment_explanation(report, candidate_id="199")["records"] == {
         "facts": [{"value": 199}]
     }
@@ -733,7 +729,9 @@ def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
-        summary=_summary_fixture({"candidate_count": 2}),
+        summary=_summary_fixture(
+            {"candidate_count": 2, "samples": [{"sample_key": s} for s in ("s1", "s2")]}
+        ),
         candidates=(
             ("a", "s1", {"candidate_id": "a"}),
             ("b", "s2", {"candidate_id": "b"}),

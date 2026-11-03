@@ -23,7 +23,9 @@ from xic_extractor.alignment_explanation.review import (
     selection_sample_facts,
 )
 from xic_extractor.alignment_explanation.storage import (
+    CANDIDATE_SELECT,
     ExplanationError,
+    decode_candidate,
     decode_object,
     open_readonly,
 )
@@ -44,27 +46,11 @@ def recorded_observations(candidate, linked_records, records, member_ids):
 def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
     """Build the review query projection inside the publication transaction."""
     samples = {sample["sample_key"]: i for i, sample in enumerate(summary["samples"])}
-    db.executemany(
-        "INSERT INTO query_samples VALUES (?,?)", ((i, s) for s, i in samples.items())
-    )
-    candidates = {
-        (cid, sid): decode_object(payload)
-        for cid, sid, payload in db.execute("SELECT * FROM candidates")
+    stored_candidates = [decode_candidate(row) for row in db.execute(CANDIDATE_SELECT)]
+    candidates = {(c["candidate_id"], c["sample_key"]): c for _, c in stored_candidates}
+    candidate_ids = {
+        (c["candidate_id"], c["sample_key"]): cid for cid, c in stored_candidates
     }
-    candidate_ids = {key: i for i, key in enumerate(sorted(candidates))}
-    db.executemany(
-        "INSERT INTO query_candidates VALUES (?,?,?,?,?)",
-        (
-            (
-                candidate_ids[key],
-                key[0],
-                samples[key[1]],
-                value.get("precursor_mz"),
-                value.get("sample_stem"),
-            )
-            for key, value in candidates.items()
-        ),
-    )
     records: dict[str, dict[str, Any]] = {}
     kinds = (
         "('rows','final_groups','terminal_subjects','initial_edges',"
@@ -111,14 +97,10 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             "utf-8"
         )
         db.execute(
-            "INSERT INTO query_items VALUES (?,?,?,?,?)",
-            (item_id, kind, identifier, gid, sort_key),
+            "INSERT INTO query_items VALUES (?,?,?,?,?,?)",
+            (item_id, kind, identifier, gid, sort_key, b""),
         )
         item_keys[item_id] = keys
-        db.executemany(
-            "INSERT INTO query_members VALUES (?,?)",
-            ((item_id, candidate_ids[key]) for key in keys),
-        )
         members = defaultdict(set)
         for member in (
             records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
@@ -174,11 +156,8 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             for bit in SELECTION_FLAGS
         )
         db.execute(
-            "INSERT INTO query_review VALUES (?,?)",
-            (
-                item_id,
-                b"".join(mask.to_bytes(mask_width, "little") for mask in masks),
-            ),
+            "UPDATE query_items SET sample_facts=? WHERE id=?",
+            (b"".join(mask.to_bytes(mask_width, "little") for mask in masks), item_id),
         )
     for edge_ref, edge in records.get("initial_edges", {}).items():
         keys = record_keys["initial_edges", edge_ref]
@@ -233,20 +212,23 @@ def query_page(
         predicates.append("i.id IN (SELECT item FROM review_order)")
         order = "(SELECT priority FROM review_order WHERE item=i.id),i.sort_key"
     for column, values in (
-        ("s.sample_id", scope),
+        ("s.sample_key", scope),
         ("c.candidate_id", candidate_ids),
         ("i.group_id", group_ids),
     ):
-        if values or column == "s.sample_id":
+        if values or column == "s.sample_key":
             predicates.append(f"{column} IN ({','.join('?' for _ in values)})")
             params.extend(values)
-    for column, operator, value in (("c.mz", ">=", mz_min), ("c.mz", "<=", mz_max)):
+    for column, operator, value in (
+        ("c.precursor_mz", ">=", mz_min),
+        ("c.precursor_mz", "<=", mz_max),
+    ):
         if value is not None:
             predicates.append(f"{column}{operator}?")
             params.append(value)
     base = (
-        " FROM query_witnesses w JOIN query_candidates c ON c.id=w.candidate "
-        "JOIN query_samples s ON s.id=c.sample JOIN query_items i ON i.id=w.item WHERE "
+        " FROM query_witnesses w JOIN candidates c ON c.id=w.candidate "
+        "JOIN samples s ON s.id=c.sample JOIN query_items i ON i.id=w.item WHERE "
         + " AND ".join(predicates)
     )
     missing = 0
@@ -272,8 +254,8 @@ def query_page(
     run_total = db.execute("SELECT COUNT(*) FROM query_items").fetchone()[0]
     eligible = db.execute(
         "SELECT COUNT(DISTINCT q.item) FROM query_scope q JOIN "
-        "query_samples s ON s.id=q.sample "
-        f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
+        "samples s ON s.id=q.sample "
+        f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})",
         tuple(scope),
     ).fetchone()[0]
     return page, run_total, eligible, matched, missing
@@ -341,13 +323,13 @@ class ReviewQuery:
         ranked = []
         for item_id, sort_key, witness_mz in db.execute(
             "SELECT item,sort_key,mz FROM ("
-            "SELECT w.item,i.sort_key,c.mz,ROW_NUMBER() OVER "
+            "SELECT w.item,i.sort_key,c.precursor_mz AS mz,ROW_NUMBER() OVER "
             "(PARTITION BY w.item ORDER BY w.ordinal) AS position "
             "FROM query_witnesses w JOIN nearest_eligible e ON e.item=w.item "
             "JOIN query_items i ON i.id=w.item "
-            "JOIN query_candidates c ON c.id=w.candidate "
-            "JOIN query_samples s ON s.id=c.sample "
-            f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})) WHERE position=1",
+            "JOIN candidates c ON c.id=w.candidate "
+            "JOIN samples s ON s.id=c.sample "
+            f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})) WHERE position=1",
             scope,
         ):
             if (
@@ -366,9 +348,9 @@ class ReviewQuery:
             )
             population_count = db.execute(
                 "SELECT COUNT(DISTINCT q.item) FROM query_scope q "
-                "JOIN query_samples s ON s.id=q.sample "
+                "JOIN samples s ON s.id=q.sample "
                 + order_filter
-                + f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
+                + f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})",
                 scope,
             ).fetchone()[0]
         missing_mz = population_count - len(ranked)
@@ -445,8 +427,7 @@ class ReviewQuery:
             (
                 (item, sort_key, *classification)
                 for item, sort_key, kind, packed in db.execute(
-                    "SELECT i.id,i.sort_key,i.kind,r.sample_facts "
-                    "FROM query_items i JOIN query_review r ON r.item=i.id"
+                    "SELECT i.id,i.sort_key,i.kind,i.sample_facts FROM query_items i"
                 )
                 if (classification := classify_packed(kind, packed)) is not None
             ),
@@ -488,10 +469,10 @@ class ReviewQuery:
         witnesses = tuple(
             row
             for row in db.execute(
-                "SELECT s.sample_id,c.candidate_id,c.mz,w.rt,"
-                "w.observation_id,c.sample_stem "
-                "FROM query_witnesses w JOIN query_candidates c ON c.id=w.candidate "
-                "JOIN query_samples s ON s.id=c.sample "
+                "SELECT s.sample_key,c.candidate_id,c.precursor_mz,w.rt,"
+                "w.observation_id,s.sample_stem "
+                "FROM query_witnesses w JOIN candidates c ON c.id=w.candidate "
+                "JOIN samples s ON s.id=c.sample "
                 "WHERE w.item=? ORDER BY w.ordinal",
                 (item_id,),
             )
@@ -501,8 +482,8 @@ class ReviewQuery:
             sorted(
                 sid
                 for (sid,) in db.execute(
-                    "SELECT s.sample_id FROM query_scope q "
-                    "JOIN query_samples s ON s.id=q.sample WHERE q.item=?",
+                    "SELECT s.sample_key FROM query_scope q "
+                    "JOIN samples s ON s.id=q.sample WHERE q.item=?",
                     (item_id,),
                 )
                 if sid in scope
@@ -510,9 +491,9 @@ class ReviewQuery:
         )
         # Candidate identity is independent of the requested sample scope.
         sid = db.execute(
-            "SELECT s.sample_id FROM query_members m JOIN "
-            "query_candidates c ON c.id=m.candidate "
-            "JOIN query_samples s ON s.id=c.sample WHERE m.item=? LIMIT 1",
+            "SELECT s.sample_key FROM query_witnesses w JOIN "
+            "candidates c ON c.id=w.candidate "
+            "JOIN samples s ON s.id=c.sample WHERE w.item=? ORDER BY w.ordinal LIMIT 1",
             (item_id,),
         ).fetchone()
         return IndexedItem(

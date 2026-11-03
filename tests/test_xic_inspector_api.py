@@ -44,15 +44,55 @@ def _insert_link(
     set_id = connection.execute(
         "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
     ).fetchone()[0]
-    connection.execute("INSERT INTO link_sets VALUES (?)", (set_id,))
     connection.execute(
-        "INSERT OR IGNORE INTO link_members VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO link_members SELECT ?,c.id FROM candidates c "
+        "JOIN samples s ON s.id=c.sample WHERE c.candidate_id=? AND s.sample_key=?",
         (set_id, candidate_id, sample_id),
     )
     connection.execute(
         "INSERT OR IGNORE INTO record_links "
         "SELECT ?, id FROM records WHERE kind=? AND record_id=?",
         (set_id, kind, record_id),
+    )
+
+
+def _insert_candidate(connection, cid, sid, payload):
+    value = json.loads(payload)
+    sample = connection.execute(
+        "SELECT id FROM samples WHERE sample_key=?", (sid,)
+    ).fetchone()
+    if sample is None:
+        sample_id = connection.execute(
+            "SELECT coalesce(max(id),-1)+1 FROM samples"
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO samples VALUES (?,?,?)",
+            (sample_id, sid, value.get("sample_stem", sid)),
+        )
+    else:
+        sample_id = sample[0]
+    extras = {
+        k: v
+        for k, v in value.items()
+        if k
+        not in {
+            "candidate_id",
+            "sample_key",
+            "sample_stem",
+            "precursor_mz",
+            "ms1_apex_mz",
+        }
+    }
+    connection.execute(
+        "INSERT INTO candidates(candidate_id,sample,precursor_mz,ms1_apex_mz,payload) "
+        "VALUES (?,?,?,?,?)",
+        (
+            cid,
+            sample_id,
+            value.get("precursor_mz"),
+            value.get("ms1_apex_mz"),
+            json.dumps(extras),
+        ),
     )
 
 
@@ -96,13 +136,14 @@ def _create_mock_db(
             {"sample_stem": "s2", "sample_key": "S2"},
         ]
 
+    sid = samples[0]["sample_key"]
     with ExplanationReportWriter(db_path) as writer:
         writer.add_candidate(
             "C1",
-            "S1",
+            sid,
             {
                 "candidate_id": "C1",
-                "sample_key": "S1",
+                "sample_key": sid,
                 "precursor_mz": 500.0,
             },
         )
@@ -113,31 +154,31 @@ def _create_mock_db(
                 "feature_id": "G1",
                 "reason": "Passed alignment",
             },
-            [("C1", "S1")],
+            [("C1", sid)],
         )
         writer.add_record(
             "final_groups",
             "G1",
             {"feature_id": "G1", "disposition": "completed"},
-            [("C1", "S1")],
+            [("C1", sid)],
         )
         writer.add_record(
             "cell_decisions",
             "cd-01",
-            {"feature_id": "G1", "sample_id": "S1", "quantitative_value": 1000.0},
-            [("C1", "S1")],
+            {"feature_id": "G1", "sample_id": sid, "quantitative_value": 1000.0},
+            [("C1", sid)],
         )
         writer.add_record(
             "terminal_subjects",
             "terminal-01",
             {"observations": [{"physical_peak_key": "obs-01", "rt_apex_min": 1.0}]},
-            [("C1", "S1")],
+            [("C1", sid)],
         )
         # Add a curve payload for C1
         curve_envelope = {
             "schema_version": "curve_payload",
             "kind": "initial_capture",
-            "sample_id": "S1",
+            "sample_id": sid,
             "candidate_id": "C1",
             "physical_peak_key": "obs-01",
             "trace_coordinate": {
@@ -171,7 +212,7 @@ def _create_mock_db(
             },
         }
         writer.add_curve_payload(
-            sample_id="S1",
+            sample_id=sid,
             kind="initial_capture",
             record_id="obs-01",
             payload=curve_envelope,
@@ -655,9 +696,9 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
         _delete_links(connection, kind="rows")
         connection.execute("DELETE FROM records WHERE kind='terminal_subjects'")
         _delete_links(connection, kind="terminal_subjects")
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
+        _insert_candidate(
+            connection,
+            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
         _insert_link(connection, ("C2", "S2", "final_groups", "G1"))
         for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
@@ -721,9 +762,9 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
+        _insert_candidate(
+            connection,
+            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
         for kind, rid in (
             ("rows", "G1"),
@@ -805,9 +846,9 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
 ):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            (
+        _insert_candidate(
+            connection,
+            *(
                 "not-acquired",
                 "S2",
                 json.dumps(
@@ -835,9 +876,9 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         for sid in ("S1", "S2"):
-            connection.execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                ("shared-id", sid, json.dumps({"candidate_id": "shared-id"})),
+            _insert_candidate(
+                connection,
+                *("shared-id", sid, json.dumps({"candidate_id": "shared-id"})),
             )
     output = tmp_path / "identities.html"
     generate_report(
@@ -1184,9 +1225,9 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             ("C2", "G2", "row-02", "obs-02"),
             ("C3", "G3", "row-03", "obs-03"),
         ):
-            connection.execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                (
+            _insert_candidate(
+                connection,
+                *(
                     candidate_id,
                     "S1",
                     json.dumps(
@@ -1328,9 +1369,9 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             ("C2", "S2"),
             ("C3", "S3"),
         ):
-            connection.execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                (
+            _insert_candidate(
+                connection,
+                *(
                     candidate_id,
                     sample_id,
                     json.dumps(
@@ -1506,9 +1547,9 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            (
+        _insert_candidate(
+            connection,
+            *(
                 "C2",
                 "S1",
                 json.dumps(
@@ -1752,9 +1793,9 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
                 ),
             ),
         )
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+        _insert_candidate(
+            connection,
+            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
             "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
@@ -1840,9 +1881,9 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO candidates VALUES (?, ?, ?)",
-            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+        _insert_candidate(
+            connection,
+            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
         )
         connection.execute(
             "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
@@ -1956,9 +1997,9 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         for candidate_id in ("C2", "C3"):
-            connection.execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                (
+            _insert_candidate(
+                connection,
+                *(
                     candidate_id,
                     "S2",
                     json.dumps(
@@ -2155,9 +2196,13 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
             ("C1", "S1", "method_subjects", "method-01"),
         )
         if sample_count == 2:
-            connection.execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+            _insert_candidate(
+                connection,
+                *(
+                    "C2",
+                    "S2",
+                    json.dumps({"candidate_id": "C2", "precursor_mz": 500.0}),
+                ),
             )
             connection.execute(
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
@@ -2577,8 +2622,10 @@ def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None
         summary = json.loads(payload)
         summary["schema_version"] = old_schema
         summary["query_index_version"] = 2
-        for sample in summary["samples"]:
-            sample["canonical_sample_identity_id"] = sample.pop("sample_key")
+        connection.execute(
+            "ALTER TABLE samples RENAME COLUMN sample_key "
+            "TO canonical_sample_identity_id"
+        )
         connection.execute(
             "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )

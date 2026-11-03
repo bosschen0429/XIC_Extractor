@@ -49,7 +49,8 @@ it to exactly one parent. An unresolved element or parent does not rescue a
 supported derivative; an unclassified feature is not assumed to be an artifact.
 It has no parameters; its thresholds are fixed
 and recorded in the summary. It needs the run's `alignment_explanation.sqlite` in
-the current compact review format and is unavailable without it.
+the current table layout (compact review or full audit) and is unavailable
+without its published cell values.
 
 Evidence counts only directly detected cells (`discovery_support` or
 `reacquired_support`) and their observation apex:

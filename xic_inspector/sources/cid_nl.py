@@ -76,9 +76,7 @@ class CidNlSource:
             and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
         )
         self._query_only = self._compact_selection and query_only
-        self._row_samples = (
-            read_review_row_samples(path, self.summary) if self._query_only else {}
-        )
+        self._row_samples = read_review_row_samples(path) if self._query_only else {}
         self._selection_cells: (
             Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
         ) = None

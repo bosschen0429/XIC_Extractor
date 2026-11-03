@@ -5,17 +5,19 @@ from __future__ import annotations
 import json
 import sqlite3
 import zlib
-from collections.abc import Callable, Container, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .review import REVIEW_SCHEMA_VERSION, iter_cell_values, unpack_cells
+from .review import REVIEW_SCHEMA_VERSION, decode_row_evidence
 from .storage import (
+    CANDIDATE_SELECT,
     CandidateNotFoundError,
     ExplanationError,
     RecordKey,
+    decode_candidate,
     decode_object,
     open_readonly,
     read_completed_summary,
@@ -37,31 +39,62 @@ def read_review_cells(
     summary: Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
-    sample_ids = [sample["sample_key"] for sample in summary["samples"]]
-    result: dict[tuple[str, str], dict[str, Any]] = {}
+    """Hydrate only selected rows; scalar readers never call this detail decoder."""
+    samples = [sample["sample_key"] for sample in summary["samples"]]
     query = (
-        "SELECT r.record_id, r.payload, c.payload FROM row_cells c "
-        "JOIN records r ON r.id=c.row_record_id"
+        "SELECT r.id,r.payload,e.payload FROM records r "
+        "JOIN row_evidence e ON e.row_record_id=r.id WHERE r.kind='rows'"
     )
-    rows: Iterable[tuple[str, str | bytes, bytes]]
-    if row_ids is None:
-        rows = connection.execute(query)
-    else:
-        rows = (
+    rows = (
+        connection.execute(query)
+        if row_ids is None
+        else (
             row
             for row_id in row_ids
-            for row in connection.execute(
-                query + " WHERE r.record_id=?",
+            for row in connection.execute(query + " AND r.record_id=?", (row_id,))
+        )
+    )
+    result = {}
+    for row_id, record, evidence in rows:
+        feature_id = decode_object(record)["feature_id"]
+        details = decode_row_evidence(evidence, sample_count=len(samples))
+        scalars = list(
+            connection.execute(
+                "SELECT sample,variant,value,source,support_origin,observation_ids "
+                "FROM cells WHERE row_record_id=? ORDER BY sample",
                 (row_id,),
             )
         )
-    for row_id, record, payload in rows:
-        group_id = decode_object(record)["feature_id"]
-        result.update(
-            unpack_cells(
-                payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
+        if set(details) != {row[0] for row in scalars}:
+            raise ExplanationError(
+                "row evidence and cell samples differ; rerun Alignment"
             )
-        )
+        for sample, variant, value, source, origin, observations in scalars:
+            sid = samples[sample]
+            result[feature_id, sid] = {
+                "feature_id": feature_id,
+                "sample_key": sid,
+                "variant": variant,
+                "value": value,
+                "source": source,
+                "evidence_states": details[sample]["evidence_states"],
+                "reason_codes": details[sample]["reason_codes"],
+                "support_origin": origin,
+                "observation_ids": json.loads(observations),
+                "signal_quality": details[sample]["signal_quality"],
+                "membership_risks": details[sample]["membership_risks"],
+                **{
+                    key: value
+                    for key, value in details[sample].items()
+                    if key
+                    not in {
+                        "evidence_states",
+                        "reason_codes",
+                        "signal_quality",
+                        "membership_risks",
+                    }
+                },
+            }
     return result
 
 
@@ -75,53 +108,16 @@ def open_review_cells(
         yield lambda row_id: read_review_cells(connection, summary, (row_id,))
 
 
-@contextmanager
-def open_review_population(
-    path: Path, summary: Mapping[str, Any]
-) -> Iterator[Iterator[dict[str, Any]]]:
-    """Stream review rows and cells within one read-only connection lifetime."""
+def read_review_row_samples(path: Path) -> dict[str, frozenset[str]]:
+    """Read actual cell presence without decoding scientific detail payloads."""
+    rows: dict[str, set[str]] = {}
     with open_readonly(path) as db:
-        samples = [s["sample_key"] for s in summary["samples"]]
-        yield (
-            {
-                "row": decode_object(record),
-                "cells": list(
-                    unpack_cells(
-                        payload,
-                        row_id=row_id,
-                        group_id=decode_object(record)["feature_id"],
-                        sample_ids=samples,
-                    ).values()
-                ),
-            }
-            for row_id, payload, record in db.execute(
-                "SELECT r.record_id,c.payload,r.payload FROM row_cells c "
-                "JOIN records r ON r.id=c.row_record_id"
-            )
-        )
-
-
-def read_review_row_samples(
-    path: Path, summary: Mapping[str, Any]
-) -> dict[str, frozenset[str]]:
-    """Read row membership without unpacking scalar values or evidence reasons."""
-    sample_ids = [s["sample_key"] for s in summary["samples"]]
-    with open_readonly(path) as db:
-        cohorts: dict[bytes, frozenset[str]] = {}
-        rows = {}
-        for row_id, mask in db.execute(
-            "SELECT r.record_id, c.sample_mask FROM row_cells c "
-            "JOIN records r ON r.id=c.row_record_id"
+        for rid, sid in db.execute(
+            "SELECT r.record_id,s.sample_key FROM cells c "
+            "JOIN records r ON r.id=c.row_record_id JOIN samples s ON s.id=c.sample"
         ):
-            if mask not in cohorts:
-                bits = int.from_bytes(mask, "little")
-                cohorts[mask] = frozenset(
-                    sid
-                    for ordinal, sid in enumerate(sample_ids)
-                    if bits & (1 << ordinal)
-                )
-            rows[row_id] = cohorts[mask]
-        return rows
+            rows.setdefault(rid, set()).add(sid)
+    return {rid: frozenset(samples) for rid, samples in rows.items()}
 
 
 def read_explanation_summary(path: Path) -> dict[str, Any]:
@@ -156,26 +152,25 @@ def read_observation_apices(path: Path) -> dict[str, float]:
 
 
 def read_row_cell_values(
-    path: Path, summary: Mapping[str, Any], feature_ids: Container[str]
+    path: Path, feature_ids: Container[str]
 ) -> Iterator[tuple[str, str, Any, Any, Any]]:
-    """Value, support origin and observations of each cell of the named rows.
+    """Read value, support origin and observation locators without cold evidence."""
+    from itertools import chain, groupby
 
-    Yields ``(feature_id, sample_key, value, support_origin, observation_ids)``.
-    Other rows are skipped before their cells are decompressed.
-    """
-    samples = [sample["sample_key"] for sample in summary["samples"]]
     with open_readonly(path) as db:
-        for record, payload in db.execute(
-            "SELECT r.payload, c.payload FROM row_cells c "
-            "JOIN records r ON r.id=c.row_record_id"
-        ):
-            feature_id = decode_object(record)["feature_id"]
+        rows = db.execute(
+            "SELECT r.id,r.payload,s.sample_key,c.value,"
+            "c.support_origin,c.observation_ids "
+            "FROM cells c JOIN records r ON r.id=c.row_record_id "
+            "JOIN samples s ON s.id=c.sample ORDER BY c.row_record_id,c.sample"
+        )
+        for _, cells in groupby(rows, key=lambda row: row[0]):
+            first = next(cells)
+            feature_id = decode_object(first[1])["feature_id"]
             if feature_id not in feature_ids:
                 continue
-            for sample, value, origin, observations in iter_cell_values(
-                payload, sample_ids=samples
-            ):
-                yield feature_id, sample, value, origin, observations
+            for _, _, sample, value, origin, observations in chain((first,), cells):
+                yield feature_id, sample, value, origin, json.loads(observations)
 
 
 def read_explanation_metadata(
@@ -199,10 +194,9 @@ def read_explanation_metadata(
             else ""
         )
         candidates = {
-            (cid, sid): decode_object(payload)
-            for cid, sid, payload in connection.execute(
-                "SELECT candidate_id, sample_id, payload FROM candidates"
-            )
+            (candidate["candidate_id"], candidate["sample_key"]): candidate
+            for row in connection.execute(CANDIDATE_SELECT)
+            for _, candidate in (decode_candidate(row),)
         }
         records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
         for kind, rid, payload in connection.execute(
@@ -215,11 +209,10 @@ def read_explanation_metadata(
                 + record_filter
             )
         )
-        if summary["schema_version"] == REVIEW_SCHEMA_VERSION and not compact_selection:
-            records["cell_decisions"] = {
-                key: value
-                for key, value in read_review_cells(connection, summary).items()
-            }
+        if not compact_selection:
+            cells = read_review_cells(connection, summary)
+            if cells:
+                records.setdefault("cell_decisions", {}).update(cells.items())
         return ExplanationMetadata(summary, candidates, records, links)
 
 
@@ -236,11 +229,11 @@ def read_explanation_selection(
         links: set[tuple[str, str, str, str]] = set()
         for cid, sid in candidate_keys:
             row = connection.execute(
-                "SELECT payload FROM candidates WHERE candidate_id=? AND sample_id=?",
+                CANDIDATE_SELECT + " WHERE c.candidate_id=? AND s.sample_key=?",
                 (cid, sid),
             ).fetchone()
             if row is not None:
-                candidates[cid, sid] = decode_object(row[0])
+                candidates[cid, sid] = decode_candidate(row)[1]
             links.update(
                 connection.execute(
                     "SELECT candidate_id, sample_id, kind, record_id FROM links "
@@ -270,10 +263,9 @@ def read_explanation_selection(
             ).fetchone()
             if row is not None:
                 records.setdefault("final_groups", {})[gid] = decode_object(row[0])
-        records["cell_decisions"] = {
-            key: value
-            for key, value in read_review_cells(connection, summary, row_ids).items()
-        }
+        cells = read_review_cells(connection, summary, row_ids)
+        if cells:
+            records.setdefault("cell_decisions", {}).update(cells.items())
         return ExplanationMetadata(summary, candidates, records, tuple(sorted(links)))
 
 
@@ -286,10 +278,9 @@ def read_alignment_explanation(
         if candidate_id is None:
             return summary
         candidates = [
-            decode_object(row[0])
+            decode_candidate(row)[1]
             for row in connection.execute(
-                "SELECT payload FROM candidates "
-                "WHERE candidate_id=? ORDER BY sample_id",
+                CANDIDATE_SELECT + " WHERE c.candidate_id=? ORDER BY s.sample_key",
                 (candidate_id,),
             )
         ]
@@ -303,9 +294,9 @@ def read_alignment_explanation(
             (candidate_id,),
         ):
             records.setdefault(kind, []).append(decode_object(payload))
-        if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
-            row_ids = [row["feature_id"] for row in records.get("rows", [])]
-            records["cell_decisions"] = list(
+        row_ids = [row["feature_id"] for row in records.get("rows", [])]
+        if row_ids:
+            records.setdefault("cell_decisions", []).extend(
                 read_review_cells(connection, summary, row_ids).values()
             )
         return {
@@ -367,3 +358,36 @@ def read_alignment_curves(
             )
             results.append({**payload_data, "payload_id": payload_id})
         return results
+
+
+def read_candidate_examples(path: Path) -> list[dict[str, Any]]:
+    """The diagnostic CLI's small preview, queried rather than copied into metadata."""
+    with open_readonly(path) as db:
+        return [
+            decode_candidate(row)[1]
+            for row in db.execute(
+                CANDIDATE_SELECT + " ORDER BY c.candidate_id,s.sample_key LIMIT 5"
+            )
+        ]
+
+
+def read_review_row_counts(
+    path: Path, summary: Mapping[str, Any]
+) -> Iterator[dict[str, Any]]:
+    """Overview facts from named cell columns, without reasons, risks or curves."""
+    samples = [s["sample_key"] for s in summary["samples"]]
+    with open_readonly(path) as db:
+        for record, numeric, unresolved in db.execute(
+            "SELECT r.payload,"
+            "group_concat(CASE WHEN c.variant='numeric' THEN c.sample END),"
+            "sum(c.variant='unresolved') "
+            "FROM records r LEFT JOIN cells c ON c.row_record_id=r.id "
+            "WHERE r.kind='rows' GROUP BY r.id"
+        ):
+            yield {
+                "row": decode_object(record),
+                "numeric_samples": [samples[int(i)] for i in numeric.split(",")]
+                if numeric
+                else [],
+                "unresolved_count": unresolved or 0,
+            }

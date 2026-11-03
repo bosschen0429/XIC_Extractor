@@ -1552,7 +1552,6 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         tmp_path / "backfill.sqlite",
         full_audit=False,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,

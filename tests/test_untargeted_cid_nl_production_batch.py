@@ -1442,7 +1442,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
-        writer_inputs=writer,
         candidates_by_sample=candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
