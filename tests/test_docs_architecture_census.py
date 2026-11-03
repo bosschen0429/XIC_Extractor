@@ -282,11 +282,13 @@ def test_semantic_identifier_gate_scans_python_values_and_maintained_docs(
     for path in (python_path, markdown_path):
         (tmp_path / path).parent.mkdir(parents=True)
     (tmp_path / python_path).write_text(
-        "LABEL = 'sample_" + "v2'\nTICKET = 'sample_" + "by_455'\n",
+        "LABEL = 'sample_" + "v2'\nTICKET = 'sample_" + "by_455'\n"
+        "SCHEMA = 'sample_schema." + "v3'\n",
         encoding="utf-8",
     )
     (tmp_path / markdown_path).write_text(
-        "Current `sample_" + "v2` and `sample_" + "by_455`.\n",
+        "Current `sample_" + "v2` and `sample_" + "by_455`.\n"
+        "Schema `sample_schema." + "v3`.\n",
         encoding="utf-8",
     )
 
@@ -296,11 +298,14 @@ def test_semantic_identifier_gate_scans_python_values_and_maintained_docs(
 
     version_label = "sample_" + "v2"
     ticket_label = "sample_" + "by_455"
+    schema_label = "sample_schema." + "v3"
     expected = {
         f"xic_extractor/example.py:1: versioned identifier {version_label}",
         f"xic_extractor/example.py:2: versioned identifier {ticket_label}",
+        f"xic_extractor/example.py:3: versioned identifier {schema_label}",
         f"docs/product/example.md:1: versioned identifier {version_label}",
         f"docs/product/example.md:1: versioned identifier {ticket_label}",
+        f"docs/product/example.md:2: versioned identifier {schema_label}",
     }
     assert expected <= set(problems)
 

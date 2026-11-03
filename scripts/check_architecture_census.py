@@ -69,7 +69,7 @@ HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {
     ),
 }
 VERSIONED_IDENTIFIER = re.compile(
-    r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:_v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
+    r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:[_.]v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
 )
 
 # Pointers only. The referenced files retain authority for their claims.
