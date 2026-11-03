@@ -80,14 +80,73 @@ locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
 
+### 2026-11-03 Remaining Evidence Directions And Independent Oracles
+
+Evidence: `diagnostic_only`; source `b58ac1e2d`. The reference discussion's
+remaining concrete evidence policies were tested, without production activation.
+These decisions close the bounded hypotheses, not all possible future models.
+
+- Weak admission, with the exact baseline RT calibration frozen: adding 175
+  resolved rescued rows changed published Matrix rows from 234 to 225, including
+  reweighted nominal masses and changed integrations; it was not merely extra
+  retention. Admitting and actually capturing 339 resolved coisolation rows
+  produced 956 versus 857 final groups and 272 published rows, but also split
+  two old groups. More output did not establish independent identity gain.
+  An earlier front-end-only coisolation trial still excluded captures downstream;
+  its unchanged output is not evidence that the observations participated.
+- A separate fixed-group observation-only probe gave no candidate anchor,
+  direct SUPPORT or writer authority. Of 57 selected attachments, 47 bodies were
+  already formal Backfills, two cells already had another apex, three groups
+  were not published, and five empty cells still had unresolved method mapping.
+  Assignment alone did not establish five recovered quantitative measurements.
+  Retain the existing Discovery review evidence; do not widen formal admission.
+- A nested five-fold error model used per-sample nearest-RT training residuals,
+  never outer-test errors, to estimate local p90 scales. Across 1,960 held-out
+  observations it narrowed median half-width from 39.89 to 32.58 seconds; on the
+  stricter 346-observation no-exact-co-apex set, coverage fell from 85.26% to
+  82.08%. Local/global rescaling of the existing membership cost changed 63
+  owners and increased groups from 857 to 859. Do not activate these scales or
+  render them as calibrated probabilities.
+- Quality-qualified shape preserved real-data membership while reducing 5,838
+  final pair-cost shape comparisons to 4,208; adding a competition-only condition
+  reduced calls to 1,199 but changed 11 owners' membership. The initially favorable
+  synthetic weak-shape cases assumed independent peaks where the physical owner
+  found unresolved mixtures. A subsequent 96-case test used 1,086 actual,
+  independently component-labeled physical measurements. Quality/competitive
+  shape corrected 48 split pairs and 61 merge pairs but introduced 21 new split
+  pairs and 29 new merge pairs; local RT introduced 66 and 62 respectively.
+  These are paired stress-test outcomes, not real-data error rates. Reject the
+  substitutions under the accepted no-new-false-splitting trade-off.
+- Restricting relative-height matching to the two named pooled QCs changed 45
+  bootstrap comparisons but reproduced the no-height calibration and Matrix.
+  It established no additional benefit, so no cohort-role branch was added.
+- A separate current Targeted acquisition/batch-selection run used the existing
+  manual-2RAW standard-mixture workbook: all 100 scored positive peaks were found,
+  with 2.2358% median absolute area error and 91/94 within 10%/20%. Six area
+  errors exceeded 20%; two also disagreed substantially in RT (maximum 47.68 s).
+  The existing manual guardrail is **FAIL**, not a readiness pass. Legacy targets
+  were translated using their prior window midpoints and existing loss/ISTD
+  declarations; explicit validation-QC annotations selected the otherwise
+  system-suitability RAWs. Source files were unchanged. Four manual ND targets
+  were not requested, so this does not measure false-positive transfer. No
+  before/after run attributes the six exceptions to this PR.
+
+No new scientific default, writer, schema or confidence UI was activated.
+Artifacts: `output/remaining-directions/report.md`, `weak-summary.json`,
+`weak-companions.json`, `local-rt/error-model.json`,
+`independent-truth/measured-summary.json`, and `manual-2raw-qc/score.json`.
+Reopen for a distinct discriminating signal, an independently adjudicated
+changed case or integration unit, or a new method/cohort—not another nearby
+threshold on the same data. Do not expand these rejected candidates to 85RAW.
+
 ### 2026-11-03 Bootstrap-To-Matrix Evidence Ablations
 
 Evidence: `diagnostic_only`; Untargeted source `23c613623`. Reused the prior
 8RAW `dna_dr` Discovery and acquisition cache, but reran the formal Alignment
 CLI through calibration, final grouping, Backfill and Matrix publication.
 Only bootstrap evidence changed; final grouping and Backfill policies stayed
-unchanged. This closes the earlier fixed-calibration experiment's causal gap,
-not the remaining weak-candidate admission or local-uncertainty research.
+unchanged. This closes the earlier fixed-calibration experiment's causal gap.
+Weak admission and local-uncertainty follow-ups are recorded separately above.
 
 - No-height and RT-first each changed 48 bootstrap pattern comparisons and
   memberships of 17 owners. Four calibration observation groups were replaced
