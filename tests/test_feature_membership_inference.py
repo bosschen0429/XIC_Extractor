@@ -91,7 +91,6 @@ def _owner(
     evidence_score: int = 80,
     seed_event_count: int = 2,
     supporting_events: tuple[IdentityEvent, ...] = (),
-    identity_conflict: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
         candidate_id=f"{sample}-{name}-primary",
@@ -117,7 +116,6 @@ def _owner(
         owner_height=100.0,
         primary_identity_event=event,
         supporting_events=supporting_events,
-        identity_conflict=identity_conflict,
         assignment_reason="same_apex_window",
     )
 
@@ -178,7 +176,6 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
 @pytest.mark.parametrize(
     "untrusted",
     (
-        {"identity_conflict": True},
         {"is_provisional": True},
         {"quantification_eligible": False},
         {"primary_identity_event": None},

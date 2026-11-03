@@ -491,7 +491,6 @@ def admit_cid_nl_group_backfills(
                     group_identity=identity,
                     feature_id=group.feature_id,
                     evidence=group.evidence,
-                    identity_conflict=group.identity_conflict,
                     review_only=group.review_only,
                 ),
                 # The original inference/ISTD binding remains about its original

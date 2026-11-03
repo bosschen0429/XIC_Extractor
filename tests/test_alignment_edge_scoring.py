@@ -53,7 +53,6 @@ def _owner(
     evidence_score: int = 80,
     seed_event_count: int = 2,
     assignment_reason: str = "same_apex_window",
-    identity_conflict: bool = False,
     support_seed_rt: float | None = None,
 ) -> SampleLocalMS1Owner:
     primary = IdentityEvent(
@@ -96,7 +95,6 @@ def _owner(
         owner_height=100.0,
         primary_identity_event=primary,
         supporting_events=support,
-        identity_conflict=identity_conflict,
         assignment_reason=assignment_reason,
     )
 
@@ -375,7 +373,6 @@ def test_insufficient_raw_keeps_helpful_drift() -> None:
     ("right", "expected_decision"),
     [
         (_owner("s1"), "blocked_edge"),
-        (_owner("s2", identity_conflict=True), "blocked_edge"),
         (_owner("s2", precursor_mz=400.0), "blocked_edge"),
         (_owner("s2", evidence_score=20, seed_event_count=0), "weak_edge"),
         (_owner("s2", owner_area=0), "weak_edge"),
@@ -483,18 +480,6 @@ def test_seed_support_uses_anchor_min_evidence_score_threshold(
     assert edge.decision == expected_decision
 
 
-def test_identity_conflict_blocks_edge() -> None:
-    edge = evaluate_owner_edge(
-        _owner("s1", identity_conflict=True),
-        _owner("s2"),
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(),
-    )
-
-    assert edge.decision == "blocked_edge"
-    assert edge.failure_reason == "identity_conflict"
-
-
 @pytest.mark.parametrize(
     (
         "left",
@@ -502,11 +487,6 @@ def test_identity_conflict_blocks_edge() -> None:
         "expected_reason",
     ),
     [
-        (
-            _owner("s1", identity_conflict=True),
-            _owner("s1"),
-            "identity_conflict",
-        ),
         (
             _owner("s1"),
             _owner("s1", neutral_loss_tag="DNA_base_loss"),

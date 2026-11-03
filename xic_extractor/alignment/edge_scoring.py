@@ -142,8 +142,6 @@ def _hard_gate_failure(
     config: AlignmentConfig,
     method_evidence: MethodPairEvidence,
 ) -> tuple[HardGateFailureReason | None, bool]:
-    if left.identity_conflict or right.identity_conflict:
-        return "identity_conflict", False
     if left.sample_stem == right.sample_stem:
         return "same_sample", False
     if method_evidence.identity_failure:

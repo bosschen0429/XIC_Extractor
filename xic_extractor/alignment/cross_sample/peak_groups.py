@@ -79,7 +79,6 @@ class CrossSamplePeakGroupHypothesis:
     has_anchor: bool = False
     owners: tuple[SampleLocalMS1Owner, ...] = ()
     evidence: str = ""
-    identity_conflict: bool = False
     review_only: bool = False
     confirm_local_owners_with_backfill: bool = False
     backfill_seed_centers: tuple[tuple[float, float], ...] = ()
@@ -193,10 +192,6 @@ def construct_cross_sample_peak_group_hypotheses(
             group_identity=group_identity,
             feature_id=f"F{index:06d}",
             evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
-            identity_conflict=not (
-                accept_competition and not bootstrap and basis.disposition == "assigned"
-            )
-            and any(owner.identity_conflict for owner in group),
             review_only=unresolved,
         )
         hypotheses.append(
@@ -219,7 +214,6 @@ def _hypothesis_from_owner_group(
     group_identity: CrossSampleGroupIdentity,
     feature_id: str,
     evidence: str,
-    identity_conflict: bool = False,
     review_only: bool = False,
 ) -> CrossSamplePeakGroupHypothesis:
     center_mz = sum(owner.precursor_mz for owner in group) / len(group)
@@ -261,7 +255,6 @@ def _hypothesis_from_owner_group(
         has_anchor=has_anchor,
         owners=group,
         evidence=effective_evidence,
-        identity_conflict=identity_conflict,
         review_only=effective_review_only,
         construction_role="successor_constructor",
     )

@@ -217,7 +217,6 @@ def _owner(sample: str, label: str, rt: float) -> SampleLocalMS1Owner:
         owner_height=100.0,
         primary_identity_event=None,
         supporting_events=(),
-        identity_conflict=False,
         assignment_reason="same_apex_window",
     )
 

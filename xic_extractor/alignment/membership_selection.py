@@ -178,7 +178,6 @@ class MembershipComparison:
             )
             if (
                 owner.is_provisional
-                or owner.identity_conflict
                 or "ambiguous" in owner.assignment_reason
                 or rules.support_level(owner, owner, config) == "weak"
             ):

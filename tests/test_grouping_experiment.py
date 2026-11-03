@@ -155,9 +155,11 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
     for item in payload["worksets"][0]["owners"]:
         item["peak_shape"].pop("half_height_point_count")
         item["peak_shape"].pop("edge_intensity_ratio")
+        item["identity_conflict"] = False
     with gzip.open(path, "wt", encoding="utf-8") as stream:
         json.dump(payload, stream)
     legacy, _ = read_grouping_inputs(path)
+    assert {frozenset(group.owner_ids) for group in replay_grouping(legacy)} == expected
     for owner in legacy.worksets[0].owners:
         assert owner.peak_shape is not None
         assert owner.peak_shape.half_height_point_count is None
