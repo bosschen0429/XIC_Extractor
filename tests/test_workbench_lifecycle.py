@@ -168,18 +168,18 @@ def test_only_the_last_closed_tab_stops_an_idle_workspace(tmp_path):
 def test_background_work_and_unseen_completion_survive_until_reopened(
     tmp_path, monkeypatch
 ):
-    from xic_extractor import feature_quality_io
+    from xic_workbench import matrix_curation
 
     started, finish = threading.Event(), threading.Event()
-    manifest = tmp_path / "manifest.json"
+    summary = tmp_path / "summary.json"
 
-    def export(**values):
+    def run_curation(config_dir, values):
         started.set()
         assert finish.wait(10)
-        manifest.write_text('{"fixture":true}')
-        return manifest
+        summary.write_text('{"fixture":true}')
+        return {"output_dir": str(tmp_path), "summary_path": str(summary)}
 
-    monkeypatch.setattr(feature_quality_io, "export_feature_quality", export)
+    monkeypatch.setattr(matrix_curation, "run_curation", run_curation)
     with _timed_server(tmp_path / "config") as (workspace, server, thread, url):
         try:
             _request(url, "/api/window", {"window": "first"})
@@ -187,13 +187,10 @@ def test_background_work_and_unseen_completion_survive_until_reopened(
                 url,
                 "/api/analysis/start",
                 {
-                    "kind": "quality",
+                    "kind": "curation",
                     "values": {
-                        "matrix_path": str(tmp_path / "matrix.tsv"),
-                        "review_path": str(tmp_path / "review.sqlite"),
-                        "sample_metadata_path": str(tmp_path / "samples.tsv"),
-                        "output_dir": str(tmp_path),
-                        "min_finite_fraction": 0.5,
+                        "source_dir": str(tmp_path),
+                        "steps": {"finite_fraction": {"min_finite_fraction": 0.5}},
                     },
                 },
             )
@@ -211,7 +208,7 @@ def test_background_work_and_unseen_completion_survive_until_reopened(
             _request(url, "/api/window", {"window": "reopened"})
             status, result = _request(url, "/api/analysis")
             assert status == 200 and result["job"]["status"] == "succeeded"
-            assert result["job"]["result"]["manifest_path"] == str(manifest)
+            assert result["job"]["result"]["summary_path"] == str(summary)
             _request(url, "/api/window", {"window": "reopened", "closed": True})
             thread.join(timeout=5)
             assert not thread.is_alive()

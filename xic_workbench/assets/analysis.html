@@ -282,6 +282,61 @@
   </div>
 </main>
 
+<main id="workspace-curation" class="page analysis-page" hidden>
+  <header class="page-header">
+    <div>
+      <h1>整理 Alignment 矩陣</h1>
+      <p class="subtle">
+        讀取已發布的 Alignment 輸出，依勾選的步驟整理後寫到新資料夾；原始檔案不會被修改。
+      </p>
+    </div>
+  </header>
+  <div class="analysis-layout">
+    <div class="analysis-main">
+      <form id="curation-form" class="steps">
+        <section class="card step">
+          <div class="step-head">
+            <span class="step-no">1</span>
+            <div>
+              <h2>Alignment 輸出</h2>
+            </div>
+          </div>
+          <div class="step-body">
+            <div id="curation-paths"></div>
+            <ul id="curation-source" class="checklist"></ul>
+          </div>
+        </section>
+        <section class="card step">
+          <div class="step-head">
+            <span class="step-no">2</span>
+            <div>
+              <h2>整理步驟</h2>
+              <p class="subtle">每一步各自依原始矩陣判斷；所有啟用步驟都保留的 feature 才保留。</p>
+            </div>
+          </div>
+          <div id="curation-steps" class="step-body"></div>
+        </section>
+      </form>
+      <section id="curation-result" class="card result-card" hidden></section>
+    </div>
+    <aside class="analysis-rail">
+      <section class="card run-card">
+        <h2>輸出</h2>
+        <p id="curation-output" class="subtle mono">選擇 Alignment 輸出後顯示</p>
+        <button
+          type="submit"
+          form="curation-form"
+          class="primary large block"
+          data-analysis-idle
+        >
+          <svg class="icon"><use href="#i-play" /></svg>開始整理
+        </button>
+      </section>
+      <div class="job-slot" data-job-slot="curation"></div>
+    </aside>
+  </div>
+</main>
+
 <template id="sample-step-template">
   <div class="step-head">
     <span class="step-no" data-part="step-no"></span>
@@ -547,43 +602,6 @@
       套用至本次執行
     </button>
   </div>
-</dialog>
-
-<dialog id="quality-dialog">
-  <form id="quality-form">
-    <div class="dialog-head">
-      <h2>篩選並匯出分析矩陣</h2>
-      <button
-        type="button"
-        class="dialog-close"
-        data-close="quality-dialog"
-        aria-label="關閉"
-      >
-        <svg class="icon"><use href="#i-x" /></svg>
-      </button>
-    </div>
-    <div class="dialog-body">
-      <p class="dialog-message">
-        依研究樣本的有效值比例篩選 feature；0 算有效，空白不算。原始矩陣會保留。
-      </p>
-      <div id="quality-paths"></div>
-      <label class="field"
-        >最低有效值比例<input
-          id="quality-threshold"
-          type="number"
-          min="0"
-          max="1"
-          step="any"
-          placeholder="0 至 1，例如 0.5"
-          required
-        /><small>必須明確指定；輸入 0 代表不篩選。</small></label
-      >
-    </div>
-    <div class="dialog-foot">
-      <button type="button" data-close="quality-dialog">取消</button
-      ><button type="submit" class="primary">開始匯出</button>
-    </div>
-  </form>
 </dialog>
 
 <dialog id="inspector-export-dialog" class="wide-dialog">

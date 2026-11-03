@@ -41,8 +41,8 @@ interpretation, and future activation gates.
 - Conservative Backfill uses study/QC roles and exclusion to derive its
   eligible support population. The RT frame uses batch membership as cohort
   context.
-- Feature Quality uses explicit study-sample and exclusion metadata for the
-  availability denominator and a separate analysis-set export. It does not
+- Matrix curation's finite-value fraction uses explicit study-sample and
+  exclusion metadata for its denominator and writes a new folder. It does not
   mutate the source Matrix.
 - Role-based blank subtraction, QC weighting, response correction and
   normalization are not implemented. Metadata alone cannot authorize these

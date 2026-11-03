@@ -47,7 +47,7 @@ owner for product documentation.
 | --- | --- | --- |
 | XIC Inspector and HTML workspace | [`xic-inspector.md`](xic-inspector.md) | Local batch review and on-demand XIC, shared selection/rendering, and portable offline Inspector reports |
 | Sample Metadata And QC | [`sample-metadata-qc.md`](sample-metadata-qc.md) | Sample identity/order/role/QC, activation gates |
-| Feature Quality And Selection | [`feature-quality.md`](feature-quality.md) | Finalized-matrix availability, explicit selection and traceable analysis sets |
+| Matrix Curation | [`matrix-curation.md`](matrix-curation.md) | Switchable post-Alignment steps on a published Matrix, per-feature decisions and the kept Matrix |
 | Instrument QC And Calibration | [`instrument-qc-calibration.md`](instrument-qc-calibration.md) | Clean-vs-biological QC, HCD audit, calibration readiness |
 
 ### System

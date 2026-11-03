@@ -86,8 +86,10 @@ def read_preferences(*, config_dir: Path | None = None) -> dict:
 
 
 def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
-    if set(values) - {"theme", "view", "targeted_output_dir"}:
+    if set(values) - {"theme", "view", "targeted_output_dir", "matrix_curation"}:
         raise ValueError("不支援此偏好設定；DLL 目錄由應用設定管理。")
+    if not isinstance(values.get("matrix_curation", {}), dict):
+        raise ValueError("矩陣整理偏好必須是物件。")
     payload = read_preferences(config_dir=config_dir) | values
     _write_json_object(_runtime_dir(config_dir) / "workbench.json", payload)
     return payload
