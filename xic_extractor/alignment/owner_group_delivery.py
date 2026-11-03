@@ -46,9 +46,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     def evidence(self) -> str: ...
 
     @property
-    def identity_conflict(self) -> bool: ...
-
-    @property
     def review_only(self) -> bool: ...
 
     @property

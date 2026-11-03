@@ -44,7 +44,6 @@ class SampleLocalMS1Owner:
     owner_height: float
     primary_identity_event: IdentityEvent | None
     supporting_events: tuple[IdentityEvent, ...]
-    identity_conflict: bool
     assignment_reason: str
     selected_integration: IntegrationResult | None = None
     quantification_eligible: bool = True

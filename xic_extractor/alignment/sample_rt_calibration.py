@@ -600,7 +600,6 @@ class BatchRtCalibrationAccumulator:
                 owner
                 for owner in group
                 if owner.primary_identity_event is not None
-                and not owner.identity_conflict
                 and not owner.is_provisional
                 and owner.quantification_eligible
             )

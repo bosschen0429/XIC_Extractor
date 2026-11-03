@@ -343,7 +343,6 @@ def _owner(
     observed_loss: float = 116.0474,
     evidence_score: int = 80,
     seed_event_count: int = 2,
-    identity_conflict: bool = False,
     is_provisional: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
@@ -379,7 +378,6 @@ def _owner(
         owner_height=100.0,
         primary_identity_event=event,
         supporting_events=(),
-        identity_conflict=identity_conflict,
         assignment_reason="owner_exact_apex_match",
         selected_integration=_integration(apex_rt),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(

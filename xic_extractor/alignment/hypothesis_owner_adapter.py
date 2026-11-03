@@ -289,7 +289,6 @@ def owner_from_cid_nl_assessment_support(
         owner_height=integration.height_raw,
         primary_identity_event=event,
         supporting_events=(),
-        identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_unique_support",
         cid_nl_composite_assessment=assessment
         if assessment.content.method_subject.composition
@@ -362,7 +361,6 @@ def owner_from_cid_nl_assessment_observation(
         owner_height=integration.height_raw,
         primary_identity_event=event,
         supporting_events=(),
-        identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_observation_only",
         selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
@@ -406,7 +404,6 @@ def owner_from_ms1_observation_hypothesis(
         owner_height=integration.height_raw,
         primary_identity_event=None,
         supporting_events=(),
-        identity_conflict=False,
         assignment_reason="ms1_observation_hypothesis",
         selected_integration=integration,
         peak_shape=prepare_local_peak_shape(

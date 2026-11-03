@@ -187,8 +187,6 @@ def owner_uncertainty_reason(
     config: AlignmentConfig,
     rules: GroupingRules,
 ) -> str:
-    if owner.identity_conflict:
-        return "owner_identity_conflict"
     if owner.is_provisional:
         return "provisional_owner"
     if owner.owner_area <= 0.0:

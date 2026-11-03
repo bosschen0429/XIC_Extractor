@@ -118,7 +118,6 @@ def _owners(case: str) -> tuple[tuple[SampleLocalMS1Owner, ...], dict[str, int]]
                 owner_height=100.0,
                 primary_identity_event=event,
                 supporting_events=(),
-                identity_conflict=False,
                 assignment_reason="same_apex_window",
             )
         )
@@ -167,7 +166,6 @@ def _synthetic_owner(
         owner_height=100.0,
         primary_identity_event=event,
         supporting_events=(),
-        identity_conflict=False,
         assignment_reason="same_apex_window",
     )
 
@@ -1557,7 +1555,6 @@ def test_equal_band_competition_selects_and_records_the_alternative() -> None:
             owner_height=100.0,
             primary_identity_event=event,
             supporting_events=(),
-            identity_conflict=False,
             assignment_reason="same_apex_window",
         )
 
@@ -1606,7 +1603,6 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
             owner_height=100.0,
             primary_identity_event=event,
             supporting_events=(),
-            identity_conflict=False,
             assignment_reason="same_apex_window",
         )
 

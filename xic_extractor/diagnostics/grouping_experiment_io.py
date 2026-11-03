@@ -290,8 +290,10 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     integration = value["selected_integration"]
     if integration is not None:
         value["selected_integration"] = _read_integration(integration)
-    # Retained snapshots may include the retired, non-semantic audit envelope.
+    # Retained snapshots may include the retired, non-semantic audit envelope
+    # and the retired owner flag that production always wrote as False.
     value.pop("region_audit", None)
+    value.pop("identity_conflict", None)
     member = value["cross_sample_member_subject"]
     member["physical_peaks"] = tuple(
         PeakObservationContent(

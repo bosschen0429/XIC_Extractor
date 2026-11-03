@@ -493,6 +493,9 @@ loop over saved Discovery candidates for scalar CID-NL presets:
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
 
+Replay reads retained snapshots that still carry the retired owner
+`identity_conflict` flag and ignores it; production never set it.
+
 Repeat `--mz-range LOWER:UPPER` for several regions. Query reads Discovery only
 and reports measured-mass candidates plus every sample, including zero-match
 samples. A query is a lookup in the saved Discovery population, not a fresh
