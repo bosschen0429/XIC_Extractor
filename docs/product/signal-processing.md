@@ -287,9 +287,8 @@ selected physical component supplies the integration bounds.
   configured target window once; the same physical owner evaluates the new
   trace. The writer never extends bounds.
 - CWT, local-minimum, derivative and alternate boundary proposals remain
-  diagnostic or model-selection evidence. Selected-full-envelope evidence and
-  boundary review annotations do not replace the retained integration or
-  establish chemical absence.
+  diagnostic or model-selection evidence. Boundary review annotations do not
+  replace the retained integration or establish chemical absence.
 - Do not integrate every positive residual in a broad RT context.
 
 ## Consumer Boundary
@@ -356,9 +355,7 @@ windows are method parameters (see [Area changes](#area-changes)).
 ## Boundary And Area Owners
 
 - `ChromPeakSegment` owns the boundary of an accepted candidate when a canonical
-  segment contains the selected apex. `selected_full_envelope` is used only when
-  no segment boundary exists; its split, neighbor-apex, blank-like, edge, width,
-  scan-count and low-S/N guards stay fail-closed.
+  segment contains the selected apex.
 - Raw trapezoid and standalone AsLS areas may remain audit evidence for excluded
   legacy consumers. Owner Backfill has no legacy fallback: apex, boundaries,
   height, area, scan support and shape share one canonical signal.

@@ -508,6 +508,7 @@ class _SampleInitialWorkerResponse:
             if state.error is None:
                 state.error = outcome.error
 
+
 def _require_outcome_keys(expected: tuple[str, ...], actual: tuple[str, ...]) -> None:
     if len(actual) != len(expected) or set(actual) != set(expected):
         raise UntargetedPartitionError(

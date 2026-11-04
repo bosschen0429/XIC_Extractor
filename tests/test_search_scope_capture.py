@@ -53,7 +53,6 @@ from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
     require_capture_binding,
-    scope_allows_evidence_inspection,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -223,7 +222,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         targeted_observation.content.integration
         == untargeted_observation.content.integration
     )
-    assert scope_allows_evidence_inspection(targeted, "candidate-b") is True
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
         require_capture_binding(targeted, "candidate-b")
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
@@ -521,7 +519,6 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
         capture_bindings=(untargeted_binding,),
     )
 
-    assert scope_allows_evidence_inspection(targeted, "candidate-b") is True
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
         require_capture_binding(targeted, "candidate-b")
     with pytest.raises(SearchScopeAuthorizationError, match="not declared"):

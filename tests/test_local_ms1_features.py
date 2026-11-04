@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import csv
-import json
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,7 +12,6 @@ from xic_extractor.discovery.local_ms1_features import (
     _peak_regions_from_smoothed_trace,
     _validate_summary,
     build_local_ms1_feature_table,
-    write_local_ms1_feature_outputs,
 )
 from xic_extractor.ms1_scan_index import MS1Scan
 
@@ -478,33 +474,6 @@ def test_build_local_ms1_feature_table_normalizes_integer_raw_provenance() -> No
     assert type(summary.raw_file_size_bytes) is int
     assert summary.raw_file_mtime_ns == 456
     assert type(summary.raw_file_mtime_ns) is int
-
-
-def test_write_local_ms1_feature_outputs_writes_contract_files(tmp_path: Path) -> None:
-    index = (
-        _scan(1, 1.00, [(500.0000, 10.0)]),
-        _scan(2, 1.05, [(500.0001, 50.0)]),
-        _scan(3, 1.10, [(500.0000, 10.0)]),
-    )
-    features, summary, diagnostics = build_local_ms1_feature_table(
-        index,
-        sample_stem="Sample_1",
-        raw_path="Sample_1.raw",
-        settings=_settings(min_ok_prominence=5.0),
-    )
-
-    outputs = write_local_ms1_feature_outputs(tmp_path, features, summary, diagnostics)
-
-    assert outputs.detected_features_csv == tmp_path / "detected_features.csv"
-    assert outputs.summary_json == tmp_path / "local_ms1_feature_summary.json"
-    assert outputs.diagnostics_csv == tmp_path / "local_ms1_feature_diagnostics.csv"
-    with outputs.detected_features_csv.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    assert rows[0]["source"] == "local_ms1_feature"
-    payload = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "local_ms1_feature_summary"
-    assert payload["area_contract"] == "screening_only"
-    assert payload["quant_ready"] is False
 
 
 def test_split_peak_child_regions_count_missing_gaps_independently() -> None:

@@ -307,14 +307,6 @@ class ProcessingAttemptIdentity:
     processing_attempt_id: str
     retry_of: ProcessingAttemptIdentity | None = None
 
-    @property
-    def retry_of_attempt_id(self) -> str | None:
-        """Typed predecessor ID without discarding its validated reference."""
-
-        if self.retry_of is None:
-            return None
-        return self.retry_of.processing_attempt_id
-
     def __post_init__(self) -> None:
         attempt_id = require_attempt_uuid(
             self.processing_attempt_id, error_factory=IdentityContractError

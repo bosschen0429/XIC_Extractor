@@ -155,6 +155,7 @@ class FinalGroupCellObservation:
             cell.group_context.method_subject_id for cell in self.effective_cells
         )
 
+
 def compose_final_group_cell_observation_population(
     *,
     handoff: CrossSampleAssociationLineageHandoff,

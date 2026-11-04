@@ -9,8 +9,6 @@ from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
     parse_sample_metadata,
-    sample_metadata_to_injection_order,
-    summarize_sample_metadata,
 )
 
 
@@ -37,27 +35,6 @@ def test_parse_sample_metadata_validates_roles_and_injection_order() -> None:
 
     assert rows[0].sample_role == "study_sample"
     assert rows[0].injection_order == 1
-    assert sample_metadata_to_injection_order(rows) == {
-        "TumorBC001_DNA": 1,
-        "QC1": 2,
-        "Breast_Cancer_Tissue_pooled_QC1": 2,
-    }
-    assert summarize_sample_metadata(rows) == {
-        "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-        "sample_count": 2,
-        "with_injection_order_count": 2,
-        "excluded_count": 0,
-        "role_counts": {
-            "blank": 0,
-            "calibrator": 0,
-            "pooled_qc": 1,
-            "qc": 0,
-            "solvent": 0,
-            "study_sample": 1,
-            "system_suitability": 0,
-            "unknown": 0,
-        },
-    }
 
 
 def test_sample_metadata_rejects_duplicate_raw_stem() -> None:

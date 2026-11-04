@@ -798,9 +798,7 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
     retry = issue_processing_attempt(retry_of=first_attempt)
 
     assert retry.processing_attempt_id != first_attempt.processing_attempt_id
-    assert retry.retry_of_attempt_id == first_attempt.processing_attempt_id
     assert retry.retry_of is first_attempt
-    assert first_attempt.retry_of_attempt_id is None
     assert {field.name for field in fields(first_attempt)} == {
         "processing_attempt_id",
         "retry_of",

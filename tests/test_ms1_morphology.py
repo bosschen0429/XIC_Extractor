@@ -13,7 +13,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     compute_shape_metrics,
     gaussian15_morphology_trace,
     gaussian15_positive_asls_residual_metrics,
-    gaussian_raw_minus_asls_raw_positive_trace,
     positive_residual_area,
 )
 from xic_extractor.peak_detection.scoring_metrics import (
@@ -134,39 +133,6 @@ def test_gaussian15_morphology_area_removes_sloped_baseline_before_integration()
 
     analytic_area = _analytic_gaussian_area_counts_seconds(height, sigma_min)
     assert metrics.area_positive_asls_residual == pytest.approx(analytic_area, rel=1e-3)
-
-
-def test_canonical_formula_smooths_raw_then_subtracts_raw_asls_baseline() -> None:
-    raw = np.asarray([10.0, 20.0, 80.0, 20.0, 10.0] * 5)
-    baseline = np.linspace(8.0, 18.0, raw.size)
-    profile = SignalProcessingProfile(window_points=5)
-
-    actual = gaussian_raw_minus_asls_raw_positive_trace(
-        raw,
-        baseline,
-        profile=profile,
-    )
-    expected = np.maximum(
-        gaussian15_morphology_trace(raw, window_points=5) - baseline,
-        0.0,
-    )
-    residual_first = np.maximum(
-        gaussian15_morphology_trace(raw - baseline, window_points=5),
-        0.0,
-    )
-
-    assert actual == pytest.approx(expected)
-    assert not np.allclose(actual, residual_first)
-
-
-def test_canonical_formula_rejects_short_trace_instead_of_shrinking_window() -> None:
-    profile = SignalProcessingProfile(window_points=15)
-    with pytest.raises(ValueError, match="insufficient_points_for_profile"):
-        gaussian_raw_minus_asls_raw_positive_trace(
-            np.ones(7),
-            np.zeros(7),
-            profile=profile,
-        )
 
 
 def test_compute_shape_metrics_handles_non_peak_apex_without_warning() -> None:

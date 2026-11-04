@@ -16,7 +16,6 @@ from xic_extractor.discovery.detected_features import (
     LOCAL_MS1_FEATURE_TRACE_QUALITY_OK,
     LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT,
     DetectedFeature,
-    write_detected_features_csv,
 )
 from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -24,7 +23,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_morphology_trace,
     morphology_trace_effective_points,
 )
-from xic_extractor.tabular_io import write_delimited_rows
 from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 SUMMARY_SCHEMA_VERSION = "local_ms1_feature_summary"
@@ -161,13 +159,6 @@ class LocalMs1FeatureDiagnosticRow:
     split_peak: bool
     overlap_suspected: bool
     reason: str
-
-
-@dataclass(frozen=True)
-class LocalMs1FeatureOutputs:
-    detected_features_csv: Path
-    summary_json: Path
-    diagnostics_csv: Path
 
 
 @dataclass
@@ -986,33 +977,3 @@ def _validate_summary(summary: LocalMs1FeatureSummary) -> None:
         + summary.fail_count
     ):
         raise ValueError("local MS1 feature peak-region count invariant failed")
-
-
-def write_local_ms1_feature_outputs(
-    output_dir: Path,
-    features: Sequence[DetectedFeature],
-    summary: LocalMs1FeatureSummary,
-    diagnostics: Sequence[LocalMs1FeatureDiagnosticRow],
-) -> LocalMs1FeatureOutputs:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    detected_features_csv = write_detected_features_csv(
-        output_dir / "detected_features.csv",
-        features,
-    )
-    summary_json = output_dir / "local_ms1_feature_summary.json"
-    summary_json.write_text(
-        json.dumps(asdict(summary), indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
-    diagnostics_csv = output_dir / "local_ms1_feature_diagnostics.csv"
-    write_delimited_rows(
-        diagnostics_csv,
-        (asdict(row) for row in diagnostics),
-        DIAGNOSTICS_COLUMNS,
-        extrasaction="raise",
-    )
-    return LocalMs1FeatureOutputs(
-        detected_features_csv=detected_features_csv,
-        summary_json=summary_json,
-        diagnostics_csv=diagnostics_csv,
-    )

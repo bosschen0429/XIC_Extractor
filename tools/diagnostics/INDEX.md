@@ -314,7 +314,7 @@ failing check.
 **Entry point:** `python -m tools.diagnostics.production_reachability_census [--output-tsv PATH]`.
 **Role:** maintained operator interface / diagnostic oracle.
 **Purpose**: List functions, classes and methods defined under `xic_extractor/`
-that no code in `xic_extractor/`, `gui/`, `scripts/` or `xic_inspector/` loads
+that no code in `xic_extractor/`, `xic_workbench/`, `scripts/` or `xic_inspector/` loads
 outside their own body, and that no `[project.scripts]` entry point names.
 Tests, `tools/`, imports and `__all__` strings do not count as referrers.
 **Status note**: Static and name-based. A same-named symbol elsewhere hides a

@@ -9,11 +9,8 @@ import openpyxl
 import pytest
 
 from xic_extractor.sample_metadata import (
-    SampleMetadata,
     SampleMetadataError,
     load_and_match_sample_metadata,
-    load_sample_metadata,
-    match_sequence_to_raw_stems,
     normalize_for_matching,
     parse_sequence_file,
 )
@@ -353,64 +350,3 @@ def _write_sequence_table(
         writer = csv.writer(handle, delimiter=delimiter)
         writer.writerow(headers)
         writer.writerows(rows)
-
-
-def test_match_sequence_to_raw_stems() -> None:
-    seq_rows = (
-        SampleMetadata(
-            sample_name="Tumor tissue BC001_DNA",
-            raw_stem="Tumor tissue BC001_DNA",
-            injection_order=8,
-            sample_role="study_sample",
-            group="Tumor",
-        ),
-        SampleMetadata(
-            sample_name="Breast Cancer Tissue_pooled_QC_1",
-            raw_stem="Breast Cancer Tissue_pooled_QC_1",
-            injection_order=7,
-            sample_role="pooled_qc",
-            group="QC",
-        ),
-    )
-
-    raw_stems = ["Breast_Cancer_Tissue_pooled_QC1", "TumorBC001_DNA", "Unknown_Sample"]
-    matched = match_sequence_to_raw_stems(seq_rows, raw_stems)
-
-    assert len(matched) == 3
-    # Matched QC1
-    assert matched[0].raw_stem == "Breast_Cancer_Tissue_pooled_QC1"
-    assert matched[0].injection_order == 7
-    assert matched[0].sample_role == "pooled_qc"
-
-    # Matched Tumor
-    assert matched[1].raw_stem == "TumorBC001_DNA"
-    assert matched[1].injection_order == 8
-    assert matched[1].group == "Tumor"
-
-    # Unmatched fallback
-    assert matched[2].raw_stem == "Unknown_Sample"
-    assert matched[2].injection_order is None
-
-
-def test_real_research_sequence_files() -> None:
-    docx_path = Path(
-        r"E:\Research\NTU cancer\2025台大乳癌組織數據for Jia"
-        r"\20260105中研院台大Breast cancer tissue\20260105 中研院分析.docx"
-    )
-    if not docx_path.is_file():
-        return
-
-    rows = load_sample_metadata(docx_path)
-    assert len(rows) >= 114
-
-    raw_dir = Path(r"C:\Xcalibur\data\20260106_CSMU_NAA_Tissue_R")
-    if raw_dir.is_dir():
-        raw_stems = [p.stem for p in sorted(raw_dir.glob("*.raw"))]
-        if len(raw_stems) == 85:
-            matched = match_sequence_to_raw_stems(rows, raw_stems)
-            assert len(matched) == 85
-            matched_orders = [m for m in matched if m.injection_order is not None]
-            assert len(matched_orders) == 85
-            qc1 = next(m for m in matched if "qc1" in m.raw_stem.lower())
-            assert qc1.injection_order == 7
-            assert qc1.sample_role == "pooled_qc"

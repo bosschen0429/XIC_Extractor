@@ -21,7 +21,6 @@ from xic_extractor.validation_primitives import (
     require_optional_text,
     require_owner_normalized_text,
     require_text,
-    require_tuple_of,
 )
 
 
@@ -252,14 +251,3 @@ def test_require_lower_sha256() -> None:
 
     assert require_optional_lower_sha256(None, field="hash") is None
     assert require_optional_lower_sha256(valid, field="hash") == valid
-
-
-def test_require_tuple_of() -> None:
-    assert require_tuple_of((1, 2, 3), int, field="numbers") == (1, 2, 3)
-    assert require_tuple_of((), str, field="empty") == ()
-
-    with pytest.raises(ValueError, match="numbers must be a tuple of int values"):
-        require_tuple_of([1, 2, 3], int, field="numbers")  # type: ignore[arg-type]
-
-    with pytest.raises(ValueError, match="numbers must be a tuple of int values"):
-        require_tuple_of((1, "two", 3), int, field="numbers")

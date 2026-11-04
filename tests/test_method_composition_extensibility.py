@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Mapping
 
 from scripts.run_alignment import _parse_args, _resolve_preset
 from tests.alignment_explanation_fixtures import explanation_summary
@@ -27,14 +26,11 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets import PresetTag, load_preset
 from xic_extractor.processing_run_spec import (
-    DiscoveryMethodSpec,
     GenericDiscoveryMethodSpec,
     GenericMethodSettings,
     compile_processing_run_spec,
     deserialize_processing_run_spec,
-    register_discovery_method_codec,
     serialize_processing_run_spec,
-    unregister_discovery_method_codec,
 )
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
@@ -84,58 +80,6 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
     assert deserialized.discovery_method.settings.pattern_id == "pt"
     assert deserialized.discovery_method.settings["pattern_id"] == "pt"
     assert deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
-
-
-def test_registered_discovery_method_codec_roundtrip(tmp_path: Path):
-    raw_paths = _raws(tmp_path)
-    base_spec = _compile_paths(raw_paths)
-    inputs = base_spec.acquisition_inputs
-    signal_profile = base_spec.signal_processing_profile
-
-    custom_spec = MockDeltaMassDiscoveryMethodSpec()
-
-    def _decode(content: Mapping[str, object]) -> MockDeltaMassDiscoveryMethodSpec:
-        settings_raw = content["settings"]
-        settings = (
-            MockDeltaMassDiscoverySettings(**settings_raw)
-            if isinstance(settings_raw, dict)
-            else MockDeltaMassDiscoverySettings()
-        )
-        return MockDeltaMassDiscoveryMethodSpec(
-            settings=settings,
-            method=str(content["method"]),
-            schema_version=str(content["schema_version"]),
-        )
-
-    def _encode(spec: DiscoveryMethodSpec) -> Mapping[str, object]:
-        return {
-            "schema_version": spec.schema_version,
-            "method": spec.method,
-            "settings": {
-                "pattern_id": spec.settings.pattern_id,
-                "mz_tolerance_ppm": spec.settings.mz_tolerance_ppm,
-                "rt_tolerance_sec": spec.settings.rt_tolerance_sec,
-            },
-        }
-
-    register_discovery_method_codec("delta_mass", decoder=_decode, encoder=_encode)
-    try:
-        run_spec = compile_processing_run_spec(
-            acquisition_inputs=inputs,
-            signal_processing_profile=signal_profile,
-            discovery_method=custom_spec,
-        )
-        serialized = serialize_processing_run_spec(run_spec)
-        deserialized = deserialize_processing_run_spec(serialized)
-        assert isinstance(
-            deserialized.discovery_method, MockDeltaMassDiscoveryMethodSpec
-        )
-        assert (
-            deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
-        )
-        assert deserialized == run_spec
-    finally:
-        unregister_discovery_method_codec("delta_mass")
 
 
 def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():

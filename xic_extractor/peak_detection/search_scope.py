@@ -338,12 +338,6 @@ def _validate_physical_capture_scope(scope: SearchScope) -> None:
             )
 
 
-def scope_allows_evidence_inspection(scope: SearchScope, candidate_id: str) -> bool:
-    _validate_scope_type(scope)
-    candidate = _normalized_text(candidate_id, field="candidate_id")
-    return candidate in scope.declared_candidate_ids
-
-
 def require_capture_binding(
     scope: SearchScope,
     candidate_id: str,
@@ -970,7 +964,6 @@ __all__ = (
     "TargetSearchScope",
     "UntargetedSearchScope",
     "require_capture_binding",
-    "scope_allows_evidence_inspection",
     "target_ms1_subject_id",
     "validate_scope_owner_binding",
     "validate_scope_trace_coordinates",

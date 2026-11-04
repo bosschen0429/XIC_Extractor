@@ -269,26 +269,6 @@ def require_list(
     return value
 
 
-def require_tuple_of(
-    value: object,
-    item_type: type | tuple[type, ...],
-    *,
-    field: str = "field",
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> tuple[object, ...]:
-    """Validate that value is a tuple containing only instances of item_type."""
-    if not isinstance(value, tuple) or any(
-        not isinstance(item, item_type) for item in value
-    ):
-        type_name = (
-            item_type.__name__
-            if hasattr(item_type, "__name__")
-            else "/".join(t.__name__ for t in item_type)
-        )
-        raise error_factory(f"{field} must be a tuple of {type_name} values")
-    return value
-
-
 def require_keys(
     value: Mapping[str, object],
     keys: tuple[str, ...],
@@ -361,7 +341,6 @@ __all__ = [
     "require_optional_text",
     "require_owner_normalized_text",
     "require_text",
-    "require_tuple_of",
 ]
 
 
