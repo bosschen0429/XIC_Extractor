@@ -22,6 +22,7 @@ from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (
     RECORDED_PRECURSOR_BASES,
+    MS1MassWindowSource,
 )
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
@@ -33,23 +34,19 @@ class StrictSeedReceiptError(ValueError):
 
 
 class StrictSeedReceiptRaw(Protocol):
-    def iter_ms2_scans(
-        self,
-        rt_min: float,
-        rt_max: float,
-    ) -> Iterator[Ms2ScanEvent]: ...
+    def iter_ms2_scan_subset(
+        self, rt_min: float, rt_max: float, scan_numbers: frozenset[int]
+    ) -> Iterator[Ms2ScanEvent]:
+        """Declared scans within the native RT-to-scan window."""
 
 
 def read_parent_ms1_observations(
-    raw: object,
+    raw: MS1MassWindowSource,
     seeds: tuple[DiscoverySeed, ...],
     *,
     tolerance_ppm: float,
 ) -> tuple[DiscoverySeed, ...]:
     """Attach fresh parent-MS1 facts without changing a seed's search provenance."""
-    read_windows = getattr(raw, "read_ms1_mass_windows", None)
-    if not callable(read_windows):
-        return seeds
     windows: dict[int, tuple[int, float, float]] = {}
     for index, seed in enumerate(seeds):
         metadata = seed.precursor_metadata
@@ -68,7 +65,7 @@ def read_parent_ms1_observations(
     if not windows:
         return seeds
     requests = tuple(dict.fromkeys(windows.values()))
-    observations = dict(zip(requests, read_windows(requests), strict=True))
+    observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
     return tuple(
         replace(seed, ms1_precursor_observation=observations[windows[index]])
         if index in windows
@@ -175,13 +172,7 @@ def _read_exact_scans(
     }
     rt_min = candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL
     rt_max = candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL
-    read_subset = getattr(raw, "iter_ms2_scan_subset", None)
-    events = (
-        read_subset(rt_min, rt_max, frozenset(declared))
-        if callable(read_subset)
-        else raw.iter_ms2_scans(rt_min, rt_max)
-    )
-    for event in events:
+    for event in raw.iter_ms2_scan_subset(rt_min, rt_max, frozenset(declared)):
         if (
             event.parse_error is None
             and event.scan is not None

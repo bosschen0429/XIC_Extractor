@@ -9,6 +9,7 @@ import pytest
 
 from scripts.run_delta_mass_discovery import main
 from xic_extractor.discovery import delta_mass_pipeline
+from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.xic_models import XICTrace
 
 
@@ -138,6 +139,9 @@ smoothing_window_sec = 1
                 * self.height
                 * np.array([0.25, 1, 0.25, 0.125, 0.5, 0.125]),
             )
+
+        def read_ms1_scan_index(self, *, centroid):
+            return build_ms1_scan_index(self, centroid=centroid)
 
         def extract_xic_many(self, requests):
             batches.append((self.base_mz, len(requests)))

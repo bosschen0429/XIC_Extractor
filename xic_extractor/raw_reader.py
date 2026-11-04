@@ -37,6 +37,7 @@ from xic_extractor.injection_timeline import (
     ScheduledInjection,
     build_injection_timeline,
 )
+from xic_extractor.ms1_scan_index import MS1Scan, build_ms1_scan_index
 from xic_extractor.ms2_scan_models import (
     Ms2PrecursorMetadata,
     Ms2PrecursorScope,
@@ -50,6 +51,7 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     fingerprint_file_content,
 )
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.sample_metadata import (
     SampleMetadata,
     SampleRole,
@@ -390,6 +392,13 @@ class RawFileHandle:
 
     def retention_time_for_scan(self, scan_number: int) -> float:
         return float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
+
+    def read_ms1_scan_index(self, *, centroid: bool = False) -> tuple[MS1Scan, ...]:
+        return build_ms1_scan_index(self._raw_file, centroid=centroid)
+
+    def batch_xic_source(self) -> RawSuperWindowSource:
+        """Overlapping scan windows share one native chromatogram read."""
+        return RawSuperWindowSource(self)
 
     def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
         """Most intense MS1 centroid within [mz_min, mz_max] at the scan at ``rt``."""

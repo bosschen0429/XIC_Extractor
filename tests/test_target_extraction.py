@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -414,7 +415,7 @@ def test_batch_applies_sample_drift_once(
     ]
     rt = np.linspace(0, 18, 1801)
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, intensity):
             self.intensity = intensity
 
@@ -488,7 +489,7 @@ def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected
     intensity = 10 + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
     requests = []
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
 
@@ -611,7 +612,7 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
     )
     window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
 
@@ -730,7 +731,7 @@ def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path)
     window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
     rt = np.linspace(0, 12, 1201)
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
 
@@ -793,7 +794,7 @@ def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
     rt = np.linspace(0, 12, 1201)
     reads = []
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
 
@@ -803,6 +804,9 @@ def test_precursor_scoped_ms2_keeps_every_target_evidence_route(tmp_path):
         def iter_ms2_scans(self, low, high):
             reads.append((low, high))
             return iter(events)
+
+        def read_ms1_mass_windows(self, requests):
+            return (None,) * len(requests)
 
     config = _strategy_config(tmp_path)
 
@@ -854,7 +858,7 @@ def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
     scan = Ms2Scan(7, 8.0, precursor, np.array([product]), np.array([1000.0]), 1000.0)
     window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
 
@@ -916,7 +920,7 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         for index, apex in enumerate((10.9, 17.3, 17.5, 17.7))
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def acquisition_rt_bounds(self):
             return 0.0, 24.0
 

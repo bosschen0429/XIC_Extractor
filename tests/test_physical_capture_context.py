@@ -14,6 +14,7 @@ from xic_extractor.acquisition.physical_capture import (
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -66,7 +67,7 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         physical_capture, "enumerate_physical_segment_universe", counted_enumerate
     )
     capture = PhysicalPeakCapture(
-        raw,
+        RawSuperWindowSource(raw),
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.shared_context",
         profile=TEST_PROFILE,
@@ -115,7 +116,7 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
     intensity += _gaussian(rt, center=6.0, sigma=0.07, height=2000.0)
     raw = _BoundedRaw(rt=rt, intensity=intensity)
     capture = PhysicalPeakCapture(
-        raw,
+        RawSuperWindowSource(raw),
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.extended_context",
         profile=TEST_PROFILE,

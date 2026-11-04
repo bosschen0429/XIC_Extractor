@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from tests.raw_header_fakes import install_fake_raw_headers
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -125,7 +126,7 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
         cid_nl_tag="dR" if neutral_loss is not None else "",
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         scan_rt = 9.0
 
         def acquisition_rt_bounds(self):

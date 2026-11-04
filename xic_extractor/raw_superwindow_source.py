@@ -2,28 +2,28 @@
 
 Requests whose scan windows overlap share one chromatogram call over their
 union window, and each returned trace is cropped back to its own request's scan
-window. A source that cannot resolve scan windows or retention times keeps its
-own extraction.
+window.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Protocol
 
-import numpy as np
-from numpy.typing import NDArray
-
-from xic_extractor.ms1_scan_index import raw_file
+from xic_extractor.acquisition_contract import BatchXICAdapter
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _WindowedRequest = tuple[int, XICRequest, tuple[int, int]]
 
 
+class ScanResolvedXICSource(BatchXICAdapter, Protocol):
+    def retention_time_for_scan(self, scan_number: int) -> float: ...
+
+
 class RawSuperWindowSource:
     def __init__(
         self,
-        source: Any,
+        source: ScanResolvedXICSource,
         *,
         superwindow_span_factor: int = 2,
     ) -> None:
@@ -35,24 +35,7 @@ class RawSuperWindowSource:
 
     @property
     def raw_chromatogram_call_count(self) -> int:
-        value = getattr(self._source, "raw_chromatogram_call_count", 0)
-        return value if isinstance(value, int) else 0
-
-    @property
-    def acquisition_source(self) -> Any:
-        return getattr(self._source, "acquisition_source", None)
-
-    def extract_xic(
-        self,
-        mz: float,
-        rt_min: float,
-        rt_max: float,
-        ppm_tol: float,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        trace = self.extract_xic_many(
-            (XICRequest(mz=mz, rt_min=rt_min, rt_max=rt_max, ppm_tol=ppm_tol),)
-        )[0]
-        return trace.rt, trace.intensity
+        return self._source.raw_chromatogram_call_count
 
     def extract_xic_many(
         self,
@@ -66,9 +49,6 @@ class RawSuperWindowSource:
             requests,
             superwindow_span_factor=self._superwindow_span_factor,
         )
-        if groups is None:
-            return _extract_source_many(self._source, requests)
-
         traces: list[XICTrace | None] = [None] * len(requests)
         for group in groups:
             union_start = min(scan_window[0] for _index, _request, scan_window in group)
@@ -86,7 +66,7 @@ class RawSuperWindowSource:
                 )
                 for _index, request, _scan_window in group
             )
-            union_traces = _extract_source_many(self._source, union_requests)
+            union_traces = tuple(self._source.extract_xic_many(union_requests))
             for trace, (original_index, _request, scan_window) in zip(
                 union_traces,
                 group,
@@ -102,47 +82,16 @@ class RawSuperWindowSource:
         return tuple(trace for trace in traces if trace is not None)
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
-        resolver = getattr(self._source, "scan_window_for_request", None)
-        if callable(resolver):
-            start_scan, end_scan = resolver(request)
-            return int(start_scan), int(end_scan)
-        raw = raw_file(self._source)
-        return (
-            int(raw.ScanNumberFromRetentionTime(request.rt_min)),
-            int(raw.ScanNumberFromRetentionTime(request.rt_max)),
-        )
+        return self._source.scan_window_for_request(request)
 
     def retention_time_for_scan(self, scan_number: int) -> float:
         scan_number = int(scan_number)
         cached = self._retention_time_cache.get(scan_number)
         if cached is not None:
             return cached
-        resolver = getattr(self._source, "retention_time_for_scan", None)
-        if callable(resolver):
-            value = float(resolver(scan_number))
-        else:
-            raw = raw_file(self._source)
-            value = float(raw.RetentionTimeFromScanNumber(scan_number))
+        value = float(self._source.retention_time_for_scan(scan_number))
         self._retention_time_cache[scan_number] = value
         return value
-
-
-def _extract_source_many(
-    source: Any,
-    requests: tuple[XICRequest, ...],
-) -> tuple[XICTrace, ...]:
-    if hasattr(source, "extract_xic_many"):
-        return tuple(source.extract_xic_many(requests))
-    traces: list[XICTrace] = []
-    for request in requests:
-        rt, intensity = source.extract_xic(
-            request.mz,
-            request.rt_min,
-            request.rt_max,
-            request.ppm_tol,
-        )
-        traces.append(XICTrace.from_arrays(rt, intensity))
-    return tuple(traces)
 
 
 def _superwindow_groups(
@@ -150,16 +99,13 @@ def _superwindow_groups(
     requests: tuple[XICRequest, ...],
     *,
     superwindow_span_factor: int,
-) -> tuple[tuple[_WindowedRequest, ...], ...] | None:
+) -> tuple[tuple[_WindowedRequest, ...], ...]:
     windowed_requests: list[_WindowedRequest] = []
-    try:
-        for index, request in enumerate(requests):
-            scan_window = source.scan_window_for_request(request)
-            source.retention_time_for_scan(scan_window[0])
-            source.retention_time_for_scan(scan_window[1])
-            windowed_requests.append((index, request, scan_window))
-    except (AttributeError, NotImplementedError):
-        return None
+    for index, request in enumerate(requests):
+        scan_window = source.scan_window_for_request(request)
+        source.retention_time_for_scan(scan_window[0])
+        source.retention_time_for_scan(scan_window[1])
+        windowed_requests.append((index, request, scan_window))
     if not windowed_requests:
         return ()
 

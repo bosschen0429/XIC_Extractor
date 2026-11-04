@@ -296,6 +296,13 @@ class _FakeXicSource:
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return 0, len(self.rt) - 1
 
+    def batch_xic_source(self):
+        return self
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
 
 def _discovery_ms1_peak_probe(
     candidate: DiscoveryCandidate,

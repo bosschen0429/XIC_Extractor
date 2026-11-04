@@ -650,6 +650,13 @@ class _CadenceBoundRaw:
     def scan_window_for_request(self, request):
         return (int(request.rt_min * 100), int(request.rt_max * 100))
 
+    def batch_xic_source(self):
+        return self
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
 
 def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     tmp_path: Path,

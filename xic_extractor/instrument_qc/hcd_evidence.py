@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import numpy as np
 
+from xic_extractor.acquisition.ms2_windows import MS2ScanSource
 from xic_extractor.instrument_qc.hcd_registry import products_for_group
 from xic_extractor.instrument_qc.models import (
     ActivationMethod,
@@ -15,7 +16,7 @@ from xic_extractor.instrument_qc.models import (
     HCDProductIon,
     SDOLEKTrendRow,
 )
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan
 
 DEFAULT_HCD_RT_WINDOW_MIN = 0.20
 DEFAULT_HCD_PRODUCT_PPM_MAX = 20.0
@@ -24,12 +25,6 @@ DEFAULT_HCD_MIN_PRODUCT_BASE_RATIO = 0.01
 DEFAULT_HCD_PRECURSOR_TOL_DA = 1.6
 DEFAULT_HCD_FALLBACK_RT_MIN = 0.0
 DEFAULT_HCD_FALLBACK_RT_MAX = 60.0
-
-
-class MS2Source(Protocol):
-    def iter_ms2_scans(
-        self, rt_min: float, rt_max: float
-    ) -> Iterator[Ms2ScanEvent]: ...
 
 
 @dataclass(frozen=True)
@@ -47,7 +42,7 @@ class _ProductEvidence:
 def build_hcd_audit_row(
     *,
     trend_row: SDOLEKTrendRow,
-    raw: MS2Source,
+    raw: MS2ScanSource,
     products: tuple[HCDProductIon, ...],
     instrument_method: str,
     activation_method: ActivationMethod,
@@ -174,7 +169,7 @@ def _empty_product_evidence() -> _ProductEvidence:
 
 def _collect_product_evidence(
     *,
-    raw: MS2Source,
+    raw: MS2ScanSource,
     rt_min: float,
     rt_max: float,
     anchor_rt: float | None,

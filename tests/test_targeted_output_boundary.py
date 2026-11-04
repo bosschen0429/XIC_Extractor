@@ -13,6 +13,7 @@ import pytest
 from openpyxl import load_workbook
 
 from tests.raw_header_fakes import install_fake_raw_headers
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from tests.test_targeted_production_workflow import (
     production_case,
     with_method_universe,
@@ -132,7 +133,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         istd_pair="",
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, scale: float) -> None:
             self.scale = scale
 
@@ -1673,7 +1674,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         istd_pair="",
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, name):
             self.name = name
 
@@ -1934,7 +1935,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         ]
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, name):
             self.name = name
 
@@ -2134,7 +2135,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         istd_pair="",
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, name):
             self.name = name
 

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from tests.raw_header_fakes import install_fake_raw_headers
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
@@ -2530,7 +2531,7 @@ def _open_raw_factory(
     return _fake_open_raw
 
 
-class _FakeRaw:
+class _FakeRaw(ScopedMs2WindowReader):
     def acquisition_rt_bounds(self):
         return 0.0, 20.0
 

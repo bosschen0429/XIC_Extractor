@@ -12,8 +12,15 @@ class MS2ScanSource(Protocol):
     ) -> Iterator[Ms2ScanEvent]: ...
 
 
+class MS2WindowSource(MS2ScanSource, Protocol):
+    def read_ms2_window(
+        self, rt_min: float, rt_max: float, *, precursor_scope: Ms2PrecursorScope
+    ) -> tuple[Ms2ScanEvent, ...]:
+        """Admitted MS2 events and acquisition errors; spectra only when admitted."""
+
+
 def acquire_ms2_window(
-    raw: MS2ScanSource,
+    raw: MS2WindowSource,
     *,
     sample_key: str,
     rt_min: float,
@@ -24,24 +31,11 @@ def acquire_ms2_window(
 
     With a precursor scope, only admitted events carry spectra.
     """
-    if precursor_scope is None:
-        return Ms2Window(
-            sample_key=sample_key,
-            rt_min=rt_min,
-            rt_max=rt_max,
-            events=tuple(raw.iter_ms2_scans(rt_min, rt_max)),
-        )
-    read_window = getattr(raw, "read_ms2_window", None)
-    if callable(read_window):
-        events = read_window(rt_min, rt_max, precursor_scope=precursor_scope)
-    else:
-        scanned = tuple(raw.iter_ms2_scans(rt_min, rt_max))
-        events = tuple(
-            event
-            for event in scanned
-            if event.scan is None
-            or precursor_scope(event.scan.precursor_mz, event.scan.precursor_metadata)
-        )
+    events = (
+        tuple(raw.iter_ms2_scans(rt_min, rt_max))
+        if precursor_scope is None
+        else raw.read_ms2_window(rt_min, rt_max, precursor_scope=precursor_scope)
+    )
     return Ms2Window(
         sample_key=sample_key,
         rt_min=rt_min,

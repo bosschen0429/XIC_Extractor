@@ -27,3 +27,15 @@ def targeted_rows():
             "note": "方法 A",
         },
     ]
+
+
+class ScopedMs2WindowReader:
+    """Fake-reader ``read_ms2_window``: scope admits events; errors are kept."""
+
+    def read_ms2_window(self, rt_min, rt_max, *, precursor_scope):
+        return tuple(
+            event
+            for event in self.iter_ms2_scans(rt_min, rt_max)
+            if event.scan is None
+            or precursor_scope(event.scan.precursor_mz, event.scan.precursor_metadata)
+        )

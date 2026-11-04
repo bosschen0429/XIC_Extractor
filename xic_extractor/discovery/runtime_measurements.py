@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from xic_extractor.acquisition_contract import (
+    BatchXICAdapter,
     RawAcquisitionSessionReceipt,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
@@ -282,16 +283,15 @@ def validate_discovery_ms1_observations(
 
 def record_raw_measurements(
     timing_recorder: TimingRecorder,
-    raw: object,
+    raw: BatchXICAdapter,
     sample_stem: str,
 ) -> None:
     """Project Discovery owner facts without inventing unavailable counters."""
 
+    raw_calls: int | None
     try:
-        raw_calls = getattr(raw, "raw_chromatogram_call_count", None)
-        raw_calls_reason = (
-            "" if isinstance(raw_calls, int) else "raw handle has no call counter"
-        )
+        raw_calls = raw.raw_chromatogram_call_count
+        raw_calls_reason = ""
     except Exception as exc:
         raw_calls = None
         raw_calls_reason = (

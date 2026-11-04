@@ -355,6 +355,18 @@ class _FakeRaw:
         )
         return first + 1, last + 1
 
+    def batch_xic_source(self):
+        return self
+
+    def read_ms1_mass_windows(self, requests):
+        """This fixture records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
+    def iter_ms2_scan_subset(self, rt_min, rt_max, scan_numbers):
+        for event in self.iter_ms2_scans(rt_min, rt_max):
+            if event.scan_number in scan_numbers:
+                yield event
+
     def iter_ms2_scans(
         self,
         rt_min: float,
