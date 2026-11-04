@@ -14,49 +14,34 @@ For definitions of domain-specific terms used in these pages, see the
 [XIC Extractor Domain Glossary](domain-glossary.md), the single vocabulary
 owner for product documentation.
 
-### Pipeline
+## Find The Rule Behind A Result
 
-| Topic | Start here | Scope |
-| --- | --- | --- |
-| Discovery | [`discovery.md`](discovery.md) | Shared candidate-discovery stage; broad Untargeted search and constrained Targeted search, candidate/review outputs, seed evidence handoff |
-| Shared Processing Kernel | [`shared-processing-kernel.md`](shared-processing-kernel.md) | Frozen workflow-neutral capture, CrossSample, ObservationRevisit, cell-decision, final-result, and Targeted/Untargeted projection seams |
-| Untargeted Method | [`untargeted-method.md`](untargeted-method.md) | Durable method boundary for Untargeted LC-MS recovery, hygiene, and historical report absorption |
-| Alignment | [`alignment.md`](alignment.md) | Cross-sample correspondence: method principles, current implementation, and open questions |
-| Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |
-| Decision Policy | [`decision-policy.md`](decision-policy.md) | Typed evidence, workflow gates, score boundaries, and projection authority |
-| Quantitation Context | [`quantitation-context.md`](quantitation-context.md) | Bounded trace context, morphology evidence, area-impacting gates |
-| Signal Processing Rationale | [`signal-processing-rationale.md`](signal-processing-rationale.md) | Why smoothed-everywhere: noise regime, stability vs precision trade-off, design exceptions |
+You do not need to read every topic. Start with the analysis question, then
+open the owner that defines the relevant decision. The
+[A/B/C processing story](../user/processing-guide.html) supplies the conceptual
+journey; these pages supply exact rules, rationale and limits.
 
-### Data Products
+| Analysis question | Topic owners |
+| --- | --- |
+| What evidence does my method search, and what do the inputs mean? | [Discovery](discovery.md), [Presets](presets.md), [Sample metadata and QC](sample-metadata-qc.md), [Vendor RAW evidence model](vendor-raw-evidence-model.md) |
+| How does a trace support a peak and an area? | [Quantitation context](quantitation-context.md), [Signal processing rationale](signal-processing-rationale.md), [Evidence spine](evidence-spine.md) |
+| Which observations belong to the same cross-sample feature? | [Alignment](alignment.md), [Peak anchor and group boundary](family-hypothesis-boundary.md), [Untargeted method](untargeted-method.md) |
+| What happens when a sample lacks usable evidence? | [Backfill](backfill.md), [Shared processing kernel](shared-processing-kernel.md) |
+| Why is an area counted, flagged, written or left blank? | [Decision policy](decision-policy.md), [Targeted selection](targeted-selection.md) |
+| What did I receive, and how can I inspect or prepare it for use? | [Targeted workbook](targeted-workbook.md), [Quant Matrix](quant-matrix.md), [XIC Inspector](xic-inspector.md), [Matrix Curation](matrix-curation.md) |
 
-| Topic | Start here | Scope |
-| --- | --- | --- |
-| Quant Matrix | [`quant-matrix.md`](quant-matrix.md) | Product-facing matrix values, Backfill activation boundaries, authority routing |
-| Targeted Workbook | [`targeted-workbook.md`](targeted-workbook.md) | Delivered Targeted XLSX: purpose, sheets, reader contracts, content and presentation rules |
-| Evidence Spine | [`evidence-spine.md`](evidence-spine.md) | Shared evidence carriers, peak hypotheses, projection boundaries |
-| Vendor RAW Evidence Model | [`vendor-raw-evidence-model.md`](vendor-raw-evidence-model.md) | Qual Browser-derived RAW evidence-query concepts, scan-filter lineage, trace-type boundaries |
-| Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |
-| Backfill | [`backfill.md`](backfill.md) | Bounded owner-backed ObservationRevisit; explicitly separate from membership and selected value |
-| Run Provenance | [`run-provenance.md`](run-provenance.md) | Targeted workbook run metadata and input snapshots; not a replay archive or delivery seal |
-| Result Traceability | [`processing-lineage.md`](processing-lineage.md) | Current request/attempt/artifact identity, bindings, and retention classes |
-| Run Lifecycle Management | [`execution-runtime.md`](execution-runtime.md) | Current attempt execution, workflow coverage, cancellation, cleanup, and observability; reserved dependency-reuse contract |
+## System And Maintenance References
 
-### Quality and Review
+Use these when the question is about execution, traceability or capability
+authority rather than interpretation of a peak or result.
 
-| Topic | Start here | Scope |
-| --- | --- | --- |
-| XIC Inspector and HTML workspace | [`xic-inspector.md`](xic-inspector.md) | Local batch review and on-demand XIC, shared selection/rendering, and portable offline Inspector reports |
-| Sample Metadata And QC | [`sample-metadata-qc.md`](sample-metadata-qc.md) | Sample identity/order/role/QC, activation gates |
-| Matrix Curation | [`matrix-curation.md`](matrix-curation.md) | Switchable post-Alignment steps on a published Matrix, per-feature decisions and the kept Matrix |
-| Instrument QC And Calibration | [`instrument-qc-calibration.md`](instrument-qc-calibration.md) | Clean-vs-biological QC, HCD audit, calibration readiness |
-
-### System
-
-| Topic | Start here | Scope |
-| --- | --- | --- |
-| Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
-| Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
-| Local HTML analysis workbench | [`untargeted-gui.md`](untargeted-gui.md) | Targeted and Untargeted setup/execution, result actions, local config, and bundle resources |
+| Question | Topic owner |
+| --- | --- |
+| How does the local workspace run an analysis and expose results? | [HTML workbench](untargeted-gui.md) |
+| How do completion, cancellation, failure and workers behave? | [Run lifecycle](execution-runtime.md) |
+| Which inputs and settings produced a result? | [Run provenance](run-provenance.md), [Result traceability](processing-lineage.md) |
+| What is supported, and which evidence establishes readiness? | [Productization](productization.md), [Instrument QC and calibration](instrument-qc-calibration.md) |
+| What does a product term mean? | [Domain glossary](domain-glossary.md) |
 
 ## Authority Boundary
 

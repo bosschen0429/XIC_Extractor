@@ -1,12 +1,13 @@
 # Targeted Selection
 
-Targeted CID-NL uses the same quadrature precursor/product m/z window as
-Discovery when it evaluates a configured neutral loss. `nl_ppm_max` and the
-CID-NL support policy tolerance are per-ion ppm inputs to that window. The
-reported observed-loss error in ppm remains a descriptive measurement.
+Targeted selection connects observed evidence to the known targets requested
+for a batch. It constrains search, binds completed groups to fixed target rows,
+and determines inclusion, detection counting and review reasons. A target-list
+entry is a search request, not evidence that the target was observed.
 
-Targeted selection is the Targeted workflow projection for known targets.
-Targeted selection does four things:
+For operation and result reading, start with the
+[Targeted guide](../user/targeted-extraction.md#review-the-batch). This page owns
+the exact selection and projection rules. Targeted selection does four things:
 
 1. Targeted selection constrains the shared scientific lifecycle with an exact
    target-list snapshot.
@@ -21,6 +22,13 @@ typed decisions. Targeted selection does not require a second capture,
 CrossSample, Backfill, or selected-value implementation.
 
 ## Contract
+
+### CID-NL mass window
+
+Targeted CID-NL uses the same quadrature precursor/product m/z window as
+Discovery when it evaluates a configured neutral loss. `nl_ppm_max` and the
+CID-NL support policy tolerance are per-ion ppm inputs to that window. The
+reported observed-loss error in ppm remains a descriptive measurement.
 
 ### MS1-only target intent
 

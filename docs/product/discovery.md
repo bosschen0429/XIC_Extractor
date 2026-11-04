@@ -1,11 +1,16 @@
 # Discovery
 
-Discovery is the candidate-generation stage of the shared XIC lifecycle.
+Discovery answers which sample-local signals warrant further evaluation. It
+turns method-specific seed evidence and MS1 traces into reviewable candidates;
+a candidate does not establish cross-sample correspondence or a final value.
+The [processing story](../user/processing-guide.html#discovery) explains that
+distinction with an example. This page owns the exact candidate and provider
+contracts.
+
 Untargeted retains every candidate qualifying under its configured evidence
 space; Targeted supplies a `TargetSearchScope` that retains only configured
 targets. Both may inspect a broad evidence policy such as dR, R, or MeR through
-the same scientific task. Discovery turns seed evidence and MS1 traces into
-reviewable candidates. Discovery does not directly publish product outputs.
+the same scientific task. Discovery does not directly publish product outputs.
 Publication requires closed cell decisions, the relevant workflow
 projection, and [Writer Authority](productization.md#writer-authority).
 
