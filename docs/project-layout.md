@@ -49,18 +49,17 @@ XIC_Extractor/
 ├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試選取
 ├── tests/                     行為測試與小型 fixtures
 ├── docs/
-│   ├── user/                  使用者操作、欄位參考與概念 HTML；README.md 是索引
+│   ├── user/                  使用者操作、欄位參考、概念 HTML 與截圖（assets/）；README.md 是索引
 │   ├── product/               產品行為與科學規則；README.md 依主題找文件
 │   ├── agent/                 按任務讀的執行、驗證與交付規則；含診斷結論 ledger
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
 │   └── project-layout.md      本檔
 ├── config/                    未追蹤的本機狀態與設定範本；公開 Targeted 範例在 xic_extractor/configuration/data/
-├── assets/                    圖示與截圖
 ├── .github/                   CI 與 issue／PR 範本
 ├── .codex/                    Repo 的 agent skill 與規則
-├── pyproject.toml             套件、依賴、已安裝 CLI 與測試設定
-├── .importlinter              可執行的靜態依賴限制
-├── xic_extractor.spec          Windows 打包輸入
+├── pyproject.toml             套件、依賴、已安裝 CLI、測試與 import-linter 依賴限制
+├── packaging/                 Windows 打包：PyInstaller spec 與 app icon
+├── launch_gui.bat / .vbs      雙擊啟動 HTML 工作區
 └── output/                    本機執行產物，不追蹤
 ```
 
@@ -125,8 +124,9 @@ XIC_Extractor/
 - **Package roots：** `pyproject.toml` 的 `packages.find` 包含 `scripts*`、
   `tools*`、`xic_extractor*`、`xic_inspector*`、`xic_workbench*`，排除
   `tests*`。這些目錄須留在 repo root；搬移時驗證已安裝 CLI 與 package。
-- **Frozen bundle：** `xic_extractor.spec` 從 `xic_workbench/__main__.py` 啟動，
-  打包圖示、設定範例、workbench／Inspector assets、preset TOML 與 package data。
+- **Frozen bundle：** `packaging/xic_extractor.spec` 從 `xic_workbench/__main__.py`
+  啟動，以 repo root 解析路徑，打包設定範例、workbench／Inspector assets、preset
+  TOML 與 package data；app icon 在同一目錄。
   搬移這些路徑要同步更新 spec 與 build workflow，並驗證打包後的程式；原始碼入口
   不能證明打包結果。
 - **Config 與 output：** `xic_extractor/configuration/loader.py` 由 config 的

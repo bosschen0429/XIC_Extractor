@@ -6,7 +6,7 @@ tables and workbench review explain how a feature or missing cell arose.
 Aligned features are not automatically identified compounds. The Matrix is an
 input to downstream analysis, not a normalized or batch-corrected result.
 
-![Untargeted workspace: run scope, data and output, internal standards, and pre-run checks](../../assets/screenshots/untargeted-workspace.png)
+![Untargeted workspace: run scope, data and output, internal standards, and pre-run checks](assets/untargeted-workspace.png)
 
 ## Workflow
 

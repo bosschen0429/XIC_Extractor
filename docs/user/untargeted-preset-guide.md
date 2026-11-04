@@ -6,7 +6,7 @@ can be saved anywhere and selected in the GUI or passed to CLI scripts.
 
 ## Configure A Method In The GUI
 
-![CID-NL method editor with an example dR/R configuration](../../assets/screenshots/method-editor.png)
+![CID-NL method editor with an example dR/R configuration](assets/method-editor.png)
 
 In **Untargeted Discovery → 分析方法**:
 

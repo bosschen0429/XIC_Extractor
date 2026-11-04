@@ -12,7 +12,7 @@ For example, run a batch of DNA adduct samples and get either:
   value or blank cell to see the saved decision and its reason, and, with the
   source RAW files, re-extract its chromatogram.
 
-![Untargeted workspace in XIC Extractor](assets/screenshots/untargeted-workspace.png)
+![Untargeted workspace in XIC Extractor](docs/user/assets/untargeted-workspace.png)
 
 Both workflows run on shared processing for peaks, areas and cross-sample
 correspondence; method-specific evidence still decides what each method

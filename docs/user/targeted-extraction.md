@@ -5,7 +5,7 @@ a batch. Prepare names, m/z and expected RT; specify identification methods
 and internal-standard relationships where applicable. The main result is one
 Excel workbook, read from batch summary to the individual results needing attention.
 
-![Targeted workspace: data and output, samples, target list, and pre-run checks](../../assets/screenshots/targeted-workspace.png)
+![Targeted workspace: data and output, samples, target list, and pre-run checks](assets/targeted-workspace.png)
 
 ## Workflow
 

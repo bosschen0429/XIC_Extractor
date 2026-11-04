@@ -31,7 +31,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 
 檔案層級的 owner 以現行 source 為準：用 CBM 查 callers 與 consumers，再讀
 module docstring。Package 名稱不是分層證明：`alignment/` 同時含科學與外層
-adapter；通過 [`.importlinter`](../.importlinter) 不代表所有 I/O 已隔離。
+adapter；通過 `pyproject.toml` 的 `[tool.importlinter]` 不代表所有 I/O 已隔離。
 
 ## Design Principles
 
@@ -164,7 +164,7 @@ forbidden dependency.
 - `extraction/` and `untargeted_execution/` do not depend on each other; shared
   scientific settings live in `configuration/scientific_settings.py`.
 - Main chain: applications → untargeted_execution／extraction → alignment →
-  discovery → peak_detection (`.importlinter` `main-chain-layers`).
+  discovery → peak_detection (import-linter `main-chain-layers`).
   `acquisition/` stays inner (`acquisition-stays-inner`).
 - `applications/` is the outermost composition layer; nothing inner imports it.
   It owns the run from configuration to publication. `extractor.run` is the

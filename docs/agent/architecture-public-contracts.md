@@ -112,7 +112,7 @@ The architecture census is disposable evidence, not an authority registry. It
 derives current module paths, static imports, declared console scripts, and
 package patterns from source.
 
-- `.importlinter` owns the coarse static dependency floor.
+- `[tool.importlinter]` in `pyproject.toml` owns the coarse static dependency floor.
 - `scripts/check_architecture_census.py` owns the census integrity, naming,
   and internal-defense growth gates.
 - Dynamic loaders, installed entry points, frozen applications, workflow

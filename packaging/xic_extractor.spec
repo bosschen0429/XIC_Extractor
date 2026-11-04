@@ -1,4 +1,4 @@
-# xic_extractor.spec
+# packaging/xic_extractor.spec
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
@@ -13,6 +13,11 @@ if sys.platform == "win32":
     os.environ["PATH"] = system32 + os.pathsep + os.environ.get("PATH", "")
 
 block_cipher = None
+
+# Resolve every path from the repository root, independent of the working
+# directory. PyInstaller defines SPECPATH; a plain Python run provides __file__.
+SPEC_DIR = globals().get("SPECPATH") or os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.abspath(SPEC_DIR))
 
 preset_datas = collect_data_files(
     "xic_extractor.presets",
@@ -29,13 +34,15 @@ workbench_datas = collect_data_files(
 )
 
 a = Analysis(
-    ["xic_workbench/__main__.py"],
-    pathex=[],
+    [os.path.join(ROOT, "xic_workbench", "__main__.py")],
+    pathex=[ROOT],
     binaries=[],
     datas=[
-        ("assets", "assets"),
-        ("xic_extractor/configuration/data", "xic_extractor/configuration/data"),
-        ("scripts", "scripts"),
+        (
+            os.path.join(ROOT, "xic_extractor", "configuration", "data"),
+            "xic_extractor/configuration/data",
+        ),
+        (os.path.join(ROOT, "scripts"), "scripts"),
     ]
     + preset_datas
     + discovery_datas
@@ -81,7 +88,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="assets/app_icon.png",
+    icon=os.path.join(SPEC_DIR, "app_icon.png"),
 )
 
 coll = COLLECT(

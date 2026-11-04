@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import configparser
 import json
 import shutil
 import subprocess
@@ -591,55 +590,50 @@ def test_git_subprocess_environment_drops_hook_repository_bindings(
 
 
 def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
-    config = configparser.ConfigParser()
-    config.read(ROOT / ".importlinter", encoding="utf-8")
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        config = tomllib.load(handle)["tool"]["importlinter"]
 
-    assert config["importlinter"]["root_packages"].split() == list(
-        census.REPOSITORY_ROOTS
-    )
-    assert config["importlinter"].getboolean("exclude_type_checking_imports") is False
-    contracts = {
-        section
-        for section in config.sections()
-        if section.startswith("importlinter:contract:")
+    assert config["root_packages"] == list(census.REPOSITORY_ROOTS)
+    assert config["exclude_type_checking_imports"] is False
+    contracts = {contract["id"]: contract for contract in config["contracts"]}
+    assert set(contracts) == {
+        "domain-no-outer-layer",
+        "peak-detection-stays-inner",
+        "configuration-stays-inner",
+        "output-does-not-read-raw",
+        "inner-layers-do-not-import-diagnostics",
+        "inner-layers-do-not-import-applications",
+        "targeted-untargeted-independent",
+        "explanation-readers-stay-readonly",
+        "main-chain-layers",
+        "acquisition-stays-inner",
+        "sample-metadata-no-instrument-qc",
+        "grouping-and-cell-consume-method-answers",
     }
-    assert contracts == {
-        "importlinter:contract:domain-no-outer-layer",
-        "importlinter:contract:peak-detection-stays-inner",
-        "importlinter:contract:configuration-stays-inner",
-        "importlinter:contract:output-does-not-read-raw",
-        "importlinter:contract:inner-layers-do-not-import-diagnostics",
-        "importlinter:contract:inner-layers-do-not-import-applications",
-        "importlinter:contract:targeted-untargeted-independent",
-        "importlinter:contract:explanation-readers-stay-readonly",
-        "importlinter:contract:main-chain-layers",
-        "importlinter:contract:acquisition-stays-inner",
-        "importlinter:contract:sample-metadata-no-instrument-qc",
-        "importlinter:contract:grouping-and-cell-consume-method-answers",
+    special = {
+        "targeted-untargeted-independent",
+        "main-chain-layers",
+        "grouping-and-cell-consume-method-answers",
     }
-    independence_section = "importlinter:contract:targeted-untargeted-independent"
-    layers_section = "importlinter:contract:main-chain-layers"
-    method_section = "importlinter:contract:grouping-and-cell-consume-method-answers"
     assert all(
-        config[section]["type"] == "forbidden"
-        and not config[section].getboolean("allow_indirect_imports")
-        for section in contracts
-        - {independence_section, layers_section, method_section}
+        contract["type"] == "forbidden" and contract["allow_indirect_imports"] is False
+        for contract_id, contract in contracts.items()
+        if contract_id not in special
     )
-    method = config[method_section]
+    method = contracts["grouping-and-cell-consume-method-answers"]
     assert method["type"] == "forbidden"
-    assert method.getboolean("allow_indirect_imports") is True
-    assert not method.get("ignore_imports", "").strip()
-    independence = config[independence_section]
+    assert method["allow_indirect_imports"] is True
+    assert not method.get("ignore_imports")
+    independence = contracts["targeted-untargeted-independent"]
     assert independence["type"] == "independence"
-    assert independence["modules"].split() == [
+    assert independence["modules"] == [
         "xic_extractor.extraction",
         "xic_extractor.untargeted_execution",
     ]
-    assert not independence.get("ignore_imports", "").strip()
-    layers = config[layers_section]
+    assert not independence.get("ignore_imports")
+    layers = contracts["main-chain-layers"]
     assert layers["type"] == "layers"
-    assert layers["layers"].strip().splitlines() == [
+    assert layers["layers"] == [
         "xic_extractor.applications",
         "xic_extractor.untargeted_execution | xic_extractor.extraction",
         "xic_extractor.alignment",
@@ -848,7 +842,7 @@ def test_optional_json_census_has_content_identity_and_scope(
     assert payload["schema_version"] == "architecture_census"
     assert payload["claim"] == "derived_disposable_not_authority"
     assert payload["static_dependency_scope"] == "grimp_static_import_graph"
-    assert payload["static_dependency_gate"] == ".importlinter"
+    assert payload["static_dependency_gate"] == "pyproject.toml [tool.importlinter]"
     assert payload["source_identity"]["head"]
     assert len(payload["source_identity"]["census_sha256"]) == 64
     assert isinstance(payload["source_identity"]["worktree_dirty"], bool)
