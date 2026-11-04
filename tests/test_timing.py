@@ -244,11 +244,9 @@ def test_timing_recorder_disabled_mode_is_a_complete_noop(tmp_path: Path) -> Non
     recorder.heartbeat(stage="discover.sample", completed=1, total=1)
     recorder.heartbeat_event({"event": "discover.sample", "completed": 1})
     recorder.observe("raw_open_count", value=1)
-    recorder.set_measurement_contract(cache_state="warm")
 
     assert recorder.records == ()
     assert recorder.measurement_observations == ()
-    assert recorder.to_json_dict()["measurement_contract"] == {}
     assert not live_path.exists()
 
 
@@ -435,13 +433,8 @@ def test_live_heartbeat_publishes_transitions_failures_completion_and_unscoped_u
     assert json.loads(live_path.read_text())["heartbeat"]["completed"] == 2
 
 
-def test_timing_recorder_measurement_contract_and_unavailable_observation() -> None:
+def test_timing_recorder_records_unavailable_observation() -> None:
     recorder = TimingRecorder("workflow")
-    recorder.set_measurement_contract(
-        cache_state="unavailable",
-        repetition_noise_design={"minimum_repetitions": 2},
-        numeric_budget={"next_milestone_seconds": 1800},
-    )
     recorder.observe(
         "process_tree_peak_rss_bytes",
         availability="unavailable",
@@ -449,7 +442,6 @@ def test_timing_recorder_measurement_contract_and_unavailable_observation() -> N
     )
 
     payload = recorder.to_json_dict()
-    assert payload["measurement_contract"]["cache_state"] == "unavailable"
     assert payload["measurement_observations"][0]["value"] is None
     assert payload["measurement_observations"][0]["availability"] == "unavailable"
 

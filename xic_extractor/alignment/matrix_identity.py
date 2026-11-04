@@ -31,12 +31,6 @@ from xic_extractor.alignment.promotion_policy import (
     evidence_from_alignment,
     is_backfill_cell_only_block_reason,
 )
-from xic_extractor.peak_detection.decision_policy import (
-    DECISION_CLASS_RANK,
-    DecisionRecord,
-    DecisionTerm,
-)
-from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 
 IdentityDecision = Literal[
     "production_family",
@@ -60,10 +54,6 @@ class MatrixIdentityRowDecision:
     duplicate_assigned_count: int
     ambiguous_ms1_owner_count: int
     row_flags: tuple[str, ...]
-
-    @property
-    def decision_record(self) -> DecisionRecord:
-        return matrix_identity_row_decision_record(self)
 
 
 @dataclass(frozen=True)
@@ -97,53 +87,6 @@ def build_matrix_identity_decisions(
             cells_by_family.get(family_id, ()),
         )
     return MatrixIdentityDecisionSet(rows=rows, cell_quality=quality)
-
-
-def matrix_identity_row_decision_record(
-    decision: MatrixIdentityRowDecision,
-) -> DecisionRecord:
-    decision_class = _matrix_identity_decision_class(decision)
-    blockers = _matrix_identity_blockers(decision)
-    gate: tuple[DecisionTerm, ...] = (
-        ("decision_class_rank", float(DECISION_CLASS_RANK[decision_class])),
-        (
-            "primary_matrix_projection_rank",
-            0.0 if decision.include_in_primary_matrix else 1.0,
-        ),
-        ("blocker_count", float(len(blockers))),
-    )
-    tie_break: tuple[DecisionTerm, ...] = (
-        (
-            "identity_confidence_rank",
-            float(_IDENTITY_CONFIDENCE_RANK[decision.identity_confidence]),
-        ),
-        (
-            "negative_detected_identity_cells",
-            -float(decision.quantifiable_detected_count),
-        ),
-        (
-            "negative_quantifiable_rescue_cells",
-            -float(decision.quantifiable_backfill_count),
-        ),
-        ("duplicate_pressure_count", float(decision.duplicate_assigned_count)),
-        ("ambiguous_owner_count", float(decision.ambiguous_ms1_owner_count)),
-    )
-    return DecisionRecord(
-        workflow="alignment_matrix_identity_row",
-        unit_id=decision.feature_id,
-        required_evidence=(
-            "matrix_identity_row",
-            "cell_quality_decisions",
-            "row_identity_evidence",
-            "backfill_promotion_policy",
-        ),
-        decision_class=decision_class,
-        blockers=blockers,
-        support=_matrix_identity_support(decision),
-        gate=gate,
-        tie_break=tie_break,
-        projection_authority="build_matrix_identity_decisions",
-    )
 
 
 def decide_matrix_identity_row(
@@ -273,61 +216,6 @@ _IDENTITY_CONFIDENCE_RANK: dict[IdentityConfidence, int] = {
     "review": 2,
     "none": 3,
 }
-
-
-def _matrix_identity_decision_class(
-    decision: MatrixIdentityRowDecision,
-) -> DecisionClass:
-    if decision.include_in_primary_matrix:
-        return "accepted"
-    if (
-        decision.identity_reason == "ambiguous_only"
-        or "ambiguous_only" in decision.row_flags
-        or "ambiguous_ms1_owner_pressure" in decision.row_flags
-    ):
-        return "ambiguous"
-    if decision.identity_decision == "audit_family":
-        if (
-            decision.identity_reason in {"review_only", "family_consolidation_loser"}
-            or "family_consolidation_loser" in decision.row_flags
-        ):
-            return "excluded"
-        return "not_counted"
-    return "review"
-
-
-def _matrix_identity_blockers(
-    decision: MatrixIdentityRowDecision,
-) -> tuple[str, ...]:
-    if decision.include_in_primary_matrix:
-        return ()
-    return tuple(
-        dict.fromkeys(
-            part for part in (decision.identity_reason, *decision.row_flags) if part
-        )
-    )
-
-
-def _matrix_identity_support(
-    decision: MatrixIdentityRowDecision,
-) -> tuple[str, ...]:
-    support = [
-        f"identity_decision:{decision.identity_decision}",
-        f"identity_confidence:{decision.identity_confidence}",
-    ]
-    if decision.include_in_primary_matrix:
-        support.append("include_in_primary_matrix")
-    if decision.primary_evidence and decision.primary_evidence != "none":
-        support.append(f"primary_evidence:{decision.primary_evidence}")
-    if decision.quantifiable_detected_count:
-        support.append(
-            f"detected_identity_cells:{decision.quantifiable_detected_count}"
-        )
-    if decision.quantifiable_backfill_count:
-        support.append(
-            f"quantifiable_rescue_cells:{decision.quantifiable_backfill_count}"
-        )
-    return tuple(dict.fromkeys(support))
 
 
 def _promotion_decision(

@@ -707,7 +707,6 @@ def test_physical_fact_source_retains_selected_records_without_hiding_visits(
         record_visitor=lambda _index, item: record_visits.append(item["ordinal"]),
         retain_record=lambda _index, item: item["ordinal"] % 2 == 0,
     ) as source:
-        assert source.record_count == 5
         assert source.read_record(4)["ordinal"] == 4
         with pytest.raises(LookupError, match="records index 1 was not retained"):
             source.read_record(1)

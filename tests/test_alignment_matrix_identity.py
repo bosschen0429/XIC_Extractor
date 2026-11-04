@@ -7,7 +7,6 @@ from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_identity import (
     MatrixIdentityRowDecision,
     build_matrix_identity_decisions,
-    matrix_identity_row_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_ONLY_BLOCKED_REASON,
@@ -119,54 +118,6 @@ def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> N
     assert decision.identity_confidence == "medium"
     assert decision.primary_evidence == "multi_sample_detected"
     assert decision.identity_reason == "multi_sample_detected"
-
-
-def test_matrix_identity_decision_record_explains_row_projection_policy() -> None:
-    matrix = _matrix(
-        _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-        (
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 90.0),
-            _cell("s3", "FAM001", "backfilled", 80.0),
-        ),
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-    record = matrix_identity_row_decision_record(decision)
-
-    assert decision.decision_record == record
-    assert record.workflow == "alignment_matrix_identity_row"
-    assert record.unit_id == "FAM001"
-    assert record.required_evidence == (
-        "matrix_identity_row",
-        "cell_quality_decisions",
-        "row_identity_evidence",
-        "backfill_promotion_policy",
-    )
-    assert record.decision_class == "accepted"
-    assert record.blockers == ()
-    assert record.support == (
-        "identity_decision:production_family",
-        "identity_confidence:high",
-        "include_in_primary_matrix",
-        "primary_evidence:owner_complete_link",
-        "detected_identity_cells:2",
-        "quantifiable_rescue_cells:1",
-    )
-    assert record.gate == (
-        ("decision_class_rank", 0.0),
-        ("primary_matrix_projection_rank", 0.0),
-        ("blocker_count", 0.0),
-    )
-    assert record.tie_break == (
-        ("identity_confidence_rank", 0.0),
-        ("negative_detected_identity_cells", -2.0),
-        ("negative_quantifiable_rescue_cells", -1.0),
-        ("duplicate_pressure_count", 0.0),
-        ("ambiguous_owner_count", 0.0),
-    )
-    assert record.projection_authority == "build_matrix_identity_decisions"
-    assert not hasattr(record, "key")
 
 
 def test_scan_support_only_high_backfill_retains_seed_identity() -> None:
@@ -495,22 +446,6 @@ def test_high_score_low_event_seeds_do_not_bypass_weak_seed_gate() -> None:
     assert "backfill_cell_evidence_required" in decision.row_flags
 
 
-def test_matrix_identity_decision_record_ignores_seed_evidence_score_payload() -> None:
-    base = _weak_seed_backfill_decision(low_event_seed_score=80)
-    adversarial = _weak_seed_backfill_decision(low_event_seed_score=100)
-
-    base_record = matrix_identity_row_decision_record(base)
-    adversarial_record = matrix_identity_row_decision_record(adversarial)
-
-    assert base_record.gate == adversarial_record.gate
-    assert base_record.tie_break == adversarial_record.tie_break
-    assert base_record.blockers == adversarial_record.blockers
-    assert base_record.support == adversarial_record.support
-    assert all("evidence_score" not in name for name, _value in base_record.gate)
-    assert all("evidence_score" not in name for name, _value in base_record.tie_break)
-    assert not hasattr(base_record, "key")
-
-
 def test_matrix_identity_ignores_targeted_only_priority_metadata() -> None:
     base = build_matrix_identity_decisions(
         _matrix(
@@ -696,44 +631,6 @@ def test_backfill_only_backfill_only_family_is_audit() -> None:
     assert decision.identity_decision == "audit_family"
     assert decision.identity_reason == BACKFILL_ONLY_BLOCKED_REASON
     assert "rescue_only" in decision.row_flags
-
-
-def test_matrix_identity_decision_record_marks_backfill_only_as_not_counted() -> None:
-    matrix = _matrix(
-        _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-        (
-            _cell("s1", "FAM001", "backfilled", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0),
-        ),
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-    record = decision.decision_record
-
-    assert record.decision_class == "not_counted"
-    assert record.blockers == (BACKFILL_ONLY_BLOCKED_REASON, "rescue_only")
-    assert record.gate == (
-        ("decision_class_rank", 2.0),
-        ("primary_matrix_projection_rank", 1.0),
-        ("blocker_count", 2.0),
-    )
-
-
-def test_matrix_identity_decision_record_marks_ambiguous_owner_as_ambiguous() -> None:
-    matrix = _matrix(
-        _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-        (_cell("s1", "FAM001", "ambiguous_ms1_owner", 100.0),),
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-    record = decision.decision_record
-
-    assert record.decision_class == "ambiguous"
-    assert record.blockers == (
-        "ambiguous_only",
-        "ambiguous_ms1_owner_pressure",
-        "zero_present",
-    )
 
 
 def test_duplicate_pressure_above_detected_support_is_audit() -> None:

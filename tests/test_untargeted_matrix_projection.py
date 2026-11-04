@@ -350,7 +350,6 @@ def test_disposition_projects_row_route_and_complete_counts(
         "matrix" if disposition == "established" else "archive"
     )
     assert row.counts.numeric_cells == (2 if disposition == "established" else 1)
-    assert len(projection.archive_rows) == int(disposition != "established")
     reordered = project_untarget_matrix(
         alignment, dict(reversed(tuple(answers.items())))
     )

@@ -85,11 +85,6 @@ class PhysicalFactSource:
             raise ValueError("physical fact source header was not transferred")
         return copy.deepcopy(self._header)
 
-    @property
-    def record_count(self) -> int:
-        self._ensure_current()
-        return len(self._record_spans)
-
     def read_manifest(self, index: int) -> dict:
         return self._read_indexed(self._manifest_spans, index, label="work_manifest")
 

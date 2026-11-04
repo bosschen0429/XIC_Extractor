@@ -122,10 +122,6 @@ class UntargetMatrixProjection:
     def decisions(self) -> tuple[ProductionCellDecision, ...]:
         return tuple(decision for row in self.rows for decision in row.decisions)
 
-    @property
-    def archive_rows(self) -> tuple[UntargetMatrixRow, ...]:
-        return tuple(row for row in self.rows if row.route.destination == "archive")
-
 
 def project_untarget_matrix(
     finalized_alignment: FinalizedScientificAlignment,

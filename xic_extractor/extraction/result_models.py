@@ -207,10 +207,6 @@ class FileResult:
     error: str | None = None
     sample_metadata: SampleMetadata | None = None
 
-    @property
-    def extraction_results(self) -> list[ExtractionResult]:
-        return list(self.results.values())
-
 
 @dataclass
 class RunOutput:

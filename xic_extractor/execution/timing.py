@@ -80,7 +80,6 @@ class TimingRecorder:
         self._heartbeat: dict[str, object] = {}
         self._last_heartbeat_publish: float | None = None
         self._measurement_observations: list[dict[str, object]] = []
-        self._measurement_contract: dict[str, object] = {}
         self._partition_timeline: list[dict[str, object]] = []
         self._live_write_lock = threading.Lock()
 
@@ -278,24 +277,6 @@ class TimingRecorder:
         self._measurement_observations.append(row)
         self._write_live()
 
-    def set_measurement_contract(
-        self,
-        *,
-        cache_state: str = "unavailable",
-        aggregation: Mapping[str, object] | None = None,
-        repetition_noise_design: Mapping[str, object] | None = None,
-        numeric_budget: Mapping[str, object] | None = None,
-    ) -> None:
-        if not self.enabled:
-            return
-        self._measurement_contract = {
-            "cache_state": cache_state,
-            "aggregation": dict(aggregation or {}),
-            "repetition_noise_design": dict(repetition_noise_design or {}),
-            "numeric_budget": dict(numeric_budget or {}),
-        }
-        self._write_live()
-
     @contextmanager
     def stage(
         self,
@@ -392,7 +373,6 @@ class TimingRecorder:
             "pipeline": self.pipeline,
             "records": [record.to_json_dict() for record in self._records],
             "summaries": summaries,
-            "measurement_contract": dict(self._measurement_contract),
             "measurement_observations": list(self._measurement_observations),
             "span_semantics": list(self._span_semantics),
         }
@@ -441,7 +421,6 @@ class TimingRecorder:
                 "recent_records": records,
                 "record_count": len(self._records),
                 "dropped_record_count": start,
-                "measurement_contract": dict(self._measurement_contract),
                 "measurement_observations": observations,
                 "recent_measurement_observations": observations,
                 "observation_count": len(self._measurement_observations),
