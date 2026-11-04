@@ -3,6 +3,18 @@
 Tests protect current observable behavior. They are not a record of how a
 change was constructed.
 
+## Read Routes
+
+Choose the row for the current decision; the rest is reference, not a required
+preflight for every edit. Use each matching row when decisions overlap.
+
+| Need | Read |
+| --- | --- |
+| Choose or run existing tests, including `ledger_snapshot` | [Affected-Test Selection](#affected-test-selection), then [Verification](#verification) |
+| Add or change regression coverage or fixtures | [Test Worth](#add-a-test-only-when-it-can-fail-usefully), [Oracle](#oracle-attribution-and-contract-boundaries), and [Observable](#choose-the-observable); [Placement](#test-placement) for a new file |
+| Browser behavior or an interactive demonstration | [Browser Workbench Checks](#browser-workbench-checks); use the regression row when adding coverage |
+| RAW or scientific evidence | [RAW And Scientific Validation](#raw-and-scientific-validation), then the matching [validation route](product-validation-contract.md#read-routes) |
+
 ## Add A Test Only When It Can Fail Usefully
 
 Every change needs evidence, but not every change needs a new test. Add or
@@ -87,12 +99,19 @@ is not the contract.
 tools.testing.test_selection derives which tests a change can affect from the
 import graph and the paths tests and code name; a new test file needs no
 registration. Pull-request CI runs that selection, master runs every test, and
-anything the derivation cannot place runs every test. Locally:
+anything the derivation cannot place runs every test.
+
+For a known failure or a bounded behavior, run its existing pytest file or node
+directly. When the affected tests are unclear, use the selector:
 
     .venv\Scripts\python.exe -m tools.testing.test_selection
     .venv\Scripts\python.exe -m tools.testing.test_selection --all
 
-Do not copy its rules into another hook or document.
+Use `--print` to inspect the marker expression and candidate files without
+running tests, including with `--snapshots`. Caller `-m` filters are included;
+this preview does not collect individual tests or resolve `-k` filters. It is
+optional, not a second required invocation. CLI help owns the remaining options;
+do not copy selection rules into another hook or document.
 
 Tests marked ledger_snapshot pin recorded validation values and are excluded
 individually from default CI. Run that lane with:
@@ -170,6 +189,13 @@ Run the narrowest existing tests that can falsify the change, then expand in
 proportion to affected consumers and public surfaces. The complete hosted
 command surface lives in .github/workflows/ci.yml; do not cache its command list
 here.
+
+When a run fails, start with its failing node and full failure block, then read
+the fixture and expected-value source. Re-run that node after the fix; expand
+only for affected consumers. Do not regenerate expected values from the failing
+implementation. A selection with no eligible tests is a skip, not evidence of
+correctness, even when the selector exits successfully. Use a known relevant
+pytest node when the change still needs verification.
 
 Report commands actually run, skipped evidence, and remaining risk. A missing
 stable oracle is an unknown to resolve, not a reason to add a test that only

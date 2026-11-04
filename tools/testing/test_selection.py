@@ -473,6 +473,7 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
     if owned_pytest_args is None:
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
+    print(f"Markers: {owned_pytest_args[1]}", flush=True)
     if plan.files is None:
         print("Running every test", flush=True)
         return subprocess.call([*_pytest_command(), *owned_pytest_args])
@@ -481,16 +482,28 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
         return 0
     print(f"Running {len(plan.files)} affected test files", flush=True)
     exit_code = subprocess.call([*_pytest_command(), *owned_pytest_args, *plan.files])
-    # Exit 5 means the selected files hold no test that the markers keep.
-    return 0 if exit_code == 5 else exit_code
+    if exit_code == 5:
+        # A selected subset can contain only tests excluded by the marker gates.
+        print(
+            "No tests ran after filtering; no verification was performed.", flush=True
+        )
+        return 0
+    return exit_code
 
 
-def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:
+def _run_snapshots(
+    pytest_args: Sequence[str], root: Path, *, print_only: bool = False
+) -> int:
     """Run only the register-snapshot tests, the ones CI deliberately skips."""
     targets = [path.as_posix() for path in discover_test_files(root)]
     if not targets:
         print("No test files discovered", file=sys.stderr)
         return 2
+    if print_only:
+        return _print_plan(
+            SelectionPlan(files=tuple(targets), marker_expression=SNAPSHOT_MARKER),
+            pytest_args,
+        )
     owned_pytest_args = _intersect_marker_selection(
         pytest_args,
         required=SNAPSHOT_MARKER,
@@ -552,12 +565,19 @@ def _pytest_command() -> list[str]:
     return [sys.executable, "-m", "pytest"]
 
 
-def _print_plan(plan: SelectionPlan) -> None:
-    print(plan.marker_expression)
+def _print_plan(plan: SelectionPlan, pytest_args: Sequence[str] = ()) -> int:
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args, required=plan.marker_expression
+    )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
+    print(owned_pytest_args[1])
     if plan.files is None:
         print(ALL_TESTS)
     else:
         print("\n".join(plan.files))
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -568,7 +588,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--print",
         action="store_true",
-        help="Print the marker expression and affected test files, then exit",
+        help=(
+            "Print the effective marker expression and candidate test files "
+            "without running tests; also supports --snapshots"
+        ),
     )
     parser.add_argument(
         "--all", action="store_true", help="Run every test, not only affected ones"
@@ -602,14 +625,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if plan is None:
             print("git diff failed", file=sys.stderr)
             return 2
-        _print_plan(plan)
-        return 0
+        return _print_plan(plan)
     if args.snapshots:
-        return _run_snapshots(pytest_args, Path(args.root))
+        return _run_snapshots(pytest_args, Path(args.root), print_only=args.print)
     plan = _local_plan(run_all=args.all, all_markers=args.all_markers)
     if args.print:
-        _print_plan(plan)
-        return 0
+        return _print_plan(plan, pytest_args)
     return _run_plan(plan, pytest_args)
 
 

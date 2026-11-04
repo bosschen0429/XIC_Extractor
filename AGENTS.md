@@ -10,14 +10,14 @@ edit. Global Codex rules own general operating defaults.
 | Project Python, worktree bootstrap, RAW/DLL, validation scale, or environment failure | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
 | Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
 | Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
-| Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
-| Test selection, new regression coverage, fixture design, UI demonstration, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
+| Readiness claim or validation policy | Choose the relevant branch in [`product-validation-contract.md#read-routes`](docs/agent/product-validation-contract.md#read-routes). |
+| Test selection, new regression coverage, fixture design, UI demonstration, or `ledger_snapshot` | Choose the relevant branch in [`testing.md#read-routes`](docs/agent/testing.md#read-routes). |
 | Change UI styling or theme roles | Read [UI Presentation](docs/architecture-contract.md#ui-presentation). |
 | Change import loading in startup-sensitive or lightweight readers | Read [Dependency Direction](docs/architecture-contract.md#dependency-direction). |
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Need a current-format Untargeted output as test input | Regenerate it with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; runs left under `output/` by older code are not current-format input. |
-| Push or PR creation | Run [PR Verification](docs/agent/execution-gates.md#pr-verification); write the body with the `pr` skill. |
+| Push or PR creation | Run [PR Verification](docs/agent/execution-gates.md#pr-verification); use [Pull Requests](docs/agent/communication-review.md#pull-requests) for the body. |
 | Clean-checkout artifact, long RAW run, CI evidence, remote-head change, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |

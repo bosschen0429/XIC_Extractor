@@ -18,8 +18,9 @@ user's language for someone judging intent and behavior without reading every
 line of the diff. Use familiar product terms; explain necessary internal terms
 at first use rather than making the reader decode owner/contract vocabulary.
 
-The `pr` skill owns the body structure: Summary, Evidence, and Merge Danger; the
-[PR template](../../.github/pull_request_template.md) mirrors it. Before publishing, check that
+The [PR template](../../.github/pull_request_template.md) provides the repo-local
+structure: Summary, Motivation, Testing, and Risks/Rollback. The template and
+this section are sufficient without an external skill. Before publishing, check that
 the reader can explain what changes, why it matters, what supports the claim,
 and what happens if it is wrong. Use the smallest useful before/after view;
 plain prose is enough, and code or file trees are not mandatory.
@@ -36,6 +37,17 @@ Link the existing Issue rather than repeating its scope. The task-shaping
 contract determines what must be investigated, not extra headings that every
 PR must contain. Expand technical detail only when it changes the reviewer's
 decision; keep construction history and internal checklists out of the body.
+
+## Review Focus
+
+Review the uncertainty left by the diff and its existing evidence. A local fix
+with a decisive regression oracle does not need a separate adversarial round.
+A further pass earns its cost by answering a concrete uncovered question:
+whether an expected value is independently justified, whether a scientific
+trade-off is accepted, or whether a changed owner/persistence/publication
+handoff preserves the consumer's result. Follow the affected production path
+and use a counterexample capable of changing that judgment. A different reviewer
+repeating the same assumptions is not independent evidence.
 
 Review comments are evidence, not scope authority. Fix a comment when it proves
 an Issue/public-contract violation or a reachable loss introduced by the diff.
