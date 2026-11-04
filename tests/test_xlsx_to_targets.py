@@ -71,7 +71,7 @@ def test_write_targets_csv_preserves_public_csv_contract(
             "label",
             "mz",
             "expected_rt_min",
-            "cid_nl_tag",
+            "method",
             "role",
             "istd_pair",
         ]
@@ -81,7 +81,7 @@ def test_write_targets_csv_preserves_public_csv_contract(
             "label": "5-hmdC",
             "mz": "100.0",
             "expected_rt_min": "8.0",
-            "cid_nl_tag": "dR",
+            "method": "dR",
             "role": "analyte",
             "istd_pair": "",
         }
@@ -94,7 +94,7 @@ def _target(label: str, *, rt: float, is_istd: bool = False) -> TargetRow:
         "label": label,
         "mz": 100.0,
         "expected_rt_min": rt,
-        "cid_nl_tag": "dR",
+        "method": "dR",
         "role": "istd" if is_istd else "analyte",
         "istd_pair": "",
     }

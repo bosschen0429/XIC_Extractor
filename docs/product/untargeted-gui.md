@@ -30,19 +30,20 @@ historical filename as the stable topic locator.
 ### Targeted
 
 - The primary path is samples, method/target intent, Run, then result review.
-- Target rows contain name, m/z, expected RT, role and ISTD pairing. Choose one
-  **預設辨認方法**; enable **顯示個別 target 的方法設定** only for exceptions.
-- **編輯辨認方法** composes CID-NL and Delta Mass condition cards using
-  **符合全部條件（AND）** or **符合任一條件（OR）**. HCD-PI is not offered.
-  Delta Mass fixes the quantitation ion at zero with signed partner m/z offsets.
-  Tolerances, shape and reference ratios stay in collapsed advanced panels.
-- A portable method retains target intent, named identification definitions and
-  the table default. Applying changes edits the draft; workspace save, named-list
-  save or Run retains it.
+- Target rows contain name, m/z, expected RT, role, ISTD pairing and one
+  **辨認方法**: MS1 only, CID-NL dR／R／MeR, or a custom method. **全部目標改用**
+  fills every row at once; individual rows can then be changed.
+- **管理辨認方法** creates, edits and deletes custom methods from CID-NL and
+  Delta Mass conditions using **全部符合（AND）** or **任一符合（OR）**. HCD-PI is
+  not offered. Delta Mass fixes the quantitation ion at zero with signed partner
+  m/z offsets; co-elution and shape thresholds stay in a collapsed panel. A method
+  that targets still use cannot be deleted.
+- A portable method retains target intent and named identification definitions.
+  **儲存方法** edits the draft; workspace save, named-list save or Run retains it.
   There is no signal-processing override panel, parameter reset, Dirty Matrix branch or user
   worker/backend selector. Scientific policy is recorded in run metadata.
 - `workspace.json` stores application settings (DLL and worker count), batch
-  inputs (RAW and sample metadata), target rows, their default method and named identification definitions
+  inputs (RAW and sample metadata), target rows and named identification definitions
   in one atomic generation.
   Reading configuration never writes it; unsupported settings are reported,
   not preserved as hidden effective overrides. No schema conversion is offered.

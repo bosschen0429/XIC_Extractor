@@ -94,7 +94,6 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "default_method": read_workspace(self.config_dir).get("default_method", ""),
             "identification_methods": read_workspace(self.config_dir).get(
                 "identification_methods", {}
             ),
@@ -242,7 +241,6 @@ class AnalysisWorkspace:
                 values["settings"],
                 values["targets"],
                 identification_methods=values.get("identification_methods", {}),
-                default_method=values.get("default_method", ""),
             )
             save_targeted_method(method, path)
             return {
@@ -268,7 +266,6 @@ class AnalysisWorkspace:
                 "identification_methods": identification_methods_payload(
                     method.identification_methods
                 ),
-                "default_method": method.default_method,
                 "summary": method_summary(settings),
             }
         if action == "preferences":
@@ -287,7 +284,6 @@ class AnalysisWorkspace:
                 values["targets"],
                 config_dir=self.config_dir,
                 identification_methods=values.get("identification_methods"),
-                default_method=values.get("default_method"),
             )
             if values.get("output_dir"):
                 write_preferences(
@@ -321,16 +317,11 @@ class AnalysisWorkspace:
             )
 
             path = Path(values["path"])
-            if (
-                values.get("default_method")
-                or values.get("identification_methods")
-                or any(row.get("method") for row in values["targets"])
-            ):
+            if values.get("identification_methods"):
                 method = create_targeted_method(
                     {},
                     values["targets"],
-                    identification_methods=values.get("identification_methods", {}),
-                    default_method=values.get("default_method", ""),
+                    identification_methods=values["identification_methods"],
                 )
                 save_targeted_method(method, path)
             else:

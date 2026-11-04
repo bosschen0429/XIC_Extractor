@@ -34,16 +34,17 @@ Custom-method runs append `Method` to `Targets`. Existing CID-NL/MS1-only runs
 keep their original sheets and columns. `Method Evidence` records each sample,
 target, candidate interval, selected flag, all/any combination, method acceptance,
 and clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
-when no candidate could be assessed. An explicit empty method uses `not_required`.
+when no candidate could be assessed.
 
-`Identification Methods` contains `Method`, `Part`, and `Definition`. Each method
-is stored as ordered JSON text fragments, numbered from 1, to stay within Excel's
-32,767-character cell limit. Inspector joins the fragments without truncation and
-rejects missing or duplicate parts; a single definition without `Part` is part 1.
+`Identification Methods` uses the same table as a portable method file: one row
+per CID-NL condition and one row per Delta Mass ion, with `Method`, `Combine`,
+`m/z Tolerance ppm`, `Condition`, `Kind`, `CID-NL Tag`, `Position`, `Delta m/z`,
+ratio, shape and co-elution columns. Method- and condition-level values repeat on
+each of their rows. Inspector rebuilds the definitions from this table.
 
 Delta Mass details record XIC query masses, not measured centroids. Height ratios
 and shape comparisons reference the quantitation ion; ratios remain annotation.
-`Apex Delta to Lowest sec` explicitly retains the matcher's lowest-m/z RT reference.
+`Apex Delta to Quant sec` is each ion's apex RT minus the quantitation ion's apex RT.
 Inspector shows **辨認條件結果** and collapsible **Delta Mass 配對明細** from these
 saved answers. CID-NL clauses in custom methods are reported in `Method Evidence`,
 not fabricated legacy NL columns. Neither writer nor Inspector reruns scientific

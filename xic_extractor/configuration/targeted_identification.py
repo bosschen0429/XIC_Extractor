@@ -12,7 +12,10 @@ from xic_extractor.configuration.delta_mass import (
 )
 from xic_extractor.validation_primitives import require_finite_real
 
-BUILTIN_TARGET_METHODS = ("ms1", "cid:dR", "cid:R", "cid:MeR")
+# A target's ``method`` is blank (MS1 only), one of these built-in CID-NL tags,
+# or the name of a user-defined identification method.
+CID_NL_TAGS = ("dR", "R", "MeR")
+DELTA_MASS_LABEL = "Delta Mass"
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,6 @@ class QuantRelativeIon:
 @dataclass(frozen=True)
 class DeltaMassCondition:
     positions: tuple[QuantRelativeIon, ...]
-    label: str = "Delta Mass"
     apex_floor_sec: float = 1.0
     scan_interval_multiplier: float = 1.25
     shape_window_sec: float = 10.0
@@ -58,7 +60,7 @@ class DeltaMassCondition:
         lowest = min(p.offset_mz for p in self.positions)
         return DeltaMassPatternSettings(
             pattern_id=f"{method_name}:{index}",
-            method_label=self.label,
+            method_label=DELTA_MASS_LABEL,
             positions=tuple(
                 DeltaMassPosition(
                     p.label,
@@ -93,8 +95,6 @@ class IdentificationMethod:
     mz_tolerance_ppm: float = 20.0
 
     def accepts(self, statuses) -> bool:
-        if not self.conditions:
-            return True
         matched = tuple(status == "matched" for status in statuses)
         return all(matched) if self.combine_mode == "all" else any(matched)
 
@@ -109,10 +109,10 @@ def parse_identification_methods(values: Mapping) -> dict[str, IdentificationMet
             not isinstance(name, str)
             or not name.strip()
             or name != name.strip()
-            or name in BUILTIN_TARGET_METHODS
+            or name in CID_NL_TAGS
         ):
             raise ValueError(
-                "method names must be nonempty, trimmed and not built-in names"
+                "method names must be nonempty, trimmed and not dR, R or MeR"
             )
         if not isinstance(value, Mapping) or set(value) - {
             "conditions",
@@ -129,18 +129,17 @@ def parse_identification_methods(values: Mapping) -> dict[str, IdentificationMet
             if ppm <= 0:
                 raise ValueError("mz_tolerance_ppm must be positive")
             raw_conditions = value.get("conditions", [])
-            if not isinstance(raw_conditions, list):
-                raise ValueError("conditions must be a list")
+            if not isinstance(raw_conditions, list) or not raw_conditions:
+                raise ValueError(
+                    "at least one condition is required; "
+                    "leave the target method blank for MS1 only"
+                )
             conditions: list[IdentificationCondition] = []
             for raw in raw_conditions:
                 if not isinstance(raw, Mapping):
                     raise ValueError("each condition must be an object")
                 if raw.get("kind") == "cid_nl":
-                    if set(raw) != {"kind", "tag"} or raw["tag"] not in (
-                        "dR",
-                        "R",
-                        "MeR",
-                    ):
+                    if set(raw) != {"kind", "tag"} or raw["tag"] not in CID_NL_TAGS:
                         raise ValueError("CID-NL requires dR, R or MeR")
                     conditions.append(CidNlCondition(tag=raw["tag"]))
                 elif raw.get("kind") == "delta_mass":

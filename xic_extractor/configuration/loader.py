@@ -92,7 +92,6 @@ def prepare_targeted_config(
             {},
             state["targets"],
             identification_methods=state.get("identification_methods", {}),
-            default_method=state.get("default_method", ""),
         )
     target_rows, targets, methods = (
         method.target_rows,
@@ -123,10 +122,6 @@ def prepare_targeted_config(
             (receipt_dir / "identification_methods.json").write_text(
                 json.dumps(identification_methods_payload(methods), ensure_ascii=False),
                 encoding="utf-8",
-            )
-        if method.default_method:
-            (receipt_dir / "default_method.txt").write_text(
-                method.default_method, encoding="utf-8"
             )
         output_dir.mkdir(parents=True, exist_ok=True)
         config = build_extraction_config(
@@ -178,14 +173,7 @@ def load_config_snapshot(
         if method_path.exists()
         else {}
     )
-    default_path = config_dir / "default_method.txt"
-    targets = _read_targets(
-        targets_path,
-        identification_methods=methods,
-        default_method=default_path.read_text(encoding="utf-8")
-        if default_path.exists()
-        else "",
-    )
+    targets = _read_targets(targets_path, identification_methods=methods)
     target_config_hash = compute_target_config_hash(targets_path)
     config = ExtractionConfig(
         **{

@@ -85,7 +85,10 @@ class AnalysisJobs:
                 from xic_workbench.targeted import TargetedRun
 
                 write_work(
-                    values["settings"], values["targets"], config_dir=self.config_dir
+                    values["settings"],
+                    values["targets"],
+                    config_dir=self.config_dir,
+                    identification_methods=values.get("identification_methods"),
                 )
                 output_dir = values.get("output_dir") or None
                 if output_dir is not None:

@@ -7,7 +7,9 @@ from pathlib import Path
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.parsing import _require_columns
 
-TARGET_FIELDS = ("label", "mz", "expected_rt_min", "cid_nl_tag", "role", "istd_pair")
+TARGET_FIELDS = ("label", "mz", "expected_rt_min", "method", "role", "istd_pair")
+# Earlier target tables named the method column after its only choices.
+LEGACY_METHOD_FIELD = "cid_nl_tag"
 LEGACY_TARGET_FIELDS = (
     "rt_min",
     "rt_max",
@@ -20,10 +22,24 @@ LEGACY_TARGET_FIELDS = (
     "quant_position",
 )
 OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
-TARGET_METHOD_FIELDS = ("method",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
+
+
+def normalize_target_header(fields: Sequence[str]) -> list[str]:
+    """Read a legacy ``cid_nl_tag`` column as ``method``; its values carry over."""
+    if LEGACY_METHOD_FIELD not in fields:
+        return list(fields)
+    if "method" in fields:
+        raise ConfigError(
+            "target table has both method and cid_nl_tag columns; keep only method"
+        )
+    return ["method" if field == LEGACY_METHOD_FIELD else field for field in fields]
+
+
+def normalize_target_row(row: Mapping[str, str]) -> dict[str, str]:
+    return dict(zip(normalize_target_header(list(row)), row.values(), strict=True))
 
 
 def read_settings(path: Path) -> dict[str, str]:
@@ -99,7 +115,7 @@ def _read_target_file_rows(
             raise ConfigError(
                 f"{path}: duplicate target header {duplicates[0]!r} is not allowed"
             )
-        _require_columns(path, fieldnames, required)
+        _require_columns(path, normalize_target_header(fieldnames), required)
 
         result: list[tuple[int, dict[str, str]]] = []
         for row_number, row in enumerate(rows, start=2):
@@ -111,7 +127,7 @@ def _read_target_file_rows(
                     f"{path} row {row_number}: fewer values than columns; "
                     f"missing {missing_fields[0]!r}"
                 )
-            result.append((row_number, row))
+            result.append((row_number, normalize_target_row(row)))
         return result
 
 

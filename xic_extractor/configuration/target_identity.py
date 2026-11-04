@@ -303,11 +303,10 @@ def _validate_target(target: Target) -> None:
         "label": target.label,
         "mz": str(target.mz),
         "expected_rt_min": str(target.expected_rt_min),
-        "cid_nl_tag": target.cid_nl_tag,
+        "method": target.method_name or target.cid_nl_tag,
         "role": "istd" if target.is_istd else "analyte",
         "istd_pair": target.istd_pair,
         "sample_applicability": target.sample_applicability,
-        "method": target.method_name,
     }
     try:
         parsed = _parse_target_row(

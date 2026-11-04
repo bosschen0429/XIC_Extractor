@@ -24,24 +24,23 @@ CrossSample, Backfill, or selected-value implementation.
 
 ### MS1-only target intent
 
-A blank `cid_nl_tag` without an effective method declares an MS1-only target.
-Intake retains the shared
+A blank `method` declares an MS1-only target. Intake retains the shared
 20 ppm precursor tolerance and leaves neutral loss and its tolerances
 unconfigured. Missing MS2 is not chemical identity evidence.
 
 ### Reusable identification methods
 
-`configuration.targeted_identification` admits named methods containing a flat
-list of CID-NL and/or Delta Mass conditions. `combine_mode=all` requires every
-condition; `any` requires at least one. HCD-PI and nested expressions are not
-implemented. An empty condition list explicitly means MS1-only.
+`configuration.targeted_identification` admits named methods containing a flat,
+nonempty list of CID-NL and/or Delta Mass conditions. `combine_mode=all` requires
+every condition; `any` requires at least one. HCD-PI and nested expressions are
+not implemented.
 
-A document-level `default_method` applies to the entire target table. A row's
-optional `method` overrides it; built-ins are `ms1`, `cid:dR`, `cid:R`, `cid:MeR`.
-Without either binding, the original per-row `cid_nl_tag` retains its meaning.
-Built-in `cid:*` choices retain the existing Targeted CID-NL assessment policy;
-in a custom method a CID-NL card must match according to the all/any rule.
-Custom methods use one shared quantitation/partner m/z tolerance.
+Each target row has exactly one `method`: blank (MS1 only), a built-in CID-NL
+tag (`dR`, `R`, `MeR`), or the name of a defined method. Older tables name this
+column `cid_nl_tag`; its values carry over unchanged. Built-in tags retain the
+existing Targeted CID-NL assessment policy; in a custom method a CID-NL card must
+match according to the all/any rule. Custom methods use one shared
+quantitation/partner m/z tolerance.
 
 Delta Mass positions use signed `offset_mz` relative to the Target's quantitation
 ion at zero. The pure settings conversion normalizes the lowest mass internally;

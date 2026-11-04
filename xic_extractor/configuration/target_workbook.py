@@ -143,7 +143,7 @@ def parse_dna_sheet(
                     "label": label,
                     "mz": round(float(mz_raw), 6),
                     "expected_rt_min": retention_time,
-                    "cid_nl_tag": "dR",
+                    "method": "dR",
                     "role": "istd" if _is_istd(label) else "analyte",
                     "istd_pair": "",
                 }
@@ -215,7 +215,7 @@ def parse_rna_sheet(
                 "label": label,
                 "mz": round(float(mz_raw), 6),
                 "expected_rt_min": retention_time,
-                "cid_nl_tag": cid_nl_tag,
+                "method": cid_nl_tag,
                 "role": "istd" if _is_istd(label) else "analyte",
                 "istd_pair": "",
             }

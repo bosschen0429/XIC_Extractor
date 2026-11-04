@@ -60,7 +60,7 @@
             <!-- Lists use the same label | field | action rows as every path. -->
             <div id="target-dropzone" class="path-line drop-line target-method-row">
               <label for="target-import">匯入檔案</label>
-              <span class="drop-target">拖曳方法檔或目標表到這裡 · XLSX、CSV、TSV</span>
+              <span class="drop-target">拖曳目標清單或目標表到這裡 · XLSX、CSV、TSV</span>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
               <button id="target-import" type="button" data-analysis-idle>瀏覽</button>
             </div>
@@ -71,14 +71,14 @@
               <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
             </div>
             <div class="path-line target-method-row">
-              <label for="target-method-default">預設辨認方法</label>
-              <select id="target-method-default" data-analysis-idle></select>
-              <button id="target-identification-edit" type="button" data-analysis-idle>編輯辨認方法</button>
+              <label for="target-identification-edit">自訂辨認方法</label>
+              <span id="target-identification-summary" class="target-identification-summary"></span>
+              <button id="target-identification-edit" type="button" data-analysis-idle>管理辨認方法</button>
             </div>
             <div class="actions list-actions">
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
               <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
-              <a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a>
+              <a href="/examples/targeted-method.xlsx" download>下載目標清單範例 XLSX</a>
               <a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a>
             </div>
           </div>
@@ -463,21 +463,29 @@
 </dialog>
 
 <dialog id="target-identification-editor" class="wide-dialog" aria-labelledby="target-identification-title">
-  <div class="dialog-head"><h2 id="target-identification-title">編輯辨認方法</h2><button type="button" class="dialog-close" data-close="target-identification-editor" aria-label="關閉辨認方法">×</button></div>
+  <div class="dialog-head"><h2 id="target-identification-title">辨認方法</h2><button type="button" class="dialog-close" data-close="target-identification-editor" aria-label="關閉辨認方法">×</button></div>
   <div class="dialog-body">
-    <p>先設計一次，分析時選方法即可。同一個候選峰必須滿足下列條件；不同峰的證據不會合併。</p>
-    <div class="settings-grid">
-      <label>編輯方法<select id="target-identification-select"><option value="">新增方法</option></select></label>
-      <label>方法名稱<input id="target-identification-name" /></label>
-      <label>條件組合<select id="target-identification-combine"><option value="all">符合全部條件（AND）</option><option value="any">符合任一條件（OR）</option></select></label>
+    <div class="method-picker">
+      <label for="target-identification-select">方法</label>
+      <select id="target-identification-select"></select>
+      <button id="target-identification-new" type="button">＋ 新增方法</button>
+      <button id="target-identification-delete" type="button">刪除此方法</button>
     </div>
+    <div class="method-fields">
+      <label>方法名稱<input id="target-identification-name" /></label>
+      <label>條件組合<select id="target-identification-combine"><option value="all">全部符合（AND）</option><option value="any">任一符合（OR）</option></select></label>
+      <label>m/z 容差（ppm）<input id="target-identification-ppm" type="number" min="0" step="any" /></label>
+    </div>
+    <p class="subtle">每個條件都判斷同一個候選峰；面積一律取目標 m/z（定量離子）。</p>
     <div id="target-identification-conditions"></div>
-    <div class="actions method-add-condition"><label>新增辨認條件<select id="target-condition-kind"><option value="cid_nl">CID-NL</option><option value="delta_mass">Delta Mass</option></select></label><button id="target-condition-add" type="button">新增條件</button></div>
-    <details><summary>進階：m/z 容差</summary><label class="method-condition-field">目標／配對 m/z 容差（ppm）<input id="target-identification-ppm" type="number" min="0" step="any" value="20" /></label><p class="subtle">CID-NL 的中性丟失與 MS2 容差沿用所選內建化學設定。</p></details>
-    <p class="subtle">未取得 MS2 不等於不符合；但不能滿足 CID-NL 條件。沒有辨認條件時為 MS1 only。HCD-PI 尚未提供。</p>
+    <div class="method-add-condition">
+      <button id="target-condition-add-cid" type="button">＋ CID-NL 條件</button>
+      <button id="target-condition-add-delta" type="button">＋ Delta Mass 條件</button>
+    </div>
+    <p class="subtle">樣本沒有 MS2 時記為「沒有 MS2」，不算不符合；但 CID-NL 條件因此不成立。</p>
     <p id="target-identification-error" class="error" role="alert"></p>
   </div>
-  <div class="dialog-foot"><button type="button" data-close="target-identification-editor">取消</button><button id="target-identification-apply" type="button" class="primary">套用為預設方法</button></div>
+  <div class="dialog-foot"><button type="button" data-close="target-identification-editor">關閉</button><button id="target-identification-apply" type="button" class="primary">儲存方法</button></div>
 </dialog>
 
 <dialog id="target-editor" class="wide-dialog">
@@ -495,7 +503,11 @@
     </button>
   </div>
   <div class="dialog-body">
-    <label><input id="target-method-overrides" type="checkbox" />顯示個別 target 的方法設定</label>
+    <div class="target-bulk-method">
+      <label for="target-bulk-method">全部目標改用</label>
+      <select id="target-bulk-method"></select>
+      <button id="target-bulk-apply" type="button">套用到全部目標</button>
+    </div>
     <div class="table-scroll editor-table">
       <table>
         <thead id="target-head"></thead>

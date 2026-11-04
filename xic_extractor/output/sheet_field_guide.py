@@ -97,9 +97,16 @@ _IDENTIFICATION_GUIDE = (
     ("Targets", "Method", "本次使用的辨認方法；定量仍取 Target m/z 通道。", ""),
     (
         "Identification Methods",
-        "Method / Part / Definition",
-        "完整方法設定 JSON，包含 AND／OR 與條件；依 Part 從 1 串接各片段。",
+        "Method / Combine / Condition / Kind",
+        "方法定義：all＝全部條件符合，any＝任一條件符合。"
+        "CID-NL 條件一列；Delta Mass 條件每個離子一列。",
         "",
+    ),
+    (
+        "Identification Methods",
+        "Position / Delta m/z",
+        "離子名稱與相對定量離子的 m/z 差（定量離子為 0）。",
+        "m/z",
     ),
     (
         "Method Evidence",
@@ -110,21 +117,20 @@ _IDENTIFICATION_GUIDE = (
     (
         "Method Evidence",
         "Combine / Method Accepted / Condition / Status",
-        "all＝全部符合，any＝任一符合；matched＝符合、not_matched＝不符、"
-        "not_acquired＝未取得 MS2、not_evaluated＝沒有候選可評估。"
-        "證據不可跨峰組合。",
+        "matched＝符合、not_matched＝不符合、not_acquired＝沒有 MS2、"
+        "not_evaluated＝沒有候選峰可評估。所有條件都看同一個候選峰。",
         "",
     ),
     (
         "Delta Mass Evidence",
         "Condition / Reference Position",
-        "條件編號及作為強度、峰形參考的定量位置（0）。",
+        "條件編號，以及作為強度、峰形參考的定量離子。",
         "",
     ),
     (
         "Delta Mass Evidence",
-        "Expected m/z / Apex Delta to Lowest sec",
-        "XIC 查詢中心（不是量測質心）；峰頂時間差相對最低 m/z 位置。",
+        "Expected m/z / Apex Delta to Quant sec",
+        "XIC 查詢中心（不是量測質心）；峰頂時間差相對定量離子。",
         "m/z / sec",
     ),
     (

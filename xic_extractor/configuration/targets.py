@@ -11,8 +11,8 @@ from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
     TARGET_FIELDS,
-    TARGET_METHOD_FIELDS,
     _read_target_rows,
+    normalize_target_row,
 )
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.parsing import (
@@ -20,7 +20,7 @@ from xic_extractor.configuration.parsing import (
     _parse_float,
 )
 from xic_extractor.configuration.targeted_identification import (
-    BUILTIN_TARGET_METHODS,
+    CID_NL_TAGS,
     DeltaMassCondition,
     IdentificationMethod,
 )
@@ -30,12 +30,8 @@ LOGGER = logging.getLogger(__name__)
 SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
-def _read_targets(
-    path: Path, *, identification_methods=None, default_method=""
-) -> list[Target]:
-    return _parse_target_rows(
-        path, _read_target_rows(path), identification_methods, default_method
-    )
+def _read_targets(path: Path, *, identification_methods=None) -> list[Target]:
+    return _parse_target_rows(path, _read_target_rows(path), identification_methods)
 
 
 def parse_target_rows(
@@ -43,7 +39,6 @@ def parse_target_rows(
     path: Path = Path("targets.csv"),
     *,
     identification_methods: Mapping[str, IdentificationMethod] | None = None,
-    default_method: str = "",
 ) -> tuple[Target, ...]:
     """Validate an in-memory table with the same target and ISTD rules as CSV intake."""
     return tuple(
@@ -51,7 +46,6 @@ def parse_target_rows(
             path,
             [(number, dict(row)) for number, row in enumerate(rows, 2)],
             identification_methods,
-            default_method,
         )
     )
 
@@ -60,15 +54,12 @@ def _parse_target_rows(
     path: Path,
     rows: list[tuple[int, dict[str, str]]],
     identification_methods=None,
-    default_method="",
 ) -> list[Target]:
     targets: list[Target] = []
     seen: set[str] = set()
 
     for row_number, row in rows:
-        target = _parse_target_row(
-            path, row_number, row, identification_methods, default_method
-        )
+        target = _parse_target_row(path, row_number, row, identification_methods)
         if target.label in seen:
             raise _config_error(
                 path, row_number, "label", target.label, "must be unique"
@@ -111,10 +102,10 @@ def _parse_target_row(
     row_number: int,
     row: dict[str, str],
     identification_methods=None,
-    default_method="",
 ) -> Target:
     from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 
+    row = normalize_target_row(row)
     retired = sorted(set(row) & set(LEGACY_TARGET_FIELDS))
     if retired:
         raise _config_error(
@@ -122,15 +113,11 @@ def _parse_target_row(
             row_number,
             retired[0],
             row[retired[0]],
-            "unsupported target schema; use expected_rt_min, cid_nl_tag and role",
+            "unsupported target schema; use expected_rt_min, method and role",
         )
     values = {
         field: str(row.get(field, "")).strip()
-        for field in (
-            *TARGET_FIELDS,
-            *OPTIONAL_TARGET_METADATA_FIELDS,
-            *TARGET_METHOD_FIELDS,
-        )
+        for field in (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
     }
     label = values["label"]
     if not label:
@@ -151,28 +138,19 @@ def _parse_target_row(
         raise _config_error(
             path, row_number, "role", values["role"], "must be analyte or istd"
         )
-    chosen = values["method"] or default_method
-    if (
-        not isinstance(chosen, str)
-        or chosen
-        and chosen not in BUILTIN_TARGET_METHODS
-        and chosen not in (identification_methods or {})
-    ):
+    # Blank is MS1 only; dR/R/MeR are built-in CID-NL; anything else is a
+    # user-defined identification method.
+    chosen = values["method"]
+    method = (identification_methods or {}).get(chosen)
+    if chosen and chosen not in CID_NL_TAGS and method is None:
         raise _config_error(
             path,
             row_number,
             "method",
-            str(chosen),
-            "must reference a defined method or a built-in",
+            chosen,
+            "must be blank (MS1 only), dR, R, MeR or a defined identification method",
         )
-    method = (identification_methods or {}).get(chosen)
-    tag = (
-        ""
-        if method is not None or chosen == "ms1"
-        else chosen[4:]
-        if chosen.startswith("cid:")
-        else values["cid_nl_tag"]
-    )
+    tag = chosen if chosen in CID_NL_TAGS else ""
     if method is not None:
         for condition in method.conditions:
             if not isinstance(condition, DeltaMassCondition):

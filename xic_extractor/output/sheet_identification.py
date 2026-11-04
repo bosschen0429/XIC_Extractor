@@ -2,9 +2,10 @@
 
 from openpyxl.utils import get_column_letter
 
-from xic_extractor.configuration.json_cells import encode_json_cells
-from xic_extractor.configuration.targeted_identification import (
-    identification_methods_payload,
+from xic_extractor.configuration.identification_method_table import (
+    METHOD_TABLE_HEADERS,
+    METHOD_TABLE_SHEET,
+    identification_method_rows,
 )
 from xic_extractor.output.workbook_styles import (
     _add_table,
@@ -32,6 +33,19 @@ METHOD_HEADERS = (
     "Status",
     "Reason",
 )
+_DEFINITION_NUMERIC = frozenset(
+    {
+        "m/z Tolerance ppm",
+        "Condition",
+        "Delta m/z",
+        "Ratio Min",
+        "Ratio Max",
+        "Apex Floor sec",
+        "Scan Interval Multiplier",
+        "Shape Window sec",
+        "Min Shape r",
+    }
+)
 DELTA_MASS_HEADERS = (
     "SampleName",
     "Target",
@@ -46,7 +60,7 @@ DELTA_MASS_HEADERS = (
     "Position",
     "Expected m/z",
     "Apex RT",
-    "Apex Delta to Lowest sec",
+    "Apex Delta to Quant sec",
     "Height Ratio to Quant",
     "Ratio Status",
     "Shape r",
@@ -54,7 +68,6 @@ DELTA_MASS_HEADERS = (
 )
 _NUMERIC = frozenset(
     {
-        "Part",
         "Candidate",
         "Candidate RT",
         "RT Start",
@@ -62,7 +75,7 @@ _NUMERIC = frozenset(
         "Condition",
         "Expected m/z",
         "Apex RT",
-        "Apex Delta to Lowest sec",
+        "Apex Delta to Quant sec",
         "Height Ratio to Quant",
         "Shape r",
         "Shape Threshold",
@@ -111,15 +124,6 @@ def identification_evidence_rows(run_output, targets):
                     "Combine": method.combine_mode,
                     "Method Accepted": "TRUE" if candidate.accepted else "FALSE",
                 }
-                if not candidate.conditions:
-                    conditions.append(
-                        {
-                            **answer,
-                            "Kind": "ms1",
-                            "Status": "not_required",
-                            "Condition Label": "MS1 only",
-                        }
-                    )
                 for condition in candidate.conditions:
                     conditions.append(
                         {
@@ -132,6 +136,14 @@ def identification_evidence_rows(run_output, targets):
                     )
                     definition = method.conditions[condition.condition_index]
                     for match in condition.delta_mass_candidates:
+                        quant_apex = next(
+                            (
+                                p.apex_rt_min
+                                for p in match.positions
+                                if p.position_label == definition.quant_position
+                            ),
+                            None,
+                        )
                         for position in match.positions:
                             positions.append(
                                 {
@@ -145,7 +157,10 @@ def identification_evidence_rows(run_output, targets):
                                     "Position": position.position_label,
                                     "Expected m/z": position.expected_mz,
                                     "Apex RT": position.apex_rt_min,
-                                    "Apex Delta to Lowest sec": position.apex_delta_sec,
+                                    "Apex Delta to Quant sec": None
+                                    if quant_apex is None
+                                    or position.apex_rt_min is None
+                                    else (position.apex_rt_min - quant_apex) * 60,
                                     "Height Ratio to Quant": position.height_ratio,
                                     "Ratio Status": position.ratio_status,
                                     "Shape r": position.shape_r,
@@ -163,17 +178,23 @@ def build_identification_sheets(workbook, targets, evidence_rows):
     }
     if not methods:
         return
-    definitions = [
-        {"Method": name, "Part": part, "Definition": fragment}
-        for name, definition in identification_methods_payload(methods).items()
-        for part, fragment in enumerate(encode_json_cells(definition), start=1)
-    ]
     _evidence_sheet(
         workbook,
-        "Identification Methods",
+        METHOD_TABLE_SHEET,
         "IdentificationDefinitions",
-        ("Method", "Part", "Definition"),
-        definitions,
+        METHOD_TABLE_HEADERS,
+        [
+            {
+                **row,
+                **(
+                    {"Compare Shape": "TRUE" if row["Compare Shape"] else "FALSE"}
+                    if "Compare Shape" in row
+                    else {}
+                ),
+            }
+            for row in identification_method_rows(methods)
+        ],
+        _DEFINITION_NUMERIC,
     )
     evidence_rows = evidence_rows or {"conditions": [], "positions": []}
     _evidence_sheet(
@@ -195,23 +216,18 @@ def build_identification_sheets(workbook, targets, evidence_rows):
         )
 
 
-def _evidence_sheet(workbook, name, table_name, headers, rows):
+def _evidence_sheet(workbook, name, table_name, headers, rows, numeric=_NUMERIC):
     sheet = workbook.create_sheet(name)
     _prepare_sheet(sheet, repeat_rows="1:1")
-    _write_header(sheet, 1, headers, _NUMERIC)
+    _write_header(sheet, 1, headers, numeric)
     for row_number, row in enumerate(rows, start=2):
         for column, key in enumerate(headers, start=1):
-            value = row.get(key)
-            cell = sheet.cell(
-                row_number, column, value if key == "Definition" else _excel_text(value)
-            )
-            if key == "Definition":
-                cell.data_type = "s"
-            _style_body(cell, numeric=key in _NUMERIC)
-            if key in _NUMERIC:
-                cell.number_format = (
-                    "0" if key in {"Candidate", "Condition", "Part"} else "0.0000"
-                )
+            cell = sheet.cell(row_number, column, _excel_text(row.get(key)))
+            _style_body(cell, numeric=key in numeric)
+            if key in {"Candidate", "Condition"}:
+                cell.number_format = "0"
+            elif key in numeric and numeric is _NUMERIC:
+                cell.number_format = "0.0000"
     _fit_columns(sheet)
     sheet.freeze_panes = "A2"
     _add_table(

@@ -56,7 +56,6 @@ def target_row(**changes):
         "label": "custom target",
         "mz": "302",
         "expected_rt_min": "2",
-        "cid_nl_tag": "",
         "role": "analyte",
         "istd_pair": "",
         "method": "my pair",
@@ -103,11 +102,8 @@ def test_overlapping_query_windows_cannot_count_one_ion_as_two_positions():
         )
 
 
-@pytest.mark.parametrize("use_default", [False, True])
 @pytest.mark.parametrize("use_method_file", [False, True])
-def test_workspace_and_run_receipts_keep_custom_method(
-    tmp_path, use_default, use_method_file
-):
+def test_workspace_and_run_receipts_keep_custom_method(tmp_path, use_method_file):
     from xic_extractor.configuration.loader import (
         load_config_snapshot,
         prepare_targeted_config,
@@ -116,15 +112,11 @@ def test_workspace_and_run_receipts_keep_custom_method(
 
     config_dir = tmp_path / "config"
     row = target_row()
-    if use_default:
-        row.pop("method")
-    default_method = "my pair" if use_default else ""
     save_workspace(
         config_dir,
         settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         targets=[row],
         identification_methods={"my pair": pattern()},
-        default_method=default_method,
     )
     saved = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     assert saved["identification_methods"]["my pair"]["mz_tolerance_ppm"] == 12.0
@@ -136,7 +128,6 @@ def test_workspace_and_run_receipts_keep_custom_method(
                 {},
                 [row],
                 identification_methods={"my pair": pattern()},
-                default_method=default_method,
             ),
             method_path,
         )

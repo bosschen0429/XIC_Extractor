@@ -3,7 +3,10 @@
 from dataclasses import replace
 from typing import Literal
 
-from xic_extractor.configuration.targeted_identification import CidNlCondition
+from xic_extractor.configuration.targeted_identification import (
+    DELTA_MASS_LABEL,
+    CidNlCondition,
+)
 from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 from xic_extractor.evidence.targeted_identification import (
     IdentificationConditionEvidence,
@@ -76,7 +79,7 @@ def assess_targeted_method_conditions(raw, assessment, window, seeds_by_tag):
                 )
                 answers.append(
                     IdentificationConditionEvidence(
-                        index, condition.kind, condition.label, status, matches
+                        index, condition.kind, DELTA_MASS_LABEL, status, matches
                     )
                 )
     return {

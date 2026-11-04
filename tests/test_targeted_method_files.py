@@ -35,7 +35,7 @@ def rows():
     common = {
         "mz": "250",
         "expected_rt_min": "2",
-        "cid_nl_tag": "dR",
+        "method": "dR",
         "role": "analyte",
         "istd_pair": "",
     }
@@ -67,7 +67,7 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
         "data_dir": "missing-batch",
         "dll_dir": "missing-dll",
     }
-    target_rows = [dict(row, cid_nl_tag=tag) for row in rows()]
+    target_rows = [dict(row, method=tag) for row in rows()]
     method = files.create_targeted_method(settings, target_rows)
     folder = tmp_path / "method-a.xlsx"
     saved = files.save_targeted_method(method, folder)
@@ -77,7 +77,7 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
     assert loaded.targets[1].istd_pair == "standard"
     assert loaded.targets[1].sample_applicability == "rna_containing"
     assert loaded.target_rows[1]["note"] == "方法 A"
-    assert loaded.target_rows[1]["cid_nl_tag"] == tag
+    assert loaded.target_rows[1]["method"] == tag
     assert (loaded.targets[1].neutral_loss_da is None) == (tag == "")
     assert folder.is_file()
     with pytest.raises(TypeError):

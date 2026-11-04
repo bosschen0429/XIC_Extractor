@@ -31,8 +31,7 @@ policy and actual resource allocation.
 | `label` | Unique target name; becomes a public output identifier |
 | `mz` | Positive precursor m/z |
 | `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
-| `cid_nl_tag` | `dR`, `R`, or `MeR` selects a shared built-in Discovery recipe; blank without `delta_mass_method` selects MS1-only with the shared 20 ppm precursor tolerance |
-| `method` | Optional per-target override: a named method or `ms1`, `cid:dR`, `cid:R`, `cid:MeR`; otherwise use the document default |
+| `method` | Blank selects MS1 only with the shared 20 ppm precursor tolerance; `dR`, `R`, or `MeR` selects a shared built-in CID-NL recipe; any other value names a custom identification method. Older tables call this column `cid_nl_tag`; it is read as `method` |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
@@ -55,14 +54,10 @@ double tops can require review without suppressing the measured total.
 
 ## Portable method
 
-A method `.xlsx` has exactly `Method` and `Targets` worksheets. `Method` uses
-`key,value` (optional `description`) and retains the compatibility row
-`strategy,cid-nl`. This format marker does not override each target's method.
-Custom methods add `identification_methods` (named definitions as JSON) and
-`default_method`. Large JSON definitions continue in `identification_methods.2`,
-`identification_methods.3`, etc., without adding worksheets or truncating text.
-These numbered fragments must be unique and contiguous, starting with the
-unnumbered first part. Edit methods in the workbench rather than editing JSON cells.
+A method `.xlsx` has `Method` and `Targets` worksheets, plus an
+`Identification Methods` worksheet when it defines custom methods. `Method` uses
+`key,value` (optional `description`) and has exactly one row: `strategy,cid-nl`.
+This format marker does not override each target's method.
 A target-table `.xlsx` has exactly one `Targets` worksheet with the columns above.
 Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.
@@ -74,22 +69,23 @@ examples, not evidence that the listed method is appropriate for your samples.
 
 ### Design and reuse an identification method
 
-1. Open **編輯辨認方法**, name it, and add CID-NL or Delta Mass condition cards.
-2. Choose **符合全部條件（AND）** or **符合任一條件（OR）**. Conditions must refer
-   to the same quantitation peak, not different peaks in the run. HCD-PI is not
+1. Open **管理辨認方法**, choose **＋ 新增方法**, name it, and add
+   **＋ CID-NL 條件** or **＋ Delta Mass 條件**.
+2. Choose **全部符合（AND）** or **任一符合（OR）**. Conditions must refer to the
+   same quantitation peak, not different peaks in the run. HCD-PI is not
    implemented and is not an available condition.
 3. For Delta Mass, the quantitation ion is fixed at `0`; enter positive or negative
-   partner `offset_mz` values. The Target's m/z and reported area always belong to
-   that zero position. Neutral mass differences require charge conversion first.
-4. Leave advanced panels closed for normal use. Open them to adjust m/z/RT
-   tolerances, shape thresholds or reference ratios. Shape and ratios reference
-   the quantitation ion; ratios only annotate, never reject peaks.
-5. **套用為預設方法** sets the default method. Routine analysis only needs the
-   **預設辨認方法** selector. In the target editor, enable
-   **顯示個別 target 的方法設定** for row overrides. Hiding these controls does not clear saved choices;
-   select **沿用整張表的方法** in a row to remove its override. With no default/override, legacy `cid_nl_tag` behavior is preserved.
-6. Save the workspace or **另存清單**. XLSX export includes the definitions and
-   default, so a later import preserves the complete method, not only target rows.
+   partner Δ m/z values. The Target's m/z and reported area always belong to that
+   zero position. Neutral mass differences require charge conversion first.
+   Ratio limits and shape comparison sit on each partner's row; ratios only
+   annotate, never reject peaks. Co-elution and shape thresholds stay in the
+   collapsed **進階：共洗脫與峰形** panel.
+4. **儲存方法** keeps the definition. It does not change which targets use it.
+5. In the target editor, pick the method in each row's **辨認方法** column, or use
+   **全部目標改用** to fill every row. Blank (MS1 only) means no identification
+   condition. A method still used by targets cannot be deleted.
+6. Save the workspace or **另存清單**. XLSX export includes the definitions, so a
+   later import preserves the complete method, not only target rows.
 
 CLI uses the same method admission and execution:
 
@@ -97,13 +93,20 @@ CLI uses the same method admission and execution:
 .venv\Scripts\python.exe -m scripts.run_extraction --method C:\methods\my-method.xlsx
 ```
 
-The `Method` worksheet retains `strategy=cid-nl` as the existing shared-strategy
-marker, plus optional `identification_methods` (JSON object) and `default_method`.
-A definition uses `combine_mode: "all" | "any"`, `mz_tolerance_ppm`, and
-`conditions`: `{ "kind": "cid_nl", "tag": "dR" }` or
-`{ "kind": "delta_mass", "positions": [{ "label": "quant", "offset_mz": 0 },
-{ "label": "partner", "offset_mz": -2 }] }`. Exactly one position must be zero.
-Use the editor or exported workbook rather than manually composing JSON.
+The `Identification Methods` worksheet has one row per CID-NL condition and
+one row per Delta Mass ion:
+
+| Method | Combine | m/z Tolerance ppm | Condition | Kind | CID-NL Tag | Position | Delta m/z | Ratio Min | Ratio Max | Compare Shape |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pt-pair | all | 20 | 1 | cid_nl | dR | | | | | |
+| Pt-pair | all | 20 | 2 | delta_mass | | quant | 0 | | | FALSE |
+| Pt-pair | all | 20 | 2 | delta_mass | | partner_1 | -1.9981 | 0.1 | 10 | TRUE |
+
+Optional `Apex Floor sec`, `Scan Interval Multiplier`, `Shape Window sec` and
+`Min Shape r` columns hold Delta Mass co-elution/shape thresholds; blank uses the
+defaults. Method- and condition-level values must agree on every row of that
+method or condition. Each Delta Mass condition needs exactly one ion at `0`.
+Every method needs at least one condition; use a blank target `method` for MS1 only.
 
 Overlapping ion windows are rejected. Two-position methods require a measured
 partner. Unmet methods do not fall back to MS1-only. `Method Evidence` explains

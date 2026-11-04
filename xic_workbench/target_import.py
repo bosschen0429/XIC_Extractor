@@ -50,7 +50,6 @@ def preview_target_upload(name: object, content: object, settings: dict) -> dict
                     method.identification_methods
                 ),
                 "settings": applied,
-                "default_method": method.default_method,
                 "summary": method_summary(applied),
             }
         return {"kind": "targets", "targets": import_targets(path)}

@@ -21,7 +21,7 @@ def _target_row(**overrides):
         "label": "ISTD",
         "mz": "258.1085",
         "expected_rt_min": "9",
-        "cid_nl_tag": "dR",
+        "method": "dR",
         "role": "istd",
         "istd_pair": "",
         **overrides,
@@ -151,7 +151,7 @@ def test_targeted_rejects_invalid_worker_budget(workers):
 
 @pytest.mark.parametrize("tag", ["dR", "R", "MeR"])
 def test_target_chemistry_resolves_from_shared_recipe(tag):
-    target = parse_target_rows([_target_row(cid_nl_tag=tag)])[0]
+    target = parse_target_rows([_target_row(method=tag)])[0]
     policy = targeted_tag_profile(tag)
     assert target.neutral_loss_da == policy.neutral_loss_profiles[0].neutral_loss_da
     assert target.ppm_tol == policy.precursor_mz_tolerance_ppm
@@ -159,9 +159,7 @@ def test_target_chemistry_resolves_from_shared_recipe(tag):
 
 
 def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
-    target = parse_target_rows([_target_row(mz="100", cid_nl_tag=" ", role="analyte")])[
-        0
-    ]
+    target = parse_target_rows([_target_row(mz="100", method=" ", role="analyte")])[0]
     assert target.cid_nl_tag == ""
     assert target.neutral_loss_da is None
     assert target.nl_ppm_warn is None and target.nl_ppm_max is None
@@ -177,7 +175,7 @@ def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
         ("mz", "0"),
         ("expected_rt_min", "-1"),
         ("expected_rt_min", "inf"),
-        ("cid_nl_tag", "unknown"),
+        ("method", "unknown"),
         ("role", "standard"),
         ("label", ""),
         ("sample_applicability", "invalid"),

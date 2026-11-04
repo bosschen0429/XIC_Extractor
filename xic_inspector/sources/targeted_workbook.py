@@ -13,10 +13,12 @@ from zipfile import BadZipFile
 from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
 )
-from xic_extractor.configuration.json_cells import decode_json_cells
+from xic_extractor.configuration.identification_method_table import (
+    METHOD_TABLE_SHEET,
+    parse_identification_method_rows,
+)
 from xic_extractor.configuration.targeted_identification import (
     identification_methods_payload,
-    parse_identification_methods,
 )
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
@@ -110,32 +112,26 @@ class TargetedWorkbookSource:
                 if "Delta Mass Evidence" in book.sheetnames
                 else []
             )
-            method_parts: dict[str, list[tuple[object, object]]] = {}
             try:
-                if "Identification Methods" in book.sheetnames:
-                    for row in _table(
-                        book, "Identification Methods", {"Method", "Definition"}
-                    ):
-                        method_parts.setdefault(row["Method"], []).append(
-                            (row.get("Part", 1), row["Definition"])
-                        )
-                methods = {
-                    name: decode_json_cells(parts)
-                    for name, parts in method_parts.items()
-                }
                 self.identification_methods = identification_methods_payload(
-                    parse_identification_methods(methods)
+                    parse_identification_method_rows(
+                        _table(
+                            book, METHOD_TABLE_SHEET, {"Method", "Condition", "Kind"}
+                        )
+                        if METHOD_TABLE_SHEET in book.sheetnames
+                        else []
+                    )
                 )
             except (TypeError, ValueError) as exc:
                 raise ExplanationError(
-                    f"Targeted XLSX 辨認 方法無法讀取：{exc}"
+                    f"Targeted XLSX 辨認方法無法讀取：{exc}"
                 ) from exc
             if any(
                 target.get("Method")
                 and target["Method"] not in self.identification_methods
                 for target in self.targets
             ):
-                raise ExplanationError("Targeted XLSX 缺少目標引用的 Delta Mass 方法。")
+                raise ExplanationError("Targeted XLSX 缺少目標引用的辨認方法。")
             self.records = _table(
                 book,
                 "XIC Results",

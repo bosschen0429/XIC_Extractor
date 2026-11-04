@@ -32,7 +32,7 @@ def row(**changes):
         "label": "target",
         "mz": "302",
         "expected_rt_min": "2",
-        "cid_nl_tag": "",
+        "method": "",
         "role": "analyte",
         "istd_pair": "",
         **changes,
@@ -52,7 +52,7 @@ def test_method_normalizes_negative_offsets_without_moving_quantitation():
     assert pattern.anchor_positions == ("quant",)
 
 
-def test_default_method_and_per_target_override_are_one_portable_intent(tmp_path):
+def test_each_row_method_is_one_portable_intent(tmp_path):
     from xic_extractor.configuration.targeted_method_files import (
         load_targeted_method,
         save_targeted_method,
@@ -60,21 +60,25 @@ def test_default_method_and_per_target_override_are_one_portable_intent(tmp_path
 
     method = create_targeted_method(
         {},
-        [row(), row(label="exception", method="ms1")],
+        [
+            row(method="Pair"),
+            row(label="ms1", method=""),
+            row(label="builtin", method="dR"),
+        ],
         identification_methods={"Pair": method_definition()},
-        default_method="Pair",
     )
     path = tmp_path / "method.xlsx"
     save_targeted_method(method, path)
     loaded = load_targeted_method(path)
     assert loaded.targets == method.targets
-    assert loaded.default_method == "Pair"
     from xic_extractor.configuration.targets import read_targets
 
     assert tuple(read_targets(path)) == loaded.targets
     assert loaded.targets[0].identification_method.name == "Pair"
     assert loaded.targets[1].identification_method is None
     assert loaded.targets[1].neutral_loss_da is None
+    assert loaded.targets[2].identification_method is None
+    assert loaded.targets[2].cid_nl_tag == "dR"
 
 
 @pytest.mark.parametrize("kind", ["hcd_pi", "unknown"])
@@ -83,9 +87,20 @@ def test_unimplemented_condition_is_not_silently_accepted(kind):
         parse_identification_methods({"bad": {"conditions": [{"kind": kind}]}})
 
 
-def test_unknown_default_is_rejected_even_when_every_row_overrides_it():
-    with pytest.raises(ConfigError, match="default_method"):
-        create_targeted_method({}, [row(method="ms1")], default_method="missing")
+def test_unknown_row_method_is_rejected():
+    with pytest.raises(ConfigError, match="defined identification method"):
+        create_targeted_method({}, [row(method="missing")])
+
+
+@pytest.mark.parametrize("name", ["dR", "R", "MeR"])
+def test_custom_method_cannot_shadow_builtin_tag(name):
+    with pytest.raises(ValueError, match="not dR, R or MeR"):
+        parse_identification_methods({name: method_definition()})
+
+
+def test_method_without_conditions_is_rejected_instead_of_meaning_ms1():
+    with pytest.raises(ValueError, match="at least one condition"):
+        parse_identification_methods({"Empty": {"conditions": []}})
 
 
 @pytest.mark.parametrize("retired", ["delta_mass_method", "quant_position"])
@@ -94,21 +109,30 @@ def test_superseded_delta_binding_cannot_silently_become_ms1(retired):
         create_targeted_method({}, [row(**{retired: "old binding"})])
 
 
-def test_workbench_persists_effective_method_defaults_for_the_gui(tmp_path):
+def test_workbench_persists_definitions_and_row_methods(tmp_path):
     from xic_workbench.analysis_workspace import AnalysisWorkspace
 
     workspace = AnalysisWorkspace(tmp_path / "config", {})
+    legacy = {**row(), "cid_nl_tag": "dR"}
+    del legacy["method"]
     workspace.action(
         "targeted/save",
         {
             "settings": {"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
-            "targets": [row()],
-            "identification_methods": {"Simple": {}},
-            "default_method": "Simple",
+            "targets": [row(method="Simple"), {**legacy, "label": "legacy"}],
+            "identification_methods": {
+                "Simple": {"conditions": [{"kind": "cid_nl", "tag": "R"}]}
+            },
         },
     )
-    saved = workspace.bootstrap()["identification_methods"]["Simple"]
-    assert saved == {"conditions": [], "combine_mode": "all", "mz_tolerance_ppm": 20}
+    state = workspace.bootstrap()
+    assert state["identification_methods"]["Simple"] == {
+        "conditions": [{"tag": "R", "kind": "cid_nl"}],
+        "combine_mode": "all",
+        "mz_tolerance_ppm": 20,
+    }
+    assert [target["method"] for target in state["targets"]] == ["Simple", "dR"]
+    assert all("cid_nl_tag" not in target for target in state["targets"])
 
 
 def extract_method(tmp_path, raw, definition, *, window=None, acquire_ms2=False):
@@ -117,7 +141,7 @@ def extract_method(tmp_path, raw, definition, *, window=None, acquire_ms2=False)
     from xic_extractor.ms2_scan_models import Ms2Window
 
     target = create_targeted_method(
-        {}, [row()], identification_methods={"Pair": definition}, default_method="Pair"
+        {}, [row(method="Pair")], identification_methods={"Pair": definition}
     ).targets[0]
     results = {}
     extract_one_target(
@@ -150,24 +174,6 @@ def test_relative_pair_quantifies_quant_channel_and_reports_relative_ratio(tmp_p
     )
     assert position.height_ratio == pytest.approx(2, rel=0.03)
     assert position.shape_r > 0.99
-
-
-def test_empty_method_does_not_blame_identification_for_a_missing_peak(tmp_path):
-    import numpy as np
-
-    from tests.test_targeted_delta_mass import PatternRaw
-
-    class FlatRaw(PatternRaw):
-        def extract_xic(self, mz, start, end, ppm):
-            keep = (self.rt >= start) & (self.rt <= end)
-            return self.rt[keep], np.full(keep.sum(), 100.0)
-
-    result = extract_method(tmp_path, FlatRaw(), {"conditions": []})
-    assert result.reported_peak_area is None
-    assert (
-        "identification_method_not_supported"
-        not in result.targeted_product_projection.not_counted_reasons
-    )
 
 
 @pytest.mark.parametrize("mode,accepted", [("all", False), ("any", True)])
