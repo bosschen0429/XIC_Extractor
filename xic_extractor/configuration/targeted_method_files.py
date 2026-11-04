@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -15,6 +14,7 @@ from xic_extractor.configuration.csv_io import (
     TARGET_FIELDS,
     TARGET_WRITE_FIELDS,
 )
+from xic_extractor.configuration.json_cells import decode_json_cells, encode_json_cells
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
     resolve_settings,
@@ -111,19 +111,36 @@ def load_targeted_method(path: Path) -> TargetedMethod:
             raise ConfigError(f"{path}: duplicate method setting {key!r}")
         settings[key] = row.get("value", "")
     missing = set(METHOD_KEYS) - settings.keys()
+    definition_keys = [
+        key
+        for key in settings
+        if key == "identification_methods" or key.startswith("identification_methods.")
+    ]
     extra = (
-        settings.keys()
-        - set(METHOD_KEYS)
-        - {"identification_methods", "default_method"}
+        settings.keys() - set(METHOD_KEYS) - {"default_method"} - set(definition_keys)
     )
     if missing or extra:
         raise ConfigError(
             f"{path}: 方法設定缺少 {sorted(missing)}；額外 {sorted(extra)}"
         )
     try:
-        methods = json.loads(settings.pop("identification_methods", "{}"))
+        methods = (
+            decode_json_cells(
+                (
+                    1
+                    if key == "identification_methods"
+                    else key.removeprefix("identification_methods."),
+                    settings.pop(key),
+                )
+                for key in definition_keys
+            )
+            if definition_keys
+            else {}
+        )
     except ValueError as exc:
-        raise ConfigError(f"{path}: invalid identification_methods JSON") from exc
+        raise ConfigError(
+            f"{path}: invalid identification_methods JSON: {exc}"
+        ) from exc
     default_method = settings.pop("default_method", "")
     return create_targeted_method(
         settings,
@@ -146,7 +163,12 @@ def load_workbook_targets(path: Path) -> tuple[Target, ...]:
     book = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
         has_method_intent = "Method" in book.sheetnames and any(
-            row and row[0] in {"identification_methods", "default_method"}
+            row
+            and isinstance(row[0], str)
+            and (
+                row[0] in {"identification_methods", "default_method"}
+                or row[0].startswith("identification_methods.")
+            )
             for row in book["Method"].iter_rows(values_only=True)
         )
     finally:
@@ -229,18 +251,23 @@ def save_targeted_method(method: TargetedMethod, path: Path) -> TargetedMethod:
                 + (
                     [
                         {
-                            "key": "identification_methods",
-                            "value": json.dumps(
-                                identification_methods_payload(
-                                    method.identification_methods
-                                ),
-                                ensure_ascii=False,
-                            ),
+                            "key": "identification_methods"
+                            if part == 1
+                            else f"identification_methods.{part}",
+                            "value": fragment,
                             "description": (
                                 "Reusable identification conditions; "
                                 "edit in the workbench"
                             ),
                         }
+                        for part, fragment in enumerate(
+                            encode_json_cells(
+                                identification_methods_payload(
+                                    method.identification_methods
+                                )
+                            ),
+                            start=1,
+                        )
                     ]
                     if method.identification_methods
                     else []

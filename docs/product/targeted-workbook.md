@@ -36,6 +36,11 @@ target, candidate interval, selected flag, all/any combination, method acceptanc
 and clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
 when no candidate could be assessed. An explicit empty method uses `not_required`.
 
+`Identification Methods` contains `Method`, `Part`, and `Definition`. Each method
+is stored as ordered JSON text fragments, numbered from 1, to stay within Excel's
+32,767-character cell limit. Inspector joins the fragments without truncation and
+rejects missing or duplicate parts; a single definition without `Part` is part 1.
+
 Delta Mass details record XIC query masses, not measured centroids. Height ratios
 and shape comparisons reference the quantitation ion; ratios remain annotation.
 `Apex Delta to Lowest sec` explicitly retains the matcher's lowest-m/z RT reference.

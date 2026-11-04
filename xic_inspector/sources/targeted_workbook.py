@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -14,6 +13,7 @@ from zipfile import BadZipFile
 from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
 )
+from xic_extractor.configuration.json_cells import decode_json_cells
 from xic_extractor.configuration.targeted_identification import (
     identification_methods_payload,
     parse_identification_methods,
@@ -110,15 +110,19 @@ class TargetedWorkbookSource:
                 if "Delta Mass Evidence" in book.sheetnames
                 else []
             )
-            methods = {}
+            method_parts: dict[str, list[tuple[object, object]]] = {}
             try:
                 if "Identification Methods" in book.sheetnames:
                     for row in _table(
                         book, "Identification Methods", {"Method", "Definition"}
                     ):
-                        if row["Method"] in methods:
-                            raise ValueError("duplicate method name")
-                        methods[row["Method"]] = json.loads(row["Definition"])
+                        method_parts.setdefault(row["Method"], []).append(
+                            (row.get("Part", 1), row["Definition"])
+                        )
+                methods = {
+                    name: decode_json_cells(parts)
+                    for name, parts in method_parts.items()
+                }
                 self.identification_methods = identification_methods_payload(
                     parse_identification_methods(methods)
                 )

@@ -97,8 +97,8 @@ _IDENTIFICATION_GUIDE = (
     ("Targets", "Method", "本次使用的辨認方法；定量仍取 Target m/z 通道。", ""),
     (
         "Identification Methods",
-        "Method / Definition",
-        "完整方法設定 JSON，包含 AND／OR 與條件。",
+        "Method / Part / Definition",
+        "完整方法設定 JSON，包含 AND／OR 與條件；依 Part 從 1 串接各片段。",
         "",
     ),
     (

@@ -59,7 +59,10 @@ A method `.xlsx` has exactly `Method` and `Targets` worksheets. `Method` uses
 `key,value` (optional `description`) and retains the compatibility row
 `strategy,cid-nl`. This format marker does not override each target's method.
 Custom methods add `identification_methods` (named definitions as JSON) and
-`default_method`. Edit them in the workbench rather than editing JSON cells.
+`default_method`. Large JSON definitions continue in `identification_methods.2`,
+`identification_methods.3`, etc., without adding worksheets or truncating text.
+These numbered fragments must be unique and contiguous, starting with the
+unnumbered first part. Edit methods in the workbench rather than editing JSON cells.
 A target-table `.xlsx` has exactly one `Targets` worksheet with the columns above.
 Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.

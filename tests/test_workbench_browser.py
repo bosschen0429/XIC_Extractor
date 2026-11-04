@@ -860,6 +860,89 @@ def test_targeted_unified_method_editor_binds_and_persists(
     assert state["targets"][0]["method"] == "ms1"
 
 
+def test_imported_quantitation_role_survives_temporary_duplicate_zero(
+    workbench, config_dir, tmp_path
+):
+    from xic_extractor.configuration.targeted_method_files import (
+        create_targeted_method,
+        save_targeted_method,
+    )
+    from xic_workbench.config_io import read_targets
+
+    definition = {
+        "conditions": [
+            {
+                "kind": "delta_mass",
+                "positions": [
+                    {"label": "light", "offset_mz": -2},
+                    {"label": "quant", "offset_mz": 0},
+                ],
+            }
+        ]
+    }
+    portable = tmp_path / "imported.xlsx"
+    save_targeted_method(
+        create_targeted_method(
+            {},
+            read_targets(config_dir=config_dir),
+            identification_methods={"Imported": definition},
+            default_method="Imported",
+        ),
+        portable,
+    )
+    page = workbench
+    page.locator("#target-import-file").set_input_files(portable)
+    expect(page.locator("#target-import-preview")).to_be_visible()
+    page.locator("#target-import-confirm").click()
+    page.locator("#target-identification-edit").click()
+    partner = page.get_by_label("Δ m/z（條件 1，位置 1）", exact=True)
+    quant = page.get_by_label("Δ m/z（條件 1，位置 2）", exact=True)
+    expect(partner).not_to_have_attribute("readonly")
+    expect(quant).to_have_attribute("readonly", "")
+    partner.fill("0")
+    page.get_by_role("button", name="新增配對位置（條件 1）", exact=True).click()
+    expect(partner).not_to_have_attribute("readonly")
+    expect(quant).to_have_attribute("readonly", "")
+    partner.fill("-2")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-editor")).not_to_be_visible()
+    page.locator("#target-save").click()
+    expect(page.locator("#toasts .toast.ok").filter(has_text="已儲存")).to_be_visible()
+    page.reload()
+    page.locator("#target-identification-edit").click()
+    expect(partner).to_have_value("-2")
+    expect(quant).to_have_value("0")
+    expect(quant).to_have_attribute("readonly", "")
+
+
+def test_add_partner_after_deleting_middle_position_keeps_defaults_unique(
+    workbench, config_dir
+):
+    page = workbench
+    page.locator("#target-identification-edit").click()
+    page.get_by_role("button", name="移除條件 1", exact=True).click()
+    page.locator("#target-identification-name").fill("Reordered pair")
+    page.locator("#target-condition-kind").select_option("delta_mass")
+    page.locator("#target-condition-add").click()
+    add = page.get_by_role("button", name="新增配對位置（條件 1）", exact=True)
+    add.click()
+    add.click()
+    page.get_by_role("button", name="移除位置 3（條件 1）", exact=True).click()
+    add.click()
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-editor")).not_to_be_visible()
+    page.locator("#target-save").click()
+    expect(page.locator("#toasts .toast.ok").filter(has_text="已儲存")).to_be_visible()
+    page.reload()
+    expect(page.locator("#target-method-default")).to_have_value("Reordered pair")
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    positions = state["identification_methods"]["Reordered pair"]["conditions"][0][
+        "positions"
+    ]
+    assert len({p["label"] for p in positions}) == len(positions) == 4
+    assert len({p["offset_mz"] for p in positions}) == 4
+
+
 def test_target_list_save_and_load_preserves_batch(workbench):
     page = workbench
     original_batch = page.locator("#t-data_dir").input_value()

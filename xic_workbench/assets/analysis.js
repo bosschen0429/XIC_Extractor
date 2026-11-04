@@ -827,15 +827,22 @@
   }
   let identificationDraft = null;
   let identificationEditingName = '';
+  // Keep the quantitation role fixed even while a draft has duplicate offsets.
+  const draftQuantitationIons = new WeakMap();
   function newDeltaCondition() {
-    return {kind: 'delta_mass', label: 'Delta Mass', positions: [
+    const condition = {kind: 'delta_mass', label: 'Delta Mass', positions: [
       {label: 'quant', offset_mz: 0, ratio_min: 0.1, ratio_max: 10, compare_shape: false},
       {label: 'partner', offset_mz: 1, ratio_min: 0.1, ratio_max: 10, compare_shape: true},
     ], apex_floor_sec: 1, scan_interval_multiplier: 1.25, shape_window_sec: 10, min_shape_r: 0.9};
+    draftQuantitationIons.set(condition, condition.positions[0]);
+    return condition;
   }
   function loadIdentificationDraft(name = '') {
     identificationEditingName = name;
     identificationDraft = structuredClone(state.identificationMethods[name] || {combine_mode: 'all', mz_tolerance_ppm: 20, conditions: [{kind: 'cid_nl', tag: 'dR'}]});
+    for (const condition of identificationDraft.conditions) {
+      if (condition.kind === 'delta_mass') draftQuantitationIons.set(condition, condition.positions.find(position => position.offset_mz === 0));
+    }
     $('target-identification-name').value = name;
     $('target-identification-combine').value = identificationDraft.combine_mode;
     $('target-identification-ppm').value = identificationDraft.mz_tolerance_ppm;
@@ -865,7 +872,7 @@
         card.append(el('p', '定量離子固定為 0；其他位置填正或負的 m/z 差值（已換算電荷）。面積只取定量離子。', 'subtle'));
         const table = el('table', undefined, 'method-ion-table'); const header = el('tr'); for (const text of ['離子角色', '位置名稱', '相對定量離子 Δ m/z', '']) header.append(el('th', text)); table.append(header);
         condition.positions.forEach((position, positionIndex) => {
-          const quant = position.offset_mz === 0 && positionIndex === condition.positions.findIndex(p => p.offset_mz === 0);
+          const quant = position === draftQuantitationIons.get(condition);
           const row = el('tr'); row.append(el('td', quant ? '定量離子' : '配對離子', 'method-ion-role')); const nameCell = el('td'); const name = el('input'); name.value = position.label;
           name.setAttribute('aria-label', `位置名稱（條件 ${index + 1}，位置 ${positionIndex + 1}）`); name.oninput = () => {position.label = name.value; const reference = card.querySelector(`[data-ratio-position="${positionIndex}"]`); if (reference) reference.textContent = name.value;}; nameCell.append(name); row.append(nameCell);
           const offsetCell = el('td'); const offset = numericEditor(position.offset_mz, `Δ m/z（條件 ${index + 1}，位置 ${positionIndex + 1}）`, value => {position.offset_mz = value;});
@@ -873,7 +880,15 @@
           const removeCell = el('td'); const remove = button('移除位置', () => {condition.positions.splice(positionIndex, 1); renderIdentificationConditions();}); remove.setAttribute('aria-label', `移除位置 ${positionIndex + 1}（條件 ${index + 1}）`); if (quant) removeCell.append(el('span', '固定', 'subtle')); else removeCell.append(remove); row.append(removeCell); table.append(row);
         });
         const scroll = el('div', undefined, 'table-scroll editor-table'); scroll.append(table); card.append(scroll);
-        const add = button('新增配對位置', () => {condition.positions.push({label: `partner_${condition.positions.length}`, offset_mz: condition.positions.length, ratio_min: 0.1, ratio_max: 10, compare_shape: true}); renderIdentificationConditions();}); add.setAttribute('aria-label', `新增配對位置（條件 ${index + 1}）`); card.append(add);
+        const add = button('新增配對位置', () => {
+          const usedLabels = new Set(condition.positions.map(position => position.label));
+          const usedOffsets = new Set(condition.positions.map(position => position.offset_mz));
+          let nextPartnerNumber = 1;
+          while (usedLabels.has(`partner_${nextPartnerNumber}`) || usedOffsets.has(nextPartnerNumber)) nextPartnerNumber += 1;
+          condition.positions.push({label: `partner_${nextPartnerNumber}`, offset_mz: nextPartnerNumber, ratio_min: 0.1, ratio_max: 10, compare_shape: true});
+          renderIdentificationConditions();
+        });
+        add.setAttribute('aria-label', `新增配對位置（條件 ${index + 1}）`); card.append(add);
         const advanced = el('details'); advanced.append(el('summary', '進階：共洗脫、峰形與強度比例'));
         const grid = el('div', undefined, 'settings-grid method-advanced-grid');
         for (const [key, text] of [['apex_floor_sec', '峰頂 RT 容差下限（秒）'], ['scan_interval_multiplier', 'MS1 掃描間隔倍數'], ['shape_window_sec', '峰形比較半窗（秒）'], ['min_shape_r', '最低峰形相關性 r']]) {
@@ -884,7 +899,7 @@
         for (const text of ['配對位置', '比例下限', '比例上限', '比較峰形']) ratioHead.append(el('th', text));
         ratios.append(ratioHead);
         condition.positions.forEach((position, positionIndex) => {
-          if (position.offset_mz === 0) return;
+          if (position === draftQuantitationIons.get(condition)) return;
           const row = el('tr'); const name = el('td', position.label); name.dataset.ratioPosition = positionIndex; row.append(name);
           for (const [key, text] of [['ratio_min', '比例下限'], ['ratio_max', '比例上限']]) {
             const cell = el('td'); cell.append(numericEditor(position[key], `${text}（條件 ${index + 1}，位置 ${positionIndex + 1}）`, value => {position[key] = value;})); row.append(cell);

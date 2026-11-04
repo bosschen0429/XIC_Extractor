@@ -1,9 +1,8 @@
 """Render retained per-peak method answers, never reinterpret RAW evidence."""
 
-import json
-
 from openpyxl.utils import get_column_letter
 
+from xic_extractor.configuration.json_cells import encode_json_cells
 from xic_extractor.configuration.targeted_identification import (
     identification_methods_payload,
 )
@@ -55,6 +54,7 @@ DELTA_MASS_HEADERS = (
 )
 _NUMERIC = frozenset(
     {
+        "Part",
         "Candidate",
         "Candidate RT",
         "RT Start",
@@ -164,14 +164,15 @@ def build_identification_sheets(workbook, targets, evidence_rows):
     if not methods:
         return
     definitions = [
-        {"Method": name, "Definition": json.dumps(definition, ensure_ascii=False)}
+        {"Method": name, "Part": part, "Definition": fragment}
         for name, definition in identification_methods_payload(methods).items()
+        for part, fragment in enumerate(encode_json_cells(definition), start=1)
     ]
     _evidence_sheet(
         workbook,
         "Identification Methods",
         "IdentificationDefinitions",
-        ("Method", "Definition"),
+        ("Method", "Part", "Definition"),
         definitions,
     )
     evidence_rows = evidence_rows or {"conditions": [], "positions": []}
@@ -200,11 +201,16 @@ def _evidence_sheet(workbook, name, table_name, headers, rows):
     _write_header(sheet, 1, headers, _NUMERIC)
     for row_number, row in enumerate(rows, start=2):
         for column, key in enumerate(headers, start=1):
-            cell = sheet.cell(row_number, column, _excel_text(row.get(key)))
+            value = row.get(key)
+            cell = sheet.cell(
+                row_number, column, value if key == "Definition" else _excel_text(value)
+            )
+            if key == "Definition":
+                cell.data_type = "s"
             _style_body(cell, numeric=key in _NUMERIC)
             if key in _NUMERIC:
                 cell.number_format = (
-                    "0" if key in {"Candidate", "Condition"} else "0.0000"
+                    "0" if key in {"Candidate", "Condition", "Part"} else "0.0000"
                 )
     _fit_columns(sheet)
     sheet.freeze_panes = "A2"
