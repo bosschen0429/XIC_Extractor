@@ -165,6 +165,7 @@ def process_file(
                     reference_rt=None,
                     sample_window=sample_window,
                     method_seeds=seeds_by_tag.get(target.cid_nl_tag),
+                    prepared_method_seeds=seeds_by_tag,
                     strict_preferred_rt=False,
                     results=results,
                     diagnostics=diagnostics,
@@ -201,6 +202,7 @@ def process_file(
                     reference_rt=reference_rt,
                     sample_window=sample_window,
                     method_seeds=seeds_by_tag.get(target.cid_nl_tag),
+                    prepared_method_seeds=seeds_by_tag,
                     paired_target=istd_targets.get(target.istd_pair),
                     sample_drift=sample_drift,
                     strict_preferred_rt=(
@@ -240,6 +242,7 @@ def extract_one_target(
     reference_rt: float | None,
     sample_window: Ms2Window | None = None,
     method_seeds: tuple | None = None,
+    prepared_method_seeds: dict[str, tuple] | None = None,
     paired_target: Target | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -283,7 +286,7 @@ def extract_one_target(
                 rt_max=context_rt_max,
                 precursor_scope=targeted_ms2_precursor_scope([target]),
             )
-            if target.neutral_loss_da is not None
+            if targeted_ms2_precursor_scope([target]) is not None
             else Ms2Window(
                 sample_key=sample_name,
                 rt_min=context_rt_min,
@@ -291,10 +294,12 @@ def extract_one_target(
                 events=(),
             )
         )
+    if prepared_method_seeds is None:
+        prepared_method_seeds = prepare_sample_method_seeds(
+            raw, sample_window, [target]
+        )
     if method_seeds is None and target.neutral_loss_da is not None:
-        method_seeds = prepare_sample_method_seeds(raw, sample_window, [target])[
-            target.cid_nl_tag
-        ]
+        method_seeds = prepared_method_seeds[target.cid_nl_tag]
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
@@ -344,6 +349,20 @@ def extract_one_target(
         istd_confidence_note=istd_confidence_note,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
+    if target.identification_method is not None:
+        from xic_extractor.extraction.targeted_method_conditions import (
+            assess_targeted_method_conditions,
+        )
+
+        candidate_assessment = replace(
+            candidate_assessment,
+            method_assessments=assess_targeted_method_conditions(
+                raw,
+                candidate_assessment,
+                method_window,
+                prepared_method_seeds,
+            ),
+        )
 
     scoring_context_builder = None
     if scoring_context_factory is not None and not defer_selection:

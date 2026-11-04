@@ -873,3 +873,208 @@
 .curation-step p {
   margin: 0;
 }
+
+/* The method editor is a dialog, outside .analysis-page's form layout. */
+#target-identification-editor .dialog-body {
+  display: grid;
+  gap: 14px;
+}
+#target-identification-editor .dialog-body > p {
+  margin: 0;
+}
+#target-identification-editor input:not([type="checkbox"]),
+#target-identification-editor select,
+#target-identification-editor button {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+}
+.method-picker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.method-picker select {
+  width: 100%;
+  min-width: 0;
+}
+.method-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.method-fields > label,
+.method-advanced-grid > label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.method-fields input,
+.method-fields select {
+  width: 100%;
+  min-width: 0;
+}
+.method-empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+.method-condition {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  background: var(--surface-2);
+}
+.method-condition > p,
+.method-condition details p {
+  margin: 0;
+}
+.method-condition-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.method-condition-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+#target-identification-editor .method-condition-head .icon-button {
+  margin-left: auto;
+}
+.method-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.method-inline-field select {
+  width: 110px;
+}
+.method-condition > button,
+.method-condition > .table-scroll {
+  justify-self: start;
+  max-width: 100%;
+}
+.method-ion-table {
+  width: auto;
+}
+.method-ion-table td {
+  vertical-align: middle;
+}
+.method-ion-table td input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+}
+.method-ion-table th.num,
+.method-ion-table td.num {
+  width: 8.5em;
+  text-align: right;
+}
+.method-ion-table th:first-child {
+  width: 14em;
+}
+.method-ion-table .center {
+  width: 6em;
+  text-align: center;
+}
+.method-ion-table th:last-child {
+  width: 48px;
+}
+.method-fixed {
+  font-variant-numeric: tabular-nums;
+}
+.method-quant-flag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft, var(--surface-2));
+  color: var(--accent, inherit);
+  font-size: 0.8em;
+}
+.method-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 9em));
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+.method-advanced-grid input {
+  width: 100%;
+}
+.method-add-condition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+@media (max-width: 760px) {
+  .method-picker {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .method-picker label {
+    grid-column: 1 / -1;
+  }
+  .method-fields,
+  .method-advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.target-bulk-method {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.target-bulk-method select {
+  min-width: 260px;
+  height: 38px;
+}
+
+.analysis-page .target-method-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 12px;
+}
+.analysis-page .target-method-row select,
+.analysis-page .target-method-row button {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+}
+.analysis-page .target-identification-summary {
+  min-width: 0;
+  padding-left: 14px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .analysis-page .target-method-row {
+    grid-template-columns: minmax(0, 1fr) 120px;
+  }
+  .target-method-row label {
+    grid-column: 1 / -1;
+  }
+}
+
+.analysis-page .target-method-row .drop-target {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+}

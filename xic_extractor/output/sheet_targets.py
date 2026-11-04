@@ -37,9 +37,13 @@ _FORMATS = {
 
 
 def _build_targets_sheet(ws, targets: list[Target]) -> None:
+    method_headers = (
+        ("Method",) if any(t.identification_method for t in targets) else ()
+    )
+    headers = (*TARGETS_HEADERS, *method_headers)
     numeric = frozenset(TARGETS_HEADERS) - _TEXT
     _prepare_sheet(ws, repeat_rows="1:1")
-    _write_header(ws, 1, TARGETS_HEADERS, numeric)
+    _write_header(ws, 1, headers, numeric)
     for row, target in enumerate(targets, start=2):
         expected_product = (
             target.mz - target.neutral_loss_da
@@ -59,17 +63,19 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
             target.nl_ppm_warn,
             target.nl_ppm_max,
             target.sample_applicability,
+        ) + (
+            tuple(_excel_text(value) for value in (target.method_name,))
+            if method_headers
+            else ()
         )
         for column, (header, value) in enumerate(
-            zip(TARGETS_HEADERS, values, strict=True), start=1
+            zip(headers, values, strict=True), start=1
         ):
             cell = ws.cell(row, column, value)
             _style_body(cell, numeric=header in numeric)
             if header in _FORMATS and isinstance(value, float):
                 cell.number_format = _FORMATS[header]
-    reference = (
-        f"A1:{get_column_letter(len(TARGETS_HEADERS))}{max(2, len(targets) + 1)}"
-    )
+    reference = f"A1:{get_column_letter(len(headers))}{max(2, len(targets) + 1)}"
     _add_table(ws, "TargetedDefinitions", reference)
     _fit_columns(ws, maximum=28)
     ws.freeze_panes = "A2"

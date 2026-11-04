@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -80,6 +80,7 @@ from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
 
 if TYPE_CHECKING:
+    from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.result_models import ExtractionResult
 
 _PRECURSOR_SCOPE_ROUNDOFF_DA = 1e-6
@@ -109,9 +110,18 @@ class TargetedCandidateAssessment:
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
     method_trigger_events: tuple[tuple[int, float], ...] = ()
+    method_assessments: Mapping[PeakCandidate, MethodCandidateEvidence] = field(
+        default_factory=dict
+    )
     paired_istd_fwhm: float | None = None
     istd_confidence_note: str | None = None
     paired_istd_anchor_rt: float | None = None
+
+    def method_admits(self, candidate: PeakCandidate) -> bool:
+        return (
+            self.target.identification_method is None
+            or self.method_assessments[candidate].accepted
+        )
 
     def population_context(self) -> TargetedPopulationContext:
         prepared = self.prepared_result.prepared
@@ -151,10 +161,18 @@ class TargetedCandidateAssessment:
                 describe_targeted_region(
                     prepared,
                     candidate.physical_segment,
-                    measurement_available=evaluation.state == "available",
+                    measurement_available=evaluation.state == "available"
+                    and self.method_admits(candidate),
                     component_apex_rts=components,
                     chemical_support=(
-                        self.method_relations is not None
+                        (
+                            bool(
+                                self.target.identification_method
+                                and self.target.identification_method.conditions
+                            )
+                            and self.method_admits(candidate)
+                        )
+                        or self.method_relations is not None
                         and index in self.method_relations.supported_candidate_indexes
                     ),
                     chemical_set_membership=index in set_members,
@@ -182,6 +200,7 @@ class TargetedCandidateAssessment:
                 candidate
                 for candidate, evaluation in self.candidate_evaluations.items()
                 if evaluation.state == "available"
+                and self.method_admits(candidate)
                 and selected_segment is not None
                 and candidate.physical_segment == selected_segment
             ),
@@ -200,7 +219,7 @@ class TargetedCandidateAssessment:
         measurable = tuple(
             candidate
             for candidate, evaluation in self.candidate_evaluations.items()
-            if evaluation.state == "available"
+            if evaluation.state == "available" and self.method_admits(candidate)
         )
         candidate_population = replace(
             self.candidates,
@@ -272,6 +291,13 @@ class TargetedCandidateAssessment:
                 else None
             ),
             sample_name=self.trace_group.sample_name,
+            method_candidate_evidence=tuple(self.method_assessments.values()),
+            selected_method_candidate_index=(
+                tuple(self.candidate_evaluations).index(candidate)
+                if candidate is not None
+                and self.target.identification_method is not None
+                else None
+            ),
         )
         return replace(result, targeted_candidate_assessment=self)
 
@@ -585,7 +611,9 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
     Method products and triggers keep a seed or recorded precursor only within
     the target's precursor tolerance; the margin absorbs float roundoff alone.
     """
-    nl_targets = [target for target in targets if target.neutral_loss_da is not None]
+    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
+
+    nl_targets = [target for target in targets if target_cid_nl_tags(target)]
     if not nl_targets:
         return None
     return PrecursorMassScope.around(
@@ -598,8 +626,9 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
             for target in nl_targets
         ),
         maximum_inference_radius_da=max(
-            discovery_settings_for_tag(target.cid_nl_tag).ms2_precursor_tol_da
+            discovery_settings_for_tag(tag).ms2_precursor_tol_da
             for target in nl_targets
+            for tag in target_cid_nl_tags(target)
         ),
     )
 
@@ -610,11 +639,12 @@ def prepare_targeted_method_seeds(
     """Parse each chemistry once for the sample, independent of target count."""
     from pathlib import Path
 
+    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
     from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 
     prepared = {}
     for tag in dict.fromkeys(
-        target.cid_nl_tag for target in targets if target.neutral_loss_da is not None
+        tag for target in targets for tag in target_cid_nl_tags(target)
     ):
         settings = discovery_settings_for_tag(tag)
         prepared[tag] = tuple(

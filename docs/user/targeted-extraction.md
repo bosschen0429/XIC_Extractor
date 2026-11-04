@@ -1,6 +1,6 @@
 # Targeted Extraction
 
-Use this workflow when you already know the compounds, m/z values, expected RT, CID-NL tags,
+Use this workflow when you already know the compounds, m/z values, expected RT, identification method,
 and internal-standard relationships you want to review.
 
 ![Targeted Extraction workspace](../../assets/screenshots/targeted-workspace.png)
@@ -41,7 +41,7 @@ workbook sheet names and the exact editable fields.
 | --- | --- |
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
-| Target table | Names, m/z, expected RT, CID-NL tag, role, and ISTD pairing |
+| Target table | Names, m/z, expected RT, identification method, role, and ISTD pairing |
 | Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
 | Environment and output | DLL and output location; shared worker count in execution resources |
 
@@ -52,12 +52,14 @@ prefixes.
 ## Analysis Method And Saved Settings
 
 The normal flow is **select samples → choose method/targets → run → review**.
-The target table specifies name, m/z, expected RT in minutes, CID-NL tag
-(`dR`, `R`, `MeR`), role and an optional ISTD relationship. An analyte may reference
-an ISTD row or leave the pair blank; an ISTD does not reference another row. The tag is the single chemistry input.
-Leave the tag blank for MS1-only extraction; no neutral-loss evidence is required
+The target table specifies name, m/z, expected RT in minutes, identification
+`method`, role and an optional ISTD relationship. An analyte may reference an ISTD
+row or leave the pair blank; an ISTD does not reference another row. The method
+is the single chemistry input: `dR`, `R` or `MeR` for a built-in CID-NL recipe, or
+the name of a custom method (see the [configuration reference](targeted-config-reference.md)).
+Leave it blank for MS1-only extraction; no neutral-loss evidence is required
 and the shared 20 ppm precursor tolerance applies. Names such as `D1` or `R1`
-are identifiers, not chemistry tags. Tagged and MS1-only rows may share a batch.
+are identifiers, not chemistry tags. Rows with different methods may share a batch.
 MS1-only compares retained regions using the reference RT, supported batch drift,
 and same-ion target order before deciding which touching lobes to integrate
 together. There is no fixed RT acceptance window. Plausible uncertain matches,

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.targeted_peak_selection import (
         TargetedCandidateAssessment,
     )
@@ -77,6 +78,16 @@ class ExtractionResult:
     # RAW handle, callback or scoring closure crosses the worker boundary.
     targeted_candidate_assessment: TargetedCandidateAssessment | None = None
     context_admissible_candidate_indexes: tuple[int, ...] | None = None
+    method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = ()
+    selected_method_candidate_index: int | None = None
+
+    @property
+    def selected_method_supported(self) -> bool:
+        return any(
+            item.candidate_index == self.selected_method_candidate_index
+            and item.accepted
+            for item in self.method_candidate_evidence
+        )
 
     def __post_init__(self) -> None:
         if self.selected_hypothesis is not None:

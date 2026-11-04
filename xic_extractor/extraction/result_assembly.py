@@ -36,6 +36,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.traces import Trace
 
 if TYPE_CHECKING:
+    from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.result_models import ExtractionResult
 
 TARGETED_ACQUISITION_TRACE_SOURCE = (
@@ -95,6 +96,8 @@ def build_extraction_result(
     cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = (),
     selected_cid_nl_candidate_index: int | None = None,
     sample_name: str = "",
+    method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = (),
+    selected_method_candidate_index: int | None = None,
 ) -> ExtractionResult:
     if selected_hypothesis is not None:
         validate_peak_hypothesis_selection_authority(
@@ -141,6 +144,8 @@ def build_extraction_result(
         cid_nl_relations=cid_nl_relations,
         cid_nl_candidate_evidence=cid_nl_candidate_evidence,
         selected_cid_nl_candidate_index=selected_cid_nl_candidate_index,
+        method_candidate_evidence=method_candidate_evidence,
+        selected_method_candidate_index=selected_method_candidate_index,
     )
     return replace(
         result,

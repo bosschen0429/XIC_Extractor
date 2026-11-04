@@ -13,6 +13,13 @@ from zipfile import BadZipFile
 from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
 )
+from xic_extractor.configuration.identification_method_table import (
+    METHOD_TABLE_SHEET,
+    parse_identification_method_rows,
+)
+from xic_extractor.configuration.targeted_identification import (
+    identification_methods_payload,
+)
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
@@ -87,6 +94,44 @@ class TargetedWorkbookSource:
             self.targets = _table(
                 book, "Targets", {"Label", "Role", "m/z", "RT min", "RT max"}
             )
+            self.method_evidence = (
+                _table(
+                    book,
+                    "Method Evidence",
+                    {"SampleName", "Target", "Method", "Status"},
+                )
+                if "Method Evidence" in book.sheetnames
+                else []
+            )
+            self.delta_mass_evidence = (
+                _table(
+                    book,
+                    "Delta Mass Evidence",
+                    {"SampleName", "Target", "Method", "Pattern Status"},
+                )
+                if "Delta Mass Evidence" in book.sheetnames
+                else []
+            )
+            try:
+                self.identification_methods = identification_methods_payload(
+                    parse_identification_method_rows(
+                        _table(
+                            book, METHOD_TABLE_SHEET, {"Method", "Condition", "Kind"}
+                        )
+                        if METHOD_TABLE_SHEET in book.sheetnames
+                        else []
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ExplanationError(
+                    f"Targeted XLSX 辨認方法無法讀取：{exc}"
+                ) from exc
+            if any(
+                target.get("Method")
+                and target["Method"] not in self.identification_methods
+                for target in self.targets
+            ):
+                raise ExplanationError("Targeted XLSX 缺少目標引用的辨認方法。")
             self.records = _table(
                 book,
                 "XIC Results",
@@ -228,6 +273,21 @@ class TargetedWorkbookSource:
                     is_attention=attention,
                     details={
                         "target": target,
+                        "identification_method": self.identification_methods.get(
+                            str(target.get("Method") or "")
+                        ),
+                        "method_evidence": [
+                            row
+                            for row in self.method_evidence
+                            if row["Target"] == label
+                            and row["SampleName"] in sample_ids
+                        ],
+                        "delta_mass_evidence": [
+                            row
+                            for row in self.delta_mass_evidence
+                            if row["Target"] == label
+                            and row["SampleName"] in sample_ids
+                        ],
                         "records": records,
                         "review_queue": queue,
                         "focus": {

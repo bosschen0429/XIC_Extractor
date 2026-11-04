@@ -76,7 +76,7 @@ def config_dir(tmp_path):
                 "label": "Browser target",
                 "mz": "500",
                 "expected_rt_min": "1.5",
-                "cid_nl_tag": "dR",
+                "method": "dR",
                 "role": "istd",
                 "istd_pair": "",
             }
@@ -706,7 +706,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page = workbench
     expect(page.locator("#target-method-state")).not_to_be_visible()
     page.locator("summary", has_text="處理策略與設定來源").click()
-    expect(page.locator("#target-method-state")).to_have_text("共用 CID-NL 策略")
+    expect(page.locator("#target-method-state")).to_have_text("共用 Targeted 策略")
     expect(page.locator("#targeted-form")).not_to_contain_text("版本")
     page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
@@ -725,9 +725,9 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
         "2.75"
     )
-    page.get_by_role(
-        "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-    ).fill(tag)
+    page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True).select_option(
+        tag
+    )
     page.locator("#target-editor-save").click()
     expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
@@ -736,12 +736,213 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
         page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
     ).to_have_value("2.75")
     expect(
-        page.get_by_role(
-            "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
-        )
+        page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True)
     ).to_have_value(tag)
     assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
     expect(page.locator("#t-parallel_workers")).to_have_value("2")
+
+
+@pytest.mark.parametrize("theme,mode", [("light", "all"), ("dark", "any")])
+def test_targeted_identification_method_editor_and_row_binding(
+    workbench, config_dir, tmp_path, theme, mode
+):
+    page = workbench
+    if theme == "dark":
+        with page.expect_response("**/api/preferences"):
+            page.locator("#theme-toggle").click()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    page.locator("#target-identification-edit").click()
+    # A new method starts empty; nothing is pre-selected on the user's behalf.
+    expect(page.locator(".method-condition")).to_have_count(0)
+    expect(page.locator("#target-identification-delete")).to_be_disabled()
+    page.locator("#target-identification-name").fill("Custom pair")
+    page.locator("#target-identification-combine").select_option(mode)
+    page.locator("#target-identification-ppm").fill("12")
+    page.locator("#target-condition-add-cid").click()
+    page.locator("#target-condition-add-delta").click()
+    # The quantitation ion is fixed at zero and has no editable offset.
+    expect(page.get_by_label("Δ m/z（條件 2，第 1 個離子）", exact=True)).to_have_count(
+        0
+    )
+    partner = page.get_by_label("Δ m/z（條件 2，第 2 個離子）", exact=True)
+    expect(partner).to_have_value("")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).to_contain_text("Δ m/z")
+    partner.fill("0")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).to_contain_text("不可重複")
+    partner.fill("-2.002")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).to_be_empty()
+    expect(page.locator("#target-identification-select")).to_have_value("Custom pair")
+    page.locator("#target-identification-editor").evaluate(
+        "dialog => Promise.all(dialog.getAnimations({subtree: true})"
+        ".map(animation => animation.finished))"
+    )
+    fields = [
+        page.locator(f"#{name}").bounding_box()
+        for name in [
+            "target-identification-name",
+            "target-identification-combine",
+            "target-identification-ppm",
+        ]
+    ]
+    assert max(box["y"] for box in fields) - min(box["y"] for box in fields) <= 1
+    assert {round(box["height"]) for box in fields} == {38}
+    name = page.get_by_label(
+        "離子名稱（條件 2，第 2 個離子）", exact=True
+    ).bounding_box()
+    offset = partner.bounding_box()
+    assert abs(name["y"] - offset["y"]) <= 1
+    assert name["height"] == offset["height"] == 38
+    page.locator("#target-identification-editor").screenshot(
+        path=str(tmp_path / f"identification-{theme}.png")
+    )
+    page.get_by_role("button", name="關閉辨認方法", exact=True).click()
+    expect(page.locator("#target-identification-summary")).to_have_text("Custom pair")
+    rows = [
+        page.locator(selector).bounding_box()
+        for selector in ["#target-dropzone .drop-target", "#target-method-select"]
+    ]
+    assert abs(rows[0]["x"] - rows[1]["x"]) <= 1
+    assert {round(box["height"]) for box in rows} == {38}
+    page.locator(".card").filter(
+        has=page.locator("#target-identification-summary")
+    ).screenshot(path=str(tmp_path / f"target-card-{theme}.png"))
+
+    page.locator("#target-edit").click()
+    page.locator("#target-bulk-method").select_option("Custom pair")
+    page.locator("#target-bulk-apply").click()
+    expect(
+        page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True)
+    ).to_have_value("Custom pair")
+    # A new row starts with the previous row's method.
+    page.locator("#target-add").click()
+    page.get_by_role("textbox", name="名稱（第 2 列）", exact=True).fill("Second")
+    page.get_by_role("textbox", name="m/z（第 2 列）", exact=True).fill("600")
+    page.get_by_role("textbox", name="預期 RT（min）（第 2 列）", exact=True).fill("2")
+    expect(
+        page.get_by_role("combobox", name="辨認方法（第 2 列）", exact=True)
+    ).to_have_value("Custom pair")
+    page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True).select_option(
+        ""
+    )
+    page.locator("#target-editor-save").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    expect(page.locator("#target-preview")).to_contain_text("Custom pair")
+    expect(page.locator("#target-preview")).to_contain_text("MS1 only")
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    assert "default_method" not in state
+    assert state["targets"][0]["method"] == ""
+    assert {row["method"] for row in state["targets"][1:]} == {"Custom pair"}
+    saved = state["identification_methods"]["Custom pair"]
+    assert saved["combine_mode"] == mode
+    assert saved["mz_tolerance_ppm"] == 12
+    assert saved["conditions"][1]["positions"][1]["offset_mz"] == -2.002
+
+    # A method that targets still use cannot be deleted.
+    page.locator("#target-identification-edit").click()
+    page.locator("#target-identification-delete").click()
+    expect(page.locator("#target-identification-error")).to_contain_text("個目標使用")
+    expect(page.locator("#target-identification-select")).to_have_value("Custom pair")
+
+
+def test_imported_quantitation_role_survives_temporary_duplicate_zero(
+    workbench, config_dir, tmp_path
+):
+    from xic_extractor.configuration.targeted_method_files import (
+        create_targeted_method,
+        save_targeted_method,
+    )
+    from xic_workbench.config_io import read_targets
+
+    definition = {
+        "conditions": [
+            {
+                "kind": "delta_mass",
+                "positions": [
+                    {"label": "light", "offset_mz": -2},
+                    {"label": "quant", "offset_mz": 0},
+                ],
+            }
+        ]
+    }
+    portable = tmp_path / "imported.xlsx"
+    save_targeted_method(
+        create_targeted_method(
+            {},
+            [
+                dict(row, method="Imported")
+                for row in read_targets(config_dir=config_dir)
+            ],
+            identification_methods={"Imported": definition},
+        ),
+        portable,
+    )
+    page = workbench
+    page.locator("#target-import-file").set_input_files(portable)
+    expect(page.locator("#target-import-preview")).to_be_visible()
+    page.locator("#target-import-confirm").click()
+    page.locator("#target-identification-edit").click()
+    partner = page.get_by_label("Δ m/z（條件 1，第 1 個離子）", exact=True)
+    quant = page.get_by_label("Δ m/z（條件 1，第 2 個離子）", exact=True)
+    expect(partner).to_have_value("-2")
+    expect(quant).to_have_count(0)
+    partner.fill("0")
+    page.get_by_role("button", name="新增離子（條件 1）", exact=True).click()
+    # The imported zero position keeps the quantitation role during the edit.
+    expect(quant).to_have_count(0)
+    partner.fill("-2")
+    page.get_by_label("Δ m/z（條件 1，第 3 個離子）", exact=True).fill("2")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).to_be_empty()
+    page.get_by_role("button", name="關閉辨認方法", exact=True).click()
+    page.locator("#target-save").click()
+    expect(
+        page.locator("#toasts .toast.ok").filter(has_text="Targeted 設定與目標已儲存")
+    ).to_be_visible()
+    page.reload()
+    page.locator("#target-identification-edit").click()
+    expect(partner).to_have_value("-2")
+    expect(quant).to_have_count(0)
+    expect(page.get_by_label("Δ m/z（條件 1，第 3 個離子）", exact=True)).to_have_value(
+        "2"
+    )
+
+
+def test_add_ion_after_deleting_middle_position_keeps_names_unique(
+    workbench, config_dir
+):
+    page = workbench
+    page.locator("#target-identification-edit").click()
+    page.locator("#target-identification-name").fill("Reordered pair")
+    page.locator("#target-condition-add-delta").click()
+    add = page.get_by_role("button", name="新增離子（條件 1）", exact=True)
+    add.click()
+    add.click()
+    page.get_by_role(
+        "button", name="移除離子（條件 1，第 3 個離子）", exact=True
+    ).click()
+    add.click()
+    for position, offset in [(2, "1"), (3, "2"), (4, "3")]:
+        page.get_by_label(f"Δ m/z（條件 1，第 {position} 個離子）", exact=True).fill(
+            offset
+        )
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).to_be_empty()
+    page.get_by_role("button", name="關閉辨認方法", exact=True).click()
+    page.locator("#target-save").click()
+    expect(
+        page.locator("#toasts .toast.ok").filter(has_text="Targeted 設定與目標已儲存")
+    ).to_be_visible()
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    positions = state["identification_methods"]["Reordered pair"]["conditions"][0][
+        "positions"
+    ]
+    assert len({p["label"] for p in positions}) == len(positions) == 4
+    assert len({p["offset_mz"] for p in positions}) == 4
 
 
 def test_target_list_save_and_load_preserves_batch(workbench):
@@ -1797,6 +1998,117 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     expect(page.locator("#review")).to_have_class("review-grid")
 
 
+def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_path):
+    from openpyxl import Workbook
+
+    from tests.test_targeted_delta_mass import pattern
+    from xic_extractor.configuration.identification_method_table import (
+        METHOD_TABLE_HEADERS,
+        identification_method_rows,
+    )
+    from xic_extractor.configuration.targeted_identification import (
+        parse_identification_methods,
+    )
+
+    book = Workbook()
+    targets = book.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "Method",
+        ]
+    )
+    targets.append(["Custom target", "Analyte", 302, 2, 2, "my pair"])
+    results = book.create_sheet("XIC Results")
+    results.append(
+        [
+            "SampleName",
+            "Target",
+            "RT",
+            "Area",
+            "PeakStart",
+            "PeakEnd",
+            "Reason",
+            "Review",
+            "Review Reason",
+            "Counted Detection",
+        ]
+    )
+    results.append(
+        [
+            "Sample A",
+            "Custom target",
+            2,
+            123.5,
+            1.9,
+            2.1,
+            "Delta Mass 配對符合",
+            "",
+            "",
+            "TRUE",
+        ]
+    )
+    metadata = book.create_sheet("Run Metadata")
+    metadata.append(["Key", "Value"])
+    metadata.append(["targeted_output_schema_version", "targeted_output"])
+    definitions = book.create_sheet("Identification Methods")
+    definitions.append(list(METHOD_TABLE_HEADERS))
+    definition = pattern()
+    definition["combine_mode"] = "any"
+    definition["conditions"].insert(0, {"kind": "cid_nl", "tag": "dR"})
+    for row in identification_method_rows(
+        parse_identification_methods({"my pair": definition})
+    ):
+        definitions.append([row.get(header) for header in METHOD_TABLE_HEADERS])
+    answers = book.create_sheet("Method Evidence")
+    answers.append(["SampleName", "Target", "Method", "Condition Label", "Status"])
+    answers.append(
+        ["Sample A", "Custom target", "my pair", "CID-NL · dR", "not_acquired"]
+    )
+    answers.append(["Sample A", "Custom target", "my pair", "Delta Mass", "matched"])
+    evidence = book.create_sheet("Delta Mass Evidence")
+    evidence.append(
+        [
+            "SampleName",
+            "Target",
+            "Method",
+            "Pattern Status",
+            "Position",
+            "Expected m/z",
+            "Shape r",
+        ]
+    )
+    evidence.append(
+        ["Sample A", "Custom target", "my pair", "pass", "heavy", 302, 0.987]
+    )
+    path = tmp_path / "delta-mass.xlsx"
+    book.save(path)
+    book.close()
+    original = path.read_bytes()
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Custom target").click()
+    expect(page.locator(".tgt-review")).to_contain_text("沒有 MS2")
+    expect(page.locator(".tgt-review")).to_contain_text("符合任一條件（OR）")
+    page.locator("summary", has_text="Delta Mass 配對明細").click()
+    panel = page.locator("details").filter(
+        has=page.locator("summary", has_text="Delta Mass 配對明細")
+    )
+    expect(panel).to_contain_text("Sample A")
+    expect(panel).to_contain_text("heavy")
+    expect(panel).to_contain_text("0.987")
+    expect(page.get_by_role("cell", name="沒有 MS2", exact=True)).to_be_visible()
+    page.locator(".tgt-review").screenshot(path=str(tmp_path / "method-evidence.png"))
+    assert path.read_bytes() == original
+
+
 def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
 
@@ -2044,7 +2356,7 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     batch = page.locator("#t-data_dir").input_value()
     dll = page.locator("#t-dll_dir").input_value()
     with page.expect_download() as download:
-        page.get_by_role("link", name="下載方法範例 XLSX", exact=True).click()
+        page.get_by_role("link", name="下載目標清單範例 XLSX", exact=True).click()
     path = tmp_path / "downloaded-method.xlsx"
     download.value.save_as(path)
     original = path.read_bytes()
@@ -2074,7 +2386,7 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     saved = load_targeted_method(config_dir / "methods" / "Edited method.xlsx")
     assert dict(saved.settings) == {"strategy": "cid-nl"}
     assert saved.target_rows[0]["expected_rt_min"] == "9.25"
-    assert saved.target_rows[0]["cid_nl_tag"] == "dR"
+    assert saved.target_rows[0]["method"] == "dR"
     assert path.read_bytes() == original
     assert not (config_dir / "settings.csv").exists()
     assert not (config_dir / "targets.csv").exists()
@@ -2263,7 +2575,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
 
     page = workbench
     targets = rows()
-    targets.append({**targets[0], "label": "RNA standard", "cid_nl_tag": "R"})
+    targets.append({**targets[0], "label": "RNA standard", "method": "R"})
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
     _view(page, "untargeted")

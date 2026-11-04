@@ -16,6 +16,9 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
 | `Targets` | Admitted target intent | Inspector, human |
+| `Identification Methods` | Used custom method definitions with combination mode and clauses | Inspector, reproducibility |
+| `Method Evidence` | Same-peak candidate/condition statuses and method acceptance | Inspector, human |
+| `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; only with Delta Mass clauses | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
 | `欄位說明` | Meaning and unit of every delivered column | Human |
 | `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
@@ -26,6 +29,26 @@ their named headers and the unversioned `targeted_output` format, not column
 positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
+
+Custom-method runs append `Method` to `Targets`. Existing CID-NL/MS1-only runs
+keep their original sheets and columns. `Method Evidence` records each sample,
+target, candidate interval, selected flag, all/any combination, method acceptance,
+and clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
+when no candidate could be assessed.
+
+`Identification Methods` uses the same table as a portable method file: one row
+per CID-NL condition and one row per Delta Mass ion, with `Method`, `Combine`,
+`m/z Tolerance ppm`, `Condition`, `Kind`, `CID-NL Tag`, `Position`, `Delta m/z`,
+ratio, shape and co-elution columns. Method- and condition-level values repeat on
+each of their rows. Inspector rebuilds the definitions from this table.
+
+Delta Mass details record XIC query masses, not measured centroids. Height ratios
+and shape comparisons reference the quantitation ion; ratios remain annotation.
+`Apex Delta to Quant sec` is each ion's apex RT minus the quantitation ion's apex RT.
+Inspector shows **辨認條件結果** and collapsible **Delta Mass 配對明細** from these
+saved answers. CID-NL clauses in custom methods are reported in `Method Evidence`,
+not fabricated legacy NL columns. Neither writer nor Inspector reruns scientific
+decisions.
 
 ## Content rules
 

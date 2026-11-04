@@ -33,7 +33,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
             "/api/targeted/method/load", {"path": path, "settings": current}
         )
         assert status == 200
-        assert loaded["summary"]["label"] == "共用 CID-NL 策略"
+        assert loaded["summary"]["label"] == "共用 Targeted 策略"
         assert {key: loaded["settings"][key] for key in local} == local
         assert loaded["targets"][1]["istd_pair"] == "standard"
         assert loaded["targets"][0]["role"] == "istd"
@@ -56,7 +56,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
             {"path": b_path, "settings": loaded["settings"]},
         )
         assert status == 200
-        assert loaded_b["summary"]["label"] == "共用 CID-NL 策略"
+        assert loaded_b["summary"]["label"] == "共用 Targeted 策略"
         assert {key: loaded_b["settings"][key] for key in local} == local
         assert len(loaded_b["targets"]) == 1
         # Both actions edit/save methods, not active batch state.

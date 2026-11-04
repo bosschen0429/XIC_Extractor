@@ -53,7 +53,7 @@ def test_method_summary_names_strategy_without_revision():
     from xic_workbench.targeted import method_summary
 
     assert method_summary({}) == {
-        "label": "共用 CID-NL 策略",
+        "label": "共用 Targeted 策略",
         "custom_keys": [],
         "differences": [],
     }

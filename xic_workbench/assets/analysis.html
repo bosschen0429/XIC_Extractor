@@ -58,26 +58,31 @@
           <div class="step-body">
             <div id="target-preview" class="target-preview"></div>
             <!-- Lists use the same label | field | action rows as every path. -->
-            <div id="target-dropzone" class="path-line drop-line">
+            <div id="target-dropzone" class="path-line drop-line target-method-row">
               <label for="target-import">匯入檔案</label>
-              <span class="drop-target">拖曳方法檔或目標表到這裡 · XLSX、CSV、TSV</span>
+              <span class="drop-target">拖曳目標清單或目標表到這裡 · XLSX、CSV、TSV</span>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
               <button id="target-import" type="button" data-analysis-idle>瀏覽</button>
             </div>
             <p id="target-import-status" role="status" aria-live="polite"></p>
-            <div class="path-line">
+            <div class="path-line target-method-row">
               <label for="target-method-select">已儲存的清單</label>
               <select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select>
               <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
             </div>
+            <div class="path-line target-method-row">
+              <label for="target-identification-edit">自訂辨認方法</label>
+              <span id="target-identification-summary" class="target-identification-summary"></span>
+              <button id="target-identification-edit" type="button" data-analysis-idle>管理辨認方法</button>
+            </div>
             <div class="actions list-actions">
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
               <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
-              <a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a>
+              <a href="/examples/targeted-method.xlsx" download>下載目標清單範例 XLSX</a>
               <a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a>
             </div>
           </div>
-          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
+          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 Targeted 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
           <div class="step-head"><span class="step-no">4</span><div><h2>執行資源</h2></div></div>
@@ -457,6 +462,32 @@
   <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
 </dialog>
 
+<dialog id="target-identification-editor" class="wide-dialog" aria-labelledby="target-identification-title">
+  <div class="dialog-head"><h2 id="target-identification-title">辨認方法</h2><button type="button" class="dialog-close" data-close="target-identification-editor" aria-label="關閉辨認方法">×</button></div>
+  <div class="dialog-body">
+    <div class="method-picker">
+      <label for="target-identification-select">方法</label>
+      <select id="target-identification-select"></select>
+      <button id="target-identification-new" type="button">＋ 新增方法</button>
+      <button id="target-identification-delete" type="button">刪除此方法</button>
+    </div>
+    <div class="method-fields">
+      <label>方法名稱<input id="target-identification-name" /></label>
+      <label>條件組合<select id="target-identification-combine"><option value="all">全部符合（AND）</option><option value="any">任一符合（OR）</option></select></label>
+      <label>m/z 容差（ppm）<input id="target-identification-ppm" type="number" min="0" step="any" /></label>
+    </div>
+    <p class="subtle">每個條件都判斷同一個候選峰；面積一律取目標 m/z（定量離子）。</p>
+    <div id="target-identification-conditions"></div>
+    <div class="method-add-condition">
+      <button id="target-condition-add-cid" type="button">＋ CID-NL 條件</button>
+      <button id="target-condition-add-delta" type="button">＋ Delta Mass 條件</button>
+    </div>
+    <p class="subtle">樣本沒有 MS2 時記為「沒有 MS2」，不算不符合；但 CID-NL 條件因此不成立。</p>
+    <p id="target-identification-error" class="error" role="alert"></p>
+  </div>
+  <div class="dialog-foot"><button type="button" data-close="target-identification-editor">關閉</button><button id="target-identification-apply" type="button" class="primary">儲存方法</button></div>
+</dialog>
+
 <dialog id="target-editor" class="wide-dialog">
   <div class="dialog-head">
     <div>
@@ -472,6 +503,11 @@
     </button>
   </div>
   <div class="dialog-body">
+    <div class="target-bulk-method">
+      <label for="target-bulk-method">全部目標改用</label>
+      <select id="target-bulk-method"></select>
+      <button id="target-bulk-apply" type="button">套用到全部目標</button>
+    </div>
     <div class="table-scroll editor-table">
       <table>
         <thead id="target-head"></thead>

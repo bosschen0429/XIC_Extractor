@@ -10,6 +10,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
+from xic_extractor.configuration.targeted_identification import IdentificationMethod
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     normalize_resolver_mode,
@@ -84,6 +85,8 @@ class Target:
     sample_applicability: str = "all"
     expected_rt_min: float | None = None
     cid_nl_tag: str = ""
+    method_name: str = ""
+    identification_method: IdentificationMethod | None = None
 
 
 class ConfigError(Exception):

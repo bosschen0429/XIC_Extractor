@@ -19,7 +19,7 @@ samples.
 
 | Workflow | Bring | Main result | Step-by-step guide |
 | --- | --- | --- | --- |
-| **Targeted Extraction** | RAW files and a targets CSV with name, m/z, expected RT, CID-NL tag, and ISTD relationships | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
+| **Targeted Extraction** | RAW files and a targets CSV with name, m/z, expected RT, identification method, and ISTD relationships | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
 | **Untargeted Discovery** | RAW files and a method preset | Discovery candidates, then `alignment_matrix.tsv` for supported CID-NL Alignment | [Untargeted guide](docs/user/untargeted-discovery.md) |
 
 ### Run the HTML workbench

@@ -1,4 +1,4 @@
-label,mz,expected_rt_min,cid_nl_tag,role,istd_pair,sample_applicability
+label,mz,expected_rt_min,method,role,istd_pair,sample_applicability
 5-hmdC,258.1085,9.0,dR,analyte,d3-5-hmdC,
 d3-5-hmdC,261.127276,9.0,dR,istd,,
 5-medC,242.1136,12.0,dR,analyte,d3-5-medC,

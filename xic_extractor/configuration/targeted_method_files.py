@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from zipfile import BadZipFile
@@ -13,10 +13,22 @@ from zipfile import BadZipFile
 from xic_extractor.configuration.csv_io import (
     TARGET_FIELDS,
     TARGET_WRITE_FIELDS,
+    normalize_target_header,
+    normalize_target_row,
+)
+from xic_extractor.configuration.identification_method_table import (
+    METHOD_TABLE_HEADERS,
+    METHOD_TABLE_SHEET,
+    identification_method_rows,
+    parse_identification_method_rows,
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
     resolve_settings,
+)
+from xic_extractor.configuration.targeted_identification import (
+    IdentificationMethod,
+    parse_identification_methods,
 )
 from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
@@ -33,10 +45,16 @@ class TargetedMethod:
     settings: Mapping[str, str]
     targets: tuple[Target, ...]
     target_rows: tuple[Mapping[str, str], ...]
+    identification_methods: Mapping[str, IdentificationMethod] = field(
+        default_factory=dict
+    )
 
 
 def create_targeted_method(
-    settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
+    settings: Mapping[str, str],
+    target_rows: Sequence[Mapping[str, str]],
+    *,
+    identification_methods: Mapping | None = None,
 ) -> TargetedMethod:
     """Admit an editable method without reading files."""
     unknown = sorted(
@@ -47,9 +65,24 @@ def create_targeted_method(
     strategy = settings.get("strategy", TARGETED_STRATEGY)
     if strategy != TARGETED_STRATEGY:
         raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
-    rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
-    targets = parse_target_rows(rows)
-    return TargetedMethod(MappingProxyType({"strategy": strategy}), targets, rows)
+    rows = tuple(MappingProxyType(normalize_target_row(row)) for row in target_rows)
+    if isinstance(identification_methods, Mapping) and all(
+        isinstance(method, IdentificationMethod)
+        for method in identification_methods.values()
+    ):
+        methods = dict(identification_methods)
+    else:
+        try:
+            methods = parse_identification_methods(identification_methods or {})
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+    targets = parse_target_rows(rows, identification_methods=methods)
+    return TargetedMethod(
+        MappingProxyType({"strategy": strategy}),
+        targets,
+        rows,
+        MappingProxyType(methods),
+    )
 
 
 def apply_targeted_method(
@@ -65,8 +98,10 @@ def apply_targeted_method(
 
 
 def load_targeted_method(path: Path) -> TargetedMethod:
-    """Read the explicit Method + Targets workbook contract; no format detection."""
-    tables = _read_workbook(path, {"Method", "Targets"})
+    """Read the Method + Targets (+ Identification Methods) workbook contract."""
+    tables = _read_workbook(
+        path, {"Method", "Targets"}, optional_sheets={METHOD_TABLE_SHEET}
+    )
     settings = {}
     for row in tables["Method"]:
         key = row.get("key", "")
@@ -79,7 +114,13 @@ def load_targeted_method(path: Path) -> TargetedMethod:
         raise ConfigError(
             f"{path}: 方法設定缺少 {sorted(missing)}；額外 {sorted(extra)}"
         )
-    return create_targeted_method(settings, tables["Targets"])
+    try:
+        methods = parse_identification_method_rows(tables.get(METHOD_TABLE_SHEET, []))
+    except ValueError as exc:
+        raise ConfigError(f"{path}/{METHOD_TABLE_SHEET}: {exc}") from exc
+    return create_targeted_method(
+        settings, tables["Targets"], identification_methods=methods
+    )
 
 
 def load_target_table(path: Path) -> list[dict[str, str]]:
@@ -89,7 +130,16 @@ def load_target_table(path: Path) -> list[dict[str, str]]:
 
 
 def load_workbook_targets(path: Path) -> tuple[Target, ...]:
-    """Read shared target intent, ignoring optional Targeted method settings."""
+    """Read shared target intent; a method workbook brings its own definitions."""
+    import openpyxl
+
+    book = openpyxl.load_workbook(path, read_only=True)
+    try:
+        has_definitions = METHOD_TABLE_SHEET in book.sheetnames
+    finally:
+        book.close()
+    if has_definitions:
+        return load_targeted_method(path).targets
     rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
     return parse_target_rows(rows, Path(path))
 
@@ -111,7 +161,8 @@ def _read_workbook(
         if not sheets <= actual or actual - sheets - (optional_sheets or set()):
             raise ConfigError(f"{path}: 工作表必須為 {sorted(sheets)}")
         tables = {}
-        for name in sheets:
+        definitions = actual & (optional_sheets or set()) & {METHOD_TABLE_SHEET}
+        for name in sorted(sheets | definitions):
             data = []
             for cells in book[name].iter_rows():
                 if any(cell.data_type in {"f", "e"} for cell in cells):
@@ -134,7 +185,13 @@ def _read_workbook(
                 or any(not h for h in data[0])
             ):
                 raise ConfigError(f"{path}/{name}: 欄位名稱不可空白或重複。")
-            required = {"key", "value"} if name == "Method" else set(TARGET_FIELDS)
+            if name == "Targets":
+                data[0] = normalize_target_header(data[0])
+            required = {
+                "Method": {"key", "value"},
+                "Targets": set(TARGET_FIELDS),
+                METHOD_TABLE_SHEET: {"Method", "Condition", "Kind"},
+            }[name]
             if not required <= set(data[0]):
                 raise ConfigError(
                     f"{path}/{name}: 缺少欄位 {sorted(required - set(data[0]))}"
@@ -150,24 +207,26 @@ def _read_workbook(
 
 
 def save_targeted_method(method: TargetedMethod, path: Path) -> TargetedMethod:
-    _save_workbook(
-        path,
-        {
-            "Method": (
-                ("key", "value", "description"),
-                [
-                    {
-                        "key": key,
-                        "value": method.settings[key],
-                        "description": "Shared Targeted strategy",
-                    }
-                    for key in METHOD_KEYS
-                ],
-            ),
-            "Targets": (_target_fields(method.target_rows), method.target_rows),
-        },
-        load_targeted_method,
-    )
+    tables: dict[str, tuple[Sequence[str], Sequence[Mapping[str, object]]]] = {
+        "Method": (
+            ("key", "value", "description"),
+            [
+                {
+                    "key": key,
+                    "value": method.settings[key],
+                    "description": "Shared Targeted strategy",
+                }
+                for key in METHOD_KEYS
+            ],
+        ),
+        "Targets": (_target_fields(method.target_rows), method.target_rows),
+    }
+    if method.identification_methods:
+        tables[METHOD_TABLE_SHEET] = (
+            METHOD_TABLE_HEADERS,
+            identification_method_rows(method.identification_methods),
+        )
+    _save_workbook(path, tables, load_targeted_method)
     return method
 
 
@@ -198,7 +257,12 @@ def _save_workbook(path: Path, tables: Mapping, reader) -> None:
             sheet = book.create_sheet(name)
             sheet.append(list(fields))
             for row in rows:
-                sheet.append([str(row.get(key, "")) for key in fields])
+                sheet.append(
+                    [
+                        "" if row.get(key) is None else str(row.get(key))
+                        for key in fields
+                    ]
+                )
             # Text storage preserves exact decimal strings and labels (including '=').
             for cells in sheet:
                 for cell in cells:

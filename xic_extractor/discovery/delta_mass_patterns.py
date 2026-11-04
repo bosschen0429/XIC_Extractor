@@ -9,7 +9,7 @@ from math import sqrt
 
 import numpy as np
 
-from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
+from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
 from xic_extractor.xic_models import XICRequest, XICTrace
@@ -30,7 +30,7 @@ class DeltaMassPositionResult:
     apex_rt_min: float | None = None
     apex_delta_sec: float | None = None
     height: float | None = None
-    height_ratio_to_base: float | None = None
+    height_ratio: float | None = None
     ratio_status: str = "unavailable"
     shape_r: float | None = None
     shape_r_threshold: float | None = None
@@ -156,6 +156,16 @@ def prepare_delta_mass_candidates(
             seen.add(key)
             base = matches[0]
             height = base.height if base else None
+            ratio_index = next(
+                (
+                    i
+                    for i, p in enumerate(settings.positions)
+                    if p.label == settings.ratio_reference_position
+                ),
+                0,
+            )
+            ratio_reference = matches[ratio_index]
+            ratio_height = ratio_reference.height if ratio_reference else None
             rt = base.rt_apex_min if base else anchor.rt_apex_min
             results = []
             for position, match in zip(settings.positions, matches, strict=True):
@@ -175,7 +185,7 @@ def prepare_delta_mass_candidates(
                     row.apex_rt_min = match.rt_apex_min
                     row.apex_delta_sec = (match.rt_apex_min - rt) * 60
                     row.height = match.height
-                    _record_ratio(row, height)
+                    _record_ratio(row, ratio_height)
                     row.position_status = "pass"
                 results.append(row)
             candidate = DeltaMassCandidate(
@@ -204,6 +214,16 @@ def prepare_delta_mass_candidates(
         }
         if needed:
             needed.add(0)
+            needed.add(
+                next(
+                    (
+                        i
+                        for i, p in enumerate(candidate.positions)
+                        if p.position_label == settings.shape_reference_position
+                    ),
+                    0,
+                )
+            )
             if candidate.positions[0].partner_source == "missing":
                 needed.add(
                     next(
@@ -265,7 +285,23 @@ def complete_delta_mass_candidates(
     for index, candidate in enumerate(prepared.candidates):
         if candidate.status == "rejected":
             continue
-        base_trace = trace_map.get((index, 0))
+        reference_index = next(
+            (
+                i
+                for i, p in enumerate(candidate.positions)
+                if p.position_label == settings.shape_reference_position
+            ),
+            0,
+        )
+        shape_reference = trace_map.get((index, reference_index))
+        ratio_index = next(
+            (
+                i
+                for i, p in enumerate(candidate.positions)
+                if p.position_label == settings.ratio_reference_position
+            ),
+            0,
+        )
         base_was_missing = candidate.positions[0].partner_source == "missing"
         anchor_index = next(
             i for i, p in enumerate(candidate.positions) if p.partner_source == "anchor"
@@ -275,7 +311,9 @@ def complete_delta_mass_candidates(
                 continue
             trace = trace_map[index, position_index]
             reference = (
-                trace_map[index, anchor_index] if position_index == 0 else base_trace
+                trace_map[index, anchor_index]
+                if position_index == 0
+                else shape_reference
             )
             r = _shape_correlation(reference, trace)
             position.shape_r = r
@@ -294,7 +332,6 @@ def complete_delta_mass_candidates(
             ):
                 candidate.base_height = position.height
                 candidate.base_rt_apex_min = position.apex_rt_min
-            _record_ratio(position, candidate.base_height)
             confirmed = (
                 position.height is not None
                 and position.height > 0
@@ -318,14 +355,15 @@ def complete_delta_mass_candidates(
                     if abs(position.apex_delta_sec) > position.apex_threshold_sec:
                         position.position_status = "fail"
                         _reject(candidate, 4, "apex_out_of_range")
-                _record_ratio(position, candidate.base_height)
+        for position in candidate.positions:
+            _record_ratio(position, candidate.positions[ratio_index].height)
         if candidate.status == "rejected":
             continue
         for position_index, position in enumerate(candidate.positions):
             if position.position_label not in settings.discriminating_positions:
                 continue
             position.shape_r = _shape_correlation(
-                base_trace, trace_map[index, position_index]
+                shape_reference, trace_map[index, position_index]
             )
             position.shape_r_threshold = settings.min_shape_r
             if position.shape_r is None or position.shape_r < settings.min_shape_r:
@@ -459,12 +497,14 @@ def _apply_base_support_gate(
         _reject(candidate, 5, "base_support_below_threshold")
 
 
-def _record_ratio(position: DeltaMassPositionResult, base_height: float | None) -> None:
+def _record_ratio(
+    position: DeltaMassPositionResult, reference_height: float | None
+) -> None:
     """Annotate measured abundance evidence independently of position admission."""
-    if position.height is None or base_height is None or base_height <= 0:
+    if position.height is None or reference_height is None or reference_height <= 0:
         return
-    ratio = position.height / base_height
-    position.height_ratio_to_base = ratio
+    ratio = position.height / reference_height
+    position.height_ratio = ratio
     position.ratio_status = (
         "below_range"
         if ratio < position.ratio_min

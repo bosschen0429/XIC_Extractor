@@ -93,12 +93,66 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ),
 )
 _HEADERS = ("工作表", "欄位", "意思", "單位")
+_IDENTIFICATION_GUIDE = (
+    ("Targets", "Method", "本次使用的辨認方法；定量仍取 Target m/z 通道。", ""),
+    (
+        "Identification Methods",
+        "Method / Combine / Condition / Kind",
+        "方法定義：all＝全部條件符合，any＝任一條件符合。"
+        "CID-NL 條件一列；Delta Mass 條件每個離子一列。",
+        "",
+    ),
+    (
+        "Identification Methods",
+        "Position / Delta m/z",
+        "離子名稱與相對定量離子的 m/z 差（定量離子為 0）。",
+        "m/z",
+    ),
+    (
+        "Method Evidence",
+        "Candidate / RT Start / RT End / Selected",
+        "同一樣本、目標的候選定量峰與範圍；TRUE 為所選候選。",
+        "min",
+    ),
+    (
+        "Method Evidence",
+        "Combine / Method Accepted / Condition / Status",
+        "matched＝符合、not_matched＝不符合、not_acquired＝沒有 MS2、"
+        "not_evaluated＝沒有候選峰可評估。所有條件都看同一個候選峰。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Condition / Reference Position",
+        "條件編號，以及作為強度、峰形參考的定量離子。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Expected m/z / Apex Delta to Quant sec",
+        "XIC 查詢中心（不是量測質心）；峰頂時間差相對定量離子。",
+        "m/z / sec",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Height Ratio to Quant / Ratio Status",
+        "相對定量離子的強度比例；僅供參考，超出範圍不淘汰。",
+        "",
+    ),
+    (
+        "Delta Mass Evidence",
+        "Shape r / Shape Threshold",
+        "相對定量離子的峰形相關性與門檻；空白為未評估。",
+        "",
+    ),
+)
 
 
-def build_field_guide_sheet(ws) -> None:
+def build_field_guide_sheet(ws, *, identification_methods: bool = False) -> None:
+    entries = FIELD_GUIDE + (_IDENTIFICATION_GUIDE if identification_methods else ())
     _prepare_sheet(ws, landscape=False)
     _write_header(ws, 1, _HEADERS)
-    for row, entry in enumerate(FIELD_GUIDE, start=2):
+    for row, entry in enumerate(entries, start=2):
         for column, value in enumerate(entry, start=1):
             _style_body(ws.cell(row, column, value), wrap=column == 3)
         ws.row_dimensions[row].height = (
@@ -106,5 +160,5 @@ def build_field_guide_sheet(ws) -> None:
         )
     for letter, width in zip("ABCD", (14, 22, 60, 12), strict=True):
         ws.column_dimensions[letter].width = width
-    _add_table(ws, "FieldGuide", f"A1:D{len(FIELD_GUIDE) + 1}")
+    _add_table(ws, "FieldGuide", f"A1:D{len(entries) + 1}")
     ws.freeze_panes = "A2"

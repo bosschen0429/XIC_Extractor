@@ -7,8 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
-from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
 from xic_extractor.tabular_io import write_delimited_rows
 
 CANDIDATE_COLUMNS = (
@@ -109,14 +109,18 @@ def write_delta_mass_outputs(
             ),
         )
         rows.append(row)
-        positions.extend(
-            {
-                "candidate_id": candidate.candidate_id,
-                "sample_stem": candidate.sample_stem,
-                **asdict(p),
-            }
-            for p in candidate.positions
-        )
+        for position in candidate.positions:
+            position_fields = asdict(position)
+            position_fields["height_ratio_to_base"] = position_fields.pop(
+                "height_ratio"
+            )
+            positions.append(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "sample_stem": candidate.sample_stem,
+                    **position_fields,
+                }
+            )
     write_delimited_rows(outputs.candidates_csv, rows, CANDIDATE_COLUMNS)
     write_delimited_rows(outputs.positions_csv, positions, POSITION_COLUMNS)
     outputs.sidecar_json.write_text(

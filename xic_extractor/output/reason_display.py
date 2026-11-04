@@ -35,6 +35,12 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
+    "identification_method_supported": (
+        "所選峰符合辨認方法；各條件結果見 Method Evidence"
+    ),
+    "identification_method_not_supported": (
+        "沒有候選峰符合辨認方法；各條件結果見 Method Evidence"
+    ),
     "targeted_cross_sample_region_conflict": "跨樣本峰對應衝突；不給定量值",
     "targeted_retention_context_unavailable": "跨 target RT 證據不足；目前對應為暫定",
     "targeted_competing_regions": ("有多個具實質訊號的候選區段；依整批上下文暫定對應"),
@@ -90,6 +96,8 @@ def reasons(row: Mapping[str, object], field: str) -> set[str]:
 
 
 BasisKind = Literal[
+    "identification_method_supported",
+    "identification_method_not_supported",
     "backfill_identity",
     "paired_istd_identity",
     "nl_observed",
@@ -129,7 +137,17 @@ def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
         )
     support = reasons(row, "Projection Support Reasons")
     not_counted = reasons(row, "Projection Not Counted Reasons")
+    if "identification_method_not_supported" in not_counted:
+        return DecisionBasis(
+            "identification_method_not_supported",
+            reason_text("identification_method_not_supported"),
+        )
     if str(row.get("Counted Detection", "")).upper() == "TRUE":
+        if "identification_method_supported" in support:
+            return DecisionBasis(
+                "identification_method_supported",
+                reason_text("identification_method_supported"),
+            )
         if "cross_sample_backfill_identity" in support:
             return DecisionBasis("backfill_identity", "由同批樣本回填確認的峰")
         if "paired_istd_identity" in support:

@@ -303,7 +303,7 @@ def _validate_target(target: Target) -> None:
         "label": target.label,
         "mz": str(target.mz),
         "expected_rt_min": str(target.expected_rt_min),
-        "cid_nl_tag": target.cid_nl_tag,
+        "method": target.method_name or target.cid_nl_tag,
         "role": "istd" if target.is_istd else "analyte",
         "istd_pair": target.istd_pair,
         "sample_applicability": target.sample_applicability,
@@ -313,6 +313,7 @@ def _validate_target(target: Target) -> None:
             Path("<immutable-target-definition>"),
             2,
             row,
+            {target.method_name: target.identification_method},
         )
     except ConfigError as exc:
         raise TargetIdentityError(
@@ -334,11 +335,27 @@ def _target_list_content(
         "definitions": [
             {
                 "target_label": definition.target_key.target_label,
-                "target": asdict(definition.target),
+                "target": _target_payload(definition.target),
             }
             for definition in definitions
         ],
     }
+
+
+def _target_payload(target: Target) -> dict:
+    payload = asdict(target)
+    if target.identification_method is None:
+        for key in ("method_name", "identification_method"):
+            del payload[key]
+    else:
+        from xic_extractor.configuration.targeted_identification import (
+            identification_methods_payload,
+        )
+
+        payload["identification_method"] = identification_methods_payload(
+            {target.method_name: target.identification_method}
+        )[target.method_name]
+    return payload
 
 
 def _owner_normalized_text(value: object, *, field: str) -> str:

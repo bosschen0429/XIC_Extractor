@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
+from xic_extractor.configuration.csv_io import normalize_target_row
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -28,7 +29,7 @@ def read_workspace(config_dir: Path) -> dict:
         }
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict) or set(state) != {
+        if not isinstance(state, dict) or set(state) - {"identification_methods"} != {
             "application",
             "batch",
             "targets",
@@ -51,8 +52,11 @@ def read_workspace(config_dir: Path) -> dict:
             for row in state["targets"]
         ):
             raise ValueError("invalid target rows")
+        state["targets"] = [normalize_target_row(row) for row in state["targets"]]
+        if not isinstance(state.get("identification_methods", {}), dict):
+            raise ValueError("invalid identification method map")
         return state
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, ConfigError) as exc:
         raise ConfigError(
             f"{path}: 工作狀態無法讀取；原檔保留。"
             f"請手動修正欄位後重跑；舊設定檔請刪除 version 那一行。{exc}"
@@ -72,8 +76,11 @@ def save_workspace(
     *,
     settings: dict[str, str] | None = None,
     targets: list[dict[str, str]] | None = None,
+    identification_methods: dict | None = None,
 ) -> None:
     state = read_workspace(config_dir)
+    if identification_methods is not None:
+        state["identification_methods"] = identification_methods
     for key, value in (settings or {}).items():
         if key not in _SECTION:
             raise ConfigError(f"不支援工作設定：{key}")

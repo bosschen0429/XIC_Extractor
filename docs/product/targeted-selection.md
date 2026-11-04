@@ -24,9 +24,49 @@ CrossSample, Backfill, or selected-value implementation.
 
 ### MS1-only target intent
 
-A blank `cid_nl_tag` declares an MS1-only target. Intake retains the shared
+A blank `method` declares an MS1-only target. Intake retains the shared
 20 ppm precursor tolerance and leaves neutral loss and its tolerances
 unconfigured. Missing MS2 is not chemical identity evidence.
+
+### Reusable identification methods
+
+`configuration.targeted_identification` admits named methods containing a flat,
+nonempty list of CID-NL and/or Delta Mass conditions. `combine_mode=all` requires
+every condition; `any` requires at least one. HCD-PI and nested expressions are
+not implemented.
+
+Each target row has exactly one `method`: blank (MS1 only), a built-in CID-NL
+tag (`dR`, `R`, `MeR`), or the name of a defined method. Older tables name this
+column `cid_nl_tag`; its values carry over unchanged. Built-in tags retain the
+existing Targeted CID-NL assessment policy; in a custom method a CID-NL card must
+match according to the all/any rule. Custom methods use one shared
+quantitation/partner m/z tolerance.
+
+Delta Mass positions use signed `offset_mz` relative to the Target's quantitation
+ion at zero. The pure settings conversion normalizes the lowest mass internally;
+users neither select a quantitation position per target nor arrange a base ion.
+Co-elution tolerance, ratios and configured shape comparisons reference the
+quantitation ion. Ratios
+remain annotations, not admission gates. Position XIC windows must not overlap.
+Offsets are m/z differences, not charge-independent neutral mass differences.
+
+Targeted acquires declared XIC windows over the sample's acquired RT coverage.
+The shared physical owner qualifies peaks; the existing pure Delta Mass matcher
+assesses partner support, co-elution and shape. CID-NL clauses reuse the existing
+CID-NL evaluator and sample-shared seeds. Each clause answers on the **same
+sample-local physical quantitation candidate**. Evidence from other peaks or
+samples cannot satisfy AND. OR does not require unacquired clauses to pass.
+
+Condition answers distinguish `matched`, `not_matched`, and `not_acquired`
+(no target MS2 acquired within that candidate). Missing MS2 is not a failed
+chemical measurement, but cannot satisfy a CID-NL condition. Only method-admitted
+candidates enter selection as available regions; an unmet method never falls
+back to MS1-only. Custom compositions do not invent CID-NL receipts or receive
+CID-NL Backfill. All candidate-level condition answers remain available in output.
+
+XIC windows establish bounded mass support, not measured centroids or zero mass
+error. Configurability and synthetic regression coverage do not establish chemical
+identity or scientific readiness (`diagnostic_only`).
 
 ### Retained candidate context
 

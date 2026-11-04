@@ -81,6 +81,15 @@ def project_targeted_result(
             ),
         )
     nl_status = result.nl_token or ""
+    if target.identification_method is not None:
+        if result.selected_method_supported:
+            support = _merge_reasons(support, ("identification_method_supported",))
+        elif target.identification_method.conditions and not any(
+            candidate.accepted for candidate in result.method_candidate_evidence
+        ):
+            not_counted = _merge_reasons(
+                not_counted, ("identification_method_not_supported",)
+            )
     return build_targeted_product_projection(
         TargetedProductContext(
             role=result.role or ("ISTD" if target.is_istd else "Analyte"),

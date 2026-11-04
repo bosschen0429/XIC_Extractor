@@ -403,6 +403,37 @@
         ['NL (Da)', target['NL (Da)']], ['NL 容差 warn / max (ppm)', `${value(target['NL ppm warn'])} / ${value(target['NL ppm max'])}`],
         ['樣本適用範圍', target['Sample applicability']],
       ]));
+      if (item.details.identification_method) {
+        const saved = item.details.identification_method;
+        const combinationLabel = saved.combine_mode === 'any' ? '符合任一條件（OR）' : '符合全部條件（AND）';
+        method.append(facts([['辨認方式', combinationLabel], ['m/z 容差 (ppm)', saved.mz_tolerance_ppm]]));
+        const definitions = element('details'); definitions.append(element('summary', '已儲存的辨認條件'));
+        saved.conditions.forEach((condition, index) => {
+          definitions.append(element('h4', `${index + 1}. ${condition.kind === 'cid_nl' ? `CID-NL · ${condition.tag}` : 'Delta Mass'}`));
+          if (condition.kind === 'delta_mass') {
+            definitions.append(facts(condition.positions.map(p => [p.label, `${p.offset_mz > 0 ? '+' : ''}${p.offset_mz} m/z${p.offset_mz === 0 ? '（定量離子）' : ''}${p.compare_shape ? ' · 比較峰形' : ''}`])));
+            definitions.append(facts([['共洗脫容差 (s)', condition.apex_floor_sec], ['峰形最低 r', condition.min_shape_r], ['強度比例／峰形參考', '定量離子（0）']]));
+          }
+        });
+        method.append(definitions);
+        const statuses = {matched: '符合', not_matched: '不符合', not_acquired: '沒有 MS2', not_evaluated: '未評估', TRUE: '是', FALSE: '否', pass: '通過', fail: '未通過'};
+        for (const [title, records, fields, collapsed] of [
+          [`辨認條件結果 · ${combinationLabel}`, item.details.method_evidence || [], [['SampleName', '樣本'], ['Candidate', '候選'], ['Candidate RT', '候選峰 RT'], ['Selected', '已選'], ['Method Accepted', '方法符合'], ['Condition', '條件編號'], ['Condition Label', '條件'], ['Status', '結果'], ['Reason', '說明']], false],
+          ['Delta Mass 配對明細', item.details.delta_mass_evidence || [], [['SampleName', '樣本'], ['Candidate RT', '候選峰 RT'], ['Condition', '條件'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Height Ratio to Quant', '相對定量離子強度'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']], true],
+        ]) {
+          if (!records.length) continue;
+          const evidence = element(collapsed ? 'details' : 'div'); evidence.append(element(collapsed ? 'summary' : 'h4', title));
+          const table = element('table', undefined, 'tgt-method-table'); const header = element('tr');
+          for (const [, label] of fields) header.append(element('th', label));
+          table.append(header);
+          for (const record of records) {
+            const row = element('tr');
+            for (const [key] of fields) row.append(element('td', statuses[record[key]] || value(record[key])));
+            table.append(row);
+          }
+          const scroll = element('div', undefined, 'tgt-table-scroll'); scroll.append(table); evidence.append(scroll); section.append(evidence);
+        }
+      }
       const labels = {
         signal_processing_method: '平滑方法', signal_processing_window_points: '平滑視窗 (points)',
         ms2_precursor_tol_da: 'MS2 precursor 容差 (Da)', nl_min_intensity_ratio: 'NL 最低相對強度',
