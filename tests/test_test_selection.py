@@ -75,9 +75,17 @@ def selection_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _select(root: Path, *changed: str) -> tuple[str, ...] | None:
+def _select(
+    root: Path,
+    *changed: str,
+    explanation: test_selection.SelectionExplanation | None = None,
+) -> tuple[str, ...] | None:
     return select_test_files(
-        changed, root=root, packages=("selpkg", "seltests"), test_package="seltests"
+        changed,
+        root=root,
+        packages=("selpkg", "seltests"),
+        test_package="seltests",
+        explanation=explanation,
     )
 
 
@@ -154,6 +162,116 @@ def test_change_the_derivation_cannot_place_runs_every_test(
 
 def test_selection_owner_change_runs_every_test() -> None:
     assert select_test_files(["tools/testing/test_selection.py"]) is None
+
+
+@pytest.mark.parametrize(
+    ("changed", "reason", "explained_tests"),
+    (
+        ("selpkg/core.py", "import dependency", {"seltests/test_consumer.py"}),
+        ("selpkg/core.py", "repository source scans", {"seltests/test_scanner.py"}),
+        (
+            "selpkg/cli.py",
+            "referenced by registers/catalog.tsv",
+            {"seltests/test_register.py"},
+        ),
+        ("docs/guide.md", "test names the path", {"seltests/test_docs.py"}),
+        (
+            ".github/workflows/ci.yml",
+            "relevance-gated lane browser_e2e",
+            {"seltests/test_marked.py"},
+        ),
+    ),
+)
+def test_explanation_observes_selection_without_changing_it(
+    selection_repo, changed, reason, explained_tests
+):
+    explanation = test_selection.SelectionExplanation()
+    selected = _select(selection_repo, changed, explanation=explanation)
+
+    assert selected == _select(selection_repo, changed)
+    assert explanation.changed_paths == (changed,)
+    assert not explanation.full_suite_reasons
+    matching = [
+        tests for text, tests in explanation.selected_by.items() if reason in text
+    ]
+    assert matching == [explained_tests]
+
+
+@pytest.mark.parametrize(
+    ("changed", "reason"),
+    (
+        ("pyproject.toml", "shared test environment or selection policy changed"),
+        ("selpkg/deleted_module.py", "no module in the import graph"),
+        ("assets/unreferenced.bin", "no dependent test could be derived"),
+    ),
+)
+def test_explanation_names_the_actual_full_suite_trigger(
+    selection_repo, changed, reason
+):
+    explanation = test_selection.SelectionExplanation()
+
+    assert _select(selection_repo, changed, explanation=explanation) is None
+    assert len(explanation.full_suite_reasons) == 1
+    assert explanation.full_suite_reasons[0].startswith(changed + ":")
+    assert reason in explanation.full_suite_reasons[0]
+
+
+@pytest.mark.parametrize(
+    "test_file", ("", "seltests/test_consumer.py", "seltests/test_unrelated.py")
+)
+def test_explain_cli_filters_reasons_without_running_tests(
+    selection_repo, monkeypatch, capsys, test_file
+):
+    def plan(*, run_all, all_markers, explanation):
+        explanation.base = "fixture-base"
+        return SelectionPlan(
+            files=_select(selection_repo, "selpkg/core.py", explanation=explanation),
+            marker_expression="not ledger_snapshot",
+        )
+
+    monkeypatch.setattr(test_selection, "_local_plan", plan)
+    monkeypatch.setattr(
+        test_selection.subprocess,
+        "call",
+        lambda _args: pytest.fail("explanation ran pytest"),
+    )
+    args = [
+        "--explain",
+        *([test_file] if test_file else []),
+        "--",
+        "-m",
+        "not browser_e2e",
+    ]
+
+    assert test_selection.main(args) == 0
+    output = capsys.readouterr().out
+    assert "Comparison base: fixture-base" in output
+    assert "Markers: (not browser_e2e) and (not ledger_snapshot)" in output
+    assert "no tests were executed" in output
+    if test_file.endswith("test_unrelated.py"):
+        assert "Not selected by the file selector" in output
+        assert "import dependency" not in output
+    else:
+        assert "selpkg/core.py: import dependency" in output
+        assert ("repository source scans" in output) == (not test_file)
+
+
+def test_explain_all_and_snapshots_are_read_only(monkeypatch, capsys):
+    monkeypatch.setattr(
+        test_selection.subprocess,
+        "call",
+        lambda _args: pytest.fail("explanation ran pytest"),
+    )
+    assert test_selection.main(["--all", "--all-markers", "--explain"]) == 0
+    assert "--all explicitly selects every test file" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        test_selection, "discover_test_files", lambda _root: (Path("tests/test_a.py"),)
+    )
+    assert test_selection.main(["--snapshots", "--explain"]) == 0
+    output = capsys.readouterr().out
+    assert "ledger_snapshot lane: files before marker filtering [files: 1]" in output
+    assert "Markers: ledger_snapshot" in output
 
 
 def test_snapshot_marker_cannot_grow_without_a_recorded_decision() -> None:
@@ -462,7 +580,9 @@ def test_local_run_skips_markers_unrelated_to_the_change(
         lambda base, head=None: ["docs/product/backfill.md"],
     )
     monkeypatch.setattr(
-        test_selection, "select_test_files", lambda _changed: ("tests/test_a.py",)
+        test_selection,
+        "select_test_files",
+        lambda _changed, **_kwargs: ("tests/test_a.py",),
     )
 
     plan = test_selection._local_plan(run_all=False, all_markers=False)

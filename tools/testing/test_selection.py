@@ -22,10 +22,10 @@ import shutil
 import subprocess
 import sys
 import tokenize
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Sequence, cast
+from typing import Iterable, Sequence, cast
 
 import grimp
 
@@ -133,6 +133,21 @@ class SelectionPlan:
     marker_expression: str
 
 
+@dataclass
+class SelectionExplanation:
+    """Optional observations from the selector, not a second selection policy."""
+
+    base: str | None = None
+    changed_paths: tuple[str, ...] = ()
+    full_suite_reasons: list[str] = field(default_factory=list)
+    selected_by: dict[str, set[str]] = field(default_factory=dict)
+
+    def record(self, reason: str, tests: Iterable[str]) -> None:
+        selected = set(tests)
+        if selected:
+            self.selected_by.setdefault(reason, set()).update(selected)
+
+
 def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:
     return tuple(
         sorted(
@@ -152,22 +167,34 @@ def select_test_files(
     root: Path = Path("."),
     packages: Sequence[str] = FIRST_PARTY_PACKAGES,
     test_package: str = "tests",
+    explanation: SelectionExplanation | None = None,
 ) -> tuple[str, ...] | None:
     """Return the test files ``changed`` can affect, or None to run them all."""
 
-    if any(FULL_RUN_INPUTS.match(path) for path in changed):
-        return None
+    if explanation is not None:
+        explanation.changed_paths = tuple(changed)
+    for path in changed:
+        if FULL_RUN_INPUTS.match(path):
+            if explanation is not None:
+                explanation.full_suite_reasons.append(
+                    f"{path}: shared test environment or selection policy changed"
+                )
+            return None
     repository = _Repository(root, packages, test_package)
     selected: set[str] = set()
     for path in changed:
-        tests = repository.dependent_tests(path)
+        tests = repository.dependent_tests(path, explanation=explanation)
         if tests is None:
             return None
         selected.update(tests)
     for marker in relevant_markers(changed):
-        selected.update(
+        marked = {
             t for t, source in repository.test_sources.items() if marker in source
-        )
+        }
+        selected.update(marked)
+        if explanation is not None:
+            paths = ", ".join(p for p in changed if RELEVANCE_RULES[marker].match(p))
+            explanation.record(f"{paths}: relevance-gated lane {marker}", marked)
     return tuple(sorted(selected))
 
 
@@ -210,19 +237,32 @@ class _Repository:
         }
 
     def dependent_tests(
-        self, path: str, *, follow_data: bool = True
+        self,
+        path: str,
+        *,
+        follow_data: bool = True,
+        explanation: SelectionExplanation | None = None,
     ) -> set[str] | None:
         """Tests a change to ``path`` can affect; None when none can be placed."""
         tests = self.source_scanners.copy() if path.endswith(".py") else set()
+        if explanation is not None:
+            explanation.record(f"{path}: repository source scans", tests)
         if follow_data:
             # A register or document that lists the path is checked by the
             # tests that read that register.
             for listing in _naming(self.data_sources, (path,)) - {path}:
-                tests.update(self.dependent_tests(listing, follow_data=False) or ())
+                readers = self.dependent_tests(listing, follow_data=False) or set()
+                tests.update(readers)
+                if explanation is not None:
+                    explanation.record(f"{path}: referenced by {listing}", readers)
         if path.endswith(".py"):
             module = _module_name(path)
             if module not in self.graph.modules:
                 # A deleted or unpackaged module has no graph node to follow.
+                if explanation is not None:
+                    explanation.full_suite_reasons.append(
+                        f"{path}: no module in the import graph (deleted or unpackaged)"
+                    )
                 return None
             references = (*self._file_references(path, directories=False), module)
             owners = {module}
@@ -233,9 +273,24 @@ class _Repository:
         # Code that names the file in a string (importlib.resources, a
         # subprocess command, a data path) depends on it like an importer.
         owners.update(_naming(self.module_sources, references))
-        tests.update(self._tests_importing(owners))
-        tests.update(_naming(self.test_sources, references))
+        importers = self._tests_importing(owners)
+        named_readers = _naming(self.test_sources, references)
+        tests.update(importers)
+        tests.update(named_readers)
+        if explanation is not None:
+            explanation.record(
+                f"{path}: import dependency on its owner or code naming this path",
+                importers,
+            )
+            explanation.record(
+                f"{path}: test names the path, parent directory, or module",
+                named_readers,
+            )
         if not tests and not path.endswith(".py"):
+            if explanation is not None:
+                explanation.full_suite_reasons.append(
+                    f"{path}: no dependent test could be derived"
+                )
             return None
         return tests
 
@@ -349,10 +404,15 @@ def irrelevant_markers(changed_paths: Sequence[str]) -> tuple[str, ...]:
     return tuple(marker for marker in RELEVANCE_RULES if marker not in relevant)
 
 
-def plan_for_change(changed: Sequence[str], *, base_expression: str) -> SelectionPlan:
+def plan_for_change(
+    changed: Sequence[str],
+    *,
+    base_expression: str,
+    explanation: SelectionExplanation | None = None,
+) -> SelectionPlan:
     exclusions = [f"not {marker}" for marker in irrelevant_markers(changed)]
     return SelectionPlan(
-        files=select_test_files(changed),
+        files=select_test_files(changed, explanation=explanation),
         marker_expression=" and ".join([base_expression, *exclusions]),
     )
 
@@ -448,16 +508,31 @@ def ci_plan(base: str, head: str) -> SelectionPlan | None:
     return plan_for_change(paths, base_expression=CI_BASE_MARKER_EXPRESSION)
 
 
-def _local_plan(*, run_all: bool, all_markers: bool) -> SelectionPlan:
+def _local_plan(
+    *,
+    run_all: bool,
+    all_markers: bool,
+    explanation: SelectionExplanation | None = None,
+) -> SelectionPlan:
     required = f"not {SNAPSHOT_MARKER}"
+    if run_all and explanation is not None:
+        explanation.full_suite_reasons.append(
+            "--all explicitly selects every test file"
+        )
     if run_all and all_markers:
         return SelectionPlan(files=None, marker_expression=required)
     base = _local_change_base()
+    if explanation is not None:
+        explanation.base = base
     paths = changed_paths(base) if base else None
     if paths is None:
         print("Could not diff against origin/master; running every test", flush=True)
+        if explanation is not None:
+            explanation.full_suite_reasons.append(
+                "Git could not provide the change set; conservative full-suite fallback"
+            )
         return SelectionPlan(files=None, marker_expression=required)
-    plan = plan_for_change(paths, base_expression=required)
+    plan = plan_for_change(paths, base_expression=required, explanation=explanation)
     if all_markers:
         plan = SelectionPlan(files=plan.files, marker_expression=required)
     if run_all:
@@ -492,13 +567,28 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
 
 
 def _run_snapshots(
-    pytest_args: Sequence[str], root: Path, *, print_only: bool = False
+    pytest_args: Sequence[str],
+    root: Path,
+    *,
+    print_only: bool = False,
+    explain_test: str | None = None,
 ) -> int:
     """Run only the register-snapshot tests, the ones CI deliberately skips."""
     targets = [path.as_posix() for path in discover_test_files(root)]
     if not targets:
         print("No test files discovered", file=sys.stderr)
         return 2
+    if explain_test is not None:
+        explanation = SelectionExplanation()
+        explanation.record(
+            f"{SNAPSHOT_MARKER} lane: files before marker filtering", targets
+        )
+        return _print_explanation(
+            SelectionPlan(files=tuple(targets), marker_expression=SNAPSHOT_MARKER),
+            explanation,
+            pytest_args,
+            test_file=explain_test,
+        )
     if print_only:
         return _print_plan(
             SelectionPlan(files=tuple(targets), marker_expression=SNAPSHOT_MARKER),
@@ -580,11 +670,60 @@ def _print_plan(plan: SelectionPlan, pytest_args: Sequence[str] = ()) -> int:
     return 0
 
 
+def _print_explanation(
+    plan: SelectionPlan,
+    explanation: SelectionExplanation,
+    pytest_args: Sequence[str],
+    *,
+    test_file: str,
+) -> int:
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args, required=plan.marker_expression
+    )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
+    print(f"Comparison base: {explanation.base or '(no Git comparison)'}")
+    print(f"Changed paths: {len(explanation.changed_paths)}")
+    print(f"Candidate test files: {'ALL' if plan.files is None else len(plan.files)}")
+    print(f"Markers: {owned_pytest_args[1]}")
+    if plan.files is None:
+        print("Full-suite reasons (supersede individual file selection):")
+        for reason in explanation.full_suite_reasons:
+            print(f"  - {reason}")
+    else:
+        requested = test_file.replace("\\", "/").removeprefix("./")
+        if requested:
+            print(f"Test file: {requested}")
+            if requested not in plan.files:
+                print("  Not selected by the file selector.")
+        else:
+            print("Selection reasons (file counts can overlap):")
+        for reason, files in sorted(explanation.selected_by.items()):
+            if not requested or requested in files:
+                print(
+                    f"  - {reason}"
+                    + (f" [files: {len(files)}]" if not requested else "")
+                )
+    print("Preview only: markers and -k may exclude cases; no tests were executed.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", default="tests", help="Test root directory")
+    parser.add_argument(
+        "--explain",
+        nargs="?",
+        const="",
+        metavar="TEST_FILE",
+        help=(
+            "Explain selection reasons without running tests; optionally show only "
+            "reasons for one repository-relative test file"
+        ),
+    )
     parser.add_argument(
         "--print",
         action="store_true",
@@ -617,6 +756,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--base", help="Base revision for --ci-plan")
     parser.add_argument("--head", help="Head revision for --ci-plan")
     args, rest = parser.parse_known_args(argv)
+    if args.explain is not None and (args.print or args.ci_plan):
+        parser.error("--explain is an alternative to --print and --ci-plan")
     pytest_args = rest[1:] if rest[:1] == ["--"] else rest
     if args.ci_plan:
         if not (args.base and args.head):
@@ -627,8 +768,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         return _print_plan(plan)
     if args.snapshots:
-        return _run_snapshots(pytest_args, Path(args.root), print_only=args.print)
-    plan = _local_plan(run_all=args.all, all_markers=args.all_markers)
+        return _run_snapshots(
+            pytest_args,
+            Path(args.root),
+            print_only=args.print,
+            explain_test=args.explain,
+        )
+    explanation = SelectionExplanation() if args.explain is not None else None
+    plan = _local_plan(
+        run_all=args.all, all_markers=args.all_markers, explanation=explanation
+    )
+    if explanation is not None:
+        return _print_explanation(
+            plan, explanation, pytest_args, test_file=args.explain
+        )
     if args.print:
         return _print_plan(plan, pytest_args)
     return _run_plan(plan, pytest_args)
