@@ -84,8 +84,7 @@ XIC_Extractor/
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
 | 本檔 | 檔案 placement、追蹤/忽略邊界與路徑約束 |
 
-文件不需要 placement 或 lifecycle 標頭；文件邊界見
-[documentation boundary contract](agent/obsidian-handoff-contract.md)。
+文件不需要 placement 或 lifecycle 標頭；文件邊界見下方[文件放哪裡](#文件放哪裡)。
 
 ## § 2 追蹤目錄
 
@@ -108,19 +107,25 @@ XIC_Extractor/
 `docs/` 根目錄只允許 `project-layout.md`、`architecture-contract.md`、
 `lc-msms-evidence-rules.md`、`diagnostic-ledger.md`。其他文件必須有明確 owner。
 
-施工 PRD、計畫、acceptance、work decomposition 放 GitHub Issue；交付敘事放 PR
-body；next 1–3 actions 放 ignored local handoff。不要建立 tracked plan、spec、
-closeout、active stub 或永久歷史 stub。
+### 文件放哪裡
 
-踩坑後若得到可重用規則，直接更新對該決策有權威的 product、agent、validation
-或 diagnostic owner；一次性命令、數字與事故敘事留在 PR／Git 歷史。不得另建
-`solutions`、`lessons` 或同義的事後知識支線。
+| 內容 | 位置 |
+| --- | --- |
+| 現行產品、架構、驗證與 agent 規則 | 對應的 repo 文件（見下表） |
+| 要做的事：計畫、acceptance、拆分、未決的產品決策 | GitHub Issue |
+| 交付的 diff、驗證結果、review 結論 | GitHub PR body |
+| 下一步 1–3 個動作、目前卡點 | ignored local handoff（`docs/superpowers/handoffs/`） |
+| 私人研究與推理 | Obsidian（選用；不能是唯一的副本） |
+| 產生的報表、完整驗證輸出、一次性 audit | ignored `output/` |
 
-文件的 public/private 與維護、移除規則由
-[`docs/agent/obsidian-handoff-contract.md`](agent/obsidian-handoff-contract.md)
-擁有。刪除前仍須先把 durable claim 吸收到 owner 並清空 exact referrers；一次性
-audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件，Git 保留舊版；
-不要求另行歸檔或建立 retirement packet。
+- 一條規則只有一個詳細 owner；其他文件只留避免誤用所需的邊界並連過去。
+- 方法或行為改變時直接改現行文件；舊版由 Git 保留，不另建歸檔、計畫、spec、
+  closeout 或歷史 stub。
+- 踩坑得到可重用規則時，更新對該決策有權威的文件；一次性命令、數字與事故
+  敘事留在 PR／Git 歷史。
+- 刪除文件前，把仍有效的內容移到 owner 並修好所有連結。
+- Repo 文件不放聊天紀錄、命令逐字稿、私人 RAW 佈局、本機路徑、憑證，或需要
+  私人 vault 才看得懂的內容。
 
 ### Current authority routes
 

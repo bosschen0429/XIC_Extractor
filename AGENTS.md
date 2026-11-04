@@ -1,60 +1,51 @@
 # XIC Extractor Agent Contract
 
-This file provides XIC-specific invariants and routes, not a checklist for every
-edit. Global Codex rules own general operating defaults.
+XIC-specific invariants and where to find the detailed rules. Global Codex
+rules own general operating defaults.
 
-## Task Routes
+## Where To Look
 
-| Trigger | Required route |
+| Task | Read |
 | --- | --- |
-| Project Python, worktree bootstrap, RAW/DLL, validation scale, or environment failure | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
-| Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
-| Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
-| Readiness claim or validation policy | Choose the relevant branch in [`product-validation-contract.md#read-routes`](docs/agent/product-validation-contract.md#read-routes). |
-| Test selection, new regression coverage, fixture design, or UI demonstration | Choose the relevant branch in [`testing.md#read-routes`](docs/agent/testing.md#read-routes). |
-| Change UI styling or theme roles | Read [UI Presentation](docs/architecture-contract.md#ui-presentation). |
-| Change import loading in startup-sensitive or lightweight readers | Read [Dependency Direction](docs/architecture-contract.md#dependency-direction). |
-| Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime lifecycle, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
-| Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
-| Need a current-format Untargeted output as test input | Regenerate it with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; runs left under `output/` by older code are not current-format input. |
-| Push or PR creation | Run [PR Verification](docs/agent/execution-gates.md#pr-verification); write the body with the `pr` skill. |
-| Clean-checkout artifact, long RAW run, CI evidence, remote-head change, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
-| Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
-| Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
-| Create, expose, consolidate, or retire a script/diagnostic; select or repeat scientific diagnostic evidence | Use [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) for lifecycle changes; search [`INDEX.md`](tools/diagnostics/INDEX.md) when selecting a tool and [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) when reusing or repeating evidence. Routine invocation of an already selected command uses its help and runner. |
-| Writer authority or a change to published values | Read [Writer Authority](docs/product/decision-policy.md#writer-authority) and the [Expected-Diff Contract](docs/agent/product-validation-contract.md#expected-diff-contract). |
-| Change docs, skills, hooks, rules, agent config, or subagent definitions; resolve Git command-policy behavior | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md); for changes, select checks by the behavior changed under its [Change Protocol](docs/agent/codex-operating-system.md#change-protocol). |
-| GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
-| Add or move a maintained file, change tracking, or alter repository layout | Read [`project-layout.md`](docs/project-layout.md). |
+| Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`parameter-settings.md`](docs/agent/parameter-settings.md) |
+| Product terminology | [`domain-glossary.md`](docs/product/domain-glossary.md) |
+| Product behavior or method evidence | [`docs/product/README.md`](docs/product/README.md) |
+| Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
+| Choosing, adding or running tests; UI demonstration | [`testing.md`](docs/agent/testing.md) |
+| Owner boundary, persisted schema, runtime lifecycle, write authority, public contract | [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md); [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary moves |
+| UI styling or theme roles | [UI Presentation](docs/architecture-contract.md#ui-presentation) |
+| Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
+| Issue scope, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
+| Current-format Untargeted output as test input | Regenerate with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; older runs under `output/` are not current-format input |
+| Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) before repeating evidence |
+| Docs, skills, hooks, rules or agent config | [`codex-operating-system.md`](docs/agent/codex-operating-system.md) |
+| GitHub issue mechanics or triage | [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md) |
+| File placement, tracking, where a document belongs | [`project-layout.md`](docs/project-layout.md) |
 
-## Always-On Gates
+## Always On
 
-- **Mission lock:** the Issue/Current Packet preserves the accepted task contract
-  when one exists. Follow [Direction Updates](docs/agent/planning-workflows.md#direction-updates)
-  when user instructions change it; TaskFrame links to that contract rather than
-  duplicating its scope or acceptance.
-- **Structural observation:** use Codebase Memory (CBM) first for callers,
-  dependencies, impact, and reachability. Check its checkout/freshness and scope
-  coverage once; a stale or different-worktree index is only a locator. Use
-  targeted current-source reads for those gaps, exact text, and negative claims
-  instead of repeating stale graph queries.
-- **Change locality:** ownership, serialization, identity/proof/token,
-  derived-fact, and internal-defense changes use the XIC technical criteria in
+- **Structure:** use Codebase Memory (CBM) for callers, dependencies and impact
+  once its index matches this checkout; read current source for exact text and
+  negative claims.
+- **Change locality:** ownership, serialization, identity, derived-fact and
+  internal-defense changes follow
   [Change Locality](docs/architecture-contract.md#change-locality).
-  [`testing.md`](docs/agent/testing.md) owns test worth.
-- 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
-- **Responsibility boundary & domain purity:** core domain algorithms operate purely on in-memory domain models. Never mix RAW/DLL I/O, multiprocessing, byte hashing, or finalization formatting into mathematical or alignment algorithms.
-- **Final-state artifacts:** code, comments, tests, and docs describe current
-  behavior and non-obvious constraints. Cleanup history and rejected options
-  stay in Git/PR history unless a current consumer needs the rationale.
-- **Module naming:** name new or renamed modules for their actual capability
-  and responsibility, following [Module Naming](docs/architecture-contract.md#module-naming).
-- **Runtime owner:** use the active worktree's documented Python runner and
-  bootstrap. Run-specific artifacts stay under ignored task-specific `output/`;
-  tracked artifacts require a current runtime, CI, or public consumer.
-- **Performance evidence:** use `xic-performance-diagnosis` for XIC timing,
-  locality, or performance comparisons; reuse a still-current diagnosis.
-- **Evidence claim:** report the canonical Evidence label and the actual method-
-  appropriate oracle. Passing tests proves engineering regression coverage,
-  not scientific or production readiness.
-- **Merge authority:** hosted checks on the final remote SHA remain merge authority.
+- **Domain purity:** core algorithms work on in-memory domain models. Never mix
+  RAW/DLL I/O, multiprocessing, byte hashing or output formatting into
+  mathematical or alignment algorithms.
+- **Batch cost:** move shared preparation out of loops and measure call counts
+  at small scale before scaling up. Deep diagnostics, full re-validation and
+  audits run on demand, not in the normal path, unless they decide this
+  output's correctness and nothing cheaper does.
+- **Current state only:** code, comments, tests and docs describe current
+  behavior and non-obvious constraints. History stays in Git and PRs.
+- **Module naming:** name modules for their capability, following
+  [Module Naming](docs/architecture-contract.md#module-naming).
+- **Runtime:** use this worktree's documented Python runner. Run output stays in
+  ignored `output/`; a tracked artifact needs a current consumer.
+- **Performance:** use `xic-performance-diagnosis` for timing, locality or
+  performance comparisons.
+- **Evidence:** report the Evidence label and the method's actual oracle.
+  Passing tests prove regression coverage, not scientific or production
+  readiness.
+- **Merge:** hosted checks on the final remote SHA decide merge readiness.

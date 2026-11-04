@@ -4,16 +4,6 @@ Read this file when work changes an owner boundary, persisted decision,
 runtime lifecycle, writer authority, schema, or public surface. It records the
 current contract only. Migration history belongs in Issues, PRs, and Git.
 
-## Read Routes
-
-| Change | Read next |
-| --- | --- |
-| owner or dependency boundary | [`../architecture-contract.md`](../architecture-contract.md) and the affected package |
-| persisted schema or evidence claim | the writer, strict reader, schema tests, and [`product-validation-contract.md`](product-validation-contract.md) |
-| runtime lifecycle | `xic_extractor.execution.partitions`, `xic_extractor.untargeted_execution.partition`, and their focused tests |
-| public command or diagnostic | [`script-tool-lifecycle.md`](script-tool-lifecycle.md) and `[project.scripts]` |
-| repository placement | [`../project-layout.md`](../project-layout.md) |
-
 Use source, tests, and executable checks for exact field lists, allowlists,
 schema versions, and command flags. Do not copy those inventories here.
 

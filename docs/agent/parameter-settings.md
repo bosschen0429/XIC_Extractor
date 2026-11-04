@@ -4,16 +4,6 @@ This file owns stable XIC runner, local-input, and expensive-run constraints.
 CLI help owns flag inventories; Issues and validation owners own task-specific
 values and artifacts.
 
-## Read Routes
-
-| Need | Read |
-| --- | --- |
-| Python, worktree, sandbox | [Runner And Environment](#runner-and-environment) |
-| RAW/DLL/local inputs | [Local Inputs](#local-inputs) |
-| validation scale | [Validation Scale](#validation-scale) |
-| Alignment or 85RAW | [Alignment And Handoff](#alignment-and-handoff) |
-| PowerShell failure | [Shell Traps](#shell-traps) |
-
 Before repeating expensive validation, check docs/diagnostic-ledger.md and the
 active validation owner. Rerun only when current code, inputs, freshness, or the
 decision oracle changed.

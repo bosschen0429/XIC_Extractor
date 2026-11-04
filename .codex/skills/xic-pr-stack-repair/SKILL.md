@@ -31,7 +31,7 @@ Ask only for missing intent or operator-only authority that changes the result.
 ## Verify And Deliver
 
 Run checks affected by the repaired boundary, then follow
-`docs/agent/execution-gates.md#pr-verification`. Use `pr-closeout` when the
+`docs/agent/delivery.md#before-push`. Use `pr-closeout` when the
 durable review surface itself needs repair; an already sufficient PR body does
 not require another closeout workflow.
 

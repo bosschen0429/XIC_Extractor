@@ -1,9 +1,8 @@
 # Issue Tracker: GitHub
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
-This file owns GitHub mechanics only. The implementation issue-to-PR shape and
-`.github` template consistency are owned by
-`docs/agent/planning-workflows.md#issue-to-pr-scope-and-template-ownership`.
+This file owns GitHub mechanics only. What an Issue and PR contain is in
+[`delivery.md`](delivery.md).
 
 ## Conventions
 
@@ -30,8 +29,8 @@ scope, acceptance, or evidence needed for the task.
 
 Used by `/wayfinder`. Wayfinder children resolve decisions; they do not become
 implementation work by receiving a task label. When the route is clear, keep
-the same parent issue and compile implementation delivery children through
-`planning-workflows.md#wayfinder-to-delivery-compilation`. A child carrying an
+the same parent issue and open implementation children under it, each with its
+own outcome and acceptance. A child carrying an
 implementation contract is excluded from the Wayfinder frontier even when a
 legacy `wayfinder:*` label remains.
 
@@ -40,4 +39,4 @@ legacy `wayfinder:*` label remains.
 - **Blocking**: GitHub's **native issue dependencies** are the canonical, UI-visible schedule gate. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed. Native blocking does not define an implementation handoff.
 - **Frontier query**: list only open decision children with a `wayfinder:<type>` label and `## Question` body (`gh issue list --state open`, scoped to the map's sub-issues / task list); exclude children carrying an implementation contract, then drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee. First in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
-- **Resolve decision ticket**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far. Implementation child closure follows `communication-review.md#issue-closure-ownership` instead.
+- **Resolve decision ticket**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far. Implementation children close when their acceptance is met ([`delivery.md`](delivery.md#closing)).
