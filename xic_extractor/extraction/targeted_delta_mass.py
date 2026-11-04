@@ -7,7 +7,6 @@ masses denote XIC query windows, not measured centroid mass estimates.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -39,11 +38,11 @@ if TYPE_CHECKING:
     )
 
 
-def assess_targeted_delta_mass(raw, assessment: TargetedCandidateAssessment):
+def assess_targeted_delta_mass(
+    raw, assessment: TargetedCandidateAssessment, settings, quant_position
+):
     """Retain a pattern answer for each measured quantitation-channel candidate."""
     target = assessment.target
-    settings = target.delta_mass_settings
-    assert settings is not None
     if not any(
         evaluation.state == "available"
         for evaluation in assessment.candidate_evaluations.values()
@@ -51,9 +50,8 @@ def assess_targeted_delta_mass(raw, assessment: TargetedCandidateAssessment):
         return {candidate: () for candidate in assessment.candidate_evaluations}
     # A bounded Target search has a known quantitation channel. Other positions
     # provide evidence, never independent targets or quantitation anchors.
-    settings = replace(settings, anchor_positions=(target.quant_position,))
     quant_delta = next(
-        p.delta_da for p in settings.positions if p.label == target.quant_position
+        p.delta_da for p in settings.positions if p.label == quant_position
     )
     base_mz = target.mz - quant_delta
     trace = assessment.trace_group.primary_trace
@@ -61,17 +59,15 @@ def assess_targeted_delta_mass(raw, assessment: TargetedCandidateAssessment):
         signal_processing_method=assessment.config.signal_processing_method,
         signal_processing_window_points=assessment.config.signal_processing_window_points,
     )
-    partners = [p for p in settings.positions if p.label != target.quant_position]
+    partners = [p for p in settings.positions if p.label != quant_position]
     requests = tuple(
         XICRequest(base_mz + p.delta_da, trace.rt_min, trace.rt_max, target.ppm_tol)
         for p in partners
     )
     traces = raw.extract_xic_many(requests)
     features = []
-    candidates_by_position = {
-        target.quant_position: tuple(assessment.candidate_evaluations)
-    }
-    evaluations_by_position = {target.quant_position: assessment.candidate_evaluations}
+    candidates_by_position = {quant_position: tuple(assessment.candidate_evaluations)}
+    evaluations_by_position = {quant_position: assessment.candidate_evaluations}
     for position, acquired in zip(partners, traces, strict=True):
         prepared = prepare_physical_signal(
             acquired.rt, acquired.intensity, profile=profile
@@ -140,9 +136,7 @@ def assess_targeted_delta_mass(raw, assessment: TargetedCandidateAssessment):
             measured_position.mz_error_ppm = None
     return {
         candidate: tuple(
-            h
-            for h in hypotheses
-            if h.anchor_feature_id == f"{target.quant_position}:{index}"
+            h for h in hypotheses if h.anchor_feature_id == f"{quant_position}:{index}"
         )
         for index, candidate in enumerate(assessment.candidate_evaluations)
     }

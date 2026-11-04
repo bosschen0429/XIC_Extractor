@@ -93,67 +93,57 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ),
 )
 _HEADERS = ("工作表", "欄位", "意思", "單位")
-_DELTA_MASS_GUIDE = (
+_IDENTIFICATION_GUIDE = (
+    ("Targets", "Method", "本次使用的辨認方法；定量仍取 Target m/z 通道。", ""),
     (
-        "Targets",
-        "Delta Mass Method / Quant Position",
-        "使用的命名方法，以及 Target m/z 與面積所對應的位置。",
-        "",
-    ),
-    (
-        "Delta Mass Methods",
+        "Identification Methods",
         "Method / Definition",
-        "本次實際使用的方法名稱與完整設定 JSON；可在 Inspector 查看。",
+        "完整方法設定 JSON，包含 AND／OR 與條件。",
         "",
     ),
     (
-        "Delta Mass Evidence",
-        "SampleName / Target / Method",
-        "這筆配對證據所屬的樣本、目標與方法。",
-        "",
-    ),
-    (
-        "Delta Mass Evidence",
-        "Quant Position / Candidate RT",
-        "定量通道的位置名稱與候選峰頂 RT。",
+        "Method Evidence",
+        "Candidate / RT Start / RT End / Selected",
+        "同一樣本、目標的候選定量峰與範圍；TRUE 為所選候選。",
         "min",
     ),
     (
-        "Delta Mass Evidence",
-        "Selected / Pattern Status / Reason",
-        "TRUE 為所選候選；pass＝符合、fail＝不符、"
-        "no_match＝沒有配對、error＝讀取失敗。",
+        "Method Evidence",
+        "Combine / Method Accepted / Condition / Status",
+        "all＝全部符合，any＝任一符合；matched＝符合、not_matched＝不符、"
+        "not_acquired＝未取得 MS2、not_evaluated＝沒有候選可評估。"
+        "證據不可跨峰組合。",
         "",
     ),
     (
         "Delta Mass Evidence",
-        "Position / Expected m/z",
-        "位置名稱與 XIC 查詢中心；不是實測質量或零誤差宣稱。",
-        "m/z",
+        "Condition / Reference Position",
+        "條件編號及作為強度、峰形參考的定量位置（0）。",
+        "",
     ),
     (
         "Delta Mass Evidence",
-        "Apex RT / Apex Delta sec",
-        "該位置的峰頂 RT，以及相對最低質量位置的峰頂時間差。",
-        "min / sec",
+        "Expected m/z / Apex Delta to Lowest sec",
+        "XIC 查詢中心（不是量測質心）；峰頂時間差相對最低 m/z 位置。",
+        "m/z / sec",
     ),
     (
         "Delta Mass Evidence",
-        "Height Ratio / Ratio Status",
-        "相對最低質量位置的強度比例；僅供參考，超出範圍不淘汰。",
+        "Height Ratio to Quant / Ratio Status",
+        "相對定量離子的強度比例；僅供參考，超出範圍不淘汰。",
         "",
     ),
     (
         "Delta Mass Evidence",
         "Shape r / Shape Threshold",
-        "設定位置與基準位置的峰形相關性及所用門檻；空白表示未評估。",
+        "相對定量離子的峰形相關性與門檻；空白為未評估。",
         "",
     ),
 )
 
 
-def build_field_guide_sheet(ws, *, delta_mass: bool = False) -> None:
-    entries = FIELD_GUIDE + (_DELTA_MASS_GUIDE if delta_mass else ())
+def build_field_guide_sheet(ws, *, identification_methods: bool = False) -> None:
+    entries = FIELD_GUIDE + (_IDENTIFICATION_GUIDE if identification_methods else ())
     _prepare_sheet(ws, landscape=False)
     _write_header(ws, 1, _HEADERS)
     for row, entry in enumerate(entries, start=2):

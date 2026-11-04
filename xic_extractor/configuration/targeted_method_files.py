@@ -15,14 +15,15 @@ from xic_extractor.configuration.csv_io import (
     TARGET_FIELDS,
     TARGET_WRITE_FIELDS,
 )
-from xic_extractor.configuration.delta_mass import (
-    DeltaMassPatternSettings,
-    delta_mass_methods_payload,
-    parse_delta_mass_methods,
-)
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
     resolve_settings,
+)
+from xic_extractor.configuration.targeted_identification import (
+    BUILTIN_TARGET_METHODS,
+    IdentificationMethod,
+    identification_methods_payload,
+    parse_identification_methods,
 )
 from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
@@ -39,16 +40,18 @@ class TargetedMethod:
     settings: Mapping[str, str]
     targets: tuple[Target, ...]
     target_rows: tuple[Mapping[str, str], ...]
-    delta_mass_methods: Mapping[str, DeltaMassPatternSettings] = field(
+    identification_methods: Mapping[str, IdentificationMethod] = field(
         default_factory=dict
     )
+    default_method: str = ""
 
 
 def create_targeted_method(
     settings: Mapping[str, str],
     target_rows: Sequence[Mapping[str, str]],
     *,
-    delta_mass_methods: Mapping | None = None,
+    identification_methods: Mapping | None = None,
+    default_method: str = "",
 ) -> TargetedMethod:
     """Admit an editable method without reading files."""
     unknown = sorted(
@@ -61,17 +64,28 @@ def create_targeted_method(
         raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
     rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
     try:
-        methods = parse_delta_mass_methods(
-            {} if delta_mass_methods is None else delta_mass_methods
+        methods = parse_identification_methods(
+            {} if identification_methods is None else identification_methods
         )
+        if not isinstance(default_method, str) or (
+            default_method
+            and default_method not in BUILTIN_TARGET_METHODS
+            and default_method not in methods
+        ):
+            raise ValueError(
+                "default_method must reference a defined or built-in method"
+            )
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
-    targets = parse_target_rows(rows, delta_mass_methods=methods)
+    targets = parse_target_rows(
+        rows, identification_methods=methods, default_method=default_method
+    )
     return TargetedMethod(
         MappingProxyType({"strategy": strategy}),
         targets,
         rows,
         MappingProxyType(methods),
+        default_method,
     )
 
 
@@ -97,17 +111,25 @@ def load_targeted_method(path: Path) -> TargetedMethod:
             raise ConfigError(f"{path}: duplicate method setting {key!r}")
         settings[key] = row.get("value", "")
     missing = set(METHOD_KEYS) - settings.keys()
-    extra = settings.keys() - set(METHOD_KEYS) - {"delta_mass_methods"}
+    extra = (
+        settings.keys()
+        - set(METHOD_KEYS)
+        - {"identification_methods", "default_method"}
+    )
     if missing or extra:
         raise ConfigError(
             f"{path}: 方法設定缺少 {sorted(missing)}；額外 {sorted(extra)}"
         )
     try:
-        methods = json.loads(settings.pop("delta_mass_methods", "{}"))
+        methods = json.loads(settings.pop("identification_methods", "{}"))
     except ValueError as exc:
-        raise ConfigError(f"{path}: invalid delta_mass_methods JSON") from exc
+        raise ConfigError(f"{path}: invalid identification_methods JSON") from exc
+    default_method = settings.pop("default_method", "")
     return create_targeted_method(
-        settings, tables["Targets"], delta_mass_methods=methods
+        settings,
+        tables["Targets"],
+        identification_methods=methods,
+        default_method=default_method,
     )
 
 
@@ -119,9 +141,19 @@ def load_target_table(path: Path) -> list[dict[str, str]]:
 
 def load_workbook_targets(path: Path) -> tuple[Target, ...]:
     """Read shared target intent, ignoring optional Targeted method settings."""
-    rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
-    if any(row.get("delta_mass_method") for row in rows):
+    import openpyxl
+
+    book = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        has_method_intent = "Method" in book.sheetnames and any(
+            row and row[0] in {"identification_methods", "default_method"}
+            for row in book["Method"].iter_rows(values_only=True)
+        )
+    finally:
+        book.close()
+    if has_method_intent:
         return load_targeted_method(path).targets
+    rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
     return parse_target_rows(rows, Path(path))
 
 
@@ -197,17 +229,31 @@ def save_targeted_method(method: TargetedMethod, path: Path) -> TargetedMethod:
                 + (
                     [
                         {
-                            "key": "delta_mass_methods",
+                            "key": "identification_methods",
                             "value": json.dumps(
-                                delta_mass_methods_payload(method.delta_mass_methods),
+                                identification_methods_payload(
+                                    method.identification_methods
+                                ),
                                 ensure_ascii=False,
                             ),
                             "description": (
-                                "Custom Delta Mass definitions; edit in the workbench"
+                                "Reusable identification conditions; "
+                                "edit in the workbench"
                             ),
                         }
                     ]
-                    if method.delta_mass_methods
+                    if method.identification_methods
+                    else []
+                )
+                + (
+                    [
+                        {
+                            "key": "default_method",
+                            "value": method.default_method,
+                            "description": "Default target identification method",
+                        }
+                    ]
+                    if method.default_method
                     else []
                 ),
             ),

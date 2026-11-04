@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
+    from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.targeted_peak_selection import (
         TargetedCandidateAssessment,
     )
@@ -78,15 +78,15 @@ class ExtractionResult:
     # RAW handle, callback or scoring closure crosses the worker boundary.
     targeted_candidate_assessment: TargetedCandidateAssessment | None = None
     context_admissible_candidate_indexes: tuple[int, ...] | None = None
-    delta_mass_candidates: tuple[DeltaMassCandidate, ...] = ()
-    selected_delta_mass_feature_id: str | None = None
+    method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = ()
+    selected_method_candidate_index: int | None = None
 
     @property
-    def selected_delta_mass_supported(self) -> bool:
+    def selected_method_supported(self) -> bool:
         return any(
-            item.anchor_feature_id == self.selected_delta_mass_feature_id
-            and item.status == "candidate"
-            for item in self.delta_mass_candidates
+            item.candidate_index == self.selected_method_candidate_index
+            and item.accepted
+            for item in self.method_candidate_evidence
         )
 
     def __post_init__(self) -> None:

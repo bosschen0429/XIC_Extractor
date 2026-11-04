@@ -1,10 +1,9 @@
-"""Shared, in-memory Delta Mass method definitions and editable input admission."""
+"""Shared, in-memory Delta Mass pattern settings."""
 
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass
 
 from xic_extractor.validation_primitives import require_finite_real
 
@@ -46,11 +45,18 @@ class DeltaMassPatternSettings:
     min_background_sigma: float = 5.0
     base_support_positions: tuple[str, ...] = ()
     min_base_support: float = 0.25
+    shape_reference_position: str = ""
+    ratio_reference_position: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.method_label, str) or not self.method_label.strip():
             raise ValueError("method_label must be non-empty text")
         labels = [p.label for p in self.positions]
+        if any(
+            value and value not in labels
+            for value in (self.shape_reference_position, self.ratio_reference_position)
+        ):
+            raise ValueError("shape and ratio reference must name pattern positions")
         deltas = [p.delta_da for p in self.positions]
         if (
             len(labels) < 2
@@ -110,46 +116,3 @@ class DeltaMassPatternSettings:
         require_finite_real(self.min_shape_r, name="min_shape_r")
         if not -1 <= self.min_shape_r <= 1:
             raise ValueError("min_shape_r must be between -1 and 1")
-
-
-def parse_delta_mass_methods(values: Mapping) -> dict[str, DeltaMassPatternSettings]:
-    """Admit named editable patterns at JSON/XLSX/HTTP intake boundaries."""
-    if not isinstance(values, Mapping):
-        raise ValueError("delta_mass_methods must be an object of named methods")
-    allowed = {field.name for field in fields(DeltaMassPatternSettings)}
-    methods = {}
-    for name, value in values.items():
-        if not isinstance(name, str) or not name.strip() or name != name.strip():
-            raise ValueError("Delta Mass method names must be nonempty and trimmed")
-        if not isinstance(value, Mapping) or set(value) - allowed:
-            raise ValueError(f"{name}: unsupported Delta Mass method fields")
-        try:
-            positions = tuple(DeltaMassPosition(**row) for row in value["positions"])
-            kwargs = {**value, "pattern_id": name, "method_label": name}
-            kwargs["positions"] = positions
-            kwargs["anchor_positions"] = tuple(
-                value.get("anchor_positions", [p.label for p in positions])
-            )
-            for key in ("discriminating_positions", "base_support_positions"):
-                kwargs[key] = tuple(value.get(key, ()))
-            methods[name] = DeltaMassPatternSettings(**kwargs)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"{name}: invalid Delta Mass method: {exc}") from exc
-    return methods
-
-
-def delta_mass_methods_payload(
-    methods: Mapping[str, DeltaMassPatternSettings],
-) -> dict[str, dict]:
-    result = {}
-    for name, settings in methods.items():
-        payload = asdict(settings)
-        for key in (
-            "positions",
-            "anchor_positions",
-            "discriminating_positions",
-            "base_support_positions",
-        ):
-            payload[key] = list(payload[key])
-        result[name] = payload
-    return result

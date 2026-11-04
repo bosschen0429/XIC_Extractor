@@ -81,12 +81,14 @@ def project_targeted_result(
             ),
         )
     nl_status = result.nl_token or ""
-    if target.delta_mass_settings is not None:
-        if result.selected_delta_mass_supported:
-            support = _merge_reasons(support, ("delta_mass_pattern_supported",))
-        else:
+    if target.identification_method is not None:
+        if result.selected_method_supported:
+            support = _merge_reasons(support, ("identification_method_supported",))
+        elif target.identification_method.conditions and not any(
+            candidate.accepted for candidate in result.method_candidate_evidence
+        ):
             not_counted = _merge_reasons(
-                not_counted, ("delta_mass_pattern_not_supported",)
+                not_counted, ("identification_method_not_supported",)
             )
     return build_targeted_product_projection(
         TargetedProductContext(

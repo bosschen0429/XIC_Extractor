@@ -403,28 +403,36 @@
         ['NL (Da)', target['NL (Da)']], ['NL 容差 warn / max (ppm)', `${value(target['NL ppm warn'])} / ${value(target['NL ppm max'])}`],
         ['樣本適用範圍', target['Sample applicability']],
       ]));
-      if (item.details.delta_mass_method) {
-        const pattern = item.details.delta_mass_method;
-        method.append(facts([
-          ['Delta Mass 方法', target['Delta Mass Method']], ['定量位置', target['Quant Position']],
-          ['質量容差 (ppm)', pattern.mz_tolerance_ppm], ['峰頂容差下限 (sec)', pattern.apex_floor_sec],
-          ['峰形相關性下限', pattern.min_shape_r],
-          ['位置（Δ m/z）', pattern.positions.map(position => `${position.label}: ${position.delta_da}`).join(' · ')],
-        ]));
-        const evidence = element('details', undefined, 'tgt-method');
-        evidence.append(element('summary', 'Delta Mass 配對證據'));
-        evidence.append(element('p', '各通道為設定的 m/z 容差視窗；不是零誤差的實測質量。強度比例只供參考。', 'tgt-note'));
-        const table = element('table'); const header = element('tr');
-        const fields = [['SampleName', '樣本'], ['Candidate RT', '定量峰 RT'], ['Selected', '已選'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Apex Delta sec', 'Δ RT (s)'], ['Height Ratio', '強度比例'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']];
-        for (const [, label] of fields) header.append(element('th', label));
-        table.append(header);
-        for (const record of item.details.delta_mass_evidence || []) {
-          const row = element('tr');
-          for (const [key] of fields) row.append(element('td', value(record[key])));
-          table.append(row);
+      if (item.details.identification_method) {
+        const saved = item.details.identification_method;
+        const combinationLabel = saved.conditions.length ? (saved.combine_mode === 'any' ? '符合任一條件（OR）' : '符合全部條件（AND）') : 'MS1 only';
+        method.append(facts([['辨認方式', combinationLabel], ['m/z 容差 (ppm)', saved.mz_tolerance_ppm]]));
+        const definitions = element('details'); definitions.append(element('summary', '已儲存的辨認條件'));
+        saved.conditions.forEach((condition, index) => {
+          definitions.append(element('h4', `${index + 1}. ${condition.kind === 'cid_nl' ? `CID-NL · ${condition.tag}` : condition.label}`));
+          if (condition.kind === 'delta_mass') {
+            definitions.append(facts(condition.positions.map(p => [p.label, `${p.offset_mz > 0 ? '+' : ''}${p.offset_mz} m/z${p.offset_mz === 0 ? '（定量離子）' : ''}${p.compare_shape ? ' · 比較峰形' : ''}`])));
+            definitions.append(facts([['共洗脫容差下限 (s)', condition.apex_floor_sec], ['峰形最低 r', condition.min_shape_r], ['強度比例／峰形參考', '定量離子（0）']]));
+          }
+        });
+        method.append(definitions);
+        const statuses = {matched: '符合', not_matched: '不符合', not_acquired: '未取得 MS2', not_evaluated: '未評估', not_required: '不要求條件', TRUE: '是', FALSE: '否', pass: '通過', fail: '未通過'};
+        for (const [title, records, fields, collapsed] of [
+          [`辨認條件結果 · ${combinationLabel}`, item.details.method_evidence || [], [['SampleName', '樣本'], ['Candidate', '候選'], ['Candidate RT', '候選峰 RT'], ['Selected', '已選'], ['Method Accepted', '方法符合'], ['Condition', '條件編號'], ['Condition Label', '條件'], ['Status', '結果'], ['Reason', '說明']], false],
+          ['Delta Mass 配對明細', item.details.delta_mass_evidence || [], [['SampleName', '樣本'], ['Candidate RT', '候選峰 RT'], ['Condition', '條件'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Height Ratio to Quant', '相對定量離子強度'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']], true],
+        ]) {
+          if (!records.length) continue;
+          const evidence = element(collapsed ? 'details' : 'div'); evidence.append(element(collapsed ? 'summary' : 'h4', title));
+          const table = element('table', undefined, 'tgt-method-table'); const header = element('tr');
+          for (const [, label] of fields) header.append(element('th', label));
+          table.append(header);
+          for (const record of records) {
+            const row = element('tr');
+            for (const [key] of fields) row.append(element('td', statuses[record[key]] || value(record[key])));
+            table.append(row);
+          }
+          const scroll = element('div', undefined, 'tgt-table-scroll'); scroll.append(table); evidence.append(scroll); section.append(evidence);
         }
-        const scroll = element('div', undefined, 'tgt-table-scroll'); scroll.append(table); evidence.append(scroll);
-        section.append(evidence);
       }
       const labels = {
         signal_processing_method: '平滑方法', signal_processing_window_points: '平滑視窗 (points)',

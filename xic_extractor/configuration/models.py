@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.configuration.execution_profile import default_parallel_workers
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -11,6 +10,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
+from xic_extractor.configuration.targeted_identification import IdentificationMethod
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     normalize_resolver_mode,
@@ -85,9 +85,8 @@ class Target:
     sample_applicability: str = "all"
     expected_rt_min: float | None = None
     cid_nl_tag: str = ""
-    delta_mass_method: str = ""
-    quant_position: str = ""
-    delta_mass_settings: DeltaMassPatternSettings | None = None
+    method_name: str = ""
+    identification_method: IdentificationMethod | None = None
 
 
 class ConfigError(Exception):

@@ -94,8 +94,9 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "delta_mass_methods": read_workspace(self.config_dir).get(
-                "delta_mass_methods", {}
+            "default_method": read_workspace(self.config_dir).get("default_method", ""),
+            "identification_methods": read_workspace(self.config_dir).get(
+                "identification_methods", {}
             ),
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
@@ -195,19 +196,19 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
-        if action == "targeted/delta-mass/validate":
-            from xic_extractor.configuration.delta_mass import (
-                delta_mass_methods_payload,
-                parse_delta_mass_methods,
+        if action == "targeted/method/validate":
+            from xic_extractor.configuration.targeted_identification import (
+                identification_methods_payload,
+                parse_identification_methods,
             )
 
             try:
-                methods = parse_delta_mass_methods(values["delta_mass_methods"])
+                methods = parse_identification_methods(values["identification_methods"])
             except ValueError as exc:
                 return {"valid": False, "error": str(exc)}
             return {
                 "valid": True,
-                "delta_mass_methods": delta_mass_methods_payload(methods),
+                "identification_methods": identification_methods_payload(methods),
             }
         if action == "targeted/method/save":
             from xic_extractor.configuration.targeted_method_files import (
@@ -240,7 +241,8 @@ class AnalysisWorkspace:
             method = create_targeted_method(
                 values["settings"],
                 values["targets"],
-                delta_mass_methods=values.get("delta_mass_methods", {}),
+                identification_methods=values.get("identification_methods", {}),
+                default_method=values.get("default_method", ""),
             )
             save_targeted_method(method, path)
             return {
@@ -249,8 +251,8 @@ class AnalysisWorkspace:
                 "message": f"已儲存方法：{name}",
             }
         if action == "targeted/method/load":
-            from xic_extractor.configuration.delta_mass import (
-                delta_mass_methods_payload,
+            from xic_extractor.configuration.targeted_identification import (
+                identification_methods_payload,
             )
             from xic_extractor.configuration.targeted_method_files import (
                 apply_targeted_method,
@@ -263,9 +265,10 @@ class AnalysisWorkspace:
             return {
                 "settings": settings,
                 "targets": [dict(row) for row in method.target_rows],
-                "delta_mass_methods": delta_mass_methods_payload(
-                    method.delta_mass_methods
+                "identification_methods": identification_methods_payload(
+                    method.identification_methods
                 ),
+                "default_method": method.default_method,
                 "summary": method_summary(settings),
             }
         if action == "preferences":
@@ -283,7 +286,8 @@ class AnalysisWorkspace:
                 values["settings"],
                 values["targets"],
                 config_dir=self.config_dir,
-                delta_mass_methods=values.get("delta_mass_methods"),
+                identification_methods=values.get("identification_methods"),
+                default_method=values.get("default_method"),
             )
             if values.get("output_dir"):
                 write_preferences(
@@ -317,11 +321,16 @@ class AnalysisWorkspace:
             )
 
             path = Path(values["path"])
-            if any(row.get("delta_mass_method") for row in values["targets"]):
+            if (
+                values.get("default_method")
+                or values.get("identification_methods")
+                or any(row.get("method") for row in values["targets"])
+            ):
                 method = create_targeted_method(
                     {},
                     values["targets"],
-                    delta_mass_methods=values.get("delta_mass_methods", {}),
+                    identification_methods=values.get("identification_methods", {}),
+                    default_method=values.get("default_method", ""),
                 )
                 save_targeted_method(method, path)
             else:

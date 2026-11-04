@@ -71,6 +71,9 @@ def serialize_preset(
         delta_mass_settings = apply_to_delta_mass_discovery(effective_preset)
         effective = asdict(delta_mass_settings)
         effective.pop("pattern_id")
+        # Targeted reference roles are not Discovery preset parameters.
+        effective.pop("shape_reference_position")
+        effective.pop("ratio_reference_position")
         effective["delta_mass_mz_tolerance_ppm"] = effective.pop("mz_tolerance_ppm")
         effective["detector"] = effective_preset.discovery_overrides.get("detector", {})
         discovery_values: Mapping[str, object] = effective

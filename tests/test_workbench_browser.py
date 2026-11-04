@@ -735,6 +735,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     expect(
         page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
     ).to_have_value("2.75")
+    page.locator("#target-method-overrides").check()
     expect(
         page.get_by_role("combobox", name="方法（第 1 列）", exact=True)
     ).to_have_value(f"cid:{tag}" if tag else "")
@@ -742,48 +743,121 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     expect(page.locator("#t-parallel_workers")).to_have_value("2")
 
 
-@pytest.mark.parametrize("theme", ["light", "dark"])
-def test_targeted_custom_delta_mass_editor_binds_and_persists(
-    workbench, config_dir, tmp_path, theme
+@pytest.mark.parametrize("theme,mode", [("light", "all"), ("dark", "any")])
+def test_targeted_unified_method_editor_binds_and_persists(
+    workbench, config_dir, tmp_path, theme, mode
 ):
     page = workbench
     if theme == "dark":
         with page.expect_response("**/api/preferences"):
             page.locator("#theme-toggle").click()
     expect(page.locator("html")).to_have_attribute("data-theme", theme)
-    page.locator("#target-delta-edit").click()
-    page.locator("#target-delta-name").fill("Custom pair")
-    page.get_by_label("Δ m/z（位置 2）", exact=True).fill("0")
-    page.locator("#target-delta-apply").click()
-    expect(page.locator("#target-delta-error")).not_to_be_empty()
-    expect(page.locator("#target-delta-editor")).to_be_visible()
-    page.get_by_label("Δ m/z（位置 2）", exact=True).fill("2.002")
-    page.locator("#target-delta-ppm").fill("12")
-    page.locator("#target-delta-apply").click()
-    expect(page.locator("#target-delta-editor")).not_to_be_visible()
-    page.locator("#target-edit").click()
-    page.get_by_role("combobox", name="方法（第 1 列）", exact=True).select_option(
-        "delta:Custom pair"
+    page.locator("#target-identification-edit").click()
+    page.locator("#target-identification-name").fill("Custom pair")
+    page.locator("#target-identification-combine").select_option(mode)
+    expect(page.locator("#target-condition-kind option")).to_have_count(2)
+    page.locator("#target-condition-kind").select_option("delta_mass")
+    page.locator("#target-condition-add").click()
+    expect(page.get_by_label("Δ m/z（條件 2，位置 1）", exact=True)).to_have_attribute(
+        "readonly", ""
     )
-    page.get_by_role("combobox", name="定量位置（第 1 列）", exact=True).select_option(
-        "partner"
+    page.get_by_label("Δ m/z（條件 2，位置 2）", exact=True).fill("0")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-error")).not_to_be_empty()
+    expect(page.locator("#target-identification-editor")).to_be_visible()
+    page.get_by_label("Δ m/z（條件 2，位置 2）", exact=True).fill("-2.002")
+    expect(page.locator("#target-identification-ppm")).not_to_be_visible()
+    page.get_by_text("進階：m/z 容差", exact=True).click()
+    page.locator("#target-identification-ppm").fill("12")
+    page.locator("#target-identification-apply").click()
+    expect(page.locator("#target-identification-editor")).not_to_be_visible()
+    expect(page.locator("#target-method-default")).to_have_value("Custom pair")
+    page.locator("#target-save").click()
+    expect(page.locator("#toasts .toast.ok").filter(has_text="已儲存")).to_be_visible()
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    expect(page.locator("#target-preview")).to_contain_text("Custom pair")
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    assert state["default_method"] == "Custom pair"
+    saved = state["identification_methods"]["Custom pair"]
+    assert saved["combine_mode"] == mode
+    assert saved["mz_tolerance_ppm"] == 12
+    assert saved["conditions"][1]["positions"][1]["offset_mz"] == -2.002
+    page.locator("#target-identification-edit").click()
+    expect(page.get_by_label("Δ m/z（條件 2，位置 2）", exact=True)).to_have_value(
+        "-2.002"
+    )
+    # Advanced panels start closed on each editor opening; common setup stays short.
+    expect(page.locator("#target-identification-ppm")).not_to_be_visible()
+    page.locator("#target-identification-editor").evaluate(
+        "dialog => Promise.all(dialog.getAnimations({subtree: true})"
+        ".map(animation => animation.finished))"
+    )
+    controls = [
+        page.locator(f"#{name}").bounding_box()
+        for name in [
+            "target-identification-select",
+            "target-identification-name",
+            "target-identification-combine",
+        ]
+    ]
+    assert all(box is not None for box in controls)
+    assert max(box["y"] for box in controls) - min(box["y"] for box in controls) <= 1
+    assert {round(box["height"]) for box in controls} == {38}
+    for position in [1, 2]:
+        name = page.get_by_label(
+            f"位置名稱（條件 2，位置 {position}）", exact=True
+        ).bounding_box()
+        offset = page.get_by_label(
+            f"Δ m/z（條件 2，位置 {position}）", exact=True
+        ).bounding_box()
+        assert abs(name["y"] - offset["y"]) <= 1
+        assert name["height"] == offset["height"] == 38
+    page.locator("#target-identification-editor").screenshot(
+        path=str(tmp_path / f"identification-{theme}.png")
+    )
+    page.get_by_text("進階：共洗脫、峰形與強度比例", exact=True).click()
+    page.locator(".method-ratio-table").scroll_into_view_if_needed()
+    heading = page.locator(".method-ratio-table th:last-child").bounding_box()
+    checkbox = page.get_by_label(
+        "比較峰形（條件 2，位置 2）", exact=True
+    ).bounding_box()
+    assert (
+        abs(heading["x"] + heading["width"] / 2 - checkbox["x"] - checkbox["width"] / 2)
+        <= 1
+    )
+    page.locator("#target-identification-editor").screenshot(
+        path=str(tmp_path / f"identification-advanced-{theme}.png")
+    )
+    page.get_by_role("button", name="關閉辨認方法", exact=True).click()
+    rows = [
+        page.locator(selector).bounding_box()
+        for selector in [
+            "#target-dropzone .drop-target",
+            "#target-method-select",
+            "#target-method-default",
+        ]
+    ]
+    assert max(box["x"] for box in rows) - min(box["x"] for box in rows) <= 1
+    assert {round(box["height"]) for box in rows} == {38}
+    page.locator(".card").filter(has=page.locator("#target-method-default")).screenshot(
+        path=str(tmp_path / f"method-default-{theme}.png")
+    )
+    page.locator("#target-edit").click()
+    expect(
+        page.get_by_role("combobox", name="方法（第 1 列）", exact=True)
+    ).not_to_be_visible()
+    page.locator("#target-method-overrides").check()
+    page.get_by_role("combobox", name="方法（第 1 列）", exact=True).select_option(
+        "ms1"
     )
     page.locator("#target-editor-save").click()
     expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
-    expect(page.locator("html")).to_have_attribute("data-theme", theme)
-    expect(page.locator("#target-preview")).to_contain_text("Custom pair · partner")
+    expect(page.locator("#target-method-default")).to_have_value("Custom pair")
+    expect(page.locator("#target-preview")).to_contain_text("MS1 only")
     state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
-    assert state["targets"][0]["cid_nl_tag"] == ""
-    assert state["targets"][0]["quant_position"] == "partner"
-    assert state["delta_mass_methods"]["Custom pair"]["mz_tolerance_ppm"] == 12
-    page.locator("#target-delta-edit").click()
-    page.locator("#target-delta-select").select_option("Custom pair")
-    expect(page.get_by_label("Δ m/z（位置 2）", exact=True)).to_have_value("2.002")
-    expect(page.locator("#target-delta-ppm")).to_have_value("12")
-    page.locator("#target-delta-editor").screenshot(
-        path=str(tmp_path / f"delta-mass-{theme}.png")
-    )
+    assert state["targets"][0]["method"] == "ms1"
 
 
 def test_target_list_save_and_load_preserves_batch(workbench):
@@ -1839,7 +1913,7 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
     expect(page.locator("#review")).to_have_class("review-grid")
 
 
-def test_saved_delta_mass_evidence_is_visible_and_readonly(workbench, tmp_path):
+def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_path):
     from openpyxl import Workbook
 
     from tests.test_targeted_delta_mass import pattern
@@ -1854,11 +1928,10 @@ def test_saved_delta_mass_evidence_is_visible_and_readonly(workbench, tmp_path):
             "m/z",
             "RT min",
             "RT max",
-            "Delta Mass Method",
-            "Quant Position",
+            "Method",
         ]
     )
-    targets.append(["Custom target", "Analyte", 302, 2, 2, "my pair", "heavy"])
+    targets.append(["Custom target", "Analyte", 302, 2, 2, "my pair"])
     results = book.create_sheet("XIC Results")
     results.append(
         [
@@ -1891,9 +1964,18 @@ def test_saved_delta_mass_evidence_is_visible_and_readonly(workbench, tmp_path):
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
-    definitions = book.create_sheet("Delta Mass Methods")
+    definitions = book.create_sheet("Identification Methods")
     definitions.append(["Method", "Definition"])
-    definitions.append(["my pair", json.dumps(pattern())])
+    definition = pattern()
+    definition["combine_mode"] = "any"
+    definition["conditions"].insert(0, {"kind": "cid_nl", "tag": "dR"})
+    definitions.append(["my pair", json.dumps(definition)])
+    answers = book.create_sheet("Method Evidence")
+    answers.append(["SampleName", "Target", "Method", "Condition Label", "Status"])
+    answers.append(
+        ["Sample A", "Custom target", "my pair", "CID-NL · dR", "not_acquired"]
+    )
+    answers.append(["Sample A", "Custom target", "my pair", "Delta Mass", "matched"])
     evidence = book.create_sheet("Delta Mass Evidence")
     evidence.append(
         [
@@ -1918,13 +2000,17 @@ def test_saved_delta_mass_evidence_is_visible_and_readonly(workbench, tmp_path):
     page.locator("#source").fill(str(path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Custom target").click()
-    page.locator("summary", has_text="Delta Mass 配對證據").click()
+    expect(page.locator(".tgt-review")).to_contain_text("未取得 MS2")
+    expect(page.locator(".tgt-review")).to_contain_text("符合任一條件（OR）")
+    page.locator("summary", has_text="Delta Mass 配對明細").click()
     panel = page.locator("details").filter(
-        has=page.locator("summary", has_text="Delta Mass 配對證據")
+        has=page.locator("summary", has_text="Delta Mass 配對明細")
     )
     expect(panel).to_contain_text("Sample A")
     expect(panel).to_contain_text("heavy")
     expect(panel).to_contain_text("0.987")
+    expect(page.get_by_role("cell", name="未取得 MS2", exact=True)).to_be_visible()
+    page.locator(".tgt-review").screenshot(path=str(tmp_path / "method-evidence.png"))
     assert path.read_bytes() == original
 
 

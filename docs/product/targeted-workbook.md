@@ -16,8 +16,9 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
 | `Targets` | Admitted target intent | Inspector, human |
-| `Delta Mass Methods` | Named pattern definitions; only with Delta Mass targets | Inspector, reproducibility |
-| `Delta Mass Evidence` | Per-position pattern answers, selected-candidate flags and unmatched searches; only with Delta Mass targets | Inspector, human |
+| `Identification Methods` | Used custom method definitions with combination mode and clauses | Inspector, reproducibility |
+| `Method Evidence` | Same-peak candidate/condition statuses and method acceptance | Inspector, human |
+| `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; only with Delta Mass clauses | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
 | `欄位說明` | Meaning and unit of every delivered column | Human |
 | `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
@@ -29,11 +30,19 @@ positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
 
-Delta Mass runs append `Delta Mass Method` and `Quant Position` to `Targets`.
-Existing CID-NL/MS1-only runs keep their original sheets and columns. Pattern
-evidence records XIC query masses, not measured centroids. Height ratios remain
-reference evidence. The Inspector's **Delta Mass 配對證據** section reads these
-saved answers; neither the writer nor Inspector reruns the scientific matcher.
+Custom-method runs append `Method` to `Targets`. Existing CID-NL/MS1-only runs
+keep their original sheets and columns. `Method Evidence` records each sample,
+target, candidate interval, selected flag, all/any combination, method acceptance,
+and clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
+when no candidate could be assessed. An explicit empty method uses `not_required`.
+
+Delta Mass details record XIC query masses, not measured centroids. Height ratios
+and shape comparisons reference the quantitation ion; ratios remain annotation.
+`Apex Delta to Lowest sec` explicitly retains the matcher's lowest-m/z RT reference.
+Inspector shows **辨認條件結果** and collapsible **Delta Mass 配對明細** from these
+saved answers. CID-NL clauses in custom methods are reported in `Method Evidence`,
+not fabricated legacy NL columns. Neither writer nor Inspector reruns scientific
+decisions.
 
 ## Content rules
 

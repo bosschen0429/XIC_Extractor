@@ -9,15 +9,15 @@ from xic_extractor.configuration.csv_io import (
     read_settings,
     write_config_snapshot,
 )
-from xic_extractor.configuration.delta_mass import (
-    delta_mass_methods_payload,
-    parse_delta_mass_methods,
-)
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import (
     build_extraction_config,
     resolve_settings,
+)
+from xic_extractor.configuration.targeted_identification import (
+    identification_methods_payload,
+    parse_identification_methods,
 )
 from xic_extractor.configuration.targeted_method_files import (
     apply_targeted_method,
@@ -89,12 +89,15 @@ def prepare_targeted_config(
     )
     if method is None:
         method = create_targeted_method(
-            {}, state["targets"], delta_mass_methods=state.get("delta_mass_methods", {})
+            {},
+            state["targets"],
+            identification_methods=state.get("identification_methods", {}),
+            default_method=state.get("default_method", ""),
         )
     target_rows, targets, methods = (
         method.target_rows,
         method.targets,
-        method.delta_mass_methods,
+        method.identification_methods,
     )
     order_source = values.get("injection_order_source", "").strip()
     output_dir = (
@@ -117,9 +120,13 @@ def prepare_targeted_config(
             LOGGER.warning(warning)
         write_config_snapshot(receipt_dir, values, target_rows)
         if methods:
-            (receipt_dir / "delta_mass_methods.json").write_text(
-                json.dumps(delta_mass_methods_payload(methods), ensure_ascii=False),
+            (receipt_dir / "identification_methods.json").write_text(
+                json.dumps(identification_methods_payload(methods), ensure_ascii=False),
                 encoding="utf-8",
+            )
+        if method.default_method:
+            (receipt_dir / "default_method.txt").write_text(
+                method.default_method, encoding="utf-8"
             )
         output_dir.mkdir(parents=True, exist_ok=True)
         config = build_extraction_config(
@@ -165,13 +172,20 @@ def load_config_snapshot(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = build_extraction_config(parsed, settings, settings_path, output_dir)
-    method_path = config_dir / "delta_mass_methods.json"
-    methods = parse_delta_mass_methods(
+    method_path = config_dir / "identification_methods.json"
+    methods = parse_identification_methods(
         json.loads(method_path.read_text(encoding="utf-8"))
         if method_path.exists()
         else {}
     )
-    targets = _read_targets(targets_path, delta_mass_methods=methods)
+    default_path = config_dir / "default_method.txt"
+    targets = _read_targets(
+        targets_path,
+        identification_methods=methods,
+        default_method=default_path.read_text(encoding="utf-8")
+        if default_path.exists()
+        else "",
+    )
     target_config_hash = compute_target_config_hash(targets_path)
     config = ExtractionConfig(
         **{

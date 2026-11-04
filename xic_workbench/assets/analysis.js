@@ -5,7 +5,8 @@
   const state = {
     config: null,
     targets: [],
-    deltaMassMethods: {},
+    identificationMethods: {},
+    defaultMethod: "",
     sampleSets: { targeted: null, untargeted: null },
     pendingExclusions: new Set(),
     editing: "untargeted",
@@ -558,7 +559,9 @@
     lock();
   }
   function applyTargetedDraft(result) {
-    state.deltaMassMethods = result.delta_mass_methods || {};
+    state.identificationMethods = result.identification_methods || {};
+    state.defaultMethod = result.default_method || "";
+    renderDefaultMethod();
     state.config.settings = result.settings;
     renderSettings(result.settings);
     setMethodState(result.summary);
@@ -648,7 +651,7 @@
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
     const output_dir = $("t-output_dir").value;
-    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir, delta_mass_methods: state.deltaMassMethods });
+    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir, identification_methods: state.identificationMethods, default_method: state.defaultMethod });
     state.config.settings = settings;
     state.config.targeted_output_dir = output_dir;
     state.config.settings_source = "workspace.json";
@@ -700,7 +703,7 @@
           row.expected_rt_min || "—",
           "num",
         ),
-        el("td", row.delta_mass_method ? `Δ ${row.delta_mass_method} · ${row.quant_position || "未指定定量位置"}` : row.cid_nl_tag ? `CID-NL ${row.cid_nl_tag}` : "MS1-only"),
+        el("td", methodLabel(row.method || state.defaultMethod || (row.cid_nl_tag ? `cid:${row.cid_nl_tag}` : "ms1"))),
         el("td", row.istd_pair || "—"),
       );
       body.append(tr);
@@ -725,20 +728,20 @@
     ["mz", "m/z"],
     ["expected_rt_min", "預期 RT（min）"],
     ["method", "方法"],
-    ["quant_position", "定量位置"],
   ];
   function renderTargets() {
+    const columns = targetColumns.filter(([key]) => key !== "method" || $("target-method-overrides").checked);
     const head = el("tr");
-    for (const [, label] of targetColumns) head.append(el("th", label));
+    for (const [, label] of columns) head.append(el("th", label));
     head.append(el("th", ""));
     $("target-head").replaceChildren(head);
     const body = $("target-rows");
     body.replaceChildren();
     state.targets.forEach((row, index) => {
       const tr = el("tr");
-      for (const [key, label] of targetColumns) {
+      for (const [key, label] of columns) {
         const td = el("td");
-        const input = el(["pairing", "method", "quant_position"].includes(key) ? "select" : "input");
+        const input = el(["pairing", "method"].includes(key) ? "select" : "input");
         input.setAttribute("aria-label", `${label}（第 ${index + 1} 列）`);
         if (key === "pairing") {
           const choices = [["", "未配對"], ["role:istd", "此列是 ISTD"]];
@@ -755,17 +758,10 @@
           }
           input.value = value;
         } else if (key === "method") {
-          input.add(new Option("MS1-only", ""));
-          for (const tag of ["dR", "R", "MeR"]) input.add(new Option(`CID-NL ${tag}`, `cid:${tag}`));
-          for (const name of Object.keys(state.deltaMassMethods)) input.add(new Option(`Delta Mass: ${name}`, `delta:${name}`));
-          const value = row.delta_mass_method ? `delta:${row.delta_mass_method}` : row.cid_nl_tag ? `cid:${row.cid_nl_tag}` : "";
-          if (![...input.options].some((option) => option.value === value)) input.add(new Option(`${value}（方法未定義）`, value));
+          fillMethodOptions(input, state.defaultMethod ? '沿用整張表的方法' : 'MS1 only', true);
+          const value = row.method || (!state.defaultMethod && row.cid_nl_tag ? `cid:${row.cid_nl_tag}` : '');
+          if (![...input.options].some(option => option.value === value)) input.add(new Option(`${value}（方法未定義）`, value));
           input.value = value;
-        } else if (key === "quant_position") {
-          input.add(new Option("選擇定量位置", ""));
-          for (const position of state.deltaMassMethods[row.delta_mass_method]?.positions || []) input.add(new Option(position.label, position.label));
-          input.disabled = !row.delta_mass_method;
-          input.value = row.quant_position || "";
         } else {
           input.value = row[key] || "";
           if (
@@ -781,9 +777,8 @@
             row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
             renderTargets();
           } else if (key === "method") {
-            row.cid_nl_tag = input.value.startsWith("cid:") ? input.value.slice(4) : "";
-            row.delta_mass_method = input.value.startsWith("delta:") ? input.value.slice(6) : "";
-            row.quant_position = "";
+            row.method = input.value;
+            row.cid_nl_tag = "";
             renderTargets();
           } else row[key] = input.value;
           dirty("targeted");
@@ -812,64 +807,95 @@
     targetCount();
   }
 
-  let deltaDraft = null;
-  let deltaEditingName = "";
-  function loadDeltaDraft(name = "") {
-    deltaEditingName = name;
-    deltaDraft = structuredClone(state.deltaMassMethods[name] || {
-      positions: [
-        { label: "base", delta_da: 0, ratio_min: 1, ratio_max: 1 },
-        { label: "partner", delta_da: 1, ratio_min: 0.1, ratio_max: 10 },
-      ],
-      discriminating_positions: ["partner"],
-      mz_tolerance_ppm: 20, apex_floor_sec: 1, scan_interval_multiplier: 1.25,
-      shape_window_sec: 10, min_shape_r: 0.9,
-    });
-    $("target-delta-name").value = name;
-    for (const [id, key] of deltaFields) $(id).value = deltaDraft[key];
-    $("target-delta-error").textContent = "";
-    renderDeltaPositions();
+  function methodLabel(name) {
+    if (name === 'ms1') return 'MS1 only';
+    if (name.startsWith('cid:')) return `CID-NL · ${name.slice(4)}`;
+    const method = state.identificationMethods[name];
+    return method ? `${name} · ${method.conditions.length ? `${method.combine_mode === 'any' ? '任一' : '全部'} ${method.conditions.length} 條件` : 'MS1 only'}` : `${name}（方法未定義）`;
   }
-  const deltaFields = [
-    ["target-delta-ppm", "mz_tolerance_ppm"], ["target-delta-apex", "apex_floor_sec"],
-    ["target-delta-interval", "scan_interval_multiplier"], ["target-delta-window", "shape_window_sec"],
-    ["target-delta-shape", "min_shape_r"],
-  ];
-  function renderDeltaPositions() {
-    const body = $("target-delta-positions");
-    body.replaceChildren();
-    deltaDraft.positions.forEach((position, index) => {
-      const row = el("tr");
-      for (const [key, label] of [["label", "位置名稱"], ["delta_da", "Δ m/z"], ["ratio_min", "比例下限"], ["ratio_max", "比例上限"]]) {
-        const cell = el("td");
-        const input = el("input");
-        input.setAttribute("aria-label", `${label}（位置 ${index + 1}）`);
-        input.value = position[key];
-        if (key !== "label") { input.type = "number"; input.step = "any"; }
-        input.oninput = () => {
-          if (key === "label") {
-            deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.map((name) => name === position.label ? input.value : name);
+  function fillMethodOptions(select, emptyLabel, includeMs1 = true) {
+    select.replaceChildren(new Option(emptyLabel, ''));
+    if (includeMs1) select.add(new Option('MS1 only', 'ms1'));
+    for (const tag of ['dR', 'R', 'MeR']) select.add(new Option(`CID-NL · ${tag}`, `cid:${tag}`));
+    for (const name of Object.keys(state.identificationMethods)) select.add(new Option(methodLabel(name), name));
+  }
+  function renderDefaultMethod() {
+    const select = $('target-method-default');
+    fillMethodOptions(select, '依目前各列設定');
+    if (state.defaultMethod && ![...select.options].some(option => option.value === state.defaultMethod)) select.add(new Option(methodLabel(state.defaultMethod), state.defaultMethod));
+    select.value = state.defaultMethod;
+  }
+  let identificationDraft = null;
+  let identificationEditingName = '';
+  function newDeltaCondition() {
+    return {kind: 'delta_mass', label: 'Delta Mass', positions: [
+      {label: 'quant', offset_mz: 0, ratio_min: 0.1, ratio_max: 10, compare_shape: false},
+      {label: 'partner', offset_mz: 1, ratio_min: 0.1, ratio_max: 10, compare_shape: true},
+    ], apex_floor_sec: 1, scan_interval_multiplier: 1.25, shape_window_sec: 10, min_shape_r: 0.9};
+  }
+  function loadIdentificationDraft(name = '') {
+    identificationEditingName = name;
+    identificationDraft = structuredClone(state.identificationMethods[name] || {combine_mode: 'all', mz_tolerance_ppm: 20, conditions: [{kind: 'cid_nl', tag: 'dR'}]});
+    $('target-identification-name').value = name;
+    $('target-identification-combine').value = identificationDraft.combine_mode;
+    $('target-identification-ppm').value = identificationDraft.mz_tolerance_ppm;
+    $('target-identification-error').textContent = '';
+    renderIdentificationConditions();
+    $("target-identification-editor").querySelectorAll("details").forEach(panel => {panel.open = false;});
+  }
+  function numericEditor(value, label, update) {
+    const input = el('input'); input.type = 'number'; input.step = 'any'; input.value = value;
+    input.setAttribute('aria-label', label);
+    input.oninput = () => update(input.value === '' ? null : Number(input.value));
+    return input;
+  }
+  function renderIdentificationConditions() {
+    const body = $('target-identification-conditions'); body.replaceChildren();
+    if (!identificationDraft.conditions.length) body.append(el('p', 'MS1 only：僅依 MS1 訊號定量，不要求辨認條件。', 'subtle'));
+    identificationDraft.conditions.forEach((condition, index) => {
+      const card = el('section', undefined, 'method-condition');
+      const head = el('div', undefined, 'actions method-condition-head'); head.append(el('h3', `${index + 1}. ${condition.kind === 'cid_nl' ? 'CID-NL' : 'Delta Mass'}`));
+      const remove = button('移除條件', () => { identificationDraft.conditions.splice(index, 1); renderIdentificationConditions(); });
+      remove.setAttribute('aria-label', `移除條件 ${index + 1}`); head.append(remove); card.append(head);
+      if (condition.kind === 'cid_nl') {
+        const label = el('label', '中性丟失類型', 'method-condition-field'); const select = el('select'); select.setAttribute('aria-label', `CID-NL 類型（條件 ${index + 1}）`);
+        for (const tag of ['dR', 'R', 'MeR']) select.add(new Option(tag, tag));
+        select.value = condition.tag; select.onchange = () => {condition.tag = select.value;}; label.append(select); card.append(label);
+      } else {
+        card.append(el('p', '定量離子固定為 0；其他位置填正或負的 m/z 差值（已換算電荷）。面積只取定量離子。', 'subtle'));
+        const table = el('table', undefined, 'method-ion-table'); const header = el('tr'); for (const text of ['離子角色', '位置名稱', '相對定量離子 Δ m/z', '']) header.append(el('th', text)); table.append(header);
+        condition.positions.forEach((position, positionIndex) => {
+          const quant = position.offset_mz === 0 && positionIndex === condition.positions.findIndex(p => p.offset_mz === 0);
+          const row = el('tr'); row.append(el('td', quant ? '定量離子' : '配對離子', 'method-ion-role')); const nameCell = el('td'); const name = el('input'); name.value = position.label;
+          name.setAttribute('aria-label', `位置名稱（條件 ${index + 1}，位置 ${positionIndex + 1}）`); name.oninput = () => {position.label = name.value; const reference = card.querySelector(`[data-ratio-position="${positionIndex}"]`); if (reference) reference.textContent = name.value;}; nameCell.append(name); row.append(nameCell);
+          const offsetCell = el('td'); const offset = numericEditor(position.offset_mz, `Δ m/z（條件 ${index + 1}，位置 ${positionIndex + 1}）`, value => {position.offset_mz = value;});
+          offset.readOnly = quant; offsetCell.append(offset); row.append(offsetCell);
+          const removeCell = el('td'); const remove = button('移除位置', () => {condition.positions.splice(positionIndex, 1); renderIdentificationConditions();}); remove.setAttribute('aria-label', `移除位置 ${positionIndex + 1}（條件 ${index + 1}）`); if (quant) removeCell.append(el('span', '固定', 'subtle')); else removeCell.append(remove); row.append(removeCell); table.append(row);
+        });
+        const scroll = el('div', undefined, 'table-scroll editor-table'); scroll.append(table); card.append(scroll);
+        const add = button('新增配對位置', () => {condition.positions.push({label: `partner_${condition.positions.length}`, offset_mz: condition.positions.length, ratio_min: 0.1, ratio_max: 10, compare_shape: true}); renderIdentificationConditions();}); add.setAttribute('aria-label', `新增配對位置（條件 ${index + 1}）`); card.append(add);
+        const advanced = el('details'); advanced.append(el('summary', '進階：共洗脫、峰形與強度比例'));
+        const grid = el('div', undefined, 'settings-grid method-advanced-grid');
+        for (const [key, text] of [['apex_floor_sec', '峰頂 RT 容差下限（秒）'], ['scan_interval_multiplier', 'MS1 掃描間隔倍數'], ['shape_window_sec', '峰形比較半窗（秒）'], ['min_shape_r', '最低峰形相關性 r']]) {
+          const label = el('label', text); label.append(numericEditor(condition[key], `${text}（條件 ${index + 1}）`, value => {condition[key] = value;})); grid.append(label);
+        }
+        advanced.append(grid, el('p', '共洗脫容差取 RT 下限與掃描間隔倍數中較大者。峰形與強度比例皆以定量離子為參考；比例僅作註記，不淘汰候選。', 'subtle'));
+        const ratios = el('table', undefined, 'method-ratio-table'); const ratioHead = el('tr');
+        for (const text of ['配對位置', '比例下限', '比例上限', '比較峰形']) ratioHead.append(el('th', text));
+        ratios.append(ratioHead);
+        condition.positions.forEach((position, positionIndex) => {
+          if (position.offset_mz === 0) return;
+          const row = el('tr'); const name = el('td', position.label); name.dataset.ratioPosition = positionIndex; row.append(name);
+          for (const [key, text] of [['ratio_min', '比例下限'], ['ratio_max', '比例上限']]) {
+            const cell = el('td'); cell.append(numericEditor(position[key], `${text}（條件 ${index + 1}，位置 ${positionIndex + 1}）`, value => {position[key] = value;})); row.append(cell);
           }
-          position[key] = key === "label" ? input.value : input.value === "" ? null : Number(input.value);
-        };
-        cell.append(input); row.append(cell);
+          const cell = el('td'); const check = el('input'); check.type = 'checkbox'; check.checked = position.compare_shape;
+          check.setAttribute('aria-label', `比較峰形（條件 ${index + 1}，位置 ${positionIndex + 1}）`); check.onchange = () => {position.compare_shape = check.checked;}; cell.append(check); row.append(cell); ratios.append(row);
+        });
+        const ratioScroll = el('div', undefined, 'table-scroll editor-table'); ratioScroll.append(ratios); advanced.append(ratioScroll);
+        card.append(advanced);
       }
-      const shapeCell = el("td"); const shape = el("input"); shape.type = "checkbox";
-      shape.setAttribute("aria-label", `比對峰形（位置 ${index + 1}）`);
-      shape.checked = deltaDraft.discriminating_positions.includes(position.label);
-      shape.onchange = () => {
-        deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.filter((name) => name !== position.label);
-        if (shape.checked) deltaDraft.discriminating_positions.push(position.label);
-      };
-      shapeCell.append(shape); row.append(shapeCell);
-      const removeCell = el("td");
-      const remove = button("刪除", () => {
-        deltaDraft.positions.splice(index, 1);
-        deltaDraft.discriminating_positions = deltaDraft.discriminating_positions.filter((name) => name !== position.label);
-        renderDeltaPositions();
-      });
-      remove.setAttribute("aria-label", `刪除位置 ${index + 1}`);
-      removeCell.append(remove); row.append(removeCell); body.append(row);
+      body.append(card);
     });
   }
 
@@ -2449,7 +2475,7 @@
     $("target-method-save").onclick = () => act(async () => {
       const name = await requestPath("另存目標清單", "", "清單名稱（不含 .xlsx）");
       if (!name) return;
-      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets, delta_mass_methods: state.deltaMassMethods });
+      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets, identification_methods: state.identificationMethods, default_method: state.defaultMethod });
       state.config.targeted_methods = result.methods;
       renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
       done(`已另存目標清單：${result.name}`);
@@ -2473,39 +2499,36 @@
       }
     });
     $("target-edit").onclick = () => {
+      $("target-method-overrides").checked = state.targets.some(row => row.method || (!state.defaultMethod && row.cid_nl_tag));
       renderTargets();
       $("target-editor").showModal();
     };
-    $("target-delta-edit").onclick = () => {
-      const select = $("target-delta-select");
-      select.replaceChildren(new Option("新增方法", ""));
-      for (const name of Object.keys(state.deltaMassMethods)) select.add(new Option(name, name));
-      loadDeltaDraft();
-      $("target-delta-editor").showModal();
+    $('target-method-default').onchange = () => {state.defaultMethod = $('target-method-default').value; dirty('targeted'); targetCount();};
+    $('target-method-overrides').onchange = renderTargets;
+    $('target-identification-edit').onclick = () => {
+      const select = $('target-identification-select'); select.replaceChildren(new Option('新增方法', ''));
+      for (const name of Object.keys(state.identificationMethods)) select.add(new Option(name, name));
+      select.value = Object.hasOwn(state.identificationMethods, state.defaultMethod) ? state.defaultMethod : '';
+      loadIdentificationDraft(select.value); $('target-identification-editor').showModal();
     };
-    $("target-delta-select").onchange = () => loadDeltaDraft($("target-delta-select").value);
-    $("target-delta-add").onclick = () => {
-      deltaDraft.positions.push({ label: `position_${deltaDraft.positions.length + 1}`, delta_da: deltaDraft.positions.length, ratio_min: 0.1, ratio_max: 10 });
-      renderDeltaPositions();
-    };
-    $("target-delta-apply").onclick = async () => {
+    $('target-identification-select').onchange = () => loadIdentificationDraft($('target-identification-select').value);
+    $('target-condition-add').onclick = () => {identificationDraft.conditions.push($('target-condition-kind').value === 'cid_nl' ? {kind: 'cid_nl', tag: 'dR'} : newDeltaCondition()); renderIdentificationConditions();};
+    $('target-identification-apply').onclick = async () => {
       try {
-        const name = $("target-delta-name").value.trim();
-        if (name !== deltaEditingName && Object.hasOwn(state.deltaMassMethods, name)) throw new Error("方法名稱已存在，請選擇該方法編輯或使用新名稱。");
-        for (const [id, key] of deltaFields) deltaDraft[key] = $(id).value === "" ? null : Number($(id).value);
-        deltaDraft.anchor_positions = deltaDraft.positions.map((position) => position.label);
-        const methods = { ...state.deltaMassMethods, [name]: deltaDraft };
-        if (deltaEditingName && deltaEditingName !== name) delete methods[deltaEditingName];
-        const result = await api("/api/targeted/delta-mass/validate", { delta_mass_methods: methods });
+        const name = $('target-identification-name').value.trim();
+        if (name !== identificationEditingName && Object.hasOwn(state.identificationMethods, name)) throw new Error('方法名稱已存在，請選擇該方法編輯或使用新名稱。');
+        identificationDraft.combine_mode = $('target-identification-combine').value;
+        identificationDraft.mz_tolerance_ppm = $('target-identification-ppm').value === '' ? null : Number($('target-identification-ppm').value);
+        const methods = {...state.identificationMethods, [name]: identificationDraft};
+        if (identificationEditingName && identificationEditingName !== name) delete methods[identificationEditingName];
+        const result = await api('/api/targeted/method/validate', {identification_methods: methods});
         if (!result.valid) throw new Error(result.error);
-        state.deltaMassMethods = result.delta_mass_methods;
-        if (deltaEditingName && deltaEditingName !== name) {
-          for (const target of state.targets) if (target.delta_mass_method === deltaEditingName) target.delta_mass_method = name;
-        }
-        dirty("targeted"); targetCount();
-        $("target-delta-editor").close();
-        done(`已套用 Delta Mass 方法「${name}」。請在目標清單選擇方法及定量位置，儲存後保留。`);
-      } catch (error) { $("target-delta-error").textContent = error.message; }
+        state.identificationMethods = result.identification_methods;
+        if (identificationEditingName && identificationEditingName !== name) for (const target of state.targets) if (target.method === identificationEditingName) target.method = name;
+        state.defaultMethod = name;
+        renderDefaultMethod(); dirty('targeted'); targetCount(); $('target-identification-editor').close();
+        done(`已將辨認方法「${name}」設為整張表的預設；個別覆寫不變。儲存或開始分析後保留。`);
+      } catch (error) {$('target-identification-error').textContent = error.message;}
     };
     $("target-add").onclick = () => {
       state.targets.push({
@@ -2528,7 +2551,7 @@
     $("target-export").onclick = () => act(async () => {
       const path = await requestPath("匯出目標清單（.xlsx）");
       if (!path) return;
-      const result = await api("/api/targets/export", { path, targets: state.targets, delta_mass_methods: state.deltaMassMethods });
+      const result = await api("/api/targets/export", { path, targets: state.targets, identification_methods: state.identificationMethods, default_method: state.defaultMethod });
       done(result.message);
     });
     bindListUpload("target", previewTargetFiles);
@@ -2878,7 +2901,9 @@
     stopWindowTracking = ui.trackWindow();
     state.config = await api("/api/config");
     state.targets = state.config.targets;
-    state.deltaMassMethods = state.config.delta_mass_methods || {};
+    state.identificationMethods = state.config.identification_methods || {};
+    state.defaultMethod = state.config.default_method || "";
+    renderDefaultMethod();
     ui.setTheme(state.config.preferences.theme || "light");
     $("dll-dir").value = state.config.settings.dll_dir || "";
     applyThemeButton();

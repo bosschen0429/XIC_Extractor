@@ -16,9 +16,11 @@ LEGACY_TARGET_FIELDS = (
     "nl_ppm_warn",
     "nl_ppm_max",
     "is_istd",
+    "delta_mass_method",
+    "quant_position",
 )
 OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
-DELTA_MASS_TARGET_FIELDS = ("delta_mass_method", "quant_position")
+TARGET_METHOD_FIELDS = ("method",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")

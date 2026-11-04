@@ -42,24 +42,37 @@ def write_work(
     targets: list[dict[str, str]],
     *,
     config_dir: Path | None = None,
-    delta_mass_methods: dict | None = None,
+    identification_methods: dict | None = None,
+    default_method: str | None = None,
 ) -> dict[str, str]:
     values, _parsed, _warnings = resolve_settings(
         read_settings(config_dir=config_dir), settings
     )
+    from xic_extractor.configuration.targeted_identification import (
+        identification_methods_payload,
+    )
     from xic_extractor.configuration.targeted_method_files import create_targeted_method
 
     methods = (
-        delta_mass_methods
-        if delta_mass_methods is not None
-        else read_workspace(_runtime_dir(config_dir)).get("delta_mass_methods", {})
+        identification_methods
+        if identification_methods is not None
+        else read_workspace(_runtime_dir(config_dir)).get("identification_methods", {})
     )
-    create_targeted_method({}, targets, delta_mass_methods=methods)
+    if default_method is None:
+        default_method = read_workspace(_runtime_dir(config_dir)).get(
+            "default_method", ""
+        )
+    method = create_targeted_method(
+        {}, targets, identification_methods=methods, default_method=default_method
+    )
     save_workspace(
         _runtime_dir(config_dir),
         settings=values,
         targets=targets,
-        delta_mass_methods=methods,
+        identification_methods=identification_methods_payload(
+            method.identification_methods
+        ),
+        default_method=default_method,
     )
     return values
 

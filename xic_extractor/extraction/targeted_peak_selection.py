@@ -80,7 +80,7 @@ from xic_extractor.peak_detection.traces import TraceGroup
 from xic_extractor.precursor_evidence import PrecursorMassScope
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
+    from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.result_models import ExtractionResult
 
 _PRECURSOR_SCOPE_ROUNDOFF_DA = 1e-6
@@ -110,17 +110,17 @@ class TargetedCandidateAssessment:
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
     method_trigger_events: tuple[tuple[int, float], ...] = ()
-    delta_mass_assessments: Mapping[PeakCandidate, tuple[DeltaMassCandidate, ...]] = (
-        field(default_factory=dict)
+    method_assessments: Mapping[PeakCandidate, MethodCandidateEvidence] = field(
+        default_factory=dict
     )
     paired_istd_fwhm: float | None = None
     istd_confidence_note: str | None = None
     paired_istd_anchor_rt: float | None = None
 
     def method_admits(self, candidate: PeakCandidate) -> bool:
-        return self.target.delta_mass_settings is None or any(
-            match.status == "candidate"
-            for match in self.delta_mass_assessments.get(candidate, ())
+        return (
+            self.target.identification_method is None
+            or self.method_assessments[candidate].accepted
         )
 
     def population_context(self) -> TargetedPopulationContext:
@@ -166,7 +166,10 @@ class TargetedCandidateAssessment:
                     component_apex_rts=components,
                     chemical_support=(
                         (
-                            self.target.delta_mass_settings is not None
+                            bool(
+                                self.target.identification_method
+                                and self.target.identification_method.conditions
+                            )
                             and self.method_admits(candidate)
                         )
                         or self.method_relations is not None
@@ -288,14 +291,11 @@ class TargetedCandidateAssessment:
                 else None
             ),
             sample_name=self.trace_group.sample_name,
-            delta_mass_candidates=tuple(
-                match
-                for matches in self.delta_mass_assessments.values()
-                for match in matches
-            ),
-            selected_delta_mass_feature_id=(
-                f"{self.target.quant_position}:{tuple(self.candidate_evaluations).index(candidate)}"
-                if candidate is not None and self.target.delta_mass_settings is not None
+            method_candidate_evidence=tuple(self.method_assessments.values()),
+            selected_method_candidate_index=(
+                tuple(self.candidate_evaluations).index(candidate)
+                if candidate is not None
+                and self.target.identification_method is not None
                 else None
             ),
         )
@@ -611,7 +611,9 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
     Method products and triggers keep a seed or recorded precursor only within
     the target's precursor tolerance; the margin absorbs float roundoff alone.
     """
-    nl_targets = [target for target in targets if target.neutral_loss_da is not None]
+    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
+
+    nl_targets = [target for target in targets if target_cid_nl_tags(target)]
     if not nl_targets:
         return None
     return PrecursorMassScope.around(
@@ -624,8 +626,9 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
             for target in nl_targets
         ),
         maximum_inference_radius_da=max(
-            discovery_settings_for_tag(target.cid_nl_tag).ms2_precursor_tol_da
+            discovery_settings_for_tag(tag).ms2_precursor_tol_da
             for target in nl_targets
+            for tag in target_cid_nl_tags(target)
         ),
     )
 
@@ -636,11 +639,12 @@ def prepare_targeted_method_seeds(
     """Parse each chemistry once for the sample, independent of target count."""
     from pathlib import Path
 
+    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
     from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 
     prepared = {}
     for tag in dict.fromkeys(
-        target.cid_nl_tag for target in targets if target.neutral_loss_da is not None
+        tag for target in targets for tag in target_cid_nl_tags(target)
     ):
         settings = discovery_settings_for_tag(tag)
         prepared[tag] = tuple(

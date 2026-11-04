@@ -15,15 +15,40 @@ from xic_extractor.configuration.targeted_method_files import (
 
 def pattern():
     return {
-        "positions": [
-            {"label": "light", "delta_da": 0.0, "ratio_min": 1.0, "ratio_max": 1.0},
-            {"label": "heavy", "delta_da": 2.0, "ratio_min": 0.1, "ratio_max": 2.0},
+        "combine_mode": "all",
+        "mz_tolerance_ppm": 12,
+        "conditions": [
+            {
+                "kind": "delta_mass",
+                "positions": [
+                    {
+                        "label": "light",
+                        "offset_mz": -2.0,
+                        "ratio_min": 0.1,
+                        "ratio_max": 10,
+                        "compare_shape": True,
+                    },
+                    {
+                        "label": "heavy",
+                        "offset_mz": 0.0,
+                        "ratio_min": 0.1,
+                        "ratio_max": 10,
+                    },
+                ],
+                "apex_floor_sec": 2,
+                "min_shape_r": 0.9,
+            }
         ],
-        "discriminating_positions": ["heavy"],
-        "mz_tolerance_ppm": 12.0,
-        "apex_floor_sec": 2.0,
-        "min_shape_r": 0.9,
     }
+
+
+def pattern_matches(result):
+    return tuple(
+        match
+        for candidate in result.method_candidate_evidence
+        for condition in candidate.conditions
+        for match in condition.delta_mass_candidates
+    )
 
 
 def target_row(**changes):
@@ -34,36 +59,33 @@ def target_row(**changes):
         "cid_nl_tag": "",
         "role": "analyte",
         "istd_pair": "",
-        "delta_mass_method": "my pair",
-        "quant_position": "heavy",
+        "method": "my pair",
         **changes,
     }
 
 
 def test_delta_mass_method_round_trip_binds_quantitation_position(tmp_path):
     method = create_targeted_method(
-        {}, [target_row()], delta_mass_methods={"my pair": pattern()}
+        {}, [target_row()], identification_methods={"my pair": pattern()}
     )
     path = tmp_path / "custom.xlsx"
     save_targeted_method(method, path)
     loaded = load_targeted_method(path)
     assert loaded.targets == method.targets
     target = loaded.targets[0]
-    assert target.delta_mass_method == "my pair"
-    assert target.quant_position == "heavy"
+    assert target.method_name == "my pair"
+    assert target.identification_method.conditions[0].quant_position == "heavy"
     assert target.ppm_tol == 12.0
-    assert target.delta_mass_settings.positions[1].delta_da == 2.0
+    assert target.identification_method.conditions[0].positions[0].offset_mz == -2.0
     assert target.neutral_loss_da is None
-    assert loaded.delta_mass_methods == method.delta_mass_methods
+    assert loaded.identification_methods == method.identification_methods
 
 
-@pytest.mark.parametrize(
-    "changes", [{"cid_nl_tag": "dR"}, {"quant_position": "absent"}, {"mz": "1"}]
-)
+@pytest.mark.parametrize("changes", [{"method": "absent"}, {"mz": "1"}])
 def test_invalid_pattern_binding_is_not_silently_ms1_only(changes):
     with pytest.raises(ConfigError):
         create_targeted_method(
-            {}, [target_row(**changes)], delta_mass_methods={"my pair": pattern()}
+            {}, [target_row(**changes)], identification_methods={"my pair": pattern()}
         )
 
 
@@ -74,14 +96,18 @@ def test_missing_pattern_definition_is_rejected():
 
 def test_overlapping_query_windows_cannot_count_one_ion_as_two_positions():
     method = pattern()
-    method["positions"][1]["delta_da"] = 0.001
+    method["conditions"][0]["positions"][0]["offset_mz"] = -0.001
     with pytest.raises(ConfigError, match="overlap"):
         create_targeted_method(
-            {}, [target_row()], delta_mass_methods={"my pair": method}
+            {}, [target_row()], identification_methods={"my pair": method}
         )
 
 
-def test_workspace_and_run_receipts_keep_custom_method(tmp_path):
+@pytest.mark.parametrize("use_default", [False, True])
+@pytest.mark.parametrize("use_method_file", [False, True])
+def test_workspace_and_run_receipts_keep_custom_method(
+    tmp_path, use_default, use_method_file
+):
     from xic_extractor.configuration.loader import (
         load_config_snapshot,
         prepare_targeted_config,
@@ -89,21 +115,40 @@ def test_workspace_and_run_receipts_keep_custom_method(tmp_path):
     from xic_extractor.configuration.workspace_state import save_workspace
 
     config_dir = tmp_path / "config"
+    row = target_row()
+    if use_default:
+        row.pop("method")
+    default_method = "my pair" if use_default else ""
     save_workspace(
         config_dir,
         settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
-        targets=[target_row()],
-        delta_mass_methods={"my pair": pattern()},
+        targets=[row],
+        identification_methods={"my pair": pattern()},
+        default_method=default_method,
     )
     saved = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
-    assert saved["delta_mass_methods"]["my pair"]["mz_tolerance_ppm"] == 12.0
-    prepared = prepare_targeted_config(config_dir, output_dir=tmp_path / "results")
+    assert saved["identification_methods"]["my pair"]["mz_tolerance_ppm"] == 12.0
+    method_path = None
+    if use_method_file:
+        method_path = tmp_path / "portable.xlsx"
+        save_targeted_method(
+            create_targeted_method(
+                {},
+                [row],
+                identification_methods={"my pair": pattern()},
+                default_method=default_method,
+            ),
+            method_path,
+        )
+    prepared = prepare_targeted_config(
+        config_dir, method_path=method_path, output_dir=tmp_path / "results"
+    )
     try:
         _, replayed = load_config_snapshot(
             prepared.input_config_dir, output_dir=tmp_path / "replay"
         )
         assert replayed == list(prepared.targets)
-        assert replayed[0].quant_position == "heavy"
+        assert replayed[0].identification_method.conditions[0].quant_position == "heavy"
     finally:
         prepared.cleanup()
 
@@ -120,7 +165,7 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
     values = {
         "settings": {"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         "targets": [target_row()],
-        "delta_mass_methods": {"my pair": pattern()},
+        "identification_methods": {"my pair": pattern()},
     }
     workspace.action("targeted/save", values)
     original = (workspace.config_dir / "workspace.json").read_bytes()
@@ -130,8 +175,13 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
         path.name, base64.b64encode(path.read_bytes()).decode(), {}
     )
     assert preview["kind"] == "method"
-    assert preview["targets"][0]["quant_position"] == "heavy"
-    assert preview["delta_mass_methods"]["my pair"]["positions"][1]["delta_da"] == 2.0
+    assert preview["targets"][0]["method"] == "my pair"
+    assert (
+        preview["identification_methods"]["my pair"]["conditions"][0]["positions"][0][
+            "offset_mz"
+        ]
+        == -2.0
+    )
     assert (workspace.config_dir / "workspace.json").read_bytes() == original
     workspace.action("targeted/method/save", {**values, "name": "Reusable"})
     loaded = workspace.action(
@@ -141,7 +191,7 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
             "settings": values["settings"],
         },
     )
-    assert loaded["delta_mass_methods"] == preview["delta_mass_methods"]
+    assert loaded["identification_methods"] == preview["identification_methods"]
 
 
 class PatternRaw:
@@ -190,7 +240,9 @@ def extract_pattern(
     from xic_extractor.extraction.target_extraction import extract_one_target
 
     target = create_targeted_method(
-        {}, [row or target_row()], delta_mass_methods=methods or {"my pair": pattern()}
+        {},
+        [row or target_row()],
+        identification_methods=methods or {"my pair": pattern()},
     ).targets[0]
     results = {}
     extract_one_target(
@@ -214,17 +266,17 @@ def test_targeted_delta_mass_quantifies_declared_position_not_lowest_mass(tmp_pa
     # The heavy channel has half the light channel's height. Quantitation must
     # remain the declared 302 channel; sum/pattern-base quantitation is wrong.
     assert result.reported_peak_intensity == pytest.approx(100_100.0, rel=0.03)
-    assert result.selected_delta_mass_supported
+    assert result.selected_method_supported
     assert result.targeted_product_projection.counted_detection
     assert (
-        "delta_mass_pattern_supported"
+        "identification_method_supported"
         in result.targeted_product_projection.support_reasons
     )
     assert result.nl_token is None
     assert {request.mz for request in raw.requests} == {300.0, 302.0}
     assert all(
         position.observed_mz is None
-        for match in result.delta_mass_candidates
+        for match in pattern_matches(result)
         for position in match.positions
     )
 
@@ -234,19 +286,19 @@ def test_targeted_delta_mass_quantifies_declared_position_not_lowest_mass(tmp_pa
 )
 def test_unmatched_pattern_never_falls_back_to_ms1_only(tmp_path, raw):
     _, result = extract_pattern(tmp_path, raw)
-    assert not result.selected_delta_mass_supported
+    assert not result.selected_method_supported
     assert not result.targeted_product_projection.counted_detection
     assert result.reported_peak_area is None
 
 
 def test_pattern_ratio_outlier_remains_evidence_not_a_veto(tmp_path):
     method = pattern()
-    method["positions"][1]["ratio_min"] = 8.0
-    method["positions"][1]["ratio_max"] = 9.0
+    method["conditions"][0]["positions"][0]["ratio_min"] = 8.0
+    method["conditions"][0]["positions"][0]["ratio_max"] = 9.0
     _, result = extract_pattern(tmp_path, PatternRaw(), methods={"my pair": method})
-    assert result.selected_delta_mass_supported
+    assert result.selected_method_supported
     assert result.targeted_product_projection.counted_detection
-    assert result.delta_mass_candidates[0].positions[1].ratio_status == "below_range"
+    assert pattern_matches(result)[0].positions[0].ratio_status == "below_range"
 
 
 def test_coeluting_partner_with_incompatible_shape_is_not_counted(tmp_path):
@@ -255,7 +307,7 @@ def test_coeluting_partner_with_incompatible_shape_is_not_counted(tmp_path):
     assert result.reported_peak_area is None
     assert any(
         match.reject_reason == "discriminating_shape_below_threshold"
-        for match in result.delta_mass_candidates
+        for match in pattern_matches(result)
     )
 
 
@@ -276,7 +328,7 @@ def test_batch_completion_preserves_sample_specific_delta_mass_areas(tmp_path):
         RunOutput(files, []), _config(tmp_path)
     )
     first, second = [file.results[target.label] for file in completed.file_results]
-    assert first.selected_delta_mass_supported and second.selected_delta_mass_supported
+    assert first.selected_method_supported and second.selected_method_supported
     assert second.reported_peak_area == pytest.approx(
         first.reported_peak_area * 3.0, rel=0.03
     )
@@ -319,7 +371,7 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
         lambda path, *_args, **_kwargs: nullcontext(raws[path.stem]),
     )
     target = create_targeted_method(
-        {}, [target_row()], delta_mass_methods={"my pair": pattern()}
+        {}, [target_row()], identification_methods={"my pair": pattern()}
     ).targets[0]
     path = tmp_path / "results.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
@@ -344,22 +396,26 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
     try:
         rows = list(book["Delta Mass Evidence"].values)
         assert (
-            len(rows) == 6
-        )  # header + 2 measured positions per hit + unmatched sample
+            len(rows) == 5
+        )  # header + 2 measured positions per hit; misses are in Method Evidence
         header = rows[0]
         evidence = [dict(zip(header, row, strict=True)) for row in rows[1:]]
         assert {(r["SampleName"], r["Pattern Status"]) for r in evidence} == {
             ("one", "pass"),
             ("two", "pass"),
-            ("missing", "no_match"),
         }
         results = list(book["XIC Results"].values)
         reasons = [
             dict(zip(results[0], row, strict=True))["Reason"] for row in results[1:]
         ]
-        assert any("Delta Mass" in reason for reason in reasons)
+        assert any("辨認方法" in reason for reason in reasons)
     finally:
         book.close()
     source = TargetedWorkbookSource(path)
-    assert source.delta_mass_methods["my pair"]["positions"][1]["delta_da"] == 2.0
-    assert {row["SampleName"] for row in source.delta_mass_evidence} == set(raws)
+    assert (
+        source.identification_methods["my pair"]["conditions"][0]["positions"][0][
+            "offset_mz"
+        ]
+        == -2.0
+    )
+    assert {row["SampleName"] for row in source.method_evidence} == set(raws)

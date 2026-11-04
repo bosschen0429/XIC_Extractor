@@ -110,7 +110,7 @@ def test_raw_confirmation_and_discriminating_shape_complete_the_hypothesis():
     assert completed[0].status == "candidate"
     assert completed[0].positions[2].partner_source == "raw"
     assert completed[0].positions[2].shape_r > 0.99
-    assert completed[0].positions[2].height_ratio_to_base == 2
+    assert completed[0].positions[2].height_ratio == 2
     assert completed[0].positions[2].ratio_status == "above_range"
 
 
@@ -149,8 +149,8 @@ def test_missing_base_measures_ratios_without_using_them_for_admission():
     completed = complete_delta_mass_candidates(prepared, traces, settings)
     assert completed[0].status == "candidate"
     assert completed[0].base_height == 100
-    assert completed[0].positions[1].height_ratio_to_base == 0.8
-    assert completed[0].positions[2].height_ratio_to_base == 4
+    assert completed[0].positions[1].height_ratio == 0.8
+    assert completed[0].positions[2].height_ratio == 4
     assert completed[0].positions[2].ratio_status == "above_range"
 
 

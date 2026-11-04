@@ -30,17 +30,19 @@ historical filename as the stable topic locator.
 ### Targeted
 
 - The primary path is samples, method/target intent, Run, then result review.
-- Target rows contain name, m/z, expected RT in minutes, a method, role and
-  ISTD pairing. Methods select MS1-only, built-in CID-NL chemistry or a named
-  custom Delta Mass pattern with an explicit quantitation position.
-- **設計 Delta Mass 方法** edits positions, offsets, reference ratios and
-  co-elution/shape conditions. Applying edits changes the draft; workspace save,
-  named-method save or Run retains the definitions with the target bindings.
-- A portable method saves target intent and custom Delta Mass definitions.
+- Target rows contain name, m/z, expected RT, role and ISTD pairing. Choose one
+  **預設辨認方法**; enable **顯示個別 target 的方法設定** only for exceptions.
+- **編輯辨認方法** composes CID-NL and Delta Mass condition cards using
+  **符合全部條件（AND）** or **符合任一條件（OR）**. HCD-PI is not offered.
+  Delta Mass fixes the quantitation ion at zero with signed partner m/z offsets.
+  Tolerances, shape and reference ratios stay in collapsed advanced panels.
+- A portable method retains target intent, named identification definitions and
+  the table default. Applying changes edits the draft; workspace save, named-list
+  save or Run retains it.
   There is no signal-processing override panel, parameter reset, Dirty Matrix branch or user
   worker/backend selector. Scientific policy is recorded in run metadata.
 - `workspace.json` stores application settings (DLL and worker count), batch
-  inputs (RAW and sample metadata), target rows and named Delta Mass definitions
+  inputs (RAW and sample metadata), target rows, their default method and named identification definitions
   in one atomic generation.
   Reading configuration never writes it; unsupported settings are reported,
   not preserved as hidden effective overrides. No schema conversion is offered.

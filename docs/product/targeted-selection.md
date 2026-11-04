@@ -24,35 +24,49 @@ CrossSample, Backfill, or selected-value implementation.
 
 ### MS1-only target intent
 
-A blank `cid_nl_tag` without `delta_mass_method` declares an MS1-only target.
+A blank `cid_nl_tag` without an effective method declares an MS1-only target.
 Intake retains the shared
 20 ppm precursor tolerance and leaves neutral loss and its tolerances
 unconfigured. Missing MS2 is not chemical identity evidence.
 
-### Custom Delta Mass target intent
+### Reusable identification methods
 
-With `delta_mass_method` set, a blank `cid_nl_tag` selects the named Delta Mass
-method instead of MS1-only. `quant_position` names the method position represented
-by the Target's m/z. The selected position supplies the reported peak and area;
-the lowest-mass position is not an implicit quantitation channel.
+`configuration.targeted_identification` admits named methods containing a flat
+list of CID-NL and/or Delta Mass conditions. `combine_mode=all` requires every
+condition; `any` requires at least one. HCD-PI and nested expressions are not
+implemented. An empty condition list explicitly means MS1-only.
 
-Targeted acquires the declared positions' XIC windows over the sample's acquired
-RT coverage. The shared physical owner qualifies their peaks. The existing pure
-Delta Mass matcher assesses mass-window support, co-elution and configured shape
-correlations. The quantitation position alone seeds this bounded search.
-Height-ratio ranges remain evidence, not admission gates. Distinct positions
-must have non-overlapping m/z windows for that Target.
+A document-level `default_method` applies to the entire target table. A row's
+optional `method` overrides it; built-ins are `ms1`, `cid:dR`, `cid:R`, `cid:MeR`.
+Without either binding, the original per-row `cid_nl_tag` retains its meaning.
+Built-in `cid:*` choices retain the existing Targeted CID-NL assessment policy;
+in a custom method a CID-NL card must match according to the all/any rule.
+Custom methods use one shared quantitation/partner m/z tolerance.
 
-Only pattern-supported quantitation candidates enter Targeted selection as
-available regions. An unmatched pattern cannot fall back to MS1-only, borrow
-another sample's pattern support or receive CID-NL Backfill. Shared completion
-consumes the admitted physical observation; no CID-NL event or support is invented.
-Targeted retains the pattern answers separately for publication and review.
+Delta Mass positions use signed `offset_mz` relative to the Target's quantitation
+ion at zero. The pure settings conversion normalizes the lowest mass internally;
+users neither select a quantitation position per target nor arrange a base ion.
+Ratios and configured shape comparisons reference the quantitation ion. Ratios
+remain annotations, not admission gates. Position XIC windows must not overlap.
+Offsets are m/z differences, not charge-independent neutral mass differences.
 
-XIC windows establish bounded mass support, not measured centroid masses or
-zero mass error. Delta offsets are m/z differences; users convert neutral mass
-differences for their ion charge before entering them. This configurable route
-does not establish chemical identity or method readiness by itself.
+Targeted acquires declared XIC windows over the sample's acquired RT coverage.
+The shared physical owner qualifies peaks; the existing pure Delta Mass matcher
+assesses partner support, co-elution and shape. CID-NL clauses reuse the existing
+CID-NL evaluator and sample-shared seeds. Each clause answers on the **same
+sample-local physical quantitation candidate**. Evidence from other peaks or
+samples cannot satisfy AND. OR does not require unacquired clauses to pass.
+
+Condition answers distinguish `matched`, `not_matched`, and `not_acquired`
+(no target MS2 acquired within that candidate). Missing MS2 is not a failed
+chemical measurement, but cannot satisfy a CID-NL condition. Only method-admitted
+candidates enter selection as available regions; an unmet method never falls
+back to MS1-only. Custom compositions do not invent CID-NL receipts or receive
+CID-NL Backfill. All candidate-level condition answers remain available in output.
+
+XIC windows establish bounded mass support, not measured centroids or zero mass
+error. Configurability and synthetic regression coverage do not establish chemical
+identity or scientific readiness (`diagnostic_only`).
 
 ### Retained candidate context
 

@@ -873,3 +873,118 @@
 .curation-step p {
   margin: 0;
 }
+
+/* The method editor is a dialog, outside .analysis-page's form layout. */
+#target-identification-editor .dialog-body > .settings-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#target-identification-editor .settings-grid > label,
+#target-identification-editor .method-condition-field,
+#target-identification-editor .method-add-condition > label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+#target-identification-editor .dialog-body input:not([type="checkbox"]),
+#target-identification-editor .dialog-body select,
+#target-identification-editor .dialog-body button,
+#target-identification-editor .dialog-foot button {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+}
+#target-identification-editor .dialog-body input:not([type="checkbox"]),
+#target-identification-editor .settings-grid select,
+#target-identification-editor .method-condition-field select {
+  width: 100%;
+  min-width: 0;
+}
+#target-identification-editor .actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+#target-identification-editor .method-add-condition {
+  align-items: flex-end;
+}
+#target-identification-editor .method-add-condition > label,
+#target-identification-editor .method-condition-field {
+  width: min(100%, 300px);
+}
+.method-condition {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+  background: var(--surface-2);
+}
+.method-condition-head {
+  margin-bottom: 12px;
+}
+.method-condition-head h3 {
+  margin: 0 auto 0 0;
+}
+.method-condition details {
+  margin-top: 12px;
+}
+#target-identification-editor .method-advanced-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.method-ion-table,
+.method-ratio-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 560px;
+}
+.method-ion-table th:first-child {
+  width: 110px;
+}
+.method-ion-table th:last-child {
+  width: 110px;
+}
+.method-ion-table td,
+.method-ratio-table td {
+  vertical-align: middle;
+}
+.method-ratio-table th:last-child,
+.method-ratio-table td:last-child {
+  text-align: center;
+}
+@media (max-width: 760px) {
+  #target-identification-editor .dialog-body > .settings-grid,
+  #target-identification-editor .method-advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.analysis-page .target-method-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 12px;
+}
+.analysis-page .target-method-row select,
+.analysis-page .target-method-row button {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+}
+@media (max-width: 760px) {
+  .analysis-page .target-method-row {
+    grid-template-columns: minmax(0, 1fr) 120px;
+  }
+  .target-method-row label {
+    grid-column: 1 / -1;
+  }
+}
+
+.analysis-page .target-method-row .drop-target {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+}

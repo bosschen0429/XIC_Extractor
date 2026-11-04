@@ -37,12 +37,10 @@ _FORMATS = {
 
 
 def _build_targets_sheet(ws, targets: list[Target]) -> None:
-    delta_headers = (
-        ("Delta Mass Method", "Quant Position")
-        if any(t.delta_mass_settings for t in targets)
-        else ()
+    method_headers = (
+        ("Method",) if any(t.identification_method for t in targets) else ()
     )
-    headers = (*TARGETS_HEADERS, *delta_headers)
+    headers = (*TARGETS_HEADERS, *method_headers)
     numeric = frozenset(TARGETS_HEADERS) - _TEXT
     _prepare_sheet(ws, repeat_rows="1:1")
     _write_header(ws, 1, headers, numeric)
@@ -66,11 +64,8 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
             target.nl_ppm_max,
             target.sample_applicability,
         ) + (
-            tuple(
-                _excel_text(value)
-                for value in (target.delta_mass_method, target.quant_position)
-            )
-            if delta_headers
+            tuple(_excel_text(value) for value in (target.method_name,))
+            if method_headers
             else ()
         )
         for column, (header, value) in enumerate(

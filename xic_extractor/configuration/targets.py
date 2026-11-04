@@ -8,17 +8,21 @@ from xic_extractor.configuration.cid_nl_profile import (
     NeutralLossProfile,
 )
 from xic_extractor.configuration.csv_io import (
-    DELTA_MASS_TARGET_FIELDS,
     LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
     TARGET_FIELDS,
+    TARGET_METHOD_FIELDS,
     _read_target_rows,
 )
-from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.parsing import (
     _config_error,
     _parse_float,
+)
+from xic_extractor.configuration.targeted_identification import (
+    BUILTIN_TARGET_METHODS,
+    DeltaMassCondition,
+    IdentificationMethod,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -26,22 +30,28 @@ LOGGER = logging.getLogger(__name__)
 SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
-def _read_targets(path: Path, *, delta_mass_methods=None) -> list[Target]:
-    return _parse_target_rows(path, _read_target_rows(path), delta_mass_methods)
+def _read_targets(
+    path: Path, *, identification_methods=None, default_method=""
+) -> list[Target]:
+    return _parse_target_rows(
+        path, _read_target_rows(path), identification_methods, default_method
+    )
 
 
 def parse_target_rows(
     rows: Sequence[Mapping[str, str]],
     path: Path = Path("targets.csv"),
     *,
-    delta_mass_methods: Mapping[str, DeltaMassPatternSettings] | None = None,
+    identification_methods: Mapping[str, IdentificationMethod] | None = None,
+    default_method: str = "",
 ) -> tuple[Target, ...]:
     """Validate an in-memory table with the same target and ISTD rules as CSV intake."""
     return tuple(
         _parse_target_rows(
             path,
             [(number, dict(row)) for number, row in enumerate(rows, 2)],
-            delta_mass_methods,
+            identification_methods,
+            default_method,
         )
     )
 
@@ -49,13 +59,16 @@ def parse_target_rows(
 def _parse_target_rows(
     path: Path,
     rows: list[tuple[int, dict[str, str]]],
-    delta_mass_methods=None,
+    identification_methods=None,
+    default_method="",
 ) -> list[Target]:
     targets: list[Target] = []
     seen: set[str] = set()
 
     for row_number, row in rows:
-        target = _parse_target_row(path, row_number, row, delta_mass_methods)
+        target = _parse_target_row(
+            path, row_number, row, identification_methods, default_method
+        )
         if target.label in seen:
             raise _config_error(
                 path, row_number, "label", target.label, "must be unique"
@@ -97,7 +110,8 @@ def _parse_target_row(
     path: Path,
     row_number: int,
     row: dict[str, str],
-    delta_mass_methods=None,
+    identification_methods=None,
+    default_method="",
 ) -> Target:
     from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 
@@ -115,7 +129,7 @@ def _parse_target_row(
         for field in (
             *TARGET_FIELDS,
             *OPTIONAL_TARGET_METADATA_FIELDS,
-            *DELTA_MASS_TARGET_FIELDS,
+            *TARGET_METHOD_FIELDS,
         )
     }
     label = values["label"]
@@ -137,50 +151,44 @@ def _parse_target_row(
         raise _config_error(
             path, row_number, "role", values["role"], "must be analyte or istd"
         )
-    tag = values["cid_nl_tag"]
-    method_name, quant_position = values["delta_mass_method"], values["quant_position"]
-    pattern = (delta_mass_methods or {}).get(method_name) if method_name else None
-    if method_name:
-        if tag or pattern is None:
-            raise _config_error(
-                path,
-                row_number,
-                "delta_mass_method",
-                method_name,
-                "requires a defined Delta Mass method and a blank cid_nl_tag",
-            )
-        position = next(
-            (p for p in pattern.positions if p.label == quant_position), None
-        )
-        if position is None or mz - position.delta_da <= 0:
-            raise _config_error(
-                path,
-                row_number,
-                "quant_position",
-                quant_position,
-                "must name a method position with a positive base m/z",
-            )
-        query_masses = [mz - position.delta_da + p.delta_da for p in pattern.positions]
-        if any(
-            right - left <= (left + right) * pattern.mz_tolerance_ppm * 1e-6
-            for left, right in zip(query_masses, query_masses[1:], strict=False)
-        ):
-            raise _config_error(
-                path,
-                row_number,
-                "delta_mass_method",
-                method_name,
-                "position XIC windows overlap; "
-                "reduce ppm or separate the mass positions",
-            )
-    elif quant_position:
+    chosen = values["method"] or default_method
+    if (
+        not isinstance(chosen, str)
+        or chosen
+        and chosen not in BUILTIN_TARGET_METHODS
+        and chosen not in (identification_methods or {})
+    ):
         raise _config_error(
             path,
             row_number,
-            "quant_position",
-            quant_position,
-            "requires delta_mass_method",
+            "method",
+            str(chosen),
+            "must reference a defined method or a built-in",
         )
+    method = (identification_methods or {}).get(chosen)
+    tag = (
+        ""
+        if method is not None or chosen == "ms1"
+        else chosen[4:]
+        if chosen.startswith("cid:")
+        else values["cid_nl_tag"]
+    )
+    if method is not None:
+        for condition in method.conditions:
+            if not isinstance(condition, DeltaMassCondition):
+                continue
+            masses = sorted(mz + p.offset_mz for p in condition.positions)
+            if masses[0] <= 0 or any(
+                right - left <= (left + right) * method.mz_tolerance_ppm * 1e-6
+                for left, right in zip(masses, masses[1:], strict=False)
+            ):
+                raise _config_error(
+                    path,
+                    row_number,
+                    "method",
+                    chosen,
+                    "positions require positive m/z and non-overlapping XIC windows",
+                )
     tag_profile = targeted_tag_profile(tag) if tag else None
     policy = tag_profile or DEFAULT_CID_NL_MASS_POLICY
     loss = tag_profile.neutral_loss_profiles[0].neutral_loss_da if tag_profile else None
@@ -194,8 +202,8 @@ def _parse_target_row(
         mz=mz,
         rt_min=expected_rt,
         rt_max=expected_rt,
-        ppm_tol=pattern.mz_tolerance_ppm
-        if pattern
+        ppm_tol=method.mz_tolerance_ppm
+        if method
         else policy.precursor_mz_tolerance_ppm,
         neutral_loss_da=loss,
         nl_ppm_warn=policy.nl_tolerance_ppm if tag else None,
@@ -203,10 +211,9 @@ def _parse_target_row(
         is_istd=values["role"] == "istd",
         istd_pair=values["istd_pair"],
         expected_rt_min=expected_rt,
-        cid_nl_tag=values["cid_nl_tag"],
-        delta_mass_method=method_name,
-        quant_position=quant_position,
-        delta_mass_settings=pattern,
+        cid_nl_tag=tag,
+        method_name=chosen if method else "",
+        identification_method=method,
         sample_applicability=_parse_target_metadata_enum(
             path,
             row_number,

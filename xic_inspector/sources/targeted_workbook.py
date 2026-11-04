@@ -14,9 +14,9 @@ from zipfile import BadZipFile
 from xic_extractor.alignment_explanation.storage import (
     ExplanationError,
 )
-from xic_extractor.configuration.delta_mass import (
-    delta_mass_methods_payload,
-    parse_delta_mass_methods,
+from xic_extractor.configuration.targeted_identification import (
+    identification_methods_payload,
+    parse_identification_methods,
 )
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
@@ -92,6 +92,15 @@ class TargetedWorkbookSource:
             self.targets = _table(
                 book, "Targets", {"Label", "Role", "m/z", "RT min", "RT max"}
             )
+            self.method_evidence = (
+                _table(
+                    book,
+                    "Method Evidence",
+                    {"SampleName", "Target", "Method", "Status"},
+                )
+                if "Method Evidence" in book.sheetnames
+                else []
+            )
             self.delta_mass_evidence = (
                 _table(
                     book,
@@ -103,23 +112,23 @@ class TargetedWorkbookSource:
             )
             methods = {}
             try:
-                if "Delta Mass Methods" in book.sheetnames:
+                if "Identification Methods" in book.sheetnames:
                     for row in _table(
-                        book, "Delta Mass Methods", {"Method", "Definition"}
+                        book, "Identification Methods", {"Method", "Definition"}
                     ):
                         if row["Method"] in methods:
                             raise ValueError("duplicate method name")
                         methods[row["Method"]] = json.loads(row["Definition"])
-                self.delta_mass_methods = delta_mass_methods_payload(
-                    parse_delta_mass_methods(methods)
+                self.identification_methods = identification_methods_payload(
+                    parse_identification_methods(methods)
                 )
             except (TypeError, ValueError) as exc:
                 raise ExplanationError(
-                    f"Targeted XLSX Delta Mass 方法無法讀取：{exc}"
+                    f"Targeted XLSX 辨認 方法無法讀取：{exc}"
                 ) from exc
             if any(
-                target.get("Delta Mass Method")
-                and target["Delta Mass Method"] not in self.delta_mass_methods
+                target.get("Method")
+                and target["Method"] not in self.identification_methods
                 for target in self.targets
             ):
                 raise ExplanationError("Targeted XLSX 缺少目標引用的 Delta Mass 方法。")
@@ -264,9 +273,15 @@ class TargetedWorkbookSource:
                     is_attention=attention,
                     details={
                         "target": target,
-                        "delta_mass_method": self.delta_mass_methods.get(
-                            str(target.get("Delta Mass Method") or "")
+                        "identification_method": self.identification_methods.get(
+                            str(target.get("Method") or "")
                         ),
+                        "method_evidence": [
+                            row
+                            for row in self.method_evidence
+                            if row["Target"] == label
+                            and row["SampleName"] in sample_ids
+                        ],
                         "delta_mass_evidence": [
                             row
                             for row in self.delta_mass_evidence
