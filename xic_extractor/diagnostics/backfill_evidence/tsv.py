@@ -9,24 +9,18 @@ from typing import cast
 
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,
     BackfillEvidenceOwnerResult,
     BackfillEvidenceRecord,
     EvidenceQueryResult,
-    SkippedEvidenceOwnerBindings,
-    SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.evidence_claims import mint_evidence_query_result
 from xic_extractor.diagnostics.backfill_evidence.bindings import (
     backfill_evidence_query_claims,
     rehydrate_backfill_evidence_bindings,
-    skipped_evidence_query_claims,
-    validate_skipped_evidence_bindings,
 )
 from xic_extractor.diagnostics.backfill_evidence.serialization import (
     backfill_evidence_record_from_projection,
-    skipped_evidence_record_from_projection,
 )
 
 _RawRow = Mapping[str | None, str | list[str] | None]
@@ -67,24 +61,6 @@ def _iter_backfill_evidence_tsv_results(
         yield record, owner_result
 
 
-def iter_skipped_evidence_tsv(
-    path: Path,
-    *,
-    owner_bindings: SkippedEvidenceOwnerBindings | None = None,
-) -> Iterator[SkippedEvidenceRecord]:
-    for row_number, row in _iter_exact_tsv_rows(
-        path,
-        SKIPPED_EVIDENCE_LEDGER_COLUMNS,
-    ):
-        try:
-            record = skipped_evidence_record_from_projection(row)
-            if owner_bindings is not None:
-                validate_skipped_evidence_bindings(record, owner_bindings)
-        except ValueError as exc:
-            raise ValueError(f"{path}: row {row_number}: {exc}") from exc
-        yield record
-
-
 def lookup_backfill_evidence_tsv(
     path: Path,
     *,
@@ -121,38 +97,6 @@ def lookup_backfill_evidence_tsv(
             owner_results=(
                 tuple(owner_results) if owner_bindings is not None else None
             ),
-        ),
-    )
-
-
-def lookup_skipped_evidence_tsv(
-    path: Path,
-    *,
-    feature_id: str,
-    sample_stem: str,
-    owner_bindings: SkippedEvidenceOwnerBindings | None = None,
-) -> EvidenceQueryResult[SkippedEvidenceRecord]:
-    _require_lookup_key("feature_id", feature_id)
-    _require_lookup_key("sample_stem", sample_stem)
-    matches: list[SkippedEvidenceRecord] = []
-    seen: set[tuple[str, str, str, str, str]] = set()
-    for record in iter_skipped_evidence_tsv(path, owner_bindings=owner_bindings):
-        if record.feature_id != feature_id:
-            continue
-        if record.sample_stem != sample_stem:
-            continue
-        if record.identity in seen:
-            raise ValueError(
-                f"{path}: duplicate composite identity {record.identity!r}"
-            )
-        seen.add(record.identity)
-        matches.append(record)
-    records = tuple(matches)
-    return mint_evidence_query_result(
-        records=records,
-        claims=skipped_evidence_query_claims(
-            found=bool(records),
-            owner_bound=owner_bindings is not None,
         ),
     )
 
@@ -208,7 +152,5 @@ def _require_lookup_key(field_name: str, value: str) -> None:
 
 __all__ = (
     "iter_backfill_evidence_tsv",
-    "iter_skipped_evidence_tsv",
     "lookup_backfill_evidence_tsv",
-    "lookup_skipped_evidence_tsv",
 )

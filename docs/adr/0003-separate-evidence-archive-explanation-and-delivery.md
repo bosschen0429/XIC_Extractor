@@ -8,29 +8,21 @@ Owner-local machine evidence, human explanation, and product delivery are
 separate authority concepts when a current consumer needs them. That separation
 does not require an implementation chain. The current repository has no
 production archive/query consumer, approved human-explanation delivery surface,
-or product-delivery plan type. Existing Backfill Parquet support remains an
-optional diagnostic/shadow capability rather than the first stage of a required
-archive programme.
+or product-delivery plan type.
 
 ## Decision
 
-- Keep `xic_extractor.alignment.backfill_evidence_parquet` and
-  `xic_extractor.alignment.backfill_evidence_parquet_bundle` as owner-local
-  helpers for the existing opt-in diagnostic Parquet shadow and its strict
-  readback, verification, and bundle identity.
-- Keep the existing Backfill/skipped TSV projections and their writers
-  unchanged. The diagnostic Parquet projection does not replace or activate a
-  production artifact.
+- Keep the existing Backfill evidence TSV projection and its writer unchanged;
+  its strict reader is the only reader that mints `EvidenceQueryResult`.
 - Do not introduce a generic evidence archive, a human-explanation subsystem,
   a product-delivery framework, or parallel writer authority without a newly
   proved current consumer and separately approved contract.
 - Do not treat a diagnostic bundle, report, or manifest as evidence of product
   delivery authority.
 
-The helpers do not become scientific or product owners. Record content,
-validity, disposition, and query-claim semantics remain with the existing
-scientific owners; persistence cannot select values, include rows, change
-disposition, or grant writer authority.
+Record content, validity, disposition, and query-claim semantics remain with the
+existing scientific owners; persistence cannot select values, include rows,
+change disposition, or grant writer authority.
 
 ## Extraction gate
 
@@ -49,19 +41,12 @@ separate; do not infer that implementation work from this ADR alone.
 - Introduce human-explanation or product-delivery scaffolding to preserve the
   separation mechanically. Rejected because boundary separation is not a
   consumer or an implementation mandate.
-- Remove the Backfill Parquet helpers with the unused programme. Rejected
-  because the opt-in diagnostic/shadow CLI remains a current consumer; focused
-  tests verify that retained surface but are not consumer evidence.
 
 ## Consequences
 
-- Current scientific receipts, machine-evidence artifacts, Backfill diagnostic
-  helpers, output transactions, and writers remain unchanged.
-- Parquet remains neither a worker message bus nor a scientific/product owner.
-  Existing strict readers continue to distinguish valid content from missing,
+- Current scientific receipts, machine-evidence artifacts, output
+  transactions, and writers remain unchanged.
+- The strict TSV reader continues to distinguish valid content from missing,
   incomplete, unsupported, corrupt, or foreign-bound content.
 - Human prose cannot mint scientific or writer authority. Product writers must
   continue to consume owner-issued decisions through their current contracts.
-- Earlier sequencing across these concepts is historical, not an active
-  handoff or blocker. Active construction belongs in the current GitHub
-  Issue/MAP surface only after a real consumer is proved.

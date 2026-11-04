@@ -53,27 +53,6 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "backfill_query_rt_max",
 )
 
-SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION = "skipped_evidence_ledger"
-SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
-    "feature_id",
-    "sample_stem",
-    "family_center_mz",
-    "family_center_rt",
-    "rt_window_start",
-    "rt_window_end",
-    "pre_backfill_category",
-    "skipped_stage",
-    "skip_reason",
-    "backfill_scope",
-    "predicate_version",
-    "raw_xic_requests_skipped",
-    "would_emit_in_full_audit",
-    "full_audit_available",
-    "source_artifact",
-)
-
-PREDICATE_VERSION = "alignment-parity-scoped-backfill-scope"
-
 _CELL_STATUSES = frozenset(
     {
         "detected",
@@ -90,16 +69,6 @@ _PRODUCTION_STATUSES = frozenset(
 _BACKFILL_TIERS = frozenset(
     {"", "accepted_backfill", "review_backfill", "rejected_backfill"}
 )
-_SKIPPED_SCOPE_REASON = {
-    "production-equivalent": (
-        "single_detected_no_consolidation_candidate",
-        "single_detected_no_consolidation_candidate",
-    ),
-    "selected-families": (
-        "selected_family_excluded",
-        "not_in_selected_family_allowlist",
-    ),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,15 +76,6 @@ class BackfillEvidenceOwnerBindings:
     known_feature_ids: frozenset[str]
     known_sample_stems: frozenset[str]
     candidate_samples: Mapping[str, str]
-
-
-@dataclass(frozen=True, slots=True)
-class SkippedEvidenceOwnerBindings:
-    known_feature_ids: frozenset[str]
-    known_sample_stems: frozenset[str]
-    expected_backfill_scope: str
-    expected_predicate_version: str = PREDICATE_VERSION
-    expected_source_artifact: str = "owner_backfill"
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,87 +235,6 @@ class BackfillEvidenceOwnerResult:
         return EvidenceClaimState.UNAVAILABLE
 
 
-@dataclass(frozen=True, slots=True)
-class SkippedEvidenceRecord:
-    """Complete persisted form of the Backfill-scope producer record."""
-
-    feature_id: str
-    sample_stem: str
-    family_center_mz: float
-    family_center_rt: float
-    rt_window_start: float
-    rt_window_end: float
-    pre_backfill_category: str
-    skipped_stage: str
-    skip_reason: str
-    backfill_scope: str
-    predicate_version: str
-    raw_xic_requests_skipped: int
-    would_emit_in_full_audit: bool
-    full_audit_available: bool
-    source_artifact: str
-
-    def __post_init__(self) -> None:
-        for field_name in (
-            "feature_id",
-            "sample_stem",
-            "pre_backfill_category",
-            "skipped_stage",
-            "skip_reason",
-            "backfill_scope",
-            "predicate_version",
-            "source_artifact",
-        ):
-            _require_nonempty(field_name, getattr(self, field_name))
-        _require_finite_fields(
-            self,
-            (
-                "family_center_mz",
-                "family_center_rt",
-                "rt_window_start",
-                "rt_window_end",
-            ),
-        )
-        if self.family_center_mz <= 0:
-            raise ValueError("family_center_mz must be positive")
-        if not self.rt_window_start <= self.family_center_rt <= self.rt_window_end:
-            raise ValueError(
-                "rt_window_start, family_center_rt, and rt_window_end are inconsistent"
-            )
-        expected_disposition = _SKIPPED_SCOPE_REASON.get(self.backfill_scope)
-        if expected_disposition is None:
-            raise ValueError(f"unsupported backfill_scope {self.backfill_scope!r}")
-        if (
-            self.pre_backfill_category,
-            self.skip_reason,
-        ) != expected_disposition:
-            raise ValueError(
-                "pre_backfill_category and skip_reason must match backfill_scope"
-            )
-        if self.skipped_stage != "owner_backfill":
-            raise ValueError("skipped_stage must be 'owner_backfill'")
-        if self.predicate_version != PREDICATE_VERSION:
-            raise ValueError(f"predicate_version must be {PREDICATE_VERSION!r}")
-        if self.raw_xic_requests_skipped <= 0:
-            raise ValueError("raw_xic_requests_skipped must be positive")
-        if not self.would_emit_in_full_audit:
-            raise ValueError("would_emit_in_full_audit must be true")
-        if not self.full_audit_available:
-            raise ValueError("full_audit_available must be true")
-        if self.source_artifact != "owner_backfill":
-            raise ValueError("source_artifact must be 'owner_backfill'")
-
-    @property
-    def identity(self) -> tuple[str, str, str, str, str]:
-        return (
-            self.feature_id,
-            self.sample_stem,
-            self.skipped_stage,
-            self.backfill_scope,
-            self.predicate_version,
-        )
-
-
 def _require_nonempty(field_name: str, value: str) -> None:
     if not value.strip():
         raise ValueError(f"{field_name} must be non-empty")
@@ -371,9 +250,6 @@ def _require_finite_fields(value: object, field_names: tuple[str, ...]) -> None:
 __all__ = (
     "ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS",
     "ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION",
-    "PREDICATE_VERSION",
-    "SKIPPED_EVIDENCE_LEDGER_COLUMNS",
-    "SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION",
     "BackfillEvidenceCandidateAssignment",
     "BackfillEvidenceOwnerBindings",
     "BackfillEvidenceOwnerResult",
@@ -381,6 +257,4 @@ __all__ = (
     "EvidenceClaim",
     "EvidenceClaimState",
     "EvidenceQueryResult",
-    "SkippedEvidenceOwnerBindings",
-    "SkippedEvidenceRecord",
 )

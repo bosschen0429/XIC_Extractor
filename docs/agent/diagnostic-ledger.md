@@ -15,7 +15,7 @@ relevant entry before investigating a known target or repeating a RAW run.
 - Delete an entry when later evidence supersedes it or what it measured is
   retired. If a rerun changes a conclusion, update the entry in the same PR.
 
-Evidence labels follow the [Product Topic Index](../product/README.md#shared-conventions);
+Evidence labels follow the [product validation contract](product-validation-contract.md#evidence-labels);
 none of these entries grants readiness or writer authority.
 
 ## Stable Inputs

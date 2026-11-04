@@ -7,10 +7,21 @@ Ordinary regression verification does not need this file. Read it when a change
 claims readiness, changes a scientific decision, or can change selected values,
 counted detection, Matrix identity, output schema or writer behavior.
 
+## Evidence Labels
+
+Each label says what a run or comparison established. A label describes
+evidence; it grants no authority.
+
+| Label | Meaning |
+| --- | --- |
+| `diagnostic_only` | Measured or checked; changes no product behavior |
+| `expected_diff` | A reviewed, intended change in product output |
+| `production_ready` | Validated for production on its stated scope |
+| `inconclusive` | The evidence did not establish a stronger claim |
+
 ## Readiness Claims
 
-A readiness claim states its validation tier with the Evidence labels in the
-[Product Topic Index](../product/README.md#shared-conventions). Validation notes
+A readiness claim states its [evidence label](#evidence-labels). Validation notes
 are evidence, never authority.
 
 Candidate rows, diagnostic sidecars, quality explanations, round-trip oracles,

@@ -166,7 +166,7 @@ Keep these facts on separate axes:
   [Writer Authority](decision-policy.md#writer-authority) owns how it is granted.
 - `validation evidence status`: a source-qualified claim about what a run or
   evidence packet verified. Its Evidence labels are defined in the
-  [Product Topic Index](README.md#shared-conventions).
+  [product validation contract](../agent/product-validation-contract.md#evidence-labels).
 - `activation contract`: the evidence, tests, authority and expected-diff
   conditions required before diagnostic or shadow behavior can affect values.
 - `parity`: a replacement preserves the declared observable contract unless an
@@ -274,10 +274,3 @@ Persisted and public exceptions retain their exact spelling:
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection
 fallback and stays outside Backfill vocabulary.
-
-## Maintenance
-
-Update this file when a stable domain term or authority concept changes, not for
-validation results, counts or temporary blockers. Do not create another
-hand-maintained product glossary; a reader-specific glossary belongs under
-`docs/user/` and links back here.

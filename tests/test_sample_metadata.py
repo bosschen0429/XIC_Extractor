@@ -1,9 +1,7 @@
-import json
 from pathlib import Path
 
 import pytest
 
-from scripts import validate_sample_metadata
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -136,50 +134,6 @@ def test_is_sample_metadata_source_detects_schema_header(tmp_path: Path) -> None
 
     assert is_sample_metadata_source(sample_metadata_path) is True
     assert is_sample_metadata_source(legacy_order_path) is False
-
-
-def test_validate_sample_metadata_cli_prints_summary_json(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    path = tmp_path / "sample_metadata.tsv"
-    _write_tsv(
-        path,
-        [
-            _row(
-                sample_name="S1",
-                raw_stem="Raw1",
-                sample_role="study_sample",
-                injection_order="1",
-            )
-        ],
-    )
-
-    assert validate_sample_metadata.main([str(path), "--summary-json"]) == 0
-    captured = capsys.readouterr()
-    summary = json.loads(captured.out)
-    assert summary["sample_count"] == 1
-    assert summary["injection_order_alias_count"] == 2
-
-
-def test_validate_sample_metadata_cli_reports_validation_error(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    path = tmp_path / "sample_metadata.tsv"
-    _write_tsv(
-        path,
-        [
-            _row(
-                sample_name="S1",
-                sample_role="unsupported",
-            )
-        ],
-    )
-
-    assert validate_sample_metadata.main([str(path)]) == 2
-    captured = capsys.readouterr()
-    assert "unsupported sample_role" in captured.err
 
 
 def _row(**overrides: str) -> dict[str, str]:

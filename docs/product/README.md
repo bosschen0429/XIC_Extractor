@@ -48,12 +48,8 @@ If a topic page conflicts with an owner below, the owner wins.
 
 ### Shared Conventions
 
-- **Validation evidence status** uses the Evidence labels `diagnostic_only`,
-  `shadow_ready`, `production_candidate`, `production_ready`, and
-  `inconclusive` to describe what a source-qualified branch, run, or evidence
-  packet verified. `inconclusive` means the required evidence did not establish
-  a stronger claim; it grants no authority. Evidence labels describe evidence,
-  not a topic page or a persisted state.
+- **Evidence labels** are defined in the
+  [product validation contract](../agent/product-validation-contract.md#evidence-labels).
 - **Writer authority**: see [Writer Authority](decision-policy.md#writer-authority).
 - **Verification** sections list test files only; the tests are the
   executable contract.
