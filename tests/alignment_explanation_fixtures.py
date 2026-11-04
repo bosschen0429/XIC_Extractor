@@ -59,9 +59,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         build_discovery_receipts,
         install_runtime_raws,
     )
-    from tests.runtime_telemetry_fixtures import (
-        build_runtime_telemetry_samples_from_coordinator,
-    )
     from tests.untargeted_partition_fixtures import (
         build_dense_partition,
         complete_dense_partition,
@@ -138,7 +135,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     )
     runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=config,
     )
     completed = complete_dense_partition(batch, runtime, alignment_config=config)

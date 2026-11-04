@@ -44,14 +44,6 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
-from xic_extractor.execution._observability import RuntimeMetricAvailability
-from xic_extractor.execution.attempt import (
-    RuntimeProcessTreePeakRssSample,
-    RuntimeTelemetrySamples,
-    RuntimeWorkerPeakRssSample,
-    runtime_started_worker_keys,
-)
-from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -590,14 +582,11 @@ def execute_prepared_alignment(
 
     with (
         recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
-        recorder.process_memory_scope("retained_runtime") as runtime_peak,
+        recorder.process_memory_scope("retained_runtime"),
     ):
         completed = execute_untargeted_plan(
             plan,
             output_dir=output_dir,
-            telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
-                coordinator, runtime_peak
-            ),
             progress_callback=runtime_progress,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
@@ -761,38 +750,6 @@ def _restore_physical_candidate(
                 f"{candidate.candidate_id}: physical {name} crossed its CSV receipt"
             )
     return replace(candidate, **values)
-
-
-def _coarse_runtime_telemetry(
-    coordinator: Any, peak: ProcessMemoryPeak
-) -> RuntimeTelemetrySamples:
-    worker_keys = runtime_started_worker_keys(coordinator)
-    measured = peak.availability == "measured" and peak.rss_bytes is not None
-    unavailable_reason = "not_collected_by_alignment_foreground_runner"
-    return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=None,
-        artifact_io=None,
-        process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=(
-                RuntimeMetricAvailability.MEASURED
-                if measured
-                else RuntimeMetricAvailability.UNSUPPORTED
-            ),
-            value=peak.rss_bytes if measured else None,
-            reason=(
-                None if measured else (peak.reason or "process_tree_sample_unavailable")
-            ),
-        ),
-        worker_peak_rss=tuple(
-            RuntimeWorkerPeakRssSample(
-                worker_key=worker_key,
-                availability=RuntimeMetricAvailability.UNSUPPORTED,
-                reason="not_applicable_shared_process_partition_workers",
-            )
-            for worker_key in worker_keys
-        ),
-        unavailable_reason=unavailable_reason,
-    )
 
 
 __all__ = [

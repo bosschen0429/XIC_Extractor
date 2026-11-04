@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
@@ -41,7 +42,6 @@ from xic_extractor.discovery.pipeline import run_discovery
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     evaluate_physical_peak,
@@ -53,6 +53,19 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.xic_models import XICTrace
+
+
+def _acquisition_totals(batches):
+    """Sum the per-batch acquisition counts that timing reports."""
+    names = (
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
+    )
+    return SimpleNamespace(
+        **{name: sum(getattr(batch, name) for batch in batches) for name in names}
+    )
 
 
 class _OwnerBoundBatchRaw(_BatchRaw):
@@ -1164,9 +1177,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         ms1_centroid_mz=lambda *_: None,
     )
 
-    metrics = derive_runtime_acquisition_metrics(
-        result.measurements.acquisition_batches
-    )
+    metrics = _acquisition_totals(result.measurements.acquisition_batches)
     assert preparation_count == 1
     assert len(result.physical_evaluations) == 2
     assert {record.evaluation.prepared for record in result.physical_evaluations} == {

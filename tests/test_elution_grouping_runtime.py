@@ -172,7 +172,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             job=result.job,
             resource_key=None,
             initial_requires_raw=False,
-            observer=workers._PartitionAcquisitionObserver(),
             adapter_result=result.adapter_result,
         )
         for result in initial.result[1].sample_results

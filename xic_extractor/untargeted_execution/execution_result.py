@@ -21,8 +21,6 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -72,7 +70,6 @@ class UntargetedPublicationInputs:
 
 @dataclass(frozen=True, slots=True)
 class CompletedUntargetBatchWorkflowResult:
-    runtime_receipt: RuntimeFinalizationReceipt
     application_result: FinalizedUntargetBatchApplicationResult
     # Diagnostic handoff only; these retained owner facts grant no completion
     # or Matrix authority and do not change scientific result equality.
@@ -106,7 +103,6 @@ class CompletedUntargetBatchWorkflowResult:
     def from_runtime(
         cls,
         *,
-        runtime_receipt: RuntimeFinalizationReceipt,
         application_result: FinalizedUntargetBatchApplicationResult,
         store: StreamedResultStore,
         retain_partition_spool: bool = False,
@@ -118,7 +114,6 @@ class CompletedUntargetBatchWorkflowResult:
         with execution, not this result.
         """
         return cls(
-            runtime_receipt=runtime_receipt,
             application_result=application_result,
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
@@ -189,30 +184,6 @@ class CompletedUntargetBatchWorkflowResult:
     def close(self) -> None:
         """Release owned stores once, also when called through a replaced view."""
         self._resources.close()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.runtime_receipt, RuntimeFinalizationReceipt):
-            raise AlignmentWorkflowContractError(
-                "workflow terminal result requires an owner-minted runtime receipt"
-            )
-        if (
-            self.runtime_receipt.supervisor.terminal_outcome
-            is not AttemptTerminalOutcome.SUCCEEDED
-        ):
-            raise AlignmentWorkflowContractError(
-                "workflow terminal result requires runtime outcome succeeded"
-            )
-        if type(self.application_result) is not FinalizedUntargetBatchApplicationResult:
-            raise AlignmentWorkflowContractError(
-                "completed Untarget batch requires an exact batch application result"
-            )
-        if (
-            self.runtime_receipt.supervisor.attempt
-            is not self.application_result.processing_attempt
-        ):
-            raise AlignmentWorkflowContractError(
-                "completed Untarget batch crossed its runtime attempt"
-            )
 
 
 __all__ = ("CompletedUntargetBatchWorkflowResult",)

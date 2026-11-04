@@ -18,12 +18,8 @@ from tests.cid_nl_runtime_fixtures import (
     install_runtime_raw,
     install_runtime_raws,
 )
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
@@ -124,25 +120,12 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         )
         for subject in subjects
     )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-batch-test"
-        ),
-    )
 
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
-    assert result.succeeded is True, tuple(
-        settlement.failure_detail.message
-        for settlement in result.finalization.coordinator.state.runtime.settlements
-        if settlement.failure_detail is not None
-    )
+    assert result.succeeded is True, result.failure
     assert len(result.sample_results) == 2
     assert {
         item.job.method_subject.method_subject_id: (
@@ -295,19 +278,13 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             partition_key="initial-and-recovery",
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
         )
-        assert partition.succeeded, tuple(
-            item.failure_detail.message
-            for item in partition.worker_batch.settlements
-            if item.failure_detail is not None
-        )
+        assert partition.succeeded, partition.failure
         missing = tuple(
             item
             for item in partition.sample_results
             if item.job.sample.metadata.raw_stem == "Missing"
         )
         assert len(missing) == 2
-        assert len(partition.acquisitions) == 4
-        assert len({item.work_unit_key for item in partition.acquisitions}) == 4
         for item in missing:
             initial = item.adapter_result.acquisition
             assert initial is not None
@@ -315,33 +292,16 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             recovery = item.backfill_attempt
             assert recovery is not None
             assert recovery.acquisition is not initial
-            assert all(
-                any(receipt.acquisition is batch for receipt in partition.acquisitions)
-                for batch in (initial, recovery.acquisition)
-            )
         assert [
             vendor.chromatogram_request_counts for vendor in opened[raw_paths[2]]
         ] == [[4], [4]]
         return
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-batch-recovery-test"
-        ),
-    )
 
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
-    assert result.succeeded is True, tuple(
-        settlement.failure_detail.message
-        for settlement in result.finalization.coordinator.state.runtime.settlements
-        if settlement.failure_detail is not None
-    )
+    assert result.succeeded is True, result.failure
     missing_results = tuple(
         item
         for item in result.sample_results
@@ -362,12 +322,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         raw_paths[1]: [[4]],
         raw_paths[2]: [[4]],
     }
-    resource_keys = tuple(
-        resource.reservation.resource_key
-        for resource in result.finalization.coordinator.state.resources
-    )
-    assert sum(":initial:" in key for key in resource_keys) == 2
-    assert sum(":backfill:" in key for key in resource_keys) == 3
     assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 

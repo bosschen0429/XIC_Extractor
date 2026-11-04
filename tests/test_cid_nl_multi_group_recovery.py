@@ -20,9 +20,6 @@ from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runt
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
@@ -47,7 +44,6 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -312,17 +308,10 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             )
         return final
 
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="grouping-window-invariance",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
         alignment_config=config,
         prepare_grouping=prepare,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     assert len(observed) == 2
@@ -439,17 +428,10 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             batch, bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
         )
 
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="sample-query-rt",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
         alignment_config=config,
         prepare_grouping=prepare,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     for sample_result in result.sample_results:
@@ -575,30 +557,15 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="rejected-bounded-recovery",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     if outcome == "failed":
         assert not result.succeeded
         assert recovery_calls == ["Rejected"]
-        assert any(
-            settlement.failure_detail is not None
-            and "recovery acquisition failed" in settlement.failure_detail.message
-            for settlement in result.finalization.coordinator.state.runtime.settlements
-        )
+        assert "recovery acquisition failed" in str(result.failure)
         return
-    assert result.succeeded, tuple(
-        s.failure_detail.message
-        for s in result.finalization.coordinator.state.runtime.settlements
-        if s.failure_detail is not None
-    )
+    assert result.succeeded, result.failure
     rejected = next(
         r for r in result.sample_results if r.job.sample.metadata.raw_stem == "Rejected"
     )
@@ -789,21 +756,10 @@ def test_runtime_recovers_every_authorized_rt_group(
             for sample in context.samples
         )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="multi-group-recovery",
-    )
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
-    assert result.succeeded, tuple(
-        s.failure_detail.message
-        for s in result.finalization.coordinator.state.runtime.settlements
-        if s.failure_detail is not None
-    )
+    assert result.succeeded, result.failure
     missing = next(
         item
         for item in result.sample_results
@@ -1303,15 +1259,8 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="shared-recovery-claim",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     missing = next(
@@ -1459,15 +1408,8 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="shared-ms1-only-backfill",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     missing_attempts = tuple(
@@ -1680,15 +1622,8 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="ms1-only-backfill",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     missing = next(
@@ -1853,15 +1788,8 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="support-elsewhere",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert result.succeeded
     missing = next(

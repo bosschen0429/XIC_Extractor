@@ -21,31 +21,6 @@ from typing import (
     TypeVar,
 )
 
-from xic_extractor.execution._finalization import (
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceOpenOutcome,
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution._lifecycle import (
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution.attempt import (
-    RuntimeAcquisitionReceipt,
-    RuntimeCancellationIngress,
-    RuntimeCancellationRequest,
-    RuntimeFinalizationReceipt,
-    RuntimeResourceSettlementReceipt,
-    RuntimeTelemetryProvider,
-    RuntimeWorkerBatchReceipt,
-    compact_runtime_acquisition_receipt,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-    start_runtime_attempt,
-)
 from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
@@ -68,8 +43,6 @@ class WorkPartition(Generic[TPayload]):
     index: int
     partition_key: str
     payload: TPayload
-    work_unit_keys: tuple[str, ...]
-    resource_keys: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,11 +62,17 @@ class PartitionPipelinePhase(Generic[TPartitionPayload]):
 
 @dataclass(frozen=True, slots=True)
 class PartitionAcquisitionOutput(Generic[TAcquisitionResult]):
+    """One partition's acquisition; ``failure`` is set when any sample failed.
+
+    An ``InterruptedError`` failure means the partition observed cancellation.
+    """
+
     result: TAcquisitionResult
-    resources: Sequence[RuntimeResourceSettlementReceipt] = ()
-    acquisitions: Sequence[RuntimeAcquisitionReceipt] = ()
-    succeeded: bool = True
-    failure_detail: WorkUnitFailureDetail | None = None
+    failure: Exception | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.failure is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,18 +92,6 @@ class PartitionPipelineAdapter(
 ):
     @property
     def partitions(self) -> Sequence[WorkPartition[TPartitionPayload]]: ...
-
-    @property
-    def processing_owners(self) -> ProcessingOwners: ...
-
-    @property
-    def work_unit_keys(self) -> Sequence[str]: ...
-
-    @property
-    def resource_reservations(self) -> Sequence[RuntimeResourceReservation]: ...
-
-    @property
-    def owner_completeness_attestation(self) -> str: ...
 
     def get_shared_objects(self) -> tuple[object, ...]: ...
 
@@ -146,33 +113,14 @@ class PartitionPipelineAdapter(
         should_cancel: Callable[[], None] | Callable[[], bool] | None = None,
     ) -> PartitionCompositionOutput[TCompositionResult]: ...
 
-    def settle_partition(
-        self,
-        partition: WorkPartition[TPartitionPayload],
-        composition_output: PartitionCompositionOutput[TCompositionResult],
-    ) -> Sequence[WorkUnitSettlement]: ...
-
     def finalize_application(
         self,
         store: StreamedResultStore,
         composition_outputs: Sequence[PartitionCompositionOutput[TCompositionResult]],
     ) -> TApplicationResult: ...
 
-    @property
-    def global_closure_work_unit_key(self) -> str | None:
-        """Optional declared manifest work-unit key for global closure."""
-        return None
-
-    def settle_global_closure(
-        self,
-        application_result: TApplicationResult,
-    ) -> Sequence[WorkUnitSettlement]:
-        """Settle the completed global application result."""
-        return ()
-
     def build_workflow_result(
         self,
-        runtime_receipt: RuntimeFinalizationReceipt,
         application_result: TApplicationResult,
         store: StreamedResultStore,
     ) -> TFinalResult: ...
@@ -182,7 +130,7 @@ _DONE_SENTINEL = object()
 
 
 class PartitionPipelineScheduler:
-    """Generic orchestrator executing partitioned workloads under runtime contracts."""
+    """Generic orchestrator executing partitioned workloads."""
 
     @staticmethod
     def execute(
@@ -195,22 +143,18 @@ class PartitionPipelineScheduler:
         ],
         *,
         output_dir: Path,
-        telemetry_provider: RuntimeTelemetryProvider,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         pipeline_overlap: bool = True,
         phases: Sequence[PartitionPipelinePhase[TPartitionPayload]] | None = None,
         acquisition_workers: int = 1,
         retain_partition_memory: bool = False,
-        execute_runtime_attempt: Callable[..., RuntimeFinalizationReceipt] = (
-            execute_runtime_attempt
-        ),
         store_factory: Callable[[Path, tuple[object, ...]], StreamedResultStore] = (
             StreamedResultStore
         ),
         acquisition_cleanup: Callable[[], None] | None = None,
     ) -> TFinalResult:
-        """Execute finite partitions under one runtime attempt."""
+        """Execute finite partitions; any failure or cancellation fails the batch."""
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
         pipeline_phases = (
@@ -219,16 +163,7 @@ class PartitionPipelineScheduler:
             else (PartitionPipelinePhase("partition-pipeline", adapter.partitions),)
         )
         partitions = tuple(p for phase in pipeline_phases for p in phase.partitions)
-        owners = adapter.processing_owners
-        work_unit_keys = adapter.work_unit_keys
-        resource_reservations = adapter.resource_reservations
-
-        runtime = start_runtime_attempt(
-            attempt=owners.attempt,
-            work_unit_keys=tuple(work_unit_keys),
-            owner_completeness_attestation=adapter.owner_completeness_attestation,
-        )
-        cancellation_ingress = RuntimeCancellationIngress(attempt=owners.attempt)
+        cancelled = threading.Event()
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -236,9 +171,6 @@ class PartitionPipelineScheduler:
             Path(mkdtemp(prefix=".partition_spool-", dir=output_dir)),
             adapter.get_shared_objects(),
         )
-
-        failure: Exception | None = None
-        application_result: TApplicationResult | None = None
 
         def progress(stage: str, completed: int) -> None:
             if progress_callback is not None:
@@ -251,41 +183,28 @@ class PartitionPipelineScheduler:
                     }
                 )
 
-        def provide_worker_batch(_aggregate: object) -> RuntimeWorkerBatchReceipt:
-            nonlocal failure, application_result
-            settlements: list[WorkUnitSettlement] = []
-            resources: dict[str, RuntimeResourceSettlementReceipt] = {}
-            acquisitions: list[RuntimeAcquisitionReceipt] = []
+        def run_partitions() -> TApplicationResult:
             composition_outputs: list[
                 PartitionCompositionOutput[TCompositionResult]
             ] = []
-            inflight_resource_keys: set[str] = set()
-            failed_work_unit_keys: set[str] = set()
-            failed_stage: str = "partition-pipeline-completion"
-            failed_exc: Exception | None = None
+            partition_failed = False
             timeline_emitted = False
             thread_lock = threading.Lock()
 
             def record_partition_failure(
                 partition: WorkPartition[TPartitionPayload],
-                stage: str,
                 exc: Exception,
             ) -> None:
-                nonlocal failed_stage, failed_exc
-                cancelled = (
-                    isinstance(exc, InterruptedError)
-                    and cancellation_ingress.is_cancelled
+                nonlocal partition_failed
+                partition_cancelled = (
+                    isinstance(exc, InterruptedError) and cancelled.is_set()
                 )
                 with thread_lock:
                     timeline_by_index[partition.index]["status"] = (
-                        "cancelled" if cancelled else "failed"
+                        "cancelled" if partition_cancelled else "failed"
                     )
-                    if cancelled:
-                        return
-                    if not failed_work_unit_keys:
-                        failed_work_unit_keys.update(partition.work_unit_keys)
-                        failed_stage = stage
-                        failed_exc = exc
+                    if not partition_cancelled:
+                        partition_failed = True
 
             timeline_records: list[dict[str, Any]] = [
                 {
@@ -331,7 +250,7 @@ class PartitionPipelineScheduler:
                                 - max(curr_acq_s, prev_comp_s),
                             )
                             timeline_records[i]["overlap_with_previous"] = overlap
-                    if cancellation_ingress.is_cancelled or bool(failed_work_unit_keys):
+                    if cancelled.is_set() or partition_failed:
                         for record in timeline_records:
                             if record.get("status") == "pending":
                                 record["status"] = "cancelled"
@@ -342,31 +261,27 @@ class PartitionPipelineScheduler:
                     }
                 progress_callback(payload)
 
-            def check_acquisition_cancellation(
+            def raise_acquisition_failure(
                 output: PartitionAcquisitionOutput[Any],
                 partition: WorkPartition[TPartitionPayload],
             ) -> None:
-                if (
-                    output.failure_detail is not None
-                    and output.failure_detail.category
-                    is WorkUnitFailureCategory.CANCELLATION
-                ):
-                    cancellation_ingress.request_cancellation(
-                        RuntimeCancellationRequest(attempt=owners.attempt)
+                failure = output.failure
+                if isinstance(failure, InterruptedError):
+                    cancelled.set()
+                    exc: Exception = InterruptedError("Partition acquisition cancelled")
+                else:
+                    exc = RuntimeError(
+                        "Partition acquisition failed: "
+                        f"{type(failure).__name__}: {failure}"
                     )
-                    exc = InterruptedError("Partition acquisition cancelled")
-                    record_partition_failure(partition, "partition-acquisition", exc)
-                    raise exc
+                record_partition_failure(partition, exc)
+                raise exc from failure
 
             def check_cancellation() -> None:
-                if cancellation_ingress.is_cancelled or (
+                if cancelled.is_set() or (
                     should_cancel is not None and should_cancel()
                 ):
-                    cancellation_ingress.request_cancellation(
-                        RuntimeCancellationRequest(
-                            attempt=owners.attempt,
-                        )
-                    )
+                    cancelled.set()
                     raise InterruptedError("Partition pipeline execution cancelled")
 
             try:
@@ -375,10 +290,8 @@ class PartitionPipelineScheduler:
                 for phase in pipeline_phases:
                     check_cancellation()
                     if phase.prepare_before is not None:
-                        failed_stage = phase.name
                         phase.prepare_before(store, check_cancellation)
                         check_cancellation()
-                    failed_stage = "partition-pipeline-completion"
                     use_overlap = pipeline_overlap and len(phase.partitions) > 1
                     if not use_overlap:
                         for index, partition in enumerate(
@@ -386,7 +299,6 @@ class PartitionPipelineScheduler:
                         ):
                             check_cancellation()
                             progress("partition_start", index)
-                            inflight_resource_keys.update(partition.resource_keys)
                             acq_start = time.perf_counter()
                             acq_out = adapter.execute_acquisition(
                                 partition,
@@ -396,31 +308,8 @@ class PartitionPipelineScheduler:
                             acq_end = time.perf_counter()
                             timeline_records[index]["acquire_start"] = acq_start
                             timeline_records[index]["acquire_end"] = acq_end
-                            resources.update(
-                                (receipt.resource_key, receipt)
-                                for receipt in acq_out.resources
-                            )
-                            acquisitions.extend(
-                                compact_runtime_acquisition_receipt(receipt)
-                                for receipt in acq_out.acquisitions
-                            )
-                            inflight_resource_keys.difference_update(
-                                partition.resource_keys
-                            )
                             if not acq_out.succeeded:
-                                check_acquisition_cancellation(acq_out, partition)
-                                failure_msg = (
-                                    f": {acq_out.failure_detail}"
-                                    if acq_out.failure_detail is not None
-                                    else ""
-                                )
-                                exc = RuntimeError(
-                                    f"Partition acquisition failed{failure_msg}"
-                                )
-                                record_partition_failure(
-                                    partition, "partition-acquisition", exc
-                                )
-                                raise exc
+                                raise_acquisition_failure(acq_out, partition)
                             check_cancellation()
                             progress("partition_compose", index)
                             comp_start = time.perf_counter()
@@ -437,9 +326,7 @@ class PartitionPipelineScheduler:
                                 timeline_records[index]["compose_end"] = (
                                     time.perf_counter()
                                 )
-                                record_partition_failure(
-                                    partition, "partition-composition", exc
-                                )
+                                record_partition_failure(partition, exc)
                                 raise
                             comp_end = time.perf_counter()
                             timeline_records[index]["compose_start"] = comp_start
@@ -447,10 +334,6 @@ class PartitionPipelineScheduler:
                             timeline_records[index]["status"] = "completed"
                             composition_outputs.append(comp_out)
                             check_cancellation()
-                            part_settlements = adapter.settle_partition(
-                                partition, comp_out
-                            )
-                            settlements.extend(part_settlements)
                             del acq_out, comp_out
                             progress("partition_released", index + 1)
                     else:
@@ -476,7 +359,7 @@ class PartitionPipelineScheduler:
                         def is_stopped(stop_event=stop_event) -> bool:
                             return (
                                 stop_event.is_set()
-                                or cancellation_ingress.is_cancelled
+                                or cancelled.is_set()
                                 or (
                                     should_cancel()
                                     if should_cancel is not None
@@ -513,10 +396,6 @@ class PartitionPipelineScheduler:
                                         break
 
                                     progress("partition_start", index)
-                                    with thread_lock:
-                                        inflight_resource_keys.update(
-                                            partition.resource_keys
-                                        )
                                     acq_start = time.perf_counter()
                                     acq_out = adapter.execute_acquisition(
                                         partition,
@@ -525,38 +404,13 @@ class PartitionPipelineScheduler:
                                     )
                                     acq_end = time.perf_counter()
                                     with thread_lock:
-                                        inflight_resource_keys.difference_update(
-                                            partition.resource_keys
-                                        )
                                         timeline_records[index]["acquire_start"] = (
                                             acq_start
                                         )
                                         timeline_records[index]["acquire_end"] = acq_end
-                                        resources.update(
-                                            (receipt.resource_key, receipt)
-                                            for receipt in acq_out.resources
-                                        )
-                                        acquisitions.extend(
-                                            compact_runtime_acquisition_receipt(receipt)
-                                            for receipt in acq_out.acquisitions
-                                        )
                                     if not acq_out.succeeded:
                                         admission_credits.release()
-                                        check_acquisition_cancellation(
-                                            acq_out, partition
-                                        )
-                                        failure_msg = (
-                                            f": {acq_out.failure_detail}"
-                                            if acq_out.failure_detail is not None
-                                            else ""
-                                        )
-                                        exc = RuntimeError(
-                                            f"Partition acquisition failed{failure_msg}"
-                                        )
-                                        record_partition_failure(
-                                            partition, "partition-acquisition", exc
-                                        )
-                                        raise exc
+                                        raise_acquisition_failure(acq_out, partition)
 
                                     put_done = False
                                     while not is_stopped():
@@ -579,13 +433,9 @@ class PartitionPipelineScheduler:
                                     timeline_records[index]["acquire_end"] = (
                                         time.perf_counter()
                                     )
-                                record_partition_failure(
-                                    partition, "partition-acquisition", exc
-                                )
+                                record_partition_failure(partition, exc)
                                 stop_event.set()
-                                cancellation_ingress.request_cancellation(
-                                    RuntimeCancellationRequest(attempt=owners.attempt)
-                                )
+                                cancelled.set()
                             finally:
                                 while not is_stopped():
                                     try:
@@ -665,11 +515,6 @@ class PartitionPipelineScheduler:
                                             timeline_by_index[partition.index][
                                                 "status"
                                             ] = "completed"
-                                        part_settlements = adapter.settle_partition(
-                                            partition, comp_out
-                                        )
-                                        with thread_lock:
-                                            settlements.extend(part_settlements)
                                         del acq_out, comp_out
                                         progress(
                                             "partition_released", partition.index + 1
@@ -687,16 +532,10 @@ class PartitionPipelineScheduler:
                                             "compose_end"
                                         ] = time.perf_counter()
                                     record_partition_failure(
-                                        partition,
-                                        "partition-composition",
-                                        composition_error,
+                                        partition, composition_error
                                     )
                                 stop_event.set()
-                                cancellation_ingress.request_cancellation(
-                                    RuntimeCancellationRequest(
-                                        attempt=owners.attempt,
-                                    )
-                                )
+                                cancelled.set()
                                 admission_credits.release()
                                 admission_credits.release()
 
@@ -726,233 +565,51 @@ class PartitionPipelineScheduler:
                             raise producer_exc
                         if consumer_exc is not None:
                             raise consumer_exc
-                        if cancellation_ingress.is_cancelled or (
-                            should_cancel is not None and should_cancel()
-                        ):
-                            cancellation_ingress.request_cancellation(
-                                RuntimeCancellationRequest(
-                                    attempt=owners.attempt,
-                                )
-                            )
-                            raise InterruptedError(
-                                "Partition pipeline execution cancelled"
-                            )
+                        check_cancellation()
                     phase_offset += len(phase.partitions)
 
                 check_cancellation()
                 store.seal()
                 progress("global_closure", len(partitions))
-                global_closure_key = getattr(
-                    adapter, "global_closure_work_unit_key", None
+                application_result = adapter.finalize_application(
+                    store, composition_outputs
                 )
-                try:
-                    application_result = adapter.finalize_application(
-                        store, composition_outputs
-                    )
-                    check_cancellation()
-                    if global_closure_key is not None:
-                        closure_settlements = adapter.settle_global_closure(
-                            application_result
-                        )
-                        settlements.extend(closure_settlements)
-                except Exception as exc:
-                    if not (
-                        isinstance(exc, InterruptedError)
-                        or cancellation_ingress.is_cancelled
-                    ):
-                        if global_closure_key is not None:
-                            with thread_lock:
-                                failed_work_unit_keys.add(global_closure_key)
-                                failed_stage = "partition-pipeline-completion"
-                                failed_exc = exc
-                    raise
-
-                emit_timeline()
-            except Exception as exc:
-                failure = exc
-                completed_keys = {receipt.work_unit_key for receipt in settlements}
-                global_closure_key = getattr(
-                    adapter, "global_closure_work_unit_key", None
-                )
-                if (
-                    len(completed_keys) == len(work_unit_keys)
-                    and global_closure_key is None
-                ):
-                    completed_keys.remove(settlements.pop().work_unit_key)
-
-                is_cancellation_accepted = (
-                    cancellation_ingress.accepted_request is not None
-                )
-                if not is_cancellation_accepted and (
-                    isinstance(exc, InterruptedError)
-                    or cancellation_ingress.is_cancelled
-                    or (should_cancel is not None and should_cancel())
-                ):
-                    cancellation_ingress.request_cancellation(
-                        RuntimeCancellationRequest(attempt=owners.attempt)
-                    )
-                    is_cancellation_accepted = (
-                        cancellation_ingress.accepted_request is not None
-                    )
-
-                unsettled_keys = [k for k in work_unit_keys if k not in completed_keys]
-                if (
-                    not is_cancellation_accepted
-                    and not failed_work_unit_keys
-                    and unsettled_keys
-                ):
-                    failed_work_unit_keys.add(unsettled_keys[0])
-                    failed_exc = exc
-
-                for key in work_unit_keys:
-                    if key not in completed_keys:
-                        if key in failed_work_unit_keys:
-                            settlements.append(
-                                mint_work_unit_settlement(
-                                    attempt=owners.attempt,
-                                    work_unit_key=key,
-                                    outcome=WorkUnitTerminalOutcome.FAILED,
-                                    failure_detail=WorkUnitFailureDetail(
-                                        category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                                        stage=failed_stage,
-                                        source_reference=key,
-                                        message=(
-                                            str(failed_exc or exc).strip()
-                                            or type(failed_exc or exc).__name__
-                                        )[:2000],
-                                    ),
-                                )
-                            )
-                        elif is_cancellation_accepted or bool(failed_work_unit_keys):
-                            if not is_cancellation_accepted:
-                                cancellation_ingress.request_cancellation(
-                                    RuntimeCancellationRequest(attempt=owners.attempt)
-                                )
-                                is_cancellation_accepted = True
-                            settlements.append(
-                                mint_work_unit_settlement(
-                                    attempt=owners.attempt,
-                                    work_unit_key=key,
-                                    outcome=WorkUnitTerminalOutcome.CANCELLED,
-                                    failure_detail=WorkUnitFailureDetail(
-                                        category=WorkUnitFailureCategory.CANCELLATION,
-                                        stage="partition-pipeline-cancellation",
-                                        source_reference=key,
-                                        message=(
-                                            "work unit cancelled due to attempt "
-                                            "cancellation"
-                                        ),
-                                    ),
-                                )
-                            )
-                        else:
-                            settlements.append(
-                                mint_work_unit_settlement(
-                                    attempt=owners.attempt,
-                                    work_unit_key=key,
-                                    outcome=WorkUnitTerminalOutcome.FAILED,
-                                    failure_detail=WorkUnitFailureDetail(
-                                        category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                                        stage=failed_stage,
-                                        source_reference=key,
-                                        message=(
-                                            str(exc).strip() or type(exc).__name__
-                                        )[:2000],
-                                    ),
-                                )
-                            )
+                check_cancellation()
+                return application_result
+            except Exception:
+                # Any failure leaves the remaining partitions unadmitted.
+                partition_failed = True
+                raise
+            finally:
                 emit_timeline()
 
-            for reservation in resource_reservations:
-                if reservation.resource_key not in resources:
-                    unknown = reservation.resource_key in inflight_resource_keys
-                    resources[reservation.resource_key] = (
-                        RuntimeResourceSettlementReceipt(
-                            attempt=owners.attempt,
-                            resource_key=reservation.resource_key,
-                            open_outcome=(
-                                RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS
-                                if unknown
-                                else RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-                            ),
-                            cleanup_outcome=(
-                                RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS
-                                if unknown
-                                else RuntimeResourceCleanupOutcome.SUCCEEDED
-                            ),
-                        )
-                    )
-            return RuntimeWorkerBatchReceipt(
-                settlements=tuple(settlements),
-                resource_settlements=tuple(resources.values()),
-                acquisitions=tuple(acquisitions),
-            )
+        def close_acquisition() -> None:
+            if acquisition_cleanup is not None:
+                acquisition_cleanup()
 
         try:
-
-            def provide_worker_batch_and_cleanup(
-                aggregate: object,
-            ) -> RuntimeWorkerBatchReceipt:
+            try:
+                application_result = run_partitions()
+            except Exception as failure:
                 try:
-                    batch = provide_worker_batch(aggregate)
-                except Exception:
-                    if acquisition_cleanup is not None:
-                        try:
-                            acquisition_cleanup()
-                        except Exception:
-                            pass
-                    raise
-                if acquisition_cleanup is None:
-                    return batch
-                try:
-                    acquisition_cleanup()
-                except Exception as exc:
-                    nonlocal failure
-                    failure = exc
-                    cleanup_failure = WorkUnitFailureDetail(
-                        category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                        stage="partition-acquisition-pool-shutdown",
-                        source_reference=owners.attempt.processing_attempt_id,
-                        message=(str(exc).strip() or type(exc).__name__)[:2000],
+                    close_acquisition()
+                except Exception as cleanup_error:
+                    failure.add_note(
+                        f"Acquisition cleanup also failed: {cleanup_error}"
                     )
-                    return RuntimeWorkerBatchReceipt(
-                        settlements=tuple(
-                            mint_work_unit_settlement(
-                                attempt=owners.attempt,
-                                work_unit_key=key,
-                                outcome=WorkUnitTerminalOutcome.FAILED,
-                                failure_detail=cleanup_failure,
-                            )
-                            for key in work_unit_keys
-                        ),
-                        resource_settlements=batch.resource_settlements,
-                        acquisitions=batch.acquisitions,
-                    )
-                return batch
-
-            finalization = execute_runtime_attempt(
-                runtime,
-                resource_reservations,
-                worker_batch_provider=provide_worker_batch_and_cleanup,
-                telemetry_provider=telemetry_provider,
-                cancellation_ingress=cancellation_ingress,
-            )
-            if failure is not None:
                 raise RuntimeError(
-                    f"Partition pipeline execution failed before batch publication: "
+                    "Partition pipeline execution failed before batch publication: "
                     f"{failure}"
                 ) from failure
-            outcome = finalization.supervisor.terminal_outcome
-            if outcome is not AttemptTerminalOutcome.SUCCEEDED or (
-                application_result is None
-            ):
+            try:
+                close_acquisition()
+            except Exception as failure:
                 raise RuntimeError(
-                    "Partition pipeline runtime did not complete atomically"
-                )
+                    "Partition pipeline execution failed before batch publication: "
+                    f"{failure}"
+                ) from failure
             progress("batch_completed", len(partitions))
-            return adapter.build_workflow_result(
-                finalization, application_result, store
-            )
+            return adapter.build_workflow_result(application_result, store)
         except Exception as exc:
             try:
                 checkpoint = store.preserve_failed_results()

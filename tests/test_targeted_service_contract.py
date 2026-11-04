@@ -362,7 +362,7 @@ def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
     )
     for path in (
         Path("xic_extractor/acquisition_contract.py"),
-        Path("xic_extractor/execution/_observability.py"),
+        Path("xic_extractor/execution/partitions.py"),
         Path("xic_extractor/applications/targeted/application.py"),
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

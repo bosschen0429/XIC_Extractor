@@ -228,7 +228,7 @@
     {
       "title": "這是責任關係，不是單一 supervisor 的時序",
       "items": [
-        "Foreground acquisition、科學組合與發布不全由同一 runtime receipt 覆蓋；不同路徑保留其正式交接。"
+        "Foreground acquisition、科學組合與發布各自保留正式交接，沒有單一 runtime 結果涵蓋全部路徑。"
       ],
       "dot": "cyan"
     },

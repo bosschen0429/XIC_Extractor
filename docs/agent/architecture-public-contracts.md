@@ -10,7 +10,7 @@ current contract only. Migration history belongs in Issues, PRs, and Git.
 | --- | --- |
 | owner or dependency boundary | [`../architecture-contract.md`](../architecture-contract.md) and the affected package |
 | persisted schema or evidence claim | the writer, strict reader, schema tests, and [`product-validation-contract.md`](product-validation-contract.md) |
-| runtime lifecycle or receipt | `xic_extractor.execution.attempt` and its focused tests |
+| runtime lifecycle | `xic_extractor.execution.partitions`, `xic_extractor.untargeted_execution.partition`, and their focused tests |
 | public command or diagnostic | [`script-tool-lifecycle.md`](script-tool-lifecycle.md) and `[project.scripts]` |
 | repository placement | [`../project-layout.md`](../project-layout.md) |
 
@@ -103,32 +103,18 @@ Targeted and Untargeted retain their existing writer owners and publication
 mechanics. A new transaction shape requires a current consumer, authority
 boundary, compatibility impact, and rollback oracle.
 
-## Runtime Construction Authority
+## Runtime Execution
 
-`xic_extractor.execution.attempt` is the sole runtime aggregate and
-finalization authority. Consumers submit typed settlements, registrations,
-owner-bound cancellation, acquisition receipts, and telemetry; the owner
-derives lifecycle, counts, ledgers, dispositions, and final outcome.
+`xic_extractor.execution.partitions` schedules partitioned work and decides the
+batch outcome: a batch completes every partition and its global closure, or it
+fails or cancels as a whole. Runtime completion grants no scientific, artifact,
+writer, or publication authority.
 
-- Consumers call `execute_runtime_attempt`. Partial settlement or finalization
-  entry points are not compatibility APIs.
-- Callers must not construct ledgers, aggregates, coordinator/supervisor
-  records, finalization receipts, or canonical mechanical counts.
-- Invalid manifests finalize through the owner as failed without dispatch or
-  fabricated work.
-- Missing observations remain unavailable. They never become inferred zero.
-- A successful empty observation result is valid only when every owner-derived
-  acquisition count is zero.
-- Typed receipt replay is idempotent only when complete owner facts match;
-  conflicting replay fails closed.
-- RAW-open and peak-cost receipts are narrow diagnostic projections. They do
-  not grant lifecycle, cleanup, scientific, artifact, writer, or finalization
-  authority.
-- Canonical metrics require the owner-minted ledger bound to the accepted
-  finalization receipt; copied labels or mappings carry no authority.
-
-Receipt bindings and active schema versions are enforced by the owner modules,
-serializers, and focused tests.
+- A real execution failure outranks cancellation observed by sibling work.
+- Missing timing observations remain unavailable with a reason. They never
+  become inferred zero.
+- Timing counts describe cost and locality only; they do not select a cell,
+  value, state, or writer decision.
 
 ## Executable Census And Dependency Gate
 

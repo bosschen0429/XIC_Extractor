@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,11 +13,21 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
-from xic_extractor.execution.attempt import (
-    derive_runtime_acquisition_metrics,
-)
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.xic_models import XICRequest, XICTrace
+
+
+def _acquisition_totals(batches):
+    """Sum the per-batch acquisition counts that timing reports."""
+    names = (
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
+    )
+    return SimpleNamespace(
+        **{name: sum(getattr(batch, name) for batch in batches) for name in names}
+    )
 
 
 class _NoRawBatchAdapter:
@@ -155,7 +166,7 @@ def test_runtime_owner_aggregates_only_typed_acquisition_receipts(
         acquire_trace_batch(capability, (request, request), adapter),
     )
 
-    metrics = derive_runtime_acquisition_metrics(batches)
+    metrics = _acquisition_totals(batches)
 
     assert metrics.logical_xic_request_count == 3
     assert metrics.xic_batch_count == 2

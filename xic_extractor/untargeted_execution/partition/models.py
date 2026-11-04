@@ -50,11 +50,6 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
-from xic_extractor.execution.attempt import (
-    RuntimeAcquisitionReceipt,
-    RuntimeWorkerBatchReceipt,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     validate_cid_nl_method_assessment_binding,
@@ -116,14 +111,6 @@ copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
 VALIDATION_STATUS = "diagnostic_only"
-RUNTIME_CALL_COST_METRIC_NAMES = (
-    "raw_open_count",
-    "logical_xic_request_count",
-    "xic_batch_count",
-    "adapter_chromatogram_call_count",
-    "trace_point_count",
-)
-_RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime"
 
 
 class UntargetedPartitionError(ValueError):
@@ -507,17 +494,18 @@ def _project_completed_backfill(
 
 @dataclass(frozen=True, slots=True)
 class UntargetedPartitionResult:
+    """Successful sample results, or the first sample failure that stops them.
+
+    An ``InterruptedError`` failure means the work observed cancellation.
+    """
+
     sample_results: tuple[UntargetedSampleResult, ...]
-    worker_batch: RuntimeWorkerBatchReceipt
-    acquisitions: tuple[RuntimeAcquisitionReceipt, ...]
+    failure: Exception | None = None
     prepared_grouping: UntargetedPreparedGrouping | None = None
 
     @property
     def succeeded(self) -> bool:
-        return bool(self.worker_batch.settlements) and all(
-            settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
-            for settlement in self.worker_batch.settlements
-        )
+        return self.failure is None
 
 
 def _exact_acquisition_traces(

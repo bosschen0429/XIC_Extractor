@@ -12,9 +12,6 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
@@ -151,7 +148,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     runtime = execute_dense_partition(
         batch,
         alignment_config=alignment_config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     by_sample = {
         result.job.sample.metadata.raw_stem: fixture_assessment(result)

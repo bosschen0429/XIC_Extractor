@@ -17,31 +17,6 @@ import pytest
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
-from xic_extractor.execution._finalization import (
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution._lifecycle import (
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution.attempt import (
-    RuntimeCancellationIngress,
-    RuntimeCancellationRequest,
-    RuntimeFinalizationReceipt,
-    RuntimeResourceSettlementReceipt,
-    RuntimeWorkerBatchReceipt,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-    start_runtime_attempt,
-)
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
@@ -273,8 +248,6 @@ class MockAdapter:
         fail_finalize: bool = False,
         acquisition_delay: float = 0.0,
         composition_delay: float = 0.0,
-        declare_global_closure: bool = False,
-        opaque_partition_bindings: bool = False,
         on_acquisition: Any = None,
         on_composition: Any = None,
     ):
@@ -284,41 +257,8 @@ class MockAdapter:
                 index=i,
                 partition_key=f"partition-{i:05d}",
                 payload={"partition_idx": i},
-                work_unit_keys=(
-                    (f"task-{i}-initial", f"task-{i}-backfill")
-                    if opaque_partition_bindings
-                    else (f"wu:partition-{i:05d}",)
-                ),
-                resource_keys=(
-                    (f"raw-handle-{i}",)
-                    if opaque_partition_bindings
-                    else (f"acquisition-session:partition-{i:05d}:phase",)
-                ),
             )
             for i in range(num_partitions)
-        )
-        self._global_closure_work_unit_key = (
-            "global-closure" if declare_global_closure else None
-        )
-        self._work_unit_keys = (
-            *(key for p in self._partitions for key in p.work_unit_keys),
-            *(
-                (self._global_closure_work_unit_key,)
-                if self._global_closure_work_unit_key
-                else ()
-            ),
-        )
-        self._resource_reservations = tuple(
-            RuntimeResourceReservation(
-                attempt=owners.attempt,
-                kind=RuntimeResourceKind.ACQUISITION_SESSION,
-                resource_key=p.resource_keys[0],
-                worker_key=f"worker:{p.partition_key}",
-                source_reference="test-src",
-                compatibility_token="test",
-                owner_conditional=True,
-            )
-            for p in self._partitions
         )
         self.fail_acquisition_index = fail_acquisition_index
         self.fail_composition_index = fail_composition_index
@@ -332,26 +272,6 @@ class MockAdapter:
     @property
     def partitions(self) -> tuple[WorkPartition[dict[str, int]], ...]:
         return self._partitions
-
-    @property
-    def processing_owners(self) -> ProcessingOwners:
-        return self._owners
-
-    @property
-    def work_unit_keys(self) -> tuple[str, ...]:
-        return self._work_unit_keys
-
-    @property
-    def global_closure_work_unit_key(self) -> str | None:
-        return self._global_closure_work_unit_key
-
-    @property
-    def resource_reservations(self) -> tuple[RuntimeResourceReservation, ...]:
-        return self._resource_reservations
-
-    @property
-    def owner_completeness_attestation(self) -> str:
-        return "mock-attestation"
 
     def get_shared_objects(self) -> tuple[object, ...]:
         return (self._owners,)
@@ -370,27 +290,9 @@ class MockAdapter:
         if self.fail_acquisition_index == partition.index:
             return PartitionAcquisitionOutput(
                 result={},
-                succeeded=False,
-                failure_detail=WorkUnitFailureDetail(
-                    category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                    stage="mock-acq-failure",
-                    source_reference=partition.partition_key,
-                    message="simulated acquisition failure",
-                ),
+                failure=RuntimeError("simulated acquisition failure"),
             )
-        res_key = partition.resource_keys[0]
-        resource_receipt = RuntimeResourceSettlementReceipt(
-            attempt=self._owners.attempt,
-            resource_key=res_key,
-            open_outcome=RuntimeResourceOpenOutcome.OPENED,
-            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-        )
-        return PartitionAcquisitionOutput(
-            result={"acq_done": partition.index},
-            resources=(resource_receipt,),
-            acquisitions=(),
-            succeeded=True,
-        )
+        return PartitionAcquisitionOutput(result={"acq_done": partition.index})
 
     def execute_composition(
         self,
@@ -421,27 +323,6 @@ class MockAdapter:
             sealed=sealed,
         )
 
-    def settle_partition(self, partition, composition_output):
-        return tuple(
-            mint_work_unit_settlement(
-                attempt=self._owners.attempt,
-                work_unit_key=key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            )
-            for key in partition.work_unit_keys
-        )
-
-    def settle_global_closure(self, application_result):
-        if self._global_closure_work_unit_key is None:
-            return ()
-        return (
-            mint_work_unit_settlement(
-                attempt=self._owners.attempt,
-                work_unit_key=self._global_closure_work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            ),
-        )
-
     def finalize_application(
         self,
         store: StreamedResultStore,
@@ -453,12 +334,10 @@ class MockAdapter:
 
     def build_workflow_result(
         self,
-        runtime_receipt: RuntimeFinalizationReceipt,
         application_result: dict[str, Any],
         store: StreamedResultStore,
     ) -> dict[str, Any]:
         return {
-            "runtime_receipt": runtime_receipt,
             "application_result": application_result,
             "children": tuple(store.sequence("children")),
         }
@@ -476,7 +355,6 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         progress_callback=progress_events.append,
         retain_partition_memory=False,
         pipeline_overlap=False,
@@ -523,7 +401,6 @@ def test_scheduler_does_not_force_full_gc_after_partition(
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=tmp_path / "gc-output",
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         pipeline_overlap=pipeline_overlap,
     )
 
@@ -543,14 +420,16 @@ def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
     def cleanup() -> None:
         cleanup_calls.append(True)
 
-    def telemetry(coordinator):
+    def build_workflow_result(application_result, store):
         assert cleanup_calls == [True]
-        return build_runtime_telemetry_samples_from_coordinator(coordinator)
+        return original_build(application_result, store)
+
+    original_build = adapter.build_workflow_result
+    adapter.build_workflow_result = build_workflow_result
 
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=tmp_path / "cleanup-output",
-        telemetry_provider=telemetry,
         acquisition_cleanup=cleanup,
     )
 
@@ -576,7 +455,6 @@ def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=tmp_path / "cleanup-failure-output",
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             acquisition_cleanup=cleanup,
         )
 
@@ -593,7 +471,6 @@ def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> No
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         retain_partition_memory=True,
     )
 
@@ -628,7 +505,6 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             should_cancel=should_cancel,
             acquisition_cleanup=cleanup,
         )
@@ -658,7 +534,6 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             acquisition_cleanup=cleanup,
         )
 
@@ -684,7 +559,6 @@ def test_scheduler_composition_failure_retains_completed_results(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
@@ -711,7 +585,6 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
@@ -752,7 +625,6 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         progress_callback=events.append,
         pipeline_overlap=True,
     )
@@ -792,7 +664,6 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
     result = PartitionPipelineScheduler.execute(
         adapter,
         output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         progress_callback=events.append,
         pipeline_overlap=True,
     )
@@ -846,7 +717,6 @@ def test_pipeline_overlap_backpressure(
         result = PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -860,7 +730,6 @@ def test_pipeline_overlap_backpressure(
                     PartitionPipelineScheduler.execute(
                         adapter,
                         output_dir=output_dir,
-                        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
                         pipeline_overlap=True,
                         acquisition_workers=acquisition_workers,
                     )
@@ -919,7 +788,6 @@ def test_pipeline_bilateral_abort_consumer_failure(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -947,7 +815,6 @@ def test_parallel_partition_acquisition_cancellation_closes_all_producers(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             should_cancel=cancelled.is_set,
             pipeline_overlap=True,
             acquisition_workers=2,
@@ -977,7 +844,6 @@ def test_pipeline_bilateral_abort_producer_failure(
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             pipeline_overlap=True,
             acquisition_workers=acquisition_workers,
         )
@@ -986,159 +852,10 @@ def test_pipeline_bilateral_abort_producer_failure(
     assert len(spool_dirs) == 0
 
 
-def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
-    """In-flight cancellation ingress acceptance transitions attempt to CANCELLED."""
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1",)
-    )
-    attempt = fixture.owners.attempt
-    ingress = RuntimeCancellationIngress(attempt=attempt)
-    runtime = start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=("wu:1", "wu:2"),
-        owner_completeness_attestation="test-attestation",
-    )
-
-    def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
-        accepted = ingress.request_cancellation(
-            RuntimeCancellationRequest(attempt=attempt)
-        )
-        assert accepted is True
-        return RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=attempt,
-                    work_unit_key="wu:1",
-                    outcome=WorkUnitTerminalOutcome.CANCELLED,
-                    failure_detail=WorkUnitFailureDetail(
-                        category=WorkUnitFailureCategory.CANCELLATION,
-                        stage="test-cancel",
-                        source_reference="wu:1",
-                        message="cancelled in flight",
-                    ),
-                ),
-                mint_work_unit_settlement(
-                    attempt=attempt,
-                    work_unit_key="wu:2",
-                    outcome=WorkUnitTerminalOutcome.CANCELLED,
-                    failure_detail=WorkUnitFailureDetail(
-                        category=WorkUnitFailureCategory.CANCELLATION,
-                        stage="test-cancel",
-                        source_reference="wu:2",
-                        message="cancelled in flight",
-                    ),
-                ),
-            ),
-            resource_settlements=(),
-            acquisitions=(),
-        )
-
-    receipt = execute_runtime_attempt(
-        runtime,
-        reservations=(),
-        worker_batch_provider=provide_worker_batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        cancellation_ingress=ingress,
-    )
-    assert receipt.supervisor.terminal_outcome is AttemptTerminalOutcome.CANCELLED
-
-
-def test_r386_01_global_closure_failure_retains_prior_success(
+def test_consumer_composition_failure_marks_partition_failed(
     tmp_path: Path,
 ) -> None:
-    """Closure failure marks only closure unit FAILED; partition units stay
-    SUCCEEDED.
-    """
-    terminal_records = []
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1", "sample-2")
-    )
-    adapter = MockAdapter(
-        fixture.owners,
-        num_partitions=2,
-        declare_global_closure=True,
-        fail_finalize=True,
-    )
-    output_dir = tmp_path / "output"
-
-    with pytest.raises(
-        RuntimeError,
-        match="Partition pipeline execution failed before batch publication",
-    ):
-        PartitionPipelineScheduler.execute(
-            adapter,
-            output_dir=output_dir,
-            telemetry_provider=_record_terminal_telemetry(terminal_records),
-            pipeline_overlap=True,
-        )
-
-    assert len(terminal_records) == 1
-    coordinator = terminal_records[0]
-    settlements = coordinator.state.runtime.settlements
-    assert len(settlements) == 3
-
-    p0_settlement = next(
-        s for s in settlements if s.work_unit_key == "wu:partition-00000"
-    )
-    p1_settlement = next(
-        s for s in settlements if s.work_unit_key == "wu:partition-00001"
-    )
-    closure_settlement = next(
-        s for s in settlements if s.work_unit_key == "global-closure"
-    )
-
-    assert p0_settlement.outcome.value == "succeeded"
-    assert p1_settlement.outcome.value == "succeeded"
-    assert closure_settlement.outcome.value == "failed"
-    assert closure_settlement.failure_detail is not None
-    assert closure_settlement.failure_detail.stage == "partition-pipeline-completion"
-
-
-def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
-    """Cancellation submitted after ingress cutoff returns False."""
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1",)
-    )
-    attempt = fixture.owners.attempt
-    ingress = RuntimeCancellationIngress(attempt=attempt)
-    runtime = start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=("wu:1",),
-        owner_completeness_attestation="test-attestation",
-    )
-
-    def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
-        return RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=attempt,
-                    work_unit_key="wu:1",
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                ),
-            ),
-            resource_settlements=(),
-            acquisitions=(),
-        )
-
-    receipt = execute_runtime_attempt(
-        runtime,
-        reservations=(),
-        worker_batch_provider=provide_worker_batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        cancellation_ingress=ingress,
-    )
-    late_accepted = ingress.request_cancellation(
-        RuntimeCancellationRequest(attempt=attempt)
-    )
-    assert late_accepted is False
-    assert receipt.supervisor.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
-
-
-def test_r386_01_consumer_composition_failure_settled_failed(
-    tmp_path: Path,
-) -> None:
-    """Consumer composition error marks failing partition FAILED, not CANCELLED."""
-    terminal_records = []
+    """Consumer composition error marks failing partition failed, not cancelled."""
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -1156,7 +873,6 @@ def test_r386_01_consumer_composition_failure_settled_failed(
     adapter = MockAdapter(
         fixture.owners,
         num_partitions=2,
-        declare_global_closure=True,
         on_acquisition=acq,
         on_composition=compose,
     )
@@ -1166,120 +882,31 @@ def test_r386_01_consumer_composition_failure_settled_failed(
     with pytest.raises(
         RuntimeError,
         match="Partition pipeline execution failed before batch publication",
-    ):
+    ) as raised:
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=_record_terminal_telemetry(terminal_records),
             progress_callback=events.append,
             pipeline_overlap=True,
         )
 
-    assert len(terminal_records) == 1
-    coordinator = terminal_records[0]
-    settlements = coordinator.state.runtime.settlements
-
-    p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
-    p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
-    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
-
-    assert p0.outcome.value == "failed"
-    assert p0.failure_detail.stage == "partition-composition"
-    assert "simulated consumer composition failure" in p0.failure_detail.message
-    assert p1.outcome.value == "cancelled"
-    assert closure.outcome.value == "cancelled"
+    assert "simulated consumer composition failure" in str(raised.value.__cause__)
     timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
+    statuses = [record["status"] for record in timeline_events[0]["timeline"]]
+    assert statuses == ["failed", "cancelled"]
 
 
-def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
+def test_closure_boundary_cancellation_fails_completed_batch(
     tmp_path: Path,
 ) -> None:
-    terminal_records = []
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1",)
-    )
-    adapter = MockAdapter(
-        fixture.owners,
-        num_partitions=2,
-        fail_composition_index=1,
-        opaque_partition_bindings=True,
-    )
-
-    with pytest.raises(RuntimeError, match="failed before batch publication"):
-        PartitionPipelineScheduler.execute(
-            adapter,
-            output_dir=tmp_path / "opaque-work-units",
-            telemetry_provider=_record_terminal_telemetry(terminal_records),
-        )
-
-    assert len(terminal_records) == 1
-    coordinator = terminal_records[0]
-    outcomes = {
-        item.work_unit_key: item.outcome.value
-        for item in coordinator.state.runtime.settlements
-    }
-    assert outcomes == {
-        "task-0-initial": "succeeded",
-        "task-0-backfill": "succeeded",
-        "task-1-initial": "failed",
-        "task-1-backfill": "failed",
-    }
-
-
-def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_loss(
-    tmp_path: Path,
-) -> None:
-    terminal_records = []
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1",)
-    )
-
-    def lose_acquisition(index: int) -> None:
-        if index == 1:
-            raise RuntimeError("worker vanished before returning a receipt")
-
-    adapter = MockAdapter(
-        fixture.owners,
-        num_partitions=2,
-        opaque_partition_bindings=True,
-        on_acquisition=lose_acquisition,
-    )
-
-    with pytest.raises(RuntimeError, match="failed before batch publication"):
-        PartitionPipelineScheduler.execute(
-            adapter,
-            output_dir=tmp_path / "opaque-resource",
-            telemetry_provider=_record_terminal_telemetry(terminal_records),
-        )
-
-    assert len(terminal_records) == 1
-    coordinator = terminal_records[0]
-    resources = {
-        item.reservation.resource_key: item for item in coordinator.state.resources
-    }
-    assert resources["raw-handle-0"].open_outcome.value == "opened"
-    assert (
-        resources["raw-handle-1"].open_outcome.value
-        == "open_state_unknown_after_worker_loss"
-    )
-    assert (
-        resources["raw-handle-1"].cleanup_outcome.value == "unknown_after_worker_loss"
-    )
-
-
-def test_r386_01_closure_boundary_cancellation_settled_cancelled(
-    tmp_path: Path,
-) -> None:
-    """Cancellation at closure boundary marks closure and attempt CANCELLED."""
-    terminal_records = []
+    """Cancellation at the closure boundary withholds an otherwise complete batch."""
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
         fixture.owners,
         num_partitions=2,
-        declare_global_closure=True,
     )
     output_dir = tmp_path / "output"
     events: list[dict[str, Any]] = []
@@ -1294,28 +921,17 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
     with pytest.raises(
         RuntimeError,
         match="Partition pipeline execution failed before batch publication",
-    ):
+    ) as raised:
         PartitionPipelineScheduler.execute(
             adapter,
             output_dir=output_dir,
-            telemetry_provider=_record_terminal_telemetry(terminal_records),
             progress_callback=progress,
             should_cancel=lambda: cancel,
             pipeline_overlap=True,
         )
 
-    assert len(terminal_records) == 1
-    coordinator = terminal_records[0]
-    settlements = coordinator.state.runtime.settlements
-
-    p0 = next(s for s in settlements if s.work_unit_key == "wu:partition-00000")
-    p1 = next(s for s in settlements if s.work_unit_key == "wu:partition-00001")
-    closure = next(s for s in settlements if s.work_unit_key == "global-closure")
-
-    assert p0.outcome.value == "succeeded"
-    assert p1.outcome.value == "succeeded"
-    assert closure.outcome.value == "cancelled"
-    assert closure.failure_detail.stage == "partition-pipeline-cancellation"
+    assert isinstance(raised.value.__cause__, InterruptedError)
+    assert not any(e.get("stage") == "batch_completed" for e in events)
 
     timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
@@ -1762,11 +1378,11 @@ def test_scheduler_phase_barrier_preserves_global_order(
         num_partitions=4,
         on_acquisition=lambda i: events.append(("acquire", i)),
     )
-    original_artifacts = adapter.settle_partition
+    original_composition = adapter.execute_composition
     original_finalize = adapter.finalize_application
 
-    def artifacts(partition, output):
-        result = original_artifacts(partition, output)
+    def composition(partition, output, store, **kwargs):
+        result = original_composition(partition, output, store, **kwargs)
         events.append(("artifacts", partition.index))
         return result
 
@@ -1774,7 +1390,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         events.append("finalize")
         return original_finalize(store, outputs)
 
-    adapter.settle_partition = artifacts
+    adapter.execute_composition = composition
     adapter.finalize_application = finalize
 
     def prepare(store, check_cancel):
@@ -1793,7 +1409,6 @@ def test_scheduler_phase_barrier_preserves_global_order(
             PartitionPipelinePhase("backfill", adapter.partitions[2:], prepare),
         ),
         output_dir=tmp_path / "output",
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         progress_callback=progress_events.append,
         pipeline_overlap=pipeline_overlap,
         acquisition_workers=2,
@@ -1824,7 +1439,6 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
         fixture.owners, num_partitions=4, on_acquisition=acquired.append
     )
     cancelled = threading.Event()
-    batches: list[RuntimeWorkerBatchReceipt] = []
 
     def prepare(store, check_cancel):
         assert store.read(1).children == ("child-1",)
@@ -1833,19 +1447,8 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
         else:
             raise ValueError("invalid handoff")
 
-    def execute_and_capture(*args, **kwargs):
-        provider = kwargs["worker_batch_provider"]
-
-        def capture(aggregate):
-            batch = provider(aggregate)
-            batches.append(batch)
-            return batch
-
-        kwargs["worker_batch_provider"] = capture
-        return execute_runtime_attempt(*args, **kwargs)
-
     output_dir = tmp_path / "output"
-    with pytest.raises(RuntimeError, match="before batch publication"):
+    with pytest.raises(RuntimeError, match="before batch publication") as raised:
         PartitionPipelineScheduler.execute(
             adapter,
             phases=(
@@ -1853,28 +1456,14 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
                 PartitionPipelinePhase("freeze-hints", adapter.partitions[2:], prepare),
             ),
             output_dir=output_dir,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             should_cancel=cancelled.is_set,
             pipeline_overlap=pipeline_overlap,
-            execute_runtime_attempt=execute_and_capture,
         )
     assert sorted(acquired) == [0, 1]
-    assert len(batches) == 1
-    if not cancel:
-        failures = [
-            s
-            for s in batches[0].settlements
-            if s.outcome is WorkUnitTerminalOutcome.FAILED
-        ]
-        assert len(failures) == 1
-        assert failures[0].failure_detail.stage == "freeze-hints"
+    if cancel:
+        assert isinstance(raised.value.__cause__, InterruptedError)
+    else:
+        assert isinstance(raised.value.__cause__, ValueError)
+        assert str(raised.value.__cause__) == "invalid handoff"
     preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
     assert len(preserved) == 1
-
-
-def _record_terminal_telemetry(records):
-    def observe(coordinator):
-        records.append(coordinator)
-        return build_runtime_telemetry_samples_from_coordinator(coordinator)
-
-    return observe

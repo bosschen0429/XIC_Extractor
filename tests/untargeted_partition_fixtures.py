@@ -26,10 +26,6 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution.attempt import (
-    RuntimeTelemetryProvider,
-    start_runtime_attempt,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
 )
@@ -51,9 +47,9 @@ from xic_extractor.untargeted_execution.execution_result import (
 from xic_extractor.untargeted_execution.input_planning import (
     prepare_eager_untargeted_plan,
 )
-from xic_extractor.untargeted_execution.partition.execution import (
-    UntargetedAttemptResult,
-    execute_attempt,
+from xic_extractor.untargeted_execution.partition.execution import execute_attempt
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionResult,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     UntargetedPartitionInputs,
@@ -95,22 +91,14 @@ def build_dense_partition(
 def execute_dense_partition(
     batch: UntargetedPartitionInputs,
     *,
-    telemetry_provider: RuntimeTelemetryProvider,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     known_istd_reference: KnownIstdReference | None = None,
-) -> UntargetedAttemptResult:
+) -> UntargetedPartitionResult:
     """Run the retained dense replay runtime for partition result oracles."""
 
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="cid-nl-production",
-    )
     result = execute_attempt(
-        runtime,
         batch.jobs,
-        telemetry_provider=telemetry_provider,
         progress_callback=progress_callback,
         alignment_config=alignment_config,
         prepare_grouping=lambda results: prepare_untargeted_partition_grouping(
@@ -163,7 +151,6 @@ def complete_dense_partition(
         excluded_candidates=partition.excluded_candidates,
     )
     return CompletedUntargetBatchWorkflowResult(
-        runtime_receipt=runtime_result.finalization,
         application_result=application_result,
         method_assessments=partition.method_assessments,
         initial_groups=partition.initial_groups,

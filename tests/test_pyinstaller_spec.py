@@ -139,7 +139,6 @@ from xic_extractor.extraction.targeted_peak_selection import (
     select_targeted_peak,
 )
 from xic_extractor.configuration.execution_profile import load_execution_profile
-from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.partitions import PartitionPipelineScheduler
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, execute_process_jobs
@@ -181,7 +180,6 @@ installed_objects = {
     "complete_analysis": complete_analysis,
     "CompletedUntargetBatchWorkflowResult": CompletedUntargetBatchWorkflowResult,
     "load_execution_profile": load_execution_profile,
-    "start_runtime_attempt": start_runtime_attempt,
     "PartitionPipelineScheduler": PartitionPipelineScheduler,
     "StreamedResultStore": StreamedResultStore,
     "WorkerAdmissionPool": WorkerAdmissionPool,

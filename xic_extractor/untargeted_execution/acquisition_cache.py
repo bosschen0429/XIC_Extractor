@@ -65,8 +65,6 @@ class CachedUntargetedRaw:
             if callable(raw)
             else self._require_policy(require_source_bound_raw_handle(raw, source))
         )
-        self.native_open_attempted = self._handle is not None
-        self.native_opened = self._handle is not None
         self._source = source
         self._cache = _FactCache(
             cache_dir, source.acquisition_source_id, mass_recalibration
@@ -83,11 +81,9 @@ class CachedUntargetedRaw:
     def _raw(self) -> RawFileHandle:
         if self._handle is None:
             assert self._opener is not None
-            self.native_open_attempted = True
             self._handle = self._require_policy(
                 require_source_bound_raw_handle(self._opener(), self._source)
             )
-            self.native_opened = True
         return self._handle
 
     @property
