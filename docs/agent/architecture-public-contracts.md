@@ -1,7 +1,7 @@
 # Architecture And Public Contracts
 
 Read this file when work changes an owner boundary, persisted decision,
-runtime receipt, writer authority, schema, or public surface. It records the
+runtime lifecycle, writer authority, schema, or public surface. It records the
 current contract only. Migration history belongs in Issues, PRs, and Git.
 
 ## Read Routes
