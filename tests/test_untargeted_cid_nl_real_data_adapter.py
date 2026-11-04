@@ -711,7 +711,6 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     fixture = replace(
         fixture, owners=bind_physical_capture(fixture.owners, physical_records)
     )
-    observer = cid_nl_acquisition._PartitionAcquisitionObserver()
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
 
@@ -734,7 +733,6 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
             settings=settings,
             peak_config=peak_config,
             raw=raw,
-            _observer=observer,
             signal_processing_profile=TEST_PROFILE,
             physical_records=tuple(
                 physical_records[c.candidate_id] for c in (candidates)
@@ -744,7 +742,6 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
     assert support.content.evidence.scan_number in candidates[0].seed_scan_ids
-    assert observer.initial_acquisition is not None
 
 
 def test_adapter_preserves_strict_scans_within_mixed_candidate(

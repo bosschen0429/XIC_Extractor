@@ -14,21 +14,14 @@ from tests.cid_nl_raw_fixture import (
     bind_physical_capture,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raw
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
-from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     CidNlAcquisitionError,
     adapt_current_discovery_sample_subject,
 )
-from xic_extractor.untargeted_execution.partition.execution import (
-    execute_attempt,
-    runtime_call_cost,
-)
+from xic_extractor.untargeted_execution.partition.execution import execute_attempt
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 from xic_extractor.untargeted_execution.partition.request import build_partition_context
 
@@ -84,7 +77,7 @@ def test_adapter_rejects_candidate_morphology_different_from_physical_receipt(
         )
 
 
-def test_runtime_retains_physical_receipt_failure_and_call_cost(tmp_path, monkeypatch):
+def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
     fixture, source, settings, config, candidate, records = _physical_fixture(tmp_path)
     candidate = replace(candidate, ms1_area=candidate.ms1_area * 1.1)
     paths = (fixture.source_paths["S1"],)
@@ -120,29 +113,12 @@ def test_runtime_retains_physical_receipt_failure_and_call_cost(tmp_path, monkey
         signal_processing_profile=TEST_PROFILE,
         physical_records=tuple(records.values()),
     )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-physical-receipt",
-    )
     result = execute_attempt(
-        runtime,
         (job,),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert not result.succeeded
     assert result.sample_results == ()
-    failure = result.finalization.coordinator.state.runtime.settlements[
-        0
-    ].failure_detail
-    assert failure is not None
-    assert "physical area_counts_seconds mismatches current receipt" in failure.message
-    assert runtime_call_cost(result.finalization) == {
-        "raw_open_count": 1,
-        "logical_xic_request_count": 1,
-        "xic_batch_count": 1,
-        "adapter_chromatogram_call_count": 1,
-        "trace_point_count": len(
-            records[candidate.candidate_id].acquired_trace.trace.rt
-        ),
-    }
+    assert isinstance(result.failure, CidNlAcquisitionError)
+    assert "physical area_counts_seconds mismatches current receipt" in str(
+        result.failure
+    )

@@ -514,9 +514,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     import gc
     import sqlite3
 
-    from tests.runtime_telemetry_fixtures import (
-        build_runtime_telemetry_samples_from_coordinator,
-    )
     from tests.test_untargeted_cid_nl_bounded_runtime import _plan
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
@@ -539,7 +536,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         plan,
         output_dir=tmp_path / "runtime",
         alignment_config=config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=4,
         retain_partition_memory=False,
     )

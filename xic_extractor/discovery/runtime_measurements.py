@@ -6,10 +6,6 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
-from xic_extractor.execution.attempt import (
-    derive_runtime_acquisition_metrics,
-    derive_runtime_raw_open_metrics,
-)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
@@ -43,14 +39,15 @@ def record_discovery_ms1_measurements(
         )
         return
 
-    runtime_metrics = derive_runtime_acquisition_metrics(
-        measurements.acquisition_batches
+    batches = measurements.acquisition_batches
+    logical_xic_request_count = sum(
+        batch.logical_xic_request_count for batch in batches
     )
     nonempty_group_count = (
         measurements.input_group_count - measurements.empty_group_count
     )
     if measurements.initial_request_count > nonempty_group_count or (
-        runtime_metrics.logical_xic_request_count
+        logical_xic_request_count
         != measurements.initial_request_count + measurements.reacquisition_request_count
     ):
         raise ValueError(
@@ -61,25 +58,25 @@ def record_discovery_ms1_measurements(
     observed = (
         (
             "logical_xic_request_count",
-            runtime_metrics.logical_xic_request_count,
+            logical_xic_request_count,
             "requests",
             acquisition_source,
         ),
         (
             "xic_batch_count",
-            runtime_metrics.xic_batch_count,
+            sum(batch.xic_batch_count for batch in batches),
             "batches",
             acquisition_source,
         ),
         (
             "adapter_chromatogram_call_count",
-            runtime_metrics.adapter_chromatogram_call_count,
+            sum(batch.adapter_chromatogram_call_count for batch in batches),
             "calls",
             acquisition_source,
         ),
         (
             "trace_point_count",
-            runtime_metrics.trace_point_count,
+            sum(batch.trace_point_count for batch in batches),
             "points",
             acquisition_source,
         ),
@@ -123,13 +120,13 @@ def record_discovery_ms1_measurements(
             "discovery_ms1_predicted_call_reduction_pct",
             (
                 0.0
-                if runtime_metrics.logical_xic_request_count == 0
+                if logical_xic_request_count == 0
                 else 100.0
                 * (
-                    runtime_metrics.logical_xic_request_count
+                    logical_xic_request_count
                     - measurements.predicted_chunked_call_count
                 )
-                / runtime_metrics.logical_xic_request_count
+                / logical_xic_request_count
             ),
             "percent",
             discovery_source,
@@ -204,20 +201,23 @@ def record_raw_open_metrics(
     raw_open_receipt: RawAcquisitionSessionReceipt | None,
     sample_stem: str,
 ) -> None:
-    metrics = derive_runtime_raw_open_metrics(
-        acquisition_source,
-        () if raw_open_receipt is None else (raw_open_receipt,),
-    )
+    """Count the one RAW session a sample opens, or say why it is unknown."""
+    raw_open_count: int | None = None
+    if acquisition_source is None:
+        reason = "RAW opener has no bound acquisition source"
+    elif raw_open_receipt is None:
+        reason = "process result carries no owner RAW-open receipt"
+    else:
+        raw_open_count = 1
+        reason = ""
     timing_recorder.observe(
         "raw_open_count",
-        value=metrics.raw_open_count,
+        value=raw_open_count,
         scope=sample_stem,
         unit="opens",
-        source=("xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"),
-        availability=(
-            "measured" if metrics.raw_open_count is not None else "unavailable"
-        ),
-        reason=metrics.unavailable_reason,
+        source="xic_extractor.discovery.runtime_measurements.record_raw_open_metrics",
+        availability="measured" if raw_open_count is not None else "unavailable",
+        reason=reason,
     )
 
 

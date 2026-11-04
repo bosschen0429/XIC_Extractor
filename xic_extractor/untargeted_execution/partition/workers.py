@@ -6,7 +6,6 @@ import importlib
 from copy import copy
 from dataclasses import dataclass, replace
 
-from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.cid_nl_planning import (
     CidNlBackfillDecision,
     CidNlBackfillQuestion,
@@ -17,7 +16,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.execution._finalization import RuntimeResourceCleanupOutcome
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
@@ -28,7 +26,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
     RawFileHandle,
-    RawReaderOpenError,
     bind_expected_path_identity,
     ensure_assemblies_loaded,
     open_raw,
@@ -44,7 +41,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     UntargetedCidNlBackfillTarget,
     UntargetedCidNlBackfillTraceBatch,
     UntargetedCidNlSampleTraceBatch,
-    _PartitionAcquisitionObserver,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
 )
@@ -62,18 +58,12 @@ class _RuntimeJobState:
     job: UntargetedPartitionJob
     resource_key: str | None
     initial_requires_raw: bool
-    observer: _PartitionAcquisitionObserver
     error: Exception | None = None
     adapter_result: CidNlAcquisitionResult | None = None
     backfill_support: _BackfillSupportContext | None = None
     backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
     backfill_targets: tuple[UntargetedCidNlBackfillTarget, ...] = ()
-    open_attempted: bool = False
-    opened: bool = False
-    cleanup_outcome: RuntimeResourceCleanupOutcome = (
-        RuntimeResourceCleanupOutcome.SUCCEEDED
-    )
 
     def apply_backfill_decision(self, decision: CidNlBackfillDecision) -> None:
         """Translate a resolved scientific decision into runtime work only.
@@ -94,23 +84,6 @@ class _RuntimeJobState:
                     key=lambda item: (item.center_rt, item.group_hypothesis_id),
                 )
             )
-
-    def accept_observations(
-        self,
-        acquisition: TraceAcquisitionBatch | None,
-        error: Exception | None,
-        *,
-        backfill: bool = False,
-    ) -> None:
-        observed = (
-            self.observer.backfill_acquisition
-            if backfill
-            else self.observer.initial_acquisition
-        )
-        if acquisition is not None and observed is None:
-            self.observer.record_acquisition(acquisition, backfill=backfill)
-        if self.error is None:
-            self.error = error
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,18 +123,6 @@ class _BatchSamplePhaseState:
     states: tuple[_RuntimeJobState, ...]
     initial_resource_key: str | None
     backfill_resource_key: str | None
-    initial_open_attempted: bool = False
-    initial_opened: bool = False
-    initial_cleanup_outcome: RuntimeResourceCleanupOutcome = (
-        RuntimeResourceCleanupOutcome.SUCCEEDED
-    )
-    backfill_open_attempted: bool = False
-    backfill_opened: bool = False
-    backfill_cleanup_outcome: RuntimeResourceCleanupOutcome = (
-        RuntimeResourceCleanupOutcome.SUCCEEDED
-    )
-    initial_acquisition: TraceAcquisitionBatch | None = None
-    backfill_acquisition: TraceAcquisitionBatch | None = None
     sample_template: UntargetedPartitionJob | None = None
 
     @property
@@ -173,18 +134,12 @@ class _BatchSamplePhaseState:
     def isolated_worker_state(self) -> _BatchSamplePhaseState:
         """Keep in-process work behind the same outcome boundary as a process.
 
-        Domain inputs stay shared; only mutable phase/job state and observation
-        collectors are local to this phase's execution.
+        Domain inputs stay shared; only mutable phase/job state is local to this
+        phase's execution.
         """
         return replace(
             self,
-            states=tuple(
-                replace(
-                    state,
-                    observer=_PartitionAcquisitionObserver(),
-                )
-                for state in self.states
-            ),
+            states=tuple(replace(state) for state in self.states),
         )
 
 
@@ -248,9 +203,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 raise UntargetedPartitionError(
                     "bounded subject is missing its acquisition reservation"
                 )
-            state.open_attempted = True
             raw = _open_job_raw(job)
-            state.opened = True
         if state.error is None:
             state.adapter_result = adapt_current_discovery_sample_subject(
                 processing_owners=job.processing_owners,
@@ -261,28 +214,16 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 settings=job.settings,
                 peak_config=job.peak_config,
                 raw=raw,
-                _observer=state.observer,
                 signal_processing_profile=job.signal_processing_profile,
                 physical_records=_request_subject_physical_records(job),
             )
-    except RawReaderOpenError as exc:
-        state.cleanup_outcome = (
-            RuntimeResourceCleanupOutcome.FAILED
-            if exc.cleanup_failed
-            else RuntimeResourceCleanupOutcome.SUCCEEDED
-        )
-        state.error = exc
     except Exception as exc:
         state.error = exc
     finally:
         if raw is not None:
-            if isinstance(raw, CachedUntargetedRaw):
-                state.open_attempted = raw.native_open_attempted
-                state.opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                state.cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 if state.error is None:
                     state.error = exc
 
@@ -303,9 +244,7 @@ def _execute_initial_assessment_batch(
                 raise UntargetedPartitionError(
                     "sample batch is missing its acquisition reservation"
                 )
-            phase.initial_open_attempted = True
             raw = _open_job_raw(job)
-            phase.initial_opened = True
             candidates = job.candidates
             if partition_candidates:
                 selected_candidates = {
@@ -333,9 +272,6 @@ def _execute_initial_assessment_batch(
                 raw=raw,
                 signal_processing_profile=job.signal_processing_profile,
             )
-            phase.initial_acquisition = (
-                trace_batch.acquisition if trace_batch is not None else None
-            )
         for state in states:
             if state.error is not None:
                 continue
@@ -348,33 +284,19 @@ def _execute_initial_assessment_batch(
                 settings=state.job.settings,
                 peak_config=state.job.peak_config,
                 raw=raw,
-                _observer=state.observer,
                 _preacquired_traces=trace_batch,
                 signal_processing_profile=state.job.signal_processing_profile,
                 physical_records=_request_subject_physical_records(state.job),
             )
-    except RawReaderOpenError as exc:
-        phase.initial_cleanup_outcome = (
-            RuntimeResourceCleanupOutcome.FAILED
-            if exc.cleanup_failed
-            else RuntimeResourceCleanupOutcome.SUCCEEDED
-        )
-        for state in states:
-            if state.error is None:
-                state.error = exc
     except Exception as exc:
         for state in states:
             if state.error is None:
                 state.error = exc
     finally:
         if raw is not None:
-            if isinstance(raw, CachedUntargetedRaw):
-                phase.initial_open_attempted = raw.native_open_attempted
-                phase.initial_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                phase.initial_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 for state in states:
                     if state.error is None:
                         state.error = exc
@@ -407,7 +329,6 @@ def _apply_backfill_questions(
                 job=job,
                 resource_key=None,
                 initial_requires_raw=False,
-                observer=_PartitionAcquisitionObserver(),
             )
             _execute_initial_assessment(state)
             states.append(state)
@@ -513,12 +434,8 @@ def _execute_backfill(
         )
         return
     raw = None
-    initial_open_attempted = state.open_attempted
-    initial_opened = state.opened
     try:
-        state.open_attempted = True
         raw = _open_job_raw(job)
-        state.opened = True
         active_acquire = (
             cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
@@ -545,7 +462,6 @@ def _execute_backfill(
                 support_policy=ctx.support_policy,
                 peak_config=job.peak_config,
                 raw=raw,
-                _observer=state.observer,
                 settings=job.settings,
                 signal_processing_profile=job.signal_processing_profile,
                 _preacquired_traces=trace_batch,
@@ -553,26 +469,13 @@ def _execute_backfill(
             state.backfill_attempts += (backfill,)
         if len(state.backfill_attempts) == 1:
             state.backfill_input = state.backfill_attempts[0].backfill_input
-    except RawReaderOpenError as exc:
-        state.cleanup_outcome = (
-            RuntimeResourceCleanupOutcome.FAILED
-            if exc.cleanup_failed
-            else RuntimeResourceCleanupOutcome.SUCCEEDED
-        )
-        state.error = exc
     except Exception as exc:
         state.error = exc
     finally:
         if raw is not None:
-            if isinstance(raw, CachedUntargetedRaw):
-                state.open_attempted = (
-                    initial_open_attempted or raw.native_open_attempted
-                )
-                state.opened = initial_opened or raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                state.cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 if state.error is None:
                     state.error = exc
 
@@ -601,9 +504,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
     raw = None
     trace_batch: UntargetedCidNlBackfillTraceBatch | None = None
     try:
-        phase.backfill_open_attempted = True
         raw = _open_job_raw(first)
-        phase.backfill_opened = True
         active_acquire = (
             cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
@@ -616,7 +517,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             peak_config=first.peak_config,
             raw=raw,
         )
-        phase.backfill_acquisition = trace_batch.acquisition
         for state in pending:
             ctx = state.backfill_support
             if ctx is None and state.adapter_result is not None:
@@ -640,32 +540,19 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     raw=raw if state.job.method_subject.composition else None,
                     settings=state.job.settings,
                     signal_processing_profile=state.job.signal_processing_profile,
-                    _observer=state.observer,
                     _preacquired_traces=trace_batch,
                 )
                 state.backfill_attempts += (backfill,)
             if len(state.backfill_attempts) == 1:
                 state.backfill_input = state.backfill_attempts[0].backfill_input
-    except RawReaderOpenError as exc:
-        phase.backfill_cleanup_outcome = (
-            RuntimeResourceCleanupOutcome.FAILED
-            if exc.cleanup_failed
-            else RuntimeResourceCleanupOutcome.SUCCEEDED
-        )
-        for state in pending:
-            state.error = exc
     except Exception as exc:
         for state in pending:
             state.error = exc
     finally:
         if raw is not None:
-            if isinstance(raw, CachedUntargetedRaw):
-                phase.backfill_open_attempted = raw.native_open_attempted
-                phase.backfill_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                phase.backfill_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 for state in pending:
                     if state.error is None:
                         state.error = exc
@@ -682,17 +569,12 @@ class _SampleInitialWorkerRequest:
 class _InitialJobOutcome:
     work_unit_key: str
     adapter_result: CidNlAcquisitionResult | None
-    observed_acquisition: bool
     error: Exception | None
 
 
 @dataclass(frozen=True, slots=True)
 class _SampleInitialWorkerResponse:
     job_outcomes: tuple[_InitialJobOutcome, ...]
-    initial_open_attempted: bool
-    initial_opened: bool
-    initial_cleanup_outcome: RuntimeResourceCleanupOutcome
-    initial_acquisition: TraceAcquisitionBatch | None
 
     def _outcomes_by_key(
         self, work_unit_keys: tuple[str, ...]
@@ -706,17 +588,11 @@ class _SampleInitialWorkerResponse:
         outcomes = self._outcomes_by_key(
             tuple(state.job.work_unit_key for state in phase.states)
         )
-        phase.initial_open_attempted = self.initial_open_attempted
-        phase.initial_opened = self.initial_opened
-        phase.initial_cleanup_outcome = self.initial_cleanup_outcome
-        phase.initial_acquisition = self.initial_acquisition
         for state in phase.states:
             outcome = outcomes[state.job.work_unit_key]
             state.adapter_result = outcome.adapter_result
-            state.accept_observations(
-                self.initial_acquisition if outcome.observed_acquisition else None,
-                outcome.error,
-            )
+            if state.error is None:
+                state.error = outcome.error
 
     def results_for(
         self, jobs: tuple[UntargetedPartitionJob, ...]
@@ -750,15 +626,10 @@ def _execute_initial_sample_phase(
             _InitialJobOutcome(
                 work_unit_key=state.job.work_unit_key,
                 adapter_result=state.adapter_result,
-                observed_acquisition=state.observer.initial_acquisition is not None,
                 error=state.error,
             )
             for state in local.states
         ),
-        initial_open_attempted=local.initial_open_attempted,
-        initial_opened=local.initial_opened,
-        initial_cleanup_outcome=local.initial_cleanup_outcome,
-        initial_acquisition=local.initial_acquisition,
     )
 
 
@@ -772,7 +643,6 @@ def _execute_sample_initial_worker(
             job=job,
             resource_key=None,
             initial_requires_raw=bool(_request_subject_candidates(job)),
-            observer=_PartitionAcquisitionObserver(),
         )
         for job in request.jobs
     )
@@ -816,17 +686,12 @@ class _BackfillJobOutcome:
     work_unit_key: str
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...]
     backfill_input: UntargetedCidNlBackfillInput | None
-    observed_acquisition: bool
     error: Exception | None
 
 
 @dataclass(frozen=True, slots=True)
 class _SampleBackfillWorkerResponse:
     job_outcomes: tuple[_BackfillJobOutcome, ...]
-    backfill_open_attempted: bool
-    backfill_opened: bool
-    backfill_cleanup_outcome: RuntimeResourceCleanupOutcome
-    backfill_acquisition: TraceAcquisitionBatch | None
 
     def apply_to(self, phase: _BatchSamplePhaseState) -> None:
         states = {
@@ -837,21 +702,14 @@ class _SampleBackfillWorkerResponse:
         _require_outcome_keys(
             tuple(states), tuple(item.work_unit_key for item in self.job_outcomes)
         )
-        phase.backfill_open_attempted = self.backfill_open_attempted
-        phase.backfill_opened = self.backfill_opened
-        phase.backfill_cleanup_outcome = self.backfill_cleanup_outcome
-        phase.backfill_acquisition = self.backfill_acquisition
         for outcome in self.job_outcomes:
             state = states[outcome.work_unit_key]
             if outcome.backfill_attempts:
                 state.backfill_attempts = outcome.backfill_attempts
             if outcome.backfill_input is not None:
                 state.backfill_input = outcome.backfill_input
-            state.accept_observations(
-                self.backfill_acquisition if outcome.observed_acquisition else None,
-                outcome.error,
-                backfill=True,
-            )
+            if state.error is None:
+                state.error = outcome.error
 
 
 def _execute_backfill_sample_phase(
@@ -870,15 +728,10 @@ def _execute_backfill_sample_phase(
                 work_unit_key=state.job.work_unit_key,
                 backfill_attempts=state.backfill_attempts,
                 backfill_input=state.backfill_input,
-                observed_acquisition=state.observer.backfill_acquisition is not None,
                 error=state.error,
             )
             for state in pending
         ),
-        backfill_open_attempted=local.backfill_open_attempted,
-        backfill_opened=local.backfill_opened,
-        backfill_cleanup_outcome=local.backfill_cleanup_outcome,
-        backfill_acquisition=local.backfill_acquisition,
     )
 
 
@@ -892,7 +745,6 @@ def _execute_sample_backfill_worker(
             job=job,
             resource_key=None,
             initial_requires_raw=False,
-            observer=_PartitionAcquisitionObserver(),
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
         )

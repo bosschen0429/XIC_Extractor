@@ -399,36 +399,6 @@ class UntargetedCidNlBackfillTraceBatch:
         )
 
 
-class _PartitionAcquisitionObserver:
-    """Retain actual acquisitions for runtime accounting, including failures."""
-
-    __slots__ = (
-        "initial_acquisition",
-        "backfill_acquisition",
-    )
-
-    def __init__(self) -> None:
-        self.initial_acquisition: TraceAcquisitionBatch | None = None
-        self.backfill_acquisition: TraceAcquisitionBatch | None = None
-
-    @property
-    def acquisition(self) -> TraceAcquisitionBatch | None:
-        return self.backfill_acquisition or self.initial_acquisition
-
-    def record_acquisition(
-        self, acquisition: TraceAcquisitionBatch, *, backfill: bool = False
-    ) -> None:
-        observed = self.backfill_acquisition if backfill else self.initial_acquisition
-        if observed is not None and observed is not acquisition:
-            raise CidNlAcquisitionError(
-                "one acquisition phase cannot replace its observed acquisition"
-            )
-        if backfill:
-            self.backfill_acquisition = acquisition
-        else:
-            self.initial_acquisition = acquisition
-
-
 def _sample_capture_requests(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -756,7 +726,6 @@ def adapt_current_discovery_sample_subject(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
-    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
     signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
@@ -896,7 +865,6 @@ def adapt_current_discovery_sample_subject(
         search_scope=search_scope,
         method_subject=method_subject,
         evidence_sink=capture_evidence,
-        _observer=_observer,
         _preacquired_traces=_preacquired_traces,
     )
     evidence_refs: list[CidNlEvidenceRef] = []
@@ -1007,7 +975,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     initial_assessment: CidNlMethodAssessmentRef | None = None,
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile,
-    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
 ) -> UntargetedCidNlBackfillAttemptResult:
     """Evaluate one owner-authorized bounded physical candidate universe.
@@ -1151,8 +1118,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             group_hypothesis_id=group_hypothesis_id,
             request=context_request,
         )
-    if _observer is not None:
-        _observer.record_acquisition(acquisition, backfill=True)
     observations: tuple[PeakObservationRef, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
     # Complete observations keep their original signal and integral. Only
@@ -1407,7 +1372,6 @@ def _reacquire_peak_observations(
     search_scope: UntargetedSearchScope,
     method_subject: CidNlMethodSubject | None = None,
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
-    _observer: _PartitionAcquisitionObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
     TraceAcquisitionBatch | None,
@@ -1452,8 +1416,6 @@ def _reacquire_peak_observations(
         raise CidNlAcquisitionError(
             "preacquired trace does not match the candidate capture plan"
         )
-    if _observer is not None:
-        _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
     captures: list[capture_owner.SampleLocalCapture] = []
     selected_traces: list[tuple[PeakObservationRef, Trace]] = []

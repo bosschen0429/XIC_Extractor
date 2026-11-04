@@ -1,15 +1,17 @@
 # Run Lifecycle Management
 
-Run lifecycle management records what executed during one processing attempt:
-scheduling, cancellation, worker loss, cleanup, cache use, and finalization.
-It does not decide what the evidence means or what the product publishes.
+Run lifecycle management schedules the work of one processing attempt and
+decides whether that attempt completed: partitioning, worker admission,
+cancellation, failure, resource cleanup, cache use, and timing. It does not
+decide what the evidence means or what the product publishes.
 
 ## Current support
 
 | Surface | Current support and limit |
 | --- | --- |
-| `AttemptRuntime`, required-work manifest, resource settlement, and finalization result | Executable owner contracts in [execution](../../xic_extractor/execution/attempt.py), consumed by Targeted and Untargeted application paths. A result covers its declared work, not automatically the entire product run. |
-| Observability ledger | The owner derives ordered lifecycle facts and mechanical counts from accepted receipts; callers supply measured timing, RSS, and runtime-mediated I/O. This is not a general public `RuntimeEvent` API or an external telemetry backend. |
+| Partition scheduling | [`PartitionPipelineScheduler`](../../xic_extractor/execution/partitions.py) runs the bounded Untargeted CID-NL batch. A batch either completes every partition and its global closure, or fails or cancels as a whole. |
+| Sample work | [`untargeted_execution.partition`](../../xic_extractor/untargeted_execution/partition/execution.py) runs one partition's samples on thread or process workers and returns their results or the failure that stopped them. |
+| Timing | [`TimingRecorder`](../../xic_extractor/execution/timing.py) records stage spans, process-memory peaks, partition timelines, and Discovery acquisition counts. It is a diagnostic record, not an external telemetry backend. |
 | Dependency reuse and resume | `ValidatedDependencyToken` and cross-attempt work reuse are not implemented. Their reserved contract is separated under [Retry and resume](#retry-and-resume). |
 | Product publication | Remains with workflow projection and writer owners. Runtime completion does not grant selected-value, counted-detection, Matrix, workbook, Backfill-write, or export authority. |
 
@@ -17,36 +19,28 @@ The lifecycle validation boundary remains `diagnostic_only`. Executable wiring,
 synthetic failure coverage, and scientific/product readiness are different
 claims. [Workflow integration](#workflow-integration) describes the actual
 coverage of each consumer.
-Runtime returns its settled completion directly; it does not persist an attempt
+Runtime returns its completed result directly; it does not persist an attempt
 marker or block a later attempt on a marker left on disk. Workbench's busy state
 and application output-collision checks protect their existing boundaries.
 
 ## Ownership
 
-One runtime state machine manages one externally identified `ProcessingAttempt`,
-a closed required-work manifest, runtime resources, and non-authoritative
-temporary artifacts. Identity, dependency compatibility, and retention come
-from [Result Traceability](processing-lineage.md); acquisition meaning comes
-from the evidence owner.
+The execution runtime runs one externally identified `ProcessingAttempt`.
+Identity, dependency compatibility, and retention come from
+[Result Traceability](processing-lineage.md); acquisition meaning comes from
+the evidence owner.
 
 The execution runtime owns:
 
-- validating that an owner-supplied required-work manifest is closed and has
-  unique opaque work-unit keys before scheduling;
-- scheduling those work units onto serial or process workers;
-- reserving acquisition-handle and other resource records before allocation,
-  then managing their lifetime inside workers;
-- bounded cooperative cancellation, pending-work suppression, and worker-loss
-  escalation;
-- scheduling a lineage-owner-authorized retry attempt using owner-supplied
-  attempt and dependency tokens;
-- typed per-unit, scheduler, worker-loss, and cleanup failure aggregation;
-- one terminal cleanup record for every reserved resource and idempotent
-  cleanup execution;
-- volatile cache lifecycle and persistent-cache access telemetry;
-- attempt, work-unit, resource, cache, artifact, and metrics events;
-- calls, opens, points, elapsed time, memory, and artifact-I/O metrics;
-- runtime-temporary artifacts being quarantined or offered to their owner.
+- scheduling partitions serially or with bounded acquisition/composition
+  overlap, and sample work onto thread or process workers;
+- bounded cooperative cancellation and pending-work suppression;
+- deciding the batch outcome from the first execution failure, or from
+  cancellation when no execution failure occurred;
+- closing RAW handles in the worker that opened them and draining process
+  pools before the batch result is returned;
+- keeping completed partition results readable after a failed batch;
+- the acquisition cache lifecycle and timing records.
 
 It does not own:
 
@@ -59,12 +53,8 @@ It does not own:
   `IntegrationResult`, Alignment, `CellObservation`, or Backfill decisions;
 - Targeted or Untargeted policy, review conclusions, counted detections,
   selected areas, Matrix cells, workbook rows, activation, or export;
-- scientific cache-key or acquisition-session compatibility meaning. The
-  runtime accepts opaque owner-supplied tokens and cannot invent or reinterpret
-  them;
-- storage engine, schema, location, or retention policy. It may only execute
-  owner-supplied lifecycle actions for registered temporary resources and
-  caches while respecting lineage pins.
+- scientific cache-key meaning; the acquisition owner keys cache entries;
+- storage engine, schema, location, or retention policy.
 
 ## Worker Settings
 
@@ -105,10 +95,10 @@ Process pools drain and close before terminal acknowledgement, including on
 failure or cancellation; a cleanup failure prevents successful publication.
 
 Sample-phase workers return work-unit-keyed outcomes rather than parallel
-result, observation, and error arrays. Thread and process execution use the
-same outcome application in `untargeted_execution.partition.workers`; it binds
-each job's facts and first error together with the shared acquisition/cleanup
-facts. The coordinator owns scheduling, cancellation, and terminal settlement.
+result and error arrays. Thread and process execution use the same outcome
+application in `untargeted_execution.partition.workers`; it binds each job's
+facts and first error together. The coordinator owns scheduling, cancellation,
+and the batch outcome.
 
 The tissue validation plan exposes both parallel and Alignment worker budgets.
 Changing from 8RAW to 85RAW does not choose a different execution profile.
@@ -124,12 +114,7 @@ scientific result, and publishes only a complete finalized Target population.
 Cancellation after acquisition or composition skips publication.
 The workflow consumes acquisition results directly and the writer reads the
 completed publication model without mutating it. Neither handoff clones the
-full result or its trace arrays.
-
-Foreground acquisition and the per-Target runtime receipt are separate
-lifecycles. The receipt acknowledges the retained-acquisition handoff, not
-foreground RAW execution, scientific composition, or publication. It does not
-provide a single full-run supervisor acknowledgement or bounded termination
+full result or its trace arrays. Targeted does not provide bounded termination
 of an in-flight serial vendor call.
 
 
@@ -140,7 +125,7 @@ pairs with Discovery candidates. Shared sample templates retain the complete
 population and acquisition settings. Missing jobs are created only after the
 direct-SUPPORT group passes the Backfill population gate; unsearched cells
 receive their assessment at final composition without worker dispatch.
-The direct batch interface retains its declared complete manifest.
+The direct batch interface runs every declared job together.
 
 Worksets remain indivisible. Scheduling packs them by 100 Da ownership and a
 1,024-candidate budget; a workset may cross either bound. Partitions do not
@@ -178,7 +163,6 @@ queries reuse acquisition facts without repeating the vendor query. Source or
 query changes require acquisition for the affected entries. Sample batches with
 an input-owner-verified source check its current path identity before replay;
 they open a native RAW handle only when a missing query or metadata needs it.
-Runtime resource receipts report whether that native open actually occurred.
 Cache entries are closed before atomic replacement and validated on read, but
 are not individually forced to stable storage. Power loss can require
 reacquisition of recent entries; this cache does not provide durable runtime
@@ -232,197 +216,40 @@ while composing partition \(P_n\) without multiplying RAW acquisition resources:
 
 #### In-flight cancellation
 
-`RuntimeCancellationIngress` provides thread-safe cancellation signaling to active
-runtime attempts:
-
-- Signals are atomically recorded and verified against attempt identity.
-- Accepted before terminalization proposal, transitioning the attempt cleanly to
-  `CANCELLED` without leaving dangling reservations or unmanaged resources.
-- Active work units are settled as `CANCELLED`, while un-opened resources transition
-  to `NOT_OPENED`.
+The scheduler polls the caller's `should_cancel` between partitions and passes
+it to sample workers. Once cancellation is observed, no further partition is
+admitted, running acquisition stops at its next check, and the batch raises.
+The partition timeline marks never-started partitions `cancelled`. A sample
+`InterruptedError` counts as cancellation only when cancellation was actually
+requested; otherwise it is an ordinary execution failure. When one sample fails
+and another observes the resulting cancellation, the batch reports the failure.
 
 #### Global closure work
 
-For workflows with post-partition global assembly (such as CID-NL composition):
+After every partition completes, the store is sealed and the adapter composes
+the global application result. A closure failure or a cancellation at that
+boundary fails the whole batch; completed partitions stay readable through the
+failed-results checkpoint described below.
 
-- The required-work manifest explicitly pre-declares a `global_closure_work_unit_key`.
-- If global closure fails, only the closure work unit is settled as `FAILED`,
-  leaving already settled partition units as `SUCCEEDED`.
+## Failure, Cancellation, And Cleanup
 
-## Minimal Runtime Vocabulary
+Any partition failure, phase-preparation failure, global-closure failure, or
+cancellation stops admission and fails the batch with
+`Partition pipeline execution failed before batch publication`; the original
+exception is its `__cause__`. No partial batch is published.
 
-These concepts are internal mechanics, not user-visible review tags.
-
-| Term | Meaning | Not the same as |
-| --- | --- | --- |
-| `AttemptRuntime` | Mutable in-memory state for exactly one lineage-identified `ProcessingAttempt` | The attempt identity or a product run |
-| `RequiredWorkManifest` | Immutable, owner-supplied complete set of unique opaque work-unit keys required for this attempt | A discovered result or dynamic success list |
-| `WorkUnit` | One manifest member that can be independently scheduled and settled | A scientific observation or delivery cell |
-| `Worker` | Serial context or process that executes work units and declares its hard-cancel capability before scheduling | A stable identity or authority boundary |
-| `AcquisitionSession` | One reserved resource record in one worker for one attempt, source, and opaque compatibility token; it may own one adapter handle | An `AcquisitionSource` identity |
-| `RuntimeEvent` (reserved API) | Ordered fact about scheduling, resource, outcome, cleanup, cache, or metrics | Scientific evidence |
-| `ValidatedDependencyToken` (not implemented) | Lineage-owner approval bound to the new attempt and exactly one manifest work-unit key, plus an opaque immutable dependency reference | Runtime-created identity or compatibility proof |
-
-The manifest is closed before the attempt starts. An accepted running manifest
-contains at least one work unit. An empty owner universe, duplicate or blank
-keys, a missing owner completeness attestation, submission failure, or an
-attempt to add later work fails closed. The runtime cannot discover that the
-owner omitted a unit from the manifest; its enforceable invariant is that every
-key in an owner-attested manifest settles exactly once. Manifest preflight
-failure terminalizes the attempt as `failed` before any work or resource
-reservation. It uses an explicit queued-to-terminal path: `attempt_queued` and
-`manifest_preflight_failed` are recorded, `attempt_started` is not fabricated,
-and the empty work and resource registries permit an immediate
-terminal proposal. Dynamic manifest expansion and later-added stage manifests
-are unsupported. If a workflow cannot state its
-complete non-empty work universe up front, stop and redraw the seam rather than
-infer completion from only the units that happened to be submitted.
-
-Settlements are bound to declared work keys. An identical replay is
-idempotent; conflicting or undeclared settlements prevent success. Failed or
-cancelled settlements carry typed failure details; successful settlements
-carry same-request/same-attempt owner-minted artifact references, not opaque
-strings or failure payloads.
-
-A settled work unit may report both initial and recovery acquisitions. The
-runtime retains distinct acquisition capabilities and deduplicates replayed
-counts for the same capability. Conflicting counts for one capability remain an
-error. Runtime telemetry does not rehash or compare scientific trace arrays.
-Batch adapters publish the acquisitions held by each phase directly, so a
-later recovery cannot hide the initial acquisition from accounting.
-
-An acquisition session may be reused only within the same attempt, worker,
-`AcquisitionSource`, and owner-supplied compatibility token. Correctness must
-not depend on reuse. Before adapter construction or allocation, the runtime
-creates a unique `resource_reserved` record with pre-bound
-`owner_conditional=false` (required) or `owner_conditional=true`. Required is
-the default; only the semantic owner that binds the consumer condition before
-allocation may reserve a conditional upper bound. Unregistered handles must
-never be used. Each
-record transitions from `reserved` to `opened`, `open_failed`,
-`not_opened`, `condition_not_activated`, or
-`open_state_unknown_after_worker_loss`, then to one terminal cleanup outcome.
-`not_opened` covers pre-allocation cancellation and performs an idempotent
-no-op cleanup. `condition_not_activated` records that an owner-declared
-conditional resource was reserved as an upper bound but its already-bound
-consumer condition did not activate it. Allocation must not occur, cleanup is
-an idempotent no-op, and the outcome does not fail an otherwise successful
-attempt. A `required` reservation reporting `condition_not_activated` is an
-integrity failure. The outcome cannot stand in for an acquisition or satisfy
-work whose accepted owner result depends on that resource. If a worker
-disappears while the parent still sees `reserved`, the runtime records
-`open_state_unknown_after_worker_loss`; it must
-not infer whether allocation occurred. Worker loss closes every non-terminal
-resource record as `unknown_after_worker_loss`. Every transition is observable,
-a late child report cannot rewrite a terminal resource record, and a reopened
-source is a new runtime session.
-
-## Small State Model
-
-Avoid multiplying user-facing or internal intermediate tags. Runtime state
-uses two orthogonal axes:
-
-| Axis | Values |
-| --- | --- |
-| Phase | `queued`, `running`, `terminal` |
-| Terminal outcome | `succeeded`, `failed`, `cancelled` |
-
-Cancellation intent is an ordered event, not a fourth outcome or another
-scientific status. Partial work is represented by settled work units, not by a `partial` attempt
-outcome.
-
-Terminal outcome is deterministic:
-
-1. manifest precondition failure, submission failure, worker loss, unit
-   failure, integrity failure, cleanup `failed` /
-   `unknown_after_worker_loss`, or a `not_opened` resource without an accepted
-   cancellation makes the attempt `failed`;
-2. otherwise, a cancellation accepted before the terminal decision makes it
-   `cancelled`;
-3. otherwise, every manifest unit settling successfully makes it `succeeded`.
-
-An attempt can become terminal after every manifest unit has a terminal result
-and every reserved resource has exactly one terminal cleanup record. Cleanup
-failure or worker loss therefore blocks success, not terminalization. A
-manifest preflight failure has an empty work and resource registry and can
-immediately propose `failed`.
-
-All state-changing events use one monotonic sequence per attempt. Appending a
-required lifecycle event and applying its state transition are one atomic
-in-memory reducer operation; a required append failure becomes an
-`integrity_failure` and prevents success. Export to an external log or metrics
-sink is a non-authoritative copy: export failure is recorded when possible as a
-telemetry failure but cannot erase the in-memory ledger. Cancellation accepted
-before the atomic terminal decision affects the outcome. A request arriving
-after that decision is recorded as rejected/no-op. Cleanup failure still has
-precedence over cancellation. The in-memory terminal decision is a frozen
-proposal; it becomes the terminal outcome only through the durable
-acknowledgement below.
-
-## Coordinator And Durable Status Boundary
-
-The runtime keeps the detailed reducer state, lifecycle events, and observability
-ledger in memory. The coordinator proposes a terminal outcome only after work,
-and resource cleanup close. The supervisor validates that
-outcome and the observability facts, then produces a typed finalization result.
-No token or content digest authenticates internal Python construction.
-
-`raw_open_count` counts only opened `acquisition_session` reservations. Opened
-`process_worker` reservations still emit complete resource lifecycle facts but
-cannot inflate acquisition-session telemetry.
-
-
-## Cancellation, Worker Loss, Partial Work, And Failure
-
-After cancellation is accepted:
-
-- no new work unit may be scheduled;
-- unscheduled or cancellable pending units settle as `cancelled`;
-- already running units receive a cooperative stop request;
-- a killable process worker escalates after an entry-point-configured and
-  recorded finite positive deadline, terminates the worker, and records
-  affected units as failed due to worker loss;
-- every reserved resource receives a terminal cleanup record;
-- no artifact becomes deliverable merely because a unit finished before the
-  cancellation request.
+- RAW handles close in the worker that opened them. A RAW open or cleanup
+  failure becomes that sample's error, so it fails the partition.
+- Process worker pools drain and close before the batch result returns, also
+  after failure or cancellation. A pool shutdown failure fails an otherwise
+  successful batch.
+- A failed batch writes `failed-results.pickle` into its partition spool so
+  completed partition results remain inspectable. The original exception
+  carries a note with that location.
 
 Bounded hard cancel is available only across a killable process boundary. An
 in-process serial Thermo call may support cooperative cancellation but cannot
 claim bounded terminalization.
-
-Worker termination cannot prove that child-owned cleanup such as vendor
-`Dispose()` ran. The contract therefore requires exactly one logical terminal
-cleanup outcome per resource:
-
-- `succeeded`;
-- `failed`;
-- `unknown_after_worker_loss`.
-
-Cleanup operations must be idempotent so parent-side reaping or retry does not
-double-apply destructive effects. Unknown or failed cleanup makes the attempt
-`failed` but still lets it reach terminal state.
-
-All failures are retained as typed records and aggregated at the attempt
-boundary. Each preserves the work-unit/resource key, stage, source reference,
-failure category, and readable message. The terminal acknowledgement separately
-binds the exact observability ledger carrying the relevant work-event sequence,
-using the same work-unit key for correlation. One exception must not erase
-sibling failures, and a traceback must not be the only failure contract.
-
-### Callback failures
-
-`execution.attempt.execute_runtime_attempt(...)` also owns the exception
-boundary for its two direct callbacks. A thrown `Exception` is classified as
-one `RuntimeExecutionPhaseError` carrying the exact owner-issued
-`ProcessingAttemptIdentity` and one closed `RuntimeExecutionPhase`:
-`worker_batch_provider` or `telemetry_provider`. The original
-exception remains available only as Python `__cause__`; its message and type do
-not become runtime facts. A worker failure skips telemetry; a telemetry failure
-returns no completed receipt. Invalid callback returns continue through the existing
-`RuntimeFinalizationContractError` validation path, and `BaseException` is not
-wrapped. The owner invokes each callback at most once and adds no retry or
-cleanup authority. A completed receipt carries the owner-derived terminal
-outcome and settled resource facts directly.
 
 ## Retry And Resume
 
@@ -467,153 +294,64 @@ Cache rules:
   contract;
 - a miss or stale rejection triggers ordinary work execution rather than
   another attempt state;
-- every attempt-local volatile cache is registered as a runtime resource and
-  released through the same terminal, idempotent cleanup contract on success,
-  failure, cancellation, or worker loss;
+- an attempt-local volatile cache is removed after a successful batch; a failed
+  attempt keeps it so a retry does not reread every RAW file;
 - persistent cache format, retention period, and eviction policy remain
   separate owner decisions.
 
-Physical deletion is limited to owner-supplied actions on registered temporary resources.
+Physical deletion is limited to the attempt's own spool and volatile cache.
 
 ## Minimum Observability
 
-Every coordinator event carries the attempt identity, monotonic sequence,
-monotonic offset from the runtime origin established by `attempt_queued`, event
-kind, and work-unit/resource reference where applicable. The coordinator ledger
-ends at `terminal_proposal`. The supervisor finalization continues from the last
-coordinator sequence and adds acknowledgement and outcome. The
-queued-to-terminal manifest-preflight path omits `attempt_started`; events
-listed below as started exist only after successful preflight. The minimum
-event set covers:
+`TimingRecorder` is the runtime's only observability record. It keeps:
 
-For a running attempt, the owner normalizes causal facts into one canonical
-phase order: attempt start, all resource reservations, all resource open
-outcomes, started workers, manifest-order work submission/start/settlement,
-all resource cleanup, terminal proposal, and then supervisor
-acknowledgement/outcome. Monotonic offsets bind
-that logical topology; they do not claim to recover physical interleaving among
-concurrent workers inside a phase. A ledger that reorders these phases fails
-closed even when every individual resource or work-unit lifecycle is complete.
+- stage spans and the live heartbeat;
+- process-tree memory peaks per scope (`process_tree_sampled_peak_rss_bytes`
+  and `process_tree_sampled_peak_private_bytes`);
+- the partition timeline: per-partition acquire and compose spans, overlap with
+  the previous partition, and `completed`, `failed`, or `cancelled` status;
+- per-sample Discovery acquisition counts.
 
-- coordinator: `attempt_queued`, `manifest_preflight_failed` when applicable,
-  `attempt_started` after successful preflight, cancellation accepted/rejected,
-  and `terminal_proposal`;
-- supervisor finalization: `terminal_acknowledged` and `terminal_outcome`;
-- required-work manifest closed and work unit submitted, started, and settled;
-- dependency reuse accepted/rejected/not used and unit satisfaction source
-  (reserved with the unimplemented dependency-reuse contract);
-- acquisition/resource reserved, `opened`, `open_failed`, `not_opened`,
-  `condition_not_activated`, or `open_state_unknown_after_worker_loss`, and
-  terminal cleanup outcome;
-- cache hit, miss, stale rejection, write, rebuild outcome, and eviction
-  outcome;
-- coordinator-side runtime artifact creation;
-- worker, scheduler, integrity, telemetry, and cleanup failures.
+Every measurement records its scope, unit, aggregation rule, source, and
+availability (`measured` or `unavailable`) plus reason. Missing optional cost
+telemetry does not change scientific or attempt outcome.
 
-Every metric records its scope (`attempt`, `stage`, `work_unit`, `worker`, or
-`resource`), unit, aggregation rule, measurement source, and availability
-(`measured`, `unsupported`, or `failed`) plus reason. Missing optional cost
-telemetry does not change scientific or attempt outcome; missing required
-lifecycle events fail closed.
-
-| Metric | Required meaning and aggregation |
+| Discovery metric | Meaning |
 | --- | --- |
-| `raw_open_count` | Sum of acquisition sessions opened; source is the runtime resource registry |
+| `raw_open_count` | RAW sessions the sample opened (one), or unavailable with a reason |
 | `logical_xic_request_count` | Sum of logical trace requests presented to the adapter |
 | `xic_batch_count` | Sum of adapter batch invocations |
 | `adapter_chromatogram_call_count` | Sum of observed vendor/backend chromatogram calls; separate from logical requests |
 | `trace_point_count` | Sum of returned trace points |
-| `coordinator_work_seconds` | Monotonic span from committed `attempt_started` through frozen terminal proposal; stored in the coordinator record; `unsupported:not_started_preflight_failure` when preflight terminalizes from `queued` |
-| `attempt_wall_seconds` | Monotonic span from committed `attempt_queued` through supervisor finalization after cleanup; stored only in the finalization record; parallel child spans are not summed into it |
-| `stage_or_unit_elapsed_seconds` | Individually scoped monotonic spans; aggregation retains count/sum/max |
-| `worker_peak_rss_bytes` | Maximum measured RSS per worker, with unsupported reason when unavailable |
-| `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
-| `artifact_read_count/bytes` | Sum of runtime-mediated reads; excludes uninstrumented external I/O and records coverage |
-| `artifact_write_count/bytes` | Sum of runtime-mediated writes; excludes uninstrumented external I/O and records coverage |
 
-The executable runtime ledger uses one attempt-scoped `sum` record for the
-count and artifact-I/O metrics, attempt-scoped `last` records for coordinator
-and wall spans, one work-unit-scoped `sum` elapsed record per declared work key,
-worker-scoped `max` RSS, and attempt-scoped `max` process-tree RSS. Metric
-identity is `(name, scope, scope_key)` and duplicates or unregistered names fail
-closed. The queued-to-terminal preflight path has no work/worker scope, so its
-explicitly unavailable elapsed/RSS records use the attempt scope and
-`not_started_preflight_failure` reason.
+The four acquisition counts are sums over the sample's `TraceAcquisitionBatch`
+records. These metrics describe cost and execution locality. They do not score
+evidence quality or authorize a result.
 
-For a running attempt, resource lifecycle events use only the registered
-resource subject and contain exactly one reservation, one open outcome, and one
-cleanup outcome in that order.
-Elapsed metrics must equal their correlated monotonic event spans. A serial run
-with no child-worker event retains one attempt-scoped
-`worker_peak_rss_bytes=unsupported:not_applicable_serial` record; it does not
-invent a worker identity or omit the required metric.
-
-These metrics describe cost and execution locality. They do not score evidence
-quality or authorize a result.
-
-For the Targeted and Alignment comparator contract, `raw_open_count`,
-`logical_xic_request_count`, `xic_batch_count`,
-`adapter_chromatogram_call_count`, `trace_point_count`,
-`coordinator_work_seconds`, `attempt_wall_seconds`,
-`stage_or_unit_elapsed_seconds`, and runtime-mediated artifact read/write
-counts and bytes are required `measured` for attempts that enter `running`.
-Manifest-preflight terminalization instead reports measured zero for
-resource/work/artifact-I/O counts, measured `attempt_wall_seconds` from
-`attempt_queued`, and `unsupported:not_started_preflight_failure` for
-`coordinator_work_seconds`, stage/unit elapsed time, and worker-derived
-metrics; it must not emit measured zero durations for work that never started.
-Process-mode comparators must also measure per-worker and process tree peak RSS;
-serial mode must measure process peak RSS and may report
-per-worker RSS as `unsupported:not_applicable_serial`. Artifact-I/O coverage is
-complete only when every registered runtime-artifact read and write contributes
-to the counters; direct legacy writer I/O stays explicitly out of scope rather
-than being reported as measured zero.
-
-The cache-disabled successful comparator is a hard locality gate:
-baseline and candidate must have exact equality for RAW opens, logical XIC
-requests, batches, adapter calls, trace points, and runtime-mediated artifact
-I/O. Elapsed time and RSS use paired baseline/candidate measurements in the
-same environment. There is no universal numeric tolerance before
-that baseline exists: the owning implementation lane must preregister its
-elapsed/RSS budget before promotion, and missing tolerance keeps the runtime at
-`diagnostic_only`. A hard-locality mismatch, a lane-budget breach, or missing
-required measurement is a rollback/stop signal, never a reason to relax
-scientific parity.
-
-### Observability ownership
-
-Callers supply `RuntimeTelemetrySamples`, not an assembled ledger. The runtime
-derives lifecycle topology and mechanical counts from closed coordinator state.
-Logical XIC requests, batches, backend calls, and trace points come from typed
-`TraceAcquisitionBatch` receipts correlated to submitted successful work.
-
-For a successful application result, an empty observation-batch projection is
-valid only when all four acquisition counts are zero. Failed or quarantined
-results may suppress exposed success batches while retaining physically
-observed counts. Missing, extra, substituted, or conflicting success-projection
-facts fail before acknowledgement.
-
-Only an opened `PROCESS_WORKER` reservation creates `worker_started` and requires
-worker RSS. Unopened, inactive conditional, and failed-open reservations do not
-invent a worker. Monotonic offsets, RSS, and runtime-mediated I/O remain external
-samples; provenance for owner-derived facts is fixed to
-`execution_runtime_owner:v1`. The ledger remains an in-memory typed result.
-
+The cache-disabled successful comparator is a hard locality gate: baseline and
+candidate must have exact equality for RAW opens, logical XIC requests,
+batches, adapter calls, and trace points. Elapsed time and memory use paired
+baseline/candidate measurements in the same environment. There is no universal
+numeric tolerance before that baseline exists: the owning implementation lane
+must preregister its elapsed/memory budget before promotion, and missing
+tolerance keeps the runtime at `diagnostic_only`. A hard-locality mismatch, a
+lane-budget breach, or missing required measurement is a rollback/stop signal,
+never a reason to relax scientific parity.
 
 ## Verification and limits
 
 Executable contract coverage lives with the owner:
 
-- [State and manifest tests](../../tests/test_execution_runtime_events.py):
-  preflight failure, ordered cancellation, and terminal-state rules.
-- [Owner tests](../../tests/test_execution_runtime_owner.py) and
-  [finalization tests](../../tests/test_execution_runtime_finalization.py):
-  work/resource/artifact closure, callback failure, and terminal outcomes.
-- [Observability tests](../../tests/test_execution_runtime_observability.py):
-  event ordering, metric availability, provenance, and receipt binding.
+- [Scheduler tests](../../tests/test_execution_engine.py): phase barriers,
+  overlap, cancellation, failure, cleanup, and the partition timeline.
+- [Bounded runtime tests](../../tests/test_untargeted_cid_nl_bounded_runtime.py):
+  partition parity with direct execution, worker threading, RAW handle
+  lifetime, and failure modes.
+- [Timing tests](../../tests/test_timing.py): measurement records and memory
+  peaks.
 
 Consumer integration additionally needs serial/process parity, unchanged
 selected results and writer bytes, complete failure/cancellation containment,
-and the locality measurements above. State-table and synthetic worker tests do
-not establish RAW hard-cancel behavior or a full-run publication guarantee.
-Use synthetic/no-RAW checks unless a bounded vendor-call question requires RAW.
+and the locality measurements above. Synthetic worker tests do not establish
+RAW hard-cancel behavior or a full-run publication guarantee. Use
+synthetic/no-RAW checks unless a bounded vendor-call question requires RAW.

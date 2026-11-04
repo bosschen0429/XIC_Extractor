@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,9 +28,6 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
@@ -39,14 +37,6 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
-)
-from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.execution.attempt import (
-    RuntimeCancellationIngress,
-    RuntimeCancellationRequest,
-    execute_runtime_attempt,
-    start_runtime_attempt,
 )
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -74,7 +64,6 @@ from xic_extractor.untargeted_execution.partition import models as partition_mod
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
 from xic_extractor.untargeted_execution.partition.execution import (
     execute_attempt,
-    runtime_call_cost,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionError,
@@ -375,8 +364,6 @@ def test_warm_ms2_full_window_subset_hydrates_selected_scan_without_opening_raw(
             )
         )
 
-    assert warm.native_open_attempted is False
-    assert warm.native_opened is False
     assert hydration_calls == 1
     assert len(selected_events) == 1
     assert selected_events[0].scan_number == selected_number
@@ -441,7 +428,6 @@ def test_ms2_subset_cache_miss_writes_subset_key_without_full_window_pollution(
     cache_files = tuple(cache_dir.rglob("*.json"))
     assert len(cache_files) == 2
     assert {path.parent.name for path in cache_files} == {"ms2"}
-    assert cached.native_open_attempted is True
 
 
 @pytest.mark.parametrize("use_cache", (False, True))
@@ -491,7 +477,6 @@ def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
             forbid_open, source=source, cache_dir=cache_dir
         ) as warm:
             replay = acquire_untargeted_trace_batch(capability, requests, warm)
-        assert not warm.native_open_attempted
         assert replay.adapter_chromatogram_call_count == 0
         assert tuple(map(serialize_acquired_trace, replay.traces)) == expected
 
@@ -546,8 +531,6 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
         )
         warm_events = tuple(lazy_warm.iter_ms2_scans(7.8, 8.2))
     assert opener_calls == []
-    assert lazy_warm.native_open_attempted is False
-    assert lazy_warm.native_opened is False
     assert tuple(map(serialize_acquired_trace, warm_batch.traces)) == tuple(
         map(serialize_acquired_trace, cold_batch.traces)
     )
@@ -589,8 +572,6 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
     assert len(missing_batch.traces) == 1
     assert len(missing_handles) == 1
     assert missing_handles[0][1].disposed is True
-    assert lazy_missing.native_open_attempted is True
-    assert lazy_missing.native_opened is True
 
     cache = cache_owner._FactCache(cache_dir, source.acquisition_source_id)
     cache_path = cache._path("xic", cache_owner._trace_key(capability, third_request))
@@ -718,26 +699,12 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         match="RAW path state does not match expected acquisition source",
     ):
         _open_job_raw(replace(jobs[0], raw_path=changed_path))
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
-    )
 
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
-    assert result.succeeded is True, (
-        result.finalization.coordinator.proposed_outcome,
-        result.finalization.supervisor.terminal_outcome,
-        result.finalization.coordinator.state.runtime.settlements,
-        result.finalization.coordinator.state.resources,
-        result.finalization.coordinator.state.artifacts,
-        result.finalization.coordinator.state.failures,
-    )
+    assert result.succeeded is True, result.failure
     assert capture_variants == ["untargeted"]
     assert len(result.sample_results) == 2
     by_stem = {
@@ -768,24 +735,10 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         return installed_warm_open(path, *args, **kwargs)
 
     monkeypatch.setattr(partition_workers, "open_raw", count_warm_open)
-    warm_runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-warm-test",
-    )
     warm_result = execute_attempt(
-        warm_runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
-    assert warm_result.succeeded is True, (
-        warm_result.finalization.coordinator.proposed_outcome,
-        warm_result.finalization.supervisor.terminal_outcome,
-        warm_result.finalization.coordinator.state.runtime.settlements,
-        warm_result.finalization.coordinator.state.resources,
-        warm_result.finalization.coordinator.state.failures,
-        warm_result.sample_results,
-    )
+    assert warm_result.succeeded is True, warm_result.failure
     warm_by_stem = {
         item.job.sample.metadata.raw_stem: item for item in warm_result.sample_results
     }
@@ -803,16 +756,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         by_stem["S1"].backfill_attempt,
         warm_by_stem["S1"].backfill_attempt,
     )
-    warm_resources = warm_result.finalization.coordinator.state.resources
-    assert any(
-        item.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-        for item in warm_resources
-    )
-    assert all(
-        item.open_outcome is not RuntimeResourceOpenOutcome.OPENED
-        for item in warm_resources
-        if item.reservation.resource_key.endswith(":S1")
-    )
+    assert warm_open_calls == []
     assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
@@ -887,11 +831,6 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
             for c in (context.candidates_by_sample["S1"])
         ),
     )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
-    )
 
     vendor_raw = install_runtime_raw(
         monkeypatch,
@@ -900,14 +839,10 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         tmp_path=tmp_path,
     )
     result = execute_attempt(
-        runtime,
         (job,),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
-    assert result.succeeded is True, (
-        result.finalization.coordinator.state.runtime.settlements
-    )
+    assert result.succeeded is True, result.failure
     assert len(result.sample_results) == 1
     adapter = result.sample_results[0].adapter_result
     assert (
@@ -1073,28 +1008,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         )
         for sample in context.samples
     )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-recovery-test"
-        ),
-    )
 
     if backfill_stop is not None:
-        ingress = RuntimeCancellationIngress(attempt=context.processing_owners.attempt)
-
-        def finalize_with_cancellation(*args, **kwargs):
-            return execute_runtime_attempt(
-                *args, **kwargs, cancellation_ingress=ingress
-            )
-
+        cancelled = threading.Event()
         prepare_work = runtime_module._prepare_runtime_work
 
         def prepare_cancellable_work(*args, **kwargs):
-            return prepare_work(
-                *args, **kwargs, should_cancel=lambda: ingress.is_cancelled
-            )
+            return prepare_work(*args, **kwargs, should_cancel=cancelled.is_set)
 
         monkeypatch.setattr(
             runtime_module, "_prepare_runtime_work", prepare_cancellable_work
@@ -1102,31 +1022,21 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
 
         def stop_backfill(_state):
             if cancel_accepted:
-                ingress.request_cancellation(
-                    RuntimeCancellationRequest(
-                        attempt=context.processing_owners.attempt
-                    )
-                )
+                cancelled.set()
             raise backfill_stop("backfill interrupted")
 
-        monkeypatch.setattr(
-            runtime_module, "execute_runtime_attempt", finalize_with_cancellation
-        )
         monkeypatch.setattr(runtime_module, "_execute_backfill", stop_backfill)
 
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     if backfill_stop is not None:
-        expected = (
-            AttemptTerminalOutcome.CANCELLED
-            if backfill_stop is InterruptedError and cancel_accepted
-            else AttemptTerminalOutcome.FAILED
-        )
-        assert result.finalization.supervisor.terminal_outcome is expected
+        assert not result.succeeded
+        cancelled_run = backfill_stop is InterruptedError and cancel_accepted
+        assert isinstance(result.failure, InterruptedError) is cancelled_run
+        if not cancelled_run:
+            assert "backfill interrupted" in str(result.failure)
         assert not result.sample_results
         assert all(raw.disposed for raws in opened.values() for raw in raws)
         return
@@ -1362,7 +1272,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         partition_key="subset",
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
     )
-    assert partition.succeeded, partition.worker_batch.settlements
+    assert partition.succeeded, partition.failure
     assert acquired_candidates
     for sample, acquired in acquired_candidates:
         job = next(job for job in selected_jobs if job.sample == sample)
@@ -1527,7 +1437,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         replace(job, subject_partition=foreign_partition)
 
 
-def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
+def test_direct_subject_batch_acquires_initial_and_recovery_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1646,52 +1556,13 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
 
         monkeypatch.setattr(cid_nl_acquisition, name, observe)
 
-    submitted_batches = []
-    owner_execute_attempt = runtime_module.execute_runtime_attempt
-
-    def capture_worker_batch(
-        runtime,
-        reservations,
-        *,
-        worker_batch_provider,
-        telemetry_provider,
-    ):
-        def provide_and_capture(aggregate):
-            batch = worker_batch_provider(aggregate)
-            submitted_batches.append(batch)
-            return batch
-
-        return owner_execute_attempt(
-            runtime,
-            reservations,
-            worker_batch_provider=provide_and_capture,
-            telemetry_provider=telemetry_provider,
-        )
-
-    monkeypatch.setattr(runtime_module, "execute_runtime_attempt", capture_worker_batch)
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="runtime-phase-acquisition-seal",
-    )
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
-    assert result.succeeded
-    assert len(submitted_batches) == 1
-    receipts = submitted_batches[0].acquisitions
+    assert result.succeeded, result.failure
     assert len(observed_phase_acquisitions) == 8
-    assert len(receipts) == len(observed_phase_acquisitions)
-    assert all(
-        receipt.work_unit_key in runtime.manifest.work_unit_keys for receipt in receipts
-    )
-    assert all(
-        sum(receipt.acquisition is acquisition for receipt in receipts) == 1
-        for acquisition in observed_phase_acquisitions
-    )
+    assert len({id(item) for item in observed_phase_acquisitions}) == 8
 
 
 def test_context_rejects_same_stem_receipt_from_different_acquisition(
@@ -1860,16 +1731,9 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         )
         for sample in context.samples
     )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=("real-data-runtime-conditional-resource-test"),
-    )
 
     result = execute_attempt(
-        runtime,
         jobs,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     assert result.succeeded is True
@@ -1878,17 +1742,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         for item in result.sample_results
     ] == ["SUPPORT", "REJECT", None]
     assert raw_paths[2] not in opened
-    if not excluded:
-        empty_resource = next(
-            resource
-            for resource in result.finalization.coordinator.state.resources
-            if resource.reservation.resource_key.endswith(":Empty")
-        )
-        assert empty_resource.open_outcome is (
-            RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-        )
-        assert empty_resource.reservation.owner_conditional is True
-    assert runtime_call_cost(result.finalization)["raw_open_count"] == 2
+    assert sum(len(vendors) for vendors in opened.values()) == 2
     assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 

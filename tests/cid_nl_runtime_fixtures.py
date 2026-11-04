@@ -21,7 +21,6 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
@@ -174,9 +173,8 @@ def install_runtime_raws(
 
 def assert_partition_matches_runtime(jobs, full_result, monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError("partition must not execute a runtime attempt")
+        raise AssertionError("RAW must not open")
 
-    monkeypatch.setattr(runtime_module, "execute_runtime_attempt", forbidden)
     observed_batches = []
     for name in (
         "acquire_untargeted_cid_nl_sample_trace_batch",
@@ -219,35 +217,12 @@ def assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         ) == tuple(
             a.assessment.content.evaluation_receipt for a in expected.backfill_attempts
         )
-    expected_keys = {
-        f"part-1:{job.sample.identity.sample_key}:{phase}"
-        for job in jobs
-        for phase in ("initial", "backfill")
-    }
-    resources = result.worker_batch.resource_settlements
-    assert {item.resource_key for item in resources} == {
-        "acquisition-session:" + key for key in expected_keys
-    }
-    assert len(resources) == len(expected_keys)
-    assert len({item.work_unit_key for item in result.acquisitions}) == len(
-        result.acquisitions
-    )
-    assert all(item.work_unit_key in expected_keys for item in result.acquisitions)
-    assert {item.work_unit_key for item in result.acquisitions} <= {
-        item.resource_key.removeprefix("acquisition-session:")
-        for item in resources
-        if item.open_outcome is RuntimeResourceOpenOutcome.OPENED
-    }
-    assert all(item.acquisition.traces for item in result.acquisitions)
-    assert len(observed_batches) == len(result.acquisitions)
-    assert all(
-        any(item.acquisition is batch for item in result.acquisitions)
-        for batch in observed_batches
-    )
+    assert observed_batches
+    assert all(batch.traces for batch in observed_batches)
     for stage in ("partition_initial", "partition_backfill", "partition_seal"):
         progress = [event for event in events if event.get("stage") == stage]
         assert progress[-1]["completed"] == progress[-1]["total"]
-    # An acquisition failure must settle its jobs and return all resource cleanup facts.
+    # A RAW open failure fails the partition and names its cause.
     monkeypatch.setattr(partition_workers, "open_raw", forbidden)
     from xic_extractor.untargeted_execution.partition import workers as worker_module
 
@@ -259,9 +234,5 @@ def assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
     )
     assert not failed.succeeded
-    assert len(failed.worker_batch.settlements) == len(jobs)
-    assert len(failed.worker_batch.resource_settlements) == len(expected_keys)
-    assert any(
-        item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
-        for item in failed.worker_batch.resource_settlements
-    )
+    assert isinstance(failed.failure, AssertionError)
+    assert str(failed.failure) == "RAW must not open"

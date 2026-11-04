@@ -3,6 +3,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -24,7 +25,6 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
-from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -37,6 +37,19 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
+
+
+def _acquisition_totals(batches):
+    """Sum the per-batch acquisition counts that timing reports."""
+    names = (
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
+    )
+    return SimpleNamespace(
+        **{name: sum(getattr(batch, name) for batch in batches) for name in names}
+    )
 
 
 def test_physical_capture_accepts_search_coordinates_without_method_evidence() -> None:
@@ -1049,9 +1062,7 @@ def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_wind
     )
 
     measurements = result.measurements
-    runtime_metrics = derive_runtime_acquisition_metrics(
-        measurements.acquisition_batches
-    )
+    runtime_metrics = _acquisition_totals(measurements.acquisition_batches)
     assert measurements.input_group_count == 4
     assert measurements.empty_group_count == 1
     assert runtime_metrics.logical_xic_request_count == 2
@@ -1095,9 +1106,7 @@ def test_owner_acquisition_batches_distinct_contexts_at_256(
         ms1_centroid_mz=lambda *_: None,
     )
 
-    metrics = derive_runtime_acquisition_metrics(
-        result.measurements.acquisition_batches
-    )
+    metrics = _acquisition_totals(result.measurements.acquisition_batches)
     assert [len(batch) for batch in raw.request_batches] == [256, 1]
     assert metrics.logical_xic_request_count == 257
     assert metrics.xic_batch_count == 2
@@ -1143,7 +1152,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     )
 
     batches = result.measurements.acquisition_batches
-    runtime_metrics = derive_runtime_acquisition_metrics(batches)
+    runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
     assert runtime_metrics.logical_xic_request_count == 2
     assert result.measurements.exact_scan_window_count == 2

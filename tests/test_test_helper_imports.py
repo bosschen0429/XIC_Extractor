@@ -31,8 +31,6 @@ EXISTING_TEST_MODULE_IMPORTS = """
     test_discovery_timing_contract test_discovery_ms1_capture
     test_discovery_timing_contract test_discovery_physical_fact_integration
     test_discovery_timing_contract test_discovery_pipeline
-    test_execution_runtime_owner test_acquisition_contract
-    test_execution_runtime_receipts test_execution_runtime_owner
     test_extraction_anchors test_result_assembly
     test_finalized_application_result test_target_pre_cell_projection
     test_finalized_application_result test_untargeted_matrix_projection

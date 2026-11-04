@@ -22,9 +22,6 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
     complete_dense_partition,
@@ -36,10 +33,6 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.applications.untargeted.istd_reference import (
     read_known_istd_reference,
-)
-from xic_extractor.execution._finalization import (
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceOpenOutcome,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
@@ -926,8 +919,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     def close_without_raw(*_args, **_kwargs):
         return SimpleNamespace(
             succeeded=True,
-            worker_batch=SimpleNamespace(resource_settlements=()),
-            acquisitions=(),
+            failure=None,
             prepared_grouping=None,
         )
 
@@ -1014,7 +1006,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         batch = materialize_untargeted_partition(plan, plan.subject_batch)
         runtime = execute_dense_partition(
             batch,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             alignment_config=config,
             known_istd_reference=reference,
         )
@@ -1034,7 +1025,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         plan,
         output_dir=tmp_path / "eligibility-output",
         alignment_config=config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(plan.context.samples),
         raw_workers=raw_workers,
         pipeline_overlap=True,
@@ -1126,7 +1116,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     eager_runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=config,
         known_istd_reference=reference,
     )
@@ -1162,7 +1151,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             plan,
             output_dir=tmp_path / "bounded-output",
             alignment_config=config,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             known_istd_reference=reference,
             progress_callback=report_progress,
             max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
@@ -1201,7 +1189,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     owners = plan.context.processing_owners
     assert actual.processing_request is owners.request
     assert actual.processing_attempt is owners.attempt
-    assert bounded.runtime_receipt.supervisor.attempt is owners.attempt
     assert all(
         left is right
         for left, right in zip(
@@ -1258,11 +1245,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
     assert heartbeat["stage"] == "batch_completed"
     assert heartbeat["completed"] == heartbeat["total"] == phase_count
-    eager_manifest = eager_runtime.finalization.coordinator.state.runtime.manifest
-    assert len(eager_manifest.work_unit_keys) == len(batch.jobs)
-    assert len(
-        bounded.runtime_receipt.coordinator.state.runtime.manifest.work_unit_keys
-    ) == (partition_count * len(plan.context.samples) * 2 + 1)
     assert actual.children
     if scenario == "recovery":
         assert any(result.backfill_attempts for result in eager_runtime.sample_results)
@@ -1338,7 +1320,6 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
             plan,
             output_dir=tmp_path / "failed-output",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
         )
     assert len(calls) == 2
@@ -1368,7 +1349,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         baseline_plan,
         output_dir=tmp_path / "cold-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(baseline_plan.context.samples),
         pipeline_overlap=False,
     )
@@ -1394,7 +1374,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             plan,
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
             pipeline_overlap=False,
         )
@@ -1406,12 +1385,11 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         retry_plan,
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(retry_plan.context.samples),
         pipeline_overlap=False,
     )
 
-    assert completed.runtime_receipt.supervisor.attempt is (
+    assert completed.application_result.processing_attempt is (
         retry_plan.context.processing_owners.attempt
     )
     assert (
@@ -1475,7 +1453,6 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         plan,
         output_dir=tmp_path / "serial-partitions",
         alignment_config=config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=False,
@@ -1538,7 +1515,6 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         plan,
         output_dir=tmp_path / "overlapped-partitions",
         alignment_config=config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=True,
@@ -1599,7 +1575,6 @@ def test_overlapped_partition_acquisition_failure_propagates(
             plan,
             output_dir=tmp_path / "overlapped-failure",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
@@ -1645,7 +1620,6 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
             plan,
             output_dir=tmp_path / "last-bootstrap",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
@@ -1710,7 +1684,6 @@ def test_final_grouping_failure_stops_before_any_backfill(
             plan,
             output_dir=tmp_path / "grouping",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=pipeline_overlap,
@@ -1789,14 +1762,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     job_counts = []
     append_order = []
     barrier_checks = []
-    acquisitions = []
     original_materialize = owner.materialize_untargeted_partition
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.StreamedResultStore.append_children
     original_prepare = runtime_owner._prepare_group_authorized_backfills
-    original_execute = owner.execute_runtime_attempt
 
     def materialize(*args, **kwargs):
         nonlocal live_jobs
@@ -1867,16 +1838,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         if event["stage"] == "partition_released":
             live_jobs = 0
 
-    def execute(*args, worker_batch_provider, **kwargs):
-        def observe(aggregate):
-            batch = worker_batch_provider(aggregate)
-            acquisitions.extend(batch.acquisitions)
-            return batch
-
-        return original_execute(*args, worker_batch_provider=observe, **kwargs)
-
     monkeypatch.setattr(owner, "materialize_untargeted_partition", materialize)
-    monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
     monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_backfills", prepare)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
@@ -1886,7 +1848,6 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         plan,
         output_dir=tmp_path / "parallel",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=8,
         raw_workers=raw_workers,
         progress_callback=progress,
@@ -1899,7 +1860,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
     assert live_jobs == 0
     assert append_order == ["partition-00000-backfill", "partition-00001-backfill"]
-    assert len(handle_threads) == len(acquisitions) == 8
+    assert len(handle_threads) == 8
     # Every initial acquisition finishes before either Backfill phase.
     assert barrier_checks == [6, 7]
     assert overlap_count <= peak_handles <= raw_workers
@@ -1931,12 +1892,10 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     entered = set()
     opened = {}
     closed = set()
-    batches = []
     original_leaf = owner.execute_partition
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
-    original_execute = owner.execute_runtime_attempt
 
     def leaf(*args, **kwargs):
         entered.add(kwargs["partition_key"])
@@ -1980,20 +1939,10 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
             return True
         return False
 
-    def execute(*args, worker_batch_provider, **kwargs):
-        def observe(aggregate):
-            batch = worker_batch_provider(aggregate)
-            assert set(opened) == closed
-            batches.append(batch)
-            return batch
-
-        return original_execute(*args, worker_batch_provider=observe, **kwargs)
-
     def fail_spool(*_args):
         raise OSError("injected spool failure")
 
     monkeypatch.setattr(owner, "execute_partition", leaf)
-    monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
@@ -2004,7 +1953,6 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
             plan,
             output_dir=tmp_path / "failed",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             raw_workers=2,
             max_partition_jobs=8,
             should_cancel=should_cancel,
@@ -2015,21 +1963,6 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     assert entered == {"partition-00000-initial"}
     assert set(opened) == closed
     assert len(opened) == (4 if failure_mode == "spool_failure" else 2)
-    assert len(batches) == 1
-    resources = batches[0].resource_settlements
-    assert sum(
-        receipt.cleanup_outcome is RuntimeResourceCleanupOutcome.FAILED
-        for receipt in resources
-    ) == (1 if failure_mode == "cleanup_failure" else 0)
-    assert sum(
-        receipt.open_outcome is RuntimeResourceOpenOutcome.OPENED
-        for receipt in resources
-    ) == len(opened)
-    assert all(
-        receipt.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-        for receipt in resources
-        if "partition-00001-initial:" in receipt.resource_key
-    )
     assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []
 
 
@@ -2294,7 +2227,6 @@ def test_sparse_recovery_partition_matches_dense_composition(
     assert len(dense_batch.jobs) == 12
     dense_runtime = execute_dense_partition(
         dense_batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=config,
     )
     assert dense_runtime.succeeded
@@ -2606,7 +2538,6 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         plan,
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
@@ -2689,7 +2620,6 @@ def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
         plan,
         output_dir=tmp_path / "runtime",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
     )
@@ -2742,7 +2672,6 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
         plan,
         output_dir=output_dir,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_acquisition_cache=retain,
@@ -2798,7 +2727,6 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             plan,
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             max_partition_jobs=len(plan.context.samples),
         )
     assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

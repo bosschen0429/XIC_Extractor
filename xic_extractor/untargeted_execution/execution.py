@@ -1,4 +1,4 @@
-"""Complete CID-NL subjects in finite partitions under one runtime attempt."""
+"""Complete CID-NL subjects in finite partitions."""
 
 from __future__ import annotations
 
@@ -19,20 +19,6 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.execution._finalization import (
-    RuntimeResourceKind,
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution._lifecycle import (
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution.attempt import (
-    RuntimeFinalizationReceipt,
-    RuntimeTelemetryProvider,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-)
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
@@ -47,7 +33,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
     PreparedRawMassRecalibration,
     ensure_assemblies_loaded,
@@ -359,14 +344,6 @@ class UntargetedPartitionPipelineAdapter:
                         index=len(partitions),
                         partition_key=partition_key,
                         payload=subjects,
-                        work_unit_keys=tuple(
-                            f"{partition_key}:{sample.identity.sample_key}:{phase}"
-                            for sample in context.samples
-                        ),
-                        resource_keys=tuple(
-                            f"acquisition-session:{partition_key}:{sample.identity.sample_key}:{phase}"
-                            for sample in context.samples
-                        ),
                     )
                 )
         self._partitions = tuple(partitions)
@@ -408,37 +385,6 @@ class UntargetedPartitionPipelineAdapter:
                     shared_objects=shared_objects,
                 ),
             )
-        self._global_closure_work_unit_key = "global-closure"
-        self._work_unit_keys = (
-            *(
-                key
-                for partition in self._partitions
-                for key in partition.work_unit_keys
-            ),
-            self._global_closure_work_unit_key,
-        )
-        self._resource_reservations = tuple(
-            RuntimeResourceReservation(
-                attempt=self._owners.attempt,
-                kind=RuntimeResourceKind.ACQUISITION_SESSION,
-                resource_key=resource_key,
-                worker_key=(
-                    f"inline-acquisition:{partition.partition_key}:"
-                    f"{sample.identity.sample_key}:"
-                    f"{'initial' if self._is_bootstrap(partition) else 'backfill'}"
-                ),
-                source_reference=resolve_request_acquisition_source(
-                    processing_owners=self._owners, sample=sample
-                ).acquisition_source_id,
-                compatibility_token="untargeted-cid-nl-real-data-runtime",
-                owner_conditional=True,
-            )
-            for partition in self._partitions
-            for sample, resource_key in zip(
-                context.samples, partition.resource_keys, strict=True
-            )
-        )
-        self._owner_completeness_attestation = "cid-nl-partitioned"
 
     @property
     def partitions(
@@ -479,22 +425,6 @@ class UntargetedPartitionPipelineAdapter:
         self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
     ) -> bool:
         return partition.index < self._bootstrap_count
-
-    @property
-    def processing_owners(self) -> ProcessingOwners:
-        return self._owners
-
-    @property
-    def work_unit_keys(self) -> Sequence[str]:
-        return self._work_unit_keys
-
-    @property
-    def resource_reservations(self) -> Sequence[RuntimeResourceReservation]:
-        return self._resource_reservations
-
-    @property
-    def owner_completeness_attestation(self) -> str:
-        return self._owner_completeness_attestation
 
     @property
     def acquisition_workers(self) -> int:
@@ -670,20 +600,9 @@ class UntargetedPartitionPipelineAdapter:
             )
         with pool_context as pool:
             leaf = run(pool=pool)
-        failure_detail = None
-        if not leaf.succeeded:
-            failed = next(
-                receipt
-                for receipt in leaf.worker_batch.settlements
-                if receipt.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
-            )
-            failure_detail = failed.failure_detail
         return PartitionAcquisitionOutput(
             result=(replace(batch, prepared_grouping=leaf.prepared_grouping), leaf),
-            resources=leaf.worker_batch.resource_settlements,
-            acquisitions=leaf.acquisitions,
-            succeeded=leaf.succeeded,
-            failure_detail=failure_detail,
+            failure=leaf.failure,
         )
 
     def execute_composition(
@@ -737,20 +656,6 @@ class UntargetedPartitionPipelineAdapter:
         )
         return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
-    def settle_partition(
-        self,
-        partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-        composition_output: PartitionCompositionOutput[PersistedUntargetedPartition],
-    ) -> Sequence[WorkUnitSettlement]:
-        return tuple(
-            mint_work_unit_settlement(
-                attempt=self._owners.attempt,
-                work_unit_key=key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            )
-            for key in partition.work_unit_keys
-        )
-
     def finalize_application(
         self,
         store: StreamedResultStore,
@@ -783,26 +688,8 @@ class UntargetedPartitionPipelineAdapter:
             partitions=tuple(output.result for output in composition_outputs),
         )
 
-    @property
-    def global_closure_work_unit_key(self) -> str:
-        return self._global_closure_work_unit_key
-
-    def settle_global_closure(
-        self,
-        application_result: FinalizedUntargetBatchApplicationResult
-        | PreparedGroupingExperiment,
-    ) -> Sequence[WorkUnitSettlement]:
-        return (
-            mint_work_unit_settlement(
-                attempt=self._owners.attempt,
-                work_unit_key=self._global_closure_work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            ),
-        )
-
     def build_workflow_result(
         self,
-        runtime_receipt: RuntimeFinalizationReceipt,
         application_result: FinalizedUntargetBatchApplicationResult
         | PreparedGroupingExperiment,
         store: StreamedResultStore,
@@ -811,7 +698,6 @@ class UntargetedPartitionPipelineAdapter:
             store.cleanup()
             return application_result
         return CompletedUntargetBatchWorkflowResult.from_runtime(
-            runtime_receipt=runtime_receipt,
             application_result=application_result,
             store=store,
             retain_partition_spool=self._retain_partition_spool,
@@ -823,7 +709,6 @@ def execute_untargeted_plan(
     *,
     output_dir: Path,
     alignment_config: AlignmentConfig,
-    telemetry_provider: RuntimeTelemetryProvider,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     max_partition_jobs: int = 100_000,
@@ -884,13 +769,11 @@ def execute_untargeted_plan(
             adapter,
             phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
-            telemetry_provider=telemetry_provider,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,
             pipeline_overlap=pipeline_overlap,
             acquisition_workers=adapter.acquisition_workers,
-            execute_runtime_attempt=execute_runtime_attempt,
             store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,
         )

@@ -31,9 +31,6 @@ from tests.cid_nl_runtime_fixtures import (
     install_runtime_raw,
     install_runtime_raws,
 )
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
@@ -58,10 +55,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
-from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.execution._observability import RuntimeMetricAvailability
 from xic_extractor.execution.process_memory import (
-    ProcessMemoryPeak,
     ProcessMemorySample,
     ProcessTreeMemorySampler,
 )
@@ -321,55 +315,6 @@ def _assert_composite_no_input_exclusion_coverage(
         and not exclusion.method_assessments
         for exclusion in exclusions
     )
-
-
-@pytest.mark.parametrize(
-    ("peak", "expected_availability", "expected_value", "expected_reason"),
-    (
-        (
-            ProcessMemoryPeak(
-                rss_bytes=123456,
-                private_bytes=654321,
-                availability="measured",
-            ),
-            RuntimeMetricAvailability.MEASURED,
-            123456,
-            None,
-        ),
-        (
-            ProcessMemoryPeak(
-                availability="unavailable",
-                reason="process memory sampler unavailable",
-            ),
-            RuntimeMetricAvailability.UNSUPPORTED,
-            None,
-            "process memory sampler unavailable",
-        ),
-    ),
-)
-def test_alignment_runtime_telemetry_preserves_process_memory_peak(
-    monkeypatch: pytest.MonkeyPatch,
-    peak: ProcessMemoryPeak,
-    expected_availability: RuntimeMetricAvailability,
-    expected_value: int | None,
-    expected_reason: str | None,
-) -> None:
-    monkeypatch.setattr(
-        alignment_adapter,
-        "runtime_started_worker_keys",
-        lambda _coordinator: (),
-    )
-
-    samples = alignment_adapter._coarse_runtime_telemetry(object(), peak)
-
-    assert samples.event_monotonic_offsets_ns is None
-    assert samples.artifact_io is None
-    assert samples.unavailable_reason == (
-        "not_collected_by_alignment_foreground_runner"
-    )
-    assert samples.process_tree_peak_rss.availability is expected_availability
-    assert samples.process_tree_peak_rss.value == expected_value
-    assert samples.process_tree_peak_rss.reason == expected_reason
 
 
 def _expected_retained_curve(
@@ -1079,11 +1024,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     def checked_runtime(*args, **kwargs):
         result = runtime_execute(*args, **kwargs)
         assert result.succeeded, (
-            tuple(
-                settlement.failure_detail.message
-                for settlement in result.worker_batch.settlements
-                if settlement.failure_detail is not None
-            ),
+            result.failure,
             tuple(
                 (
                     sample_stem,
@@ -1451,41 +1392,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         "RAW opens must reuse the input owner's source verification",
         trace.runtime_fingerprints,
     )
-    assert (
-        completed.runtime_receipt.supervisor.terminal_outcome
-        is AttemptTerminalOutcome.SUCCEEDED
-    )
-    runtime_ledger = completed.runtime_receipt.observability_ledger
-    assert all(event.monotonic_offset_ns is None for event in runtime_ledger.events)
-    unavailable_metric_names = {
-        "artifact_read_count",
-        "artifact_read_bytes",
-        "artifact_write_count",
-        "artifact_write_bytes",
-        "coordinator_work_seconds",
-        "attempt_wall_seconds",
-        "stage_or_unit_elapsed_seconds",
-    }
-    unavailable_metrics = tuple(
-        metric
-        for metric in runtime_ledger.metrics
-        if metric.name in unavailable_metric_names
-    )
-    assert {metric.name for metric in unavailable_metrics} == unavailable_metric_names
-    assert all(
-        metric.availability is RuntimeMetricAvailability.UNSUPPORTED
-        and metric.value is None
-        and metric.reason == "not_collected_by_alignment_foreground_runner"
-        for metric in unavailable_metrics
-    )
-    rss = [
-        metric
-        for metric in runtime_ledger.metrics
-        if metric.name == "process_tree_peak_rss_bytes"
-    ]
-    assert len(rss) == 1
-    assert rss[0].availability is RuntimeMetricAvailability.MEASURED
-    assert rss[0].value == 123456
     _assert_jobs_match_direct_construction(trace.captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
@@ -2519,7 +2425,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     )
     runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=alignment_config,
     )
     assert runtime.succeeded
@@ -2749,7 +2654,6 @@ def test_production_reuses_source_verification_across_runtime_opens(
     execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "out",
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=1,
     )
@@ -2909,7 +2813,6 @@ def test_production_rejects_source_change_after_input_verification(
         execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "failed-output",
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             alignment_config=AlignmentConfig(),
         )
 
@@ -3224,7 +3127,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
 
     result = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     assert result.succeeded
@@ -3520,7 +3422,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         plan,
         output_dir=tmp_path / "admission-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         raw_workers=1,
     )
     assert set(completed.application_result.candidate_ids) == admitted
@@ -3616,7 +3517,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     progress_events = []
     runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=AlignmentConfig(),
         progress_callback=progress_events.append,
     )
@@ -3732,7 +3632,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_plain = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=AlignmentConfig(),
     )
     assert runtime_plain.succeeded
@@ -3764,7 +3663,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     config = AlignmentConfig()
     runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         alignment_config=config,
         known_istd_reference=reference,
     )
@@ -4067,7 +3965,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
 
     runtime_result = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     recovered = tuple(
         result
@@ -4389,7 +4286,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
 
     runtime = execute_dense_partition(
         batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     assert runtime.succeeded
     recovered = {

@@ -6,9 +6,6 @@ import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from tests.test_physical_peak_evaluation_persistence import _overlapping_triplet_trace
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
@@ -196,7 +193,6 @@ def test_review_rows_never_become_alignment_roots(
             plan,
             output_dir=tmp_path / "alignment",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             raw_workers=1,
         )
         assert set(result.application_result.candidate_ids) == expected_ids
