@@ -10,7 +10,7 @@ current contract only. Migration history belongs in Issues, PRs, and Git.
 | --- | --- |
 | owner or dependency boundary | [`../architecture-contract.md`](../architecture-contract.md) and the affected package |
 | persisted schema or evidence claim | the writer, strict reader, schema tests, and [`product-validation-contract.md`](product-validation-contract.md) |
-| runtime lifecycle or receipt | `xic_extractor.execution.attempt` and `scripts/check_architecture_census.py` |
+| runtime lifecycle or receipt | `xic_extractor.execution.attempt` and its focused tests |
 | public command or diagnostic | [`script-tool-lifecycle.md`](script-tool-lifecycle.md) and `[project.scripts]` |
 | repository placement | [`../project-layout.md`](../project-layout.md) |
 
@@ -127,19 +127,18 @@ derives lifecycle, counts, ledgers, dispositions, and final outcome.
 - Canonical metrics require the owner-minted ledger bound to the accepted
   finalization receipt; copied labels or mappings carry no authority.
 
-Exact allowed calls, exports, construction sites, receipt bindings, and active
-schema versions are enforced by `scripts/check_architecture_census.py`, the
-owner modules, serializers, and focused tests.
+Receipt bindings and active schema versions are enforced by the owner modules,
+serializers, and focused tests.
 
 ## Executable Census And Dependency Gate
 
 The architecture census is disposable evidence, not an authority registry. It
-derives current module paths, static imports, declared console scripts, package
-patterns, and runtime-construction violations from source.
+derives current module paths, static imports, declared console scripts, and
+package patterns from source.
 
 - `.importlinter` owns the coarse static dependency floor.
-- `scripts/check_architecture_census.py` owns the targeted construction and
-  export gate.
+- `scripts/check_architecture_census.py` owns the census integrity, naming,
+  and internal-defense growth gates.
 - Dynamic loaders, installed entry points, frozen applications, workflow
   checks, diagnostics indexes, and test selection remain with their respective
   executable owners.
