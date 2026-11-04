@@ -1,5 +1,5 @@
 name: Implementation Change
-description: Define an outcome, bounded scope, and observable completion check; add material boundaries when needed.
+description: Describe what should work, the scope, and how completion is checked.
 title: "[Implementation] "
 labels:
   - needs-triage
@@ -7,86 +7,28 @@ body:
   - type: textarea
     id: outcome
     attributes:
-      label: Outcome and observable loss
-      description: State what should work and the current user, product, scientific, or engineering cost.
+      label: Outcome
+      description: What should work, and what it costs today that it does not.
     validations:
       required: true
-  - type: input
-    id: execution_base
-    attributes:
-      label: Source binding (when version-dependent)
-      description: >-
-        Fill only when an artifact, frozen decision, or required gate depends on
-        a particular source state. Name the exact producing/execution ref;
-        after blockers, reconcile any provisional binding at claim. Ordinary
-        established-owner work does not need an execution-base freeze.
-    validations:
-      required: false
   - type: textarea
-    id: graph_placement
+    id: scope
     attributes:
-      label: Delivery graph and handoff (when an edge exists)
-      description: >-
-        Fill only for a real cross-ticket delivery edge. Name the parent, native
-        blockers, consumed/produced output and consuming contract or entry,
-        successor handoff, and one carrier Issue per edge. Leave empty for
-        independent work.
-    validations:
-      required: false
-  - type: textarea
-    id: owner_universe
-    attributes:
-      label: Owner and consumer boundary (when material)
-      description: >-
-        Fill for a material owner replacement, cross-owner handoff, or public/
-        persisted-schema correctness, authority, or compatibility risk. Name
-        affected owners, production entries and current consumers. Add a census
-        locator and exclusions only when migration, retirement, or a completeness
-        claim depends on them.
-    validations:
-      required: false
-  - type: textarea
-    id: asset_disposition
-    attributes:
-      label: Asset disposition (migration or replacement only)
-      description: >-
-        For migration or replacement, classify retained, adapted, replaced, and
-        retirement-candidate paths with their consumers and adapter removal
-        conditions. Supply zero-reference evidence where retirement relies on
-        it. Leave empty for an established-owner local change.
-    validations:
-      required: false
-  - type: textarea
-    id: boundaries
-    attributes:
-      label: Bounded scope
-      description: >-
-        State the behavior and owner this ticket changes. Add non-goals or an
-        owner cutoff when they prevent material scope ambiguity; ordinary local
-        work needs only its clear boundary.
+      label: Scope
+      description: The behavior this changes. Add what is out of scope only when it would otherwise be ambiguous.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Observable completion and validation
-      description: >-
-        Name the observable result and the check that decides completion. Add
-        preserved invariants, rollback, or a usable handoff when the change needs
-        them. Science/readiness or high-cost RAW work must bind the decision to
-        its method/lane oracle, inputs, authority ceiling, and source-qualified
-        validation owner. For multiple PRs, name independently usable outcomes
-        or failure-domain seams. Use prose appropriate to this issue.
+      label: Acceptance
+      description: The observable result and the check that decides completion. For science or long RAW runs, name the method's oracle and inputs.
     validations:
       required: true
   - type: textarea
-    id: stop_rule
+    id: notes
     attributes:
-      label: Stop or escalation boundary (when task-specific)
-      description: >-
-        Fill for a high-cost run's observable stop condition or an unresolved
-        operator/parent decision that can change outcome, scope, or authority.
-        Generic review finding resolution follows planning-workflows.md; local
-        changes do not need to predict hypothetical findings here.
+      label: Notes
+      description: Optional. Owners, consumers, migration, rollback or a stop condition when the change needs them.
     validations:
       required: false

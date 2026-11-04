@@ -3,18 +3,6 @@
 Tests protect current observable behavior. They are not a record of how a
 change was constructed.
 
-## Read Routes
-
-Choose the row for the current decision; the rest is reference, not a required
-preflight for every edit. Use each matching row when decisions overlap.
-
-| Need | Read |
-| --- | --- |
-| Choose or run existing tests | [Affected-Test Selection](#affected-test-selection), then [Verification](#verification) |
-| Add or change regression coverage or fixtures | [Test Worth](#add-a-test-only-when-it-can-fail-usefully), [Oracle](#oracle-attribution-and-contract-boundaries), and [Observable](#choose-the-observable); [Placement](#test-placement) for a new file |
-| Browser behavior or an interactive demonstration | [Browser Workbench Checks](#browser-workbench-checks); use the regression row when adding coverage |
-| RAW or scientific evidence | [RAW And Scientific Validation](#raw-and-scientific-validation), then the matching [validation route](product-validation-contract.md#read-routes) |
-
 ## Add A Test Only When It Can Fail Usefully
 
 Every change needs evidence, but not every change needs a new test. Add or
