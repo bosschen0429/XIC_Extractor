@@ -17,7 +17,7 @@ edit. Global Codex rules own general operating defaults.
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Need a current-format Untargeted output as test input | Regenerate it with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; runs left under `output/` by older code are not current-format input. |
-| Push or PR creation | Run [PR Verification](docs/agent/execution-gates.md#pr-verification); use [Pull Requests](docs/agent/communication-review.md#pull-requests) for the body. |
+| Push or PR creation | Run [PR Verification](docs/agent/execution-gates.md#pr-verification); write the body with the `pr` skill. |
 | Clean-checkout artifact, long RAW run, CI evidence, remote-head change, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |

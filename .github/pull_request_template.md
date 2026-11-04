@@ -1,27 +1,23 @@
-<!-- Write in the user's language for a reviewer judging intent and behavior.
-docs/agent/communication-review.md owns review guidance. Put commands, SHAs,
-and detailed evidence in links or a collapsed details block. -->
+<!-- Structure follows the `pr` skill. Write for a reviewer who judges intent and
+behavior without reading every diff, in the user's language and domain terms.
+Commands, SHAs, and detailed evidence belong in links or a collapsed details block. -->
 
 ## Summary
 
-<!-- What changes for the consumer? Plain prose is enough; add a before/after
-view only when it makes the behavior easier to judge. -->
+<!-- The smallest view that makes the change clear: pseudocode, call tree, file
+tree, Mermaid, or a diff of that shape, each beside one or two sentences. -->
 
-## Motivation
+## Evidence
 
-<!-- What real problem does this solve? Link the existing issue rather than
-copying its scope. -->
+<!-- Before and after. Screenshots for visual changes; otherwise the exact check
+that fails before and passes after, or the observed output. Do not invent a
+failing baseline; distinguish manual review from execution and keep gaps visible. -->
 
-## Testing
+## Merge Danger
 
-<!-- What did the checks establish, and what remains unverified? Distinguish
-execution from manual review. Show a failing baseline only when observed;
-use screenshots for visual changes and method-appropriate scientific evidence. -->
+**Door:** <!-- one-way or two-way -->
 
-## Risks/Rollback
-
-<!-- Name material risks and breaking changes explicitly. Explain what could
-be affected and how to recover, including reprocessing when needed. -->
+**Blast Radius:** <!-- one word, then what could break: outputs, consumers, data that needs reprocessing -->
 
 Issue linkage: <!-- Link the relevant issue, or state the user request if none.
 Use a closing keyword only when this PR completes the issue on the default branch. -->
