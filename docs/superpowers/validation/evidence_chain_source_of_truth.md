@@ -26,17 +26,16 @@ treat a passing diagnostic replay as permission to change that output.
 | --- | --- |
 | What does a domain term mean? | [Domain Glossary](../../product/domain-glossary.md) |
 | What can MS1, MS2/NL, RT, morphology, or ISTD evidence establish? | [LC-MS/MS Evidence Rules](../../lc-msms-evidence-rules.md) |
-| How are observations, hypotheses, method assessments, and references represented? | [Evidence Spine](../../product/evidence-spine.md) |
+| How are observations, hypotheses, method assessments, and references represented? | [Discovery](../../product/discovery.md#cid-nl-support-relations) |
 | How are sample-local candidates obtained? | [Discovery](../../product/discovery.md) |
 | Which observations correspond across samples? | [Alignment](../../product/alignment.md) |
-| What are group identity, disposition, and lineage? | [Group Boundary](../../product/family-hypothesis-boundary.md) |
+| What are group identity, disposition, and lineage? | [Alignment](../../product/alignment.md#group-identity-and-disposition) |
 | How are missing observations searched and accepted? | [Backfill](../../product/backfill.md) |
 | How do Targeted selection, confidence, and counted detection relate? | [Targeted Selection](../../product/targeted-selection.md) and [Decision Policy](../../product/decision-policy.md) |
 | How do completed cells become Matrix values and rows? | [Quant Matrix](../../product/quant-matrix.md) |
 | What grants product-writing authority? | [Writer authority](../../product/productization.md#writer-authority) |
-| Which request, attempt, and artifact produced a result? | [Result Traceability](../../product/processing-lineage.md) |
-| What happened during execution? | [Execution Runtime](../../product/execution-runtime.md) |
-| How is retained evidence inspected? | [XIC Inspector](../../product/xic-inspector.md) and the [Diagnostics Index](../../../tools/diagnostics/INDEX.md) |
+| Which inputs and settings produced a Targeted result? | [Targeted workbook](../../product/targeted-workbook.md#run-metadata) |
+| How is retained evidence inspected? | [Workbench and review](../../product/workbench.md) and the [Diagnostics Index](../../../tools/diagnostics/INDEX.md) |
 
 A boundary reminder may appear at a consuming entry point, but the detailed
 rule stays with its owner. This map changes when navigation or ownership changes,

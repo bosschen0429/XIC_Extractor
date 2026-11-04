@@ -1,13 +1,5 @@
 # Signal Processing Rationale
 
-Doc placement: formal_repo_doc
-Doc kind: product_doc
-Doc lifecycle: active
-Repo owner: docs/product/signal-processing-rationale.md
-Doc exit rule: Keep active as the durable design rationale for trace smoothing
-and area integration choices; retire only if the pipeline abandons the
-smoothed-everywhere principle.
-
 This document records **why** the canonical signal profile uses a
 Gaussian-smoothed raw trace together with an independently estimated AsLS raw
 baseline for judgment, scoring, boundary, and area decisions. For the operational rules
@@ -270,6 +262,31 @@ satisfy the retained-evaluation replay contract. Until a replacement has both
 appropriate method evidence and reproducible persisted answers, the current
 Gaussian/AsLS definition remains the operational owner.
 
+## Quantitation Context
+
+The quantitation context is the acquired RT trace available to the shared
+physical owner. A candidate proposal interval can be narrower than that
+context, and the full search window is not the quantitation context. The
+selected physical component supplies the integration bounds.
+
+- The shared physical owner decides whether the observed context supports
+  complete peak bounds. Missing or clipped support keeps its explicit
+  unavailable reason; no downstream adapter invents flanks or integrates a
+  replacement region.
+- Supported lobes stay distinct when the valley persists for one canonical
+  smoothing footprint at half its dip depth. Brief dropouts and unsupported
+  ripple do not separate peaks.
+- A persistent shallow valley supplies a component boundary and keeps overlap
+  review. Its area is measured, not deconvolved compound-specific area.
+- If a focused query clips the peak, Targeted NL acquisition can restore the
+  configured target window once; the same physical owner evaluates the new
+  trace. The writer never extends bounds.
+- CWT, local-minimum, derivative and alternate boundary proposals remain
+  diagnostic or model-selection evidence. Selected-full-envelope evidence and
+  boundary review annotations do not replace the retained integration or
+  establish chemical absence.
+- Do not integrate every positive residual in a broad RT context.
+
 ## Consumer Boundary
 
 `smooth_window`, `smooth_polyorder`, and `resolver_mode` belong to legacy
@@ -278,14 +295,11 @@ cannot change profile-covered physical facts. The only canonical public method
 is `gaussian`; its public point count is
 `signal_processing_window_points` (default 9, odd integer 3–999).
 
-Untargeted Backfill was the first bounded consumer of the canonical profile
-and shared physical owner. Current normal Untargeted Discovery, Alignment
-owner-build, and Backfill routes are now cut over without waiting for
-Targeted parity. The former Standard Peak product route and
-source-Matrix republisher are retired; retained shape/overlay helpers are
-offline diagnostics only. The automatic gallery route is parked. Targeted
-and any deliberately retained diagnostic computation remain separately
-bounded and cannot supply a second answer for profile-covered Untargeted work.
+Normal Untargeted Discovery, Alignment owner-build and Backfill use the
+canonical profile and shared physical owner. Retained shape and overlay helpers
+are offline diagnostics only. Targeted and any deliberately retained diagnostic
+computation remain separately bounded and cannot supply a second answer for
+profile-covered Untargeted work.
 
 The physical owner answers a closed stage-supplied peak question from the
 canonical signal. It does not choose a `PeakHypothesis`, group, feature row,
@@ -340,9 +354,6 @@ a method-appropriate area-ratio and smoothing-duration review per
 - Focused synthetic/no-RAW tests can prove formula, profile propagation,
   identity invalidation, failure semantics, and serial/process parity. They do
   not prove production readiness.
-- Historical 85-sample evidence that raw and standalone AsLS areas did not reach
-  the product matrix predates this exact canonical formula and cannot validate
-  its qualitative peak choice.
 - PT-pattern discovery: explicit `TRACE_DECISION_BASIS =
   "gaussian15_smoothed_trace"` constant.
 - Profile-covered scoring and relative-shape comparison consume the resolved

@@ -21,8 +21,8 @@ delivery seam as if they were already final.
   columns.
 - Identity, row-basis, source, evidence, and review details belong in
   sidecars unless an explicit public schema says otherwise.
-- LC-MS/MS evidence rules and morphology-aware area policy supersede the
-  historical AsLS primary-matrix policy.
+- The [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+  own the area policy.
 - A finite positive observed censored physical area may supply the numeric
   value. Preserve its observed censored source and the retained
   `near_detection_limit` or truncation evidence; do not impute missing signal.
@@ -53,71 +53,24 @@ quantification-authority guard, not a new peak-selection or Backfill route.
 ### Matrix publication
 
 - Normal Matrix publication consumes the live Alignment cell decisions and
-  projection owners. It does not run a separate promotion, activation dry-run,
-  or product-ready closeout chain.
-- Consult the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
-  for current registered writer scopes. Historical validation packets cannot
+  projection owners, without a separate promotion or closeout chain.
+- The [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
+  lists current registered writer scopes. A past validation packet cannot
   authorize current values.
-- Changes to selected values still require the owning product contract and
-  method-appropriate evidence; deleting a historical validation workflow does
-  not change the scientific selection policy.
-
-Writer projection checks sample completeness per finalized row without building
-a second global row-by-sample key set. Cell and integration-audit TSV writers
-consume formatted rows incrementally instead of retaining a second complete
-population of cell dictionaries.
+- Changes to selected values require the owning product contract and
+  method-appropriate evidence.
 
 The default `production` Matrix artifact is `alignment_matrix.tsv`. Alignment's
-method-neutral per-cell evidence artifact is `alignment_explanation.sqlite`.
-It is published after the Matrix when requested by the publication policy,
-output level, or retained membership risks; see
-[execution explanations](xic-inspector.md#cid-nl-execution-explanations).
-Identity, review, provenance, Backfill evidence, HTML, and workbook artifacts
-remain explicit machine, validation, diagnostic, or compatibility outputs;
-their schemas and value policies are unchanged. `production` and
-`validation-minimal` publication consumes finalized rows in one pass, retaining
-the identity census rather than the complete cell and decision populations.
-Public row numbering and identity hashes span that complete ordered stream.
-Workbook, HTML and additional whole-matrix consumers retain the materialized
-projection API. Both routes use the same atomic publication and rollback owner.
+method-neutral per-cell evidence is `alignment_explanation.sqlite`, published
+after the Matrix; see [retained evidence](workbench.md#retained-evidence-and-diagnostics).
+Identity, review, provenance, Backfill evidence, HTML and workbook artifacts
+remain explicit machine, validation, diagnostic or compatibility outputs.
 
-TSV, XLSX and HTML share the existing multi-file temp-write, replace,
-fingerprint and rollback transaction. The live handoff does not define persisted
-owner rehydration, cross-version replay or run/attempt identity. Diagnostic
-sidecars may preserve raw evidence, but do not supply competing production
-decisions.
-
-### Renderer input
-
-- Shared-peak explanation and PeakHypothesis selection sidecars are
-  diagnostic evidence only. These sidecars do not expose an independent
-  activation writer or a matrix reconstruction command.
-- Finalized production owners own Matrix output through
-  `output/alignment/product_matrix.py`.
-- Within one activated Alignment run, the owner-minted
-  `ProductionDecisionSet` is the single live semantic input for TSV, XLSX, and
-  HTML projections.
-- Renderers can format the `ProductionDecisionSet`. Renderers cannot rebuild
-  competing values, statuses, counts, or row inclusion from raw cells.
-- This in-process handoff does not define a durable decision carrier by
-  itself.
-- The live cell-decision owner is `alignment/cell_decision/owner.py`. Target
-  retains its fixed-row decision path. Untarget completes payload and selected
-  integration from group/sample evidence before its single Matrix projection
-  wraps them in `ProductionCellDecision` with the published row/cell identity.
-- `ProductionDecisionSet` in `alignment/production_decisions.py` is the
-  writer-input projection of those finalized decisions for the existing TSV,
-  XLSX, and HTML writers. `ProductionDecisionSet` holds a separate
-  compatibility cell type that is also named `ProductionCellDecision`.
-- The legacy matrix-based `build_production_decisions` still builds a
-  `ProductionDecisionSet` as the fallback in `output/alignment/product_matrix.py` and
-  for diagnostics and provenance replay.
-- This writer-input projection preserves selected values, statuses, counts,
-  inclusion and renderer bytes; output compatibility is not a second
-  scientific decision.
-
-The writer maps retained provenance to its legacy candidate-ID field without
-revalidating assessment/hypothesis closure.
+All renderers (TSV, XLSX, HTML) format one finalized decision set from the live
+cell-decision owner. A renderer cannot rebuild competing values, statuses,
+counts or row inclusion from raw cells. The output files share one atomic
+temp-write, replace and rollback transaction. Diagnostic sidecars can preserve
+raw evidence but never supply competing production decisions.
 
 ### Row identity and display
 
@@ -143,25 +96,6 @@ ordering, columns or schema versions is a public-contract change, with the
 existing expected-diff and downstream checks. Review tokens and diagnostic
 risk flags do not independently authorize a value or row.
 
-## Retained Validation Anchors
-
-Archived validation notes stay in repo only when they still anchor exact product
-or oracle references. Archived validation notes are support packets. Archived
-validation notes are not matrix authority by themselves.
-
-- PR70 matrix-handoff validation remains the scoped oracle for the
-  `AlignedCell.matrix_area` handoff behavior: 8RAW and 85RAW foreground runs
-  produced byte-identical `alignment_matrix.tsv`, `alignment_review.tsv`, and
-  `alignment_cells.tsv` against accepted P8b outputs.
-- That PR70 claim is limited to the alignment matrix handoff behavior. The
-  PR70 claim does not promote baseline policy, resolver defaults, broader
-  cleanup work, or any new matrix writer scope.
-- Future branches must use stable `local_validation_artifacts/` discovery
-  batch indexes for this validation shape. Future branches must not use the
-  ignored `output/` paths of another worktree.
-- If the validation note is ever compressed or moved, exact repo refs must first
-  retarget to this owner or to a compact oracle artifact.
-
 ## Surfaces
 
 | Surface | Role |
@@ -169,7 +103,6 @@ validation notes are not matrix authority by themselves.
 | `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
 | `cell_provenance.tsv` | Cell-level provenance for accepted values |
 | `row_summary.tsv` | Matrix row identity and summary sidecar |
-| `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 | Productization status index / authority manifest | Current state and writer scope |
 
@@ -195,30 +128,22 @@ and scored without a rerun. It does not establish production readiness by itself
 
 ## Verification
 
-- Expected-diff packet for changed values or schema.
-- Focused output tests for matrix, provenance, row summary, and source summary.
-- Productization state and authority checker pass.
-- Downstream-impact smoke when consumers depend on the matrix.
-- Heldout/manual/oracle evidence when making production-readiness claims.
+- `tests/test_alignment_matrix.py`, `tests/test_alignment_matrix_identity.py`
+- `tests/test_alignment_cell_decision.py`, `tests/test_alignment_production_decisions.py`
 
 ## Pitfalls
 
 - Treating candidate Backfill rows as accepted matrix values.
 - Treating a Backfill observation as the selected value without a closed
   `ProductionCellDecision`.
-- Passing the pre-final owner Matrix or loose `AlignedCell` collection directly
-  to a writer.
+- Passing a pre-final cell collection directly to a writer.
 - Adding diagnostic evidence columns to the primary matrix.
-- Treating historical AsLS-vs-raw policy as current area authority.
-- Reopening retired AsLS/linear-edge comparison gates instead of using current
-  morphology-aware area and evidence rules.
 - Claiming `production_ready` from contract fixtures or 8RAW smoke alone.
 - Updating topic prose while leaving status index or authority manifest stale.
 
 ## See Also
 
 - [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
-- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Targeted candidate selection](targeted-selection.md#candidate-selection)
-- [Run provenance](run-provenance.md)
+- [Workbench and review](workbench.md)

@@ -141,7 +141,7 @@ than guessing its meaning from a number.
 
 For maintainer-facing product contracts behind this workflow, see:
 
-- [Untargeted GUI contract](../product/untargeted-gui.md)
+- [Workbench and review](../product/workbench.md)
 - [Discovery](../product/discovery.md)
 - [Alignment](../product/alignment.md)
 - [Presets](../product/presets.md)

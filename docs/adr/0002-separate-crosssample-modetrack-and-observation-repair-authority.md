@@ -48,5 +48,5 @@ authorities above remain current.
 
 Current contracts: `docs/architecture-contract.md`,
 `docs/agent/architecture-public-contracts.md`, and
-`docs/product/shared-processing-kernel.md`. Delivery tickets: GitHub #302,
+`docs/product/alignment.md` (Group identity and disposition). Delivery tickets: GitHub #302,
 #303, and #304.

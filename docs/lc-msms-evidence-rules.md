@@ -214,8 +214,8 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   evidence. It is not identity authority by itself: paired RT, target window,
   product/NL/MS2 acquisition opportunity, method-specific CID-NL evidence, and
   CrossSample identity gates still decide whether a candidate is accepted,
-  not counted, ambiguous, or excluded; see the [evidence spine](product/evidence-spine.md)
-  and [shared processing kernel](product/shared-processing-kernel.md).
+  not counted, ambiguous, or excluded; see [Discovery](product/discovery.md#cid-nl-support-relations)
+  and the [decision policy](product/decision-policy.md).
 - Canonical Gaussian(raw)-nonnegative-AsLS(raw) positive area is the selected product
   direction for the bounded Owner Backfill migration, with profile/fact/value
   provenance. Numeric area differences from legacy integration are accepted
@@ -402,6 +402,41 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   A scan-free peak must not gain chemical ranking priority over a reference peak
   whose acquired MS2 lacks qualified target support. Only positive evidence
   assigned to the same target and physical peak earns that priority.
+
+## RAW Evidence Is A Query
+
+A RAW-backed evidence claim is the answer to one reproducible query, not a
+free-floating column. Its meaning depends on the scan filter, trace type, mass
+window, RT window, extraction backend and processing basis, so a claim must
+keep them.
+
+- The scan filter is an evidence-selection predicate. It decides which scans
+  can contribute to a chromatogram or an MS2 claim; it is not display metadata.
+- Mass-range XIC, TIC, base-peak chromatogram, neutral-loss and product-ion
+  views are different evidence over the same RAW file. Do not mix their
+  meanings, and do not compare traces unless both queries are known.
+- Name which view drove a decision: vendor raw trace, smoothed trace, detection
+  basis, boundary basis or quantitation basis.
+- Peak detection is a strategy over the query result, not the underlying truth.
+  Vendor integration (ICIS, Avalon, Genesis) parity is not claimed unless the
+  detector settings are deliberately mapped and validated.
+- Manual review and overrides are review-layer facts. They never silently
+  rewrite automatic Discovery, Alignment, Backfill or writer rules.
+- When two acquisition methods were designed for different roles, compare them
+  by role. A high-resolution full-scan MS1 run can be the Discovery evidence
+  while a lower-resolution DDA run supports already-found bases; absent DDA MS2
+  is not negative evidence unless the inclusion list shows the candidate should
+  have been queried.
+
+A zero in an extracted trace does not establish ion absence. Inspect the
+acquired centroid stream before changing the mass window or peak algorithm;
+use adjacent scans and the batch's scan mode to distinguish mass-window loss
+from missing acquired centroids. Nearby centroid intensities give local
+context, not a vendor detection threshold.
+
+Sources: [Xcalibur 4.6 Qual Browser User Guide](https://docs.thermofisher.com/v/u/Xcalibur-4.6-Qual-Browser-User-Guide)
+(scan filters, trace types, peak detection algorithms) and
+[Thermo RawFileReader](https://github.com/thermofisherlsms/RawFileReader).
 
 ## Product Ions, Neutral Losses, Adducts, And Fragments
 

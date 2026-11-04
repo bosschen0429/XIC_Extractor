@@ -87,7 +87,7 @@ a required extra invocation. `--help` owns runtime overrides; the plan owns the
 actual paths and effective settings.
 
 Both datasets use the same scientific preset, background library, ISTD input,
-and shared [execution profile](../product/execution-runtime.md#worker-settings).
+and shared [execution profile](../../xic_extractor/configuration/execution_profile.py).
 `--help` lists the worker-budget options, and the preflight plan prints the
 effective worker counts. The runner reads the ignored local environment file;
 explicit CLI arguments and process environment take precedence. It creates a
@@ -102,8 +102,8 @@ The current command surface is:
 
     .venv\Scripts\python.exe -m scripts.run_alignment --help
 
-Output semantics live in docs/product/quant-matrix.md; workflow handoffs live in
-docs/product/shared-processing-kernel.md; preset
+Output semantics live in docs/product/quant-matrix.md; cell decisions live in
+docs/product/decision-policy.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 

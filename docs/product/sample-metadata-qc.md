@@ -14,26 +14,14 @@ interpretation, and future activation gates.
 - `raw_stem` is a lookup alias only.
 - Injection order, role, batch, `matrix_type`, group, and exclusion fields do not
   participate in canonical sample identity.
-- Only `xic_extractor.sample_metadata` mints `CanonicalSampleIdentity`. The
-  identity is `xic.sample:<sha256>` over an explicit stable owner namespace,
-  the identity schema/version, and the primary sample key.
-- The namespace must identify the owning study/sample registry. The namespace
-  must not be a path, timestamp, or output location.
-- Renaming `sample_name` creates a new identity. Changing only a projection
-  field does not create a new identity.
-- Resolution requires an immutable `SampleMetadataSnapshot`, compared by its
-  namespace and all normalized metadata rows. Snapshot equality is row-order
-  neutral.
-- An alias or projection mutation produces an unequal snapshot, even when a
-  canonical sample identity remains stable.
-- Resolution accepts only an exact primary key or an unambiguous current
-  `raw_stem` alias.
-- A missing, ambiguous, or stale alias-to-key binding fails closed.
-- Resolution never normalizes or infers padded tokens, filename suffixes,
-  paths, or row order.
-- The returned resolution retains the exact lookup token and the owner metadata
-  row. A lineage consumer can therefore bind the resolution to a request input
-  without reconstructing sample identity.
+- Renaming `sample_name` creates a new sample identity. Changing only a
+  projection field (order, role, batch, group, exclusion) does not.
+- Sample lookup accepts only an exact `sample_name` or an unambiguous current
+  `raw_stem` alias. A missing, ambiguous or stale alias fails; lookup never
+  infers identity from padded tokens, filename suffixes, paths or row order.
+- One analysis folder holds one independent canonical sample per RAW source.
+  QC replicates and meaningful reinjections keep their full distinct names;
+  suffixes are never stripped to collapse them into one specimen.
 - Sample metadata can act as an injection-order and sample-identity projection
   surface when sample metadata preserves existing output values.
 - `AnalysisSet` uses role and explicit exclusion to choose analysis members;
@@ -71,8 +59,6 @@ identities merely because its files were measured on different dates.
 | Surface | Role |
 | --- | --- |
 | `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, `matrix_type`, group, exclusion schema |
-| `SampleMetadataSnapshot` | Owner-minted immutable value for one complete normalized metadata snapshot and stable identity namespace |
-| `mint_canonical_sample_identity` / `resolve_canonical_sample_identity` | Owner-only namespaced identity minting and self-validating fail-closed lookup resolution |
 | `injection_order_source` | Optional sequence annotations; RAW chronology owns resolved injection order |
 | Instrument-QC sidecars | QC context and trend evidence |
 | Run metadata / method manifest | Provenance links to sample metadata inputs |
@@ -89,44 +75,26 @@ identities merely because its files were measured on different dates.
 
 ## Injection timeline diagnostic
 
-`python -m tools.diagnostics.build_injection_timeline` produces an opt-in,
-read-only injection timeline JSON sidecar and a readable TSV. CLI help owns
-the arguments. `raw_reader` acquires header facts; `injection_timeline` owns
-deduplication, chronological previous-injection links, and the pre-flag policy.
-This producer does not change sample metadata identity, analysis-set membership,
-RT, selected peaks, or values. Evidence is `diagnostic_only`; the
+`tools.diagnostics.build_injection_timeline` builds a read-only batch
+chronology; its arguments, inputs and outputs are listed in the
+[Diagnostics Index](../../tools/diagnostics/INDEX.md#build_injection_timelinepy).
+The timeline does not change sample identity, analysis-set membership, RT,
+selected peaks or values.
+
+Injection identity comes from the RAW creation date plus the original vendor
+acquisition path, not filesystem timestamps or the local basename. Idle time is
+the current acquisition start minus the previous acquisition end; genuine
+negative idle is kept with an overlap warning.
+
+The default policy pre-flags an injection when the previous run is at most 20
+minutes, at most half the current run length, and idle is between zero and 5
+minutes inclusive. A short previous method followed closely by a long one can
+leave the LC gradient or column state unsettled. These thresholds describe a
+possible perturbation, not a validated method-independent classifier; the
 [sample RT calibration diagnostic](../../tools/diagnostics/INDEX.md#build_sample_rt_calibrationpy)
-confirms a perturbation from the measured data.
-
-The producer recursively reads all RAW files under the supplied batch root,
-including blanks and subfolders. Creation date plus the original vendor
-acquisition path identifies copies; all local copy paths remain in JSON.
-Conflicting duplicate headers fail rather than silently select a copy. A file's
-filesystem timestamps and local basename do not determine injection identity.
-`raw_stem` is the local filename stem, the identity used by the rest of the
-product; the original acquisition stem is kept as `acquisition_stem`, and
-`renamed_after_acquisition` marks files renamed after acquisition.
-Creation date is the clock origin; acquisition start/end add the respective
-`RunHeaderEx` minute offsets, and run length is end minus start. Idle is current
-acquisition start minus previous acquisition end. Genuine negative idle is
-preserved with an overlap warning and does not trigger the pre-flag.
-
-The default policy flags an injection when the previous run is at most
-20 minutes, at most half the current run length, and idle is between zero and
-5 minutes inclusive. All three thresholds are configurable and persisted in
-the JSON sidecar. These thresholds describe a possible perturbation, not a
-validated method-independent classifier; 25-minute blanks are excluded by
-default. Headers with missing acquisition identity/date or invalid run times
-fail instead of generating a plausible but incomplete timeline.
-
-Optional repeated `--sld` inputs use Thermo's `SequenceFileReaderFactory`.
-Exact original acquisition filenames (Windows case-insensitive) match observed
-injections. Segment provenance, missing RAWs, and ambiguous repeat acquisitions
-are retained separately; empty filename rows remain `unconfigured`, not missing
-injections. Sequence rows never invent timestamps or order the
-actual timeline. A missing RAW means absent from the supplied root, not proof
-that an injection never occurred. JSON and TSV are diagnostic/offline consumer
-surfaces; this command does not add an Inspector UI panel.
+confirms it from measured data. 25-minute blanks are excluded by default. A
+sequence row never invents a timestamp, and a RAW missing from the supplied root
+is not proof that an injection never occurred.
 
 ## RAW analysis-set preparation
 
@@ -160,108 +128,46 @@ explicitly excluded file does not need to open successfully.
 
 ### Sample groups and exclusions
 
-`sample_groups.resolve_sample_group` is the group decision owner: an explicit
-metadata `group` wins; otherwise `qc` and `pooled_qc` roles display `QC`, and
-all other roles display `Other`. Sample-name keywords do not assign groups.
-Targeted's `Group` column consumes the resolved sample metadata, not an
-independent filename classifier.
-
-Group names have surrounding whitespace removed and internal whitespace
-collapsed. `sample_group_key` supplies the case-insensitive identity for all
-group comparisons; `canonicalize_sample_groups` retains the first encountered
-display spelling. Blank and case-insensitive `Other` mean unassigned; `QC` is
-also a valid explicit group. `suggest_sample_groups` is an opt-in pure naming
-suggestion: it removes the extension, sample codes (one to three capital letters
-followed by at least three digits), and a trailing `_N` or `-N` repeat number,
-then collapses underscores, hyphens, and whitespace. Suggestions do not change
-roles or apply themselves to metadata.
-
-Word, Excel, and ordinary delimited sequence tables share
-`sample_metadata.match_sample_metadata`. It uses `normalize_for_matching` and
-pairs repeated names by injection order with numerically ordered RAW suffixes
-only when that pairing is unambiguous. Reports distinguish matched, unmatched,
-and ambiguous names. Word table parsing belongs to `sequence_document`; its
-numbered sequence column may have an `ID` heading or be untitled, while the
-acquisition columns distinguish it from inventory and method-detail tables.
-The instrument-QC trend tool retains its own matching and classification rules.
-
-Files with a `schema_version` column are persisted sample metadata, not fuzzy
-sequence tables. They bind only by case-insensitive **exact `raw_stem`**, never
-by normalized sample names or repeat order. Unbound rows are reported unmatched;
-their group and exclusion flags must not migrate to a similar RAW name.
+- An explicit metadata `group` wins. Otherwise `qc` and `pooled_qc` roles
+  display `QC`, and every other role displays `Other`. Sample-name keywords
+  never assign groups; naming suggestions apply only when the user accepts them.
+- Group comparison is case-insensitive after whitespace normalization. Blank
+  and `Other` mean unassigned.
+- Sequence documents and ordinary delimited tables are matched by normalized
+  sample name, pairing repeated names by injection order only when that pairing
+  is unambiguous. Matched, unmatched and ambiguous names are reported.
+- Files with a `schema_version` column are persisted sample metadata, not fuzzy
+  sequence tables. They bind only by case-insensitive exact `raw_stem`.
+  Unbound rows stay unmatched; their group and exclusion never migrate to a
+  similar RAW name.
+- Explicit exclusion means the sample is not analyzed, in both Targeted and
+  Untargeted runs. The shared `AnalysisSet` keeps excluded injections as
+  context, but they are neither extracted nor emitted as result rows or
+  columns. An exclusion needs a reason and applies from the next run; it never
+  changes a published result.
 
 ### Workbench sample step
 
-Targeted and Untargeted share one sample step. Confirmed sample metadata is one
-`sample_metadata` TSV per RAW folder under the workbench config directory
-(`sample_metadata/<folder>-<path hash>.tsv`); both flows read and write it. Once
-it exists it is that folder's metadata source: a different 上機資訊 path is used
-only through **匯入上機資訊**, which takes roles from the list and keeps confirmed
-groups and exclusions the list does not supply. Edits save at once and are
-validated by `parse_sample_metadata` before writing, so an exclusion waits for
-its reason. A Targeted run reads the folder's file as its
-`injection_order_source` for that run only, and an Untargeted run reads the
-same file rather than rows a page may still hold. Roles saved in `discovery_gui.json`
-before this file existed seed their own RAW folder until it is confirmed.
+Targeted and Untargeted share one confirmed `sample_metadata` TSV per RAW
+folder under the workbench config directory. Both flows read and write it, and
+once it exists it is that folder's metadata source. Edits are validated by
+`parse_sample_metadata` before writing. Previewing samples or importing a
+sequence reads no RAW and leaves unmatched roles unknown rather than overriding
+a later RAW-header role; real identities and chronology are resolved before
+analysis. A failed or cancelled import keeps the previous confirmed file.
 
-Listing samples and importing a sequence in the workbench preview filenames and
-annotations without opening RAW files or requiring a DLL. Unmatched roles stay
-unknown instead of silently overriding a future RAW-header role. Preview names
-are lookup aliases and injection order remains unset; actual sample identities
-and chronology are resolved before analysis. The job reports listing and parsing
-stages and can be cancelled before confirmed annotations are written. A failed
-or cancelled import preserves the previous confirmed file and editable inputs.
-
-The pre-run checklist words `sample_overview`: per-group counts, unassigned study
-samples, one-sample groups, and exclusions over the analyzed population. Naming
-cards group `suggest_sample_groups` output; applying a card fills only samples
-without a group unless overwrite is chosen, and renaming or merging a card moves
-only the samples it wrote. Clicking a word in a sample name selects samples
-sharing that whole word. A collaborator table (Excel, CSV, TSV, or pasted) maps
-chosen name, group, and exclusion columns through `match_sample_metadata`;
-earlier confirmed metadata binds its own RAW exactly and the rest by name. Both
-preview matched, unmatched, and ambiguous rows before writing. The file is keyed
-by folder path, so a moved or renamed folder starts unconfirmed; its earlier
-file is reused through the same carry-over list, which names every confirmed
-folder.
-
-`xic_inspector.rendering.group_colors` owns group colours: each group of a batch
-takes the curve-palette slot its name hashes to, or the next free slot, and
-`QC`/`Other` stay neutral. The sample step and Targeted review use the analyzed
-population's groups, so one group shows one colour in both. Targeted review of
-a result opened from its run can mark an injection excluded; the Inspector only
-requests it, and the workbench writes the metadata of that run's RAW folder, not
-the editable review path; an unconfirmed folder is first read with the 上機資訊
-that run used, not the current batch settings. A result opened by hand has no run folder and offers
-no exclusion. An exclusion applies on the next run and does not change the
-published result; a box checked without a reason stays a pending mark that
-closing the editor drops, so it never reaches a run.
-
-Explicit exclusion has the same meaning in complete Targeted and Untargeted
-runs: the sample is not analyzed. The shared `AnalysisSet` retains excluded
-injections as context, but they are neither extracted nor emitted as analyzed
-result rows/columns. Targeted accepts the TSV through `--injection-order-source`;
-Untargeted applies it when selecting Discovery inputs and passes the same TSV
-through Alignment's `--sample-metadata`. Alignment's CLI passes only analyzed
-metadata to its Discovery-batch input. Role inference and the RAW-owned
-injection timeline are unchanged.
-
-This input-preparation contract can change resolved order relative to legacy
-mtime or document ordering. It is distinct from the no-value-change canonical
-identity projection above and requires a real-data expected-diff comparison.
-Header/order parity alone is engineering evidence, not quantitative or
+This input preparation can change resolved order relative to file modification
+time or document ordering. Such a change needs a real-data expected-diff
+comparison; header and order parity alone is engineering evidence, not
 scientific readiness.
 
 ## Verification
 
-- Schema validation tests for metadata fields and role values.
-- Identity tests for deterministic owner minting, alias parity, rename
-  invalidation, projection-field neutrality, and missing/ambiguous/stale
-  resolution.
-- Parity tests proving no value change when metadata is only an
-  order/lookup source.
-- Expected-diff packet for any role-aware value behavior.
-- Downstream matrix/workbook tests if outputs can change.
+- `tests/test_sample_metadata.py`, `tests/test_sample_metadata_auto_derivation.py`,
+  `tests/test_sample_metadata_sequence_parsing.py`
+- `tests/test_analysis_set.py`, `tests/test_sample_groups.py`,
+  `tests/test_targeted_sample_metadata.py`
+- `tests/test_injection_timeline.py`
 
 ## Pitfalls
 
@@ -272,7 +178,7 @@ scientific readiness.
 
 ## See Also
 
-- [Run provenance](run-provenance.md)
+- [Targeted workbook](targeted-workbook.md)
 - [Productization](productization.md)
 - [Product validation contract](../agent/product-validation-contract.md)
 - [Productization status index](../superpowers/validation/productization_status_index.tsv)

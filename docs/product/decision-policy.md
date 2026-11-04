@@ -33,53 +33,23 @@ questions:
   explain a decision. Such evidence becomes product authority only through an
   explicit activation/export contract and expected-diff gate.
 
-## Current Transition State
+## No-Write Reasons
 
-The codebase is not fully `PeakHypothesis`-native yet. Legacy selectors,
-confidence fields, `raw_score`, `evidence_score`, and string evidence fields still exist because they are public compatibility
-surfaces or migration adapters.
+A cell decision either selects a value or returns one typed no-write reason.
+The closed set is:
 
-Treat those surfaces as compatibility or audit signals unless another owner
-promotes them through typed evidence semantics, workflow projection, parity
-evidence, or approved expected-diff records. A compatibility oracle is a
-baseline for proving behavior, not the owner of product truth.
+| Reason | Meaning |
+| --- | --- |
+| `not_searched` | No search ran for this cell |
+| `searched_no_observation` | A completed search found no candidate peak |
+| `unresolved` | Candidate evidence exists but does not resolve to one supported peak (for CID-NL, `HOLD` with candidate peaks) |
+| `rejected_observation` | The method rejected the cell (for CID-NL, `REJECT`) |
+| `not_quantifiable` | An observed peak cannot support a reliable quantity (below) |
+| `unavailable` | The evaluation was technically unsupported or failed |
 
-## Layers
-
-| Layer | Owns | Must not own |
-| --- | --- | --- |
-| Typed evidence facts | Observed RT, shape, boundary, MS2, NL, isotope/adduct, standards, library, paired-context, and provenance facts | Product state, counted detection, matrix value |
-| Decision semantics | Accepted/review/not-counted/ambiguous/excluded classes, support reasons, conflict reasons, blocker reasons | Workflow-specific writer authority |
-| Model selection / ranking | Choosing among comparable `PeakHypothesis` candidates after typed gates | Overriding hard gates or granting matrix writes |
-| Cell decision | Selected value or typed no-write for a Target subject or completed Feature × Sample observation | Row identity, grouping, RAW access, or rendering |
-| Workflow projection | Row identity/binding and output cell subjects; inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill revisit, or value recomputation |
-| Audit trail | Human-readable explanation, review queue, expected-diff evidence | Silent product behavior |
-
-Target projection binds its fixed row and constructs `TargetCellSubject` before
-value selection, then closes inclusion, counts, reasons, and routing. Untarget
-value selection consumes completed `FinalGroupCellObservation` evidence first,
-without row identities. One Matrix projection then packages the existing payload
-and selected integration as `ProductionCellDecision`, assigns row/cell IDs, and
-closes sample order, counts and routing without repeating scientific decisions.
-
-## Common Decision Shape
-
-Every value-changing decision should be explainable in this order:
-
-1. **Unit:** what is being decided: target candidate, `PeakHypothesis`, sample
-   cell, cross-sample group, or matrix value.
-2. **Required evidence:** typed facts that must be present before the decision
-   can be considered.
-3. **Blockers:** conflicts, ambiguity, provenance gaps, sample-role exclusions,
-   wrong-peak evidence, or missing activation authority.
-4. **Support:** facts that strengthen the selected unit but do not independently
-   grant authority.
-5. **Tie-break:** deterministic ranking among still-comparable candidates.
-6. **Projection:** the workflow-owned output decision and the artifact or test
-   that authorizes it.
-
-If a decision cannot name these fields, it is not ready to become product
-behavior. It can remain diagnostic, shadow, or review-only.
+Human-facing text is rendered from these typed facts and is never parsed back
+into scientific logic. Failure, ambiguity or missing positive evidence never
+serializes as chemical absence, zero or a selected value.
 
 ## Quantification, Detection Counts, And Observation Origin
 
@@ -343,10 +313,9 @@ contract.
 
 ## See Also
 
-- [Evidence spine](evidence-spine.md)
+- [Discovery](discovery.md)
 - [Targeted selection](targeted-selection.md)
 - [Backfill](backfill.md)
 - [Alignment](alignment.md)
-- [Peak anchor and group boundary](family-hypothesis-boundary.md)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)

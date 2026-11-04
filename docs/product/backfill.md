@@ -10,6 +10,19 @@ conservative decision in `xic_extractor.alignment.backfill.conservative`.
 
 ## Contract
 
+### Missing cell
+
+The two workflows define a missing cell differently:
+
+- Untargeted: every eligible sample without direct SUPPORT for a non-rejected
+  group that passes the [group support gate](#group-support-gate), including
+  samples with a HOLD or REJECT assessment for that group.
+- Targeted: a HOLD sample of a Target that is an internal standard or is paired
+  with one, revisited from its direct CID-NL peers and the paired ISTD's
+  observation in that sample.
+
+Backfill cannot start without that prior Target or group context.
+
 ### Targeted route
 
 `alignment.backfill.istd_anchored` freezes a reference group from a Target's
@@ -268,7 +281,7 @@ Competing claims on the same physical content remain unresolved and supply no
 numeric value. Final cells retain the original cell for provenance and the
 completed Backfill assessment/observation for the final decision and integral.
 Cell evidence uses `cell_observation` and binds unresolved SUPPORT and
-Backfill provenance explicitly. Old diagnostic evidence remains historical; acquisition
+Backfill provenance explicitly. Acquisition
 cache facts do not depend on these cell schemas.
 
 ### Final cell evidence

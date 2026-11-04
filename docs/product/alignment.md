@@ -21,6 +21,34 @@ A method subject denotes an acquisition or evaluation question, not a Feature
 boundary. A fixed Target output row is not a cross-sample Feature either. Shared
 terminology remains owned by the [Domain Glossary](domain-glossary.md).
 
+## Group identity and disposition
+
+- A group is identified by its members. Each member is one canonical sample
+  plus one owner-backed peak hypothesis and the physical observation it binds.
+- A group holds at most one member per canonical sample. Distinguishable peaks
+  in the same sample stay in separate groups; unresolved ambiguity does not
+  choose an arbitrary winner.
+- Each finalized group has exactly one disposition: `established`,
+  `provisional`, `unresolved` or `rejected`. Established requires accepted
+  members from at least two distinct samples; a singleton is always
+  provisional. Low support alone is not rejection. Disposition and output
+  inclusion are separate decisions.
+- `feature_id` is not identity. Discovery's `feature_id` labels candidates that
+  share one MS1 peak within one sample. Alignment's `feature_id` (`F000001`)
+  numbers the published groups of one report in raw measured member order, never
+  from m/z/RT centers, scores or display order. Neither label, row order, sample
+  stem, display coordinate nor area is an identity basis, and neither carries
+  identity across reports.
+- Several Discovery peak anchors or groups never collapse into one product row
+  without an explicit consolidation contract and its tests.
+- Initial members stay fixed during bounded Backfill. Only CrossSample can admit
+  a unique missing-sample SUPPORT observation and record its successor group and
+  lineage; a Backfill observation never implies membership. A new processing
+  request creates new groups; cross-request continuity is not inferred.
+- Cross-sample membership is not same-peak proof, and a legacy `family` is not a
+  same-peak or chemical-identity claim. Two resolved peaks in one sample can
+  belong to different groups of one family.
+
 ## Method principles
 
 ### Observations and correspondence
@@ -122,9 +150,8 @@ paths.
 Alignment consumes candidates and owner-backed hypotheses from Discovery or
 Targeted; it does not create the first sample-local Discovery hit. RAW owner-build
 accepts only MS1-feature-backed Discovery candidates; review-only rows do not
-thereby receive a second XIC search. See
-[Execution Runtime](execution-runtime.md#cid-nl-alignment-execution) for input
-and scheduling details.
+thereby receive a second XIC search. Scheduling partitions pack worksets for
+execution only; they do not restrict scientific comparison or RT calibration.
 
 Non-composite method subjects with the same scalar neutral loss form connected
 worksets through resolver intervals and known-reference comparison envelopes.
@@ -278,8 +305,8 @@ matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)
 and the [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm).
 It counts RT positions per injection, not the number of samples in the batch.
 The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
-not feed their own results back into that fit. Historical frozen maps retain
-their coordinates on replay and are not retroactively refitted under this floor.
+not feed their own results back into that fit. Saved frozen maps keep their
+coordinates on replay and are not refitted under this floor.
 
 The strong-only map and inverse remain bounded by the supported anchor range.
 Final membership and localization explicitly use a graded query instead:
@@ -314,8 +341,8 @@ drift: a supported apex cannot join an unsupported raw apex through
 ordinary correspondence. When both apices are unsupported, existing raw/shape
 evidence remains available. A Backfill forecast uses common coordinates only
 when its references and target inverse have estimates; otherwise it estimates
-the entire forecast in raw RT, without mixing coordinate systems. Historical
-frozen `BatchRtWarp` payloads remain readable for replay, not as a runtime fitter.
+the entire forecast in raw RT, without mixing coordinate systems. Saved frozen
+`BatchRtWarp` payloads remain readable for replay, not as a runtime fitter.
 
 ### Decide membership
 
@@ -519,16 +546,11 @@ Existing retained fixtures and their interpretation are owned by the
 This document focuses on cross-sample correspondence; existing documents own
 the other topics:
 
-- Group identity, disposition, and lineage:
-  [Group Boundary](family-hypothesis-boundary.md).
 - Bounded searches and observation acceptance: [Backfill](backfill.md).
-- Workflow and result interfaces:
-  [Shared Processing Kernel](shared-processing-kernel.md).
-- Values, rows, and output contracts: [Quant Matrix](quant-matrix.md).
-- Scheduling, caches, and failure handling:
-  [Execution Runtime](execution-runtime.md).
+- Values, rows, and output contracts: [Quant Matrix](quant-matrix.md) and
+  [Decision Policy](decision-policy.md).
 - Sample/cohort inputs: [Sample Metadata and QC](sample-metadata-qc.md).
 - Operation, diagnostics, and review:
   [Untargeted Discovery](../user/untargeted-discovery.md),
   [Diagnostics Index](../../tools/diagnostics/INDEX.md),
-  [XIC Inspector](xic-inspector.md).
+  [Workbench and review](workbench.md).

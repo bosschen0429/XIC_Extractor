@@ -84,6 +84,27 @@ decisions.
 - Reasons and checks use plain domain words (RT, MS1, XIC, ISTD, 中性丟失) and
   point to the XIC view; internal codes stay out of the workbook.
 
+## Run Metadata
+
+Normal Targeted delivery is this one XLSX. No HTML, CSV/TSV or manifest
+sidecar is published, and Targeted runs have no replay entry point.
+
+- `Run Metadata` records the actual method settings, runtime configuration and
+  config fragments. `Targets` records target identity, ranges, pairing and
+  sample applicability.
+- `target_config_hash` is a target-list display fragment. It is not a complete
+  method record and does not reproduce a run. A timestamp, output path or
+  successful exit is not a processing identity either.
+- A saved Targeted method is reusable intent, not a run receipt. Admission
+  freezes settings, targets and the supplied injection-order input in a private
+  temporary workspace, so editing a method cannot change a queued or running
+  run.
+- A supplied sample context table is embedded as the hidden `Sample Context`
+  sheet. It preserves the values behind decisions, not a byte-for-byte replay
+  archive. RAW bytes are never snapshotted into the workbook.
+- Provenance rendering never recomputes evidence or changes selected peaks,
+  areas, counted detections or values.
+
 ## Presentation rules
 
 | Rule | Why |
@@ -107,5 +128,5 @@ decisions.
 - Decisive evidence wording: `xic_extractor.output.reason_display`; review
   routing: `xic_extractor.output.review_queue_model`.
 - Saved-workbook reader: `xic_inspector.sources.targeted_workbook`
-  ([XIC Inspector](xic-inspector.md#targeted-xlsx-review)).
+  ([Workbench and review](workbench.md)).
 - Column meanings for users: [Targeted Output Reference](../user/targeted-output-reference.md).
