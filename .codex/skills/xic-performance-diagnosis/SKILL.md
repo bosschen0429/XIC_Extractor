@@ -51,9 +51,9 @@ public outputs, selected values, counts, identities, or schemas when applicable:
 - `fast_mode_candidate`: explicit opt-in alternate semantics preserving defaults.
 - `diagnostic_only`: measurement without product behavior changes.
 
-Tests or speed alone do not grant ProductWriter, activation, matrix, workbook,
-or export authority. Consult productization owners only when those decisions
-are actually in scope.
+Tests or speed alone do not grant writer, Matrix, workbook, or export
+authority. Consult [Writer Authority](../../../docs/product/decision-policy.md#writer-authority)
+only when those decisions are actually in scope.
 
 ## Report The Decision
 

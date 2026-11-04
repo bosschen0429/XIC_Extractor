@@ -38,7 +38,7 @@ delivered narrative to the PR, and disposable next actions to an ignored handoff
 Git preserves previous versions; make a private copy only when requested.
 
 Read `references/bound-doc-compression.md` when handling XIC validation,
-Backfill/quant, productization, lockbox, or docs-workflow history. Resolve unclear
+Backfill/quant, lockbox, or docs-workflow history. Resolve unclear
 ownership with the cheapest decisive evidence and preserve the affected source
 until its useful claims and consumers have a replacement. Proceed under
 existing authorization; no separate retirement packet is required.

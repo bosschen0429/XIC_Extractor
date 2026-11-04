@@ -29,9 +29,8 @@ request.
   checks; missing timing is not an optimization-acceptance gate for this task.
 - "Launch 85RAW now." Use the runner documented in `parameter-settings.md`;
   this skill can only define the performance decision the run should close.
-- "Can this diagnostic evidence advance product tier?" Read or update the
-  productization status index and promotion contract after performance evidence
-  exists.
+- "Can this diagnostic evidence support a readiness claim?" Use the product
+  validation contract after performance evidence exists.
 
 ## Borderline
 

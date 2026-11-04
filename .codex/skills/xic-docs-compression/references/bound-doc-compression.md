@@ -48,7 +48,7 @@ For each topic family, ask:
 If these questions reveal no unique current payload, remove the obsolete
 documents through the normal task diff after owner and referrer checks.
 
-## Validation And Productization Families
+## Validation Families
 
 Validation history often repeats a shared conclusion across dated reports.
 Compare:

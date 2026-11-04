@@ -15,7 +15,7 @@ differently. Each publishes observations and hypotheses through one shared
 evidence contract, so Alignment, Backfill and the cell decision do not fork per
 provider. Untargeted retains every candidate qualifying under its configured
 evidence space; Targeted retains only configured targets. Discovery does not
-publish product values; see [Writer Authority](productization.md#writer-authority).
+publish product values; see [Writer Authority](decision-policy.md#writer-authority).
 
 ## Evidence providers and composites
 

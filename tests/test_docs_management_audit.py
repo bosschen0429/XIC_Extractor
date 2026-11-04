@@ -14,14 +14,12 @@ from tools.diagnostics.docs_management_audit import (
     write_topic_clusters_tsv,
     write_topic_index_readmes,
 )
-from tools.diagnostics.docs_policy import CONTROL_PLANE_PATH
 
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
 PROJECT_ROOT = Path(__file__).parents[1]
 MAINTAINED_VALIDATION_HTML = (
-    "docs/superpowers/validation/evidence_chain_status_guide.html",
     "docs/superpowers/validation/evidence_overlay_interpretation_guide.html",
 )
 
@@ -66,7 +64,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
         "docs/agent/product-validation-contract.md",
         "docs/agent/execution-gates.md",
         "tools/diagnostics/INDEX.md",
-        "docs/product/productization.md",
         "docs/agent/codex-operating-system.md",
         "docs/user/README.md",
         "docs/agent/obsidian-handoff-contract.md",
@@ -108,7 +105,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
                 "- [Architecture](docs/architecture-contract.md)",
                 "- [Execution](docs/agent/execution-gates.md)",
                 "- [Diagnostics](tools/diagnostics/INDEX.md)",
-                "- [Productization](docs/product/productization.md)",
                 "- [Layout](docs/project-layout.md)",
                 "- [Agent system](docs/agent/codex-operating-system.md)",
             ]
@@ -174,10 +170,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
 
 def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
-    _write(
-        root / CONTROL_PLANE_PATH,
-        (PROJECT_ROOT / CONTROL_PLANE_PATH).read_text(encoding="utf-8"),
-    )
 
 
 def _git(root: Path, *args: str) -> None:
@@ -308,41 +300,6 @@ def test_repo_only_completed_transient_spec_is_advisory(
     )
     active_result = _run_audit(root, repo_only=True)
     assert result.blockers == active_result.blockers
-
-
-def test_repo_only_archived_productization_summary_inventory(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    _clean_repo(root)
-    summary_path = (
-        "docs/superpowers/productization/evidence/2026-07-01-framework-phase-summary.md"
-    )
-    _write(
-        root / summary_path,
-        "\n".join(
-            [
-                "# Productization phase summary",
-                "",
-                "Doc placement: repo_support_doc",
-                "Doc kind: report",
-                "Doc lifecycle: archived",
-                "Repo owner: docs/product/productization.md",
-                "Doc exit rule: remove after owner absorption.",
-                "",
-                "Completed branch history.",
-            ]
-        ),
-    )
-
-    result = _run_audit(
-        root,
-        repo_only=True,
-    )
-
-    review = result.summary["repo"]["completed_transient_review"]
-    assert review["completed_files"] == 1
-    assert review["top_completed_files"][0]["path"] == summary_path
 
 
 def test_repo_only_active_spec_is_excluded_from_completed_inventory(
@@ -876,7 +833,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/productization.md",
+                "Repo owner: docs/agent/product-validation-contract.md",
                 "Doc exit rule: update when planning surfaces change.",
                 "",
                 f"Historical support lives at `{support_path}`.",
@@ -1269,7 +1226,7 @@ def test_sample_metadata_contract_gets_own_topic_before_run_provenance(
     ]
 
 
-def test_productization_routing_index_wins_over_backfill_body_mentions(
+def test_goal_routing_index_wins_over_backfill_body_mentions(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -1286,8 +1243,8 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
                 "Doc placement: repo_support_doc",
                 "Doc kind: goal",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/productization.md",
-                ("Doc exit rule: update when productization goal routing changes."),
+                "Repo owner: docs/agent/product-validation-contract.md",
+                ("Doc exit rule: update when goal routing changes."),
                 "",
                 "Backfill roadmap entries can be linked here, but this page is",
                 "the productization goal routing index.",
@@ -1301,10 +1258,9 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
     cluster = next(
         item
         for item in review["top_topic_clusters"]
-        if item["topic_key"] == "productization"
+        if item["topic_key"] == "product validation"
     )
     assert index_path in cluster["supporting_sample_paths"]
-    assert cluster["topic_owner_count"] == 1
     assert index_path not in cluster["owner_paths"]
 
 
@@ -1433,7 +1389,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/productization.md",
+                "Repo owner: docs/agent/product-validation-contract.md",
                 "Doc exit rule: update when planning surfaces change.",
                 "",
                 f"Historical support lives at `{support_path}`.",
@@ -1464,7 +1420,7 @@ def test_mechanical_referrer_anchor_is_not_docs_followup_queue(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    support_path = "docs/superpowers/notes/productization-test-anchor.md"
+    support_path = "docs/superpowers/notes/goal-test-anchor.md"
     _write(
         root / support_path,
         "\n".join(
@@ -1474,10 +1430,10 @@ def test_mechanical_referrer_anchor_is_not_docs_followup_queue(
                 "Doc placement: repo_support_doc",
                 "Doc kind: note",
                 "Doc lifecycle: archived",
-                "Repo owner: docs/product/productization.md",
+                "Repo owner: docs/agent/product-validation-contract.md",
                 "Doc exit rule: keep while tests assert the routing fixture path.",
                 "",
-                "Productization routing fixture.",
+                "Goal routing fixture.",
             ]
         ),
     )
@@ -1708,10 +1664,7 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    authority_bound_path = "docs/superpowers/notes/backfill-bound-packet.md"
-    explanation_bound_path = (
-        "docs/superpowers/notes/backfill-explanation-bound-packet.md"
-    )
+    referenced_path = "docs/superpowers/notes/backfill-bound-packet.md"
     exact_ref_path = "docs/superpowers/notes/backfill-oracle-note.md"
     compressible_path = "docs/superpowers/notes/backfill-archived-note.md"
     support_body = [
@@ -1724,30 +1677,15 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         "Backfill support artifact.",
     ]
     for path in (
-        authority_bound_path,
-        explanation_bound_path,
+        referenced_path,
         exact_ref_path,
         compressible_path,
     ):
         _write(root / path, "# Backfill support\n\n" + "\n".join(support_body))
-    _write(
-        root / "docs/superpowers/validation/productization_status_index.tsv",
-        (f"lane\tcurrent_artifact\nbroad_backfill\t{authority_bound_path}\n"),
-    )
-    _write(
-        root / "docs/superpowers/productization/status/"
-        "productization_authority_manifest.json",
-        json.dumps(
-            {
-                "decision_packet": authority_bound_path,
-                "explanation_only_sources": [{"artifact": explanation_bound_path}],
-            }
-        ),
-    )
     for index in range(6):
         _write(
             root / f"docs/product/ref-{index}.md",
-            f"# Ref {index}\n\nExtra reference: `{authority_bound_path}`.\n",
+            f"# Ref {index}\n\nExtra reference: `{referenced_path}`.\n",
         )
     _write(
         root / "docs/product/backfill.md",
@@ -1763,11 +1701,9 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         if item["topic_key"] == "backfill and quant matrix"
     )
 
-    assert "authority_or_status_anchor:2" in cluster["support_retention_counts"]
-    assert "exact_referrer_bound_support:1" in cluster["support_retention_counts"]
+    assert "exact_referrer_bound_support:2" in cluster["support_retention_counts"]
     assert "archived_compressible_support:1" in cluster["support_retention_counts"]
-    assert authority_bound_path in cluster["bound_support_sample_paths"]
-    assert explanation_bound_path in cluster["bound_support_sample_paths"]
+    assert referenced_path in cluster["bound_support_sample_paths"]
     assert exact_ref_path in cluster["bound_support_sample_paths"]
     assert compressible_path in cluster["compressible_support_sample_paths"]
 
@@ -1776,7 +1712,7 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         encoding="utf-8"
     )
     assert "### Bound Support Samples" in readme
-    assert f"- `{authority_bound_path}`" in readme
+    assert f"- `{referenced_path}`" in readme
     assert f"- `{compressible_path}`" in readme
 
 
@@ -2534,5 +2470,5 @@ def test_clean_repo_and_vault_have_no_blockers(tmp_path: Path) -> None:
     result = _run_audit(root, vault)
 
     assert result.blockers == ()
-    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 1
+    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 0
     assert result.summary["repo"]["docs_routing_review"]["candidate_files"] == 0

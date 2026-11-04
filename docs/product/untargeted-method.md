@@ -25,7 +25,7 @@ results. Published features are not, by themselves, identified compounds.
   Targeted retains only configured `TargetKey` rows.
 - Product-facing `Matrix` output stays conservative. Backfill-only (`rescue_only`), ambiguous,
   diagnostic, and review-only evidence belongs in Review/Audit surfaces until a
-  [Writer Authority](productization.md#writer-authority) activation chain explicitly promotes it.
+  writer path is explicitly contracted; see [Writer Authority](decision-policy.md#writer-authority).
 - Untargeted projection derives a typed `UntargetRowKey` from each finalized
   canonical group. Standard Matrix rows require `established` disposition.
   `provisional` groups stay in a compact machine archive/review surface;
@@ -87,5 +87,5 @@ by itself:
 - [Alignment](alignment.md)
 - [Backfill](backfill.md)
 - [Quant Matrix](quant-matrix.md)
-- [Productization](productization.md)
+- [Decision Policy](decision-policy.md)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)

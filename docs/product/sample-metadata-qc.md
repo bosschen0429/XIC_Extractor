@@ -8,7 +8,7 @@ interpretation, and future activation gates.
 ## Contract
 
 - `sample_metadata` owns sample identity, injection-order projection, role,
-  batch and exclusion inputs. The status index owns lane readiness.
+  batch and exclusion inputs.
 - Within `sample_metadata`, `sample_name` is the owner-stable,
   case-sensitive primary sample key.
 - `raw_stem` is a lookup alias only.
@@ -179,6 +179,4 @@ scientific readiness.
 ## See Also
 
 - [Targeted workbook](targeted-workbook.md)
-- [Productization](productization.md)
 - [Product validation contract](../agent/product-validation-contract.md)
-- [Productization status index](../superpowers/validation/productization_status_index.tsv)

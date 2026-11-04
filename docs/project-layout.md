@@ -55,7 +55,7 @@ XIC_Extractor/
 │   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
 │   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
 │   ├── agent/                 按任務載入的執行、驗證與交付契約
-│   ├── superpowers/           既有 schema、驗證與 productization 機器契約
+│   ├── superpowers/           既有 schema 與驗證機器契約
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
 │   └── project-layout.md      本結構樹與收納規則
 ├── config/                    未追蹤的本機狀態與部署環境範本
@@ -116,7 +116,6 @@ XIC_Extractor/
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
-| `docs/superpowers/productization/` | Current productization compatibility/evidence surfaces |
 | `assets/` | Icons and screenshots |
 | `config/` | Local JSON state and named methods；private values 不追蹤；公開 Targeted 範例在 `xic_extractor/configuration/data/` |
 | `.github/` | GitHub workflows |
@@ -141,10 +140,6 @@ closeout、active stub 或永久歷史 stub。
 或 diagnostic owner；一次性命令、數字與事故敘事留在 PR／Git 歷史。不得另建
 `solutions`、`lessons` 或同義的事後知識支線。
 
-唯一的 exact-path machine exception 必須保持原路徑，但不得當作新檔模板：
-
-- `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
-
 文件的 public/private 與維護、移除規則由
 [`docs/agent/obsidian-handoff-contract.md`](agent/obsidian-handoff-contract.md)
 擁有。刪除前仍須先把 durable claim 吸收到 owner 並清空 exact referrers；一次性
@@ -156,9 +151,8 @@ audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件�
 | Claim | Owner |
 | --- | --- |
 | Product semantics | `docs/product/<topic>.md` |
-| Product maturity and promotion vocabulary | `docs/agent/product-validation-contract.md` |
-| Current productization lane state | `docs/superpowers/validation/productization_status_index.tsv` |
-| Writer scope and authority | `docs/superpowers/productization/status/productization_authority_manifest.json` |
+| Readiness claims and expected-diff requirements | `docs/agent/product-validation-contract.md` |
+| Writer authority | `docs/product/decision-policy.md#writer-authority` |
 | LC-MS/MS evidence semantics | `docs/lc-msms-evidence-rules.md` |
 | Validation verdict and rerun policy | `docs/diagnostic-ledger.md` or current checker-consumed artifact |
 | Architecture/dependency ownership | `docs/architecture-contract.md` |
@@ -216,8 +210,7 @@ does not prove the frozen artifact.
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。
 8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
    執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
-   schema 描述留在 `docs/superpowers/schemas/`。可變 authority instance 依
-   [Current authority routes](#current-authority-routes) 歸 productization state。
+   schema 描述留在 `docs/superpowers/schemas/`。
    不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
 9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。

@@ -10,7 +10,7 @@ in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
 
 - Changing a default preset or silent resolver behavior changes public
   behavior. It needs
-  [expected-diff framing](../agent/product-validation-contract.md#promotion-packet-contract),
+  [expected-diff framing](../agent/product-validation-contract.md#expected-diff-contract),
   focused tests and relevant evidence.
 - Targeted and profile-bound Untargeted processing use the shared physical
   signal owner. Direct resolver-based diagnostic callers keep their explicit
@@ -96,7 +96,7 @@ Multi-tag CID-NL presets combine tags by `union` (OR) or `intersection` (AND):
 A built-in Alignment preset emits the seed audit and
 `alignment_backfill_cell_evidence.tsv` where the runner contract requires them.
 Non-standard peaks and candidate-only evidence stay outside automatic
-publication unless the authority manifest says otherwise.
+publication.
 
 Normal Alignment rejects methods outside this CID-NL route. The Delta Mass
 Discovery path owns the Pt and Pt + CID-NL composite presets, and CID-NL

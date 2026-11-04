@@ -43,7 +43,7 @@ Lifecycle role:
 - **evidence producer**: creates evidence or a reproducible source artifact;
 - **diagnostic oracle**: checks parity, performance, review, or a bounded
   scientific claim without product-writing authority;
-- **workflow gate**: enforces repository, CI, productization, or review state;
+- **workflow gate**: enforces repository, CI, or review state;
 - **compatibility wrapper**: preserves an existing import or invocation while
   behavior moves inward;
 - **protected unknown**: current evidence is insufficient to prove retirement;

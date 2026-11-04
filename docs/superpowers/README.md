@@ -16,16 +16,8 @@ evidence. It is not an implementation-planning or project-history archive.
 | `schemas/` | Checker-consumed schema descriptions; runtime resources follow the consuming package under the [placement rules](../project-layout.md). |
 | `validation/` | Checker-readable validation packets, inventories, compact summaries, and retained evidence. |
 | `fixtures/` | Small test/checker fixtures and expected-output oracles. |
-| `productization/status/` | Current authority manifests, stable compatibility keys, and productization routing anchors. |
-| `productization/evidence/` | Compact machine evidence required by a current productization contract; not phase summaries or handoff archives. |
 | `file-management/` | Current machine-readable file-management contracts only. |
 | `handoffs/` | Ignored local continuation workspace; tracked historical handoffs are not retained. |
-
-One legacy path remains intentionally stable:
-`plans/2026-06-15-productization-control-plane.md`. Despite its location and
-dated name, it is a compact compatibility index consumed by current checkers,
-not an implementation plan. It may move only through a checker-aware path
-migration.
 
 ## Construction Work
 
@@ -44,7 +36,7 @@ owner. A temporary plan has no permanent repo role after that absorption.
 Keep only artifacts that remain useful without reconstructing a past branch:
 
 - current product, user, architecture, validation, and agent contracts;
-- machine-readable schemas, authority manifests, fixtures, and retained
+- machine-readable schemas, fixtures, and retained
   regression evidence;
 - compact evidence summaries that a current checker or decision still consumes.
 

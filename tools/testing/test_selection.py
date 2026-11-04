@@ -94,12 +94,6 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|tests/test_pyinstaller_spec\.py$"
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|assets|config)/)"
     ),
-    "product_governance": re.compile(
-        r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
-        r"|docs/product/|docs/superpowers/(validation|schemas|productization)/"
-        r"|docs/superpowers/plans/2026-06-15-productization-control-plane\.md"
-        r"|tools/diagnostics/docs_(policy|scan)\.py)"
-    ),
 }
 # The main CI pytest session: snapshots never run, the census runs once in the
 # lint job, and serial tests run after the parallel session.
@@ -115,12 +109,6 @@ CI_BASE_MARKER_EXPRESSION = (
 # docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
 # an invariant that survives a consistent re-analysis belongs in CI unmarked.
 SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
-    "tests/test_check_productization_authority.py": (
-        "test_productization_authority_checker_accepts_repo_artifacts",
-    ),
-    "tests/test_productization_state_index.py": (
-        "test_productization_state_index_accepts_current_artifacts",
-    ),
     "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
         "test_current_cid_nl_public_output_claim_catalog_is_valid",
         "test_reference_rows_preserve_existing_owner_boundaries",

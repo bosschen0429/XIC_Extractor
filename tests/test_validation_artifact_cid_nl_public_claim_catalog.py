@@ -124,9 +124,6 @@ def test_reference_rows_preserve_existing_owner_boundaries() -> None:
         assert "docs/product/decision-policy.md" in row["existing_authority_owner"]
         assert "docs/product/targeted-selection.md" in row["existing_authority_owner"]
     assert "docs/product/quant-matrix.md" in matrix["existing_authority_owner"]
-    assert (
-        "productization_authority_manifest.json" in matrix["existing_authority_owner"]
-    )
     assert "targeted-selection.md" not in matrix["existing_authority_owner"]
 
 

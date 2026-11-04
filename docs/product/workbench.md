@@ -9,6 +9,12 @@ reports. This page owns what review may and may not mean. The
 `xic-workbench`, `xic-inspector` and `tools.diagnostics.explain_cid_nl_run`
 owns command arguments.
 
+## CLI and HTML use one path
+
+The HTML workbench is the primary human surface; script CLIs remain
+reproducible automation and diagnostic surfaces. Both call the same application
+and scientific owners, so a result does not depend on which route started it.
+
 ## Review does not change results
 
 - Review reads completed evidence. Opening a result, filtering, loading curves,

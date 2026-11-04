@@ -22,7 +22,7 @@ conceptual journey.
 | What happens when a sample lacks usable evidence? | [Backfill](backfill.md) |
 | Why is an area counted, flagged, written or left blank? | [Decision policy](decision-policy.md), [Targeted selection](targeted-selection.md) |
 | What did I receive, and how can I inspect or prepare it for use? | [Targeted workbook](targeted-workbook.md), [Quant Matrix](quant-matrix.md), [Workbench and review](workbench.md), [Matrix Curation](matrix-curation.md) |
-| What is supported, and which evidence establishes readiness? | [Productization](productization.md), [Instrument QC and calibration](instrument-qc-calibration.md) |
+| Which evidence establishes readiness? | [Product validation contract](../agent/product-validation-contract.md), [Instrument QC and calibration](instrument-qc-calibration.md) |
 
 ## Authority Boundary
 
@@ -31,8 +31,6 @@ If a topic page conflicts with an owner below, the owner wins.
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)
-- [Productization status index](../superpowers/validation/productization_status_index.tsv)
-- [Productization authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Product validation contract](../agent/product-validation-contract.md)
 
 ## Contributor Rules
@@ -44,9 +42,9 @@ If a topic page conflicts with an owner below, the owner wins.
 - State each rule in one place and link to it elsewhere.
 - Describe current behavior only. Dated plans, retired designs, command
   transcripts and private investigation stay in Git history or private notes.
-- Topic pages do not change maturity tier, writer authority, Matrix behavior,
-  schema or validation verdicts. If a change affects product authority, update
-  the owning spec and tests first.
+- Topic pages do not change writer authority, Matrix behavior, schema or
+  validation verdicts. If a change affects them, update the owning code and
+  tests first.
 - Explanatory HTML belongs with the [user guides](../user/README.md).
 
 ### Shared Conventions
@@ -55,11 +53,9 @@ If a topic page conflicts with an owner below, the owner wins.
   `shadow_ready`, `production_candidate`, `production_ready`, and
   `inconclusive` to describe what a source-qualified branch, run, or evidence
   packet verified. `inconclusive` means the required evidence did not establish
-  a stronger claim; it grants no authority. Evidence labels are not inherent
-  properties of a topic page and are not persisted lane state in the
-  productization status index.
-- **ProductWriter authority**: see
-  [Writer Authority](productization.md#writer-authority).
+  a stronger claim; it grants no authority. Evidence labels describe evidence,
+  not a topic page or a persisted state.
+- **Writer authority**: see [Writer Authority](decision-policy.md#writer-authority).
 - **Verification** sections list test files only; the tests are the
   executable contract.
 

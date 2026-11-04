@@ -33,6 +33,20 @@ questions:
   explain a decision. Such evidence becomes product authority only through an
   explicit activation/export contract and expected-diff gate.
 
+## Writer Authority
+
+The Targeted workbook and the Untargeted Matrix are published only by their
+workflow writers, under
+[Writer Transaction Authority](../agent/architecture-public-contracts.md#writer-transaction-authority).
+Writers render finalized cell decisions; they never recompute them.
+
+Evidence providers, candidate rows, write-ready labels, quality blockers,
+sidecars, replays, review packets, galleries and diagnostics can explain or
+gate a decision, but none grants writer authority. A new writer path needs its
+own contract, expected diff and focused tests under the
+[Expected-Diff Contract](../agent/product-validation-contract.md#expected-diff-contract).
+Topic pages link here instead of restating this rule.
+
 ## No-Write Reasons
 
 A cell decision either selects a value or returns one typed no-write reason.

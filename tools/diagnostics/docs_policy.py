@@ -1,88 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
-from pathlib import Path
 
-CONTROL_PLANE_PATH = "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-
-
-def source_copy_note_title(source_path: str, source_hash: str) -> str:
-    """Return the deterministic title of an exact retired source copy."""
-
-    return f"{Path(source_path).stem}-source-{source_hash[:12]}"
-
-
-def source_copy_locator_note_title(source_path: str, source_hash: str) -> str:
-    """Return the deterministic title of the searchable locator sidecar."""
-
-    return f"{source_copy_note_title(source_path, source_hash)}-locator"
-
-
-def source_copy_locator_text(source_path: str, source_hash: str) -> str:
-    """Render the non-authoritative locator without changing exact source bytes."""
-
-    exact_note_title = source_copy_note_title(source_path, source_hash)
-    return "\n".join(
-        (
-            "# Retired source locator",
-            "",
-            f"source_repo_path:{source_path}",
-            "",
-            f"Exact source note: [[{exact_note_title}]]",
-            "",
-            f"Source SHA-256: `{source_hash}`",
-            "",
-        )
-    )
-
-
-def source_copy_locator_sha256(source_path: str, source_hash: str) -> str:
-    """Hash the deterministic searchable locator sidecar."""
-
-    return hashlib.sha256(
-        source_copy_locator_text(source_path, source_hash).encode("utf-8")
-    ).hexdigest()
-
-
-PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS = (
-    "# Productization compatibility index",
-    "Doc placement: formal_repo_doc",
-    "Doc kind: manifest",
-    "Doc lifecycle: active",
-    "This path is a compatibility lookup surface.",
-    "## Authority routes",
-    "## Historical source",
-    "## Lane anchor index",
-)
 HANDOFF_CURRENT_DIR = "docs/superpowers/handoffs/current/"
 HANDOFF_ARCHIVE_DIR = "docs/superpowers/handoffs/archive/"
 DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = f"{HANDOFF_CURRENT_DIR}ACTIVE.local.md"
-PRODUCTIZATION_STATUS_ANCHOR_PATH = (
-    "docs/superpowers/productization/status/cc-framework-improvements-productization.md"
-)
-PRODUCTIZATION_SCHEMA_REL = (
-    "docs/superpowers/schemas/productization_control_plane_schema.json"
-)
-PRODUCTIZATION_STATUS_INDEX_REL = (
-    "docs/superpowers/validation/productization_status_index.tsv"
-)
-PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
-    "docs/superpowers/productization/status/productization_authority_manifest.json"
-)
-PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
-    "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
-)
-PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE = source_copy_note_title(
-    CONTROL_PLANE_PATH,
-    PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
-)
-PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE = (
-    source_copy_locator_note_title(
-        CONTROL_PLANE_PATH,
-        PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
-    )
-)
 SUPERPOWERS_SPEC_DIR = "docs/superpowers/specs/"
 
 DOC_PLACEMENT_MARKER = "Doc placement:"
@@ -158,7 +80,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
             "docs/architecture-contract.md",
             "docs/agent/execution-gates.md",
             "tools/diagnostics/INDEX.md",
-            "docs/product/productization.md",
             "docs/project-layout.md",
             "docs/agent/codex-operating-system.md",
         ),
@@ -205,18 +126,6 @@ PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
 )
 
 
-def is_productization_control_plane_path(path: str) -> bool:
-    return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
-
-
-def is_productization_compatibility_index_text(text: str) -> bool:
-    """Identify a previously retired control-plane compatibility preimage."""
-
-    return all(
-        text.count(marker) == 1 for marker in PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS
-    )
-
-
 DOC_ROOT_ALLOWLIST_FILES = {
     "docs/architecture-contract.md",
     "docs/diagnostic-ledger.md",
@@ -241,8 +150,7 @@ DOC_RETIRED_TRACKED_DIRS = {
         "Obsidian, a formal owner, or a narrowly named public artifact lane"
     ),
     "docs/superpowers/pulse-reports/": (
-        "pulse reports are generated read-side snapshots; write to output/ "
-        "unless promoted to productization/evidence/"
+        "pulse reports are generated read-side snapshots; write to output/"
     ),
     "docs/superpowers/reports/": (
         "reports is too broad; route public HTML, fixtures, probes, and "
@@ -254,10 +162,7 @@ DOC_RETIRED_TRACKED_DIRS = {
     "docs/superpowers/handoffs/archive/": (
         "handoff archives are private or disposable history and must not be tracked"
     ),
-    "docs/superpowers/plans/": (
-        "construction plans and PRDs belong in GitHub Issues; only the "
-        "checker-bound productization compatibility index is exempt"
-    ),
+    "docs/superpowers/plans/": "construction plans and PRDs belong in GitHub Issues",
     "docs/superpowers/specs/": (
         "construction specs belong in GitHub Issues; durable contracts belong "
         "in product, agent, architecture, schema, or validation owners"
@@ -275,11 +180,6 @@ DOC_RETIRED_TRACKED_DIRS = {
     ),
 }
 DOC_RETIRED_TRACKED_DIR_PREFIXES = tuple(DOC_RETIRED_TRACKED_DIRS)
-DOC_RETIRED_TRACKED_EXEMPTIONS = frozenset(
-    {
-        CONTROL_PLANE_PATH,
-    }
-)
 
 DOC_CANONICAL_OWNER_DIRS = [
     "docs/product/",
@@ -288,7 +188,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/superpowers/schemas/",
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
-    "docs/superpowers/productization/",
     "tests/fixtures/",
 ]
 DOC_CANONICAL_OWNER_FILES = {
@@ -301,8 +200,6 @@ DOC_CANONICAL_OWNER_FILES = {
     "docs/project-layout.md",
     "docs/superpowers/README.md",
     "docs/superpowers/handoffs/README.md",
-    PRODUCTIZATION_STATUS_ANCHOR_PATH,
-    CONTROL_PLANE_PATH,
 }
 HIGH_RISK_DOC_DIRS = [
     "docs/deepresearch/",
@@ -333,7 +230,6 @@ DOC_ROUTING_VALIDATION_PREFIXES = (
 DOC_ROUTING_GOVERNANCE_PREFIXES = (
     "docs/superpowers/closeouts/",
     "docs/superpowers/file-management/",
-    "docs/superpowers/productization/",
 )
 DOC_ROUTING_LEGACY_HISTORY_PREFIXES = (
     "docs/superpowers/deepresearch/",
@@ -350,12 +246,6 @@ DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
     "docs/superpowers/file-management/docs-cleanup/referrers/",
 )
 DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
-DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
-    {
-        "docs/superpowers/validation/productization_status_index.tsv",
-        "docs/superpowers/productization/status/productization_authority_manifest.json",
-    }
-)
 PRIVATE_HISTORY_SIGNALS = [
     "implementation diary",
     "command log",
@@ -547,8 +437,6 @@ def is_superpowers_spec_lane_path(path: str) -> bool:
 
 def retired_tracked_dir_for_path(path: str) -> str:
     normalized = normalize_path_text(path).lstrip("./")
-    if normalized in DOC_RETIRED_TRACKED_EXEMPTIONS:
-        return ""
     for root in DOC_RETIRED_TRACKED_DIR_PREFIXES:
         if path_is_under(normalized, root):
             return root

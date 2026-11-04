@@ -7,12 +7,9 @@ import pytest
 from tools.diagnostics.docs_policy import (
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
-    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
-    PRODUCTIZATION_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
 )
-from tools.diagnostics.docs_routing_review import PRODUCTIZATION_OWNER_ROUTE
 from tools.diagnostics.docs_scan import (
     normalize_repo_rel_path,
     permanent_root_contract_problems,
@@ -75,7 +72,7 @@ def test_permanent_root_contract_rejects_missing_route_and_wrong_owner() -> None
     rel_path = "AGENTS.md"
     text = (root / rel_path).read_text(encoding="utf-8")
     text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
-    text += "\nRepo owner: docs/product/productization.md\n"
+    text += "\nRepo owner: docs/product/backfill.md\n"
 
     problems = permanent_root_contract_problems(root, rel_path, text)
 
@@ -463,18 +460,3 @@ def test_lifecycle_managed_not_overridden_by_metadata() -> None:
 def test_superpowers_schema_index_constant_matches_case_sensitive_path() -> None:
     assert DOC_ROUTING_SCHEMAS_INDEX_PATH == "docs/superpowers/schemas/README.md"
     assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()
-
-
-def test_productization_owner_route_uses_schema_and_writer_manifest() -> None:
-    assert PRODUCTIZATION_SCHEMA_REL == (
-        "docs/superpowers/schemas/productization_control_plane_schema.json"
-    )
-    assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/productization/status/productization_authority_manifest.json"
-    )
-    for path in (
-        PRODUCTIZATION_SCHEMA_REL,
-        PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
-    ):
-        assert Path(path).is_file()
-        assert path in PRODUCTIZATION_OWNER_ROUTE

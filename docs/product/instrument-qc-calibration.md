@@ -89,4 +89,3 @@ activation contract promotes a correction or gate.
 
 - [Sample metadata and QC](sample-metadata-qc.md)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
-- [Productization](productization.md)

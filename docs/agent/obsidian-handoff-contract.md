@@ -60,11 +60,6 @@ Retain schemas, fixtures, and evidence artifacts while a current checker or
 scientific claim consumes them. Their retention follows that consumer's
 contract, not a general document-archiving rule.
 
-The compatibility index at
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md` is also an
-exact-path machine exception. It is a current lookup contract despite its
-legacy path and must not be used to justify new tracked plans.
-
 ## Public/private publication boundary
 
 Repo documents may contain maintained contracts, current operator guidance,
