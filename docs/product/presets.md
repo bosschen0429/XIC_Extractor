@@ -1,262 +1,149 @@
 # Presets
 
-Presets are named Discovery methods with effective tuning and the retained
-alignment runtime option. Presets are reproducibility and public behavior
-surfaces. Presets are not product authority by themselves.
+Presets are named Discovery methods with their effective tuning and the
+retained Alignment runtime option. Presets are reproducibility and public
+behavior surfaces; a preset is not product authority by itself. Code lives in
+[`xic_extractor/presets/`](../../xic_extractor/presets/) and built-in TOML files
+in [`xic_extractor/presets/data/`](../../xic_extractor/presets/data/).
 
 ## Contract
 
 - Changing a default preset or silent resolver behavior changes public
-  behavior. Such a change needs
+  behavior. It needs
   [expected-diff framing](../agent/product-validation-contract.md#promotion-packet-contract),
-  focused tests, and relevant evidence.
+  focused tests and relevant evidence.
 - Targeted and profile-bound Untargeted processing use the shared physical
-  signal owner.
-- Direct resolver-based diagnostic callers retain their explicit `local_minimum` or
-  `savgol` configuration (including saved `legacy_savgol` input). Those settings
-  do not choose the formal Targeted physical algorithm.
-- Application profiles can expose explicit preset choices. Local profiles
-  must not silently overwrite user intent.
-- A preset run must be reproducible from documented CLI/config surfaces and
-  metadata. A branch-local command diary is not a reproducibility source.
-- `serialize_preset` and `save_preset` own portable method export.
-- Export resolves the effective Discovery values and the preset-owned runtime
-  option. Export then writes the existing TOML shape.
-- Export validates the written TOML through the same parser and apply
-  functions that intake uses.
-- An invalid method leaves an existing destination intact.
-- Export preserves tag order and combination.
-- `source` is derived on load. `source` is never a TOML field or a scientific
-  identity.
-- The TOML format carries method intent. The format does not carry RAW/output
-  paths, worker counts, or application state.
-- `dna_dr_product_ready` is a historical compatibility preset name. A
-  successful run does not assert product readiness and does not invoke Standard Peak or a publication checker.
-- Discovery method or preset labels can wrap strategy families for usability.
-  For example, `pt_pattern` means `delta_mass(pattern_id=pt)`. The preset layer
-  must not turn that label into a separate primitive strategy or ProductWriter
-  authority.
+  signal owner. Direct resolver-based diagnostic callers keep their explicit
+  `local_minimum` or `savgol` configuration; those settings do not choose the
+  Targeted physical algorithm.
+- A preset run is reproducible from documented CLI/config surfaces and run
+  metadata. A command diary is not a reproducibility source.
+- The TOML format carries method intent only: no RAW/output paths, worker
+  counts or application state. `source` is derived on load and is never a TOML
+  field or scientific identity.
+- `serialize_preset` and `save_preset` own portable export. Export resolves the
+  effective values, writes the existing TOML shape, and validates it through the
+  same parser intake uses. Tag order and combination are preserved, and an
+  invalid method leaves an existing destination intact.
+- Preset names carry no readiness claim. A successful run of any preset does
+  not assert product readiness.
+- A method label can wrap a strategy family for usability: `pt_pattern` means
+  `delta_mass(pattern_id=pt)`. The preset layer never turns a label into a new
+  primitive strategy or ProductWriter authority.
 
 ## RAW Mass Recalibration
 
 CID-NL Discovery presets default to `easy_ic_restore` when
 `[discovery].mass_recalibration` is absent. `DiscoverySettings` and
-`ExtractionConfig` use this same new-execution default. The RAW adapter takes
-the median finite LM Correction from MS1 scans with Number of LM Found > 0
-as each file's baseline. Each scan's shift in ppm is twice its LM minus twice
-the baseline. The adapter divides recorded masses by `1 + shift_ppm * 1e-6`.
-The mechanism-supported ppm approximation applies only to positive-polarity RAWs,
-including MS2-only excursions. No background-ion threshold gates MS2 correction.
-Negative-polarity RAWs retain all vendor mass paths and explicitly report
-`outcome=not_applicable`, `reason=negative_polarity`; restoration is not attempted.
-Mixed or unknown polarities report `unavailable` and retain vendor mass paths.
-Missing trailers or an absent baseline produce `unavailable` and retain vendor
-read paths. Missing finite LM in a scan under an applied policy is a read error.
-Downstream algorithms receive masses, not a second correction policy.
+`ExtractionConfig` use the same default for new execution.
+
+The RAW adapter takes the median finite LM Correction from MS1 scans with
+Number of LM Found > 0 as each file's baseline. Each scan's shift in ppm is
+twice its LM minus twice the baseline, and recorded masses are divided by
+`1 + shift_ppm * 1e-6`. Downstream algorithms receive corrected masses, not a
+second correction policy.
+
+- The ppm approximation is supported by the lock-mass mechanism only for
+  positive-polarity RAWs, including MS2-only excursions. No background-ion
+  threshold gates MS2 correction.
+- Negative-polarity RAWs keep vendor masses and report
+  `outcome=not_applicable`, `reason=negative_polarity`. Mixed or unknown
+  polarity reports `unavailable` and keeps vendor masses.
+- Missing trailers or an absent baseline report `unavailable` and keep vendor
+  masses. A missing finite LM in a scan under an applied policy is a read error.
 
 The fixed baseline also moves normal scan-to-scan fluctuations. Restoration is
-not absolute mass recalibration and does not remove background ions' native bias.
-Measured precursors use the parent MS1 scale; fragments use their own MS2 scale.
-Inclusion-list setpoints remain unchanged.
+not absolute mass recalibration and does not remove background ions' native
+bias. Measured precursors use the parent MS1 scale; fragments use their own MS2
+scale. Inclusion-list setpoints are unchanged.
 
-To restore vendor masses, set `mass_recalibration = "none"` in `[discovery]`.
-Preset export preserves explicit `none`; it omits the default restoration value.
-Persisted method/request identities have a different compatibility rule: an
-absent mass policy means legacy `none`, and explicit `none` is non-canonical.
-Restoration executions have a different scientific identity from both legacy
-`easy_ic_probe` and `none` executions.
+Set `mass_recalibration = "none"` in `[discovery]` to keep vendor masses.
+Export preserves an explicit `none` and omits the default. In persisted
+method/request identities, an absent policy means `none`, and restoration runs
+have a different scientific identity from `none` and `easy_ic_probe` runs.
 
-Discovery sample receipts carry each RAW's mass result in the optional
-`mass_recalibration` column of `discovery_batch_index.csv` (including standalone
-Discovery). Alignment always publishes `alignment_run_metadata.json` and copies
-these source-bound results into `mass_recalibration_by_sample`. Workbench review
-curves replay the saved policy, not today's default. Keep the Alignment metadata
-beside its review report; their request and attempt IDs must match. Targeted
-workbooks save `mass_recalibration` in Run Metadata for the same purpose. Legacy
-results without a saved policy retain `none`. New results store `baseline_lm`
-and `n_anchor`; saved `easy_ic_probe` results retain their original `a + b * LM`
-formula. New execution no longer fits background ions. A legacy policy without
-its saved fitted result cannot replay the old correction and raises a read error;
-this includes old Targeted workbooks that recorded only the probe policy.
-Re-analysis must explicitly select restoration or `none`, not silently reinterpret
-the old method. Mass telemetry does not grant writer authority; cache namespaces
-separate restoration, legacy probe, and vendor facts.
-Direct `open_raw` callers still default to `none`; Delta Mass, QC, and blank-library
-acquisition are unchanged.
+Each RAW's mass result is saved where its review can replay it:
+`discovery_batch_index.csv` (`mass_recalibration`), the Alignment
+`alignment_run_metadata.json` (`mass_recalibration_by_sample`) and Targeted
+`Run Metadata`. Review curves replay the saved result, not today's default.
+Saved `easy_ic_probe` results keep their original `a + b * LM` formula; a probe
+policy without its saved fit cannot be replayed and raises a read error.
+Re-analysis must select restoration or `none` explicitly. Direct `open_raw`
+callers default to `none`; Delta Mass, QC and blank-library acquisition are
+unchanged.
 
-## Delta Mass Parameters
-
-Delta Mass TOMLs specify `discovery.positions` (label, delta, height-ratio bounds),
-anchor/discriminating labels and co-elution/shape tolerances. The detector's
-`smoothing_window_sec` is converted per RAW to an odd scan-point window;
-shared peak-detection defaults remain unchanged. Both Pt presets are provisional.
-See [Delta Mass Discovery](discovery.md#delta-mass-discovery) for the method and
-one-pass RAW entry point. Preset export preserves these nested settings.
-
-## Surfaces
-
-| Surface | Role |
-| --- | --- |
-| `xic_extractor/presets/` | Preset loading and code surface |
-| `xic_extractor/presets/serialization.py` | Validated effective-method TOML export and atomic saving |
-| `xic_extractor/presets/data/` | Built-in TOML preset resources |
-| `scripts/run_discovery.py --preset ...` | Discovery CLI using the same recipe binder; only explicit tuning flags override the method |
-| `scripts/run_alignment.py --preset ...` | CLI path that activates alignment presets |
-| `scripts/run_tissue_validation.py --dataset {8,85}` | Shared tissue validation launch defaults; delegates Discovery and Alignment to their current CLIs |
-| Signal profile settings in config/HTML workbench | Shared physical signal configuration |
-| Runner metadata and sidecars | Provenance for preset-backed runs |
-
-## CID-NL Workflow Composition
-
-### Tissue Validation Defaults
-
-The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
-same `dna_dr` method and effective scientific settings, including disabled
-blank-background qualification. Dataset selection changes the sample scope.
-Dataset selection does not change the method.
-
-The maintained tissue validation runner owns paths, timing, and stage launch
-order. The runner consumes the shared
-[execution profile](execution-runtime.md#worker-settings) for worker budgets.
-The runner does not maintain a second scientific preset.
-
-Neither scale resolves or loads a blank library by default. An explicit
-`--blank-library` opts in and binds the same library in Discovery and
-Alignment. The suitability of that library must be established separately.
-ISTD input follows the normal Alignment targets CSV. A historical reference
-workbook is an explicit override. Resolved inputs and commands are visible
-before RAW work.
-See [local validation commands](../agent/parameter-settings.md#validation-scale).
-
-### Recipe Binding
+## CID-NL Recipe Binding
 
 A CID-NL preset is bound once, before expensive work, to one immutable
-in-memory recipe. The recipe contains the existing typed Discovery and
-Alignment settings. The recipe has no
-Standard Peak or Backfill-expansion post-stage choice. The recipe does not
-contain RAW/output paths, sample metadata, worker counts, review inputs, a
-persisted recipe identity, or a second invocation schema.
+in-memory recipe holding the typed Discovery and Alignment settings. The recipe
+contains no paths, sample metadata, worker counts, review inputs or second
+invocation schema.
 
-The current routes remain the existing entry-point modes:
-
-| Existing route | Preset-backed behavior |
+| Route | Preset-backed behavior |
 | --- | --- |
-| `discovery_only` | RAW to the existing Discovery terminal |
-| `full` | RAW -> Discovery -> retained finalized CID-NL batch -> canonical Matrix writer |
-| `align_only` | Existing Discovery index -> retained finalized CID-NL batch -> canonical Matrix writer |
+| `discovery_only` | RAW to the Discovery outputs |
+| `full` | RAW -> Discovery -> finalized CID-NL batch -> canonical Matrix writer |
+| `align_only` | Existing Discovery index -> finalized CID-NL batch -> canonical Matrix writer |
 
-The retained finalized CID-NL batch closes the Matrix loop for neutral-loss
-presets, including multi-tag `union` (OR) and `intersection` (AND).
+Multi-tag CID-NL presets combine tags by `union` (OR) or `intersection` (AND):
 
 - OR accepts any configured tag on the same physical peak.
-- AND requires all configured tags on that peak within one sample.
-- Alignment and Backfill use the same method requirement.
-- Different tag hits across samples can share a row when the existing physical
-  peak compatibility gates pass. Labels alone do not establish identity.
+- AND requires every configured tag on that peak within one sample.
+- Alignment and Backfill apply the same requirement.
+- Different tag hits across samples can share a row when the physical peak
+  compatibility gates pass. Labels alone never establish identity.
 
-Other routes and retained artifacts:
+A built-in Alignment preset emits the seed audit and
+`alignment_backfill_cell_evidence.tsv` where the runner contract requires them.
+Non-standard peaks and candidate-only evidence stay outside automatic
+publication unless the authority manifest says otherwise.
 
-- Normal Alignment rejects methods outside this CID-NL route.
-- Standard Peak is not reachable from normal CLI/HTML/preset execution.
-- The source-Matrix republisher and its authority/productization chain are
-  deleted.
-- Retained Standard Peak helpers are explicit offline falsifiers/renderers
-  only. They do not select CID-NL `HOLD` results or grant product authority.
-- The historical clean-target packet retains diagnostic context and
-  current-file self-consistency checks only. The packet has no independent
-  historical seal. The ownerless writer and registered scope of the packet are
-  retired.
+Normal Alignment rejects methods outside this CID-NL route. The Delta Mass
+Discovery path owns the Pt and Pt + CID-NL composite presets, and CID-NL
+binders reject them. Normal recipes reject the retired Standard Peak and
+Backfill-expansion keys; no replacement publication choice is exposed.
 
-These route names are existing in-memory selectors. The route names are not
-new preset TOML fields or a user-authored workflow graph. The delta-mass
-Discovery path owns the Pt and Pt + CID-NL composite presets. CID-NL-only
-binders reject those composite presets.
-
-### Resolver Presets
+## Resolver Presets
 
 | Preset | Role |
 | --- | --- |
 | `savgol` | Savitzky-Golay smoothing and prominence-based candidate resolver |
-| `local_minimum` | Canonical local-minimum candidate resolver |
+| `local_minimum` | Local-minimum candidate resolver |
 
-New resolver settings use `savgol`. Saved `legacy_savgol` input is accepted and
-normalized to `savgol` before candidate search and preset export. This read alias
-serves existing user settings/presets; remove it only after those consumers have
-migrated and an announced compatibility window has ended. Formal Targeted still
-uses physical candidates rather than selecting a resolver from settings.
-The emitted `legacy_savgol` proposal-source label stays stable because it is
-part of retained peak identities; it describes the savgol resolver source.
+Saved `legacy_savgol` input is normalized to `savgol` before candidate search
+and export. The emitted `legacy_savgol` proposal-source label stays stable
+because retained peak identities use it.
 
-### Alignment Presets
+## Delta Mass Parameters
 
-Code: `xic_extractor/presets/`; built-in TOML: `xic_extractor/presets/data/`.
+Delta Mass TOMLs specify `discovery.positions` (label, delta, height-ratio
+bounds), anchor and discriminating labels, and co-elution and shape
+tolerances. The detector's `smoothing_window_sec` is converted per RAW to the
+nearest positive odd number of scan points; for example 6.6 s with 1.31 s scans
+gives five points. This screening window is separate from the shared Gaussian
+profile. Export preserves the nested settings. See
+[Delta Mass](discovery.md#delta-mass-discovery) for the method.
 
-| Preset | Role |
-| --- | --- |
-| `dna_dr.toml` | DNA dR alignment preset |
-| `dna_dr_product_ready.toml` | Historical compatibility profile name; not readiness authority |
+## Tissue Validation Defaults
 
-Rules:
-
-- For repeatable validation, prefer preset surfaces over hand-written long
-  command recipes.
-- A built-in product-facing preset must emit the expected seed audit and
-  `alignment_backfill_cell_evidence.tsv` where the runner contract requires
-  them.
-- Normal recipes reject the former Standard Peak and Backfill expansion preset
-  keys. No replacement publication choice is exposed.
-- Non-standard peaks and candidate-only evidence stay outside automatic
-  publication policy unless the authority manifest says otherwise.
-
-### Performance Anchors
-
-- The 2026-06-22 `dna_dr_product_ready` 8RAW performance pass is retained as an
-  exact-output-preserving preset/runtime anchor. Total wall time improved from
-  about 252.5s to 170.5s. Public TSV hashes and product-ready preset checks
-  stayed matched.
-- The durable lesson is call-shape discipline. The lesson is not a new product
-  contract. Call-shape discipline means:
-  - reuse generated overlays where provenance matches;
-  - batch or slice existing summaries instead of regenerating them per chunk;
-  - keep RAW/render worker caps conservative;
-  - keep payload validation cheap for scalar leaves.
-- Performance archives and timing packets do not change preset defaults,
-  matrix authority, Backfill scope, or application behavior. Performance archives and
-  timing packets are evidence for safe runtime implementation choices under
-  the same preset contract.
-
-## Boundaries
-
-- **Owns**: preset loading, resolver/alignment preset behavior definitions,
-  immutable CID-NL recipe binding, TOML resource format, and reproducibility
-  guarantees for preset-backed runs.
-- **Does not own**: accepted publication scope (see
-  [productization.md](productization.md)), exact command recipes for every
-  validation run (see runner docs), release readiness (see status index and
-  product validation contract).
+The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
+same `dna_dr` method and effective settings, including disabled blank
+qualification. Dataset selection changes the sample scope, not the method, and
+the runner keeps no second scientific preset. An explicit `--blank-library`
+binds the same library in Discovery and Alignment; its suitability must be
+established separately. ISTD input follows the normal Alignment targets CSV,
+and resolved inputs are shown before RAW work. See
+[local validation commands](../agent/parameter-settings.md#validation-scale).
 
 ## Verification
 
-Before changing preset behavior, require the relevant subset of:
-
-- Focused tests for preset loading and default selection.
-- Runner smoke check for documented CLI/config surfaces.
-- Product-ready preset checker when a preset claims product-readiness support.
-- Productization owner update if preset behavior changes matrix authority,
-  selected values, schema, or publication scope.
-
-## Pitfalls
-
-- Replacing documented preset surfaces with branch-local command recipes.
-- Assuming Backfill expansion replay is included just because a preset is
-  product-facing.
+- `tests/test_presets_loader.py`, `tests/test_presets_builtins.py`,
+  `tests/test_presets_apply.py`, `tests/test_presets_serialization.py`
+- `tests/test_delta_mass_presets.py`
+- `tests/test_raw_mass_recalibration.py`, `tests/test_mass_recalibration_contracts.py`
 
 ## See Also
 
 - [Parameter settings](../agent/parameter-settings.md)
-- [Preset code](../../xic_extractor/presets/)
-- [Preset TOML data](../../xic_extractor/presets/data/)
-- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index.tsv)
-- [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
+- [Discovery](discovery.md) | [Signal processing rationale](signal-processing-rationale.md)
 - [Diagnostic ledger](../diagnostic-ledger.md)

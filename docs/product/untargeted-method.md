@@ -31,14 +31,20 @@ results. Published features are not, by themselves, identified compounds.
   `provisional` groups stay in a compact machine archive/review surface;
   `unresolved` and `rejected` groups remain AuditTrail facts. Disposition and
   row inclusion are separate typed decisions.
-- `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
-  compatibility/display facts, not canonical cell identity.
-- Exact equality to old upstream feature tables is not the success definition.
-  The accepted method direction is owner-centered Backfill plus duplicate-claim
-  control while preserving a clean primary matrix.
-- QC, blank, calibrator, injection-order, and batch metadata must become
-  first-class inputs before any QC correction, blank filtering, or normalization
-  behavior can write product values.
+- Row order, m/z/RT display coordinates and Matrix text are display facts, not
+  canonical cell identity.
+- Exact equality to other tools' feature tables is not the success definition.
+  The method direction is owner-centered Backfill plus duplicate-claim control
+  while preserving a clean primary Matrix. The lane addresses false missingness,
+  RT-driven splitting and duplicate claims, and keeps Review/Audit separate.
+- Targeted ISTD recall is a useful benchmark, but a past 8RAW/85RAW result is an
+  evidence snapshot, not lasting product authority.
+- Untargeted LC-MS practice expects pooled QC, injection-order tracking,
+  blank/background handling, batch drift checks, sample-matrix-effect awareness,
+  missingness classification and artifact/adduct/isotope review. QC, blank,
+  calibrator, injection-order and batch metadata must become first-class inputs
+  before any QC correction, blank filtering or normalization can write values;
+  see [Sample metadata and QC](sample-metadata-qc.md).
 
 ## Literature Grounding
 
@@ -55,16 +61,6 @@ by itself:
 | Reviews of LC-MS/MS metabolite data mining list extracted-ion chromatograms, mass-defect filters, product-ion filters, neutral-loss filters, and isotope-pattern filters as complementary post-acquisition strategies ([Dhurjad et al. 2017](https://doi.org/10.4155/bio-2017-0046); [Zhang et al. 2009](https://doi.org/10.1002/jms.1610)). | CID-NL, HCD-PI, and Delta Mass fit the same broad class: configurable Discovery methods that find candidate features matching diagnostic evidence. |
 | Isotope-pattern and stable-isotope mass-shift filtering work shows that specific MS1 mass-shift/isotope patterns can mine candidate ions from complex LC-MS data ([Yang et al. 2009](https://doi.org/10.1021/ac900626d); [Uchida et al. 2013](https://doi.org/10.3390/ijms141019716)). | A Pt-specific delta-mass pattern is methodologically plausible as a first `delta_mass` pattern, but first-version hard gates should stay simple and evidence-based. |
 | XCMS `fillPeaks` integrates raw data inside aligned peak-group regions for samples missing a peak, and uses retention-time correction when available ([XCMS documentation](https://sneumann.github.io/xcms/reference/fillPeaks.chrom-methods.html)). Missing-value reviews warn that missing values arise from biological, technical, and preprocessing causes, and that filling/imputation choices can bias downstream analysis ([Wei et al. 2018](https://doi.org/10.1038/s41598-017-19120-0); [Hrydziuszko and Viant 2018/2019](https://pubmed.ncbi.nlm.nih.gov/30830398/)). | Backfill must mean an evidence-based revisit of raw traces or approved sidecars, not blind statistical imputation. Statistical imputation belongs downstream and must not be counted as detection. |
-
-## Absorbed 2026-05-14 Conclusions
-
-| Stable conclusion | Durable owner |
-| --- | --- |
-| Untargeted LC-MS literature expects pooled QC, injection-order tracking, blank/background handling, batch drift checks, sample-matrix-effect awareness, missingness classification, and artifact/adduct/isotope review. | [Sample Metadata And QC](sample-metadata-qc.md), [Instrument QC And Calibration](instrument-qc-calibration.md), [Productization](productization.md) |
-| XIC's current Untargeted value is narrower: sample-local owner finding, owner-centered Backfill, RT-aware alignment, duplicate-claim control, and Matrix/Review/Audit separation. | [Discovery](discovery.md), [Alignment](alignment.md), [Backfill](backfill.md), [Quant Matrix](quant-matrix.md) |
-| Targeted ISTD recall is a useful benchmark gate, but historical 8RAW/85RAW results are evidence snapshots, not permanent product authority. Current validation verdicts must come from the diagnostic ledger, validation packets, status index, and authority manifest. | [Diagnostic ledger](../diagnostic-ledger.md), [Productization](productization.md) |
-| Pre-Backfill consolidation and primary-promotion rules reduce matrix pollution only when tied to explicit writer authority and expected-diff tests. | [Backfill](backfill.md), [Decision Policy](decision-policy.md), [Productization](productization.md) |
-| Old reports, research notes, and deepresearch imports may explain why a direction was chosen, but they do not override current product owners. | This page, [Product Topic Index](README.md), [Project Layout](../project-layout.md) |
 
 ## In Scope
 
@@ -84,21 +80,6 @@ by itself:
   post-Alignment [same-compound collapse](matrix-curation.md#same-compound-collapse)
   removes isotope, adduct and dimer rows from a curated copy of the Matrix only.
 - Treating review-only candidates as product matrix values.
-
-## Promotion Rule
-
-Any future expansion from method evidence to product output must name:
-
-1. the public output/schema that changes,
-2. the ProductWriter or authority manifest record that allows the write,
-3. the expected matrix diff,
-4. the focused tests and validation packet proving the diff,
-5. the current productization tier after the change.
-
-Structural adoption of the shared owners is parity work and does not itself
-promote provisional groups, change Matrix row identity, fill a cell, or activate
-downstream preprocessing. Public `UntargetRowKey` cutover and analytical-handoff activation each require
-their own packet.
 
 ## See Also
 

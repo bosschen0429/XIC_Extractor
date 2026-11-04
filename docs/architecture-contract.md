@@ -222,17 +222,14 @@ general discovery, grouping, and matrix delivery. Separate entry points and
 writers do not justify duplicate capture, peak identity, CrossSample,
 ObservationRevisit, or cell-decision owners.
 
-The detailed scientific lifecycle is owned by
-[`shared-processing-kernel.md`](product/shared-processing-kernel.md),
-[`alignment.md`](product/alignment.md), and
-[`decision-policy.md`](product/decision-policy.md). Processing identity and
-delivery lineage are owned by
-[`processing-lineage.md`](product/processing-lineage.md); scheduling,
-cancellation, cleanup, recovery, and observability are owned by
-[`execution-runtime.md`](product/execution-runtime.md).
+The scientific lifecycle is described in the
+[Domain Glossary](product/domain-glossary.md#product-shape),
+[`alignment.md`](product/alignment.md), [`backfill.md`](product/backfill.md), and
+[`decision-policy.md`](product/decision-policy.md). Processing identity lives in
+[`processing_identity.py`](../xic_extractor/processing_identity.py); scheduling,
+cancellation, cleanup, and timing live in
+[`xic_extractor/execution/`](../xic_extractor/execution/).
 
-Shared scientific interfaces and application-specific search, projection, and
-writer contracts are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#current-contract).
 Provider-specific evidence handling must not create a parallel downstream
 decision core.
 
@@ -252,7 +249,6 @@ persisted records retain their owners and encodings. Another method still needs
 its own evidence adapter; no delta-mass execution is implied by these seams.
 
 Grouping and RT bootstrap are described in [Alignment](product/alignment.md#current-implementation).
-Immutable-result handoffs are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#deep-interfaces).
 A revisit does not reopen grouping, replace the partition, or mint a second
 grouping owner.
 
@@ -286,13 +282,14 @@ contract 沒有 ignore，並包含間接依賴。
   must not import or invoke the Inspector.
 - The workbench hosts Inspector views: the renderer owns presentation, and the
   workbench owns sources, jobs and cancellation. The
-  [local HTML workspace](product/xic-inspector.md#local-html-workspace)
-  defines review and export behavior.
+  [workbench and review](product/workbench.md) page defines what review
+  and export may mean.
 - Entry points pass typed intent to an application, not flattened execution
   and publication arguments. The application owns the run from configuration to
   publication; Alignment owns neither that lifetime nor a second runtime or
-  writer transaction. [Execution Runtime](product/execution-runtime.md#workflow-integration)
-  defines execution, spooling and resource ownership.
+  writer transaction. [`xic_extractor/execution/`](../xic_extractor/execution/)
+  and [`untargeted_execution/`](../xic_extractor/untargeted_execution/) own
+  execution, spooling and resource cleanup.
 - Scientific completion is pure over owner-bound inputs. Runtime and persistence
   wrap it without changing its result, and Matrix projection receives only the
   finalized result.

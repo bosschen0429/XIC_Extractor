@@ -1170,9 +1170,9 @@ def test_repo_docs_topic_review_distinguishes_distinct_subcontracts(
                 "Doc placement: repo_subcontract_doc",
                 "Doc kind: spec",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/run-provenance.md",
+                "Repo owner: docs/product/targeted-workbook.md",
                 (
-                    "Doc exit rule: retire after docs/product/run-provenance.md "
+                    "Doc exit rule: retire after docs/product/targeted-workbook.md "
                     "absorbs it."
                 ),
                 "",
@@ -1189,9 +1189,9 @@ def test_repo_docs_topic_review_distinguishes_distinct_subcontracts(
                 "Doc placement: repo_subcontract_doc",
                 "Doc kind: spec",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/run-provenance.md",
+                "Repo owner: docs/product/targeted-workbook.md",
                 (
-                    "Doc exit rule: retire after docs/product/run-provenance.md "
+                    "Doc exit rule: retire after docs/product/targeted-workbook.md "
                     "absorbs it."
                 ),
                 "",

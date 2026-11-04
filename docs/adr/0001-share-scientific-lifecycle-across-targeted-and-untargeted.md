@@ -40,5 +40,5 @@ application contracts rather than separate fishing methods.
 
 Current contracts: `docs/architecture-contract.md`,
 `docs/agent/architecture-public-contracts.md`, and
-`docs/product/shared-processing-kernel.md`. Active delivery map: GitHub #301;
+`docs/product/domain-glossary.md` (Product Shape). Active delivery map: GitHub #301;
 initial execution frontier: #316.

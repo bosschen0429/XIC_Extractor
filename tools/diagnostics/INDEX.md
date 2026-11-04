@@ -31,7 +31,7 @@ workflow owner rather than chaining similarly named commands.
 | Task | Entry and owner |
 | --- | --- |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
-| Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Inspector](../../docs/product/xic-inspector.md) owns offline review |
+| Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
 | Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
@@ -117,11 +117,11 @@ models because their output schemas are intentionally different; see
 
 **Purpose**: Read the normal CID-NL execution explanation artifact and return a
 compact summary or exact candidate details without reading RAW.
-**Owner**: [CID-NL execution explanations](../../docs/product/xic-inspector.md#cid-nl-execution-explanations).
+**Owner**: [Retained evidence](../../docs/product/workbench.md#retained-evidence-and-diagnostics); arguments in `--help`.
 **Input**: `alignment_explanation.sqlite`, optionally an exact candidate ID.
 **Output**: Readable text or JSON; `--compact-to` writes compact review from an
 existing full report; `--curve-bundle` acquires only explicitly selected windows
-for Inspector. [Retention and curve export](../../docs/product/xic-inspector.md#lightweight-alignment-review).
+for Inspector.
 **Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
@@ -351,6 +351,17 @@ reference input review needs this oracle; no matrix or reference-writing authori
   copy provenance, previous injection/idle, persisted perturbation policy, and
   optional sequence comparisons. No spectra are acquired; each discovered RAW
   is opened once for header facts, without content hashing or acquisition cache.
+- **Inputs:** recursively reads every RAW under the batch root, including
+  blanks and subfolders. Creation date plus the original vendor acquisition
+  path identifies copies, and every local copy path stays in the JSON;
+  conflicting duplicate headers fail. `raw_stem` is the local filename stem,
+  `acquisition_stem` the original one, and `renamed_after_acquisition` marks a
+  rename. Start and end add the `RunHeaderEx` minute offsets to the creation
+  date. Headers missing acquisition identity, date or valid run times fail.
+  Optional repeated `--sld` inputs use Thermo's `SequenceFileReaderFactory`;
+  exact original filenames (case-insensitive) match injections, and missing
+  RAWs, ambiguous repeats and empty filename rows (`unconfigured`) stay
+  separate. All three pre-flag thresholds are configurable and persisted.
 - **Authority:** `diagnostic_only`; no selection, RT, value, or analysis-set
   authority. Keep as the batch chronology producer for offline diagnostics;
   retire if run metadata adopts the same producer and sidecar contract.

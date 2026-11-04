@@ -152,7 +152,7 @@ PRODUCT_TOPIC_BY_LANE_GROUP = {
     "backfill": "backfill.md",
     "calibration": "instrument-qc-calibration.md",
     "cid_nl": "discovery.md",
-    "gui": "untargeted-gui.md",
+    "gui": "workbench.md",
     "review": "productization.md",
     "review_action": "productization.md",
     "sample_metadata": "sample-metadata-qc.md",

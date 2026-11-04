@@ -45,14 +45,14 @@ link here instead of restating this rule.
 
 | Area | Stable capability | Canonical topic owner |
 | --- | --- | --- |
-| Domain evidence | Typed observations, hypotheses, evidence vectors, decisions, integration results, and audit records remain distinct from product projection | [Evidence Spine](evidence-spine.md) |
+| Domain evidence | Typed observations, hypotheses, evidence vectors, decisions, integration results, and audit records remain distinct from product projection | [Domain glossary](domain-glossary.md#evidence-terms) |
 | Discovery | Method-specific evidence providers create sample-local candidates without directly granting matrix authority | [Discovery](discovery.md) |
 | Alignment | Cross-sample correspondence and group hypotheses remain separate from candidate generation and publication | [Alignment](alignment.md) |
 | Backfill | An evidence-based Backfill value reaches product outputs only through an explicit authority and expected-diff path | [Backfill](backfill.md) |
 | Quant output | Accepted values, cell provenance, and matrix-version contracts are public output responsibilities | [Quant Matrix](quant-matrix.md) |
 | Targeted selection | Configured identity and bounded rescue behavior have their own public and evidence boundaries | [Targeted Selection](targeted-selection.md) |
 | Review | Human or automated review stays auditable and cannot silently become writer authority | [Writer authority](#writer-authority) |
-| Run replay | Inputs, configuration, versions, and artifacts remain traceable through explicit provenance | [Run Provenance](run-provenance.md) |
+| Run replay | Inputs, configuration, versions, and artifacts remain traceable through explicit provenance | [Targeted workbook](targeted-workbook.md#run-metadata) |
 | Sample metadata and QC | Sample roles and QC projections are typed inputs, not implicit activation authority | [Sample Metadata and QC](sample-metadata-qc.md) |
 | Presets | Reproducible CLI/HTML bundles route behavior but do not create independent product authority | [Presets](presets.md) |
 

@@ -580,10 +580,10 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 
 ## See Also
 
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Evidence spine](evidence-spine.md)
-- [Quantitation context](quantitation-context.md)
+- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Discovery](discovery.md#cid-nl-support-relations)
+- [Quantitation context](signal-processing-rationale.md#quantitation-context)
 - [Decision policy](decision-policy.md)
-Use [XIC Inspector](xic-inspector.md) for visual review of its supported retained
+Use the [workbench](workbench.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
 reselection comparison tables. Formal peak selection and numerical output remain
 owner-controlled.
