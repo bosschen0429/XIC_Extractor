@@ -2,10 +2,11 @@
 
 A symbol defined under ``xic_extractor/`` counts as reachable when its name is
 loaded anywhere in the production roots outside its own definition, or when a
-``[project.scripts]`` entry point names it. References are matched by name, so
-an unrelated symbol with the same name hides a dead one, and names reached only
-through ``getattr`` or string tables are reported as unreachable. The report
-is evidence for triage; it never fails.
+``[project.scripts]`` entry point names it. A load of an import alias
+(``from m import name as alias``) counts as a load of ``name``. References are
+otherwise matched by name, so an unrelated symbol with the same name hides a
+dead one, and names reached only through ``getattr`` or string tables are
+reported as unreachable. The report is evidence for triage; it never fails.
 """
 
 from __future__ import annotations
@@ -104,9 +105,18 @@ def _definition(
 
 
 def _name_loads(tree: ast.Module, path: str) -> Iterable[_NameLoad]:
+    aliases = {
+        alias.asname: alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.asname and alias.asname != alias.name
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             yield _NameLoad(node.id, path, node.lineno)
+            if node.id in aliases:
+                yield _NameLoad(aliases[node.id], path, node.lineno)
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
             yield _NameLoad(node.attr, path, node.lineno)
 

@@ -317,9 +317,10 @@ failing check.
 that no code in `xic_extractor/`, `xic_workbench/`, `scripts/` or `xic_inspector/` loads
 outside their own body, and that no `[project.scripts]` entry point names.
 Tests, `tools/`, imports and `__all__` strings do not count as referrers.
-**Status note**: Static and name-based. A same-named symbol elsewhere hides a
-dead one, and names reached only through `getattr` or string tables are
-reported. It reads source only and always exits 0.
+**Status note**: Static and name-based; uses of an import alias count for the
+original name. A same-named symbol elsewhere hides a dead one, and names reached
+only through `getattr` or string tables are reported. It reads source only and
+always exits 0.
 
 ### `output_population_census.py`
 
