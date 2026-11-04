@@ -17,11 +17,12 @@ from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runt
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
+from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     CidNlAcquisitionError,
     adapt_current_discovery_sample_subject,
 )
-from xic_extractor.untargeted_execution.partition.execution import execute_attempt
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
 from xic_extractor.untargeted_execution.partition.request import build_partition_context
 
@@ -113,8 +114,10 @@ def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
         signal_processing_profile=TEST_PROFILE,
         physical_records=tuple(records.values()),
     )
-    result = execute_attempt(
+    result = execute_partition(
         (job,),
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert not result.succeeded
     assert result.sample_results == ()

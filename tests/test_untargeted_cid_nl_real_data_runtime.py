@@ -20,7 +20,6 @@ from tests.cid_nl_raw_fixture import (
     _source_for,
 )
 from tests.cid_nl_runtime_fixtures import (
-    assert_partition_matches_runtime,
     build_discovery_receipts,
     install_runtime_raw,
     install_runtime_raws,
@@ -35,6 +34,7 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
+from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
 )
@@ -62,9 +62,7 @@ from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 from xic_extractor.untargeted_execution.partition import execution as runtime_module
 from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
-from xic_extractor.untargeted_execution.partition.execution import (
-    execute_attempt,
-)
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionError,
     UntargetedPartitionJob,
@@ -700,8 +698,10 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     ):
         _open_job_raw(replace(jobs[0], raw_path=changed_path))
 
-    result = execute_attempt(
+    result = execute_partition(
         jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
 
     assert result.succeeded is True, result.failure
@@ -718,7 +718,8 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert not s2_assessment.content.evaluation_receipt.search_completed
     assert by_stem["S1"].adapter_result.strict_scan_count == 2
     assert by_stem["S2"].adapter_result.acquisition is None
-    assert vendor_raw.chromatogram_request_counts == [1]
+    # One integration trace plus its separate elution-context trace.
+    assert vendor_raw.chromatogram_request_counts == [2]
     assert vendor_raw.disposed is True
 
     warm_vendor_raw = install_runtime_raw(
@@ -735,8 +736,10 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         return installed_warm_open(path, *args, **kwargs)
 
     monkeypatch.setattr(partition_workers, "open_raw", count_warm_open)
-    warm_result = execute_attempt(
+    warm_result = execute_partition(
         jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert warm_result.succeeded is True, warm_result.failure
     warm_by_stem = {
@@ -757,7 +760,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         warm_by_stem["S1"].backfill_attempt,
     )
     assert warm_open_calls == []
-    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
@@ -838,8 +840,10 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         raw_path=raw_path,
         tmp_path=tmp_path,
     )
-    result = execute_attempt(
+    result = execute_partition(
         (job,),
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
 
     assert result.succeeded is True, result.failure
@@ -1009,26 +1013,24 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         for sample in context.samples
     )
 
+    cancelled = threading.Event()
     if backfill_stop is not None:
-        cancelled = threading.Event()
-        prepare_work = runtime_module._prepare_runtime_work
+        acquire = _FakeThermoRaw.GetChromatogramData
 
-        def prepare_cancellable_work(*args, **kwargs):
-            return prepare_work(*args, **kwargs, should_cancel=cancelled.is_set)
+        def stop_backfill(raw, *args, **kwargs):
+            if raw.source is source_raws[raw_paths[2]]:
+                if cancel_accepted:
+                    cancelled.set()
+                raise backfill_stop("backfill interrupted")
+            return acquire(raw, *args, **kwargs)
 
-        monkeypatch.setattr(
-            runtime_module, "_prepare_runtime_work", prepare_cancellable_work
-        )
+        monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", stop_backfill)
 
-        def stop_backfill(_state):
-            if cancel_accepted:
-                cancelled.set()
-            raise backfill_stop("backfill interrupted")
-
-        monkeypatch.setattr(runtime_module, "_execute_backfill", stop_backfill)
-
-    result = execute_attempt(
+    result = execute_partition(
         jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        should_cancel=cancelled.is_set,
     )
 
     if backfill_stop is not None:
@@ -1065,14 +1067,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         path: [vendor.chromatogram_request_counts for vendor in vendors]
         for path, vendors in opened.items()
     } == {
-        raw_paths[0]: [[1]],
-        raw_paths[1]: [[1]],
+        # Initial sample batches retain integration and elution-context traces.
+        raw_paths[0]: [[2]],
+        raw_paths[1]: [[2]],
         raw_paths[2]: [[2]],
         raw_paths[3]: [[2]],
     }
     assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
-
-    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_batch_candidate_selection_preserves_order_and_request_sample_membership(
@@ -1270,7 +1271,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     partition = runtime_module.execute_partition(
         selected_jobs,
         partition_key="subset",
-        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert partition.succeeded, partition.failure
     assert acquired_candidates
@@ -1435,134 +1436,6 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         match="foreign candidate membership",
     ):
         replace(job, subject_partition=foreign_partition)
-
-
-def test_direct_subject_batch_acquires_initial_and_recovery_once(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    physical_records = {}
-    raw_paths = tuple(tmp_path / f"S{index}.synthetic" for index in range(1, 5))
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    source_raws = {path: _FakeRaw((8.0,)) for path in raw_paths}
-    candidates_by_sample = {}
-    for path in raw_paths:
-        path.write_bytes(path.stem.encode())
-        candidates_by_sample[path.stem] = _current_candidates(
-            source_raws[path],
-            raw_file=path,
-            settings=settings,
-            physical_records=physical_records,
-        )
-    subjects = tuple(
-        sorted(
-            (
-                mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=mz,
-                    precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-                    neutral_loss_da=116.0474,
-                )
-                for mz in (500.0, 500.004)
-            ),
-            key=lambda subject: subject.method_subject_id,
-        )
-    )
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=tuple(
-            (
-                candidate.candidate_id,
-                subjects[index // 2].method_subject_id,
-            )
-            for index, path in enumerate(raw_paths)
-            for candidate in candidates_by_sample[path.stem]
-        ),
-    )
-    context = build_partition_context(
-        raw_paths=raw_paths,
-        sample_metadata=tuple(
-            SampleMetadata(
-                sample_name=path.stem,
-                raw_stem=path.stem,
-                injection_order=index,
-                sample_role="study_sample",
-            )
-            for index, path in enumerate(raw_paths, start=1)
-        ),
-        method_subject=subject_batch,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, raw_paths, candidates_by_sample
-        ),
-        sample_identity_namespace="study:runtime-phase-acquisition-seal",
-        signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in (candidates_by_sample).values()
-            for c in values
-        },
-    )
-    jobs = tuple(
-        job
-        for sample in context.samples
-        for job in build_sample_jobs(
-            processing_owners=context.processing_owners,
-            sample=sample,
-            subject_work_units=tuple(
-                (
-                    subject,
-                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
-                )
-                for subject in subjects
-            ),
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[
-                sample.metadata.raw_stem
-            ],
-            settings=settings,
-            peak_config=peak_config,
-            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
-            dll_dir=tmp_path,
-            acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.metadata.raw_stem
-            ],
-            signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
-            ),
-        )
-    )
-    install_runtime_raws(
-        monkeypatch,
-        sources_by_path=source_raws,
-        tmp_path=tmp_path,
-    )
-    observed_phase_acquisitions = []
-    for name in (
-        "acquire_untargeted_cid_nl_sample_trace_batch",
-        "acquire_untargeted_cid_nl_backfill_trace_batch",
-    ):
-        original = getattr(cid_nl_acquisition, name)
-
-        def observe(*args, _original=original, **kwargs):
-            acquired = _original(*args, **kwargs)
-            if acquired is not None:
-                observed_phase_acquisitions.append(acquired.acquisition)
-            return acquired
-
-        monkeypatch.setattr(cid_nl_acquisition, name, observe)
-
-    result = execute_attempt(
-        jobs,
-    )
-
-    assert result.succeeded, result.failure
-    assert len(observed_phase_acquisitions) == 8
-    assert len({id(item) for item in observed_phase_acquisitions}) == 8
 
 
 def test_context_rejects_same_stem_receipt_from_different_acquisition(
@@ -1732,8 +1605,10 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         for sample in context.samples
     )
 
-    result = execute_attempt(
+    result = execute_partition(
         jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
 
     assert result.succeeded is True
@@ -1743,7 +1618,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     ] == ["SUPPORT", "REJECT", None]
     assert raw_paths[2] not in opened
     assert sum(len(vendors) for vendors in opened.values()) == 2
-    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_path):

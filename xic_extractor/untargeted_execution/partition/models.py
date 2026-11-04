@@ -840,10 +840,6 @@ def _request_subject_physical_records(
     )
 
 
-def _request_uses_subject_batch(job: UntargetedPartitionJob) -> bool:
-    return isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch)
-
-
 class _SampleResultContext:
     """Reuse completed adapter snapshots within one synchronous owner phase."""
 

@@ -25,6 +25,7 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
 )
+from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -59,7 +60,7 @@ from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
-from xic_extractor.untargeted_execution.partition.execution import execute_attempt
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     project_completed_backfill,
@@ -308,8 +309,9 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             )
         return final
 
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
         alignment_config=config,
         prepare_grouping=prepare,
     )
@@ -428,8 +430,9 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             batch, bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
         )
 
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
         alignment_config=config,
         prepare_grouping=prepare,
     )
@@ -557,8 +560,10 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     if outcome == "failed":
         assert not result.succeeded
@@ -676,6 +681,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             settings=settings,
             physical_records=physical_records,
         )
+        current_candidates = tuple(
+            sorted(current_candidates, key=lambda candidate: candidate.candidate_id)
+        )
         candidates[path.stem] = (
             current_candidates
             if path.stem in support
@@ -756,8 +764,10 @@ def test_runtime_recovers_every_authorized_rt_group(
             for sample in context.samples
         )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_attempt(
+    result = execute_partition(
         jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert result.succeeded, result.failure
     missing = next(
@@ -1259,8 +1269,10 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert result.succeeded
     missing = next(
@@ -1408,8 +1420,10 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert result.succeeded
     missing_attempts = tuple(
@@ -1622,8 +1636,10 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert result.succeeded
     missing = next(
@@ -1788,8 +1804,10 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="runtime-fixture",
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )
     assert result.succeeded
     missing = next(

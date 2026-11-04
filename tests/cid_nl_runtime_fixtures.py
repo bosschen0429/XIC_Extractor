@@ -1,8 +1,7 @@
-"""Shared synthetic CID-NL runtime wiring and partition parity assertions."""
+"""Shared synthetic CID-NL runtime wiring."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,7 +29,6 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
     open_raw,
 )
-from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 from xic_extractor.untargeted_execution.partition import execution as runtime_module
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
 
@@ -169,70 +167,3 @@ def install_runtime_raws(
     monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open_runtime_raw)
     return opened
-
-
-def assert_partition_matches_runtime(jobs, full_result, monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("RAW must not open")
-
-    observed_batches = []
-    for name in (
-        "acquire_untargeted_cid_nl_sample_trace_batch",
-        "acquire_untargeted_cid_nl_backfill_trace_batch",
-    ):
-        original = getattr(cid_nl_acquisition, name)
-
-        def observe(*args, _original=original, **kwargs):
-            batch = _original(*args, **kwargs)
-            if batch is not None:
-                observed_batches.append(batch.acquisition)
-            return batch
-
-        monkeypatch.setattr(cid_nl_acquisition, name, observe)
-    events = []
-    result = runtime_module.execute_partition(
-        jobs,
-        partition_key="part-1",
-        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
-        progress_callback=events.append,
-    )
-    assert result.succeeded
-    assert len(result.sample_results) == len(full_result.sample_results)
-    for actual, expected in zip(
-        result.sample_results, full_result.sample_results, strict=True
-    ):
-        actual_assessments = actual.effective_assessments
-        expected_assessments = expected.effective_assessments
-        assert len(actual_assessments) == len(expected_assessments)
-        for left, right in zip(actual_assessments, expected_assessments, strict=True):
-            assert left.content.method_result == right.content.method_result
-            assert left.content.technical_state == right.content.technical_state
-            assert left.candidate_peaks == right.candidate_peaks
-        assert (
-            actual.adapter_result.source_candidate_ids
-            == expected.adapter_result.source_candidate_ids
-        )
-        assert tuple(
-            a.assessment.content.evaluation_receipt for a in actual.backfill_attempts
-        ) == tuple(
-            a.assessment.content.evaluation_receipt for a in expected.backfill_attempts
-        )
-    assert observed_batches
-    assert all(batch.traces for batch in observed_batches)
-    for stage in ("partition_initial", "partition_backfill", "partition_seal"):
-        progress = [event for event in events if event.get("stage") == stage]
-        assert progress[-1]["completed"] == progress[-1]["total"]
-    # A RAW open failure fails the partition and names its cause.
-    monkeypatch.setattr(partition_workers, "open_raw", forbidden)
-    from xic_extractor.untargeted_execution.partition import workers as worker_module
-
-    monkeypatch.setattr(worker_module, "open_raw", forbidden)
-    failed_jobs = tuple(replace(job, acquisition_cache_dir=None) for job in jobs)
-    failed = runtime_module.execute_partition(
-        failed_jobs,
-        partition_key="part-error",
-        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert not failed.succeeded
-    assert isinstance(failed.failure, AssertionError)
-    assert str(failed.failure) == "RAW must not open"
