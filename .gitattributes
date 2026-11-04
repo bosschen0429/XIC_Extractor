@@ -1,17 +1,10 @@
 * text=auto eol=crlf whitespace=cr-at-eol
 *.bat text eol=crlf
 /docs/product/alignment.md text eol=lf
-/docs/superpowers/validation/**/*.json text eol=lf
-/docs/superpowers/validation/**/*.md text eol=lf
-/docs/superpowers/validation/**/*.tsv text eol=lf
-/docs/superpowers/validation/*.html text eol=lf
+/scripts/*.tsv text eol=lf
 /docs/user/assets/*.svg text eol=lf
 /docs/user/assets/*.architecture.json text eol=lf
 /tests/*.py text eol=lf
 /xic_extractor/**/*.py text eol=lf
-/docs/superpowers/validation/**/*.tsv whitespace=cr-at-eol,-blank-at-eol
-/docs/superpowers/validation/issue180_m9_gate_c_observation_replay/** -text -eol
-/docs/superpowers/validation/issue180_m9_gate_c_closed_writer/review_transfer/manual_review.json -text -eol
-/docs/superpowers/validation/issue180_m9_gate_c_closed_writer/review_transfer/manual_review_observation_replay.json -text -eol
 *.gz -text -eol
 *.json.gz -text -eol

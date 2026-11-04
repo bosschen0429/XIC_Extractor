@@ -10,9 +10,7 @@ from _pytest.mark.expression import Expression
 
 from tools.testing import test_selection
 from tools.testing.test_selection import (
-    SNAPSHOT_TESTS,
     SelectionPlan,
-    discover_snapshot_tests,
     select_test_files,
 )
 
@@ -156,54 +154,6 @@ def test_selection_owner_change_runs_every_test() -> None:
     assert select_test_files(["tools/testing/test_selection.py"]) is None
 
 
-def test_snapshot_marker_cannot_grow_without_a_recorded_decision() -> None:
-    # The marker removes a test from CI, so marking a test without recording it
-    # here fails.
-    assert discover_snapshot_tests() == SNAPSHOT_TESTS
-
-
-@pytest.mark.parametrize(
-    "source",
-    (
-        "@pytest.mark.ledger_snapshot\nasync def test_async_snapshot():\n    pass\n",
-        (
-            "class TestSnapshots:\n"
-            "    @pytest.mark.ledger_snapshot\n"
-            "    def test_method_snapshot(self):\n"
-            "        pass\n"
-        ),
-        (
-            "@pytest.mark.ledger_snapshot\n"
-            "class TestSnapshotClass:\n"
-            "    def test_member(self):\n"
-            "        pass\n"
-        ),
-        (
-            "pytestmark = pytest.mark.ledger_snapshot\n\n"
-            "def test_module_snapshot():\n"
-            "    pass\n"
-        ),
-    ),
-    ids=("async", "method", "class", "module"),
-)
-def test_snapshot_inventory_rejects_unsupported_marker_placements(
-    tmp_path: Path,
-    source: str,
-) -> None:
-    root = tmp_path / "tests"
-    root.mkdir()
-    (root / "test_marker_shape.py").write_text(
-        "import pytest\n\n" + source,
-        encoding="utf-8",
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="ledger_snapshot.*top-level synchronous test function",
-    ):
-        discover_snapshot_tests(root)
-
-
 def test_selection_prefers_uv_runner_when_pytest_is_not_importable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -232,31 +182,13 @@ def _capture_calls(
     return commands
 
 
-def test_snapshot_runner_intersects_caller_marker_with_snapshot_owner(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        test_selection,
-        "discover_test_files",
-        lambda _root: (Path("tests/test_snapshot.py"),),
-    )
-    commands = _capture_calls(monkeypatch)
-
-    assert test_selection._run_snapshots(("-m", "slow"), Path("tests")) == 0
-
-    assert len(commands) == 1
-    pytest_args = commands[0][3:]
-    assert pytest_args.count("-m") == 1
-    assert pytest_args[pytest_args.index("-m") + 1] == "(slow) and (ledger_snapshot)"
-
-
 def test_selected_run_intersects_caller_marker_and_passes_selected_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     commands = _capture_calls(monkeypatch)
     plan = SelectionPlan(
         files=("tests/test_a.py", "tests/test_b.py"),
-        marker_expression="not ledger_snapshot",
+        marker_expression="not browser_e2e",
     )
 
     assert test_selection._run_plan(plan, ("-m", "slow")) == 0
@@ -267,7 +199,7 @@ def test_selected_run_intersects_caller_marker_and_passes_selected_files(
             "-m",
             "pytest",
             "-m",
-            "(slow) and (not ledger_snapshot)",
+            "(slow) and (not browser_e2e)",
             "tests/test_a.py",
             "tests/test_b.py",
         ]
@@ -298,8 +230,8 @@ def test_selected_run_without_kept_tests_succeeds(
 @pytest.mark.parametrize(
     ("pytest_args", "expected_exit", "expected_output"),
     (
-        ((), 0, "not ledger_snapshot\ntests/test_a.py\n"),
-        (("-m", "slow"), 0, "(slow) and (not ledger_snapshot)\ntests/test_a.py\n"),
+        ((), 0, "not browser_e2e\ntests/test_a.py\n"),
+        (("-m", "slow"), 0, "(slow) and (not browser_e2e)\ntests/test_a.py\n"),
         (("-m",), 2, ""),
     ),
 )
@@ -314,7 +246,7 @@ def test_print_selection_applies_caller_markers_without_running_tests(
         test_selection,
         "_local_plan",
         lambda **_kwargs: SelectionPlan(
-            files=("tests/test_a.py",), marker_expression="not ledger_snapshot"
+            files=("tests/test_a.py",), marker_expression="not browser_e2e"
         ),
     )
     monkeypatch.setattr(
@@ -328,27 +260,6 @@ def test_print_selection_applies_caller_markers_without_running_tests(
     assert captured.out == expected_output
     assert captured.err == (
         "Invalid pytest marker selection\n" if expected_exit else ""
-    )
-
-
-def test_snapshot_preview_does_not_execute_the_snapshot_lane(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(
-        test_selection,
-        "discover_test_files",
-        lambda _root: (Path("tests/test_snapshot.py"),),
-    )
-    monkeypatch.setattr(
-        test_selection.subprocess,
-        "call",
-        lambda _command: pytest.fail("snapshot preview must not run pytest"),
-    )
-
-    assert test_selection.main(["--snapshots", "--print", "--", "-m", "slow"]) == 0
-    assert capsys.readouterr().out == (
-        "(slow) and (ledger_snapshot)\ntests/test_snapshot.py\n"
     )
 
 
@@ -387,22 +298,34 @@ def test_marker_intersection_handles_every_pytest_option_shape(
         ("-m", "-q"),
     ),
 )
-def test_snapshot_runner_rejects_malformed_marker_before_pytest(
+def test_run_rejects_malformed_marker_before_pytest(
     monkeypatch: pytest.MonkeyPatch,
     pytest_args: tuple[str, ...],
 ) -> None:
-    monkeypatch.setattr(
-        test_selection,
-        "discover_test_files",
-        lambda _root: (Path("tests/test_snapshot.py"),),
-    )
     monkeypatch.setattr(
         test_selection.subprocess,
         "call",
         lambda _command: pytest.fail("malformed marker reached pytest"),
     )
+    plan = SelectionPlan(files=("tests/test_a.py",), marker_expression="owned")
 
-    assert test_selection._run_snapshots(pytest_args, Path("tests")) == 2
+    assert test_selection._run_plan(plan, pytest_args) == 2
+
+
+@pytest.mark.parametrize(
+    ("pytest_args", "expected"),
+    (
+        (("-q",), ("-q",)),
+        (("-m", "slow", "-q"), ("-m", "(slow)", "-q")),
+    ),
+)
+def test_marker_intersection_without_owned_expression_keeps_caller_markers(
+    pytest_args: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    assert test_selection._intersect_marker_selection(pytest_args, required="") == (
+        expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -466,14 +389,10 @@ def test_local_run_skips_markers_unrelated_to_the_change(
     plan = test_selection._local_plan(run_all=False, all_markers=False)
     assert plan == SelectionPlan(
         files=("tests/test_a.py",),
-        marker_expression=(
-            "not ledger_snapshot and not browser_e2e and not packaging_build"
-        ),
+        marker_expression="not browser_e2e and not packaging_build",
     )
     assert test_selection._local_plan(run_all=False, all_markers=True) == (
-        SelectionPlan(
-            files=("tests/test_a.py",), marker_expression="not ledger_snapshot"
-        )
+        SelectionPlan(files=("tests/test_a.py",), marker_expression="")
     )
     assert test_selection._local_plan(run_all=True, all_markers=False).files is None
 
@@ -484,7 +403,7 @@ def test_local_run_runs_every_test_when_git_cannot_diff(
     monkeypatch.setattr(test_selection, "_local_change_base", lambda: None)
 
     assert test_selection._local_plan(run_all=False, all_markers=False) == (
-        SelectionPlan(files=None, marker_expression="not ledger_snapshot")
+        SelectionPlan(files=None, marker_expression="")
     )
 
 
@@ -686,12 +605,11 @@ function .\.venv\Scripts\python.exe {
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
     # The original selection must be partitioned exactly once, including the
-    # browser/non-browser boundary and the existing relevance/snapshot gates.
+    # browser/non-browser boundary and the existing relevance gates.
     selected_expression = Expression.compile(selection)
     markers = (
         "browser_e2e",
         "packaging_build",
-        "ledger_snapshot",
         "current_repository_census",
         "serial_ci",
     )

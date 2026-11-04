@@ -1,3 +1,0 @@
-scope	single_dr_primary_rows	risky_extreme_backfill_rows	risky_weak_seed_backfill_rows	watch_weak_seed_tolerated_rows	gate_candidates_implement	fam000264_risk_classification	fam000264_seed_quality_status	fam000264_min_evidence_score	fam000264_min_seed_event_count	fam000264_max_abs_nl_ppm	post_review_interpretation
-8RAW	282	0	13	0	1	risky_weak_seed_backfill	weak	58.0	1.0	11.5175	NO_GO: current hardened weak-seed contract would not support the prior production delivery promotion
-85RAW	597	0	5	0	1						NO_GO: current hardened weak-seed contract reclassifies the prior weak_seed_tolerated watch rows as risky weak-seed rows

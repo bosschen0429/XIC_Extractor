@@ -9,7 +9,6 @@ derivation cannot place runs the whole suite.
     python -m tools.testing.test_selection             # tests this branch affects
     python -m tools.testing.test_selection --print     # show the selection only
     python -m tools.testing.test_selection --all       # every ordinary test
-    python -m tools.testing.test_selection --snapshots # the ledger_snapshot tests
 """
 
 from __future__ import annotations
@@ -55,21 +54,6 @@ ALL_TESTS = "ALL"
 # so can every test that runs such code.
 SOURCE_SCAN = re.compile(r"""\.r?glob\(\s*[rf]?["'][^"']*\.py["']""")
 
-# Register-snapshot tests are excluded from CI per test, by marker: they read a
-# checked-in register under docs/superpowers/validation/ without redirecting
-# the checker to a tmp_path copy, so they pin recorded numbers and go red when
-# an analysis is legitimately re-run. A behavioural test that only reads a
-# register stays unmarked and runs in CI.
-#
-# EXIT RULE (required by the retirement contract; do not drop this block without
-# resolving it): revisit at the next release cut, or as soon as any of these
-# holds, and then either delete the register plus its test or promote it back
-# into CI --
-#   1. a register here has not been consulted in a decision for two releases;
-#   2. its test has gone red only because recorded numbers moved, twice;
-#   3. the register's owning milestone is retired.
-SNAPSHOT_MARKER = "ledger_snapshot"
-
 # Markers whose tests are expensive and guard a known set of inputs. A change
 # that touches none of a marker's paths skips that marker's tests; a change that
 # touches one selects every test carrying the marker. CI
@@ -95,25 +79,9 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|assets|config)/)"
     ),
 }
-# The main CI pytest session: snapshots never run, the census runs once in the
-# lint job, and serial tests run after the parallel session.
-CI_BASE_MARKER_EXPRESSION = (
-    f"not {SNAPSHOT_MARKER} and not current_repository_census and not serial_ci"
-)
-
-# Every test carrying the snapshot marker, locked. The marker takes a test out
-# of CI, so adding one is a recorded decision; an unrecorded marker fails
-# tests/test_test_selection.py.
-#
-# Add an entry only for a test that pins a recorded value from
-# docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
-# an invariant that survives a consistent re-analysis belongs in CI unmarked.
-SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
-    "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
-        "test_current_cid_nl_public_output_claim_catalog_is_valid",
-        "test_reference_rows_preserve_existing_owner_boundaries",
-    ),
-}
+# The main CI pytest session: the census runs once in the lint job, and serial
+# tests run after the parallel session.
+CI_BASE_MARKER_EXPRESSION = "not current_repository_census and not serial_ci"
 
 
 @dataclass(frozen=True)
@@ -344,64 +312,8 @@ def plan_for_change(changed: Sequence[str], *, base_expression: str) -> Selectio
     exclusions = [f"not {marker}" for marker in irrelevant_markers(changed)]
     return SelectionPlan(
         files=select_test_files(changed),
-        marker_expression=" and ".join([base_expression, *exclusions]),
+        marker_expression=" and ".join(filter(None, [base_expression, *exclusions])),
     )
-
-
-def discover_snapshot_tests(
-    root: Path = Path("tests"),
-) -> dict[str, tuple[str, ...]]:
-    """Return every test carrying SNAPSHOT_MARKER, read from the source."""
-    found: dict[str, tuple[str, ...]] = {}
-    for path in discover_test_files(root):
-        source = path.read_text(encoding="utf-8", errors="replace")
-        if SNAPSHOT_MARKER not in source:
-            continue
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            continue
-        names: list[str] = []
-        supported_references: set[ast.Attribute] = set()
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            references = tuple(
-                reference
-                for decorator in node.decorator_list
-                if (reference := _direct_snapshot_marker_reference(decorator))
-                is not None
-            )
-            if references:
-                names.append(node.name)
-                supported_references.update(references)
-
-        unsupported = tuple(
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Attribute)
-            and node.attr == SNAPSHOT_MARKER
-            and node not in supported_references
-        )
-        if unsupported:
-            lines = ", ".join(str(node.lineno) for node in unsupported)
-            raise ValueError(
-                f"{path.as_posix()}: {SNAPSHOT_MARKER} marker at line(s) "
-                f"{lines} must decorate a top-level synchronous test function"
-            )
-        if names:
-            found[path.as_posix()] = tuple(sorted(names))
-    return found
-
-
-def _direct_snapshot_marker_reference(
-    decorator: ast.expr,
-) -> ast.Attribute | None:
-    """Return a direct marker decorator, excluding marker-like arguments."""
-    target = decorator.func if isinstance(decorator, ast.Call) else decorator
-    if isinstance(target, ast.Attribute) and target.attr == SNAPSHOT_MARKER:
-        return target
-    return None
 
 
 def changed_paths(base: str, head: str | None = None) -> list[str] | None:
@@ -440,7 +352,7 @@ def ci_plan(base: str, head: str) -> SelectionPlan | None:
 
 
 def _local_plan(*, run_all: bool, all_markers: bool) -> SelectionPlan:
-    required = f"not {SNAPSHOT_MARKER}"
+    required = ""
     if run_all and all_markers:
         return SelectionPlan(files=None, marker_expression=required)
     base = _local_change_base()
@@ -464,7 +376,7 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
     if owned_pytest_args is None:
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
-    print(f"Markers: {owned_pytest_args[1]}", flush=True)
+    print(f"Markers: {_marker_expression(owned_pytest_args) or '(none)'}", flush=True)
     if plan.files is None:
         print("Running every test", flush=True)
         return subprocess.call([*_pytest_command(), *owned_pytest_args])
@@ -480,30 +392,6 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
         )
         return 0
     return exit_code
-
-
-def _run_snapshots(
-    pytest_args: Sequence[str], root: Path, *, print_only: bool = False
-) -> int:
-    """Run only the register-snapshot tests, the ones CI deliberately skips."""
-    targets = [path.as_posix() for path in discover_test_files(root)]
-    if not targets:
-        print("No test files discovered", file=sys.stderr)
-        return 2
-    if print_only:
-        return _print_plan(
-            SelectionPlan(files=tuple(targets), marker_expression=SNAPSHOT_MARKER),
-            pytest_args,
-        )
-    owned_pytest_args = _intersect_marker_selection(
-        pytest_args,
-        required=SNAPSHOT_MARKER,
-    )
-    if owned_pytest_args is None:
-        print("Invalid pytest marker selection", file=sys.stderr)
-        return 2
-    print(f"Running {SNAPSHOT_MARKER} tests across {len(targets)} files", flush=True)
-    return subprocess.call([*_pytest_command(), *owned_pytest_args, *targets])
 
 
 def _intersect_marker_selection(
@@ -536,12 +424,15 @@ def _intersect_marker_selection(
         remaining.append(argument)
         index += 1
 
-    expression = required
-    if caller_expressions:
-        expression = " and ".join(
-            (*(f"({item})" for item in caller_expressions), f"({required})")
-        )
+    if not caller_expressions:
+        return ("-m", required, *remaining) if required else tuple(remaining)
+    owned = (required,) if required else ()
+    expression = " and ".join(f"({item})" for item in (*caller_expressions, *owned))
     return ("-m", expression, *remaining)
+
+
+def _marker_expression(owned_pytest_args: Sequence[str]) -> str:
+    return owned_pytest_args[1] if owned_pytest_args[:1] == ("-m",) else ""
 
 
 def _pytest_command() -> list[str]:
@@ -563,7 +454,7 @@ def _print_plan(plan: SelectionPlan, pytest_args: Sequence[str] = ()) -> int:
     if owned_pytest_args is None:
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
-    print(owned_pytest_args[1])
+    print(_marker_expression(owned_pytest_args))
     if plan.files is None:
         print(ALL_TESTS)
     else:
@@ -581,7 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help=(
             "Print the effective marker expression and candidate test files "
-            "without running tests; also supports --snapshots"
+            "without running tests"
         ),
     )
     parser.add_argument(
@@ -591,11 +482,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--all-markers",
         action="store_true",
         help="Run relevance-gated tests even when this change does not touch them",
-    )
-    parser.add_argument(
-        "--snapshots",
-        action="store_true",
-        help=f"Run only the {SNAPSHOT_MARKER} tests, which other runs exclude",
     )
     parser.add_argument(
         "--ci-plan",
@@ -617,8 +503,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("git diff failed", file=sys.stderr)
             return 2
         return _print_plan(plan)
-    if args.snapshots:
-        return _run_snapshots(pytest_args, Path(args.root), print_only=args.print)
     plan = _local_plan(run_all=args.all, all_markers=args.all_markers)
     if args.print:
         return _print_plan(plan, pytest_args)

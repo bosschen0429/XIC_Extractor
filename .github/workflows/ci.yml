@@ -45,7 +45,7 @@ jobs:
       - name: Diagnostics index in sync
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_diagnostics_index.py
-      - name: Repository docs links and placement
+      - name: Repository docs links
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_repository_docs.py
 
@@ -104,7 +104,7 @@ jobs:
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
+          $markerExpression = "not current_repository_census and not serial_ci"
           $runPackagingBuild = $true
           # An empty target list runs every test; a selected subset passes paths.
           $testTargets = @()
@@ -196,7 +196,7 @@ jobs:
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
+          $markerExpression = "not current_repository_census and not serial_ci"
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
             $headSha = "${{ github.event.pull_request.head.sha }}"

@@ -83,8 +83,8 @@ first be represented in the canonical repo owner or a live GitHub Issue.
 
 Tracked documents need no placement or lifecycle header; their path and their
 owner's links say what they are. Construction plans, specs, handoffs, and
-closeouts are not tracked: `scripts/check_repository_docs.py` rejects files in
-their retired lanes and any relative Markdown link that no longer resolves.
+closeouts are not tracked. `scripts/check_repository_docs.py` rejects relative
+Markdown links that no longer resolve.
 
 ## Daily document routing
 
@@ -97,10 +97,6 @@ their retired lanes and any relative Markdown link that no longer resolves.
 6. Generated or disposable material: use ignored `output/` or scratch.
 7. Before deletion: absorb durable claims, repair exact referrers, and verify
    the affected docs and consumers through the normal task diff.
-
-Never add tracked documents under `docs/superpowers/plans/`, `specs/`,
-`closeouts/`, or `file-management/docs-cleanup/`. The exact machine exception
-named above remains a read-only compatibility surface.
 
 ## Unresolved Dependencies
 

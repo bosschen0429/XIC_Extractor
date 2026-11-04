@@ -558,11 +558,6 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 - Expected-diff packet for workbook/CSV or matrix-impacting changes.
 - Schema/versioning review when output fields or compatibility projection change.
 - RAW-tier evidence label matching the product claim.
-- The bounded CID-NL `targeted_output` delivery claims and current test
-  dispositions are indexed in the
-  [public-output claim catalog](../superpowers/validation/cid_nl_public_output_claim_catalog.tsv).
-  The catalog points to these owners. The catalog does not grant
-  selected-value, counted-detection, ProductWriter, or Matrix authority.
 
 ## Pitfalls
 

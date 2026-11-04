@@ -30,11 +30,7 @@ from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 # The 85RAW root also holds injected samples outside the study design.
 _DATASET_SAMPLE_METADATA = {
-    85: _REPO_ROOT
-    / "docs"
-    / "superpowers"
-    / "validation"
-    / "tissue_85raw_sample_metadata.tsv",
+    85: Path(__file__).with_name("tissue_85raw_sample_metadata.tsv"),
 }
 _DEFAULT_TARGETS = targets_template_path()
 _LOCAL_ENV = _REPO_ROOT / ".env.xic-local"
