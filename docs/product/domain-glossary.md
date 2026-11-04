@@ -1,8 +1,14 @@
 # XIC Extractor Domain Glossary
 
+Doc placement: formal_repo_doc
+Doc kind: product_doc
+Doc lifecycle: active
+Repo owner: docs/product/domain-glossary.md
+Doc exit rule: Update when stable vocabulary, lane boundaries, or authority concepts change.
+
 This file is the single stable vocabulary owner for XIC Extractor. Internal
 type names belong in their module docstrings; volatile status, counts and
-blockers belong in the productization status index and authority manifest.
+blockers belong in Issues and PRs.
 
 ## Product Shape
 
@@ -79,7 +85,7 @@ tests.
   decisions close. Pre-final collections use other names and cannot cross the
   Matrix interface.
 - `ProductWriter`: the exclusive approved code path for product-matrix
-  mutations; see [Writer Authority](productization.md#writer-authority).
+  mutations; see [Writer Authority](decision-policy.md#writer-authority).
 - `Discovery record`: a retained sample-local observation and its
   qualification. A row in the Discovery candidate CSV is not by itself a feature
   for cross-sample grouping.
@@ -157,7 +163,7 @@ Keep these facts on separate axes:
 - `candidate/audit universe`: rows visible for review, audit or diagnosis; not
   writable product output.
 - `authority`: the permission boundary for Matrix, workbook or value writes;
-  [Writer Authority](productization.md#writer-authority) owns how it is granted.
+  [Writer Authority](decision-policy.md#writer-authority) owns how it is granted.
 - `validation evidence status`: a source-qualified claim about what a run or
   evidence packet verified. Its Evidence labels are defined in the
   [Product Topic Index](README.md#shared-conventions).

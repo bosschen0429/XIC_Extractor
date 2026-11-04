@@ -1,1 +1,1 @@
-"""Diagnostic and productization command modules."""
+"""Diagnostic command modules."""

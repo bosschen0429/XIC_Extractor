@@ -435,11 +435,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
-        ("docs/product/backfill.md", {"product_governance"}),
-        (
-            "scripts/check_productization_state.py",
-            {"product_governance", "packaging_build"},
-        ),
+        ("docs/product/backfill.md", set()),
         ("README.md", set()),
         ("pyproject.toml.example", set()),
         (".codex/skills/foo/SKILL.md", set()),
@@ -695,7 +691,6 @@ function .\.venv\Scripts\python.exe {
     markers = (
         "browser_e2e",
         "packaging_build",
-        "product_governance",
         "ledger_snapshot",
         "current_repository_census",
         "serial_ci",

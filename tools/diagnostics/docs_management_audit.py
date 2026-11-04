@@ -64,7 +64,6 @@ COMPLETED_TRANSIENT_SCAN_PREFIXES = (
     "docs/superpowers/plans/",
     "docs/superpowers/specs/",
     "docs/superpowers/notes/",
-    "docs/superpowers/productization/evidence/",
 )
 COMPLETED_TRANSIENT_LIFECYCLES = {
     "implemented",

@@ -54,9 +54,8 @@ quantification-authority guard, not a new peak-selection or Backfill route.
 
 - Normal Matrix publication consumes the live Alignment cell decisions and
   projection owners, without a separate promotion or closeout chain.
-- The [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
-  lists current registered writer scopes. A past validation packet cannot
-  authorize current values.
+- Only the workflow writer publishes values; see [Writer Authority](decision-policy.md#writer-authority).
+  A past validation packet cannot authorize current values.
 - Changes to selected values require the owning product contract and
   method-appropriate evidence.
 
@@ -104,7 +103,6 @@ risk flags do not independently authorize a value or row.
 | `cell_provenance.tsv` | Cell-level provenance for accepted values |
 | `row_summary.tsv` | Matrix row identity and summary sidecar |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
-| Productization status index / authority manifest | Current state and writer scope |
 
 Alignment additionally exposes `alignment_review.tsv` for group review and
 bound Matrix row references,
@@ -139,11 +137,9 @@ and scored without a rerun. It does not establish production readiness by itself
 - Passing a pre-final cell collection directly to a writer.
 - Adding diagnostic evidence columns to the primary matrix.
 - Claiming `production_ready` from contract fixtures or 8RAW smoke alone.
-- Updating topic prose while leaving status index or authority manifest stale.
 
 ## See Also
 
-- [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
-- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
+- [Backfill](backfill.md) | [Alignment](alignment.md) | [Decision Policy](decision-policy.md)
 - [Targeted candidate selection](targeted-selection.md#candidate-selection)
 - [Workbench and review](workbench.md)

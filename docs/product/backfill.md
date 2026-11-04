@@ -314,9 +314,7 @@ an additional runtime repair path or change published identities.
 - `ProductionCellDecision` owns the selected numeric output and the
   write/no-write decision.
 - CrossSample owns membership.
-- The [Quant Matrix](quant-matrix.md), the
-  [productization status index](../superpowers/validation/productization_status_index.tsv),
-  and the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
-  own publication scope.
+- The [Quant Matrix](quant-matrix.md) and [Writer Authority](decision-policy.md#writer-authority) own
+  publication scope.
 - Diagnostic traces, a well-formed coverage epoch, and candidate records do not
   grant any of the authorities listed above.

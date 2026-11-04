@@ -22,7 +22,7 @@ edit. Global Codex rules own general operating defaults.
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
 | Create, expose, consolidate, or retire a script/diagnostic; select or repeat scientific diagnostic evidence | Use [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) for lifecycle changes; search [`INDEX.md`](tools/diagnostics/INDEX.md) when selecting a tool and [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) when reusing or repeating evidence. Routine invocation of an already selected command uses its help and runner. |
-| Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
+| Writer authority or a change to published values | Read [Writer Authority](docs/product/decision-policy.md#writer-authority) and the [Expected-Diff Contract](docs/agent/product-validation-contract.md#expected-diff-contract). |
 | Change docs, skills, hooks, rules, agent config, or subagent definitions; resolve Git command-policy behavior | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md); for changes, select checks by the behavior changed under its [Change Protocol](docs/agent/codex-operating-system.md#change-protocol). |
 | GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
 | Add or move a maintained file, change tracking, or alter repository layout | Read [`project-layout.md`](docs/project-layout.md). |

@@ -17,16 +17,10 @@ This file is not a replacement for task-specific validation notes. It is the
 small durable index that tells future agents which prior conclusions are already
 known, where the evidence lives, and when a rerun is justified.
 
-This file is also not the live productization tier board. Product maturity tier,
-active lane, current writer counts, promotion-packet status, and Backfill
-authority scopes are owned by the productization status index
-`docs/superpowers/validation/productization_status_index.tsv`, the authority
-manifest
-`docs/superpowers/productization/status/productization_authority_manifest.json`, and the
-promotion contract `docs/agent/product-validation-contract.md`. When this ledger
-cites a historical validation note, treat it as diagnostic/rerun memory unless
-a current structured authority artifact still promotes the same claim. The
-dated productization control-plane path is compatibility lookup only.
+This file does not grant readiness or writer authority. Readiness claims follow
+`docs/agent/product-validation-contract.md`, and writer authority follows
+`docs/product/decision-policy.md#writer-authority`. When this ledger cites a
+historical validation note, treat it as diagnostic/rerun memory.
 
 ## Use Rules
 
@@ -54,10 +48,6 @@ dated productization control-plane path is compatibility lookup only.
 - Fold issue-named sections into dated entries under Known Diagnostic
   Conclusions when their conclusions still meet this rule.
 - If a rerun changes a durable conclusion, update this ledger in the same PR.
-- If a later status-index or authority-manifest entry changes maturity tier,
-  writer scope, or product authority after a ledger entry was written, defer to
-  the later productization authority and update this ledger only when the
-  diagnostic/rerun conclusion itself changes.
 
 ## Stable Inputs
 

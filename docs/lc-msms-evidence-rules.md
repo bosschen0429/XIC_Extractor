@@ -25,14 +25,12 @@ contract, machine-readable reason/status fields, and regression tests.
 Evidence providers do not write the product matrix directly. Backfill, MS2/NL,
 RT, morphology, standards, library matches, and future learned models are inputs
 to evidence, hypothesis, model-selection, audit, or activation contracts.
-[Writer Authority](product/productization.md#writer-authority) owns how write
+[Writer Authority](product/decision-policy.md#writer-authority) owns how write
 authority is granted.
 
-This document owns durable evidence semantics, not live maturity tier, active
-lane, or current writer counts. Read lane/readiness from
-`docs/superpowers/validation/productization_status_index.tsv`, writer scope
-from `docs/superpowers/productization/status/productization_authority_manifest.json`, and
-promotion semantics from `docs/agent/product-validation-contract.md`.
+This document owns durable evidence semantics. Readiness claims and
+expected-diff requirements are owned by
+[`docs/agent/product-validation-contract.md`](agent/product-validation-contract.md).
 
 ## Physical Peak View Equivalence
 

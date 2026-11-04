@@ -13,15 +13,6 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 
 LOCAL_PATH_SCAN_EXCLUSIONS = {"tools/diagnostics/docs_management_audit.py"}
-LOCAL_PATH_SCAN_FALLBACK_DIRS = (
-    "config",
-    "docs",
-    "tests",
-    "tools",
-    "scripts",
-    ".github",
-    ".codex/hooks",
-)
 LOCAL_PATH_SCAN_TEXT_SUFFIXES = {
     ".cfg",
     ".csv",
@@ -378,46 +369,6 @@ def load_repository_text_view(
     )
 
 
-def git_visible_paths(root: Path) -> tuple[str, ...] | None:
-    try:
-        completed = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(root),
-                "ls-files",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    return tuple(
-        line.strip().replace("\\", "/")
-        for line in completed.stdout.splitlines()
-        if line.strip()
-    )
-
-
-def fallback_local_path_scan_paths(root: Path) -> tuple[str, ...]:
-    paths: set[str] = set()
-    for base in LOCAL_PATH_SCAN_FALLBACK_DIRS:
-        base_path = root / base
-        if base_path.is_file():
-            paths.add(repo_rel(base_path, root))
-        elif base_path.exists():
-            paths.update(repo_rel(path, root) for path in base_path.rglob("*"))
-    for filename in LOCAL_PATH_SCAN_TEXT_FILENAMES:
-        if (root / filename).exists():
-            paths.add(filename)
-    return tuple(sorted(paths))
-
-
 def is_local_path_scan_rel_path(rel_path: str) -> bool:
     if rel_path in LOCAL_PATH_SCAN_EXCLUSIONS:
         return False
@@ -425,10 +376,6 @@ def is_local_path_scan_rel_path(rel_path: str) -> bool:
     if rel.name in LOCAL_PATH_SCAN_TEXT_FILENAMES:
         return True
     return rel.suffix.lower() in LOCAL_PATH_SCAN_TEXT_SUFFIXES
-
-
-def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
-    return path.is_file() and is_local_path_scan_rel_path(rel_path)
 
 
 def markdown_without_fenced_code(text: str) -> str:
@@ -750,20 +697,6 @@ def _normalized_reference_label(label: str) -> str:
     return " ".join(unescaped.casefold().split())
 
 
-def html_link_targets(text: str) -> tuple[str, ...]:
-    text = markdown_without_html_comments(text)
-    targets: list[str] = []
-    for match in re.finditer(
-        r"\bhref\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s\"'=<>`]+))",
-        text,
-        re.I,
-    ):
-        target = next((value for value in match.groups() if value is not None), "")
-        if target:
-            targets.append(target)
-    return tuple(targets)
-
-
 def resolve_repo_target(referrer: str, raw_target: str) -> str | None:
     target = raw_target.strip().strip("<>").split("#", 1)[0]
     if not target or "://" in target or target.startswith(("#", "/", "mailto:")):
@@ -852,89 +785,6 @@ def permanent_root_contract_problems(
     if repo_owner and repo_owner != contract["owner"]:
         problems.append("permanent root path has conflicting Repo owner: " + repo_owner)
     return tuple(problems)
-
-
-def normalized_path_dependency_census(
-    root: Path,
-    target_path: str,
-    *,
-    scan_paths: Sequence[str] | None = None,
-    overrides: Mapping[str, str] | None = None,
-    excluded_paths: Sequence[str] = (),
-    repository_view: RepositoryTextView | None = None,
-) -> dict[str, object]:
-    from tools.diagnostics.docs_policy import is_productization_control_plane_path
-
-    if repository_view is not None:
-        require_repository_text_view(root, repository_view)
-    normalized_target = normalize_repo_rel_path(target_path)
-    overrides = overrides or {}
-    excluded = {normalize_repo_rel_path(path) for path in excluded_paths}
-    paths = set(
-        scan_paths
-        or (repository_view.paths if repository_view is not None else ())
-        or git_visible_paths(root)
-        or fallback_local_path_scan_paths(root)
-    )
-    paths.update(overrides)
-    literal: list[str] = []
-    markdown: list[dict[str, str]] = []
-    html: list[dict[str, str]] = []
-    constants: list[str] = []
-    control_plane_constant_name = "CONTROL_" + "PLANE_PATH"
-    for rel in sorted(paths):
-        normalized = normalize_repo_rel_path(rel)
-        if normalized == normalized_target or normalized in excluded:
-            continue
-        path = root / normalized
-        if normalized in overrides:
-            text = overrides[normalized]
-        elif repository_view is not None:
-            if normalized not in repository_view.texts:
-                continue
-            text = repository_view.read_text(normalized)
-        elif is_local_path_scan_target(path, normalized):
-            text = read_text(path)
-        else:
-            continue
-        if normalized_target in text:
-            literal.append(normalized)
-        if normalized.lower().endswith((".md", ".markdown")):
-            for raw_target in markdown_link_targets(text):
-                resolved = resolve_repo_target(normalized, raw_target)
-                if resolved == normalized_target:
-                    markdown.append(
-                        {
-                            "referrer": normalized,
-                            "raw_target": raw_target,
-                            "resolved_path": resolved,
-                        }
-                    )
-        if normalized.lower().endswith((".html", ".htm")):
-            for raw_target in html_link_targets(text):
-                resolved = resolve_repo_target(normalized, raw_target)
-                if resolved == normalized_target:
-                    html.append(
-                        {
-                            "referrer": normalized,
-                            "raw_target": raw_target,
-                            "resolved_path": resolved,
-                        }
-                    )
-        if is_productization_control_plane_path(normalized_target) and (
-            control_plane_constant_name in text
-        ):
-            constants.append(normalized)
-    return {
-        "literal_path_referrers": sorted(set(literal)),
-        "relative_markdown_links": sorted(
-            markdown, key=lambda item: (item["referrer"], item["raw_target"])
-        ),
-        "relative_html_links": sorted(
-            html, key=lambda item: (item["referrer"], item["raw_target"])
-        ),
-        "control_plane_constant_consumers": sorted(set(constants)),
-    }
 
 
 def _markdown_table_cells(line: str) -> list[str]:

@@ -16,11 +16,7 @@ if str(ROOT) not in sys.path:
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_RETIRED_PLACEMENT_VALUES,
-    DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES,
-    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
-    PRODUCTIZATION_SCHEMA_REL,
-    PRODUCTIZATION_STATUS_INDEX_REL,
     DocClassification,
     classify_doc,
     classify_doc_path,
@@ -49,13 +45,7 @@ DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL = (
 )
 DOC_ROUTE_REPO_PRODUCT_DOC = "repo_product_doc"
 DOC_ROUTE_NEEDS_DECISION = "needs_route_decision"
-PRODUCTIZATION_OWNER_ROUTE = (
-    "docs/product/productization.md; "
-    f"{PRODUCTIZATION_STATUS_INDEX_REL}; "
-    f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}; "
-    f"{PRODUCTIZATION_SCHEMA_REL}; "
-    "docs/agent/product-validation-contract.md"
-)
+PRODUCT_VALIDATION_OWNER_ROUTE = "docs/agent/product-validation-contract.md"
 DOC_ROUTING_SIGNAL_PATTERNS = (
     ("command_evidence", re.compile(r"\b(?:git add|git commit|uv run|pytest)\b")),
     ("branch_or_pr_history", re.compile(r"\b(?:Branch|PR Body Seed|Commit Split):")),
@@ -119,9 +109,9 @@ DOC_ROUTING_TOPIC_RULES = (
         "docs/lc-msms-evidence-rules.md",
     ),
     (
-        "productization",
-        ("productization", "maturity", "active lane", "productwriter"),
-        PRODUCTIZATION_OWNER_ROUTE,
+        "product validation",
+        ("productization", "readiness", "maturity", "productwriter"),
+        PRODUCT_VALIDATION_OWNER_ROUTE,
     ),
     (
         "run provenance",
@@ -137,7 +127,7 @@ DOC_TOPIC_FOLDER_SLUGS = {
     "targeted selection": "targeted-selection",
     "sample metadata and qc": "sample-metadata-qc",
     "evidence semantics": "evidence-semantics",
-    "productization": "productization",
+    "product validation": "product-validation",
     "run provenance": "run-provenance",
     "docs workflow or historical context": "docs-workflow",
 }
@@ -243,14 +233,9 @@ DOC_ROUTING_OWNER_TOPIC_RULES = (
         "docs/lc-msms-evidence-rules.md",
     ),
     (
-        "docs/product/productization.md",
-        "productization",
-        PRODUCTIZATION_OWNER_ROUTE,
-    ),
-    (
-        "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-        "productization",
-        PRODUCTIZATION_OWNER_ROUTE,
+        "docs/agent/product-validation-contract.md",
+        "product validation",
+        PRODUCT_VALIDATION_OWNER_ROUTE,
     ),
     (
         "docs/product/targeted-workbook.md",
@@ -349,16 +334,15 @@ def _routing_signals(text: str) -> list[str]:
 
 def _topic_hint(path: str, text: str) -> tuple[str, str]:
     path_haystack = path.lower()
-    productization_routing_paths = {
+    product_validation_routing_paths = {
         "docs/superpowers/goals/readme.md",
         "docs/superpowers/plans/readme.md",
-        "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
         "docs/superpowers/pulse-reports/readme.md",
     }
-    if path_haystack in productization_routing_paths:
+    if path_haystack in product_validation_routing_paths:
         return (
-            "productization",
-            PRODUCTIZATION_OWNER_ROUTE,
+            "product validation",
+            PRODUCT_VALIDATION_OWNER_ROUTE,
         )
     if path_haystack == "docs/superpowers/readme.md":
         return (
@@ -618,9 +602,6 @@ def _digestion_next_action(status: str) -> str:
 def _support_retention_reason(record: DocsRoutingCandidate) -> str:
     if record.topic_role != "repo_supporting_artifact":
         return "not_support_surface"
-    referrers = record.sample_referrers
-    if any(path in referrers for path in DOC_ROUTING_AUTHORITY_REFERRER_PATHS):
-        return "authority_or_status_anchor"
     if record.doc_lifecycle == "active":
         return "active_support_surface"
     if record.exact_referrers:
@@ -637,12 +618,6 @@ def _support_retention_reason(record: DocsRoutingCandidate) -> str:
 
 
 def _support_next_action(reason: str) -> str:
-    if reason == "authority_or_status_anchor":
-        return (
-            "do not move or rewrite until the status index or authority "
-            "manifest has a replacement compact artifact, hash update, and "
-            "focused checker coverage"
-        )
     if reason == "exact_referrer_bound_support":
         return (
             "retarget exact repo referrers to the owner or a compact oracle "
@@ -1012,18 +987,11 @@ def _with_referrer_status(
             exact_referrers=0,
             sample_referrers="none",
         )
-    authority_referrers = [
-        path for path in referrers if path in DOC_ROUTING_AUTHORITY_REFERRER_PATHS
-    ]
-    other_referrers = [
-        path for path in referrers if path not in DOC_ROUTING_AUTHORITY_REFERRER_PATHS
-    ]
-    sample_referrers = authority_referrers + other_referrers
     return replace(
         candidate,
         referrer_status="exact_repo_referrers_present",
         exact_referrers=len(referrers),
-        sample_referrers="; ".join(sample_referrers[:5]),
+        sample_referrers="; ".join(referrers[:5]),
     )
 
 
@@ -1155,7 +1123,6 @@ def _topic_cluster_rows(
             for record in sorted_group
             if record.support_retention_reason
             in {
-                "authority_or_status_anchor",
                 "mechanical_referrer_anchor",
                 "archived_retention_anchor",
                 "exact_referrer_bound_support",
@@ -1334,7 +1301,7 @@ def _classify_docs_routing_candidate(
         return DocsRoutingCandidate(
             path=normalized,
             disposition="keep_repo_governance_artifact",
-            reason="public docs-governance, productization, or closeout surface",
+            reason="public docs-governance or closeout surface",
             placement=placement,
             repo_owner=repo_owner,
             **_routing_metadata(normalized, text, "keep_repo_governance_artifact"),

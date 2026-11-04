@@ -47,11 +47,9 @@ was intentionally rebuilt, and the expected remote head has been checked.
 
 ## Focused Checks
 
-Select the affected checker when artifact-boundary or productization surfaces
-are involved; these are not a required suite for every stack repair:
+Select the affected checker when artifact-boundary surfaces are involved; it is
+not a required suite for every stack repair:
 
 ```powershell
-.venv\Scripts\python.exe -m scripts.check_productization_state
-.venv\Scripts\python.exe -m scripts.check_productization_authority
 .venv\Scripts\python.exe -m scripts.check_diagnostics_index
 ```
