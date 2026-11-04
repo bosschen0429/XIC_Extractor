@@ -32,8 +32,6 @@ historical validation note, treat it as diagnostic/rerun memory.
 - Do not escalate from 8RAW to 85RAW when the 8RAW evidence is already `NO_GO`.
 - Worktree `output/` paths are evidence references, not reusable inputs. Inputs
   that must survive worktrees belong under `local_validation_artifacts/`.
-  Small diagnostic snapshots that must survive worktrees belong under
-  `docs/superpowers/fixtures/` with a source note and hash.
 - Keep an entry only while it still decides whether to rerun or which result to use,
   binds a current stable input, or supplies evidence for an open issue.
 - Delete an entry once later evidence supersedes or disproves it, or its bound
@@ -918,6 +916,25 @@ locality, removes duplicated exact work, changes the complete Standard Peak
 stage cost, or new evidence contradicts these measurements. Any public-output
 change remains an expected-diff product decision, not a performance-only edit.
 
+### NL116 ISTD Human Boundary Calibration (Issue #125)
+
+The owner blind-labelled 12 NL116 ISTD cases (six labelled ISTDs in
+`Breast_Cancer_Tissue_pooled_QC3` and `TumorBC2263_DNA`) before seeing machine
+results. All 12 were accepted with observed peaks; the machine counted all 12.
+C010 was `detected_flagged` only for `targeted_rt_review`, i.e. more cautious,
+not a disagreement.
+
+Human boundaries were drawn as a conservative outer envelope. Every machine
+interval lay inside it (median boundary IoU 0.807). Reintegrating both
+intervals with the same `gaussian15_positive_asls_residual` owner, the machine
+kept a median 99.24% and minimum 98.96% of the human-envelope area. The active
+2% baseline-return rule therefore does not materially truncate these clean
+peaks; compare boundaries by containment and area retention, not coordinate
+equality.
+
+Rerun only when boundary selection, the baseline-return rule or the area
+integrator changes.
+
 ### 2026-06-05 Gaussian15 MS1 Morphology Primary Area Owner
 
 Verdict: `production_ready` for the Gaussian15 MS1 morphology ownership
@@ -1003,31 +1020,10 @@ zero-blocker result as though the hardened gate had accepted it.
 
 The 85RAW snapshot retained 597 primary rows and one selected primary family
 for every active ISTD at 85/85 positives. Its area mismatches were a separate
-quantitative follow-up, not independent identity proof. The retained artifacts,
-not historical `FAM*` labels, bind these observations:
+quantitative follow-up, not independent identity proof.
 
-| Evidence | Path / fact |
-| --- | --- |
-| Baseline 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved.tsv`, SHA256 `9A63FC81C811CF92925853884837B623878B644A26311799FAF64FA4947548E8`; source bytes: CRLF |
-| Post-fix 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved_primary_delivery_fix.tsv`, SHA256 `B38EC06D01714B4AACA6825B1C003C9BB724264689FCD78FBCB8DD2F9AB0CE9D`; source bytes: CRLF |
-| Baseline 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9`; source bytes: CRLF |
-| Post-fix 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage_primary_delivery_fix.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9`; source bytes: CRLF |
-| Post-fix collateral promotion table | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/collateral_promoted_primary_rows_primary_delivery_fix.csv`, SHA256 `9CFD07DBDD067748DEFEA883086894E481E947C157C15727E7BACC6DDCB71296`; source bytes: CRLF |
-| Post-fix 85RAW validation summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_primary_delivery_fix_summary.tsv`, SHA256 `4CF19B045F850B205E23888F1B3C5A6E3AF1C0BEC0C516E4447B61738CEAC24B`; source bytes: LF |
-| Post-fix 85RAW weak-seed watch rows | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_weak_seed_tolerated_watch_rows.tsv`, SHA256 `E003FDEAC97E1DAE6E0D6AF929CDD7EA3A004BC9873A0340EF8A7B2E099683E4`; source bytes: LF |
-| Post-review hardened single-dR gate summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/post_review_hardened_single_dr_gate_summary.tsv`, SHA256 `43FE4E4BCFF9DD20CA6B16F183F7A414EE89DCF1657A7E2E3B20559E32DE48E3`; source bytes: LF |
-| Baseline 8RAW diagnostic tool usage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/diagnostic_tool_usage_current_8raw.tsv` |
-| Baseline 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_current_8raw_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table; source bytes: CRLF |
-| Post-fix 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_primary_delivery_fix_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table; source bytes: CRLF |
-
-Snapshot hashes use the indicated original line endings; Git checkout may
-normalize these text files. Compare in the recorded serialization rather than
-interpreting an EOL-only checkout difference as changed analytical content.
-
-The two retained 5-medC Targeted-GT comparisons both reported PASS 8/8 with
-zero SPLIT/DRIFT/DUPLICATE/MISS. This is only the audited 8RAW slice, not current
-85RAW readiness or ProductWriter authority. The committed fixtures remain
-usable without the original `output/product_priority_reset_phase1/` checkout.
+The 8RAW 5-medC Targeted-GT comparisons before and after the change both
+reported PASS 8/8 with zero SPLIT/DRIFT/DUPLICATE/MISS.
 
 Reuse the local-RT and same-surface lesson rather than re-proving drift.
 A new selection, boundary, membership, or promotion question needs evidence

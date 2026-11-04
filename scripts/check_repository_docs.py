@@ -1,9 +1,7 @@
-"""CI guard: tracked Markdown links resolve and retired docs lanes stay empty.
+"""CI guard: relative links in tracked Markdown resolve.
 
-Relative Markdown links must point at a tracked file or directory, so a moved
-or deleted document cannot leave a dangling route. Construction plans, specs,
-reports and handoff chronology belong in GitHub Issues, PRs or ignored local
-storage; tracked files under those retired lanes are rejected.
+Each relative link must point at a tracked file or directory, so a moved or
+deleted document cannot leave a dangling route.
 
 Exit code 0 when clean, 1 with one line per problem otherwise.
 """
@@ -14,28 +12,9 @@ import posixpath
 import re
 import subprocess
 import sys
-from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
-RETIRED_DOC_LANES = (
-    "docs/deepresearch/",
-    "docs/history/",
-    "docs/superpowers/closeouts/",
-    "docs/superpowers/deepresearch/",
-    "docs/superpowers/file-management/",
-    "docs/superpowers/goals/",
-    "docs/superpowers/handoffs/archive/",
-    "docs/superpowers/handoffs/current/",
-    "docs/superpowers/notes/",
-    "docs/superpowers/plans/",
-    "docs/superpowers/productization/",
-    "docs/superpowers/pulse-reports/",
-    "docs/superpowers/reports/",
-    "docs/superpowers/schemas/",
-    "docs/superpowers/specs/",
-)
 
 _FENCE_RE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
@@ -76,21 +55,13 @@ def broken_links(
     return problems
 
 
-def retired_lane_files(paths: Iterable[str]) -> list[str]:
-    return [
-        f"{path}: tracked file in retired docs lane"
-        for path in paths
-        if path.startswith(RETIRED_DOC_LANES)
-    ]
-
-
 def check(root: Path) -> list[str]:
     paths = tracked_paths(root)
     tracked = set(paths)
     directories = {
         path[:index] for path in paths for index, char in enumerate(path) if char == "/"
     }
-    problems = retired_lane_files(paths)
+    problems: list[str] = []
     for path in paths:
         if not path.endswith(".md"):
             continue
@@ -109,7 +80,7 @@ def main() -> int:
     if problems:
         print(f"{len(problems)} repository docs problem(s).")
         return 1
-    print("Repository docs links and placement are clean.")
+    print("Repository docs links resolve.")
     return 0
 
 

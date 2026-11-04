@@ -1,6 +1,0 @@
-feature_family_id	neutral_loss_tag	family_center_mz	family_center_rt	quantifiable_detected_count	quantifiable_rescue_count	accepted_cell_count	row_flags
-FAM014236	DNA_dR	399.174	9.10176	3	62	65	rescue_heavy;weak_seed_tolerated
-FAM016268	DNA_dR	459.273	48.0956	3	82	85	rescue_heavy;weak_seed_tolerated
-FAM019827	DNA_dR	643.776	35.287	3	68	71	rescue_heavy;weak_seed_tolerated
-FAM019967	DNA_dR	742.884	34.4309	3	82	85	rescue_heavy;weak_seed_tolerated
-FAM020040	DNA_dR	797.899	36.6731	3	80	83	rescue_heavy;weak_seed_tolerated

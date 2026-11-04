@@ -16,7 +16,7 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     return tmp_path
 
 
-def test_resolving_links_and_live_lanes_are_clean(tmp_path: Path) -> None:
+def test_resolving_links_are_clean(tmp_path: Path) -> None:
     root = _repo(
         tmp_path,
         {
@@ -44,11 +44,3 @@ def test_untracked_link_target_is_broken(tmp_path: Path) -> None:
     (root / "docs" / "notes.md").write_text("untracked\n", encoding="utf-8")
 
     assert docs_check.check(root) == ["docs/a.md: broken link -> notes.md"]
-
-
-def test_tracked_file_in_retired_lane_is_reported(tmp_path: Path) -> None:
-    root = _repo(tmp_path, {"docs/superpowers/plans/next.md": "plan\n"})
-
-    assert docs_check.check(root) == [
-        "docs/superpowers/plans/next.md: tracked file in retired docs lane"
-    ]

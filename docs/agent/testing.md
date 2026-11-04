@@ -10,7 +10,7 @@ preflight for every edit. Use each matching row when decisions overlap.
 
 | Need | Read |
 | --- | --- |
-| Choose or run existing tests, including `ledger_snapshot` | [Affected-Test Selection](#affected-test-selection), then [Verification](#verification) |
+| Choose or run existing tests | [Affected-Test Selection](#affected-test-selection), then [Verification](#verification) |
 | Add or change regression coverage or fixtures | [Test Worth](#add-a-test-only-when-it-can-fail-usefully), [Oracle](#oracle-attribution-and-contract-boundaries), and [Observable](#choose-the-observable); [Placement](#test-placement) for a new file |
 | Browser behavior or an interactive demonstration | [Browser Workbench Checks](#browser-workbench-checks); use the regression row when adding coverage |
 | RAW or scientific evidence | [RAW And Scientific Validation](#raw-and-scientific-validation), then the matching [validation route](product-validation-contract.md#read-routes) |
@@ -113,18 +113,10 @@ directly. When the affected tests are unclear, use the selector:
     .venv\Scripts\python.exe -m tools.testing.test_selection --all
 
 Use `--print` to inspect the marker expression and candidate files without
-running tests, including with `--snapshots`. Caller `-m` filters are included;
+running tests. Caller `-m` filters are included;
 this preview does not collect individual tests or resolve `-k` filters. It is
 optional, not a second required invocation. CLI help owns the remaining options;
 do not copy selection rules into another hook or document.
-
-Tests marked ledger_snapshot pin recorded validation values and are excluded
-individually from default CI. Run that lane with:
-
-    .venv\Scripts\python.exe -m tools.testing.test_selection --snapshots
-
-A legitimate re-analysis may change a snapshot. Keep rejection behavior and
-dependency-failure checks in ordinary CI when their oracle is still current.
 
 ## Browser Workbench Checks
 

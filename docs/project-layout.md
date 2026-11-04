@@ -55,7 +55,6 @@ XIC_Extractor/
 │   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
 │   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
 │   ├── agent/                 按任務載入的執行、驗證與交付契約
-│   ├── superpowers/           既有 schema 與驗證機器契約
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
 │   └── project-layout.md      本結構樹與收納規則
 ├── config/                    未追蹤的本機狀態與部署環境範本
@@ -96,13 +95,11 @@ XIC_Extractor/
 | `xic_inspector/` | Installed read-only evidence review package；source adapters、共同 selection/API、可掛載 renderer 與 self-contained offline export |
 | `xic_workbench/` | Local HTML analysis and review application；HTTP transport、session view snapshots、按需 HTML 匯出、設定與 workflow adapters |
 | `scripts/` | Public CLI、product adapters、validation scripts |
-| `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
+| `tools/diagnostics/` | Maintained product-adjacent diagnostics |
 | `tests/` | pytest tests 與小型 fixtures |
 | `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
 | `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
-| `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
-| `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
 | `assets/` | Icons and screenshots |
 | `config/` | Local JSON state and named methods；private values 不追蹤；公開 Targeted 範例在 `xic_extractor/configuration/data/` |
 | `.github/` | GitHub workflows |
@@ -110,14 +107,6 @@ XIC_Extractor/
 
 `docs/` 根目錄只允許 `project-layout.md`、`architecture-contract.md`、
 `lc-msms-evidence-rules.md`、`diagnostic-ledger.md`。其他文件必須有明確 owner。
-
-以下 tracked lanes 已退休：
-
-- `docs/superpowers/plans/`
-- `docs/superpowers/specs/`
-- `docs/superpowers/closeouts/`
-- `docs/superpowers/file-management/docs-cleanup/`
-- generic `deepresearch/`、`goals/`、`notes/`、`reports/`、`pulse-reports/`、`topics/`
 
 施工 PRD、計畫、acceptance、work decomposition 放 GitHub Issue；交付敘事放 PR
 body；next 1–3 actions 放 ignored local handoff。不要建立 tracked plan、spec、
@@ -199,8 +188,8 @@ does not prove the frozen artifact.
    執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
    schema 與該 checker 的 validation contract 放在一起。
    不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
-9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
-   `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。
+9. Small validation input or fixture → 放在讀它的程式或 `tests/fixtures/` 旁，
+   必須有現存 consumer。
 10. Construction spec/plan → GitHub Issue；branch closeout → PR body。
 11. Generated report/audit/full output → ignored `output/`。
 12. Optional private research → Obsidian；throwaway context → ignored scratch。
