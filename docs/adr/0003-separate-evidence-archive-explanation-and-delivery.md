@@ -2,9 +2,6 @@
 status: accepted
 ---
 
-Doc placement: repo_support_doc
-Repo owner: docs/architecture-contract.md
-
 # Keep Evidence, Explanation, And Delivery Consumer-Driven
 
 Owner-local machine evidence, human explanation, and product delivery are

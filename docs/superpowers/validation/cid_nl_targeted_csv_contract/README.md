@@ -1,11 +1,5 @@
 # CID-NL Targeted CSV Contract v1
 
-Doc placement: formal_repo_doc
-Doc kind: validation_artifact
-Doc lifecycle: active
-Repo owner: docs/superpowers/validation/cid_nl_targeted_csv_contract/README.md
-Doc exit rule: Retain while targeted_output remains a characterized public delivery surface.
-
 Status: `diagnostic_only`; characterization evidence, not scientific truth or
 new product authority.
 

@@ -85,20 +85,8 @@ XIC_Extractor/
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
 | 本檔 | 檔案 placement、追蹤/忽略邊界與路徑約束 |
 
-### Permanent root document contract
-
-只有下列四個路徑是永久 root authority。Audit 確認路徑存在、文件有可見內容，
-並檢查下列 route、target 與 referrer；標題與說明文字可隨內容調整。路徑本身
-提供 placement、purpose 與 self-ownership，因此不需要 generic lifecycle metadata：
-
-| Path | Purpose / required route |
-| --- | --- |
-| `AGENTS.md` | Bounded repo agent routing；必須連到 parameter、product、evidence、architecture、execution、diagnostics、project layout owners |
-| `README.md` | 公開入口；必須連到 user、product、architecture、project layout 與 LC-MS/MS evidence |
-| `docs/architecture-contract.md` | Architecture/dependency owner；必須由 root docs 可達 |
-| `docs/project-layout.md` | File placement and documentation lifecycle owner；必須連到 architecture、product 與 [documentation boundary contract](agent/obsidian-handoff-contract.md) |
-
-不得新增第五個 root authority exemption。
+文件不需要 placement 或 lifecycle 標頭；文件邊界見
+[documentation boundary contract](agent/obsidian-handoff-contract.md)。
 
 ## § 2 追蹤目錄
 
@@ -113,7 +101,6 @@ XIC_Extractor/
 | `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
 | `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
-| `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
 | `assets/` | Icons and screenshots |
@@ -210,7 +197,7 @@ does not prove the frozen artifact.
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。
 8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
    執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
-   schema 描述留在 `docs/superpowers/schemas/`。
+   schema 與該 checker 的 validation contract 放在一起。
    不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
 9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。

@@ -72,34 +72,19 @@ Obsidian may contain long research and private context, but any decision that
 changes software behavior, authority, validation policy, or agent workflow must
 first be represented in the canonical repo owner or a live GitHub Issue.
 
-## Placement marker and taxonomy
+## Placement
 
-Use these placements for new durable or local material:
+| Destination | Holds |
+| --- | --- |
+| Canonical repo owner | Maintained public contract or source of truth |
+| Validation or fixture lane | Current support artifact consumed by a checker or test |
+| Private vault | Optional private research or reasoning |
+| Ignored `output/` or scratch | Generated audits, evidence packets, bulky or disposable output |
 
-| Placement | Destination | Meaning |
-| --- | --- | --- |
-| `formal_repo_doc` | canonical repo owner | Maintained public contract or source of truth |
-| `repo_subcontract_doc` | bounded repo owner child | Maintained contract under one named owner |
-| `repo_support_doc` | schema, validation, fixture, or evidence lane | Current support artifact with no parallel topic authority |
-| `private_obsidian_note` | private vault | Optional private research or reasoning |
-| `ignored_artifact` | ignored local storage | Generated audit, evidence packet, or bulky output |
-| `throwaway_scratch` | ignored local scratch | Material with no retention value |
-
-Tracked `repo_active_stub`, `branch_closeout_summary`,
-`repo_stub_plus_obsidian`, and `repo_stub_plus_formal_doc` are retired migration vocabulary.
-Do not create or refresh them.
-
-Machine-readable markers for non-canonical repo documents:
-
-```markdown
-Doc placement: <formal_repo_doc | repo_subcontract_doc | repo_support_doc>
-Repo owner: <canonical repo path>
-```
-
-Private and ignored material may use its corresponding placement marker, but
-those values are invalid under tracked `docs/`. Canonical owners do not need
-generic lifecycle metadata. New tracked `Doc kind: plan`, `spec`, `handoff`, or
-`closeout` documents are forbidden regardless of lifecycle value.
+Tracked documents need no placement or lifecycle header; their path and their
+owner's links say what they are. Construction plans, specs, handoffs, and
+closeouts are not tracked: `scripts/check_repository_docs.py` rejects files in
+their retired lanes and any relative Markdown link that no longer resolves.
 
 ## Daily document routing
 

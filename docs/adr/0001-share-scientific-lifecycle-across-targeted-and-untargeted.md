@@ -2,9 +2,6 @@
 status: accepted
 ---
 
-Doc placement: repo_support_doc
-Repo owner: docs/architecture-contract.md
-
 # Share one scientific lifecycle across Targeted and Untargeted
 
 Targeted and Untargeted use one scientific capture, hypothesis, cross-sample,

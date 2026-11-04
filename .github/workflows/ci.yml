@@ -45,9 +45,9 @@ jobs:
       - name: Diagnostics index in sync
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_diagnostics_index.py
-      - name: Docs lifecycle audit
+      - name: Repository docs links and placement
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: uv run python tools/diagnostics/docs_management_audit.py --repo-only --json
+        run: uv run python scripts/check_repository_docs.py
 
   typecheck:
     runs-on: ubuntu-latest

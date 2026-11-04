@@ -12,14 +12,8 @@ update the existing owner directly. Read `docs/project-layout.md` and
 ## Establish What Must Survive
 
 Use current consumers, exact referrers, and checker/schema use to identify each
-candidate's role. When the family needs a broader census, use the existing audit:
-
-```powershell
-.venv\Scripts\python.exe tools/diagnostics/docs_management_audit.py --repo-only --json
-```
-
-Audit labels and referrer counts are mechanical facts, not proof of information
-value or permission to delete. Reuse still-current evidence.
+candidate's role with `git grep` for its path and anchors. Reuse still-current
+evidence.
 
 Compare useful claims with their canonical owners: current decisions, reasons,
 public contracts, active checks, and still-needed lessons. Absorb unique,
@@ -43,8 +37,8 @@ ownership with the cheapest decisive evidence and preserve the affected source
 until its useful claims and consumers have a replacement. Proceed under
 existing authorization; no separate retirement packet is required.
 
-After changes, check affected references and consumers, using the docs audit
-when useful. Guidance changes follow
+After changes, check affected references and consumers and run
+`scripts/check_repository_docs.py` for broken links. Guidance changes follow
 `docs/agent/codex-operating-system.md#change-protocol`.
 
 Report what was consolidated, the surviving owners, actual verification, and

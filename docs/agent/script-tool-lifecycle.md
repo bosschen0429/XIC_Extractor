@@ -1,11 +1,5 @@
 # Script And Diagnostic Tool Lifecycle
 
-Doc placement: formal_repo_doc
-Doc kind: product_doc
-Doc lifecycle: active
-Repo owner: docs/agent/script-tool-lifecycle.md
-Doc exit rule: Replace only when another durable engineering owner absorbs script and diagnostic lifecycle policy.
-
 This document owns the durable classification and retirement rules for
 `scripts/` and `tools/diagnostics/`. It does not preserve dated censuses,
 construction history, command diaries, or filename-by-filename snapshots.

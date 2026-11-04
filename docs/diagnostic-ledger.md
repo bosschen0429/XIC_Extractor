@@ -1,11 +1,5 @@
 # Diagnostic Ledger And Rerun Policy
 
-Doc placement: formal_repo_doc
-Doc kind: report
-Doc lifecycle: active
-Repo owner: docs/diagnostic-ledger.md
-Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
-
 **Status:** maintained repo-local diagnostic memory
 **Last updated:** 2026-11-04
 
@@ -862,8 +856,7 @@ paired performance evidence, and the batching decision remains
 
 ### 2026-07-24 Acquisition Source And Reusable Artifact Capability
 
-Issue #124 is source-qualified in
-`docs/superpowers/validation/acquisition_source_capability_probe/README.md`.
+Issue #124 measured the acquisition source surface.
 
 Reusable conclusion:
 

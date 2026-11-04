@@ -1,11 +1,5 @@
 # LC-MS/MS Evidence Rules
 
-Doc placement: formal_repo_doc
-Doc kind: product_doc
-Doc lifecycle: active
-Repo owner: docs/lc-msms-evidence-rules.md
-Doc exit rule: Keep active as the durable LC-MS/MS evidence semantics owner; retire only after a replacement product evidence contract absorbs these rules.
-
 This document owns XIC Extractor's durable interpretation rules for LC-MS/MS
 evidence. `AGENTS.md` keeps only the short guardrails; this file carries the
 full domain contract.
