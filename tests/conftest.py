@@ -41,11 +41,11 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
             )
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def isolated_config_dir(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """Opt in when a Workbench/CLI test uses the default application settings."""
+    """Share one private config between Workbench and CLI within each test."""
     from xic_extractor.configuration import execution_profile
     from xic_workbench import config_io, discovery_config_io
 

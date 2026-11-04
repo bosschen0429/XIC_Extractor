@@ -42,7 +42,22 @@ def _run_test_environment(
     )
 
 
-def test_pure_domain_test_does_not_load_workbench_or_raw_reader(tmp_path):
+def test_default_application_settings_never_resolve_to_the_checkout():
+    """Local config/ holds the developer's own ignored settings, not test input."""
+    from xic_extractor.configuration import execution_profile
+    from xic_workbench import config_io, discovery_config_io
+
+    checkout_config = (Path(config_io.__file__).parents[1] / "config").resolve()
+    defaults = (
+        config_io.CONFIG_DIR,
+        discovery_config_io.CONFIG_DIR,
+        execution_profile.runtime_root() / "config",
+    )
+
+    assert all(Path(d).resolve() != checkout_config for d in defaults)
+
+
+def test_pure_domain_test_does_not_load_raw_reader(tmp_path):
     result = _run_test_environment(
         tmp_path,
         """
@@ -51,8 +66,6 @@ def test_pure_domain_test_does_not_load_workbench_or_raw_reader(tmp_path):
 
         def test_domain_calculation():
             assert bounded_trace_interval(-1, 4, 3) == (0, 3)
-            assert not any(name == 'xic_workbench' or name.startswith('xic_workbench.')
-                           for name in sys.modules)
             assert 'xic_extractor.raw_reader' not in sys.modules
         """,
     )

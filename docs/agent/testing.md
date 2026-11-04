@@ -94,13 +94,6 @@ function-scoped fixtures by default, and tests/fixtures for reusable payloads.
 Split a file when it accumulates unrelated responsibilities; line count alone
 is not the contract.
 
-Tests using default Workbench or CLI application settings request
-`isolated_config_dir`, directly or through `pytest.mark.usefixtures`. Tests
-using only explicit `config_dir=tmp_path` already own that isolation. Pure domain
-tests need neither application configuration nor RAW initialization. The global
-config-write guard and RAW cache cleanup remain active without loading those
-product modules.
-
 Keep shared domain builders in a fixture module, such as
 `tests/membership_fixtures.py`, rather than importing another test's private
 helper. State synthetic evidence defaults there; cases changing evidence
