@@ -1716,16 +1716,6 @@ def _untargeted_search_scope(
         raise CidNlAcquisitionError(str(exc)) from exc
 
 
-def _has_recorded_precursor_reference(
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> bool:
-    """Schedule RAW assessment; source labels alone do not grant NL support."""
-    return any(
-        candidate.precursor_mz_basis in {"scan_precursor", "scan_monoisotopic"}
-        for candidate in candidates
-    )
-
-
 def _validate_inputs(**values: object) -> None:
     expected = {
         "processing_owners": ProcessingOwnerReferences,

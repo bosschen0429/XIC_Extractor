@@ -13,10 +13,6 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 CID_NL_ALIGNMENT_CONFIG = AlignmentConfig(anchor_min_seed_events=1)
 
 
-class UntargetedCidNlGoldenPathError(ValueError):
-    """Raised when the bounded Untargeted path would lose or invent authority."""
-
-
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlAssessmentInput:
     """One sample's complete CID-NL method assessment."""

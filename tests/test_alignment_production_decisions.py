@@ -10,7 +10,6 @@ from xic_extractor.alignment.matrix import (
 )
 from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
-    production_cell_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
@@ -48,52 +47,6 @@ def test_detected_and_supported_backfill_write_numeric_values():
     assert decisions.row("FAM001").primary_evidence == "owner_complete_link"
     assert decisions.row("FAM001").quantifiable_detected_count == 2
     assert decisions.row("FAM001").row_flags == ()
-
-
-def test_production_cell_decision_record_explains_matrix_value_projection() -> None:
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
-        cells=(
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 95.0),
-        ),
-        sample_order=("s1", "s2"),
-    )
-
-    decision = build_production_decisions(matrix, AlignmentConfig()).cell(
-        "FAM001",
-        "s1",
-    )
-    record = production_cell_decision_record(decision)
-
-    assert decision.decision_record == record
-    assert record.workflow == "alignment_production_cell"
-    assert record.unit_id == "FAM001:s1"
-    assert record.required_evidence == (
-        "production_cell_decision",
-        "cell_quality_decision",
-        "matrix_identity_row_decision",
-    )
-    assert record.decision_class == "accepted"
-    assert record.blockers == ()
-    assert record.support == (
-        "raw_status:detected",
-        "production_status:detected",
-        "write_matrix_value",
-        "matrix_value_present",
-    )
-    assert record.gate == (
-        ("decision_class_rank", 0.0),
-        ("matrix_value_projection_rank", 0.0),
-        ("blocker_count", 0.0),
-    )
-    assert record.tie_break == (
-        ("production_status_rank", 0.0),
-        ("backfill_tier_rank", 0.0),
-        ("matrix_value_present_rank", 0.0),
-    )
-    assert record.projection_authority == "build_production_decisions"
-    assert not hasattr(record, "key")
 
 
 def test_production_matrix_value_uses_asls_selected_integration_area_when_present():
@@ -180,36 +133,6 @@ def test_targeted_metadata_does_not_authorize_untargeted_matrix_write() -> None:
     )
 
 
-def test_production_cell_decision_record_explains_missing_row_identity_blank() -> None:
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
-        cells=(
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0),
-        ),
-        sample_order=("s1", "s2"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-    detected_record = decisions.cell("FAM001", "s1").decision_record
-    backfill_record = decisions.cell("FAM001", "s2").decision_record
-
-    assert detected_record.decision_class == "not_counted"
-    assert detected_record.blockers == ("missing_row_identity_support",)
-    assert detected_record.gate == (
-        ("decision_class_rank", 2.0),
-        ("matrix_value_projection_rank", 1.0),
-        ("blocker_count", 1.0),
-    )
-    assert backfill_record.decision_class == "review"
-    assert backfill_record.blockers == ("missing_row_identity_support",)
-    assert backfill_record.support == (
-        "raw_status:backfilled",
-        "production_status:review_backfill",
-        "backfill_tier:review_backfill",
-    )
-
-
 def test_backfill_heavy_row_needs_multiple_detected_owners_for_primary_promotion():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
@@ -274,52 +197,6 @@ def test_scan_support_only_backfill_keeps_seeds_and_reviews_backfills():
     assert decisions.cell("FAM001", "rescue01").write_matrix_value is False
     assert decisions.cell("FAM001", "rescue01").blank_reason == (
         BACKFILL_MS1_PATTERN_BLOCKED_REASON
-    )
-
-
-def test_production_cell_decision_record_keeps_review_backfill_out_of_matrix() -> None:
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("seed2", "FAM001", "detected", 95.0),
-            *tuple(
-                _cell(
-                    f"rescue{i:02d}",
-                    "FAM001",
-                    "backfilled",
-                    80.0 + i,
-                )
-                for i in range(1, 84)
-            ),
-        ),
-        sample_order=(
-            "seed1",
-            "seed2",
-            *(f"rescue{i:02d}" for i in range(1, 84)),
-        ),
-    )
-
-    record = (
-        build_production_decisions(
-            matrix,
-            AlignmentConfig(),
-        )
-        .cell("FAM001", "rescue01")
-        .decision_record
-    )
-
-    assert record.decision_class == "review"
-    assert record.blockers == (BACKFILL_MS1_PATTERN_BLOCKED_REASON,)
-    assert record.gate == (
-        ("decision_class_rank", 1.0),
-        ("matrix_value_projection_rank", 1.0),
-        ("blocker_count", 1.0),
-    )
-    assert record.tie_break == (
-        ("production_status_rank", 2.0),
-        ("backfill_tier_rank", 2.0),
-        ("matrix_value_present_rank", 1.0),
     )
 
 

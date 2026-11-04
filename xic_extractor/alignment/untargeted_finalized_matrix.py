@@ -75,10 +75,6 @@ class FinalizedUntargetMatrixRow:
     membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
 
     @property
-    def source_feature_ids(self) -> tuple[str, ...]:
-        return (self.feature_id,)
-
-    @property
     def event_cluster_ids(self) -> tuple[str, ...]:
         return self.physical_peak_keys
 

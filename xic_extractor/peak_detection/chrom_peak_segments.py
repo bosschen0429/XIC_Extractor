@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -12,8 +12,17 @@ from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
 )
-from xic_extractor.peak_detection.selected_envelope import TraceInterval
 from xic_extractor.peak_detection.signal_quality import short_scale_noise_sigma
+
+
+@dataclass(frozen=True)
+class TraceInterval:
+    start_index: int
+    end_index: int
+    rt_start_min: float
+    rt_end_min: float
+    scan_count: int
+
 
 ChromPeakSegmentStatus = Literal[
     "OK",
@@ -242,19 +251,6 @@ def enumerate_chrom_peak_segments(
         morphology_trace_window_points=active_policy.morphology_trace_window_points,
         morphology_trace_effective_points=morphology_effective_points,
         morphology_trace_values=tuple(float(value) for value in morphology_trace),
-    )
-
-
-def segments_containing_rt(
-    segments: Sequence[ChromPeakSegment],
-    rt_min: float,
-) -> tuple[ChromPeakSegment, ...]:
-    """Return only segments whose recorded interval contains the target RT."""
-    target = float(rt_min)
-    return tuple(
-        segment
-        for segment in segments
-        if segment.interval.rt_start_min <= target <= segment.interval.rt_end_min
     )
 
 

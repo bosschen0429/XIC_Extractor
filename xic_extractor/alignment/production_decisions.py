@@ -25,12 +25,6 @@ from xic_extractor.alignment.promotion_policy import (
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
     cell_evidence_from_aligned,
 )
-from xic_extractor.peak_detection.decision_policy import (
-    DECISION_CLASS_RANK,
-    DecisionRecord,
-    DecisionTerm,
-)
-from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 
 ProductionStatus = Literal[
     "detected",
@@ -52,10 +46,6 @@ class ProductionCellDecision:
     write_matrix_value: bool
     matrix_value: float | None
     blank_reason: str
-
-    @property
-    def decision_record(self) -> DecisionRecord:
-        return production_cell_decision_record(self)
 
 
 @dataclass(frozen=True)
@@ -87,47 +77,6 @@ class ProductionDecisionSet:
 
     def row(self, feature_id: str) -> ProductionRowDecision:
         return self.rows[feature_id]
-
-
-def production_cell_decision_record(
-    decision: ProductionCellDecision,
-) -> DecisionRecord:
-    decision_class = _production_cell_decision_class(decision)
-    blockers = _production_cell_blockers(decision)
-    gate: tuple[DecisionTerm, ...] = (
-        ("decision_class_rank", float(DECISION_CLASS_RANK[decision_class])),
-        (
-            "matrix_value_projection_rank",
-            0.0 if decision.write_matrix_value else 1.0,
-        ),
-        ("blocker_count", float(len(blockers))),
-    )
-    tie_break: tuple[DecisionTerm, ...] = (
-        (
-            "production_status_rank",
-            float(_PRODUCTION_STATUS_RANK[decision.production_status]),
-        ),
-        ("backfill_tier_rank", float(_BACKFILL_TIER_RANK[decision.backfill_tier])),
-        (
-            "matrix_value_present_rank",
-            0.0 if decision.matrix_value is not None else 1.0,
-        ),
-    )
-    return DecisionRecord(
-        workflow="alignment_production_cell",
-        unit_id=f"{decision.feature_id}:{decision.sample_stem}",
-        required_evidence=(
-            "production_cell_decision",
-            "cell_quality_decision",
-            "matrix_identity_row_decision",
-        ),
-        decision_class=decision_class,
-        blockers=blockers,
-        support=_production_cell_support(decision),
-        gate=gate,
-        tie_break=tie_break,
-        projection_authority="build_production_decisions",
-    )
 
 
 def build_production_decisions(
@@ -181,53 +130,6 @@ _BACKFILL_TIER_RANK: dict[BackfillTier, int] = {
     "review_backfill": 2,
     "rejected_backfill": 3,
 }
-
-
-def _production_cell_decision_class(
-    decision: ProductionCellDecision,
-) -> DecisionClass:
-    if decision.write_matrix_value:
-        return "accepted"
-    if decision.production_status == "review_backfill":
-        return "review"
-    if decision.blank_reason == "ambiguous_ms1_owner":
-        return "ambiguous"
-    if decision.production_status == "rejected_backfill":
-        return "excluded"
-    return "not_counted"
-
-
-def _production_cell_blockers(
-    decision: ProductionCellDecision,
-) -> tuple[str, ...]:
-    if decision.write_matrix_value:
-        return ()
-    return tuple(
-        dict.fromkeys(
-            part
-            for part in (
-                decision.blank_reason,
-                "" if decision.blank_reason else "matrix_value_not_written",
-            )
-            if part
-        )
-    )
-
-
-def _production_cell_support(
-    decision: ProductionCellDecision,
-) -> tuple[str, ...]:
-    support = [
-        f"raw_status:{decision.raw_status}",
-        f"production_status:{decision.production_status}",
-    ]
-    if decision.backfill_tier:
-        support.append(f"backfill_tier:{decision.backfill_tier}")
-    if decision.write_matrix_value:
-        support.append("write_matrix_value")
-    if decision.matrix_value is not None:
-        support.append("matrix_value_present")
-    return tuple(dict.fromkeys(support))
 
 
 def _cell_decision(

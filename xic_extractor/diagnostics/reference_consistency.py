@@ -132,13 +132,6 @@ def trace_clusters(
     return tuple((float(rt[i]), *widths[i]) for i in sorted(retained))
 
 
-def trace_cluster_apices(
-    trace: XICTrace, policy: ReferencePolicy = _DEFAULT_REFERENCE_POLICY
-) -> tuple[float, ...]:
-    """Return diagnostic apex positions for callers that need positions only."""
-    return tuple(apex for apex, _, _ in trace_clusters(trace, policy))
-
-
 def _same_target(left: Target, right: Target) -> bool:
     return abs(left.mz - right.mz) <= min(left.ppm_tol, right.ppm_tol) * left.mz / 1e6
 

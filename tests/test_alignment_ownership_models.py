@@ -47,7 +47,6 @@ def test_sample_local_owner_exposes_primary_and_supporting_events():
 
     assert owner.all_events == (primary, support)
     assert owner.neutral_loss_tag == "DNA_dR"
-    assert owner.event_candidate_ids == ("s1#6095", "s1#6096")
 
 
 def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():

@@ -81,11 +81,6 @@ class ProcessTreeMemorySampler:
         self._peak = ProcessMemoryPeak()
         self._active_scopes: list[ProcessMemoryPeak] = []
 
-    @property
-    def running(self) -> bool:
-        with self._lock:
-            return self._running
-
     def start(self) -> bool:
         with self._lock:
             if self._running:

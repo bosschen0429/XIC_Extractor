@@ -155,12 +155,6 @@ class FinalGroupCellObservation:
             cell.group_context.method_subject_id for cell in self.effective_cells
         )
 
-    @property
-    def position_keys(self) -> tuple[tuple[str, str], ...]:
-        return tuple(
-            association.position.key for association in self.position_associations
-        )
-
 
 def compose_final_group_cell_observation_population(
     *,

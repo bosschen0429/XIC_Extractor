@@ -72,3 +72,27 @@ def test_reports_symbols_that_only_tests_or_their_own_body_reach(
         "xic_extractor.stage.recursive_only",
         "xic_extractor.stage.Store.never_read",
     }
+
+
+def test_import_alias_use_counts_for_the_original_name(tmp_path: Path) -> None:
+    _write(tmp_path / "pyproject.toml", "[project]\n")
+    _write(
+        tmp_path / "xic_extractor" / "stage.py",
+        "def called_through_alias():\n"
+        "    return 1\n"
+        "\n"
+        "def imported_but_unused():\n"
+        "    return 2\n",
+    )
+    _write(
+        tmp_path / "xic_workbench" / "view.py",
+        "from xic_extractor.stage import called_through_alias as run\n"
+        "from xic_extractor.stage import imported_but_unused as unused\n"
+        "\n"
+        "run()\n",
+    )
+
+    unreachable = {symbol.name for symbol in find_unreachable_symbols(tmp_path)}
+
+    assert "called_through_alias" not in unreachable
+    assert "imported_but_unused" in unreachable

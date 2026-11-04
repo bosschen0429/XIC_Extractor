@@ -15,7 +15,6 @@ from xic_extractor.diagnostics.reference_consistency import (
     ClusterObservation,
     ReferencePolicy,
     check_reference_consistency,
-    trace_cluster_apices,
     trace_clusters,
 )
 from xic_extractor.xic_models import XICTrace
@@ -198,21 +197,6 @@ def test_sample_count_does_not_overrule_cross_group_ordinal() -> None:
     assert all(
         row["severity"] == "none" for row in report["rows"] if row["group"] != "c"
     )
-
-
-def test_trace_peaks_preserve_late_ordinal_even_when_early_peak_is_taller() -> None:
-    rt = np.linspace(1, 10, 1801)
-    intensity = 100 * np.exp(-(((rt - 4) / 0.08) ** 2)) + 90 * np.exp(
-        -(((rt - 4.8) / 0.08) ** 2)
-    )
-    # Low-amplitude distant spikes must not renumber prominent peak clusters.
-    intensity += 15 * np.exp(-(((rt - 7) / 0.01) ** 2))
-    # A one-scan spike can be as tall as a real peak after smoothing.
-    intensity[np.argmin(abs(rt - 8))] = 500
-    assert trace_cluster_apices(XICTrace.from_arrays(rt, intensity)) == pytest.approx(
-        (4, 4.8), abs=0.01
-    )
-    assert trace_cluster_apices(XICTrace.from_arrays(rt, np.zeros_like(rt))) == ()
 
 
 @pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])

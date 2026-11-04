@@ -314,12 +314,13 @@ failing check.
 **Entry point:** `python -m tools.diagnostics.production_reachability_census [--output-tsv PATH]`.
 **Role:** maintained operator interface / diagnostic oracle.
 **Purpose**: List functions, classes and methods defined under `xic_extractor/`
-that no code in `xic_extractor/`, `gui/`, `scripts/` or `xic_inspector/` loads
+that no code in `xic_extractor/`, `xic_workbench/`, `scripts/` or `xic_inspector/` loads
 outside their own body, and that no `[project.scripts]` entry point names.
 Tests, `tools/`, imports and `__all__` strings do not count as referrers.
-**Status note**: Static and name-based. A same-named symbol elsewhere hides a
-dead one, and names reached only through `getattr` or string tables are
-reported. It reads source only and always exits 0.
+**Status note**: Static and name-based; uses of an import alias count for the
+original name. A same-named symbol elsewhere hides a dead one, and names reached
+only through `getattr` or string tables are reported. It reads source only and
+always exits 0.
 
 ### `output_population_census.py`
 
@@ -427,7 +428,6 @@ grouping replay. Initial-grouping output does not include final Backfill results
 Not entry-points, but referenced by multiple topic groups:
 
 - `xic_extractor/tabular_io.py` — package-neutral shared delimited/TSV read-write, file SHA256 hashing, scalar parsing, numeric equality, header validation, label splitting, text grouping, and value formatting. Cluster 1, the listed Cluster 3 loaders, alignment backfill authority/projection modules, and backfill/standard-peak diagnostics now reuse this helper; use it before adding local `_read_required_tsv`, `_bool_value`, `_optional_float`, `_text`, `_required_indexes`, `_write_tsv`, `_sha256_file`, `_numeric_equal`, or `_group_by_family` copies.
-- `xic_extractor/diagnostics/backfill_overlay.py` — package-owned shared selector for seed-specific backfill overlay rows. It keeps retained backfill gates, shadow policy, and shadow projection on one fail-closed selection rule: exact seed rows beat legacy family rows when allowed, and conflict/review verdicts outrank support verdicts when duplicate rows exist for the same seed. Use it before adding local `_selected_overlay_row` or `_overlay_sort_key` copies.
 
 Large diagnostics refactor reviews should use the `code-review` workflow with a
 fixed base and head. Start from high blast-radius helpers and public contracts:

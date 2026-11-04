@@ -114,33 +114,6 @@ class ProductionCellDecision:
         return ""
 
 
-def decide_production_cell(
-    subject: TargetCellSubject,
-    *,
-    target_projection: TargetPreCellProjection | None = None,
-) -> ProductionCellDecision:
-    """Decide one explicit subject through its complete owner population."""
-
-    if type(subject) is TargetCellSubject:
-        if target_projection is None:
-            raise CellDecisionContractError(
-                "Target decision requires only its exact Target projection"
-            )
-        target_owner_subjects = target_projection.cell_subjects
-        if not any(subject is item for item in target_owner_subjects):
-            raise CellDecisionContractError(
-                "explicit Target subject is absent from its owner population"
-            )
-        return _decide_sealed_subject(
-            subject,
-            evidence=subject.terminal_subject,
-        )
-    else:
-        raise CellDecisionContractError(
-            "explicit subject decision requires an exact TargetCellSubject"
-        )
-
-
 def decide_target_cell_population(
     projection: TargetPreCellProjection,
     *,

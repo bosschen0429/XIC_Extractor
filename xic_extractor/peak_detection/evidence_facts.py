@@ -1,39 +1,15 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
 
-from xic_extractor.peak_detection.baseline import (
-    asls_baseline,
-    bounded_trace_interval,
-    integrate_with_baseline,
-)
 from xic_extractor.peak_detection.evidence_semantics import (
     EvidenceDecisionSemantics,
     EvidenceSignalSet,
     decision_semantics_from_signal_set,
-)
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.ms1_morphology import (
-    DEFAULT_GAUSSIAN15_WINDOW_POINTS,
-    MS1_MORPHOLOGY_AREA_SOURCE,
-    MS1_MORPHOLOGY_TRACE_METHOD,
-    gaussian15_positive_asls_residual_trace,
-    morphology_trace_effective_points,
-    positive_residual_area,
-)
-from xic_extractor.peak_detection.ms1_shape_identity import (
-    DEFAULT_LOCAL_HALF_WINDOW_MIN,
-    DEFAULT_OWN_MAX_SMOOTH_POINTS,
-    OwnMaxTrace,
-    own_max_normalized_trace,
-)
-from xic_extractor.peak_detection.ms1_trace_detection import (
-    validate_ms1_trace_arrays,
 )
 from xic_extractor.peak_detection.scoring_metrics import (
     noise_shape_severity,
@@ -77,21 +53,6 @@ class TraceEvidenceFacts:
     continuity: float | None = None
     quality_flags: tuple[str, ...] = ()
     hard_quality_flags: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class TraceWindowEvidenceFacts:
-    """Hypothesis-neutral physical facts around one explicit trace coordinate."""
-
-    status: Literal["ok", "inconclusive"]
-    reason: str
-    query_apex_rt_min: float | None
-    query_apex_in_trace_window: bool
-    trace_apex_rt_min: float | None = None
-    global_trace_apex_delta_min: float | None = None
-    local_apex_delta_min: float | None = None
-    local_max_intensity: float | None = None
-    local_to_global_max_ratio: float | None = None
 
 
 @dataclass(frozen=True)
@@ -158,218 +119,6 @@ class CandidateEvidenceFacts:
     boundary: BoundaryEvidenceFacts
     quality_penalty: int = 0
     selection_quality_penalty: float | None = None
-
-
-def gaussian15_trace_window_evidence(
-    rt_values: Sequence[float | int | None],
-    intensity_values: Sequence[float | int | None],
-    *,
-    query_apex_rt_min: float | int | None,
-    half_window_min: float = DEFAULT_LOCAL_HALF_WINDOW_MIN,
-) -> tuple[OwnMaxTrace, TraceWindowEvidenceFacts]:
-    """Mint one Gaussian15 trace and its bound hypothesis-neutral window facts."""
-
-    rt = tuple(rt_values)
-    intensity = tuple(intensity_values)
-    normalized_trace = own_max_normalized_trace(
-        rt,
-        intensity,
-        smooth_points=DEFAULT_OWN_MAX_SMOOTH_POINTS,
-    )
-    bound_rt = rt if len(rt) == len(intensity) else ()
-    requested_query_apex = _optional_float(query_apex_rt_min)
-    query_apex = requested_query_apex
-    if query_apex is None and normalized_trace.is_usable:
-        trace_rt = np.asarray(normalized_trace.rt, dtype=float)
-        trace_intensity = np.asarray(normalized_trace.intensity, dtype=float)
-        if trace_rt.size and trace_rt.size == trace_intensity.size:
-            query_apex = float(trace_rt[int(np.argmax(trace_intensity))])
-    return normalized_trace, _trace_window_evidence_facts(
-        bound_rt,
-        normalized_trace,
-        query_apex_rt_min=query_apex,
-        half_window_min=half_window_min,
-        report_global_trace_apex_delta=requested_query_apex is not None,
-    )
-
-
-def _trace_window_evidence_facts(
-    bound_rt_values: Sequence[float | int | None],
-    normalized_trace: OwnMaxTrace,
-    *,
-    query_apex_rt_min: float | int | None,
-    half_window_min: float,
-    report_global_trace_apex_delta: bool,
-) -> TraceWindowEvidenceFacts:
-    """Describe facts from coordinates and Gaussian15 trace minted together above."""
-
-    query_apex = _optional_float(query_apex_rt_min)
-    try:
-        raw_rt = np.asarray(tuple(bound_rt_values), dtype=float)
-    except (TypeError, ValueError):
-        raw_rt = np.asarray((), dtype=float)
-    finite_rt = raw_rt[np.isfinite(raw_rt)] if raw_rt.ndim == 1 else np.asarray(())
-    query_in_window = bool(
-        query_apex is not None
-        and finite_rt.size
-        and float(np.min(finite_rt)) - 1e-9
-        <= query_apex
-        <= float(np.max(finite_rt)) + 1e-9
-    )
-    if query_apex is None:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="query_apex_unavailable",
-            query_apex_rt_min=None,
-            query_apex_in_trace_window=False,
-        )
-    if not normalized_trace.is_usable or normalized_trace.max_intensity is None:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason=normalized_trace.reason,
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-        )
-
-    trace_rt = np.asarray(normalized_trace.rt, dtype=float)
-    trace_intensity = np.asarray(normalized_trace.intensity, dtype=float)
-    if trace_rt.size == 0 or trace_intensity.size != trace_rt.size:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="normalized_trace_unavailable",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-        )
-    trace_apex_index = int(np.argmax(trace_intensity))
-    trace_apex_rt = float(trace_rt[trace_apex_index])
-    global_trace_apex_delta = (
-        trace_apex_rt - query_apex if report_global_trace_apex_delta else None
-    )
-    local_mask = (trace_rt >= query_apex - half_window_min) & (
-        trace_rt <= query_apex + half_window_min
-    )
-    if not np.any(local_mask):
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="local_window_unavailable",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-            trace_apex_rt_min=trace_apex_rt,
-            global_trace_apex_delta_min=global_trace_apex_delta,
-        )
-    local_rt = trace_rt[local_mask]
-    local_intensity = trace_intensity[local_mask]
-    local_index = int(np.argmax(local_intensity))
-    local_ratio = float(local_intensity[local_index])
-    if local_ratio <= 0:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="non_positive_local_signal",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-            trace_apex_rt_min=trace_apex_rt,
-            global_trace_apex_delta_min=global_trace_apex_delta,
-        )
-    return TraceWindowEvidenceFacts(
-        status="ok",
-        reason="gaussian15_query_window_evidence",
-        query_apex_rt_min=query_apex,
-        query_apex_in_trace_window=query_in_window,
-        trace_apex_rt_min=trace_apex_rt,
-        global_trace_apex_delta_min=global_trace_apex_delta,
-        local_apex_delta_min=float(local_rt[local_index] - query_apex),
-        local_max_intensity=local_ratio * normalized_trace.max_intensity,
-        local_to_global_max_ratio=local_ratio,
-    )
-
-
-def integration_with_trace_evidence(
-    integration: IntegrationResult,
-    rt_values: object,
-    intensity_values: object,
-    *,
-    baseline_integration_method: str = "asls",
-) -> IntegrationResult:
-    """Enrich an existing integration with owner-computed baseline/morphology facts."""
-
-    enriched, _rt, _morphology_trace = _integration_and_morphology_trace(
-        integration,
-        rt_values,
-        intensity_values,
-        baseline_integration_method=baseline_integration_method,
-    )
-    return enriched
-
-
-def _integration_and_morphology_trace(
-    integration: IntegrationResult,
-    rt_values: object,
-    intensity_values: object,
-    *,
-    baseline_integration_method: str,
-) -> tuple[IntegrationResult, np.ndarray, np.ndarray | None]:
-    if not isinstance(integration, IntegrationResult):
-        raise TypeError("integration must be an IntegrationResult")
-    rt, intensity = validate_ms1_trace_arrays(rt_values, intensity_values)
-    if len(rt) < 2:
-        raise ValueError("trace arrays must have matching length >= 2")
-    left_index, right_index = _bounded_indices_for_rt_window(
-        rt,
-        integration.rt_left_min,
-        integration.rt_right_min,
-    )
-    baseline_values = (
-        asls_baseline(intensity) if baseline_integration_method == "asls" else None
-    )
-    baseline = integrate_with_baseline(
-        intensity,
-        rt,
-        left_index,
-        right_index,
-        baseline_method=baseline_integration_method,
-        baseline_values=baseline_values,
-    )
-    morphology_trace = (
-        gaussian15_positive_asls_residual_trace(intensity, baseline_values)
-        if baseline_values is not None
-        else None
-    )
-    morphology_area = (
-        positive_residual_area(rt, morphology_trace, left_index, right_index)
-        if morphology_trace is not None
-        else None
-    )
-    enriched = replace(
-        integration,
-        raw_scan_indices=tuple(range(left_index, right_index)),
-        area_baseline_corrected=baseline.area_baseline_corrected,
-        area_uncertainty=baseline.area_uncertainty,
-        area_uncertainty_formula_version=baseline.area_uncertainty_formula_version,
-        baseline_residual_mad=baseline.baseline_residual_mad,
-        area_uncertainty_noise_source=baseline.area_uncertainty_noise_source,
-        baseline_type=baseline.baseline_type,
-        baseline_score=baseline.baseline_score,
-        area_ms1_morphology=morphology_area,
-        ms1_morphology_area_source=(
-            MS1_MORPHOLOGY_AREA_SOURCE if morphology_trace is not None else ""
-        ),
-        ms1_morphology_trace_method=(
-            MS1_MORPHOLOGY_TRACE_METHOD if morphology_trace is not None else ""
-        ),
-        ms1_morphology_trace_window_points=(
-            DEFAULT_GAUSSIAN15_WINDOW_POINTS if morphology_trace is not None else None
-        ),
-        ms1_morphology_trace_effective_points=(
-            morphology_trace_effective_points(
-                len(morphology_trace),
-                method=MS1_MORPHOLOGY_TRACE_METHOD,
-                window_points=DEFAULT_GAUSSIAN15_WINDOW_POINTS,
-            )
-            if morphology_trace is not None
-            else None
-        ),
-    )
-    return enriched, rt, morphology_trace
 
 
 def build_candidate_evidence_facts(
@@ -748,25 +497,6 @@ def _boundary_facts(candidate: Any) -> BoundaryEvidenceFacts:
         cwt_ridge_persistence=cwt_ridge_persistence,
         chrom_peak_segment_present="chrom_peak_segment" in proposal_sources,
     )
-
-
-def _bounded_indices_for_rt_window(
-    rt_values: np.ndarray,
-    peak_start_rt: float,
-    peak_end_rt: float,
-) -> tuple[int, int]:
-    if not np.isfinite(peak_start_rt) or not np.isfinite(peak_end_rt):
-        raise ValueError("peak RT bounds must be finite")
-    left_rt = min(float(peak_start_rt), float(peak_end_rt))
-    right_rt = max(float(peak_start_rt), float(peak_end_rt))
-    if right_rt <= left_rt:
-        raise ValueError("peak RT window must have positive width")
-    left_index = int(np.searchsorted(rt_values, left_rt, side="left"))
-    right_index = int(np.searchsorted(rt_values, right_rt, side="right"))
-    if right_index - left_index < 2:
-        left_index = int(np.argmin(np.abs(rt_values - left_rt)))
-        right_index = int(np.argmin(np.abs(rt_values - right_rt))) + 1
-    return bounded_trace_interval(left_index, right_index, len(rt_values))
 
 
 def _candidate_id(candidate: Any) -> str:

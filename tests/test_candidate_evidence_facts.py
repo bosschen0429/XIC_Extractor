@@ -15,11 +15,9 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
-    integration_with_trace_evidence,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_morphology_trace,
@@ -39,60 +37,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
-
-
-def test_integration_trace_evidence_preserves_compatibility_fields() -> None:
-    integration = IntegrationResult(
-        rt_left_min=1.0,
-        rt_apex_min=2.0,
-        rt_right_min=3.0,
-        raw_apex_rt_min=2.0,
-        rt_width_min=2.0,
-        height_raw=50.0,
-        height_smoothed=45.0,
-        area_raw_counts_seconds=4000.0,
-        integration_method="raw_trapezoid",
-        boundary_sources=("test_trace",),
-        raw_scan_indices=(1, 2, 3),
-    )
-
-    enriched = integration_with_trace_evidence(
-        integration,
-        [0.0, 1.0, 2.0, 3.0, 4.0],
-        [10.0, 12.0, 50.0, 12.0, 10.0],
-    )
-
-    assert enriched.area_raw_counts_seconds == 4000.0
-    assert enriched.integration_method == "raw_trapezoid"
-    assert enriched.boundary_sources == ("test_trace",)
-    assert enriched.raw_scan_indices == (1, 2, 3)
-    assert enriched.baseline_type == "asls"
-    assert enriched.area_baseline_corrected is not None
-    assert enriched.area_ms1_morphology is not None
-    assert enriched.ms1_morphology_trace_method == "gaussian_15"
-
-
-def test_integration_trace_evidence_records_exact_selected_scan_indices() -> None:
-    integration = IntegrationResult(
-        rt_left_min=1.0,
-        rt_apex_min=2.0,
-        rt_right_min=3.0,
-        raw_apex_rt_min=2.0,
-        rt_width_min=2.0,
-        height_raw=50.0,
-        height_smoothed=45.0,
-        area_raw_counts_seconds=4000.0,
-        integration_method="raw_trapezoid",
-        boundary_sources=("test_trace",),
-    )
-
-    enriched = integration_with_trace_evidence(
-        integration,
-        [0.0, 1.0, 2.0, 3.0, 4.0],
-        [10.0, 12.0, 50.0, 12.0, 10.0],
-    )
-
-    assert enriched.raw_scan_indices == (1, 2, 3)
 
 
 def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> None:

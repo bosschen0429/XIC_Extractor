@@ -96,9 +96,6 @@ class FileResultLike(Protocol):
     @property
     def error(self) -> str | None: ...
 
-    @property
-    def extraction_results(self) -> Sequence[ExtractionResultLike]: ...
-
 
 def _long_output_rows(
     file_result: FileResultLike, targets: Sequence[Target]

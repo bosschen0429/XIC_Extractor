@@ -724,24 +724,6 @@ def _repeated_name_sort_key(value: str) -> tuple[int, str]:
     return (int(match.group(1)) if match else 0, value)
 
 
-def match_sequence_to_raw_stems_report(
-    sequence_rows: Sequence[SampleMetadata],
-    raw_stems: Sequence[str],
-    *,
-    conflicts: tuple[SequenceConflict, ...] = (),
-) -> SequenceMatchReport:
-    """Report projection retained for existing sequence consumers."""
-    return match_sample_metadata(sequence_rows, raw_stems, conflicts=conflicts)
-
-
-def match_sequence_to_raw_stems(
-    sequence_rows: Sequence[SampleMetadata],
-    raw_stems: Sequence[str],
-) -> tuple[SampleMetadata, ...]:
-    """Compatibility projection for callers that only consume matched rows."""
-    return match_sequence_to_raw_stems_report(sequence_rows, raw_stems).rows
-
-
 def _sequence_match_report(
     sequence_rows: Sequence[SampleMetadata],
     raw_stems: Sequence[str],
@@ -979,38 +961,6 @@ def resolve_canonical_sample_identity(
     )
 
 
-def sample_metadata_to_injection_order(
-    rows: Sequence[SampleMetadata],
-) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for row in rows:
-        if row.injection_order is None:
-            continue
-        _add_injection_order(out, row.sample_name, row.injection_order)
-        if row.raw_stem and row.raw_stem != row.sample_name:
-            _add_injection_order(out, row.raw_stem, row.injection_order)
-    return out
-
-
-def summarize_sample_metadata(rows: Sequence[SampleMetadata]) -> dict[str, object]:
-    role_counts = {role: 0 for role in sorted(SAMPLE_ROLES)}
-    excluded_count = 0
-    with_injection_order = 0
-    for row in rows:
-        role_counts[row.sample_role] += 1
-        if row.excluded:
-            excluded_count += 1
-        if row.injection_order is not None:
-            with_injection_order += 1
-    return {
-        "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-        "sample_count": len(rows),
-        "with_injection_order_count": with_injection_order,
-        "excluded_count": excluded_count,
-        "role_counts": role_counts,
-    }
-
-
 def _read_sample_metadata_rows(path: Path) -> list[Mapping[str, object]]:
     if not path.is_file():
         raise SampleMetadataError(f"{path}: sample metadata file not found")
@@ -1160,15 +1110,6 @@ def _register_alias(
             f"already used as {existing_type} on row {existing_row}"
         )
     seen[value] = (row_number, alias_type)
-
-
-def _add_injection_order(out: dict[str, int], sample: str, order: int) -> None:
-    existing = out.get(sample)
-    if existing is not None and existing != order:
-        raise SampleMetadataError(
-            f"conflicting injection_order for sample {sample!r}: {existing} != {order}"
-        )
-    out[sample] = order
 
 
 def _canonical_sample_key(value: object) -> str:

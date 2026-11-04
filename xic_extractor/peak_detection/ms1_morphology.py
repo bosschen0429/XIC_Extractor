@@ -171,22 +171,6 @@ def gaussian15_positive_asls_residual_trace(
     )
 
 
-def gaussian_raw_minus_asls_raw_positive_trace(
-    intensity_values: np.ndarray,
-    baseline_values: np.ndarray,
-    *,
-    profile: SignalProcessingProfile,
-) -> np.ndarray:
-    """Subtract a nonnegative AsLS baseline from Gaussian(raw), clipped at zero."""
-
-    _smoothed, positive = canonical_gaussian_signal_traces(
-        intensity_values,
-        baseline_values,
-        profile=profile,
-    )
-    return positive
-
-
 def canonical_gaussian_signal_traces(
     intensity_values: np.ndarray,
     baseline_values: np.ndarray,

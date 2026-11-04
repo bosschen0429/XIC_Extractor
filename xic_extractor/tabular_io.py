@@ -389,13 +389,6 @@ def optional_float(value: object) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def optional_int(value: object) -> int | None:
-    parsed = optional_float(value)
-    if parsed is None:
-        return None
-    return int(parsed)
-
-
 def required_float(value: object, field: str, label: str) -> float:
     parsed = optional_float(value)
     if parsed is None:
@@ -412,30 +405,10 @@ def bool_value(value: object) -> bool | None:
     return None
 
 
-def numeric_equal(left: object, right: object) -> bool:
-    left_value = optional_float(left)
-    right_value = optional_float(right)
-    if left_value is None or right_value is None:
-        return text_value(left) == text_value(right)
-    return math.isclose(left_value, right_value, rel_tol=1e-6, abs_tol=1e-9)
-
-
 def text_value(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
-
-
-def rows_by_text_field(
-    rows: Iterable[Mapping[str, str]],
-    field: str,
-) -> dict[str, tuple[Mapping[str, str], ...]]:
-    grouped: dict[str, list[Mapping[str, str]]] = {}
-    for row in rows:
-        key = text_value(row.get(field))
-        if key:
-            grouped.setdefault(key, []).append(row)
-    return {key: tuple(items) for key, items in grouped.items()}
 
 
 def split_semicolon_labels(value: object) -> list[str]:

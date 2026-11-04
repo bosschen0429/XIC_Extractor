@@ -174,14 +174,6 @@ class FinalizedUntargetBatchApplicationResult:
         )
 
     @property
-    def archive_rows(self) -> tuple[object, ...]:
-        return tuple(
-            row
-            for child in self.children
-            for row in child.completed_projection.archive_rows
-        )
-
-    @property
     def decisions(self) -> tuple[object, ...]:
         return tuple(
             decision

@@ -114,8 +114,6 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
     assert result.canonical_samples == scientific_core.canonical_samples
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
-    assert result.completed_projection.included_rows == projection.included_rows
-    assert result.completed_projection.archive_rows == projection.archive_rows
 
 
 def test_untarget_result_consumes_projection_without_recomputing_it(

@@ -35,7 +35,6 @@ from xic_extractor.alignment.projection.untarget.matrix import (
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
-    FinalizedUntargetBatchApplicationResult,
     UntargetedCandidateExclusion,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
@@ -158,14 +157,6 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
 
 
 WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetWorkflowBundle:
-    """One bounded subject workset and its acquired scientific inputs."""
-
-    request: UntargetWorkflowCompositionRequest
-    adapter: UntargetWorkflowAdapter
 
 
 def compose_untarget_subject(
@@ -446,48 +437,18 @@ def complete_analysis(
     )
 
 
-def complete_untarget_batch(
-    request: UntargetWorkflowCompositionRequest,
-    bundles: tuple[UntargetWorkflowBundle, ...],
-) -> FinalizedUntargetBatchApplicationResult:
-    """Close the exact subject population without a runtime terminal wrapper."""
-    try:
-        children: list[FinalizedUntargetApplicationResult] = []
-        for bundle in bundles:
-            child = complete_analysis(bundle.request, bundle.adapter)
-            if type(child) is not FinalizedUntargetApplicationResult:
-                raise AlignmentWorkflowContractError(
-                    "Untarget batch child returned a crossed application result"
-                )
-            children.append(child)
-        application_result = FinalizedUntargetBatchApplicationResult(
-            scope=request.scope,
-            processing_request=request.processing_request,
-            processing_attempt=request.processing_attempt,
-            children=tuple(children),
-            excluded_candidates=request.excluded_candidates,
-        )
-        return application_result
-    except WorkflowStageFailure:
-        raise
-    except Exception as exc:
-        raise WorkflowStageFailure(WorkflowStage.APPLICATION_RESULT, exc) from exc
-
-
 __all__ = (
     "AlignmentWorkflowContractError",
     "CaptureWorkflowArguments",
     "TargetWorkflowAdapter",
     "TargetWorkflowRequest",
     "UntargetWorkflowAdapter",
-    "UntargetWorkflowBundle",
     "UntargetWorkflowCompositionRequest",
     "WorkflowAdapter",
     "WorkflowRequest",
     "WorkflowStage",
     "WorkflowStageFailure",
     "complete_analysis",
-    "complete_untarget_batch",
     "compose_untarget_subject",
     "resolve_workflow_processing_owners",
 )

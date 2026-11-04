@@ -10,7 +10,6 @@ from dataclasses import field as dataclass_field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Iterator,
     Literal,
     Mapping,
@@ -494,35 +493,6 @@ class GenericDiscoveryMethodSpec:
         )
 
 
-DiscoveryMethodDecoder = Callable[[Mapping[str, object]], DiscoveryMethodSpec]
-DiscoveryMethodEncoder = Callable[[DiscoveryMethodSpec], Mapping[str, object]]
-
-_DISCOVERY_METHOD_DECODERS: dict[str, DiscoveryMethodDecoder] = {}
-_DISCOVERY_METHOD_ENCODERS: dict[str, DiscoveryMethodEncoder] = {}
-
-
-def register_discovery_method_codec(
-    method: str,
-    *,
-    decoder: DiscoveryMethodDecoder,
-    encoder: DiscoveryMethodEncoder | None = None,
-) -> None:
-    """Register custom serialization codec for a Discovery method."""
-    method_name = str(method).strip()
-    if not method_name:
-        raise ValueError("method name cannot be empty")
-    _DISCOVERY_METHOD_DECODERS[method_name] = decoder
-    if encoder is not None:
-        _DISCOVERY_METHOD_ENCODERS[method_name] = encoder
-
-
-def unregister_discovery_method_codec(method: str) -> None:
-    """Unregister custom serialization codec for a Discovery method."""
-    method_name = str(method).strip()
-    _DISCOVERY_METHOD_DECODERS.pop(method_name, None)
-    _DISCOVERY_METHOD_ENCODERS.pop(method_name, None)
-
-
 def _method_content(
     method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec,
 ) -> dict[str, object]:
@@ -589,8 +559,6 @@ def _method_content(
             },
         }
         return content
-    if method.method in _DISCOVERY_METHOD_ENCODERS:
-        return dict(_DISCOVERY_METHOD_ENCODERS[method.method](method))
     if hasattr(method, "to_content_dict"):
         return dict(method.to_content_dict())
     settings_val = method.settings
@@ -695,14 +663,6 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
 def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
     _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
     method_name = str(content["method"])
-    if method_name in _DISCOVERY_METHOD_DECODERS:
-        decoded = _DISCOVERY_METHOD_DECODERS[method_name](content)
-        if not isinstance(decoded, DiscoveryMethodSpec):
-            raise TypeError(
-                f"Registered decoder for '{method_name}' must return a "
-                "DiscoveryMethodSpec"
-            )
-        return decoded
 
     if method_name != "cid_nl":
         return GenericDiscoveryMethodSpec(
@@ -1029,8 +989,6 @@ __all__ = [
     "PROCESSING_RUN_SPEC_ENVELOPE_VERSION",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
-    "DiscoveryMethodDecoder",
-    "DiscoveryMethodEncoder",
     "DiscoveryMethodSpec",
     "GenericDiscoveryMethodSpec",
     "GenericMethodSettings",
@@ -1041,7 +999,5 @@ __all__ = [
     "compile_processing_run_spec",
     "deserialize_processing_run_spec",
     "normalize_generic_method_settings",
-    "register_discovery_method_codec",
     "serialize_processing_run_spec",
-    "unregister_discovery_method_codec",
 ]
