@@ -226,11 +226,9 @@ moving an owner rather than expanding this table.
 
 ## Evidence And Decision Boundaries
 
-XIC Extractor is an LC-MS evidence and model-selection system, not an
-8RAW/85RAW- or CID-NL-specific tool; fixtures are validation oracles. Evidence
-providers enter through `EvidenceVector`, `PeakHypothesis`, model selection and
-`AuditTrail` before any Matrix change. Direct Matrix writes need an activation
-contract, expected diff and output oracle.
+Evidence providers enter through `EvidenceVector`, `PeakHypothesis`, model
+selection and `AuditTrail` before any Matrix change; activation rules are in
+[`product-validation-contract.md`](agent/product-validation-contract.md).
 
 - `peak_detection.evidence_semantics` is role-neutral and shared by candidate
   selection, product projection and Alignment, so changes there reach both

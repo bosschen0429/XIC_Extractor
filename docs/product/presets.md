@@ -145,5 +145,5 @@ and resolved inputs are shown before RAW work. See
 ## See Also
 
 - [Parameter settings](../agent/parameter-settings.md)
-- [Discovery](discovery.md) | [Signal processing rationale](signal-processing-rationale.md)
+- [Discovery](discovery.md) | [Signal processing](signal-processing-rationale.md)
 - [Diagnostic ledger](../diagnostic-ledger.md)

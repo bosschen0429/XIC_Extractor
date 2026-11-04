@@ -1,10 +1,10 @@
-# Signal Processing Rationale
+# Signal Processing
 
-This document records **why** the canonical signal profile uses a
-Gaussian-smoothed raw trace together with an independently estimated AsLS raw
-baseline for judgment, scoring, boundary, and area decisions. For the operational rules
-themselves, see [`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md)
-§MS1 Morphology And Area Owner.
+This page owns the canonical MS1 signal, physical peak qualification,
+boundaries and area, and the reasons for them. Targeted measurement policy on top
+of these physical answers is in [Targeted Selection](targeted-selection.md);
+cross-workflow evidence principles are in
+[LC-MS/MS evidence rules](../lc-msms-evidence-rules.md).
 
 ## Design Principle
 
@@ -23,7 +23,8 @@ positive_signal = max(smoothed - baseline, 0)
 
 The physical baseline cannot be negative: extrapolated negative background
 must not create positive peak signal. A selected interval reaching an acquired
-trace edge lacks observed boundary context and has no numeric physical answer.
+trace edge lacks observed boundary context and has no numeric physical answer
+(`incomplete_peak_context`); Discovery's bounded reacquisition can recover it.
 
 ### Edge-reaching intervals
 
@@ -41,6 +42,12 @@ stability/quantitation tradeoff explicit in the versioned selection policy. A
 context window can still contain a different candidate population. The
 bounded tolerance is not a guarantee of window invariance.
 
+Point queries use `baseline_peak_contains_query`; membership and integration
+share the selected bounds, including inter-scan tails. Group-guided recovery
+uses `unique_baseline_peak_in_context`: its center locates the search context
+and need not fall inside the peak, and multiple local peaks remain ambiguous and
+non-numeric.
+
 ### Baseline and raw intensity
 
 AsLS estimates background. AsLS is not a smoothing method exposed alongside
@@ -55,8 +62,10 @@ numeric facts: Gaussian spread cannot create independent acquired evidence.
 The contiguous canonical core around the selected apex is bounded by half of
 its whole-interval prominence. Within that core, an adjacent pair of original
 XIC values after subtracting the owner baseline must reach the same half-top
-level. Low neighbors elsewhere in a long envelope cannot certify an impulse;
-constant background is not peak support.
+level, and at least two original observations must support the top. Low
+neighbors elsewhere in a long envelope cannot certify an impulse; constant
+background is not peak support. Failures give
+`insufficient_original_xic_support` or `insufficient_original_xic_continuity`.
 Ordinary support does not additionally require an above-baseline run spanning
 the configured Gaussian window or hit-density enrichment. Those conditions
 must not erase a morphology peak with adjacent acquired support and sufficient
@@ -72,7 +81,8 @@ For left-censored signals, unsmoothed binary hit density must be enriched agains
 both local flanks. The shared physical owner uses a fourfold enrichment and a
 trace-length-corrected one-sided exact test. It replaces fragmented segments only
 when the enriched cluster contains no ordinary continuous peak. Qualified
-clusters use observed-signal trapezoid area and carry `near_detection_limit`;
+clusters use observed-signal trapezoid area and carry
+`local_hit_density_enrichment` and `near_detection_limit`;
 adjacency and intensity shape cannot be additional requirements because
 censoring destroys them. No censored intensity is imputed. Ordinary peaks retain
 their morphology boundaries and canonical baseline-corrected area.
@@ -140,7 +150,9 @@ with linear interpolation between its immediate neighbors, using actual RT
 spacing and the coefficient norm. This normalized difference removes constant
 and linear background. On a uniform grid the difference is
 `diff(raw, n=2) / sqrt(6)`. Comparing raw values with a wide smoother instead
-would confuse resolved neighboring peaks with noise.
+would confuse resolved neighboring peaks with noise. Fewer than three points or
+zero MAD adds no rejection. Failure gives `insufficient_local_peak_contrast`
+without numeric facts or integration.
 
 The local-relief rule is a local contrast requirement, not the full residual
 height above an AsLS floor. The rule uses the existing prepared arrays without
@@ -155,19 +167,14 @@ The difference construction is related to the normalized three-point
 estimators discussed by [Brown and Levine (2007)](https://faculty.wharton.upenn.edu/wp-content/uploads/2012/04/2007b-Variance-estimation-in-nonparametric-regression-via-the-difference-sequence-method.pdf).
 The robust MAD aggregation and qualification factor here are product policy;
 that paper does not validate this chromatographic gate or its threshold.
-The versioned selection policy in
-[`LC-MS/MS evidence rules`](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-owns that eligibility check; the profile continues to own the quantitative
-signal and its scan-support count.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
 
 Known-reference ISTD localization answers a narrower question than discovering
 local maxima: small surface ripples should not erase a supported broad contour
-before the known RT and method evidence can locate it. The
-[physical qualification contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-defines the reference-specific full-contour policy and preserved support checks.
-It does not relax Discovery, Backfill or non-ISTD Targeted qualification.
+before the known RT and method evidence can locate it. The reference-specific
+contour policy is in [Targeted Selection](targeted-selection.md); it does not
+relax Discovery, Backfill or non-ISTD Targeted qualification.
 
 Known limits are conservative false negatives, not proof of signal absence.
 In very short peaks the three-point noise estimate can include peak curvature;
@@ -345,11 +352,38 @@ Sigma is not independently configurable; it is derived from window size. The
 legacy settings key `ms1_morphology_smoothing_window_points` is accepted only
 as a one-way load-time alias to `signal_processing_window_points`. Canonical
 and legacy values may coexist only when equal. Savitzky–Golay and resolver
-settings are not aliases. The 9-point default is scan-rate sensitive — non-default windows require
-a method-appropriate area-ratio and smoothing-duration review per
-[`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md).
+settings are not aliases. The 9-point default is scan-rate sensitive, so other
+windows are method parameters (see [Area changes](#area-changes)).
 
-## Evidence Status And Activation
+## Boundary And Area Owners
+
+- `ChromPeakSegment` owns the boundary of an accepted candidate when a canonical
+  segment contains the selected apex. `selected_full_envelope` is used only when
+  no segment boundary exists; its split, neighbor-apex, blank-like, edge, width,
+  scan-count and low-S/N guards stay fail-closed.
+- Raw trapezoid and standalone AsLS areas may remain audit evidence for excluded
+  legacy consumers. Owner Backfill has no legacy fallback: apex, boundaries,
+  height, area, scan support and shape share one canonical signal.
+- Physical questions do not cross profile-bound segment universes. A changed
+  interpretation mints a new question; saved answers are never rewritten.
+- Morphology supplies boundary and shape evidence, not identity. RT, target
+  window, MS2/NL opportunity, CID-NL evidence and cross-sample gates decide
+  acceptance ([decision policy](decision-policy.md)).
+
+### Area changes
+
+- Area differences from legacy integration are accepted expected differences;
+  parity is never manufactured by a second calculation.
+- Cross-batch production claims need a review of raw-versus-Gaussian area ratios
+  and smoothing duration on retained numbers. The review never changes selected
+  boundaries, area, presence or Matrix values.
+- Apex, boundary, height, scan-support and shape differences are qualitative and
+  need bounded real-RAW and manual-EIC evidence before activation. Changes to
+  the selected hypothesis, ambiguity handling, SUPPORT/HOLD/REJECT, Backfill
+  status, identity or write decisions are hard-zero expected differences; a
+  qualitative mismatch is HOLD, never a reason to restore legacy computation.
+
+## Evidence Status
 
 - Focused synthetic/no-RAW tests can prove formula, profile propagation,
   identity invalidation, failure semantics, and serial/process parity. They do
@@ -358,7 +392,3 @@ a method-appropriate area-ratio and smoothing-duration review per
   "gaussian15_smoothed_trace"` constant.
 - Profile-covered scoring and relative-shape comparison consume the resolved
   canonical signal, rather than assuming a fixed 15-point trace.
-- Canonical signal migration follows the
-  [quantitative, qualitative, and required non-change gates](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner).
-  Until the required evidence gate and the registered selected-area authority
-  scope pass, construction is not production-ready.
