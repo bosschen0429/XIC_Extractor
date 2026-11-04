@@ -410,3 +410,50 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
         == -2.0
     )
     assert {row["SampleName"] for row in source.method_evidence} == set(raws)
+
+
+class ThreeIonRaw(PatternRaw):
+    """Quant 302 at 2.0 min; light 300 and heavy 304 eluting later by seconds."""
+
+    def __init__(self, *, light_sec, heavy_sec):
+        super().__init__()
+        self.peaks = [
+            (302.0, 2.0),
+            (300.0, 2.0 + light_sec / 60),
+            (304.0, 2.0 + heavy_sec / 60),
+        ]
+
+    def extract_xic(self, mz, start, end, ppm):
+        values = np.full(self.rt.shape, 100.0)
+        for mass, apex in self.peaks:
+            if abs(mass - mz) <= mz * ppm * 1e-6:
+                values += 100_000.0 * np.exp(-0.5 * ((self.rt - apex) / 0.08) ** 2)
+        keep = (self.rt >= start) & (self.rt <= end)
+        return self.rt[keep], values[keep]
+
+
+@pytest.mark.parametrize("heavy_sec,counted", [(0.5, True), (1.5, False)])
+def test_coelution_is_measured_from_the_quantitation_ion(tmp_path, heavy_sec, counted):
+    # The light ion (lowest m/z) elutes 0.75 s after the quantitation ion; the
+    # heavy ion must still be within the 1 s tolerance of the quantitation ion,
+    # not merely of the light ion.
+    method = {
+        "conditions": [
+            {
+                "kind": "delta_mass",
+                "apex_floor_sec": 1,
+                "positions": [
+                    {"label": "light", "offset_mz": -2.0},
+                    {"label": "quant", "offset_mz": 0.0},
+                    {"label": "heavy", "offset_mz": 2.0},
+                ],
+            }
+        ]
+    }
+    _, result = extract_pattern(
+        tmp_path,
+        ThreeIonRaw(light_sec=0.75, heavy_sec=heavy_sec),
+        methods={"my pair": method},
+    )
+    assert result.targeted_product_projection.counted_detection is counted
+    assert (result.reported_peak_area is not None) is counted

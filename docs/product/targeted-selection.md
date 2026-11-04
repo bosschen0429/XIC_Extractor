@@ -45,7 +45,8 @@ quantitation/partner m/z tolerance.
 Delta Mass positions use signed `offset_mz` relative to the Target's quantitation
 ion at zero. The pure settings conversion normalizes the lowest mass internally;
 users neither select a quantitation position per target nor arrange a base ion.
-Ratios and configured shape comparisons reference the quantitation ion. Ratios
+Co-elution tolerance, ratios and configured shape comparisons reference the
+quantitation ion. Ratios
 remain annotations, not admission gates. Position XIC windows must not overlap.
 Offsets are m/z differences, not charge-independent neutral mass differences.
 

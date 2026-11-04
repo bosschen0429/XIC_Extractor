@@ -134,9 +134,35 @@ def assess_targeted_delta_mass(
         for measured_position in hypothesis.positions:
             measured_position.observed_mz = None
             measured_position.mz_error_ppm = None
+        _require_coelution_with_quantitation(hypothesis, quant_position)
     return {
         candidate: tuple(
             h for h in hypotheses if h.anchor_feature_id == f"{quant_position}:{index}"
         )
         for index, candidate in enumerate(assessment.candidate_evaluations)
     }
+
+
+def _require_coelution_with_quantitation(hypothesis, quant_position) -> None:
+    """Measure co-elution from the quantitation ion, not the lowest-mass ion.
+
+    The shared matcher re-anchors its RT reference to the lowest-mass position;
+    a Targeted pattern is defined relative to the quantitation peak instead.
+    """
+    if hypothesis.status != "candidate":
+        return
+    quant_apex = next(
+        p.apex_rt_min
+        for p in hypothesis.positions
+        if p.position_label == quant_position
+    )
+    if quant_apex is None:
+        return
+    for position in hypothesis.positions:
+        if position.apex_rt_min is None:
+            continue
+        if abs(position.apex_rt_min - quant_apex) * 60 > position.apex_threshold_sec:
+            position.position_status = "fail"
+            hypothesis.status = "rejected"
+            hypothesis.rejected_at_layer = 4
+            hypothesis.reject_reason = "apex_out_of_range"
