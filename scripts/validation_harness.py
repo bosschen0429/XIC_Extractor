@@ -95,7 +95,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "  compare  reuse the run ID and pass --baseline-root\n"
             "  stop     fix an inconclusive FIXTURE_COHORT gate; do not escalate it to "
             "FULL_COHORT\n"
-            "  runtime  docs/agent/parameter-settings.md"
+            "  runtime  docs/agent/local-execution.md"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

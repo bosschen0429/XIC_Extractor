@@ -115,7 +115,7 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
 
 ## Packaging
 
-`xic_extractor.spec` defines the frozen-build resource and entry-point
+`packaging/xic_extractor.spec` defines the frozen-build resource and entry-point
 contract. Source tests verify the Python and resource contract only; a frozen
 release is verified only by its artifact build and smoke run.
 

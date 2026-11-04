@@ -27,7 +27,7 @@ request.
 - "Remove redundant internal envelope validation; compare baseline/candidate
   outputs without a speedup claim." Use the owning Issue and regression/parity
   checks; missing timing is not an optimization-acceptance gate for this task.
-- "Launch 85RAW now." Use the runner documented in `parameter-settings.md`;
+- "Launch 85RAW now." Use the runner documented in `local-execution.md`;
   this skill can only define the performance decision the run should close.
 - "Can this diagnostic evidence support a readiness claim?" Use the product
   validation contract after performance evidence exists.

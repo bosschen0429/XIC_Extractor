@@ -21,8 +21,8 @@ delivery seam as if they were already final.
   columns.
 - Identity, row-basis, source, evidence, and review details belong in
   sidecars unless an explicit public schema says otherwise.
-- The [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-  own the area policy.
+- [Signal processing](signal-processing.md#boundary-and-area-owners)
+  owns the area policy.
 - A finite positive observed censored physical area may supply the numeric
   value. Preserve its observed censored source and the retained
   `near_detection_limit` or truncation evidence; do not impute missing signal.

@@ -75,5 +75,5 @@ You do not need all of these pages. Choose the question that brought you here.
 | [Matrix Curation](../product/matrix-curation.md) | Curation steps, inputs, interpretation, and separate outputs |
 
 For operator validation, use the [Targeted validation route](targeted-extraction.md#validation)
-or [local Alignment validation](../agent/parameter-settings.md#alignment-and-handoff).
+or [local Alignment validation](../agent/local-execution.md#alignment-and-handoff).
 For maintaining the diagrams, see [guide assets](assets/README.md).

@@ -14,6 +14,12 @@ questions:
 
 ## Contract
 
+- Prefer evidence chains over any single metric. RT, CWT, WIS, iRT, local
+  minima, RT models, shape similarity, product ions, neutral losses, adducts and
+  in-source fragments are evidence inputs; none silently overrules the selected
+  peak or Matrix identity on its own. An evidence source that changes
+  production behavior needs explicit config or contract and machine-readable
+  reason/status fields.
 - Evidence providers feed typed facts into `EvidenceVector`,
   `EvidenceDecisionSemantics`, `PeakHypothesis`, `IntegrationResult`, and audit
   records. Evidence providers do not write product matrices directly.
@@ -32,6 +38,20 @@ questions:
 - Diagnostic, shadow, gallery, review, lockbox, and sidecar evidence can
   explain a decision. Such evidence becomes product authority only through an
   explicit activation/export contract and expected-diff gate.
+
+## RT And Identity
+
+- RT is contextual evidence, not a hard identity veto. It must not prove absence
+  or override co-eluting, candidate-aligned MS1/MS2 evidence unless an explicit
+  hard RT exclusion policy exists.
+- Large, reproducible or unmodeled RT shifts may trigger ambiguity or confidence
+  demotion, especially when inconsistent with ISTD transfer.
+- Cross-sample RT or m/z dispersion alone does not establish separate isomers,
+  and lack of distinct peaks within a sample does not prove identity; inspect
+  within-sample peaks and method MS2/NL evidence.
+- MS1 shape alone must not dismiss a shoulder or weak peak with method MS2/NL
+  support; that support does not authorize quantitation without reliable
+  physical bounds.
 
 ## Writer Authority
 
@@ -331,5 +351,4 @@ contract.
 - [Targeted selection](targeted-selection.md)
 - [Backfill](backfill.md)
 - [Alignment](alignment.md)
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)

@@ -1,7 +1,7 @@
 # Product Validation Contract
 
-This file owns product-readiness language and LC-MS/MS evidence guardrails. The
-full domain evidence contract remains in `docs/lc-msms-evidence-rules.md`.
+This file owns readiness claims, expected differences and validation discipline.
+How evidence is interpreted is in [`docs/product/`](../product/README.md).
 
 Ordinary regression verification does not need this file. Read it when a change
 claims readiness, changes a scientific decision, or can change selected values,
@@ -59,6 +59,11 @@ evidence, or no rollback path stops the change.
   matrix-writing authority without an explicit activation/export contract.
 - Diagnostic TSVs, shadow reports, wrappers, and sidecars prove observability,
   not product usability.
+- Keep audit and production gates separate. Sparse, extrapolated or
+  low-coverage evidence stays review-only until a production policy exists.
+- When manual EIC/MS2 review contradicts a diagnostic label, find whether the
+  shared rule, the wording or the reviewed row is wrong. Fix the shared rule
+  with regression tests; do not encode one-off sample or target exceptions.
 - Use the documented runner for RAW execution and the method's actual
   acceptance check for its results. A diagnostic, method, or RAW label alone
   does not create another gate.
@@ -95,22 +100,3 @@ An explained difference is not automatically an accepted difference. Bind each
 material loss to the current acceptance/trade-off; keep it unresolved when no
 such decision or evidence exists. CI establishes regression coverage, not that
 scientific or product trade-off.
-
-## Domain Evidence Guardrails
-
-- Prefer evidence chains over single-metric authority. RT, CWT, WIS, iRT, local
-  minima, RT models, shape similarity, product ions, neutral losses, adducts,
-  and in-source fragments are evidence inputs, not silent vetoes.
-- RT is contextual evidence. It must not prove analyte absence or override
-  co-eluting, candidate-aligned MS1/MS2 evidence unless an explicit hard RT
-  exclusion policy exists.
-- Missing DDA MS2/product/NL evidence is `not_observed` by default. Treat it as
-  negative evidence only when acquisition opportunity and comparable controls
-  show it should have been observable.
-- Clean standards can support audit, library, and instrument interpretation, but
-  cannot alone justify production correction of biological matrices.
-- Keep audit and production gates separate. Sparse, extrapolated, or low
-  coverage evidence stays review-only until a production policy exists.
-- Targeted outputs may be benchmarks or shared low-level evidence, but target
-  labels and targeted pass/fail logic must not leak into untargeted production
-  matrix identity without an approved contract.

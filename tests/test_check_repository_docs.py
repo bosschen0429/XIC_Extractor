@@ -44,3 +44,22 @@ def test_untracked_link_target_is_broken(tmp_path: Path) -> None:
     (root / "docs" / "notes.md").write_text("untracked\n", encoding="utf-8")
 
     assert docs_check.check(root) == ["docs/a.md: broken link -> notes.md"]
+
+
+def test_html_href_is_checked_and_server_routes_are_skipped(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        {
+            "docs/user/guide.html": (
+                '<a href="../product/topic.md#area">ok</a>'
+                '<a href="../gone.md#x">gone</a>'
+                '<a href="/assets/app.css">route</a>'
+                '<a href="https://example.org">web</a>\n'
+            ),
+            "docs/product/topic.md": "topic\n",
+        },
+    )
+
+    assert docs_check.check(root) == [
+        "docs/user/guide.html: broken link -> ../gone.md#x"
+    ]

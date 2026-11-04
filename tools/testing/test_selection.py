@@ -73,10 +73,10 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     # on any of their code or data. A shortlist of entry points misses package
     # inputs and resources, while ordinary documentation can still skip.
     "packaging_build": re.compile(
-        r"^((pyproject\.toml|uv\.lock|xic_extractor\.spec)$"
+        r"^((pyproject\.toml|uv\.lock)$"
         r"|\.github/workflows/(build|ci)\.yml$"
         r"|tests/test_pyinstaller_spec\.py$"
-        r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|assets|config)/)"
+        r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|packaging|config)/)"
     ),
 }
 # The main CI pytest session: the census runs once in the lint job, and serial

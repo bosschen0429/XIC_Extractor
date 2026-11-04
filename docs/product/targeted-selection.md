@@ -224,13 +224,12 @@ existing shared owners. Batch selection reuses the retained CID-NL relation
 answer over those same regions. No candidate-local best product replaces the
 complete method relation.
 
-Known ISTDs retain reference-first localization and
-`reference_localized_contour_peak` geometry. Their acquired support is assessed
+Analytes use `localized_total_envelope` measurements. Known ISTDs retain
+reference-first localization and `reference_localized_contour_peak` geometry. Their acquired support is assessed
 on the body, not a half-prominence apex core. Both Targeted roles preserve
 measurable poor-top contours; Discovery and bounded Backfill retain their
-separate qualification policies. The
-[physical measurement contract](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
-owns quantitative signal and units.
+separate qualification policies. [Signal processing](signal-processing.md)
+owns the quantitative signal and units.
 
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
@@ -572,8 +571,8 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 
 ## See Also
 
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Discovery](discovery.md#cid-nl-support-relations)
-- [Quantitation context](signal-processing-rationale.md#quantitation-context)
+- [Discovery](discovery.md#cid-nl-support-relations) | [Signal processing](signal-processing.md)
+- [Quantitation context](signal-processing.md#quantitation-context)
 - [Decision policy](decision-policy.md)
 Use the [workbench](workbench.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT

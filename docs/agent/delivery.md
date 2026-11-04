@@ -27,7 +27,7 @@ How work moves from an Issue to a merged PR.
   set; hosted checks on the final remote SHA decide merge readiness.
 - Generated output stays in ignored `output/`. Check a clean checkout only when
   packaging, installation, CI or tracked generated files change.
-- RAW and long runs use the runner in [Local Execution](parameter-settings.md);
+- RAW and long runs use the runner in [Local Execution](local-execution.md);
   `--preflight-only` inspects settings without running. Keep logs under the
   task's output directory and report against the task's acceptance check.
 

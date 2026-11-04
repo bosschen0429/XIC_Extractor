@@ -7,7 +7,7 @@ rules own general operating defaults.
 
 | Task | Read |
 | --- | --- |
-| Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`parameter-settings.md`](docs/agent/parameter-settings.md) |
+| Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`local-execution.md`](docs/agent/local-execution.md) |
 | Product terminology | [`domain-glossary.md`](docs/product/domain-glossary.md) |
 | Product behavior or method evidence | [`docs/product/README.md`](docs/product/README.md) |
 | Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
@@ -17,7 +17,7 @@ rules own general operating defaults.
 | Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
 | Issue scope, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
 | Current-format Untargeted output as test input | Regenerate with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; older runs under `output/` are not current-format input |
-| Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) before repeating evidence |
+| Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/agent/diagnostic-ledger.md) before repeating evidence |
 | Docs, skills, hooks, rules or agent config | [`codex-operating-system.md`](docs/agent/codex-operating-system.md) |
 | GitHub issue mechanics or triage | [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md) |
 | File placement, tracking, where a document belongs | [`project-layout.md`](docs/project-layout.md) |

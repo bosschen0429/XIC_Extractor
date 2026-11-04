@@ -4,7 +4,7 @@ This file owns stable XIC runner, local-input, and expensive-run constraints.
 CLI help owns flag inventories; Issues and validation owners own task-specific
 values and artifacts.
 
-Before repeating expensive validation, check docs/diagnostic-ledger.md and the
+Before repeating expensive validation, check [the diagnostic ledger](diagnostic-ledger.md) and the
 active validation owner. Rerun only when current code, inputs, freshness, or the
 decision oracle changed.
 
@@ -41,7 +41,7 @@ the public template.
 | XIC_ACQUISITION_CACHE_DIR | shared Alignment RAW acquisition cache; keep it on a fast local disk |
 
 Stable accepted-input paths and hashes live in
-docs/diagnostic-ledger.md#stable-inputs. The runner validates the selected inputs;
+[Stable Inputs](diagnostic-ledger.md#stable-inputs). The runner validates the selected inputs;
 do not silently substitute another dataset when the configured input is missing.
 
 Reader setup is documented in [the application guide](../../README.md#run-the-html-workbench).

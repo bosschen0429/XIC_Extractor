@@ -2,7 +2,8 @@
 
 The census records facts derived from tracked or unignored Python source and
 ``pyproject.toml``. Grimp supplies the static module graph. Import Linter owns
-the separate blocking dependency contracts in ``.importlinter``.
+the separate blocking dependency contracts in ``pyproject.toml``
+``[tool.importlinter]``.
 
 Neither surface interprets dynamic loaders or proves installed-package,
 console-wrapper, or frozen-application behavior.
@@ -476,7 +477,7 @@ def write_architecture_census_json(
         "schema_version": "architecture_census",
         "claim": "derived_disposable_not_authority",
         "static_dependency_scope": STATIC_DEPENDENCY_SCOPE,
-        "static_dependency_gate": ".importlinter",
+        "static_dependency_gate": "pyproject.toml [tool.importlinter]",
         "source_identity": _source_identity(repo_root, census),
         "owners": dict(CENSUS_OWNER_REFS),
         "census": census.serializable(),

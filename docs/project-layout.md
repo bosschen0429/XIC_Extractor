@@ -1,14 +1,11 @@
 # Project Layout
 
-本檔是 XIC Extractor 的**目錄收納規則單一可信來源**。Repo 只追蹤長期維護的
-產品、操作、架構、治理與機器契約；施工計畫與交付歷史由 GitHub Issues/PRs
-保存，不以 dated Markdown 留在 repo。
-本節也定義 documentation source-of-truth 與歷程邊界。
+哪些檔案放哪裡、哪些要追蹤。Repo 只追蹤長期維護的程式、文件與它們真正讀取的資料；
+施工計畫與交付歷史在 GitHub Issues／PRs。
 
 ## Repository Tree
 
-這是閱讀用的主要結構，省略個別實作檔案。先分清「程式放哪裡」；
-再用[架構導覽](architecture-contract.md#reading-the-code)找執行入口與責任。
+省略個別實作檔案。執行入口與責任見[架構導覽](architecture-contract.md#reading-the-code)。
 
 ```text
 XIC_Extractor/
@@ -49,185 +46,89 @@ XIC_Extractor/
 ├── xic_workbench/              本機 HTML 分析、結果檢閱、進度／取消及按需 XIC
 │   ├── assets/                分析／檢閱 HTML、JavaScript 與 CSS
 │   └── *.py                   loopback server、設定、工作與 workflow adapters
-├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
+├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試選取
 ├── tests/                     行為測試與小型 fixtures
-├── docs/                      文件依用途分流；不以 HTML 外觀判定權威
-│   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
-│   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
-│   ├── agent/                 按任務載入的執行、驗證與交付契約
+├── docs/
+│   ├── user/                  使用者操作、欄位參考、概念 HTML 與截圖（assets/）；README.md 是索引
+│   ├── product/               產品行為與科學規則；README.md 依主題找文件
+│   ├── agent/                 按任務讀的執行、驗證與交付規則；含診斷結論 ledger
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
-│   └── project-layout.md      本結構樹與收納規則
-├── config/                    未追蹤的本機狀態與部署環境範本
-├── assets/                    圖示與截圖
-├── .github/                   CI 與 GitHub 設定
-├── .codex/                    Repo 的 agent 執行規則
-├── pyproject.toml             套件、依賴、已安裝 CLI 與測試設定
-├── .importlinter              可執行的靜態依賴限制
-├── xic_extractor.spec          Windows 打包輸入
+│   └── project-layout.md      本檔
+├── config/                    未追蹤的本機狀態與設定範本；公開 Targeted 範例在 xic_extractor/configuration/data/
+├── .github/                   CI 與 issue／PR 範本
+├── .codex/                    Repo 的 agent skill 與規則
+├── pyproject.toml             套件、依賴、已安裝 CLI、測試與 import-linter 依賴限制
+├── packaging/                 Windows 打包：PyInstaller spec 與 app icon
+├── launch_gui.bat / .vbs      雙擊啟動 HTML 工作區
 └── output/                    本機執行產物，不追蹤
 ```
 
-`xic_extractor/output/` 是受版本控制的**輸出程式**；根目錄 `output/` 是不追蹤的
-**執行產物**。`alignment/` 現在同時容納演算法、流程、I/O 與交付 adapter，
-不能把整個目錄當成純計算層。`xic_extractor/` 根層也不全是 facade；
-應依[責任表](architecture-contract.md#ownership-map)辨認正式 owner。
+`xic_extractor/output/` 是輸出**程式**；根目錄 `output/` 是不追蹤的執行**產物**。
+`alignment/` 同時容納演算法、流程、I/O 與交付 adapter，不是純計算層；正式 owner 見
+[責任表](architecture-contract.md#ownership-map)。`docs/` 根目錄只放上面兩份文件。
 
-## § 1 主要規則文件的職責分工
+## 新檔案放哪裡
 
-| 文件 | 職責 |
-| --- | --- |
-| [`README.md`](../README.md) | 使用者入口與文件索引 |
-| [`AGENTS.md`](../AGENTS.md) | 高頻 agent guardrails 與 owner routing |
-| [`docs/user/`](user/) | HTML 工作區／CLI 操作手冊、欄位參考與概念 HTML 導覽 |
-| [`docs/product/`](product/) | 維護中的產品語義與 topic authority |
-| [`docs/agent/`](agent/) | 執行、驗證、文件、架構與 PR 契約 |
-| [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
-| 本檔 | 檔案 placement、追蹤/忽略邊界與路徑約束 |
+1. HTML 互動、本機 transport、workflow adapter → `xic_workbench/`。
+2. Public CLI → `scripts/run_<purpose>.py`，並在 `pyproject.toml` 註冊 entry point。
+3. 可重用的 domain 邏輯 → `xic_extractor/<owner>/`；owner 查 architecture contract。
+4. 證據來源 adapter、selection、共用檢閱 renderer、離線匯出 → `xic_inspector/`。
+5. 維護中的診斷 → `tools/diagnostics/<purpose>.py`，並更新 `tools/diagnostics/INDEX.md`。
+6. 測試 → `tests/test_<module>_<behavior>.py`；共用 fixture → `tests/fixtures/`。
+7. 格式契約跟著 consumer：內部資料留在 owner 的 typed model；執行時需要的
+   schema/data 隨讀它的 package 安裝。不因資料是 JSON 就另建 schema。
+8. 小型驗證輸入或 fixture → 放在讀它的程式或 `tests/fixtures/` 旁，必須有現存 consumer。
 
-文件不需要 placement 或 lifecycle 標頭；文件邊界見下方[文件放哪裡](#文件放哪裡)。
+命名規則見 [Module Naming](architecture-contract.md#module-naming)；日期、Issue
+編號與施工 phase 不能當路徑或 schema 名稱。
 
-## § 2 追蹤目錄
-
-| 目錄 | 長期用途 |
-| --- | --- |
-| `xic_extractor/` | Domain 與 pipeline package |
-| `xic_inspector/` | Installed read-only evidence review package；source adapters、共同 selection/API、可掛載 renderer 與 self-contained offline export |
-| `xic_workbench/` | Local HTML analysis and review application；HTTP transport、session view snapshots、按需 HTML 匯出、設定與 workflow adapters |
-| `scripts/` | Public CLI、product adapters、validation scripts |
-| `tools/diagnostics/` | Maintained product-adjacent diagnostics |
-| `tests/` | pytest tests 與小型 fixtures |
-| `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
-| `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
-| `docs/agent/` | Agent/validation/execution contracts |
-| `assets/` | Icons and screenshots |
-| `config/` | Local JSON state and named methods；private values 不追蹤；公開 Targeted 範例在 `xic_extractor/configuration/data/` |
-| `.github/` | GitHub workflows |
-| `.codex/` | Repo-local skills, hooks, rules, and profiles |
-
-`docs/` 根目錄只允許 `project-layout.md`、`architecture-contract.md`、
-`lc-msms-evidence-rules.md`、`diagnostic-ledger.md`。其他文件必須有明確 owner。
-
-### 文件放哪裡
+## 文件放哪裡
 
 | 內容 | 位置 |
 | --- | --- |
-| 現行產品、架構、驗證與 agent 規則 | 對應的 repo 文件（見下表） |
-| 要做的事：計畫、acceptance、拆分、未決的產品決策 | GitHub Issue |
+| 產品行為與科學規則 | `docs/product/<topic>.md` |
+| Readiness 與 expected-diff | `docs/agent/product-validation-contract.md` |
+| Writer authority | [`decision-policy.md`](product/decision-policy.md#writer-authority) |
+| 架構與依賴 | `docs/architecture-contract.md` |
+| 診斷結論與重跑條件 | `docs/agent/diagnostic-ledger.md` |
+| 要做的事：計畫、acceptance、未決的產品決策 | GitHub Issue |
 | 交付的 diff、驗證結果、review 結論 | GitHub PR body |
-| 下一步 1–3 個動作、目前卡點 | ignored local handoff（`docs/superpowers/handoffs/`） |
-| 私人研究與推理 | Obsidian（選用；不能是唯一的副本） |
+| 下一步 1–3 個動作、目前卡點 | 本機 `.handoffs/`（不追蹤） |
+| 私人研究與推理 | Obsidian（選用；不能是唯一副本） |
 | 產生的報表、完整驗證輸出、一次性 audit | ignored `output/` |
 
-- 一條規則只有一個詳細 owner；其他文件只留避免誤用所需的邊界並連過去。
-- 方法或行為改變時直接改現行文件；舊版由 Git 保留，不另建歸檔、計畫、spec、
-  closeout 或歷史 stub。
-- 踩坑得到可重用規則時，更新對該決策有權威的文件；一次性命令、數字與事故
-  敘事留在 PR／Git 歷史。
-- 刪除文件前，把仍有效的內容移到 owner 並修好所有連結。
-- Repo 文件不放聊天紀錄、命令逐字稿、私人 RAW 佈局、本機路徑、憑證，或需要
-  私人 vault 才看得懂的內容。
+- 一條規則只有一個詳細 owner；其他文件只連過去。
+- 行為改變時直接改現行文件；舊版由 Git 保留，不另建歸檔、計畫、spec 或歷史 stub。
+- 刪除文件前，把仍有效的內容移到 owner 並修好連結。
+- Repo 不放聊天紀錄、命令逐字稿、私人 RAW 佈局、本機路徑、憑證，或需要私人
+  vault 才看得懂的內容。完整 workbook、matrix、RAW dump 與探索報告不因曾被人工
+  看過就進版控。
 
-### Current authority routes
+## 不追蹤的目錄
 
-| Claim | Owner |
+| 目錄 | 用途 |
 | --- | --- |
-| Product semantics | `docs/product/<topic>.md` |
-| Readiness claims and expected-diff requirements | `docs/agent/product-validation-contract.md` |
-| Writer authority | `docs/product/decision-policy.md#writer-authority` |
-| LC-MS/MS evidence semantics | `docs/lc-msms-evidence-rules.md` |
-| Validation verdict and rerun policy | `docs/diagnostic-ledger.md` or current checker-consumed artifact |
-| Architecture/dependency ownership | `docs/architecture-contract.md` |
-| Active construction decision | GitHub Issue |
-| Delivered branch evidence | GitHub PR body |
+| `.venv/`, `.uv-cache/`, `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `.tmp/` | 可重建的 cache |
+| `output/` | 執行產物與本機證據；不是可重用輸入 |
+| `tmp_runtime/` | 可重算的 pipeline cache；清除會增加重算成本 |
+| `.worktrees/` | 本機 Git worktrees；不是 cache，移除前確認 branch 與未提交變更 |
+| `local_validation_artifacts/` | 跨 worktree 重用的驗證輸入，以相對路徑引用 |
+| `local_raw_samples/`, `local_validation_raw/` | 私人 RAW，永不追蹤 |
+| `.superpowers/`, `.remember/` | Agent 工具暫存 |
+| `.handoffs/` | 本機 handoff：下一步動作與卡點，不進版控 |
 
-## § 3 忽略目錄
+清理前先確認確切目標；本檔不提供遞迴刪除命令。
 
-| 目錄 | 用途 / retention |
-| --- | --- |
-| `.venv/`, `.uv-cache/`, `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, `.tmp/` | 可重建的 tool/runtime cache |
-| `output/` | Pipeline output、generated audits、routing tables、local evidence packets |
-| `tmp_runtime/` | 可重算的 pipeline/validation pickle cache |
-| `.worktrees/` | Local Git worktrees；移除前逐一確認 branch 與 dirty state |
-| `local_validation_artifacts/` | 可重用但不進 git 的 accepted validation inputs |
-| `local_raw_samples/`, `local_validation_raw/` | 私人 RAW samples |
-| `.superpowers/`, `.remember/` | Agent tool scratch/state |
-| `docs/superpowers/handoffs/` | Ignored local handoff workspace only |
+## 搬移時的連動
 
-Validation output 預設留在 ignored storage。Repo 只保留 clean checkout 能審查
-claim 的最小 contract seed、hash/row count、regeneration metadata 或 focused
-fixture。完整 workbook、full matrix、RAW-derived dump 與 exploratory report 不得
-因為「曾被人工看過」就升格為 tracked authority。
-
-## § 4 不可分離的路徑約束
-
-### Package discovery
-
-`pyproject.toml` 的 `packages.find` 包含 `scripts*`、`tools*`、
-`xic_extractor*`、`xic_inspector*`、`xic_workbench*`，並排除 `tests*`。這些 package roots 必須維持在 repo root；搬移
-時要同步驗證 installed CLI/package closure。
-
-### Frozen bundle
-
-`xic_extractor.spec` starts `xic_workbench/__main__.py` and bundles the app
-icon, config examples, workbench/Inspector assets, preset TOMLs, and required
-package data. Inspector's rendering assets are shared by the mounted workbench
-view and single-file offline export. Moving those paths requires a matching
-spec/build-workflow update and dev/frozen verification. The source entry point
-does not prove the frozen artifact.
-
-### Config/output siblings
-
-`xic_extractor/configuration/loader.py` 由 config parent 導出 `output/`。移動
-`config/` 或 `output/` 時，必須同步驗證 HTML 工作區與 CLI 的路徑導航。
-
-## § 5 新檔案 routing
-
-1. HTML application interaction, local transport, or workflow adapter → `xic_workbench/`。
-2. Public CLI/product adapter → `scripts/`，public CLI 同步註冊 entry point。
-3. Reusable domain logic → `xic_extractor/<owner>/`；owner 查 architecture contract。
-4. Installed evidence source adapter、selection、共用檢閱 renderer 或 offline exporter → `xic_inspector/`。
-5. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
-6. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
-7. Stable product/user/agent/architecture rule → 對應 canonical owner。
-8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
-   執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
-   schema 與該 checker 的 validation contract 放在一起。
-   不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
-9. Small validation input or fixture → 放在讀它的程式或 `tests/fixtures/` 旁，
-   必須有現存 consumer。
-10. Construction spec/plan → GitHub Issue；branch closeout → PR body。
-11. Generated report/audit/full output → ignored `output/`。
-12. Optional private research → Obsidian；throwaway context → ignored scratch。
-
-抽象與設定依 [architecture design principles](architecture-contract.md#design-principles)
-判斷目前收益與維護成本。新 artifact lane 需要長期 owner、consumer 與 retirement
-rule，不能只因單次施工方便而建立。
-
-## § 6 暫存資料安全
-
-- Cache 可在沒有 active process 使用時清除；刪除後應可由 documented command 重建。
-- `tmp_runtime/` 清除會增加重算成本，先確認需要的結果已寫入別處。
-- `.worktrees/` 不是 cache；逐一確認 branch、dirty diff 與 merge state 後才移除。
-- `output/` 是 evidence reference，不是 durable input store。跨 worktree accepted
-  input 放 `local_validation_artifacts/`，並使用相對 locator。
-- RAW 與 private validation data 永不追蹤。
-- 不在本文件提供一鍵遞迴刪除命令；實際清理必須先解析 exact target。
-
-## § 7 命名與維護
-
-| 類別 | 慣例 |
-| --- | --- |
-| Schema | 依 § 5 的 consumer 選 owner；名稱描述格式契約，只有相容性需要時加入語義版本 |
-| Test | `tests/test_<module>_<behavior>.py` |
-| Public CLI | `scripts/run_<purpose>.py` |
-| Diagnostic | `tools/diagnostics/<purpose>.py` |
-| Product owner | `docs/product/<topic>.md` |
-
-`<purpose>` 與 `<contract>` 必須描述長期 owner、行為或 artifact role；Issue／PR
-編號、施工 package／phase、`P7`／`M7`、Gate B/C、日期與第一批驗證資料量
-不得充當 current path 或 schema identity。凍結 provenance path、真正 schema
-version、科學名稱與輸入 cardinality 不受此限制。
-
-只有在第一層目錄、placement policy、package/bundle path constraint、ignored
-storage semantics 或命名規則改變時更新本檔。內部 module 拆分與待辦不寫在這裡；
-由 architecture owner 與 GitHub Issues 管理。
+- **Package roots：** `pyproject.toml` 的 `packages.find` 包含 `scripts*`、
+  `tools*`、`xic_extractor*`、`xic_inspector*`、`xic_workbench*`，排除
+  `tests*`。這些目錄須留在 repo root；搬移時驗證已安裝 CLI 與 package。
+- **Frozen bundle：** `packaging/xic_extractor.spec` 從 `xic_workbench/__main__.py`
+  啟動，以 repo root 解析路徑，打包設定範例、workbench／Inspector assets、preset
+  TOML 與 package data；app icon 在同一目錄。
+  搬移這些路徑要同步更新 spec 與 build workflow，並驗證打包後的程式；原始碼入口
+  不能證明打包結果。
+- **Config 與 output：** `xic_extractor/configuration/loader.py` 由 config 的
+  上層目錄導出 `output/`。搬移 `config/` 或 `output/` 時，驗證 HTML 工作區與 CLI
+  的路徑。

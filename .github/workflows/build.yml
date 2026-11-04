@@ -81,7 +81,7 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
-          & .\.venv\Scripts\python.exe -m PyInstaller xic_extractor.spec --clean --noconfirm
+          & .\.venv\Scripts\python.exe -m PyInstaller packaging/xic_extractor.spec --clean --noconfirm
 
       - name: Package distribution
         shell: pwsh

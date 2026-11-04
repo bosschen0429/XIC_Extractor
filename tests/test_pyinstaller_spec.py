@@ -18,6 +18,7 @@ from PyInstaller.utils.hooks import collect_data_files
 from xic_extractor.presets import list_presets
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SPEC_PATH = PROJECT_ROOT / "packaging" / "xic_extractor.spec"
 TARGET_TEMPLATE_RELATIVE = (
     Path("xic_extractor") / "configuration" / "data" / "targets.csv"
 )
@@ -242,8 +243,8 @@ metadata_output.write_text(
 )
 """
 PACKAGING_SOURCE_DIRECTORIES = (
-    "assets",
     "config",
+    "packaging",
     "scripts",
     "tools",
     "xic_extractor",
@@ -274,7 +275,7 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
 
     with pytest.raises(AnalysisReached):
         runpy.run_path(
-            str(PROJECT_ROOT / "xic_extractor.spec"),
+            str(SPEC_PATH),
             init_globals={"Analysis": inspect_dependency_search},
         )
 
@@ -286,8 +287,7 @@ def packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     source_root = temp_root / "source"
     source_root.mkdir()
 
-    for filename in ("pyproject.toml", "xic_extractor.spec"):
-        shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
+    shutil.copy2(PROJECT_ROOT / "pyproject.toml", source_root / "pyproject.toml")
     for directory in PACKAGING_SOURCE_DIRECTORIES:
         if directory == "config":
             # A package must not depend on or copy a developer's ignored state.
@@ -380,7 +380,7 @@ def test_development_and_frozen_config_roots_stay_with_the_application(
 
 
 def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
     hiddenimports_match = re.search(
         r"hiddenimports=\[(?P<body>.*?)\],",
         spec_text,
@@ -393,16 +393,19 @@ def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
 
 
 def test_pyinstaller_spec_starts_html_workbench_and_excludes_qt() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
 
-    assert 'Analysis(\n    ["xic_workbench/__main__.py"]' in spec_text
+    assert (
+        'Analysis(\n    [os.path.join(ROOT, "xic_workbench", "__main__.py")]'
+        in spec_text
+    )
     assert 'excludes=["PyQt6", "PySide6"]' in spec_text
     assert '"PyQt6.' not in spec_text
     assert '"PySide6.' not in spec_text
 
 
 def test_pyinstaller_spec_includes_inspector_api() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
     assert '"xic_inspector.api"' in spec_text
     assert '"xic_inspector.sources.cid_nl"' in spec_text
     assert '"xic_inspector.rendering.html_builder"' in spec_text
@@ -441,7 +444,7 @@ def test_pyinstaller_collects_workbench_frontend() -> None:
 
 
 def test_pyinstaller_spec_includes_builtin_preset_tomls() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
 
     assert "collect_data_files" in spec_text
     assert '"xic_extractor.presets"' in spec_text
@@ -468,7 +471,7 @@ def test_pyinstaller_collects_builtin_preset_tomls() -> None:
 
 
 def test_pyinstaller_spec_includes_discovery_default_background_library() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
 
     assert "discovery_datas = collect_data_files(" in spec_text
     assert '"xic_extractor.discovery"' in spec_text
@@ -693,7 +696,7 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
             str(dist_root),
             "--workpath",
             str(work_root),
-            str(packaging_source / "xic_extractor.spec"),
+            str(packaging_source / "packaging" / "xic_extractor.spec"),
         ),
         cwd=packaging_source,
         timeout_seconds=900,

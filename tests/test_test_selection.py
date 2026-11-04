@@ -333,7 +333,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
     (
         ("pyproject.toml", {"packaging_build", "browser_e2e"}),
         ("uv.lock", {"packaging_build", "browser_e2e"}),
-        ("xic_extractor.spec", {"packaging_build"}),
+        ("packaging/xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
         (".github/workflows/ci.yml", {"packaging_build", "browser_e2e"}),
         ("tests/test_test_selection.py", set()),
