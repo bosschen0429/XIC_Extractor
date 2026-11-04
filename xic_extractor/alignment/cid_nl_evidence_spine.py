@@ -44,8 +44,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-VALIDATION_STATUS = "diagnostic_only"
-
 
 class CidNlEvidenceSpineError(ValueError):
     """Raised when the bounded CellObservationRef reference spine cannot close
@@ -59,7 +57,6 @@ class TargetedCellObservationReferenceProjection:
 
     cell: CellObservationRef
     group: CrossSamplePeakGroupHypothesis
-    validation_status: str = VALIDATION_STATUS
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +65,6 @@ class UntargetedCellObservationReferenceProjection:
 
     cell: CellObservationRef
     group: CrossSamplePeakGroupHypothesis
-    validation_status: str = VALIDATION_STATUS
 
 
 @dataclass(frozen=True, slots=True)

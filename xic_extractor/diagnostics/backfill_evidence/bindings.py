@@ -11,8 +11,6 @@ from xic_extractor.alignment.backfill.evidence_contract import (
     BackfillEvidenceRecord,
     EvidenceClaim,
     EvidenceClaimState,
-    SkippedEvidenceOwnerBindings,
-    SkippedEvidenceRecord,
 )
 from xic_extractor.diagnostics.backfill_evidence.serialization import (
     backfill_evidence_identity_candidates,
@@ -73,31 +71,6 @@ def rehydrate_backfill_evidence_bindings(
         group_assignment_binding=group_assignment_binding,
         candidate_assignment=candidate_assignment,
     )
-
-
-def validate_skipped_evidence_bindings(
-    record: SkippedEvidenceRecord,
-    bindings: SkippedEvidenceOwnerBindings,
-) -> None:
-    if record.feature_id not in bindings.known_feature_ids:
-        raise ValueError(f"unknown feature_id {record.feature_id!r}")
-    if record.sample_stem not in bindings.known_sample_stems:
-        raise ValueError(f"unknown sample_stem {record.sample_stem!r}")
-    if record.backfill_scope != bindings.expected_backfill_scope:
-        raise ValueError(
-            f"backfill_scope {record.backfill_scope!r} does not match expected "
-            f"{bindings.expected_backfill_scope!r}"
-        )
-    if record.predicate_version != bindings.expected_predicate_version:
-        raise ValueError(
-            f"predicate_version {record.predicate_version!r} does not match expected "
-            f"{bindings.expected_predicate_version!r}"
-        )
-    if record.source_artifact != bindings.expected_source_artifact:
-        raise ValueError(
-            f"source_artifact {record.source_artifact!r} does not match expected "
-            f"{bindings.expected_source_artifact!r}"
-        )
 
 
 def backfill_evidence_query_claims(
@@ -212,66 +185,7 @@ def _all_backfill_owner_results(
     )
 
 
-def skipped_evidence_query_claims(
-    *,
-    found: bool,
-    owner_bound: bool,
-) -> tuple[EvidenceClaim, ...]:
-    return (
-        EvidenceClaim(
-            subject="record_content",
-            state=(
-                EvidenceClaimState.OWNER_REHYDRATED
-                if found
-                else EvidenceClaimState.UNAVAILABLE
-            ),
-            reason=(
-                "complete SkippedEvidenceRecord reconstructed by the Alignment "
-                "Backfill scope owner parser"
-                if found
-                else "no matching skipped record was retained"
-            ),
-        ),
-        EvidenceClaim(
-            subject="cross_artifact_binding",
-            state=(
-                EvidenceClaimState.OWNER_REHYDRATED
-                if found and owner_bound
-                else EvidenceClaimState.UNAVAILABLE
-            ),
-            reason=(
-                "family, sample, scope, predicate, and source bindings passed"
-                if found and owner_bound
-                else "complete owner bindings were not supplied or no record matched"
-            ),
-        ),
-        EvidenceClaim(
-            subject="full_audit_execution",
-            state=(
-                EvidenceClaimState.STRUCTURE_BOUND
-                if found
-                else EvidenceClaimState.UNAVAILABLE
-            ),
-            reason=(
-                "the persisted availability literal passed schema invariants but is "
-                "not a runtime execution receipt"
-                if found
-                else "no matching skipped record was retained"
-            ),
-        ),
-        EvidenceClaim(
-            subject="missing_key_absence",
-            state=EvidenceClaimState.UNAVAILABLE,
-            reason=(
-                "zero retained rows does not prove a Backfill request was unnecessary"
-            ),
-        ),
-    )
-
-
 __all__ = (
     "backfill_evidence_query_claims",
     "rehydrate_backfill_evidence_bindings",
-    "skipped_evidence_query_claims",
-    "validate_skipped_evidence_bindings",
 )

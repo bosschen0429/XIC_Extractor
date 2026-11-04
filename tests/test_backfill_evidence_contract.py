@@ -5,24 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.skipped_evidence_ledger_fixture import write_skipped_evidence_ledger_fixture
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-    PREDICATE_VERSION,
-    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,
     EvidenceClaimState,
-    SkippedEvidenceOwnerBindings,
-)
-from xic_extractor.alignment.backfill.scope import (
-    SkippedEvidenceRecord,
 )
 from xic_extractor.diagnostics.backfill_evidence.tsv import (
     iter_backfill_evidence_tsv,
-    iter_skipped_evidence_tsv,
     lookup_backfill_evidence_tsv,
-    lookup_skipped_evidence_tsv,
 )
 
 
@@ -75,28 +66,6 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
     return row
 
 
-def _skipped_row(**overrides: str) -> dict[str, str]:
-    row = {
-        "feature_id": "F000001",
-        "sample_stem": "sample-a",
-        "family_center_mz": "242.1",
-        "family_center_rt": "1.25",
-        "rt_window_start": "-1.75",
-        "rt_window_end": "4.25",
-        "pre_backfill_category": "single_detected_no_consolidation_candidate",
-        "skipped_stage": "owner_backfill",
-        "skip_reason": "single_detected_no_consolidation_candidate",
-        "backfill_scope": "production-equivalent",
-        "predicate_version": PREDICATE_VERSION,
-        "raw_xic_requests_skipped": "1",
-        "would_emit_in_full_audit": "True",
-        "full_audit_available": "True",
-        "source_artifact": "owner_backfill",
-    }
-    row.update(overrides)
-    return row
-
-
 def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
     return BackfillEvidenceOwnerBindings(
         known_feature_ids=frozenset({"F000001", "F000002"}),
@@ -105,16 +74,6 @@ def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
             "sample-a#candidate-1": "sample-a",
             "sample-b#candidate-1": "sample-b",
         },
-    )
-
-
-def _skipped_bindings() -> SkippedEvidenceOwnerBindings:
-    return SkippedEvidenceOwnerBindings(
-        known_feature_ids=frozenset({"F000001", "F000002"}),
-        known_sample_stems=frozenset({"sample-a", "sample-b"}),
-        expected_backfill_scope="production-equivalent",
-        expected_predicate_version=PREDICATE_VERSION,
-        expected_source_artifact="owner_backfill",
     )
 
 
@@ -226,44 +185,6 @@ def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
         tuple(iter_backfill_evidence_tsv(path, owner_bindings=bindings))
 
 
-def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> None:
-    source = SkippedEvidenceRecord(
-        feature_id="F000001",
-        sample_stem="sample-a",
-        family_center_mz=242.1,
-        family_center_rt=1.25,
-        rt_window_start=-1.75,
-        rt_window_end=4.25,
-        pre_backfill_category="single_detected_no_consolidation_candidate",
-        skipped_stage="owner_backfill",
-        skip_reason="single_detected_no_consolidation_candidate",
-        backfill_scope="production-equivalent",
-        predicate_version=PREDICATE_VERSION,
-        raw_xic_requests_skipped=1,
-        would_emit_in_full_audit=True,
-        full_audit_available=True,
-        source_artifact="owner_backfill",
-    )
-    path = write_skipped_evidence_ledger_fixture(tmp_path / "skipped.tsv", (source,))
-
-    result = lookup_skipped_evidence_tsv(
-        path,
-        feature_id="F000001",
-        sample_stem="sample-a",
-        owner_bindings=_skipped_bindings(),
-    )
-
-    assert result.records == (source,)
-    assert result.claim("record_content").state is EvidenceClaimState.OWNER_REHYDRATED
-    assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.OWNER_REHYDRATED
-    )
-    assert result.claim("full_audit_execution").state is (
-        EvidenceClaimState.STRUCTURE_BOUND
-    )
-    assert result.claim("missing_key_absence").state is EvidenceClaimState.UNAVAILABLE
-
-
 @pytest.mark.parametrize(
     ("lookup", "header", "row", "query"),
     [
@@ -271,12 +192,6 @@ def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> N
             lookup_backfill_evidence_tsv,
             ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
             _backfill_row(),
-            {"feature_id": "missing", "sample_stem": "sample-a"},
-        ),
-        (
-            lookup_skipped_evidence_tsv,
-            SKIPPED_EVIDENCE_LEDGER_COLUMNS,
-            _skipped_row(),
             {"feature_id": "missing", "sample_stem": "sample-a"},
         ),
     ],
@@ -427,52 +342,3 @@ def test_reordered_distinct_backfill_rows_preserve_source_order(tmp_path: Path) 
         "F000002",
         "F000001",
     ]
-
-
-@pytest.mark.parametrize(
-    ("overrides", "message"),
-    [
-        ({"predicate_version": "unsupported_p7-backfill-scope"}, "predicate_version"),
-        ({"source_artifact": "caller_projection"}, "source_artifact"),
-        ({"would_emit_in_full_audit": "FALSE"}, "would_emit_in_full_audit"),
-        ({"raw_xic_requests_skipped": "0"}, "raw_xic_requests_skipped"),
-        ({"sample_stem": "sample-z"}, "unknown sample_stem"),
-        (
-            {"backfill_scope": "selected-families"},
-            "pre_backfill_category",
-        ),
-    ],
-)
-def test_skipped_reader_rejects_stale_malformed_or_cross_bound_fields(
-    tmp_path: Path,
-    overrides: dict[str, str],
-    message: str,
-) -> None:
-    path = _write_rows(
-        tmp_path / "skipped.tsv",
-        SKIPPED_EVIDENCE_LEDGER_COLUMNS,
-        [_skipped_row(**overrides)],
-    )
-
-    with pytest.raises(ValueError, match=message):
-        tuple(
-            iter_skipped_evidence_tsv(
-                path,
-                owner_bindings=_skipped_bindings(),
-            )
-        )
-
-
-def test_skipped_lookup_rejects_duplicate_composite_identity(tmp_path: Path) -> None:
-    path = _write_rows(
-        tmp_path / "skipped.tsv",
-        SKIPPED_EVIDENCE_LEDGER_COLUMNS,
-        [_skipped_row(), _skipped_row(raw_xic_requests_skipped="2")],
-    )
-
-    with pytest.raises(ValueError, match="duplicate composite identity"):
-        lookup_skipped_evidence_tsv(
-            path,
-            feature_id="F000001",
-            sample_stem="sample-a",
-        )

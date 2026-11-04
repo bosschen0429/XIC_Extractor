@@ -119,7 +119,6 @@ from xic_extractor.untargeted_execution.acquisition_cache import (
 )
 from xic_extractor.xic_models import XICRequest
 
-VALIDATION_STATUS = "diagnostic_only"
 _ADAPTER_NAMESPACE = "xic_extractor.untargeted_cid_nl_real_data_adapter"
 UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = (
     f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}"
@@ -149,7 +148,6 @@ class CidNlAcquisitionResult:
     captures: tuple[capture_owner.SampleLocalCapture, ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
-    validation_status: str = VALIDATION_STATUS
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
@@ -161,7 +159,6 @@ class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessmentRef
     backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch
-    validation_status: str = VALIDATION_STATUS
     group_hypothesis_id: str | None = None
     query_rt: float | None = None
     query_rt_basis: str = "group_center"

@@ -9,9 +9,7 @@ from typing import Literal, cast
 
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceRecord,
-    SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.matrix import CellStatus
 from xic_extractor.alignment.production_decisions import (
@@ -83,40 +81,6 @@ def backfill_evidence_record_from_projection(
     )
 
 
-def skipped_evidence_record_from_projection(
-    row: Mapping[str, str],
-) -> SkippedEvidenceRecord:
-    _require_exact_fields(row, SKIPPED_EVIDENCE_LEDGER_COLUMNS)
-    return SkippedEvidenceRecord(
-        feature_id=_required_text(row, "feature_id"),
-        sample_stem=_required_text(row, "sample_stem"),
-        family_center_mz=_parse_required_float(row, "family_center_mz"),
-        family_center_rt=_parse_required_float(row, "family_center_rt"),
-        rt_window_start=_parse_required_float(row, "rt_window_start"),
-        rt_window_end=_parse_required_float(row, "rt_window_end"),
-        pre_backfill_category=_required_text(row, "pre_backfill_category"),
-        skipped_stage=_required_text(row, "skipped_stage"),
-        skip_reason=_required_text(row, "skip_reason"),
-        backfill_scope=_required_text(row, "backfill_scope"),
-        predicate_version=_required_text(row, "predicate_version"),
-        raw_xic_requests_skipped=_parse_positive_int(
-            row,
-            "raw_xic_requests_skipped",
-        ),
-        would_emit_in_full_audit=_parse_bool(
-            row,
-            "would_emit_in_full_audit",
-            style="title",
-        ),
-        full_audit_available=_parse_bool(
-            row,
-            "full_audit_available",
-            style="title",
-        ),
-        source_artifact=_required_text(row, "source_artifact"),
-    )
-
-
 def backfill_evidence_record_to_projection(
     record: BackfillEvidenceRecord,
 ) -> dict[str, str]:
@@ -154,34 +118,6 @@ def backfill_evidence_record_to_projection(
         "reason": record.reason,
         "backfill_query_rt_min": _float_text(record.backfill_query_rt_min),
         "backfill_query_rt_max": _float_text(record.backfill_query_rt_max),
-    }
-
-
-def skipped_evidence_record_to_projection(
-    record: SkippedEvidenceRecord,
-) -> dict[str, str]:
-    return {
-        "feature_id": record.feature_id,
-        "sample_stem": record.sample_stem,
-        "family_center_mz": _float_text(record.family_center_mz),
-        "family_center_rt": _float_text(record.family_center_rt),
-        "rt_window_start": _float_text(record.rt_window_start),
-        "rt_window_end": _float_text(record.rt_window_end),
-        "pre_backfill_category": record.pre_backfill_category,
-        "skipped_stage": record.skipped_stage,
-        "skip_reason": record.skip_reason,
-        "backfill_scope": record.backfill_scope,
-        "predicate_version": record.predicate_version,
-        "raw_xic_requests_skipped": str(record.raw_xic_requests_skipped),
-        "would_emit_in_full_audit": _bool_text(
-            record.would_emit_in_full_audit,
-            style="title",
-        ),
-        "full_audit_available": _bool_text(
-            record.full_audit_available,
-            style="title",
-        ),
-        "source_artifact": record.source_artifact,
     }
 
 
@@ -287,6 +223,4 @@ __all__ = (
     "backfill_evidence_identity_projection_spellings",
     "backfill_evidence_record_from_projection",
     "backfill_evidence_record_to_projection",
-    "skipped_evidence_record_from_projection",
-    "skipped_evidence_record_to_projection",
 )

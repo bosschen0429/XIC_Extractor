@@ -47,7 +47,6 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 POLICY_VERSION = "conservative-backfill"
-VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
@@ -80,7 +79,6 @@ class ConservativeBackfillGroupFacts:
     may_attempt_backfill: bool
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
-    validation_status: str = VALIDATION_STATUS
     unsearched_sample_ids: tuple[str, ...] = ()
 
 
@@ -96,7 +94,6 @@ class ConservativeBackfillCandidateUniverse:
     method_evidence: CellMethodEvidence
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
-    validation_status: str = VALIDATION_STATUS
 
     @property
     def method_subject_id(self) -> str:
@@ -114,7 +111,6 @@ class ConservativeBackfillEvidence:
     candidate_universe: ConservativeBackfillCandidateUniverse
     peak_observation: PeakObservationRef
     evidence_source: str = "owner_backfill_revisit"
-    validation_status: str = VALIDATION_STATUS
 
     @property
     def method_subject_id(self) -> str:
@@ -134,7 +130,6 @@ class ConservativeBackfillCellDecision:
     disposition: ConservativeBackfillDisposition
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
-    validation_status: str = VALIDATION_STATUS
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("ConservativeBackfillCellDecision is final")

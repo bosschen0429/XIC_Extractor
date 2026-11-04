@@ -158,7 +158,6 @@ def alignment_metadata(
     heavy_audit_enabled: bool = True,
     audit_evidence_mode_reason: str = "",
     scope_warning: str = "",
-    skipped_evidence_predicate_version: str = "",
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
@@ -198,7 +197,6 @@ def alignment_metadata(
         "heavy_audit_enabled": str(heavy_audit_enabled),
         "audit_evidence_mode_reason": audit_evidence_mode_reason,
         "scope_warning": scope_warning,
-        "skipped_evidence_predicate_version": skipped_evidence_predicate_version,
         "feature_id_policy": "report_scoped_measured_member_order",
         "matrix_split_evaluation_status": "complete_no_product_ready_split",
         "matrix_projection_status": "not_projection",

@@ -87,7 +87,6 @@ def test_alignment_metadata_records_backfill_scope() -> None:
         selected_family_count=2,
         selected_family_source="tsv:selected.tsv",
         scope_warning="diagnostic_only_incomplete_scope",
-        skipped_evidence_predicate_version="alignment-parity-scoped-test",
     )
 
     assert metadata["backfill_scope"] == "selected-families"
@@ -95,9 +94,6 @@ def test_alignment_metadata_records_backfill_scope() -> None:
     assert metadata["selected_family_count"] == "2"
     assert metadata["selected_family_source"] == "tsv:selected.tsv"
     assert metadata["scope_warning"] == "diagnostic_only_incomplete_scope"
-    assert (
-        metadata["skipped_evidence_predicate_version"] == "alignment-parity-scoped-test"
-    )
 
 
 def test_alignment_metadata_records_audit_evidence_mode() -> None:

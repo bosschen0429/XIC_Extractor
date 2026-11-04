@@ -47,12 +47,9 @@ commands.
 
 1. [Validation Gates](#validation-gates)
 2. [Evidence Consistency](#evidence-consistency)
-3. [Backfill Reviews](#backfill-reviews)
-4. [Peak / Candidate Audits](#peak--candidate-audits)
-5. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
-6. [Instrument QC](#instrument-qc)
-7. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
-8. [Surface Population And Reachability](#surface-population-and-reachability)
+3. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
+4. [Instrument QC](#instrument-qc)
+5. [Surface Population And Reachability](#surface-population-and-reachability)
 
 ---
 
@@ -90,14 +87,6 @@ baseline decision closed. AsLS is the current production baseline integration
 method, and `linear_edge` is retired as a selectable baseline method. Do not add
 new diagnostics that compare against or fall back to linear-edge; use current
 AsLS/boundary/product contracts instead.
-
----
-
-### `backfill_evidence_cost_summary.py`
-
-**Purpose**: Summarize backfill evidence cost and correctness outcomes.
-**Topic group**: `backfill_evidence_cost_summary.py`
-**Originating spec/plan**: `retired-provenance:ad226e2eb39a`, `retired-provenance:10eb03817ff8`
 
 ---
 
@@ -233,79 +222,6 @@ scoring, or values.
 
 ---
 
-## Backfill Reviews
-
-Four Backfill review tools: a Parquet shadow bundle of the Backfill evidence
-TSV projections, a `diagnostic_only` evidence-gate sidecar for product-retained
-Backfill, a fast-mode expected-diff packet against exact `dna_dr_product_ready`
-output, and a PeakHypothesis Backfill transfer-readiness summary.
-
-### `backfill_evidence_parquet_shadow.py`
-
-**Purpose**: Build a post-run, opt-in Parquet shadow bundle for the existing
-owner-readable Backfill and skipped-evidence TSV projections.
-**Topic group**: `backfill_evidence_parquet_shadow.py` +
-`xic_extractor.alignment.backfill_evidence_{parquet,parquet_bundle}`.
-**Originating issue**: [#200](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/200).
-**Status note**: `diagnostic_only`; this command does not run Alignment or RAW,
-does not register a console script, and does not change TSV schemas, paths,
-defaults, Matrix values, or artifact authority. The manifest binds source and
-Parquet bytes, row counts, and relative locators. Owner claims still come from
-the shared Backfill evidence parser; canonical group assignments and public
-compatibility-label bindings are reported separately, formula-protected machine
-IDs must resolve unambiguously against owner bindings, and a missing lookup
-remains unavailable.
-
----
-
-### `retained_backfill_evidence_gate.py`
-
-**Purpose**: Emit a `diagnostic_only` machine sidecar for product-retained backfill family/seed groups, linking actual primary-matrix backfill behavior to seed provenance, MS1 overlay support/blockers, missing evidence, and source artifact hashes.
-**Topic group**: `retained_backfill_evidence_gate.py` + `xic_extractor/diagnostics/retained_backfill_evidence_gate.py`
-**Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Writes `alignment_retained_backfill_evidence_gate.tsv`, `alignment_retained_backfill_evidence_gate.json`, `alignment_retained_backfill_missing_overlay_queue.tsv`, and `alignment_retained_backfill_overlay_review_queue.tsv`. It consumes existing alignment review/cell/matrix, optional owner backfill seed audit, and optional overlay summary TSVs only. `detected=0` families are excluded from main rows and counted separately. Exact `seed_group_id` overlay rows are required for seed-specific MS1 support/blocker decisions; legacy overlay rows without `seed_group_id` are retained only as family context and are re-queued as `missing_seed_specific_overlay`. Missing-overlay rows with seed provenance are emitted as review queues; the full missing-overlay queue and family-deduplicated review queue share one ordered candidate list during output writing. It does not accept RAW/DLL paths, does not generate overlays, does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbook schemas, or product decisions, and does not declare production readiness.
-
----
-
-
-### `backfill_peakhypothesis_transfer_readiness.py`
-
-**Purpose**: Summarize transfer readiness for a reviewed PeakHypothesis backfill
-promotion slice by joining the promotion summary, 8RAW/current-writer activation
-acceptance, FULL COHORT current-writer artifact contract, optional FULL COHORT slice gate
-summary, optional FULL COHORT hypothesis manual-review summary, and optional FULL COHORT
-winner-remap proposal summary.
-**Topic group**: `backfill_peakhypothesis_transfer_readiness.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_transfer_readiness.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_transfer_readiness.tsv` and
-`backfill_peakhypothesis_transfer_readiness_summary.json`. The gate is a
-decision surface, not a matrix writer: it does not read RAW, apply activation,
-mutate alignment artifacts, or change workbook schemas. A pass through its hard
-checks can report `readiness_label=production_candidate` when the 8RAW matrix
-diff acceptance passes and the FULL COHORT artifact refresh uses the canonical
-current-writer contract. With `--full-cohort-acceptance-gate-summary-json`, a failing
-slice gate becomes a hard blocker such as
-`full_cohort_slice_specific_no_regression_failed`; a missing slice gate remains
-`full_cohort_acceptance_gate_status=not_assessed`. A hypothesis-anchor partial gate is
-surfaced as `full_cohort_acceptance_gate_hypothesis_candidate_review_count` with
-`next_action=review_full_cohort_hypothesis_candidates_before_product_transfer`. When
-`--full_cohort-hypothesis-review-summary-json` shows every review candidate was
-manually accepted as same-peak evidence, the partial gate no longer counts as a
-hard peak-shape failure; readiness records
-`full_cohort_peak_shape_review_status=manual_same_peak_supported_all_review_candidates`
-and moves the remaining blocker to `full_cohort_consolidation_policy_not_productized`.
-Winner-remap summaries are optional legacy context and no longer override the
-hypothesis-anchor next action. It deliberately keeps `production_ready=FALSE`
-until an explicit product-transfer decision and consolidation policy exist.
-
----
-
-## Peak / Candidate Audits
-
----
-
 ## Targeted Benchmarks & Reviews
 
 ### `targeted_istd_benchmark.py`
@@ -384,18 +300,6 @@ are not daily).
 **Recent doc**: `retired-provenance:b15c365ea97c`
 
 ---
-
-## Peak-Group / Overlay Visualization
-
-New human-facing chromatogram review goes through XIC Inspector (see
-[script lifecycle](../../docs/agent/script-tool-lifecycle.md#diagnostic-boundaries)); the Matplotlib tools in this section are retirement candidates under #441.
-
-Matplotlib-rendered MS1 overlay visuals for human review of backfill candidates.
-Legacy `family_ms1_*` filenames and `feature_family_id` fields mean public
-row-label compatibility, not product identity authority. Peak-group overlays are
-context; mode-aware outputs should use
-`peak_hypothesis_id` / selected-apex mode evidence when a row may contain
-multiple MS1 peak modes.
 
 ## Surface Population And Reachability
 

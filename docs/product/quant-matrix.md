@@ -136,7 +136,7 @@ and scored without a rerun. It does not establish production readiness by itself
   `ProductionCellDecision`.
 - Passing a pre-final cell collection directly to a writer.
 - Adding diagnostic evidence columns to the primary matrix.
-- Claiming `production_ready` from contract fixtures or 8RAW smoke alone.
+- Claiming production readiness from contract fixtures or 8RAW smoke alone.
 
 ## See Also
 
