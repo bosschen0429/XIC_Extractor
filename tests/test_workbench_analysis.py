@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.inspector_fixtures import create_inspector_report
 from tests.raw_header_fakes import install_raw_sample_headers
-from tests.test_targeted_method_files import rows as sample_target_rows
-from tests.test_xic_inspector_api import _create_mock_db
-from tests.test_xic_workbench import _client
+from tests.targeted_fixtures import targeted_rows as sample_target_rows
+from tests.workbench_http import workbench_client
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.raw_reader import RawSampleHeader
 from xic_inspector.api import SelectionRequest, prepare_report
@@ -148,7 +148,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     monkeypatch.setattr("xic_workbench.config_io.write_targets", lambda *a, **kw: None)
     workspace = ReviewWorkspace(config_dir=tmp_path)
     jobs = workspace.analysis.jobs
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         try:
             jobs.start("targeted", {"settings": {}, "targets": sample_target_rows()})
             success = _terminal(jobs)["results"]["targeted"]
@@ -188,7 +188,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
 
 def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
         assert config["targeted_form"]["settings"]
@@ -548,10 +548,8 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
     stale_dir = tmp_path / "stale"
     current_dir.mkdir()
     stale_dir.mkdir()
-    current_report, current_matrix, current_hash = _create_mock_db(current_dir)
-    stale_report, _, _ = _create_mock_db(
-        stale_dir, request_id="req-stale", attempt_id="att-stale"
-    )
+    current_report, current_matrix, current_hash = create_inspector_report(current_dir)
+    stale_report, _, _ = create_inspector_report(stale_dir, attempt_id="att-stale")
     expected_source = prepare_report(
         current_report, SelectionRequest(strategy="sample", limit=10)
     ).source
@@ -600,7 +598,7 @@ def test_http_targeted_bootstrap_explains_active_source(tmp_path):
 
     save_workspace(config_dir, settings={"parallel_workers": "0"})
     workspace = ReviewWorkspace(config_dir=config_dir)
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
         assert config["settings"]["parallel_workers"] == "0"
@@ -632,11 +630,11 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
 
 
 def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
-    from tests.test_xic_workbench import _client
+    from tests.workbench_http import workbench_client
     from xic_workbench.workspace import ReviewWorkspace
 
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         settings = {**config["settings"], "ms2_precursor_tol_da": "1.2"}
         assert request("/api/targeted/method", {"settings": settings})[0] == 400

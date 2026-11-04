@@ -123,3 +123,28 @@ def test_explanation_metadata_fixture_does_not_load_runtime_or_test_modules():
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_ui_fixture_imports_do_not_load_application_or_test_modules():
+    script = dedent(
+        """
+        import sys
+        from tests.inspector_fixtures import read_report_payload
+        from tests.targeted_fixtures import targeted_rows
+        from tests.workbench_http import workbench_client
+
+        targeted_rows()
+        assert not any(name.startswith('tests.test_') for name in sys.modules)
+        assert 'xic_workbench' not in sys.modules
+        assert 'xic_extractor.raw_reader' not in sys.modules
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -86,7 +86,7 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
 def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     tmp_path, monkeypatch, criteria, expected
 ):
-    from tests.test_xic_inspector_api import _report_data
+    from tests.inspector_fixtures import read_report_payload
 
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix fixture", encoding="utf-8")
@@ -191,7 +191,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
         result.matched_count,
         result.missing_rt_count,
     ) == expected
-    assert _report_data(output) == _report_data(baseline)
+    assert read_report_payload(output) == read_report_payload(baseline)
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))

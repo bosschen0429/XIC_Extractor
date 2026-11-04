@@ -111,12 +111,12 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
 
 
 def test_target_import_entrypoint_uses_explicit_targets_sheet(tmp_path):
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
     from xic_workbench.target_import import import_targets
 
     source = tmp_path / "targets.xlsx"
-    save_target_table(rows(), source)
+    save_target_table(targeted_rows(), source)
     imported = import_targets(source)
     assert imported[0]["role"] == "istd"
     assert imported[1]["istd_pair"] == "standard"
@@ -434,24 +434,28 @@ def test_uploaded_files_detect_content_and_preserve_batch(tmp_path, kind, extens
     import base64
     import csv
 
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration import targeted_method_files as files
     from xic_workbench.target_import import preview_target_upload
 
     path = tmp_path / f"arbitrary-name.{extension}"
     if kind == "method":
-        files.save_targeted_method(files.create_targeted_method({}, rows()), path)
+        files.save_targeted_method(
+            files.create_targeted_method({}, targeted_rows()), path
+        )
     elif extension == "xlsx":
-        files.save_target_table(rows(), path)
+        files.save_target_table(targeted_rows(), path)
     else:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=list(dict.fromkeys(key for row in rows() for key in row)),
+                fieldnames=list(
+                    dict.fromkeys(key for row in targeted_rows() for key in row)
+                ),
                 delimiter="\t" if extension == "tsv" else ",",
             )
             writer.writeheader()
-            writer.writerows(rows())
+            writer.writerows(targeted_rows())
     settings = {"data_dir": "current-raw", "dll_dir": "current-dll"}
     result = preview_target_upload(
         path.name, base64.b64encode(path.read_bytes()).decode(), settings
@@ -472,12 +476,12 @@ def test_uploaded_invalid_method_is_not_downgraded_to_target_table(tmp_path):
 
     import openpyxl
 
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
     from xic_workbench.target_import import preview_target_upload
 
     path = tmp_path / "broken.xlsx"
-    save_target_table(rows(), path)
+    save_target_table(targeted_rows(), path)
     book = openpyxl.load_workbook(path)
     book.create_sheet("Method").append(["invalid"])
     book.save(path)
