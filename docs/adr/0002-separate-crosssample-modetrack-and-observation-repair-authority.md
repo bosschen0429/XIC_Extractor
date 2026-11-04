@@ -2,9 +2,6 @@
 status: accepted
 ---
 
-Doc placement: repo_support_doc
-Repo owner: docs/architecture-contract.md
-
 # Separate CrossSample, ModeTrack, and ObservationRepair authority
 
 CrossSample is the sole owner of group identity, membership, edge eligibility,

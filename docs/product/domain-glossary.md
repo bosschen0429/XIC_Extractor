@@ -1,11 +1,5 @@
 # XIC Extractor Domain Glossary
 
-Doc placement: formal_repo_doc
-Doc kind: product_doc
-Doc lifecycle: active
-Repo owner: docs/product/domain-glossary.md
-Doc exit rule: Update when stable vocabulary, lane boundaries, or authority concepts change.
-
 This file is the single stable vocabulary owner for XIC Extractor. Internal
 type names belong in their module docstrings; volatile status, counts and
 blockers belong in Issues and PRs.

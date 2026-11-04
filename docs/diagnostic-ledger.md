@@ -1,11 +1,5 @@
 # Diagnostic Ledger And Rerun Policy
 
-Doc placement: formal_repo_doc
-Doc kind: report
-Doc lifecycle: active
-Repo owner: docs/diagnostic-ledger.md
-Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
-
 **Status:** maintained repo-local diagnostic memory
 **Last updated:** 2026-11-04
 

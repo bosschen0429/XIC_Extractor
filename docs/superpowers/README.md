@@ -1,11 +1,5 @@
 # Superpowers Artifact Layout
 
-Doc placement: formal_repo_doc
-Doc kind: product_doc
-Doc lifecycle: active
-Repo owner: docs/superpowers/README.md
-Doc exit rule: replace only when another durable artifact-layout owner absorbs this contract.
-
 This directory contains durable, repo-readable machine contracts and compact
 evidence. It is not an implementation-planning or project-history archive.
 

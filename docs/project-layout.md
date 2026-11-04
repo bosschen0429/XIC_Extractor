@@ -85,20 +85,8 @@ XIC_Extractor/
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
 | 本檔 | 檔案 placement、追蹤/忽略邊界與路徑約束 |
 
-### Permanent root document contract
-
-只有下列四個路徑是永久 root authority。Audit 確認路徑存在、文件有可見內容，
-並檢查下列 route、target 與 referrer；標題與說明文字可隨內容調整。路徑本身
-提供 placement、purpose 與 self-ownership，因此不需要 generic lifecycle metadata：
-
-| Path | Purpose / required route |
-| --- | --- |
-| `AGENTS.md` | Bounded repo agent routing；必須連到 parameter、product、evidence、architecture、execution、diagnostics、project layout owners |
-| `README.md` | 公開入口；必須連到 user、product、architecture、project layout 與 LC-MS/MS evidence |
-| `docs/architecture-contract.md` | Architecture/dependency owner；必須由 root docs 可達 |
-| `docs/project-layout.md` | File placement and documentation lifecycle owner；必須連到 architecture、product 與 [documentation boundary contract](agent/obsidian-handoff-contract.md) |
-
-不得新增第五個 root authority exemption。
+文件不需要 placement 或 lifecycle 標頭；文件邊界見
+[documentation boundary contract](agent/obsidian-handoff-contract.md)。
 
 ## § 2 追蹤目錄
 
