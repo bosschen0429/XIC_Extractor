@@ -146,4 +146,4 @@ and resolved inputs are shown before RAW work. See
 
 - [Parameter settings](../agent/local-execution.md)
 - [Discovery](discovery.md) | [Signal processing](signal-processing.md)
-- [Diagnostic ledger](../diagnostic-ledger.md)
+- [Diagnostic ledger](../agent/diagnostic-ledger.md)

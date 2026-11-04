@@ -50,11 +50,8 @@ progress-report.notes.json
 progress-report.snapshot.json
 progress-report.server-info.json
 
-# Local/private handoff workspace.
-# Transient branch handoffs and completed phase diaries stay local or move to
-# Obsidian. Do not force-add them; durable claims go to owners and PR bodies.
-docs/superpowers/handoffs/current/*
-docs/superpowers/handoffs/archive/*
+# Local handoff notes; durable claims go to their owner documents and PR bodies.
+.handoffs/
 
 # Private user config/profiles (only the environment template is versioned)
 config/*

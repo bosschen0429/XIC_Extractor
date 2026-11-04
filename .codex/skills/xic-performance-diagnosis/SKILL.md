@@ -17,7 +17,7 @@ owning Issue and regression/parity checks, not this optimization workflow.
 - Baseline and candidate: establish comparability before calculating a speedup.
 
 Locate the relevant artifacts and producing code, config, inputs, and backend.
-Search `tools/diagnostics/INDEX.md` and `docs/diagnostic-ledger.md` before adding
+Search `tools/diagnostics/INDEX.md` and `docs/agent/diagnostic-ledger.md` before adding
 measurement machinery. Use `docs/agent/local-execution.md#alignment-and-handoff`
 for RAW commands and preset limits; normal runner execution performs input checks.
 

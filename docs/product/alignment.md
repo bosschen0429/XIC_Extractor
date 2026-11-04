@@ -540,7 +540,7 @@ support only the candidates and data scope actually compared; they cannot be
 extrapolated into validation of the entire method. Engineering tests confirm
 declared behavior and regressions, not scientific correctness directly.
 Existing retained fixtures and their interpretation are owned by the
-[Diagnostic Ledger](../diagnostic-ledger.md); evidence labels follow the
+[Diagnostic Ledger](../agent/diagnostic-ledger.md); evidence labels follow the
 [Product Validation Contract](../agent/product-validation-contract.md).
 
 This document focuses on cross-sample correspondence; existing documents own
