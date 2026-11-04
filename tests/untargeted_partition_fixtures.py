@@ -47,7 +47,7 @@ from xic_extractor.untargeted_execution.execution_result import (
 from xic_extractor.untargeted_execution.input_planning import (
     prepare_eager_untargeted_plan,
 )
-from xic_extractor.untargeted_execution.partition.execution import execute_attempt
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
 )
@@ -95,10 +95,11 @@ def execute_dense_partition(
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     known_istd_reference: KnownIstdReference | None = None,
 ) -> UntargetedPartitionResult:
-    """Run the retained dense replay runtime for partition result oracles."""
+    """Run one dense partition through the production sample-batch runtime."""
 
-    result = execute_attempt(
+    result = execute_partition(
         batch.jobs,
+        partition_key="dense-fixture",
         progress_callback=progress_callback,
         alignment_config=alignment_config,
         prepare_grouping=lambda results: prepare_untargeted_partition_grouping(

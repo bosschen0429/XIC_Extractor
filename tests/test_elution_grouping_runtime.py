@@ -170,7 +170,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     states = [
         workers._RuntimeJobState(
             job=result.job,
-            resource_key=None,
             initial_requires_raw=False,
             adapter_result=result.adapter_result,
         )

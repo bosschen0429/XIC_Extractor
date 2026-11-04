@@ -56,7 +56,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 @dataclass(slots=True)
 class _RuntimeJobState:
     job: UntargetedPartitionJob
-    resource_key: str | None
     initial_requires_raw: bool
     error: Exception | None = None
     adapter_result: CidNlAcquisitionResult | None = None
@@ -195,15 +194,9 @@ def _open_job_raw(
 
 
 def _execute_initial_assessment(state: _RuntimeJobState) -> None:
+    """Assess a newly authorized no-input subject before its Backfill search."""
     job = state.job
-    raw = None
     try:
-        if state.error is None and state.initial_requires_raw:
-            if state.resource_key is None:
-                raise UntargetedPartitionError(
-                    "bounded subject is missing its acquisition reservation"
-                )
-            raw = _open_job_raw(job)
         if state.error is None:
             state.adapter_result = adapt_current_discovery_sample_subject(
                 processing_owners=job.processing_owners,
@@ -213,25 +206,16 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 support_candidates=job.support_candidates,
                 settings=job.settings,
                 peak_config=job.peak_config,
-                raw=raw,
+                raw=None,
                 signal_processing_profile=job.signal_processing_profile,
                 physical_records=_request_subject_physical_records(job),
             )
     except Exception as exc:
         state.error = exc
-    finally:
-        if raw is not None:
-            try:
-                raw.__exit__(None, None, None)
-            except Exception as exc:
-                if state.error is None:
-                    state.error = exc
 
 
 def _execute_initial_assessment_batch(
     phase: _BatchSamplePhaseState,
-    *,
-    partition_candidates: bool = False,
 ) -> None:
     states = phase.states
     leader = states[0]
@@ -245,22 +229,18 @@ def _execute_initial_assessment_batch(
                     "sample batch is missing its acquisition reservation"
                 )
             raw = _open_job_raw(job)
-            candidates = job.candidates
-            if partition_candidates:
-                selected_candidates = {
-                    candidate.candidate_id: candidate
-                    for state in states
-                    if state.error is None
-                    for candidate in _request_subject_candidates(state.job)
-                }
-                candidates = tuple(
-                    sorted(
-                        selected_candidates.values(),
-                        key=lambda candidate: job._candidate_order[
-                            candidate.candidate_id
-                        ],
-                    )
+            selected_candidates = {
+                candidate.candidate_id: candidate
+                for state in states
+                if state.error is None
+                for candidate in _request_subject_candidates(state.job)
+            }
+            candidates = tuple(
+                sorted(
+                    selected_candidates.values(),
+                    key=lambda candidate: job._candidate_order[candidate.candidate_id],
                 )
+            )
             active_acquire = (
                 cid_nl_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
             )
@@ -327,7 +307,6 @@ def _apply_backfill_questions(
             )
             state = _RuntimeJobState(
                 job=job,
-                resource_key=None,
                 initial_requires_raw=False,
             )
             _execute_initial_assessment(state)
@@ -416,70 +395,6 @@ def _prepare_subject_authorized_backfills(
     return tuple(prepared_states[len(states) :])
 
 
-def _execute_backfill(
-    state: _RuntimeJobState,
-) -> None:
-    job = state.job
-    ctx = state.backfill_support
-    if ctx is None and state.adapter_result is not None:
-        ctx = _backfill_support_context(state.adapter_result)
-    if ctx is None:
-        state.error = UntargetedPartitionError(
-            "backfill requires a completed initial assessment"
-        )
-        return
-    if state.resource_key is None:
-        state.error = UntargetedPartitionError(
-            "eligible backfill is missing its acquisition reservation"
-        )
-        return
-    raw = None
-    try:
-        raw = _open_job_raw(job)
-        active_acquire = (
-            cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
-        )
-        trace_batch = active_acquire(
-            processing_owners=job.processing_owners,
-            sample=job.sample,
-            backfill_requests=state.backfill_targets,
-            peak_config=job.peak_config,
-            raw=raw,
-        )
-        for target in state.backfill_targets:
-            backfill = backfill_untargeted_cid_nl_sample_subject(
-                processing_owners=job.processing_owners,
-                sample=job.sample,
-                method_subject=job.method_subject,
-                group_center_rt=target.center_rt,
-                query_rt=target.sample_query_rt,
-                query_rt_basis=target.query_rt_basis,
-                query_rt_tolerance_sec=target.query_rt_tolerance_sec,
-                query_rt_reliable=target.query_rt_reliable,
-                group_center_mz=target.physical_mz,
-                group_hypothesis_id=target.group_hypothesis_id,
-                initial_assessment=ctx.initial_assessment,
-                support_policy=ctx.support_policy,
-                peak_config=job.peak_config,
-                raw=raw,
-                settings=job.settings,
-                signal_processing_profile=job.signal_processing_profile,
-                _preacquired_traces=trace_batch,
-            )
-            state.backfill_attempts += (backfill,)
-        if len(state.backfill_attempts) == 1:
-            state.backfill_input = state.backfill_attempts[0].backfill_input
-    except Exception as exc:
-        state.error = exc
-    finally:
-        if raw is not None:
-            try:
-                raw.__exit__(None, None, None)
-            except Exception as exc:
-                if state.error is None:
-                    state.error = exc
-
-
 def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
     pending = tuple(
         sorted(
@@ -562,7 +477,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
 class _SampleInitialWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
-    partition_candidates: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -617,10 +531,10 @@ def _require_outcome_keys(expected: tuple[str, ...], actual: tuple[str, ...]) ->
 
 
 def _execute_initial_sample_phase(
-    phase: _BatchSamplePhaseState, *, partition_candidates: bool = False
+    phase: _BatchSamplePhaseState,
 ) -> _SampleInitialWorkerResponse:
     local = phase.isolated_worker_state()
-    _execute_initial_assessment_batch(local, partition_candidates=partition_candidates)
+    _execute_initial_assessment_batch(local)
     return _SampleInitialWorkerResponse(
         job_outcomes=tuple(
             _InitialJobOutcome(
@@ -641,7 +555,6 @@ def _execute_sample_initial_worker(
     states = tuple(
         _RuntimeJobState(
             job=job,
-            resource_key=None,
             initial_requires_raw=bool(_request_subject_candidates(job)),
         )
         for job in request.jobs
@@ -651,10 +564,7 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
     )
-    return _execute_initial_sample_phase(
-        phase,
-        partition_candidates=request.partition_candidates,
-    )
+    return _execute_initial_sample_phase(phase)
 
 
 def assess_initial_sample_jobs(
@@ -667,7 +577,6 @@ def assess_initial_sample_jobs(
             initial_resource_key=(
                 f"grouping-experiment:{jobs[0].sample.identity.sample_key}"
             ),
-            partition_candidates=True,
         )
     )
     return response.results_for(jobs)
@@ -743,7 +652,6 @@ def _execute_sample_backfill_worker(
     states = tuple(
         _RuntimeJobState(
             job=job,
-            resource_key=None,
             initial_requires_raw=False,
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
@@ -768,7 +676,6 @@ __all__ = [
     "_execute_initial_assessment",
     "_execute_initial_assessment_batch",
     "_execute_initial_sample_phase",
-    "_execute_backfill",
     "_execute_backfill_batch",
     "_execute_backfill_sample_phase",
     "_execute_sample_initial_worker",
