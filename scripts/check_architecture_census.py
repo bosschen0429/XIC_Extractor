@@ -62,11 +62,7 @@ LAYOUT_OWNER = "docs/project-layout.md"
 
 # Historical immutable provenance may be exempted only with a path, value, and
 # reason. Current contracts have no exemptions.
-HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {
-    ("docs/diagnostic-ledger.md", "discovery_batch_index_v2"): (
-        "Names a rejected historical input in the diagnostic ledger."
-    ),
-}
+HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {}
 VERSIONED_IDENTIFIER = re.compile(
     r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:[_.]v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
 )
