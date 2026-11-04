@@ -58,6 +58,10 @@ class _WorkbenchHTTPServer(ThreadingHTTPServer):
             threading.Thread(target=self.shutdown, daemon=True).start()
 
 
+class _ResponseDisconnected(Exception):
+    """The peer disconnected while this handler was writing its response."""
+
+
 def create_server(
     workspace: ReviewWorkspace,
     *,
@@ -109,8 +113,17 @@ def create_server(
                 self.send_header("Connection", "close")
             for key, value in headers.items():
                 self.send_header(key.replace("_", "-"), value)
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.end_headers()
+                self.wfile.write(data)
+            except (
+                BrokenPipeError,
+                ConnectionResetError,
+                ConnectionAbortedError,
+            ) as exc:
+                # Unwind the action: an undelivered job completion must not be
+                # acknowledged, and an error response must not be sent twice.
+                raise _ResponseDisconnected() from exc
 
         def _guard(self, *, api=False):
             authority = f"127.0.0.1:{self.server.server_port}"
@@ -131,30 +144,37 @@ def create_server(
 
         def _handle(self, action):
             try:
-                action()
-            except PermissionError as exc:
-                self._send(403, {"error": str(exc)})
-            except (WorkspaceBusy, PickerBusy) as exc:
-                self._send(409, {"error": str(exc)})
-            except (
-                ValueError,
-                TypeError,
-                KeyError,
-                OSError,
-                InspectorError,
-                ExplanationError,
-                ConfigError,
-                PresetError,
-            ) as exc:
-                payload = {"error": str(exc)}
-                if exc.__cause__ is not None:
-                    payload["detail"] = str(exc.__cause__)
-                self._send(400, payload)
-            except Exception:
-                logging.getLogger(__name__).exception("Local workspace request failed")
-                self._send(
-                    500, {"error": "工作區無法完成要求；請查看啟動終端的錯誤訊息。"}
-                )
+                try:
+                    action()
+                except _ResponseDisconnected:
+                    raise
+                except PermissionError as exc:
+                    self._send(403, {"error": str(exc)})
+                except (WorkspaceBusy, PickerBusy) as exc:
+                    self._send(409, {"error": str(exc)})
+                except (
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    OSError,
+                    InspectorError,
+                    ExplanationError,
+                    ConfigError,
+                    PresetError,
+                ) as exc:
+                    payload = {"error": str(exc)}
+                    if exc.__cause__ is not None:
+                        payload["detail"] = str(exc.__cause__)
+                    self._send(400, payload)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Local workspace request failed"
+                    )
+                    self._send(
+                        500, {"error": "工作區無法完成要求；請查看啟動終端的錯誤訊息。"}
+                    )
+            except _ResponseDisconnected:
+                self.close_connection = True
 
         def do_GET(self):
             self._handle(self._get)
