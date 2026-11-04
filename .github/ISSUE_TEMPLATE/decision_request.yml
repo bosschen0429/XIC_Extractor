@@ -45,9 +45,9 @@ body:
     validations:
       required: true
   - type: textarea
-    id: productization_impact
+    id: public_surface_impact
     attributes:
-      label: Productization impact and closure
-      description: State the authority/public surface at risk, validation or exit evidence needed, and whether handoff/control-plane updates are required.
+      label: Public surface and evidence
+      description: Name the published values, writer authority, or public contract at risk and the evidence needed before the decision closes.
     validations:
       required: true
