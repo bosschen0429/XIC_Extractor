@@ -1,13 +1,20 @@
 # XIC Extractor
 
-Turn Thermo `.raw` LC-MS data into **measurements you can use and evidence you
-can inspect**. XIC Extractor finds candidate signals, evaluates chromatographic
-peaks, compares observations across samples, and delivers quantitative results
-with reasons for results that need review.
+XIC Extractor turns a batch of Thermo `.raw` LC-MS injections into peak areas
+you can take downstream, and lets you check each area against its chromatogram.
 
-Use **Targeted** for a known target list, or **Untargeted** to discover features
-under a selected method. The two workflows share scientific processing, but
-answer different analysis questions and deliver different results.
+For example, run a batch of DNA adduct samples and get either:
+
+- **a known-target workbook (Targeted):** one area per target and sample, a
+  batch summary, and a list of results that need a second look; or
+- **a feature × sample area matrix (Untargeted):** features discovered from
+  CID neutral-loss evidence and matched across samples, where you can open any
+  value or blank cell to see the saved decision and its reason, and, with the
+  source RAW files, re-extract its chromatogram.
+
+Both workflows run on shared processing for peaks, areas and cross-sample
+correspondence; method-specific evidence still decides what each method
+accepts. They differ in what you ask for and what you receive.
 
 ## Use The Application
 
@@ -16,7 +23,7 @@ answer different analysis questions and deliver different results.
 | Your question | Prepare | Start reviewing here |
 | --- | --- | --- |
 | **Targeted:** What happened to my known targets in this batch? | RAW files and a target table or saved method XLSX: names, m/z, expected RT, identification methods, and optional ISTD pairs | One Excel workbook: `摘要` for the batch overview, then `需檢查` for results needing attention |
-| **Untargeted:** Which features can I compare across samples? | RAW files and a Discovery method; check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
+| **Untargeted:** Which features can I compare across samples? | RAW files and a CID-NL method (dR, R, MeR or custom neutral-loss tags); check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
 
 The [Targeted guide](docs/user/targeted-extraction.md) and
 [Untargeted guide](docs/user/untargeted-discovery.md) take you from preparation
@@ -89,9 +96,10 @@ answers a different question before a value can be used. The
 [DNA adduct CID-NL example](docs/user/raw-to-final-matrix-product-story.html)
 applies that reasoning to one method; it does not define the whole platform.
 
-Method support and evidence differ by workflow. The operating guides describe
-the available paths; a diagnostic candidate or review plot alone does not
-establish support for quantitative output. Exact rules are in the
+The Untargeted Matrix currently comes from CID-NL Discovery. Other Discovery
+methods, such as Delta Mass / Pt pattern, produce diagnostic candidates for
+review and do not yet publish a Matrix; a diagnostic candidate or review plot
+alone does not establish support for quantitative output. Exact rules are in the
 [product topic index](docs/product/README.md) and
 [LC-MS/MS evidence rules](docs/lc-msms-evidence-rules.md).
 
