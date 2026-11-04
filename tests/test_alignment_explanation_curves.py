@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_alignment_explanation import _summary_fixture
+from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
@@ -62,7 +62,7 @@ def test_curve_payload_write_and_read() -> None:
                         area_raw_counts_seconds=12000.0,
                     )
                 ),
-                "provenance": _curve_provenance(),
+                "provenance": curve_provenance(),
             }
             writer.add_curve_payload(
                 sample_id="S1",
@@ -71,7 +71,7 @@ def test_curve_payload_write_and_read() -> None:
                 payload=curve_envelope,
             )
             final_path = writer.finalize(
-                _summary_fixture(
+                explanation_summary(
                     {
                         "processing_attempt_id": "att-1",
                         "samples": [{"sample_stem": "s1", "sample_key": "S1"}],
@@ -119,12 +119,12 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
 
 
 def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
-    from tests.test_alignment_explanation import _owner_run
+    from tests.alignment_explanation_fixtures import run_alignment_fixture
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     expected = {}
@@ -160,21 +160,6 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     assert actual == expected
 
 
-def _curve_provenance():
-    return {
-        "profile_version": None,
-        "acquisition_source_id": None,
-        "processing_attempt_id": None,
-        "selected_trace_indices": None,
-        "resolver_mode": None,
-        "proposal_sources": None,
-        "method_subject_id": None,
-        "profile": None,
-        "physical_state": None,
-        "physical_reason": None,
-    }
-
-
 def _bound_curve_payload():
     return {
         "schema_version": "curve_payload",
@@ -191,7 +176,7 @@ def _bound_curve_payload():
             "positive": None,
         },
         "integration": None,
-        "provenance": _curve_provenance(),
+        "provenance": curve_provenance(),
     }
 
 
@@ -216,7 +201,7 @@ def test_curve_rowid_preserves_exact_payload_across_reopen(
             payload=payload,
         )
         report = writer.finalize(
-            _summary_fixture({"samples": []}, review_only=writer.review_only)
+            explanation_summary({"samples": []}, review_only=writer.review_only)
         )
 
     assert payload_id == expected_payload_id
@@ -250,7 +235,7 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
         distinct = writer.add_curve_payload(**binding, payload=changed)
         assert distinct == 2
         report = writer.finalize(
-            _summary_fixture({"samples": []}, review_only=writer.review_only)
+            explanation_summary({"samples": []}, review_only=writer.review_only)
         )
     with sqlite3.connect(report) as connection:
         assert (
@@ -286,7 +271,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
             payload=payload,
         )
         report = writer.finalize(
-            _summary_fixture({"samples": []}, review_only=writer.review_only)
+            explanation_summary({"samples": []}, review_only=writer.review_only)
         )
     if corruption == "sample":
         payload["sample_id"] = "S2"
@@ -339,7 +324,7 @@ def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path
                 payload=invented,
             )
         report = writer.finalize(
-            _summary_fixture({"samples": []}, review_only=writer.review_only)
+            explanation_summary({"samples": []}, review_only=writer.review_only)
         )
     assert read_alignment_curves(report) == [{**payload, "payload_id": 1}]
 
@@ -375,7 +360,9 @@ def test_curve_reader_requires_complete_nested_fields(tmp_path, section, change)
         writer.add_curve_payload(
             sample_id="S1", kind="initial_capture", record_id="obs-1", payload=payload
         )
-        report = writer.finalize(_summary_fixture({"samples": []}, review_only=False))
+        report = writer.finalize(
+            explanation_summary({"samples": []}, review_only=False)
+        )
     nested = (
         payload["integration"]["signal_quality"]
         if section == "signal_quality"

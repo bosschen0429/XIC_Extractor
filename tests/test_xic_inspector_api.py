@@ -12,8 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_alignment_explanation import _summary_fixture
-from tests.test_alignment_explanation_curves import _curve_provenance
+from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
@@ -207,7 +206,7 @@ def _create_mock_db(
                 )
             ),
             "provenance": {
-                **_curve_provenance(),
+                **curve_provenance(),
                 "processing_attempt_id": attempt_id,
             },
         }
@@ -218,7 +217,7 @@ def _create_mock_db(
             payload=curve_envelope,
         )
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "processing_attempt_id": attempt_id,
                     "matrix_path": str(matrix_path),
@@ -2310,7 +2309,7 @@ def _create_nearest_mz_db(directory, rows):
                 {"S1": 0, "S2": 1},
             )
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),

@@ -1,6 +1,6 @@
 import pytest
 
-from tests.test_alignment_explanation import _owner_run
+from tests.alignment_explanation_fixtures import run_alignment_fixture
 from xic_extractor.alignment_explanation.published_cells import (
     PublishedCell,
     read_published_cells,
@@ -57,7 +57,7 @@ def test_duplicate_quantification_classifies_row_pairs_by_direct_detections():
 
 def publish_owner_run(tmp_path, monkeypatch, level):
     """A published Alignment folder of one owner run, with its explanation."""
-    completed, writer, candidates, _, config = _owner_run(
+    completed, writer, candidates, _, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     output_dir = tmp_path / "published"

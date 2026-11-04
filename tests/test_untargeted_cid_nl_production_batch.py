@@ -17,24 +17,24 @@ import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
 import xic_extractor.untargeted_execution.partition.request as input_owner
+from tests.alignment_explanation_fixtures import explanation_summary
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
+    _current_candidates,
+    _FakeRaw,
     _multi_tag_settings,
     _peak_config,
     _settings,
 )
+from tests.cid_nl_runtime_fixtures import (
+    build_discovery_receipts,
+    install_runtime_raw,
+    install_runtime_raws,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_alignment_explanation import _summary_fixture
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _current_candidates,
-    _discovery_receipts,
-    _FakeRaw,
-    _install_runtime_raw,
-    _install_runtime_raws,
-)
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
@@ -617,7 +617,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     source_raws = {}
-    opened_raws = _install_runtime_raws(
+    opened_raws = install_runtime_raws(
         monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path
     )
     receipts = {}
@@ -750,7 +750,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             records=discovery.physical_evaluations,
         )
         receipts.update(
-            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
+            build_discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = tuple(
@@ -1888,7 +1888,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 },
             )
         sink.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "processing_attempt_id": (
                         job.processing_owners.attempt.processing_attempt_id
@@ -2362,7 +2362,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -2381,7 +2381,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         len({subject.method_subject_id for subject in batch.subject_batch.subjects})
         == 2
     )
-    _install_runtime_raws(
+    install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -2514,7 +2514,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         ),
         settings=settings,
         peak_config=peak_config,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": candidates},
@@ -2592,7 +2592,7 @@ def _source_verification_inputs(tmp_path: Path):
             settings=settings,
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=_discovery_receipts(
+            discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path, (path,), {"S1": candidates}
             ),
             dll_dir=tmp_path,
@@ -2617,7 +2617,7 @@ def test_production_reuses_source_verification_across_runtime_opens(
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
     monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
     plan = prepare_eager_untargeted_plan(**arguments)
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path
     )
     execute_untargeted_plan(
@@ -2727,7 +2727,9 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:source-verification",
     )
@@ -2776,7 +2778,7 @@ def test_production_rejects_source_change_after_input_verification(
         replacement = tmp_path / "replacement.synthetic"
         replacement.write_bytes(path.read_bytes())
         replacement.replace(path)
-    _install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         execute_untargeted_plan(
             plan,
@@ -2822,7 +2824,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, (raw_path,), {"S1": candidates}
         ),
         dll_dir=tmp_path,
@@ -2890,7 +2892,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         settings=settings,
         peak_config=peak_config,
     )
-    receipts = _discovery_receipts(
+    receipts = build_discovery_receipts(
         tmp_path,
         (raw_path,),
         {"S1": candidates},
@@ -3021,7 +3023,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             settings=crossed_settings,
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=_discovery_receipts(
+            discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path,
                 (raw_path,),
                 {"S1": candidates},
@@ -3073,7 +3075,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": candidates},
@@ -3087,7 +3089,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
             for c in values
         },
     )
-    vendor_raw = _install_runtime_raw(
+    vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_path,
@@ -3343,7 +3345,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -3357,7 +3359,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -3449,7 +3451,9 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:canonical-batch",
         signal_processing_profile=TEST_PROFILE,
@@ -3459,7 +3463,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
@@ -3587,7 +3591,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:known-istd",
         signal_processing_profile=TEST_PROFILE,
@@ -3597,7 +3603,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_plain = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -3913,7 +3919,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -3927,7 +3933,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -4241,7 +4247,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, raw_paths, candidates_by_sample
         ),
         dll_dir=tmp_path,
@@ -4253,7 +4259,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
 
     runtime = execute_dense_partition(
         batch,

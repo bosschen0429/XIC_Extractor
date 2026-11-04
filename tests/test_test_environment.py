@@ -96,3 +96,30 @@ def test_lazily_imported_raw_reader_cache_is_isolated_between_tests(tmp_path):
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_explanation_metadata_fixture_does_not_load_runtime_or_test_modules():
+    script = dedent(
+        """
+        import sys
+        from tests.alignment_explanation_fixtures import (
+            explanation_summary, curve_provenance,
+        )
+
+        explanation_summary({'samples': [{'sample_key': 'S1'}]})
+        curve_provenance()
+        assert not any(name.startswith('tests.test_') for name in sys.modules)
+        assert not any(name.startswith('xic_extractor.untargeted_execution')
+                       for name in sys.modules)
+        assert 'xic_extractor.raw_reader' not in sys.modules
+        """,
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr

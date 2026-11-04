@@ -13,12 +13,9 @@ from tests.cid_nl_raw_fixture import (
     _settings,
     bind_physical_capture,
 )
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raw
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _discovery_receipts,
-    _install_runtime_raw,
 )
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
@@ -99,12 +96,14 @@ def test_runtime_retains_physical_receipt_failure_and_call_cost(tmp_path, monkey
         settings=settings,
         peak_config=config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:physical-receipt",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate=records,
     )
-    _install_runtime_raw(
+    install_runtime_raw(
         monkeypatch, source_raw=source, raw_path=paths[0], tmp_path=tmp_path
     )
     job = UntargetedPartitionJob(

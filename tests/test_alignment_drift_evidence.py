@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from tests.test_alignment_explanation import _summary_fixture
+from tests.alignment_explanation_fixtures import explanation_summary
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
@@ -592,7 +592,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
 
     with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
         path = writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {"known_istd_reference": receipt}, review_only=writer.review_only
             )
         )

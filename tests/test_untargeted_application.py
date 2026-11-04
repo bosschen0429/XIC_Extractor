@@ -14,7 +14,8 @@ import xic_extractor.output.alignment.pipeline_outputs as output_owner
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
-from tests.cid_nl_raw_fixture import _settings
+from tests.cid_nl_raw_fixture import _FakeRaw, _settings
+from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.test_discovery_pipeline import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
@@ -24,10 +25,6 @@ from tests.test_discovery_pipeline import (
 )
 from tests.test_discovery_pipeline import (
     _settings as _discovery_settings,
-)
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _FakeRaw,
-    _install_runtime_raws,
 )
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.applications.untargeted.application import (
@@ -828,8 +825,8 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
 
 
 def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
+    from tests.alignment_explanation_fixtures import run_alignment_fixture
     from tests.test_alignment_drift_evidence import _known_reference_workbook
-    from tests.test_alignment_explanation import _owner_run
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
     )
@@ -840,7 +837,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         write_alignment_explanation,
     )
 
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
@@ -1053,7 +1050,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         )
         return raw
 
-    _install_runtime_raws(
+    install_runtime_raws(
         monkeypatch,
         sources_by_path={
             raw_paths[0].resolve(): alignment_raw(0),

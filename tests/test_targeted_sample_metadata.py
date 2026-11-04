@@ -123,13 +123,13 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(
     from scripts import run_alignment, run_extraction
     from scripts.run_discovery import _raw_paths_from_dir
     from tests.cid_nl_raw_fixture import _FakeRaw
+    from tests.cid_nl_runtime_fixtures import install_runtime_raws
     from tests.test_discovery_pipeline import (
         _OwnerBoundFakeRawHandle,
         _peak_config,
         _scan_event,
         _settings,
     )
-    from tests.test_untargeted_cid_nl_real_data_runtime import _install_runtime_raws
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.configuration.loader import PreparedTargetedConfig
     from xic_extractor.discovery.pipeline import run_discovery_batch
@@ -240,7 +240,7 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(
         raw_opener=lambda path, _dll: handles[path],
         run_spec=spec,
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch, sources_by_path=raw_spectra, tmp_path=tmp_path
     )
     monkeypatch.setattr(

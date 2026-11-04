@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Mapping
 
 from scripts.run_alignment import _parse_args, _resolve_preset
-from tests.test_alignment_explanation import _summary_fixture
+from tests.alignment_explanation_fixtures import explanation_summary
 from tests.test_processing_run_spec import _compile_paths, _raws
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
@@ -208,7 +208,7 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
 
     with ExplanationReportWriter(db_path) as writer:
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {"processing_algorithm_version": "discovery"},
                 review_only=writer.review_only,
             )
