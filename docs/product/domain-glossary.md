@@ -365,6 +365,8 @@ stable because they identify existing data or public interfaces.
 | `recovery` | resuming or closing a run after a runtime failure | Backfill; candidate search; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
 | `recall` | the fraction of oracle reference compounds a run finds | — |
+| `Workbench` | the daily HTML application (`xic_workbench/`) where users set up, run, and review analyses | a second review program |
+| `Inspector` | the shared review view (`xic_inspector/`) that Workbench embeds and offline HTML reports reuse | a separate application to launch |
 
 The `recovery`, `repair`, and `rescue` words must not describe Backfill in
 prose either. Use them only in the senses in this table or in the preserved
