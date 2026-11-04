@@ -1,9 +1,9 @@
 # Targeted Extraction
 
-Use this workflow when you already know the compounds, m/z values, expected RT, identification method,
-and internal-standard relationships you want to review.
-
-![Targeted Extraction workspace](../../assets/screenshots/targeted-workspace.png)
+Use Targeted when you have a known target list and want to measure and review
+a batch. Prepare names, m/z and expected RT; specify identification methods
+and internal-standard relationships where applicable. The main result is one
+Excel workbook, read from batch summary to the individual results needing attention.
 
 ## Workflow
 
@@ -126,6 +126,29 @@ For missing MS2, the formal projection applies the ISTD/analyte role and
 support policy. Missing MS2 is not direct CID-NL support; there is no detection
 override. The [Decision Policy](../product/decision-policy.md) owns these rules.
 
+## Review The Batch
+
+1. Open the completed workbook from the result actions. Read `摘要` for the
+   batch conclusion and which targets need attention.
+2. Follow the indicated items into `需檢查` when present. A review note asks
+   for inspection; it does not by itself mean that the area is unusable or the
+   detection was rejected.
+3. In workbench result review, select the target and sample. Compare the saved
+   area, RT, counted status, and reason. Request the XIC when you need to check
+   the peak; this needs the source RAW files and reader. Reading saved workbook
+   values alone does not.
+4. Use `面積` for saved sample × target areas and any intended in-workbook
+   calculations. Check the method, ISTD pairing and units before comparing
+   results across batches. The workbook preserves the input snapshot and run
+   metadata for this purpose.
+
+An area, a counted detection, and a review flag answer different questions.
+Do not infer chemical identity from area alone, or turn a missing result into
+zero. For the reasoning, see the [processing story](processing-guide.html#decisions);
+for exact fields, use the [output reference](targeted-output-reference.md).
+Review does not overwrite the saved scientific result; changed analysis inputs
+require a new run.
+
 ## CLI
 
 Developer checkout:
@@ -153,13 +176,11 @@ Execution scheduling is automatic; actual workers are recorded in run metadata.
 
 ## Validation
 
-After a run, start with `摘要` or the workbench's batch overview. Follow 先看
-into `需檢查` or a sample detail; inspect the XIC and saved peak/NL evidence in
-the workbench before rerunning.
-See the [output reference](targeted-output-reference.md) for column meanings.
-
-For developer-level validation harness details, see
-[docs/agent/parameter-settings.md](../agent/parameter-settings.md).
+Result review is described [above](#review-the-batch). Operator validation uses
+`.venv\Scripts\python.exe scripts\validation_harness.py --help` for suite
+selection, dry-run and baseline comparison. For developer environment and
+RAW-run constraints, see [Local Execution](../agent/parameter-settings.md).
+Regression checks do not establish method-wide scientific readiness.
 
 ## Troubleshooting
 

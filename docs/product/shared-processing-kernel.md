@@ -1,9 +1,14 @@
 # Shared Processing Kernel
 
-This page owns the workflow-neutral scientific contract shared by Targeted and
-Untargeted processing. The kernel is a collaboration of the existing
-`peak_detection`, `alignment`, result, and projection owners. The kernel is
-not a reason to create a generic `core/` package.
+Targeted and Untargeted ask different search and delivery questions, but both
+need evidence-backed peak observations, cross-sample correspondence and cell
+answers. This page owns their shared scientific handoffs. Method-specific
+evidence interpretation remains explicit; shared processing does not mean
+every method uses identical judgments. For the reader-facing explanation, see
+the [processing story](../user/processing-guide.html#kernel).
+
+The kernel is a collaboration of the existing `peak_detection`, `alignment`,
+result, and projection owners, not a reason to create a generic `core/` package.
 
 CID-NL is the first production tracer through this contract, not the product
 boundary. Additional Discovery providers may consume different source evidence

@@ -1,9 +1,10 @@
 # Untargeted Discovery
 
-Use this workflow when you want to discover candidate features from RAW files,
-align them across samples, and open reviewable outputs from the GUI.
-
-![Untargeted Discovery workspace](../../assets/screenshots/untargeted-workspace.png)
+Use Untargeted to discover features under a selected method and compare them
+across samples. A full run produces a feature × sample area Matrix; candidate
+tables and workbench review explain how a feature or missing cell arose.
+Aligned features are not automatically identified compounds. The Matrix is an
+input to downstream analysis, not a normalized or batch-corrected result.
 
 ## Workflow
 
@@ -96,20 +97,43 @@ Start with the file that matches your review question:
 | `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
-| `alignment_review.tsv` | Group review and bound Matrix row references | Input for traceable Matrix selection |
+| `alignment_review.tsv` | Group identity, detection/quantification summaries, warnings, and bound Matrix row references | Investigate a group or trace a Matrix row |
 | `alignment_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
-| `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Review output |
 | `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |
 
-To curate the Matrix, choose **整理矩陣** in the completed results. The
-**矩陣整理** page takes the run's folder and samples; enter a minimum valid-value
-fraction (0–1) and choose **開始整理**. Zero and finite backfilled values count
-as valid; blanks do not. QC, blank and excluded samples are outside the
-denominator. This is availability filtering, not detection-rate filtering.
-Results go to a new `matrix_curation_<time>` folder inside the Alignment output,
-and the source Matrix is preserved. Earlier Alignment folders can be chosen on
-the same page. See [Matrix Curation](../product/matrix-curation.md) for the
-output contract.
+## Read And Use The Matrix
+
+1. Open `alignment_matrix.tsv` for the published feature × sample areas. Check
+   sample names and roles against the intended batch. Feature correspondence
+   does not establish a chemical identity.
+2. Investigate an unexpected value or blank in workbench result review. Select
+   the feature and sample, then inspect the saved decision and available XIC
+   evidence. A candidate table alone is not the final Matrix.
+3. Distinguish numeric availability from detection. Zero is a numeric value;
+   a blank is not automatically zero or proof that a compound is absent.
+   Backfill revisits local evidence, not an interpolation of other samples'
+   areas. Use the [processing story](processing-guide.html#backfill) when you
+   need to understand that distinction.
+4. If you need a curated Matrix, choose **整理矩陣** in the completed results.
+   On **矩陣整理**, check the source folder and sample data, choose enabled
+   steps and any required thresholds, then start curation. An unavailable step
+   reports its missing input; it does not silently establish a decision.
+5. Read the curation summary and `feature_decisions.tsv` before using the kept
+   Matrix downstream. Curation writes a new `matrix_curation_<time>` folder;
+   the original Matrix and Alignment decisions are preserved.
+
+For the finite-value fraction step, zero and finite backfilled values count
+as available; blank/nonfinite cells do not. QC, blank, unknown-role and excluded
+samples are outside the denominator. This is availability filtering, not a
+detection rate. The [Matrix Curation contract](../product/matrix-curation.md)
+defines each step, inputs, decisions and output files. Normalization, calibration
+and statistical analysis remain separate downstream decisions.
+
+Saved results can be reopened with `uv run xic-workbench "path/to/batch-output"`.
+Review and offline reports explain the saved result; they do not change its
+peak selection, area, or group membership. Use the
+[output reference](untargeted-output-reference.md) to look up a column rather
+than guessing its meaning from a number.
 
 ## Further Reading
 

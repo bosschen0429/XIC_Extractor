@@ -84,85 +84,74 @@
   <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
-  <div class="page">
-    <header class="hero">
-      <nav class="breadcrumbs" aria-label="相關頁面"><a href="core-modules-explainer.html#modes">核心模組導覽</a><span>／</span><span>Targeted Extraction 操作指南</span></nav>
-      <div class="hero-inner">
-        <div><p class="eyebrow">XIC Extractor · 已知目標</p><h1>從目標清單<br>走到可審閱的結果</h1><p class="lead">當你已知道要找的化合物、m/z、RT 範圍，以及可能的內標配對，用 Targeted Extraction 跑一批 Thermo RAW。完成後從 Excel workbook 開始檢視。</p></div>
-        <aside class="hero-aside" aria-label="快速掌握"><strong>這批工作要準備</strong><p>RAW 資料夾、Thermo RawFileReader DLL 資料夾、目標表。主要輸出是 <code>output/</code> 中的 workbook。</p></aside>
-      </div>
-    </header>
-    <nav class="jump" aria-label="頁內導覽">
-      <a href="#flow-map">先看流程圖</a><a href="#workflow">操作步驟</a><a href="#inputs">輸入與設定</a><a href="#outputs">輸出檔案</a><a href="#review">判讀與檢視</a><a href="#cli">CLI</a><a href="#troubleshooting">常見問題</a></nav>
-    <main>
-<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">從清單確認走到完成結果</h2>
-<p class="guide-map-intro">先確認這一批的 RAW、方法與目標清單，再執行分析；只有完成的答案才交付成 workbook。</p>
-<div class="guide-map-toolbar"><p>先看處理與判斷的關係，再沿下方說明閱讀。</p><a href="assets/targeted-workflow.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a></div>
-<img class="guide-map-frame" src="assets/targeted-workflow.svg" alt="從清單確認走到完成結果：流程圖" loading="lazy">
-<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#workflow">操作步驟</a>。</p>
+<main class="page">
+  <header class="hero">
+<p class="eyebrow">XIC Extractor · 已知目標</p>
+<h1>從目標清單，<br>走到可使用的批次結果</h1>
+<p class="lead">準備目標與 RAW，執行後由整批摘要縮到需要查看的樣本。主要交付是一份 workbook；有疑問時再看 XIC，不必先理解程式模組。</p>
+<p><a href="readers-index.html">回文件入口</a> · <a href="targeted-extraction.md">完整 Markdown 操作指南</a>
+</p>
+</header>
+  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一個批次</a><a href="#inputs">準備輸入</a><a href="#outputs">讀 workbook</a><a href="#review">檢閱結果</a><a href="#cli">命令列</a><a href="#troubleshooting">遇到問題</a>
+</nav>
+  <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">先完成工作，再追問數字</h2>
+<div class="guide-map-toolbar">
+<p>這張圖說明準備、判斷與交付的關係，不是函式執行時序。</p><a href="assets/targeted-workflow.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
+</div><img class="guide-map-frame" src="assets/targeted-workflow.svg" alt="Targeted 從目標清單與 RAW 到 workbook 和檢閱的流程圖" loading="lazy">
 </section>
-      <section id="workflow" aria-labelledby="workflow-heading">
-        <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run xic-workbench</code>。</p>
-        <figure class="snapshot"><img src="../../assets/screenshots/targeted-workspace.png" alt="Targeted Extraction 工作區畫面"><figcaption>Targeted Extraction 工作區：設定批次、編輯目標、執行與檢視結果。</figcaption></figure>
-        <ol class="steps">
-          <li><h3>選擇 Targeted Extraction</h3><p>進入已知目標的工作區。</p></li>
-          <li><h3>指定 RAW 與 DLL 資料夾</h3><p>RAW 資料夾放這批 Thermo <code>.raw</code>；DLL 資料夾須包含 RawFileReader DLL。</p></li>
-          <li><h3>匯入或編輯目標</h3><p>拖曳 XLSX 方法檔／目標表到匯入區，或按「選擇檔案」（也支援 CSV／TSV，單檔上限 1 MiB）。系統自動辨識並預覽目標與 ISTD 配對；按「確認匯入並取代」才套用，取消不變更目前清單。也可按「檢視與編輯」開啟全高目標表。「返回批次設定」或 <code>Alt+Left</code> 會保留編輯並回到批次摘要。</p></li>
-          <li><h3>按「開始執行」</h3><p>按工作區下方的執行按鈕；完成後，到 <code>output/</code> 找本次 workbook。</p></li>
-        </ol>
-        <div class="note"><p><strong>接著跑新批次？</strong>「開始新批次」會清除 RAW 資料夾與畫面上的結果，保留目標、DLL 與分析參數。本機環境與執行資源可另外調整。</p><p>已完成執行後若改設定，畫面會把現有結果標為「先前結果」；請用新執行的 workbook 判讀新設定。</p></div>
-        <div class="note"><p><strong>分析方法與設定</strong>：可攜式 XLSX 包含 <code>Method</code> 與 <code>Targets</code>；本機目前工作由 <code>workspace.json</code> 管理。平台固定使用共用 <code>cid-nl</code> 策略，沒有舊 scalar 科學參數或重設按鈕。載入清單保留批次與機器設定。詳見 <a href="targeted-config-reference.md">設定參考</a>。</p></div>
-      </section>
-      <section id="inputs" aria-labelledby="inputs-heading">
-        <p class="eyebrow">02 · 輸入與設定</p><h2 id="inputs-heading">每個欄位在做什麼</h2><p class="intro">從目標清單卡下載 XLSX 範例、另存副本並載入。保存目前工作寫入 <code>config/workspace.json</code>；另存清單建立可攜式 XLSX，不讀取或轉換舊 CSV 設定。</p>
-        <div class="grid">
-          <article class="card"><span class="label">資料入口</span><h3>RAW directory</h3><p>這批要處理的 Thermo <code>.raw</code> 檔案所在資料夾。</p></article>
-          <article class="card"><span class="label">讀檔環境</span><h3>DLL directory</h3><p>Thermo RawFileReader DLL 所在資料夾。</p></article>
-          <article class="card"><span class="label">分析目標</span><h3>Target table</h3><p>標籤、m/z、expected RT、CID/NL tag、role 與 ISTD 配對。</p></article>
-          <article class="card"><span class="label">按需調整</span><h3>執行資源</h3><p>本機 DLL 與 worker 數；科學策略由平台統一管理。</p></article>
-        </div>
-        <div class="note"><p><strong>目標標籤會出現在對外結果。</strong>Workbook 與 CSV 會用它當識別名稱；若改名，請確認下游 script 與檢視習慣能接受新的欄位前綴。機器上的 RAW、DLL 與實驗室路徑請放在本機工作副本。</p></div>
-      </section>
-      <section id="outputs" aria-labelledby="outputs-heading">
-        <p class="eyebrow">03 · 主輸出</p><h2 id="outputs-heading">先開 workbook</h2><p class="intro">完成後只交付一份 XLSX；從「摘要」開始，再看「需檢查」。</p>
-        <p>內部 gate 的暫存檔會在完成、失敗或取消後清理。非空的批次資料、身分支持與核准記錄保留為隱藏工作表，不另留 sidecar。Inspector 可直接開啟完成的 Targeted XLSX；曲線依使用者要求讀取 RAW。</p>
-        <code class="output-path">output/xic_results_YYYYMMDD_HHMM.xlsx</code>
-        <div class="table-wrap"><table><thead><tr><th scope="col">Sheet</th><th scope="col">用途</th></tr></thead><tbody>
-          <tr><td><code>摘要</code></td><td>整批結論，以及每個目標要先看什麼。</td></tr>
-          <tr><td><code>需檢查</code></td><td>要先看的結果：與多數不同的結果，或沒有明顯多數時有檢閱註記的結果（有才出現）。</td></tr>
-          <tr><td><code>面積</code></td><td>各樣本 × 目標的峰面積；共用同一 ISTD 的 analyte 排在一起，後面接該 ISTD。</td></tr>
-          <tr><td><code>XIC Results</code></td><td>各 sample-target 的 RT、Area、計入判定與檢閱原因。</td></tr>
-          <tr><td><code>Targets</code></td><td>本次執行所用目標表快照。</td></tr>
-          <tr><td><code>Run Metadata</code></td><td>本次方法參數與版本。</td></tr>
-          <tr><td><code>欄位說明</code></td><td>每個欄位的意思與單位。</td></tr>
-        </tbody></table></div>
-      </section>
-      <section id="review" aria-labelledby="review-heading">
-        <p class="eyebrow">04 · 判讀順序</p><h2 id="review-heading">從總覽找到要看的列</h2><p class="intro">完成後先看 <code>摘要</code>，再依「需先看」到 <code>需檢查</code>。要確認某筆結果時，在工作台開 XIC 看峰，再考慮重跑。</p>
-        <div class="review-grid"><article class="review-card"><h3>Detection %</h3><p>正式 Targeted projection 判定的計數比例。計數與數值可用性分開：有 RT／area 的列仍可能不計數。以進階欄位 <code>Counted Detection</code>、<code>Product State</code> 與理由判讀，不單靠 NL token。</p></article><article class="review-card"><h3>Flagged %</h3><p>人工檢視工作量：已 detected 的列仍可能因 confidence 低或 RT shift 特別而被標記。</p></article></div>
-        <div class="note"><p><strong><code>NO_MS2</code> 怎麼計算？</strong>正式結果依 ISTD／analyte 角色與支持政策決定計數。<code>count_no_ms2_as_detected</code> 只控制缺少正式 projection 的 legacy fallback，不會覆寫正式結果。詳見 <a href="../product/decision-policy.md">Decision Policy</a>。</p></div>
-      </section>
-      <section id="cli" aria-labelledby="cli-heading">
-        <p class="eyebrow">05 · 命令列選擇</p><h2 id="cli-heading">CLI 走同一條 Targeted pipeline</h2><p class="intro">如果在開發 checkout 或使用已安裝的 entry point，可從命令列執行。</p>
-        <div class="cli-layout"><article class="card"><h3>Developer checkout</h3><pre><code>uv run python -m scripts.run_extraction --base-dir .</code></pre></article><article class="card"><h3>Installed entry point</h3><pre><code>uv run xic-extractor-cli --base-dir .</code></pre></article></div>
-        <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th scope="col">選項</th><th scope="col">用途</th></tr></thead><tbody>
-          <tr><td><code>--base-dir</code></td><td>包含 <code>config/</code> 與 <code>output/</code> 的目錄。</td></tr>
-          <tr><td><code>--data-dir</code></td><td>本次執行的 RAW 資料夾覆寫值。</td></tr>
-          <tr><td><code>--parallel-mode</code></td><td><code>serial</code> 或 <code>process</code>。</td></tr>
-          <tr><td><code>--parallel-workers</code></td><td>process mode 的 worker 數。</td></tr>
-        </tbody></table></div><p class="intro">目前追蹤的設定預設 <code>parallel_mode=process</code>；診斷或隔離環境問題時可用 serial mode。</p>
-      </section>
-      <section id="troubleshooting" aria-labelledby="troubleshooting-heading">
-        <p class="eyebrow">06 · 常見問題</p><h2 id="troubleshooting-heading">錯誤發生時先查這裡</h2>
-        <details class="faq"><summary>XLSX 或目前工作 JSON 格式錯誤</summary><p>依錯誤訊息指出的檔案、列與欄位修正。</p></details>
-        <details class="faq"><summary><code>data_dir</code> 不存在</summary><p>把 Settings 指到真正包含 <code>.raw</code> 檔案的資料夾。</p></details>
-        <details class="faq"><summary>DLL 載入失敗</summary><p>把 Settings 指到 Thermo RawFileReader DLL 所在資料夾。</p></details>
-        <details class="faq"><summary>只有一個 RAW 檔案失敗</summary><p>讓批次繼續，完成後在 <code>需檢查</code> 找「RAW 處理失敗」那一列，建議檢查欄會附上錯誤訊息。</p></details>
-        <div class="next"><a href="untargeted-discovery.html"><strong>想探索未知特徵？→</strong><span>改看 Untargeted Discovery 操作指南。</span></a><a href="core-modules-explainer.html#modes"><strong>回核心模組導覽 →</strong><span>對照兩種工作模式與共用處理核心。</span></a></div>
-      </section>
-    </main>
-    <footer><p>這頁是使用者閱讀版；正式操作文件 owner：<code>docs/user/targeted-extraction.md</code>。產品行為若有更新，先依 owner 文件，再同步此頁。</p><p>使用者指南不取代產品主題契約或科學證據驗收。</p></footer>
-  </div>
+  <section id="workflow">
+<p class="eyebrow">01 · 執行</p>
+<h2>跑一個批次</h2>
+<p>首次使用先依 <a href="../../README.md#run-the-html-workbench">啟動與 reader 設定</a>打開工作台；source checkout 使用 <code>uv run xic-workbench</code>。</p>
+<ol>
+<li>選 <strong>Targeted Extraction</strong>，指定本批 RAW 資料夾。</li>
+<li>載入已保存的清單／方法，或從目標卡下載 XLSX 範例、編輯並匯入。</li>
+<li>核對目標、方法、內標配對與樣本資訊；預覽確認後才套用匯入。</li>
+<li>按 <strong>開始 Targeted 分析</strong>。完成後從結果動作開啟 workbook。</li>
+</ol>
+<p>下一批使用 <strong>開始新批次</strong>，保留目標與本機 reader 設定。完成後若改輸入，畫面上的舊結果不代表新設定，需另跑一批。</p>
+</section>
+  <section id="inputs">
+<p class="eyebrow">02 · 輸入</p>
+<h2>先分清楚目標意圖與機器設定</h2>
+<p>目標表包含名稱、m/z、expected RT、辨識方法、role 與可選的 ISTD 配對。已知目標不代表樣本中一定有訊號；未指定辨識方法的 MS1-only 路徑與有方法條件的判斷也不能混用。</p>
+<p>可攜式清單／方法使用 XLSX；CSV／TSV 仍可明確匯入目標表草稿。<strong>另存清單</strong>供下批重用；<strong>保存目前工作</strong>保存本機目前狀態。RAW 路徑與執行資源不應當作可攜方法內容。</p>
+<p>完整欄位與自訂方法查 <a href="targeted-config-reference.md">設定參考</a>。</p>
+</section>
+  <section id="outputs">
+<p class="eyebrow">03 · 結果</p>
+<h2>先開 workbook，不先翻中間檔</h2>
+<p>完成結果為 <code>xic_results_YYYYMMDD_HHMM.xlsx</code>。先讀 <strong>摘要</strong>的整批結論與目標提示，再看 <strong>需檢查</strong>（有項目才出現）。<strong>面積</strong>提供樣本 × 目標的保存數值。</p>
+<p><code>XIC Results</code>、目標快照、方法證據與 Run Metadata 支持進一步判讀與追溯；完整工作表和欄位查 <a href="targeted-output-reference.md">輸出參考</a>。</p>
+</section>
+  <section id="review">
+<p class="eyebrow">04 · 檢閱與使用</p>
+<h2>有疑問時，由目標縮到樣本與曲線</h2>
+<ol>
+<li>在工作台開啟完成的 XLSX，選擇摘要提示的目標與樣本。</li>
+<li>一起看 area、RT、counted status 與 review reason。<strong>有面積、計入偵測、需要檢閱是不同答案。</strong>
+</li>
+<li>需要確認峰時再要求 XIC，並提供 source RAW 與 reader；只讀保存的 workbook 值不需要它們。</li>
+<li>確認方法、單位與內標配對後，再用 <strong>面積</strong>做預定計算。檢閱不改寫保存的科學判斷。</li>
+</ol>
+<p>空白不是自動的零，面積也不證明化合物身分。需要理解原因時，讀 <a href="processing-guide.html#decisions">結果判讀原理</a>；要重現操作，回 <a href="targeted-extraction.md#review-the-batch">逐步閱讀指南</a>。</p>
+</section>
+  <section id="cli">
+<p class="eyebrow">05 · 自動化</p>
+<h2>命令列使用同一條分析路徑</h2>
+<p>在 source checkout 執行 <code>uv run xic-extractor-cli --help</code>。使用已保存的 XLSX 方法與新批 RAW；精確參數與範例查 <a href="targeted-extraction.md#cli">CLI 操作段落</a>。科學方法與本機執行設定是不同輸入。</p>
+</section>
+  <section id="troubleshooting">
+<p class="eyebrow">06 · 遇到問題</p>
+<h2>先定位失敗，再決定是否重跑</h2>
+<p>輸入格式錯誤先修訊息指出的檔案、列與欄位；DLL 問題依 <a href="README.md#reader-setup">reader 設定</a>處理，不使用舊 Xcalibur DLL。個別樣本失敗時查結果中的錯誤與診斷，不把它當作未偵測。</p>
+<p><a href="targeted-extraction.md#troubleshooting">完整 troubleshooting</a> · <a href="untargeted-discovery.html">想探索未列出的特徵？改走 Untargeted</a>
+</p>
+</section>
+  <footer>
+<p>操作與格式以 <a href="targeted-extraction.md">Markdown 指南</a>及其參考文件為準；精確選擇規則查 <a href="../product/targeted-selection.md">Targeted Selection</a>。</p><a href="readers-index.html">回文件入口</a>
+</footer>
+</main>
 </body>
 </html>

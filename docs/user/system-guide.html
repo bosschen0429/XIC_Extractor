@@ -108,13 +108,13 @@
     <header class="hero">
       <div class="hero-inner">
         <div>
-          <p class="eyebrow">XIC Extractor · 系統與檢視</p>
+          <p class="eyebrow">XIC Extractor · 維護者系統導覽</p>
           <h1>誰做判斷，<br>誰讓工作完成？</h1>
-          <p class="lead">模組負責處理證據，執行 runtime 負責把一次工作安全地跑完；完成後，XIC Inspector 讓你查看記錄。沿著這三條線，就能分清楚結果從哪裡來、工作怎麼收尾、檢視又能做什麼。</p>
+          <p class="lead">需要理解或修改實作時，用這篇區分科學判斷、執行安排與結果檢視。一般分析不必先讀系統：請由操作指南走到結果，有疑問再查處理原理。</p>
         </div>
         <aside class="hero-aside" aria-label="閱讀重點">
-          <strong>閱讀順序</strong>
-          <p>先看資料沿哪些模組走，再看一次 attempt 的生命週期，最後看完成證據如何進入只讀報告。</p>
+          <strong>不是操作的必經章節</strong>
+          <p><a href="targeted-extraction.html#review">Targeted 結果檢閱</a>與 <a href="untargeted-discovery.html#review">Untargeted 結果使用</a>由操作指南說明。本頁回答背後的責任與依賴。</p>
         </aside>
       </div>
     </header>
@@ -124,7 +124,7 @@
       <a href="#architecture">模組與依賴</a>
       <a href="#runtime">執行生命週期</a>
       <a href="#inspector">完成證據檢視</a>
-      <a href="core-modules-explainer.html">返回核心模組導覽</a>
+      <a href="readers-index.html">回文件入口</a>
     </nav>
 
     <main>
@@ -184,36 +184,37 @@
           </ul>
         </div>
         <div class="grid">
-          <div class="card"><h3>重跑與續跑不同</h3><p>目前未提供沿用先前工作結果的 retry / resume；ValidatedDependencyToken 尚未實作。重新執行不等於接續失敗工作。Untargeted 可重用通過來源與查詢驗證的 acquisition cache，但會重新做科學決策。</p></div>
+          <div class="card"><h3>重跑與續跑不同</h3><p>目前未提供沿用先前工作結果的 retry / resume。重新執行不等於接續失敗工作。Untargeted 可重用通過來源與查詢驗證的 acquisition cache，但會重新做科學決策。</p></div>
           <div class="card"><h3>量的是執行成本</h3><p>timing 記錄已觀察到的 RAW 開啟、查詢及執行成本；未觀察到的數值維持 unavailable。這些記錄不評分證據品質。</p></div>
         </div>
         <div class="panel caution"><p><strong>目前的證據邊界：</strong>正式執行契約記載，整合證據尚未超過 <code>diagnostic_only</code>。這裡解釋契約規定的生命週期，不宣稱 Targeted、Alignment 或所有入口已通過產品整合驗證。</p></div>
       </section>
 
       <section id="inspector" aria-labelledby="inspector-heading">
-        <p class="eyebrow">03 · 完成後檢視</p>
-        <h2 id="inspector-heading">把留下的證據打開看，不重做決策</h2>
-        <p class="section-intro">XIC Inspector 是已安裝的只讀 CLI / API，接受 pure Untargeted CID-NL 的已完成 SQLite 證據，也接受診斷工具保存的 curve-bundle JSON。Untargeted GUI 可在 Alignment 完成並取得證據 locator 後手動匯出。兩種來源都經過選擇，再產生單一 HTML 閱讀工作台。</p>
-        <div class="panel">
-          <div class="inspector-path" aria-label="Inspector 檢視路徑">
-            <div><strong>來源與綁定</strong><p>SQLite adapter 檢查完成證據綁定的 Matrix 身分；curve-bundle JSON 以檔案 SHA-256 綁定，不要求 Matrix。JSON 保存 producer 提供的曲線與結果，不讓 viewer 補算。</p></div>
-            <span class="path-arrow" aria-hidden="true">→</span>
-            <div><strong>自包含的離線 HTML</strong><p>選中的曲線、樣本關係、整合與決策記錄連同 CSS、圖表和互動一起放入檔案；開啟時不依賴資料庫或網路。</p></div>
-          </div>
-        </div>
-        <div class="grid three" aria-label="選擇檢視項目的方式">
-          <div class="card"><h3>sample · 看代表性群組</h3><p>SQLite 來源優先挑選真實跨樣本群組，兼顧覆蓋與已記錄狀態；不足時才補入未分群候選。Curve bundle 以 transition 為可選項目。</p></div>
-          <div class="card"><h3>attention · 看待注意項</h3><p>挑出 owner 已記錄的檢視條件，協助先讀可能需要審閱的項目；標記本身不改最終格值。</p></div>
-          <div class="card"><h3>query · 找指定證據</h3><p>依樣本、候選、群組、m/z 或 RT apex 查真正存在的 witness 鏈，並用 offset / limit 分頁。</p></div>
-        </div>
-        <div class="panel note"><p><strong>報告裡能做的事：</strong>在項目、樣本和候選間切換，對照曲線與積分、跨樣本關係、支援來源和已記錄的 cell decision。缺少曲線、校正或摘要時會顯示不可用或有限範圍；畫面不重新平滑、擬合、補證據，也不從相近名稱、質量或時間猜測關係。</p></div>
-        <div class="panel caution"><p><strong>只讀邊界：</strong>Inspector 不開 RAW、不重跑科學計算、不選 Matrix 值，也不寫產品 Matrix。報告的圖表、說明和 review 狀態是檢視投影，不授予 activation、publication 或 ProductWriter 權限。</p></div>
+        <p class="eyebrow">03 · 檢視邊界</p>
+<h2 id="inspector-heading">保存值、取得曲線、畫面檢視是不同責任</h2>
+        <p class="section-intro">日常閱讀結果由操作指南負責；維護實作時則要分清楚：來源 adapter 解讀保存證據，工作台 acquisition 按需取得 RAW 曲線，Inspector 的選擇與 renderer 呈現結果。</p>
+        <div class="grid three">
+<div class="card">
+<h3>來源與保存值</h3>
+<p>工作台可開 Targeted XLSX 與完成的 CID-NL 結果。診斷 curve-bundle 是另一種來源，不代表相應方法已取得產品輸出支援。</p>
+</div>
+<div class="card">
+<h3>曲線取得</h3>
+<p>需要 RAW 曲線時由工作台 acquisition 處理。不能因檢閱介面要求曲線，就讓 renderer 重選峰、重做科學決策或改格值。</p>
+</div>
+<div class="card">
+<h3>離線報告</h3>
+<p>自包含 HTML 保存選定的曲線與記錄，供離線檢閱；它不回寫原始結果，也不是方法 activation 或 publication 的授權。</p>
+</div>
+</div>
+        <p>精確來源、綁定與 API 查 <a href="../product/xic-inspector.md">XIC Inspector</a>；執行生命週期查 <a href="../product/execution-runtime.md">Run Lifecycle</a>。一般使用者回 <a href="processing-guide.html#results">結果使用路徑</a>。</p>
       </section>
     </main>
 
     <footer>
       <p>這頁是人類閱讀導覽。正式 owner 仍是 <a href="../architecture-contract.md"><code>docs/architecture-contract.md</code></a>（模組責任與依賴）、<a href="../product/execution-runtime.md"><code>docs/product/execution-runtime.md</code></a>（執行生命週期）、<a href="../product/xic-inspector.md"><code>docs/product/xic-inspector.md</code></a>（只讀檢視）。精確 API、欄位與實際能力以 owner 文件及現行程式為準。</p>
-      <p><a href="core-modules-explainer.html">返回核心模組導覽</a></p>
+      <p><a href="readers-index.html">回文件入口</a></p>
     </footer>
   </div>
 </body>

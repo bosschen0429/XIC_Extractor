@@ -85,83 +85,81 @@
   <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
-  <div class="page">
-    <header class="hero">
-      <nav class="breadcrumbs" aria-label="相關頁面"><a href="core-modules-explainer.html#modes">核心模組導覽</a><span>／</span><span>Untargeted Discovery 操作指南</span></nav>
-      <div class="hero-inner"><div><p class="eyebrow">XIC Extractor · 探索特徵</p><h1>從 RAW 探索候選，<br>對齊各個樣本</h1><p class="lead">當你沒有預先列好的目標清單，用 Untargeted Discovery 從 RAW 找候選特徵，依需要跨樣本對齊，並從 GUI 開啟可檢視的輸出。</p></div><aside class="hero-aside" aria-label="快速掌握"><strong>先做三個選擇</strong><p>選 run mode、指定 RAW / DLL / output，確認上機資訊與 CID-NL 方法。預設跨樣本輸出是 <code>alignment_matrix.tsv</code>。</p></aside></div>
-    </header>
-    <nav class="jump" aria-label="頁內導覽">
-      <a href="#flow-map">先看流程圖</a><a href="#workflow">操作步驟</a><a href="#modes">模式選擇</a><a href="#inputs">輸入與方法</a><a href="#outputs">輸出與檢視</a><a href="#troubleshooting">常見問題</a></nav>
-    <main>
-<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">選對模式，就知道流程在哪裡開始與停下</h2>
-<p class="guide-map-intro">full 會串接 Discovery 與 Alignment；只探索停在候選；已有 batch index 時可以直接對齊。</p>
-<div class="guide-map-toolbar"><p>先看處理與判斷的關係，再沿下方說明閱讀。</p><a href="assets/untargeted-modes.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a></div>
-<img class="guide-map-frame" src="assets/untargeted-modes.svg" alt="選對模式，就知道流程在哪裡開始與停下：流程圖" loading="lazy">
-<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#modes">模式與輸入說明</a>。</p>
+<main class="page">
+  <header class="hero">
+<p class="eyebrow">XIC Extractor · 探索特徵</p>
+<h1>從方法探索，<br>走到可比較的 Matrix</h1>
+<p class="lead">依方法找候選、對齊樣本，再讀懂格值與缺格。需要時檢閱曲線、整理矩陣，最後把結果交給下游；對齊的 feature 不自動等於已鑑定化合物。</p>
+<p><a href="readers-index.html">回文件入口</a> · <a href="untargeted-discovery.md">完整 Markdown 操作指南</a>
+</p>
+</header>
+  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一次分析</a><a href="#modes">選模式</a><a href="#inputs">確認輸入</a><a href="#outputs">讀 Matrix</a><a href="#review">檢閱與整理</a><a href="#troubleshooting">遇到問題</a>
+</nav>
+  <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">模式決定從哪裡開始、在哪裡停下</h2>
+<div class="guide-map-toolbar">
+<p>這張圖說明各模式的範圍，不是函式時序。</p><a href="assets/untargeted-modes.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
+</div><img class="guide-map-frame" src="assets/untargeted-modes.svg" alt="Untargeted 完整分析、只探索與只對齊的模式圖" loading="lazy">
 </section>
-      <section id="workflow" aria-labelledby="workflow-heading">
-        <p class="eyebrow">01 · 跑一次探索</p><h2 id="workflow-heading">在 GUI 中完成這八步</h2><p class="intro">封裝版開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run python -m gui.main</code>。</p>
-        <figure class="snapshot"><img src="../../assets/screenshots/untargeted-workspace.png" alt="Untargeted Discovery 工作區畫面"><figcaption>Untargeted Discovery 工作區：模式、資料路徑、上機資訊、內標與方法設定。</figcaption></figure>
-        <ol class="steps">
-          <li><h3>選擇 Untargeted Discovery</h3><p>進入探索工作區。</p></li>
-          <li><h3>選擇 run mode</h3><p>新批次通常選 <code>full</code>；單檔候選探索選 <code>discovery_only</code>；既有探索結果要重新對齊選 <code>align_only</code>。</p><p><code>full</code> 可關閉 Alignment，只輸出批次各樣本的 Discovery，不產生矩陣。Alignment 與 Backfill 預設開啟；關閉 Backfill（CLI：<code>--no-backfill</code>）會保留原有觀察，未搜尋的缺格留空，不補零或新增 SUPPORT。</p></li>
-          <li><h3>設定資料路徑</h3><p>指定 RAW 輸入、Thermo DLL 資料夾與輸出資料夾。</p></li>
-          <li><h3>匯入 Word「上機資訊」</h3><p>依檔名配對樣本與注射順序；檢查未配對或有歧義項目。字母順序不是注射順序。</p></li>
-          <li><h3>檢查「內標清單」</h3><p>在「選擇檔案」旁下載共用 XLSX 範例；可選檔或拖放 XLSX、CSV、TSV。預覽會列出內標；流程只使用 <code>role=istd</code> 且符合目前方法 CID-NL 的列。dR 方法不使用 R 內標；不適用會標示略過，不是 ND。切換方法會更新預覽。</p></li>
-          <li><h3>選 CID-NL 起始方法</h3><p>開「編輯方法…」選 dR、R、MeR 或 custom NL tags 與組合，將方法套用到本次執行。</p></li>
-          <li><h3>按「開始執行」</h3><p>確認設定完成後執行。</p></li>
-          <li><h3>從輸出資料夾開始檢視</h3><p>按問題選候選 CSV 或 Alignment matrix；GUI 預設呈現 matrix。</p></li>
-        </ol>
-        <div class="note"><p><strong>本機設定位置：</strong>GUI 將 Untargeted 設定存於 <code>config/discovery_gui.json</code>。這是機器本地狀態，應留在本機。</p></div>
-      </section>
-      <section id="modes" aria-labelledby="modes-heading">
-        <p class="eyebrow">02 · 模式選擇</p><h2 id="modes-heading">要探索、對齊，還是兩者都做？</h2><p class="intro">GUI 從 RAW 資料夾開始完整批次時選 <code>full</code>。若想對一整個資料夾只做 discovery-only batch，使用 CLI discovery workflow。</p>
-        <div class="mode-grid">
-          <article class="mode-card"><span class="label">新批次</span><h3><code>full</code></h3><p>候選探索後，再做跨樣本 Alignment。</p><p class="mode-input"><strong>輸入：</strong>RAW 資料夾。</p></article>
-          <article class="mode-card"><span class="label">先看單檔</span><h3><code>discovery_only</code></h3><p>只檢查一個 RAW 檔案的候選特徵。</p><p class="mode-input"><strong>輸入：</strong>單一 RAW 檔案。</p></article>
-          <article class="mode-card"><span class="label">已有探索結果</span><h3><code>align_only</code></h3><p>拿既有 discovery 輸出做對齊。</p><p class="mode-input"><strong>輸入：</strong>RAW 資料夾與 <code>discovery_batch_index.csv</code>。</p></article>
-        </div>
-      </section>
-      <section id="inputs" aria-labelledby="inputs-heading">
-        <p class="eyebrow">03 · 輸入與方法</p><h2 id="inputs-heading">開始之前核對這些資料</h2>
-        <div class="input-grid">
-          <article class="input-card"><h3>RAW directory 或 RAW file</h3><p>Thermo 儀器資料，依選定模式進行探索或對齊。</p></article>
-          <article class="input-card"><h3>DLL directory</h3><p>包含 Thermo RawFileReader DLL 的資料夾。</p></article>
-          <article class="input-card"><h3>Output directory</h3><p>候選與 Alignment artifacts 的寫入位置。</p></article>
-          <article class="input-card"><h3>上機資訊</h3><p>Word sequence table，供檔案／樣本配對及注射順序使用。</p></article>
-          <article class="input-card"><h3>內標清單</h3><p>與 Targeted 共用的 XLSX、CSV、TSV 清單；Untargeted 只消費 <code>role=istd</code> 列。</p></article>
-          <article class="input-card"><h3>Preset 與 advanced overrides</h3><p>選定 CID-NL tags 與組合；進階覆寫可在本次執行中調整 preset 方法。</p></article>
-        </div>
-        <div class="note"><p><strong>要換內標清單：</strong>下載共用 XLSX 範例，於 Excel 編輯後選檔或拖放匯入；保留 <code>Targets</code> 工作表欄名與 <code>role=istd</code>。方法 XLSX 只取清單，不套用 Targeted 方法設定。沒有第二份 Untargeted 專用清單。</p><p>若提供的檔案沒有內標，GUI 會報錯；清空該欄位可不使用內標清單執行。</p></div>
-      </section>
-      <section id="outputs" aria-labelledby="outputs-heading">
-        <p class="eyebrow">04 · 輸出與檢視</p><h2 id="outputs-heading">依你要回答的問題開檔</h2><p class="intro">GUI Alignment 會保留矩陣、配對的特徵識別資料與 review/provenance 表，支援結果頁的「篩選匯出…」。曲線檢閱統一由 Inspector 開啟。CLI 仍預設只輸出矩陣。</p>
-        <div class="output-lead"><div><h3>跨樣本量化先看 matrix</h3><p>feature 是列、sample 是欄，格內放 area；這是預設 Alignment 產物。</p></div><code>alignment_matrix.tsv</code></div>
-        <div class="table-wrap"><table><thead><tr><th scope="col">輸出</th><th scope="col">內容</th><th scope="col">適合的檢視問題</th></tr></thead><tbody>
-          <tr><td><code>discovery_candidates.csv</code></td><td>各樣本候選特徵的 m/z、RT、area 與 seed evidence。</td><td>逐樣本檢查候選細節。</td></tr>
-          <tr><td><code>discovery_review.csv</code></td><td>較精簡的候選欄位與 confidence。</td><td>快速分流檢視。</td></tr>
-          <tr><td><code>discovery_batch_index.csv</code></td><td>連結每個樣本的 candidate / review CSV。</td><td>Alignment 輸入；探索後自動產生。</td></tr>
-          <tr><td><code>alignment_matrix.tsv</code></td><td>跨樣本對齊特徵與各格 area。</td><td>預設跨樣本量化結果。</td></tr>
-          <tr><td><code>alignment_review.tsv</code></td><td>群組審閱與矩陣列綁定資料。</td><td>保留篩選後特徵與原始列的對應。</td></tr>
-          <tr><td><code>alignment_explanation.sqlite</code></td><td>成功發布後保存的 CID-NL 決策與曲線證據。</td><td>Inspector 匯出的證據來源。</td></tr>
-          <tr><td><code>alignment_review.tsv</code></td><td>對齊品質、owner 身分與每格 backfill 狀態。</td><td>檢閱對齊結果。</td></tr>
-          <tr><td><code>xic_inspector.html</code></td><td>離線曲線檢閱頁。</td><td>完成後點「開啟 Inspector」。</td></tr>
-        </tbody></table></div>
-        <p>先在樣品表點「匯出樣品資料」，存成 TSV；完成 Alignment 後點「篩選匯出…」，選取 TSV、指定 0 至 1 的最低有效值比例，以及新輸出資料夾。0 算有效值，空白不算；QC、blank 與排除樣本不計入比例。匯出會保留原始矩陣，完成後開啟分析資料夾。</p>
-      </section>
-      <section id="troubleshooting" aria-labelledby="troubleshooting-heading">
-        <p class="eyebrow">05 · 常見問題</p><h2 id="troubleshooting-heading">先檢查輸入，再看主輸出</h2>
-        <details class="faq"><summary>執行按鈕顯示設定未完成</summary><p>填齊畫面上每個路徑欄位，並確認檔案／資料夾實際存在。</p></details>
-        <details class="faq"><summary>DLL 載入失敗</summary><p>把 DLL directory 指到 Thermo RawFileReader 安裝資料夾。</p></details>
-        <details class="faq"><summary>Inspector 無法開啟</summary><p>查看輸出按鈕下方的 Inspector 狀態；完成的執行需要有可用的 evidence 來源。</p></details>
-        <details class="faq"><summary>篩選匯出按鈕無法使用</summary><p>舊結果若只有矩陣而沒有配對的特徵識別資料，請重新執行 Alignment。</p></details>
-        <details class="faq"><summary>只想重新做 Alignment</summary><p>選 <code>align_only</code>，並提供既有 <code>discovery_batch_index.csv</code>。</p></details>
-        <details class="faq"><summary>結果和預期不同</summary><p>檢查 RAW 檔案是否有效，以及 DLL 版本是否與 Xcalibur 安裝相符。</p></details>
-        <div class="next"><a href="targeted-extraction.html"><strong>已知道要查的目標？→</strong><span>改看 Targeted Extraction 操作指南。</span></a><a href="core-modules-explainer.html#modes"><strong>回核心模組導覽 →</strong><span>對照兩種工作模式與共用處理核心。</span></a></div>
-      </section>
-    </main>
-    <footer><p>這頁是使用者閱讀版；正式操作文件 owner：<code>docs/user/untargeted-discovery.md</code>。產品行為若有更新，先依 owner 文件，再同步此頁。</p><p>使用者指南不取代產品主題契約或科學證據驗收。</p></footer>
-  </div>
+  <section id="workflow">
+<p class="eyebrow">01 · 執行</p>
+<h2>新批次從 full 開始</h2>
+<p>首次使用先依 <a href="../../README.md#run-the-html-workbench">啟動與 reader 設定</a>打開工作台；source checkout 使用 <code>uv run xic-workbench</code>。</p>
+<ol>
+<li>選 <strong>Untargeted Discovery</strong> 與適合的模式。</li>
+<li>指定 RAW 與輸出資料夾，確認共用 reader 設定。</li>
+<li>匯入並核對上機資訊、樣本配對與注射順序；確認內標清單是否適用於所選方法。</li>
+<li>選 CID-NL 起始方法，用 <strong>編輯方法…</strong>確認 tags 與組合，再套用。</li>
+<li>開始執行；完成後從結果開 Matrix 與檢閱介面。</li>
+</ol>
+<p>詳細操作及可選輸入查 <a href="untargeted-discovery.md#workflow">逐步操作指南</a>。方法如何匯入、編輯與保存查 <a href="untargeted-preset-guide.md">Preset 參考</a>。</p>
+</section>
+  <section id="modes">
+<p class="eyebrow">02 · 模式</p>
+<h2>要探索、對齊，還是兩者都做？</h2>
+<ul>
+<li><strong>full</strong>：從 RAW 資料夾進行探索與跨樣本 Alignment。</li>
+<li><strong>discovery_only</strong>：GUI 檢查單一 RAW 的候選，不交付跨樣本 Matrix。</li>
+<li><strong>align_only</strong>：使用既有 <code>discovery_batch_index.csv</code> 與 RAW 資料夾進行 Alignment。</li>
+</ul>
+<p>整個資料夾的 discovery-only batch 使用 CLI Discovery workflow。精確輸入見 <a href="untargeted-discovery.md#modes">模式說明</a>，不必用一份候選表冒充完成矩陣。</p>
+</section>
+  <section id="inputs">
+<p class="eyebrow">03 · 輸入</p>
+<h2>方法、樣本順序與內標各回答不同問題</h2>
+<p>方法決定搜尋什麼證據；上機資訊支援樣本配對與注射順序，字母順序不是注射順序。內標清單與 Targeted 共用格式，但 Untargeted 只使用適用的 <code>role=istd</code> 列，不套用 Targeted 方法設定。</p>
+<p>例如 dR 方法不把 R 內標當成適用標準。不適用不等於 ND；更換方法後應重新核對。清空內標欄位可不提供清單，與提供一份沒有可用內標列的檔案是不同操作。完整輸入規則查 <a href="untargeted-discovery.md#inputs">Inputs</a>。</p>
+</section>
+  <section id="outputs">
+<p class="eyebrow">04 · 結果</p>
+<h2>先分清楚候選與完成的 Matrix</h2>
+<p><code>alignment_matrix.tsv</code> 的列是 feature、欄是 sample、格內是發布的 area；它不是候選清單，也不是已完成 normalization 的結果。</p>
+<p><code>discovery_candidates.csv</code> 回答單樣本找到哪些候選；<code>alignment_review.tsv</code> 與完成的 evidence report 支持群組／格值判讀。GUI 與 CLI 的預設輸出層級不同，詳細檔案與條件查 <a href="untargeted-discovery.md#outputs">輸出指南</a>，欄位查 <a href="untargeted-output-reference.md">輸出參考</a>。</p>
+</section>
+  <section id="review">
+<p class="eyebrow">05 · 檢閱與使用</p>
+<h2>讀懂缺格，再準備下游矩陣</h2>
+<ol>
+<li>核對 Matrix 樣本與本批資料，找到有疑問的 feature。</li>
+<li>在工作台選 feature 與 sample，查看保存的判斷與可用 XIC。<strong>零是數值；空白不等於零或化合物不存在。</strong>
+</li>
+<li>需要理解回填時，先看 <a href="processing-guide.html#backfill">為什麼 Backfill 不是插值</a>。有面積與計入偵測也不是同一件事。</li>
+<li>按需要選 <strong>整理矩陣</strong>，在 <strong>矩陣整理</strong>確認來源與樣本、啟用步驟與必要門檻。未具備輸入的步驟會標示無法執行。</li>
+<li>讀摘要與 <code>feature_decisions.tsv</code>，確認保留／移除原因，再使用保留的矩陣。新結果寫到獨立資料夾，不覆寫原始 Matrix。</li>
+</ol>
+<p>有效值比例是 availability，不是 detection rate：零與有限的回填值可算有效，空白不算；樣本角色決定分母。精確規則與其他整理步驟查 <a href="../product/matrix-curation.md">Matrix Curation</a>。</p>
+<p><a href="untargeted-discovery.md#read-and-use-the-matrix">逐步讀取與使用指南 →</a>。Normalization、校正與統計仍是分開的下游工作。</p>
+</section>
+  <section id="troubleshooting">
+<p class="eyebrow">06 · 遇到問題</p>
+<h2>先確認輸入與完成狀態</h2>
+<p>按鈕無法執行時先檢查缺少的輸入；DLL 錯誤依 <a href="README.md#reader-setup">RawFileReader 設定</a>處理，不依 Xcalibur 舊 DLL 配對。檢閱不可用時查完成證據與畫面上的原因，不把部分輸出當作已完成結果。</p>
+<p><a href="untargeted-discovery.md#troubleshooting">完整 troubleshooting</a> · <a href="targeted-extraction.html">已有固定目標清單？改走 Targeted</a>
+</p>
+</section>
+  <footer>
+<p>操作與格式以 <a href="untargeted-discovery.md">Markdown 指南</a>及其參考文件為準；方法與判斷查 <a href="../product/README.md">產品規則</a>。</p><a href="readers-index.html">回文件入口</a>
+</footer>
+</main>
 </body>
 </html>

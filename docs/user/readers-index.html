@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="XIC Extractor 人讀版文件入口：操作、科學處理和系統檢視。">
-  <title>XIC Extractor 人讀版文件索引</title>
+  <title>XIC Extractor｜依問題選文件</title>
   <style>
     :root {
       color-scheme: light;
@@ -64,116 +64,91 @@
   <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
-  <div class="page">
-    <header class="hero">
-      <p class="eyebrow">XIC Extractor · 人讀版文件</p>
-      <h1>下一頁，讀什麼？</h1>
-      <p>依你眼前的問題選一條閱讀路線。這裡把目前核心模組導覽所提到的操作、科學流程與系統分工，接成連續的 HTML 閱讀體驗。</p>
-    </header>
-    <nav class="nav" aria-label="頁面導覽">
-      <a href="#flow-map">先看互動路線圖</a>
-      <a href="core-modules-explainer.html">回核心模組導覽</a>
-      <a href="#routes">三條閱讀路線</a>
-      <a href="#questions">依問題找段落</a>
-      <a href="#example">看具體故事</a>
-    </nav>
-    <main>
-      <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-        <h2 id="flow-map-title">先按問題選路線，再開指南</h2>
-        <p class="guide-map-intro">每個節點都是一份 HTML 導覽。直接點選即可開啟，不會跳到原始碼；也可用 Tab 選取，再按 Enter。</p>
-        <nav class="reading-map" aria-label="依問題開啟 HTML 導覽">
-          <p class="reading-map-prompt">你現在想完成什麼？</p>
-          <div class="reading-map-groups">
-            <div class="reading-map-group" data-lane="operate">
-              <h3>我要跑分析、看結果</h3>
-              <ul>
-                <li><a class="reading-map-node" href="targeted-extraction.html"><strong>Targeted 操作指南</strong><span>已知目標：準備清單、執行與檢閱。</span></a></li>
-                <li><a class="reading-map-node" href="untargeted-discovery.html"><strong>Untargeted 操作指南</strong><span>探索候選：選模式，再對齊樣本。</span></a></li>
-              </ul>
-            </div>
-            <div class="reading-map-group" data-lane="understand">
-              <h3>我要理解證據與格值</h3>
-              <ul>
-                <li><a class="reading-map-node" href="core-modules-explainer.html"><strong>核心流程導覽</strong><span>先掌握共用核心與兩種交付方式。</span></a></li>
-                <li><a class="reading-map-node" href="processing-guide.html"><strong>處理原理</strong><span>看峰證據、群組與每格答案的關係。</span></a></li>
-                <li><a class="reading-map-node" href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Matrix 故事</strong><span>沿一個例子，看完整資料旅程。</span></a></li>
-              </ul>
-            </div>
-            <div class="reading-map-group" data-lane="maintain">
-              <h3>我要理解分工與收尾</h3>
-              <ul>
-                <li><a class="reading-map-node" href="system-guide.html"><strong>系統與檢視導覽</strong><span>分清楚誰判斷、誰執行、誰發布。</span></a></li>
-              </ul>
-            </div>
-          </div>
-        </nav>
-        <p class="guide-map-caption">這是閱讀路線，不是分析執行順序。選一份指南開始即可，不必把全部頁面讀完。</p>
-      </section>
-      <section id="routes" aria-labelledby="routes-heading">
-        <p class="eyebrow">01 · 選一條路</p>
-        <h2 id="routes-heading">從操作、原理或系統開始</h2>
-        <p class="intro">每條路都能從一篇完整的人讀版開始；需要更細的概念時，再跳到同一篇中的對應段落。</p>
-        <div class="routes">
-          <article class="route">
-            <span class="number" aria-hidden="true">1</span>
-            <h3>我要實際跑資料</h3>
-            <p>從你已知的目標或想探索的特徵出發，確認輸入、GUI/CLI 操作與拿到的檔案。</p>
-            <ul>
-              <li><a href="targeted-extraction.html">Targeted 操作指南 →</a></li>
-              <li><a href="untargeted-discovery.html">Untargeted 操作指南 →</a></li>
-            </ul>
-          </article>
-          <article class="route science">
-            <span class="number" aria-hidden="true">2</span>
-            <h3>我想知道結果怎麼來</h3>
-            <p>看 Discovery、峰觀察、跨樣本配對、必要時的 Backfill，以及每個輸出格的決定。</p>
-            <ul>
-              <li><a href="processing-guide.html">共同處理流程 →</a></li>
-              <li><a href="processing-guide.html#terms">先看產品詞彙 →</a></li>
-            </ul>
-          </article>
-          <article class="route system">
-            <span class="number" aria-hidden="true">3</span>
-            <h3>我想知道模組怎麼接手</h3>
-            <p>看入口與核心的責任邊界、執行如何安排，以及目前 pure Untargeted CID-NL 完成後的證據如何只讀檢視。</p>
-            <ul>
-              <li><a href="system-guide.html">系統與檢視導覽 →</a></li>
-              <li><a href="system-guide.html#inspector">直接看 XIC Inspector →</a></li>
-            </ul>
-          </article>
+<div class="page">
+  <header class="hero">
+    <p class="eyebrow">XIC Extractor · 文件入口</p>
+    <h1>從分析問題，走到可用結果</h1>
+    <p>選一條工作路線，走到能使用的結果。遇到疑問時再查原理與規則，不必先讀完全部文件。</p>
+  </header>
+  <nav class="nav" aria-label="頁面導覽">
+    <a href="#routes">操作與結果</a><a href="#questions">理解結果</a><a href="#example">方法案例</a>
+    <a href="README.md">Markdown 文件索引</a>
+  </nav>
+  <main>
+    <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+      <h2 id="flow-map-title">從你的分析問題出發</h2>
+      <p class="guide-map-intro">這些連結可用滑鼠或 Tab／Enter 開啟。上層是操作，下一層回答「為什麼」，最後才是維護實作。</p>
+      <nav class="reading-map" aria-label="依問題開啟 HTML 導覽">
+        <p class="reading-map-prompt">你現在想完成什麼？</p>
+        <div class="reading-map-groups">
+          <div class="reading-map-group" data-lane="operate">
+<h3>先跑分析、讀結果</h3>
+<ul>
+            <li><a class="reading-map-node" href="targeted-extraction.html"><strong>Targeted 操作指南</strong><span>已知目標 → 執行 → workbook → 待檢查結果。</span></a>
+</li>
+            <li><a class="reading-map-node" href="untargeted-discovery.html"><strong>Untargeted 操作指南</strong><span>方法探索 → 對齊 → Matrix → 檢閱與整理。</span></a>
+</li>
+          </ul>
+</div>
+          <div class="reading-map-group" data-lane="understand">
+<h3>有疑問，再理解依據</h3>
+<ul>
+            <li><a class="reading-map-node" href="processing-guide.html"><strong>A／B／C 樣本的處理故事</strong><span>兩個樣本有峰，第三個缺格：每一步要回答什麼？</span></a>
+</li>
+            <li><a class="reading-map-node" href="core-modules-explainer.html"><strong>一頁處理地圖</strong><span>只想快速對照兩種入口與共同判斷。</span></a>
+</li>
+          </ul>
+</div>
+          <div class="reading-map-group" data-lane="maintain">
+<h3>需要改產品或實作</h3>
+<ul>
+            <li><a class="reading-map-node" href="../product/README.md"><strong>產品規則索引</strong><span>由分析問題找到精確規則、依據與限制。</span></a>
+</li>
+            <li><a class="reading-map-node" href="system-guide.html"><strong>系統分工導覽</strong><span>理解模組、執行與發布，再進程式。</span></a>
+</li>
+          </ul>
+</div>
         </div>
-      </section>
-      <section id="questions" aria-labelledby="questions-heading">
-        <p class="eyebrow">02 · 依問題找段落</p>
-        <h2 id="questions-heading">我現在卡在哪一個概念？</h2>
-        <ul class="questions">
-          <li><a href="processing-guide.html#discovery">候選特徵從哪裡來？ <span>Discovery</span></a></li>
-          <li><a href="processing-guide.html#peak">一段訊號怎麼變成峰？ <span>定量與峰觀察</span></a></li>
-          <li><a href="processing-guide.html#kernel">兩種模式為何能共用核心？ <span>Shared kernel</span></a></li>
-          <li><a href="processing-guide.html#alignment">不同樣本怎麼對齊？ <span>Alignment</span></a></li>
-          <li><a href="processing-guide.html#backfill">缺漏的格能不能補？ <span>Backfill</span></a></li>
-          <li><a href="processing-guide.html#decisions">為什麼有些格留空？ <span>Decision policy</span></a></li>
-          <li><a href="processing-guide.html#matrix">Matrix 到底裝什麼？ <span>Quant matrix</span></a></li>
-          <li><a href="processing-guide.html#terms">這些專有名詞怎麼讀？ <span>產品詞彙</span></a></li>
-          <li><a href="system-guide.html#architecture">各模組誰負責什麼？ <span>Architecture</span></a></li>
-          <li><a href="system-guide.html#runtime">執行中斷或重跑怎麼管理？ <span>Runtime</span></a></li>
-          <li><a href="system-guide.html#inspector">Untargeted CID-NL 完成後怎麼看證據？ <span>Inspector</span></a></li>
-        </ul>
-      </section>
-      <section id="example" aria-labelledby="example-heading">
-        <p class="eyebrow">03 · 看一個例子</p>
-        <h2 id="example-heading">想沿著一個結果走到底？</h2>
-        <p class="intro">既有產品故事頁用具體例子走過 RAW、Discovery、XIC、峰、Alignment 和 Final Matrix。</p>
-        <div class="story">
-          <div><h3>RAW 到 Final Matrix 的產品故事</h3><p>先讀全貌，再回這個索引查你想深入的段落。故事中的方法與狀態屬於例子；現行規則仍以對應正式 owner 為準。</p></div>
-          <a href="raw-to-final-matrix-product-story.html">開啟故事 →</a>
-        </div>
-      </section>
-    </main>
-    <footer>
-      <p>這是人讀版索引，涵蓋目前核心模組導覽所連的主題。正式模組由 <a href="../architecture-contract.md"><code>docs/architecture-contract.md</code></a> 管理；產品主題從 <a href="../product/README.md"><code>docs/product/README.md</code></a> 找正式 owner，操作指南由 <a href="README.md"><code>docs/user/</code></a> 的 Markdown owner 管理。</p>
-      <p>當 owner 的流程或輸出變更，先更新正式文件，再同步對應 HTML 說明。</p>
-    </footer>
-  </div>
+      </nav>
+    </section>
+    <section id="routes" aria-labelledby="routes-heading">
+      <p class="eyebrow">01 · 先走完工作</p>
+<h2 id="routes-heading">分析完成後，先讀什麼？</h2>
+      <div class="routes">
+        <article class="route"><span class="number">1</span>
+<h3>已知目標：從整批看到個別結果</h3>
+<p>準備目標表與 RAW，完成後先讀 workbook 摘要，再依待檢查項目查看樣本與 XIC。</p><a href="targeted-extraction.html">Targeted 操作指南 →</a>
+</article>
+        <article class="route"><span class="number">2</span>
+<h3>探索特徵：從 Matrix 走向下游</h3>
+<p>選方法、確認樣本資料、探索與對齊。讀懂格值與缺格，按需要整理 Matrix，保留原始結果。</p><a href="untargeted-discovery.html">Untargeted 操作指南 →</a>
+</article>
+      </div>
+    </section>
+    <section id="questions" aria-labelledby="questions-heading">
+      <p class="eyebrow">02 · 有疑問再深入</p>
+<h2 id="questions-heading">讓問題帶你到下一段</h2>
+      <div class="question-grid">
+        <a href="processing-guide.html#discovery">為什麼找到候選還不算確認？</a>
+        <a href="processing-guide.html#peak">怎麼決定峰邊界和面積？</a>
+        <a href="processing-guide.html#alignment">不同樣本真的是同一個 feature 嗎？</a>
+        <a href="processing-guide.html#backfill">缺格能找回來嗎？回填是猜值嗎？</a>
+        <a href="processing-guide.html#decisions">有面積、計入偵測、需要檢閱有何不同？</a>
+        <a href="processing-guide.html#results">結果接下來怎麼使用？</a>
+        <a href="../product/README.md">哪一份文件定義精確規則？</a>
+        <a href="system-guide.html#runtime">取消、失敗和重跑怎麼處理？</a>
+      </div>
+    </section>
+    <section id="example" aria-labelledby="example-heading">
+      <p class="eyebrow">03 · 看方法如何套用</p>
+<h2 id="example-heading">DNA adduct CID-NL：一個具體情境</h2>
+      <p>用中性流失線索、MS1 峰與跨樣本對應，理解為什麼候選不能直接當作已鑑定化合物。這是示意案例，不是驗證資料或所有方法的共同門檻。</p>
+      <a href="raw-to-final-matrix-product-story.html">開啟方法案例 →</a>
+    </section>
+  </main>
+  <footer>
+<p>欄位與格式查 <a href="README.md#look-up-a-field-or-method">參考文件</a>；產品語義查 <a href="../product/README.md">產品規則</a>。要修改實作，再看 <a href="../architecture-contract.md#reading-the-code">架構導覽</a>。</p>
+</footer>
+</div>
 </body>
 </html>

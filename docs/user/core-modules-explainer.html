@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="先用互動流程圖看懂 XIC Extractor 的共用處理與判斷，再展開兩種工作模式、輸出與結果檢視的說明。">
-  <title>XIC Extractor 核心流程導覽</title>
+  <title>XIC Extractor｜一頁處理地圖</title>
   <style>
     :root {
       color-scheme: light;
@@ -223,12 +223,12 @@
       <div class="hero-inner">
         <div>
           <p class="eyebrow">XIC Extractor · 核心流程導覽</p>
-          <h1>RAW 進來之後，<br>誰接手？</h1>
-          <p class="lead">先看流程圖，掌握訊號怎麼變成峰證據、群組與每格答案。Targeted 和 Untargeted 共用科學核心，但保留不同的搜尋範圍與交付方式。</p>
+          <h1>兩種分析入口，<br>一條證據路徑</h1>
+          <p class="lead">這是一頁地圖：選入口、看共同判斷、找到結果。想知道某一步為什麼這樣做，再讀 A／B／C 的處理故事；不必把所有導覽依序讀完。</p>
         </div>
         <aside class="hero-aside" aria-label="閱讀重點">
           <strong>讀圖的順序</strong>
-          <p>先沿中央的綠色處理往下讀，再看兩側的搜尋與交付。想知道原因或實作時，再展開下方說明、核對來源。</p>
+          <p>先沿中央的綠色處理往下讀，再看兩側的搜尋與交付。想知道原因時讀處理故事；需要改實作時才看系統導覽。</p>
         </aside>
       </div>
     </header>
@@ -251,11 +251,11 @@
           <a href="assets/core-processing-map.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
         </div>
         <img class="map-frame" src="assets/core-processing-map.svg" alt="XIC 共用核心：從峰證據、群組與補證到每格答案的流程圖" loading="lazy">
-        <p class="map-caption">這是科學責任與資料交接圖，不是每個函式的執行時序。若小螢幕不易閱讀，可另開完整圖；也能沿下方<a href="#core">逐步說明</a>讀完同一條流程。</p>
+        <p class="map-caption">這是科學責任與資料交接圖，不是每個函式的執行時序。若小螢幕不易閱讀，可另開完整圖；也能沿下方<a href="#core">問題摘要</a>讀完同一條流程。</p>
         <ul class="map-takeaways" aria-label="讀圖時記住三件事">
           <li><strong>共用，不等於方法盲目一致</strong><span>共享觀察、群組與格值的責任；搜尋與解讀仍可採用明確的方法策略。</span></li>
-          <li><strong>補到觀察，不等於可寫值</strong><span>補證、群組成員資格與數值判斷各有依據，不能把其中一步當成全部完成。</span></li>
-          <li><strong>輸出只消費完成答案</strong><span>Targeted 與 Untargeted 各自投影和發布，不由 writer 重讀 RAW、分組或重選格值。</span></li>
+          <li><strong>回填不是猜值</strong><span>回到缺格樣本尋找本地訊號，不拿其他樣本的面積推算缺值；找到後仍要判斷能否使用。</span></li>
+          <li><strong>數值與偵測分開</strong><span>有面積不一定計入偵測；需要檢閱也不等於數值被否決。結果要連同狀態與理由閱讀。</span></li>
         </ul>
       </section>
 
@@ -270,7 +270,7 @@
         <article class="mode-card" data-mode-panel="targeted" aria-label="Targeted 工作模式">
           <div>
             <p class="tiny-label">你提供</p>
-            <h3>已知要找哪個化合物</h3>
+            <h3>已有要量測的目標清單</h3>
             <p>目標清單限定要交付的目標；流程從 RAW 中尋找對應訊號，並對每個目標保留固定的結果列。</p>
             <ul class="chips" aria-label="Targeted 輸入">
               <li>Thermo .raw</li><li>目標清單</li><li>執行設定</li>
@@ -280,7 +280,7 @@
           <div class="mode-output">
             <p class="tiny-label">你拿到</p>
             <p>按目標與樣本整理的 Excel workbook，包含結果、摘要和待審閱項目。</p>
-            <ul class="chips" aria-label="Targeted 輸出"><li>Excel workbook</li><li>Review Queue</li></ul>
+            <ul class="chips" aria-label="Targeted 輸出"><li>Excel workbook</li><li>待檢查結果</li></ul>
           </div>
         </article>
         <article class="mode-card" data-mode-panel="untargeted" aria-label="Untargeted 工作模式" hidden>
@@ -295,102 +295,57 @@
           </div>
           <div class="mode-output">
             <p class="tiny-label">你拿到</p>
-            <p>候選特徵 CSV 與跨樣本 matrix TSV。額外的 review 或 gallery 由輸出選項明確開啟。</p>
+            <p>候選特徵與跨樣本 Matrix。先用 Matrix 看面積，再由工作台查對應證據；額外報告依輸出選項產生。</p>
             <ul class="chips" aria-label="Untargeted 輸出"><li>候選特徵 CSV</li><li>Alignment matrix TSV</li></ul>
           </div>
         </article>
         <p class="core-note">搜尋政策與交付形狀可以不同；觀察峰、跨樣本配對、補缺與格值決策仍走共用核心。</p>
       </section>
 
+
       <section id="core" aria-labelledby="core-heading">
-        <p class="eyebrow">03 · 需要時展開細節</p>
-        <h2 id="core-heading">從候選訊號到可交付的格值</h2>
-        <p class="section-intro">沿同一條證據路徑，逐步看每個判斷的輸入與交付。下列說明不要求你先認識程式目錄；需要改實作時，再追到各步的正式 owner。</p>
-        <ol class="flow" aria-label="共同處理路徑">
-          <li>
-            <span class="step-marker" aria-hidden="true">1</span>
-            <details class="stage">
-              <summary><span><span class="stage-label">Discovery · 找候選</span><span class="stage-title">依搜尋範圍讀 RAW，找可能的訊號</span><span class="stage-summary">從儀器資料取得候選特徵與色譜訊號，保留它們從哪裡來的證據。</span></span><span class="expand" aria-hidden="true"></span></summary>
-              <div class="stage-body">
-                <div><p>Targeted 從目標清單限定要交付的目標；Untargeted 在設定的證據空間中探索。Discovery 產生候選和來源事實，Extraction 負責 Targeted 執行協調與抽取工作。</p><ul><li>進來：RAW、設定、搜尋範圍。</li><li>交出：候選訊號與帶來源的觀察資料。</li></ul></div>
-                <aside class="owner-box"><p><code>discovery/</code>、<code>extraction/</code></p><p>繼續閱讀：<a href="processing-guide.html#discovery">Discovery</a>、<a href="system-guide.html#architecture">模組責任</a></p></aside>
-              </div>
-            </details>
-          </li>
-          <li>
-            <span class="step-marker" aria-hidden="true">2</span>
-            <details class="stage">
-              <summary><span><span class="stage-label">Peak evidence · 看峰</span><span class="stage-title">把色譜訊號變成可檢查的峰觀察</span><span class="stage-summary">辨認峰的位置、邊界和面積，讓後續判斷有可追溯的依據。</span></span><span class="expand" aria-hidden="true"></span></summary>
-              <div class="stage-body">
-                <div><p>這一步處理物理訊號與候選峰證據。它還不是最終 matrix 的值；同一筆觀察仍須經過跨樣本和輸出格的決策。</p><ul><li>進來：候選色譜訊號。</li><li>交出：峰觀察、候選假說與積分證據。</li></ul></div>
-                <aside class="owner-box"><p><code>peak_detection/</code></p><p>繼續閱讀：<a href="processing-guide.html#peak">定量脈絡</a>、<a href="processing-guide.html#decisions">證據與決策</a></p></aside>
-              </div>
-            </details>
-          </li>
-          <li>
-            <span class="step-marker" aria-hidden="true">3</span>
-            <details class="stage">
-              <summary><span><span class="stage-label">Alignment · 跨樣本</span><span class="stage-title">判斷哪些觀察屬於同一組</span><span class="stage-summary">把各樣本的證據對齊，建立可比較的目標或特徵群。</span></span><span class="expand" aria-hidden="true"></span></summary>
-              <div class="stage-body">
-                <div><p>Alignment 的 CrossSample owner 管群組成員與身分；共享處理核心讓兩種工作模式沿用同一套跨樣本判斷。</p><ul><li>進來：各樣本的峰觀察與來源。</li><li>交出：完成的跨樣本群組與每個樣本的對應情形。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/</code></p><p>繼續閱讀：<a href="processing-guide.html#alignment">Alignment</a>、<a href="processing-guide.html#kernel">共享處理核心</a></p></aside>
-              </div>
-            </details>
-          </li>
-          <li>
-            <span class="step-marker conditional" aria-hidden="true">4</span>
-            <details class="stage conditional">
-              <summary><span><span class="stage-label">Backfill · 有需要才回填</span><span class="stage-title">某個格的證據不足時，有限度地再查一次</span><span class="stage-summary">已經有目標或群組 owner，才對缺漏的樣本格做 bounded revisit。</span></span><span class="expand" aria-hidden="true"></span></summary>
-              <div class="stage-body">
-                <div><p>Backfill 只在啟用與准入條件成立時補搜，可能補出新觀察，也可能回報無法修復。它不建立新群組、不自行改成員或挑選輸出值；只有 CrossSample 能接納合格觀察並記錄群組演變。原始與補搜證據會一起閉合，保留群組和觀察終態，再交給格值決策。</p><ul><li>進來：已建立的目標／群組與不足的樣本格。</li><li>交出：補充觀察或明確的無修復結果。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/backfill/</code></p><p>繼續閱讀：<a href="processing-guide.html#backfill">Backfill</a>、<a href="processing-guide.html#terms">產品用語</a></p></aside>
-              </div>
-            </details>
-          </li>
-          <li>
-            <span class="step-marker" aria-hidden="true">5</span>
-            <details class="stage">
-              <summary><span><span class="stage-label">Cell decision &amp; output · 交付</span><span class="stage-title">決定每個結果格要寫值，還是留空</span><span class="stage-summary">先完成格值決策，再依工作模式寫成 workbook 或 matrix。</span></span><span class="expand" aria-hidden="true"></span></summary>
-              <div class="stage-body">
-                <div><p>共享的 cell decision 決定數值或不寫入理由，並保留選定的積分證據。Targeted 先綁定固定列 subjects 再決定格值；Untargeted 先完成 Feature × Sample 答案，再投影群組列。兩者各自決定呈現與計數，經結果封存後，writer 只把完成答案寫成檔案。</p><ul><li>進來：閉合的科學證據；Targeted 另有固定列 subject 綁定。</li><li>交出：可審閱的 Excel workbook、TSV 或明確選用的報告。</li><li>未搜尋、無觀察或不可定量等情形保留不寫入理由，不一律當成零或化學不存在。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/cell_decision/</code>、<code>output/</code></p><p>繼續閱讀：<a href="processing-guide.html#decisions">格值決策</a>、<a href="processing-guide.html#matrix">Matrix</a></p></aside>
-              </div>
-            </details>
-          </li>
-        </ol>
-      </section>
-
-      <section id="support" aria-labelledby="support-heading">
-        <p class="eyebrow">04 · 讓流程跑起來，再看結果</p>
-        <h2 id="support-heading">支援模組與只讀檢視</h2>
-        <p class="section-intro">下面的模組負責接人、讀檔或安排執行；它們支援共同核心，沒有另立一套科學判斷。</p>
+        <p class="eyebrow">03 · 共同判斷</p>
+<h2 id="core-heading">每一步回答不同問題</h2>
         <div class="support-grid">
-          <article class="support-card"><h3>HTML 工作區 / CLI 與設定</h3><p>接收使用者選項、載入目標清單或 preset，將工作交給對應流程。</p><code>xic_workbench/ · scripts/ · configuration/</code></article>
-          <article class="support-card"><h3>RAW 資料入口</h3><p>對儀器資料提供讀取介面，讓 Discovery 和 Extraction 取得所需訊號。</p><code>raw_reader.py</code></article>
-          <article class="support-card"><h3>執行引擎</h3><p>安排工作、管理 worker 和已完成結果的暫存；不挑選峰，也不決定輸出格值。</p><code>execution/</code></article>
-        </div>
-        <div class="review-card">
-          <span class="review-icon" aria-hidden="true">↗</span>
-          <div class="review-content"><h3>分析完成後，用 XIC Inspector 看證據</h3><p>Inspector 可讀 Targeted workbook、完成的 CID-NL 證據 report，以及診斷工具保存的 curve-bundle JSON。HTML 工作區可檢閱完成結果、按需取得 XIC，並匯出離線報告。RAW 擷取由工作區的 acquisition 負責；只讀檢閱不改變既有峰選擇或格值，能檢視診斷曲線也不代表該方法已取得產品寫入權。</p><p class="links"><code>xic_inspector/</code> · <a href="system-guide.html#inspector">看 Inspector 的白話導覽</a> · <a href="system-guide.html#runtime">看執行生命週期</a></p></div>
+          <article class="support-card">
+<h3>哪些訊號值得追查？</h3>
+<p>Discovery 依方法提出候選；峰證據提供邊界與面積。候選還不是已鑑定化合物。</p><a href="processing-guide.html#discovery">看候選與峰的例子 →</a>
+</article>
+          <article class="support-card">
+<h3>不同樣本能對上嗎？</h3>
+<p>Alignment 比較本地觀察；有既有脈絡且需要時，Backfill 才重訪缺格，不從別人的面積猜值。</p><a href="processing-guide.html#alignment">看跨樣本與缺格 →</a>
+</article>
+          <article class="support-card">
+<h3>這個格值怎麼解讀？</h3>
+<p>可用面積、計入偵測與需要檢閱分開判斷；空白也不等於零。</p><a href="processing-guide.html#decisions">看結果意義 →</a>
+</article>
         </div>
       </section>
-
+      <section id="support" aria-labelledby="support-heading">
+        <p class="eyebrow">04 · 取得結果</p>
+<h2 id="support-heading">依工作方式閱讀，不必先理解系統</h2>
+        <div class="review-card"><span class="review-icon" aria-hidden="true">↗</span>
+<div class="review-content">
+<h3>從結果開始，需要時才看曲線</h3>
+<p>Targeted 先讀 workbook 摘要與待檢查結果；Untargeted 先看 Matrix。工作台可檢閱完成結果並按需取得 XIC；檢閱不改寫既有判斷。</p>
+<p><a href="targeted-extraction.md#review-the-batch">讀 Targeted 結果</a> · <a href="untargeted-discovery.md#read-and-use-the-matrix">使用 Untargeted Matrix</a>
+</p>
+</div>
+</div>
+      </section>
       <section id="reading" aria-labelledby="reading-heading">
-        <p class="eyebrow">05 · 繼續深入</p>
-        <h2 id="reading-heading">看故事，或選一篇深入讀</h2>
-        <div class="reading">
-          <a href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Final Matrix 的產品故事 →</strong><span>以一個具體例子，沿 Discovery、XIC、峰和 Alignment 看結果怎麼形成。</span></a>
-          <a href="system-guide.html#architecture"><strong>系統模組的白話導覽 →</strong><span>模組如何分工、執行如何管理，以及完成後如何檢視證據。</span></a>
-          <a href="processing-guide.html#terms"><strong>產品詞彙的白話解釋 →</strong><span>查 Discovery、Alignment、Backfill、Targeted 和 Untargeted 的用語。</span></a>
-          <a href="readers-index.html"><strong>人讀版文件索引 →</strong><span>按你的問題選操作指南、科學流程或系統導覽。</span></a>
-        </div>
-      </section>
+<p class="eyebrow">05 · 按問題深入</p>
+<h2 id="reading-heading">下一頁各有不同工作</h2>
+<div class="reading">
+        <a href="processing-guide.html">主要概念故事 → 候選、峰、跨樣本對應與格值為什麼要分開？</a>
+        <a href="raw-to-final-matrix-product-story.html">CID-NL 方法案例 → 把同一套問題放進 DNA adduct 情境。</a>
+        <a href="system-guide.html">系統分工 → 需要理解模組、runtime 或修改實作時再讀。</a>
+        <a href="readers-index.html">文件入口 → 選操作、原理或精確規則。</a>
+      </div>
+</section>
     </main>
 
-    <footer>
-      <p>這頁與延伸 HTML 是人讀版。正式模組責任仍由 <a href="../architecture-contract.md"><code>docs/architecture-contract.md</code></a> 管理；產品語義由 <a href="../product/README.md"><code>docs/product/</code></a> 的對應 Markdown owner 與 <a href="../product/domain-glossary.md"><code>domain-glossary.md</code></a> 管理。</p>
-      <p>維護時，若搜尋範圍、共用處理責任或交付形狀改變，先更新對應的正式 owner，再同步這張導覽。</p>
-    </footer>
+    <footer><p>精確產品規則查 <a href="../product/README.md">產品索引</a>；模組與依賴查 <a href="../architecture-contract.md#reading-the-code">架構導覽</a>。</p></footer>
   </div>
   <script>
     const buttons = document.querySelectorAll('[data-mode-button]');
