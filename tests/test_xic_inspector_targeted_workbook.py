@@ -268,6 +268,7 @@ def test_nd_curve_acquisition_reports_original_support_without_changing_saved_va
     assert workbook.read_bytes() == original
 
 
+@pytest.mark.usefixtures("isolated_config_dir")
 def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
     workbook,
     tmp_path,
@@ -371,6 +372,7 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
     assert workbook.read_bytes() == before
 
 
+@pytest.mark.usefixtures("isolated_config_dir")
 def test_targeted_http_review_preserves_values_scope_and_source(workbook):
     before = hashlib.sha256(workbook.read_bytes()).hexdigest()
     files = set(workbook.parent.iterdir())

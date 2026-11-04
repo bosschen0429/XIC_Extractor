@@ -11,6 +11,8 @@ from xic_extractor.configuration.execution_profile import default_parallel_worke
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
+pytestmark = pytest.mark.usefixtures("isolated_config_dir")
+
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:

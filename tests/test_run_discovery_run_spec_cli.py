@@ -22,6 +22,8 @@ from xic_extractor.presets import (
 )
 from xic_extractor.raw_reader import RawReaderError
 
+pytestmark = pytest.mark.usefixtures("isolated_config_dir")
+
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:

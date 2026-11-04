@@ -113,7 +113,9 @@ def test_targeted_publication_keeps_metadata_group_and_sample_attribution(
     assert by_sample["QC_1"]["Area"] > by_sample["Tumor_A"]["Area"] > 0
 
 
-def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatch):
+def test_cli_flows_share_tsv_groups_and_excluded_population(
+    tmp_path, monkeypatch, isolated_config_dir
+):
     from types import SimpleNamespace
 
     import numpy as np

@@ -1,5 +1,7 @@
 import hashlib
 import os
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -39,11 +41,11 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
             )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def isolated_config_dir(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """Share one private config between Workbench and CLI within each test."""
+    """Opt in when a Workbench/CLI test uses the default application settings."""
     from xic_extractor.configuration import execution_profile
     from xic_workbench import config_io, discovery_config_io
 
@@ -75,10 +77,18 @@ def _clear_outer_git_repository_bindings(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_raw_reader_assembly_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fake DLL loads must not make later tests skip the real assembly loader."""
-    from xic_extractor import raw_reader
+def _isolate_raw_reader_assembly_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Isolate fake DLL loads without importing RAW support for unrelated tests."""
+    raw_reader = sys.modules.get("xic_extractor.raw_reader")
 
-    # Start unloaded; normal in-test caching remains intact and teardown restores
-    # the original state. Tests do not need a product reset convenience API.
-    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
+    if raw_reader is not None:
+        monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
+    yield
+    if raw_reader is None:
+        # A test can import the reader lazily and then load fake assemblies.
+        # Its initial cache was empty; restore that state for the next test.
+        imported_reader = sys.modules.get("xic_extractor.raw_reader")
+        if imported_reader is not None:
+            vars(imported_reader)["_ASSEMBLIES_LOADED"] = False

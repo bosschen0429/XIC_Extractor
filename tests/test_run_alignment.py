@@ -36,6 +36,8 @@ from xic_extractor.raw_reader import (
     RawReaderError,
 )
 
+pytestmark = pytest.mark.usefixtures("isolated_config_dir")
+
 
 def _write_empty_batch_index(path: Path) -> None:
     _write_owner_closed_batch_index(path, [])

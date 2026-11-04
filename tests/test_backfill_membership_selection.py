@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.test_feature_membership_inference import _owner
+from tests.membership_fixtures import cid_nl_owner
 from xic_extractor.alignment.backfill.membership_selection import (
     select_backfill_memberships,
 )
@@ -19,11 +19,11 @@ def test_competing_peak_selects_best_group_and_retains_nearest_alternative(
     reverse, second_rt
 ):
     owners = (
-        _owner("a", "A", apex_rt=10.0),
-        _owner("b", "B", apex_rt=10.0),
-        _owner("c", "C", apex_rt=second_rt),
-        _owner("d", "D", apex_rt=second_rt),
-        _owner("s", "S", apex_rt=10.0),
+        cid_nl_owner("a", "A", apex_rt=10.0),
+        cid_nl_owner("b", "B", apex_rt=10.0),
+        cid_nl_owner("c", "C", apex_rt=second_rt),
+        cid_nl_owner("d", "D", apex_rt=second_rt),
+        cid_nl_owner("s", "S", apex_rt=10.0),
     )
     comparison = MembershipComparison(
         owners,
@@ -58,9 +58,9 @@ def test_competing_peak_selects_best_group_and_retains_nearest_alternative(
 
 def test_blank_wins_when_finite_assignment_cost_exceeds_separation():
     owners = (
-        _owner("a", "A", apex_rt=10),
-        _owner("b", "B", apex_rt=10),
-        _owner("s", "S", apex_rt=11.5),
+        cid_nl_owner("a", "A", apex_rt=10),
+        cid_nl_owner("b", "B", apex_rt=10),
+        cid_nl_owner("s", "S", apex_rt=11.5),
     )
     comparison = MembershipComparison(
         owners,
@@ -88,7 +88,7 @@ def test_blank_wins_when_finite_assignment_cost_exceeds_separation():
 @pytest.mark.parametrize("reverse", [False, True])
 def test_complete_backfill_configuration_can_rescue_rejected_prefix(seconds, reverse):
     owners = tuple(
-        _owner(str(i), str(i), apex_rt=10 + second / 60)
+        cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
         for i, second in enumerate(seconds)
     )
     comparison = MembershipComparison(
@@ -120,7 +120,7 @@ def test_fixed_original_conflict_does_not_poison_a_compatible_extension(
 ):
     from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 
-    owners = tuple(_owner(str(i), str(i), apex_rt=10 + i / 100) for i in range(3))
+    owners = tuple(cid_nl_owner(str(i), str(i), apex_rt=10 + i / 100) for i in range(3))
     a, b, candidate = (owner.owner_id for owner in owners)
     comparison = MembershipComparison(
         owners,
@@ -155,7 +155,7 @@ def test_fixed_original_conflict_does_not_poison_a_compatible_extension(
 
 def test_complete_extension_still_rejects_two_rt_populations():
     owners = tuple(
-        _owner(str(i), str(i), apex_rt=10 + second / 60)
+        cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
         for i, second in enumerate((0, 2, 4, 30, 32))
     )
     comparison = MembershipComparison(

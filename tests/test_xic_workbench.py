@@ -22,6 +22,8 @@ from tests.test_xic_inspector_api import _create_mock_db
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
+pytestmark = pytest.mark.usefixtures("isolated_config_dir")
+
 
 def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
     """These packages dominate cold start; the first page load does not need them."""
