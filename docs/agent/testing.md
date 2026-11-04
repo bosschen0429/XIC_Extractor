@@ -125,14 +125,6 @@ this preview does not collect individual tests or resolve `-k` filters. It is
 optional, not a second required invocation. CLI help owns the remaining options;
 do not copy selection rules into another hook or document.
 
-When selection is surprising, `--explain` reports the selector's actual reasons:
-import dependencies, named paths/registers, source scans, relevance-gated lanes,
-or a full-suite fallback. `--explain tests/test_test_selection.py` focuses on
-one file.
-It is also a read-only preview; the reasons describe candidate files before
-pytest filters individual cases. The plain `--print` and CI plan formats stay
-unchanged.
-
 Tests marked ledger_snapshot pin recorded validation values and are excluded
 individually from default CI. Run that lane with:
 
