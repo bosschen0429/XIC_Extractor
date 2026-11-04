@@ -16,16 +16,8 @@ from xic_extractor.alignment.production_decisions import (
     BackfillTier,
     ProductionStatus,
 )
-from xic_extractor.tabular_io import escape_excel_formula
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
-
-
-def backfill_evidence_identity_projection_spellings(value: str) -> tuple[str, ...]:
-    """Return every current projection spelling for one canonical machine ID."""
-
-    escaped = escape_excel_formula(value)
-    return (value,) if escaped == value else (value, escaped)
 
 
 def backfill_evidence_identity_candidates(value: str) -> tuple[str, ...]:
@@ -81,46 +73,6 @@ def backfill_evidence_record_from_projection(
     )
 
 
-def backfill_evidence_record_to_projection(
-    record: BackfillEvidenceRecord,
-) -> dict[str, str]:
-    return {
-        "schema_version": record.schema_version,
-        "feature_id": record.feature_id,
-        "sample_stem": record.sample_stem,
-        "status": record.status,
-        "production_cell_status": record.production_cell_status,
-        "backfill_tier": record.backfill_tier,
-        "write_matrix_value": _bool_text(record.write_matrix_value, style="upper"),
-        "include_in_primary_matrix": _bool_text(
-            record.include_in_primary_matrix,
-            style="upper",
-        ),
-        "identity_decision": record.identity_decision,
-        "row_flags": ";".join(record.row_flags),
-        "area": _float_text(record.area),
-        "primary_matrix_area": _float_text(record.primary_matrix_area),
-        "primary_matrix_area_source": record.primary_matrix_area_source,
-        "primary_matrix_area_reason": record.primary_matrix_area_reason,
-        "apex_rt": _float_text(record.apex_rt),
-        "height": _float_text(record.height),
-        "peak_start_rt": _float_text(record.peak_start_rt),
-        "peak_end_rt": _float_text(record.peak_end_rt),
-        "rt_delta_sec": _float_text(record.rt_delta_sec),
-        "trace_quality": record.trace_quality,
-        "scan_support_score": _float_text(record.scan_support_score),
-        "gap_fill_state": record.gap_fill_state,
-        "gap_fill_reason": record.gap_fill_reason,
-        "source_candidate_id": record.source_candidate_id,
-        "neutral_loss_tag": record.neutral_loss_tag,
-        "family_center_mz": _float_text(record.family_center_mz),
-        "family_center_rt": _float_text(record.family_center_rt),
-        "reason": record.reason,
-        "backfill_query_rt_min": _float_text(record.backfill_query_rt_min),
-        "backfill_query_rt_max": _float_text(record.backfill_query_rt_max),
-    }
-
-
 def _require_exact_fields(row: Mapping[str, str], expected: tuple[str, ...]) -> None:
     if tuple(row) != expected:
         raise ValueError(
@@ -164,16 +116,6 @@ def _parse_optional_float(
     return value
 
 
-def _parse_positive_int(row: Mapping[str, str], field_name: str) -> int:
-    raw_value = row[field_name].strip()
-    if _NONNEGATIVE_INTEGER.fullmatch(raw_value) is None:
-        raise ValueError(f"{field_name} must be a positive integer")
-    value = int(raw_value)
-    if value <= 0:
-        raise ValueError(f"{field_name} must be positive")
-    return value
-
-
 def _parse_bool(
     row: Mapping[str, str],
     field_name: str,
@@ -208,19 +150,11 @@ def _parse_row_flags(row: Mapping[str, str]) -> tuple[str, ...]:
     return flags
 
 
-def _bool_text(value: bool, *, style: Literal["upper", "title"]) -> str:
-    if style == "upper":
-        return "TRUE" if value else "FALSE"
-    return "True" if value else "False"
-
-
 def _float_text(value: float | None) -> str:
     return "" if value is None else format(value, ".17g")
 
 
 __all__ = (
     "backfill_evidence_identity_candidates",
-    "backfill_evidence_identity_projection_spellings",
     "backfill_evidence_record_from_projection",
-    "backfill_evidence_record_to_projection",
 )

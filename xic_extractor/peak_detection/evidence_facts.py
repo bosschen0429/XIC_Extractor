@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
@@ -25,12 +24,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_trace,
     morphology_trace_effective_points,
     positive_residual_area,
-)
-from xic_extractor.peak_detection.ms1_shape_identity import (
-    DEFAULT_LOCAL_HALF_WINDOW_MIN,
-    DEFAULT_OWN_MAX_SMOOTH_POINTS,
-    OwnMaxTrace,
-    own_max_normalized_trace,
 )
 from xic_extractor.peak_detection.ms1_trace_detection import (
     validate_ms1_trace_arrays,
@@ -77,21 +70,6 @@ class TraceEvidenceFacts:
     continuity: float | None = None
     quality_flags: tuple[str, ...] = ()
     hard_quality_flags: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class TraceWindowEvidenceFacts:
-    """Hypothesis-neutral physical facts around one explicit trace coordinate."""
-
-    status: Literal["ok", "inconclusive"]
-    reason: str
-    query_apex_rt_min: float | None
-    query_apex_in_trace_window: bool
-    trace_apex_rt_min: float | None = None
-    global_trace_apex_delta_min: float | None = None
-    local_apex_delta_min: float | None = None
-    local_max_intensity: float | None = None
-    local_to_global_max_ratio: float | None = None
 
 
 @dataclass(frozen=True)
@@ -158,129 +136,6 @@ class CandidateEvidenceFacts:
     boundary: BoundaryEvidenceFacts
     quality_penalty: int = 0
     selection_quality_penalty: float | None = None
-
-
-def gaussian15_trace_window_evidence(
-    rt_values: Sequence[float | int | None],
-    intensity_values: Sequence[float | int | None],
-    *,
-    query_apex_rt_min: float | int | None,
-    half_window_min: float = DEFAULT_LOCAL_HALF_WINDOW_MIN,
-) -> tuple[OwnMaxTrace, TraceWindowEvidenceFacts]:
-    """Mint one Gaussian15 trace and its bound hypothesis-neutral window facts."""
-
-    rt = tuple(rt_values)
-    intensity = tuple(intensity_values)
-    normalized_trace = own_max_normalized_trace(
-        rt,
-        intensity,
-        smooth_points=DEFAULT_OWN_MAX_SMOOTH_POINTS,
-    )
-    bound_rt = rt if len(rt) == len(intensity) else ()
-    requested_query_apex = _optional_float(query_apex_rt_min)
-    query_apex = requested_query_apex
-    if query_apex is None and normalized_trace.is_usable:
-        trace_rt = np.asarray(normalized_trace.rt, dtype=float)
-        trace_intensity = np.asarray(normalized_trace.intensity, dtype=float)
-        if trace_rt.size and trace_rt.size == trace_intensity.size:
-            query_apex = float(trace_rt[int(np.argmax(trace_intensity))])
-    return normalized_trace, _trace_window_evidence_facts(
-        bound_rt,
-        normalized_trace,
-        query_apex_rt_min=query_apex,
-        half_window_min=half_window_min,
-        report_global_trace_apex_delta=requested_query_apex is not None,
-    )
-
-
-def _trace_window_evidence_facts(
-    bound_rt_values: Sequence[float | int | None],
-    normalized_trace: OwnMaxTrace,
-    *,
-    query_apex_rt_min: float | int | None,
-    half_window_min: float,
-    report_global_trace_apex_delta: bool,
-) -> TraceWindowEvidenceFacts:
-    """Describe facts from coordinates and Gaussian15 trace minted together above."""
-
-    query_apex = _optional_float(query_apex_rt_min)
-    try:
-        raw_rt = np.asarray(tuple(bound_rt_values), dtype=float)
-    except (TypeError, ValueError):
-        raw_rt = np.asarray((), dtype=float)
-    finite_rt = raw_rt[np.isfinite(raw_rt)] if raw_rt.ndim == 1 else np.asarray(())
-    query_in_window = bool(
-        query_apex is not None
-        and finite_rt.size
-        and float(np.min(finite_rt)) - 1e-9
-        <= query_apex
-        <= float(np.max(finite_rt)) + 1e-9
-    )
-    if query_apex is None:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="query_apex_unavailable",
-            query_apex_rt_min=None,
-            query_apex_in_trace_window=False,
-        )
-    if not normalized_trace.is_usable or normalized_trace.max_intensity is None:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason=normalized_trace.reason,
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-        )
-
-    trace_rt = np.asarray(normalized_trace.rt, dtype=float)
-    trace_intensity = np.asarray(normalized_trace.intensity, dtype=float)
-    if trace_rt.size == 0 or trace_intensity.size != trace_rt.size:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="normalized_trace_unavailable",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-        )
-    trace_apex_index = int(np.argmax(trace_intensity))
-    trace_apex_rt = float(trace_rt[trace_apex_index])
-    global_trace_apex_delta = (
-        trace_apex_rt - query_apex if report_global_trace_apex_delta else None
-    )
-    local_mask = (trace_rt >= query_apex - half_window_min) & (
-        trace_rt <= query_apex + half_window_min
-    )
-    if not np.any(local_mask):
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="local_window_unavailable",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-            trace_apex_rt_min=trace_apex_rt,
-            global_trace_apex_delta_min=global_trace_apex_delta,
-        )
-    local_rt = trace_rt[local_mask]
-    local_intensity = trace_intensity[local_mask]
-    local_index = int(np.argmax(local_intensity))
-    local_ratio = float(local_intensity[local_index])
-    if local_ratio <= 0:
-        return TraceWindowEvidenceFacts(
-            status="inconclusive",
-            reason="non_positive_local_signal",
-            query_apex_rt_min=query_apex,
-            query_apex_in_trace_window=query_in_window,
-            trace_apex_rt_min=trace_apex_rt,
-            global_trace_apex_delta_min=global_trace_apex_delta,
-        )
-    return TraceWindowEvidenceFacts(
-        status="ok",
-        reason="gaussian15_query_window_evidence",
-        query_apex_rt_min=query_apex,
-        query_apex_in_trace_window=query_in_window,
-        trace_apex_rt_min=trace_apex_rt,
-        global_trace_apex_delta_min=global_trace_apex_delta,
-        local_apex_delta_min=float(local_rt[local_index] - query_apex),
-        local_max_intensity=local_ratio * normalized_trace.max_intensity,
-        local_to_global_max_ratio=local_ratio,
-    )
 
 
 def integration_with_trace_evidence(

@@ -417,10 +417,6 @@ def build_local_ms1_feature_table(
     return tuple(sorted_features), summary, tuple(diagnostics)
 
 
-def _ppm_error(observed_mz: float, expected_mz: float) -> float:
-    return (observed_mz - expected_mz) / expected_mz * 1e6
-
-
 def _parameter_hash(settings: LocalMs1FeatureSettings) -> str:
     payload = json.dumps(asdict(settings), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -854,24 +850,6 @@ def _trace_has_min_consecutive_intensity(
             consecutive = 0
         previous_position = scan_position
     return False
-
-
-def _positive_scan_peaks(scan: MS1Scan) -> list[tuple[float, float]]:
-    masses = np.asarray(scan.masses, dtype=np.float64)
-    intensities = np.asarray(scan.intensities, dtype=np.float64)
-    if masses.ndim != 1 or intensities.ndim != 1 or masses.shape != intensities.shape:
-        return []
-    peaks = [
-        (float(mz), float(intensity))
-        for mz, intensity in zip(masses, intensities, strict=True)
-        if (
-            float(intensity) > 0
-            and math.isfinite(float(mz))
-            and math.isfinite(float(intensity))
-        )
-    ]
-    peaks.sort(key=lambda item: item[0])
-    return peaks
 
 
 def _classify_region(

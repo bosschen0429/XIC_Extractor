@@ -6,7 +6,6 @@ contracts, and persistence envelopes, reducing copy-paste boilerplate.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -15,12 +14,6 @@ from numbers import Integral, Real
 from uuid import UUID
 
 _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
-
-
-def sha256_hexdigest(data: bytes | str) -> str:
-    """Return lowercase hex SHA-256 digest of bytes or UTF-8 string."""
-    payload = data.encode("utf-8") if isinstance(data, str) else data
-    return hashlib.sha256(payload).hexdigest()
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -252,20 +245,6 @@ def require_owner_normalized_text(
     return value
 
 
-def require_optional_owner_normalized_text(
-    value: object,
-    *,
-    field: str = "field",
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> str | None:
-    """Return owner-normalized text if value is not None, else None."""
-    if value is None:
-        return None
-    return require_owner_normalized_text(
-        value, field=field, error_factory=error_factory
-    )
-
-
 def require_mapping(
     value: object,
     *,
@@ -379,12 +358,10 @@ __all__ = [
     "require_mapping",
     "require_optional_integer",
     "require_optional_lower_sha256",
-    "require_optional_owner_normalized_text",
     "require_optional_text",
     "require_owner_normalized_text",
     "require_text",
     "require_tuple_of",
-    "sha256_hexdigest",
 ]
 
 

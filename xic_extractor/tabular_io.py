@@ -412,14 +412,6 @@ def bool_value(value: object) -> bool | None:
     return None
 
 
-def numeric_equal(left: object, right: object) -> bool:
-    left_value = optional_float(left)
-    right_value = optional_float(right)
-    if left_value is None or right_value is None:
-        return text_value(left) == text_value(right)
-    return math.isclose(left_value, right_value, rel_tol=1e-6, abs_tol=1e-9)
-
-
 def text_value(value: object) -> str:
     if value is None:
         return ""

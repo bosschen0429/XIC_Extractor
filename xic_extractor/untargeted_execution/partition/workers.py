@@ -508,21 +508,6 @@ class _SampleInitialWorkerResponse:
             if state.error is None:
                 state.error = outcome.error
 
-    def results_for(
-        self, jobs: tuple[UntargetedPartitionJob, ...]
-    ) -> tuple[CidNlAcquisitionResult, ...]:
-        outcomes = self._outcomes_by_key(tuple(job.work_unit_key for job in jobs))
-        results = []
-        for job in jobs:
-            outcome = outcomes[job.work_unit_key]
-            if outcome.error is not None:
-                raise outcome.error
-            if outcome.adapter_result is None:
-                raise UntargetedPartitionError("initial assessment returned no result")
-            results.append(outcome.adapter_result)
-        return tuple(results)
-
-
 def _require_outcome_keys(expected: tuple[str, ...], actual: tuple[str, ...]) -> None:
     if len(actual) != len(expected) or set(actual) != set(expected):
         raise UntargetedPartitionError(
@@ -565,21 +550,6 @@ def _execute_sample_initial_worker(
         backfill_resource_key=None,
     )
     return _execute_initial_sample_phase(phase)
-
-
-def assess_initial_sample_jobs(
-    jobs: tuple[UntargetedPartitionJob, ...],
-) -> tuple[CidNlAcquisitionResult, ...]:
-    """Use the production initial worker without scheduling missing-cell work."""
-    response = _execute_sample_initial_worker(
-        _SampleInitialWorkerRequest(
-            jobs=jobs,
-            initial_resource_key=(
-                f"grouping-experiment:{jobs[0].sample.identity.sample_key}"
-            ),
-        )
-    )
-    return response.results_for(jobs)
 
 
 @dataclass(slots=True)

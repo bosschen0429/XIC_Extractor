@@ -20,10 +20,6 @@ from xic_extractor.alignment.cell_observation.observations import (
     CellObservationRef,
     CidNlCellGroupContext,
 )
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    TargetedCellObservationReferenceProjection,
-    UntargetedCellObservationReferenceProjection,
-)
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -299,48 +295,6 @@ def assess_conservative_backfill_group(
             minimum_support=minimum_support,
         ),
         unsearched_sample_ids=unsearched_sample_ids,
-    )
-
-
-def assess_targeted_conservative_backfill_group(
-    projections: tuple[TargetedCellObservationReferenceProjection, ...],
-    *,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> ConservativeBackfillGroupFacts:
-    """Thin Targeted adapter over the exact CellObservationRef references."""
-
-    if not projections or any(
-        not isinstance(item, TargetedCellObservationReferenceProjection)
-        for item in projections
-    ):
-        raise ConservativeBackfillContractError(
-            "Targeted adapter requires CellObservationRef Targeted reference "
-            "projections"
-        )
-    return assess_conservative_backfill_group(
-        tuple(item.cell for item in projections),
-        sample_population=sample_population,
-    )
-
-
-def assess_untargeted_conservative_backfill_group(
-    projections: tuple[UntargetedCellObservationReferenceProjection, ...],
-    *,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> ConservativeBackfillGroupFacts:
-    """Thin Untargeted adapter over the exact CellObservationRef references."""
-
-    if not projections or any(
-        not isinstance(item, UntargetedCellObservationReferenceProjection)
-        for item in projections
-    ):
-        raise ConservativeBackfillContractError(
-            "Untargeted adapter requires CellObservationRef Untargeted reference "
-            "projections"
-        )
-    return assess_conservative_backfill_group(
-        tuple(item.cell for item in projections),
-        sample_population=sample_population,
     )
 
 
@@ -865,8 +819,6 @@ __all__ = [
     "ConservativeBackfillEvidence",
     "POLICY_VERSION",
     "assess_conservative_backfill_group",
-    "assess_targeted_conservative_backfill_group",
-    "assess_untargeted_conservative_backfill_group",
     "map_conservative_backfill_candidates",
     "minimum_direct_support_count",
     "mint_conservative_backfill_candidate_universe",

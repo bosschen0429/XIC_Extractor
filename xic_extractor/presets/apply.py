@@ -338,19 +338,6 @@ def _str_setting(
     return cast(str, tuning.get(field, default))
 
 
-def _enum_str_setting(
-    overrides: Mapping[str, object],
-    field: str,
-    default: str,
-    choices: frozenset[str],
-) -> str:
-    value = overrides.get(field, default)
-    if not isinstance(value, str) or value not in choices:
-        supported = ", ".join(sorted(choices))
-        raise PresetError(f"{field} must be one of: {supported}")
-    return value
-
-
 def _validate_discovery_tuning(
     tuning: Mapping[str, object],
     *,

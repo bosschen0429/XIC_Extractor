@@ -86,33 +86,6 @@ def build_ms1_scan_index(
     return result
 
 
-def build_ms1_scan_index_for_rt_window(
-    source: Any,
-    *,
-    rt_min: float,
-    rt_max: float,
-) -> tuple[MS1Scan, ...]:
-    """Build an MS1 index for a bounded RT window without hiding scan errors."""
-
-    parsed_rt_min = require_finite_real(rt_min, name="rt_min")
-    parsed_rt_max = require_finite_real(rt_max, name="rt_max")
-    if parsed_rt_min > parsed_rt_max:
-        raise ValueError("rt_min must be <= rt_max")
-    raw = raw_file(source)
-    try:
-        first_scan = int(raw.ScanNumberFromRetentionTime(rt_min))
-        last_scan = int(raw.ScanNumberFromRetentionTime(rt_max))
-    except Exception as exc:
-        raise MS1ScanReadError(
-            f"failed to resolve MS1 scan window for RT {rt_min:g}-{rt_max:g}: {exc}"
-        ) from exc
-    return build_ms1_scan_index(
-        source,
-        first_scan_number=first_scan,
-        last_scan_number=last_scan,
-    )
-
-
 def write_ms1_scan_index_npz(
     path: Path,
     index: tuple[MS1Scan, ...],
