@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -18,12 +17,16 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
     _source_for,
-    _working_imports,
+)
+from tests.cid_nl_runtime_fixtures import (
+    assert_partition_matches_runtime,
+    build_discovery_receipts,
+    install_runtime_raw,
+    install_runtime_raws,
 )
 from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
-from tests.raw_header_fakes import install_fake_raw_headers
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -36,11 +39,7 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
-    DiscoveryCandidateUniverseReceipt,
-    mint_discovery_candidate_universe_receipt,
 )
-from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.execution.attempt import (
@@ -56,17 +55,12 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.processing_identity import (
     IdentityContractError,
-    build_local_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
 )
 from xic_extractor.raw_reader import (
-    EXPECTED_THERMO_DLLS,
-    THERMO_RAW_ACQUISITION_FORMAT,
-    THERMO_RAW_OBSERVATION_NAMESPACE,
     RawReaderError,
-    open_raw,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
@@ -670,7 +664,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates, "S2": ()},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             {"S1": candidates, "S2": ()},
@@ -683,7 +677,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
             for c in values
         },
     )
-    vendor_raw = _install_runtime_raw(
+    vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_paths[0],
@@ -760,7 +754,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert vendor_raw.chromatogram_request_counts == [1]
     assert vendor_raw.disposed is True
 
-    warm_vendor_raw = _install_runtime_raw(
+    warm_vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_paths[0],
@@ -819,7 +813,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         for item in warm_resources
         if item.reservation.resource_key.endswith(":S1")
     )
-    _assert_partition_matches_runtime(jobs, result, monkeypatch)
+    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
@@ -863,7 +857,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": (inferred,)},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": (inferred,)},
@@ -899,7 +893,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
     )
 
-    vendor_raw = _install_runtime_raw(
+    vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_path,
@@ -1039,7 +1033,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -1052,7 +1046,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -1168,7 +1162,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     }
     assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
 
-    _assert_partition_matches_runtime(jobs, result, monkeypatch)
+    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_batch_candidate_selection_preserves_order_and_request_sample_membership(
@@ -1204,7 +1198,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         source.scans = tuple(scans)
         sources_by_path[path] = source
         candidates_by_sample[path.stem] = tuple(candidates)
-    receipts = _discovery_receipts(tmp_path, raw_paths, candidates_by_sample)
+    receipts = build_discovery_receipts(tmp_path, raw_paths, candidates_by_sample)
     subjects = tuple(
         sorted(
             (
@@ -1341,7 +1335,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 neutral_loss_da=116.0474,
             ),
         )
-    _install_runtime_raws(
+    install_runtime_raws(
         monkeypatch,
         sources_by_path=sources_by_path,
         tmp_path=tmp_path,
@@ -1424,7 +1418,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         subjects=subjects,
         candidate_memberships=memberships,
     )
-    receipts = _discovery_receipts(
+    receipts = build_discovery_receipts(
         tmp_path,
         (raw_path,),
         {"S1": candidates},
@@ -1590,7 +1584,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, raw_paths, candidates_by_sample
         ),
         sample_identity_namespace="study:runtime-phase-acquisition-seal",
@@ -1632,7 +1626,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             ),
         )
     )
-    _install_runtime_raws(
+    install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -1720,7 +1714,7 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
         settings=settings,
         physical_records=physical_records,
     )
-    receipt = _discovery_receipts(
+    receipt = build_discovery_receipts(
         tmp_path,
         (source_path,),
         {"S1": candidates},
@@ -1818,7 +1812,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -1831,7 +1825,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -1895,238 +1889,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         )
         assert empty_resource.reservation.owner_conditional is True
     assert runtime_call_cost(result.finalization)["raw_open_count"] == 2
-    _assert_partition_matches_runtime(jobs, result, monkeypatch)
-
-
-def _discovery_receipts(
-    root: Path,
-    raw_paths: tuple[Path, ...],
-    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]],
-) -> dict[str, DiscoveryCandidateUniverseReceipt]:
-    receipts: dict[str, DiscoveryCandidateUniverseReceipt] = {}
-    for raw_path in raw_paths:
-        candidates = candidates_by_sample[raw_path.stem]
-        candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
-        write_discovery_candidates_csv(candidate_csv, candidates)
-        source = build_local_acquisition_source_identity(
-            raw_path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        )
-        receipts[raw_path.stem] = mint_discovery_candidate_universe_receipt(
-            sample_stem=raw_path.stem,
-            acquisition_source=source,
-            candidate_csv=candidate_csv,
-            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
-            candidates=candidates,
-        )
-    return receipts
-
-
-def _install_runtime_raw(
-    monkeypatch,
-    *,
-    source_raw: _FakeRaw,
-    raw_path: Path,
-    tmp_path: Path,
-) -> _FakeThermoRaw:
-    monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
-    for filename in EXPECTED_THERMO_DLLS:
-        (tmp_path / filename).write_bytes(b"dll")
-    vendor_raw = _FakeThermoRaw(source_raw)
-
-    def _open_runtime_raw(
-        path,
-        dll_dir,
-        *,
-        mass_recalibration="none",
-        expected_acquisition_source,
-        _expected_path_identity=None,
-        prepared_mass_recalibration=None,
-    ):
-        assert path == raw_path
-        return open_raw(
-            path,
-            dll_dir,
-            mass_recalibration=mass_recalibration,
-            expected_acquisition_source=expected_acquisition_source,
-            _expected_path_identity=_expected_path_identity,
-            prepared_mass_recalibration=prepared_mass_recalibration,
-            _import_module=_working_imports,
-            _thermo=SimpleNamespace(
-                raw_file_reader_adapter=SimpleNamespace(
-                    FileFactory=lambda _path: vendor_raw
-                ),
-                device_ms="MS",
-                mass_range_factory=lambda low, high: (low, high),
-                trace_settings_factory=lambda *_args: SimpleNamespace(
-                    MassRanges=None,
-                    Filter=None,
-                ),
-                mass_range_trace_type="MassRange",
-                ms2_order="Ms2",
-                ms1_order="Ms1",
-            ),
-        )
-
-    monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
-    return vendor_raw
-
-
-def _install_runtime_raws(
-    monkeypatch,
-    *,
-    sources_by_path: dict[Path, _FakeRaw],
-    tmp_path: Path,
-) -> dict[Path, list[_FakeThermoRaw]]:
-    # Callers importing this helper do not inherit this module's autouse fixture.
-    monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
-
-    def _forbid_vendor_api(_import_module):
-        pytest.fail("Synthetic RAW fixtures must not reach the real Thermo API")
-
-    monkeypatch.setattr("xic_extractor.raw_reader._load_thermo_api", _forbid_vendor_api)
-
-    # This fixture supplies spectra, not vendor headers; the analysis-set owner
-    # still orders the synthetic files without opening fake bytes natively.
-    install_fake_raw_headers(monkeypatch)
-    for filename in EXPECTED_THERMO_DLLS:
-        (tmp_path / filename).write_bytes(b"dll")
-    opened: dict[Path, list[_FakeThermoRaw]] = {}
-
-    def _open_runtime_raw(
-        path,
-        dll_dir,
-        *,
-        mass_recalibration="none",
-        expected_acquisition_source,
-        _expected_path_identity=None,
-        prepared_mass_recalibration=None,
-    ):
-        vendor_raw = _FakeThermoRaw(sources_by_path[path])
-        opened.setdefault(path, []).append(vendor_raw)
-        return open_raw(
-            path,
-            dll_dir,
-            mass_recalibration=mass_recalibration,
-            expected_acquisition_source=expected_acquisition_source,
-            _expected_path_identity=_expected_path_identity,
-            prepared_mass_recalibration=prepared_mass_recalibration,
-            _import_module=_working_imports,
-            _thermo=SimpleNamespace(
-                raw_file_reader_adapter=SimpleNamespace(
-                    FileFactory=lambda _path: vendor_raw
-                ),
-                device_ms="MS",
-                mass_range_factory=lambda low, high: (low, high),
-                trace_settings_factory=lambda *_args: SimpleNamespace(
-                    MassRanges=None,
-                    Filter=None,
-                ),
-                mass_range_trace_type="MassRange",
-                ms2_order="Ms2",
-                ms1_order="Ms1",
-            ),
-        )
-
-    monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
-    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open_runtime_raw)
-    return opened
-
-
-def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("partition must not execute a runtime attempt")
-
-    monkeypatch.setattr(runtime_module, "execute_runtime_attempt", forbidden)
-    observed_batches = []
-    for name in (
-        "acquire_untargeted_cid_nl_sample_trace_batch",
-        "acquire_untargeted_cid_nl_backfill_trace_batch",
-    ):
-        original = getattr(cid_nl_acquisition, name)
-
-        def observe(*args, _original=original, **kwargs):
-            batch = _original(*args, **kwargs)
-            if batch is not None:
-                observed_batches.append(batch.acquisition)
-            return batch
-
-        monkeypatch.setattr(cid_nl_acquisition, name, observe)
-    events = []
-    result = runtime_module.execute_partition(
-        jobs,
-        partition_key="part-1",
-        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
-        progress_callback=events.append,
-    )
-    assert result.succeeded
-    assert len(result.sample_results) == len(full_result.sample_results)
-    for actual, expected in zip(
-        result.sample_results, full_result.sample_results, strict=True
-    ):
-        actual_assessments = actual.effective_assessments
-        expected_assessments = expected.effective_assessments
-        assert len(actual_assessments) == len(expected_assessments)
-        for left, right in zip(actual_assessments, expected_assessments, strict=True):
-            assert left.content.method_result == right.content.method_result
-            assert left.content.technical_state == right.content.technical_state
-            assert left.candidate_peaks == right.candidate_peaks
-        assert (
-            actual.adapter_result.source_candidate_ids
-            == expected.adapter_result.source_candidate_ids
-        )
-        assert tuple(
-            a.assessment.content.evaluation_receipt for a in actual.backfill_attempts
-        ) == tuple(
-            a.assessment.content.evaluation_receipt for a in expected.backfill_attempts
-        )
-    expected_keys = {
-        f"part-1:{job.sample.identity.sample_key}:{phase}"
-        for job in jobs
-        for phase in ("initial", "backfill")
-    }
-    resources = result.worker_batch.resource_settlements
-    assert {item.resource_key for item in resources} == {
-        "acquisition-session:" + key for key in expected_keys
-    }
-    assert len(resources) == len(expected_keys)
-    assert len({item.work_unit_key for item in result.acquisitions}) == len(
-        result.acquisitions
-    )
-    assert all(item.work_unit_key in expected_keys for item in result.acquisitions)
-    assert {item.work_unit_key for item in result.acquisitions} <= {
-        item.resource_key.removeprefix("acquisition-session:")
-        for item in resources
-        if item.open_outcome is RuntimeResourceOpenOutcome.OPENED
-    }
-    assert all(item.acquisition.traces for item in result.acquisitions)
-    assert len(observed_batches) == len(result.acquisitions)
-    assert all(
-        any(item.acquisition is batch for item in result.acquisitions)
-        for batch in observed_batches
-    )
-    for stage in ("partition_initial", "partition_backfill", "partition_seal"):
-        progress = [event for event in events if event.get("stage") == stage]
-        assert progress[-1]["completed"] == progress[-1]["total"]
-    # An acquisition failure must settle its jobs and return all resource cleanup facts.
-    monkeypatch.setattr(partition_workers, "open_raw", forbidden)
-    from xic_extractor.untargeted_execution.partition import workers as worker_module
-
-    monkeypatch.setattr(worker_module, "open_raw", forbidden)
-    failed_jobs = tuple(replace(job, acquisition_cache_dir=None) for job in jobs)
-    failed = runtime_module.execute_partition(
-        failed_jobs,
-        partition_key="part-error",
-        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
-    )
-    assert not failed.succeeded
-    assert len(failed.worker_batch.settlements) == len(jobs)
-    assert len(failed.worker_batch.resource_settlements) == len(expected_keys)
-    assert any(
-        item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
-        for item in failed.worker_batch.resource_settlements
-    )
+    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_path):

@@ -12,14 +12,14 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
+from tests.cid_nl_runtime_fixtures import (
+    assert_partition_matches_runtime,
+    build_discovery_receipts,
+    install_runtime_raw,
+    install_runtime_raws,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _assert_partition_matches_runtime,
-    _discovery_receipts,
-    _install_runtime_raw,
-    _install_runtime_raws,
 )
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.discovery.models import DiscoveryCandidate
@@ -84,7 +84,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": candidates},
@@ -97,7 +97,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
             for c in values
         },
     )
-    vendor_raw = _install_runtime_raw(
+    vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_path,
@@ -245,7 +245,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -258,7 +258,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -368,7 +368,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     )
     assert sum(":initial:" in key for key in resource_keys) == 2
     assert sum(":backfill:" in key for key in resource_keys) == 3
-    _assert_partition_matches_runtime(jobs, result, monkeypatch)
+    assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def _nearby_subject_candidates(

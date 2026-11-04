@@ -276,6 +276,7 @@ def test_selected_run_intersects_caller_marker_and_passes_selected_files(
 
 def test_selected_run_without_kept_tests_succeeds(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     commands = _capture_calls(monkeypatch, exit_code=5)
     selected = SelectionPlan(files=("tests/test_a.py",), marker_expression="x")
@@ -283,9 +284,72 @@ def test_selected_run_without_kept_tests_succeeds(
     empty = SelectionPlan(files=(), marker_expression="x")
 
     assert test_selection._run_plan(selected, ()) == 0
+    selected_output = capsys.readouterr().out
+    assert "Markers: x" in selected_output
+    assert (
+        "No tests ran after filtering; no verification was performed."
+        in selected_output
+    )
     assert test_selection._run_plan(every, ()) == 5
     assert test_selection._run_plan(empty, ()) == 0
     assert len(commands) == 2
+
+
+@pytest.mark.parametrize(
+    ("pytest_args", "expected_exit", "expected_output"),
+    (
+        ((), 0, "not ledger_snapshot\ntests/test_a.py\n"),
+        (("-m", "slow"), 0, "(slow) and (not ledger_snapshot)\ntests/test_a.py\n"),
+        (("-m",), 2, ""),
+    ),
+)
+def test_print_selection_applies_caller_markers_without_running_tests(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pytest_args: tuple[str, ...],
+    expected_exit: int,
+    expected_output: str,
+) -> None:
+    monkeypatch.setattr(
+        test_selection,
+        "_local_plan",
+        lambda **_kwargs: SelectionPlan(
+            files=("tests/test_a.py",), marker_expression="not ledger_snapshot"
+        ),
+    )
+    monkeypatch.setattr(
+        test_selection.subprocess,
+        "call",
+        lambda _command: pytest.fail("preview must not run pytest"),
+    )
+
+    assert test_selection.main(["--print", "--", *pytest_args]) == expected_exit
+    captured = capsys.readouterr()
+    assert captured.out == expected_output
+    assert captured.err == (
+        "Invalid pytest marker selection\n" if expected_exit else ""
+    )
+
+
+def test_snapshot_preview_does_not_execute_the_snapshot_lane(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        test_selection,
+        "discover_test_files",
+        lambda _root: (Path("tests/test_snapshot.py"),),
+    )
+    monkeypatch.setattr(
+        test_selection.subprocess,
+        "call",
+        lambda _command: pytest.fail("snapshot preview must not run pytest"),
+    )
+
+    assert test_selection.main(["--snapshots", "--print", "--", "-m", "slow"]) == 0
+    assert capsys.readouterr().out == (
+        "(slow) and (ledger_snapshot)\ntests/test_snapshot.py\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -365,7 +429,9 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         ("tests/browser_diagnostics.py", {"browser_e2e"}),
         ("tests/test_browser_diagnostics.py", {"browser_e2e"}),
         ("tests/test_xic_inspector_browser.py", {"browser_e2e"}),
-        ("tests/test_xic_inspector_api.py", {"browser_e2e"}),
+        ("tests/test_xic_inspector_api.py", set()),
+        ("tests/inspector_fixtures.py", {"browser_e2e"}),
+        ("tests/workbench_http.py", {"browser_e2e"}),
         ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),

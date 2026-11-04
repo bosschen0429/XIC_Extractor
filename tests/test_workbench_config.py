@@ -72,9 +72,9 @@ def test_read_discovery_config_preserves_custom_output(monkeypatch, tmp_path) ->
 
 
 def test_target_rows_preserve_extra_metadata_order(tmp_path):
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
 
-    values = rows()
+    values = targeted_rows()
     values[0].update(extra_b="1", extra_a="2")
     config_io.write_targets(values, config_dir=tmp_path)
     saved = config_io.read_targets(config_dir=tmp_path)

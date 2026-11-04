@@ -8,7 +8,10 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 
-from tests.test_alignment_explanation import _owner_run, _summary_fixture
+from tests.alignment_explanation_fixtures import (
+    explanation_summary,
+    run_alignment_fixture,
+)
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
@@ -35,7 +38,7 @@ from xic_workbench.acquisition import (
 
 
 def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     source = write_alignment_explanation(
@@ -83,7 +86,7 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
 def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     tmp_path, monkeypatch, criteria, expected
 ):
-    from tests.test_xic_inspector_api import _report_data
+    from tests.inspector_fixtures import read_report_payload
 
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix fixture", encoding="utf-8")
@@ -150,7 +153,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             [("C1", "S1"), ("C4", "S2")],
         )
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
@@ -188,14 +191,14 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
         result.matched_count,
         result.missing_rt_count,
     ) == expected
-    assert _report_data(output) == _report_data(baseline)
+    assert read_report_payload(output) == read_report_payload(baseline)
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))
 def test_default_review_keeps_values_and_query_without_curves(
     tmp_path, monkeypatch, scenario
 ):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, scenario
     )
     report = write_alignment_explanation(
@@ -291,7 +294,7 @@ def test_default_review_keeps_values_and_query_without_curves(
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     tmp_path, monkeypatch
 ):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
@@ -317,7 +320,7 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
 
 
 def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     full = write_alignment_explanation(
@@ -368,7 +371,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
 def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     tmp_path, monkeypatch
 ):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     review = write_alignment_explanation(
@@ -412,7 +415,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
 
 
 def _two_sample_curve_review(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     review = write_alignment_explanation(
@@ -682,7 +685,7 @@ def _group_with_missing_apex_review(tmp_path):
             {"S1": 0, "S2": 1, "S3": 2},
         )
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "samples": [{"sample_key": sid} for sid in ("S1", "S2", "S3")],
                     "acquisition_sources": sources,
@@ -986,7 +989,7 @@ def _quality_review_report(
         writer.add_record("rows", "G1", {"feature_id": "G1"}, keys)
         writer.add_row_cells("G1", cells, {"S1": 0, "S2": 1})
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "processing_attempt_id": "quality-attempt",
                     "matrix_path": str(matrix),
@@ -1101,7 +1104,7 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    completed, _, candidates, matrix, config = _owner_run(
+    completed, _, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     # Re-evaluate the real owners with a frozen, independently measured sparse
@@ -1219,7 +1222,9 @@ def test_production_publication_automatically_includes_recorded_risk(
     )
     from xic_extractor.execution.timing import TimingRecorder
 
-    completed, _, candidates, _, config = _owner_run(tmp_path, monkeypatch, "positive")
+    completed, _, candidates, _, config = run_alignment_fixture(
+        tmp_path, monkeypatch, "positive"
+    )
     completed = completed.bind_publication_inputs(
         candidates_by_sample=candidates, alignment_config=config
     )
@@ -1269,7 +1274,7 @@ def test_named_cells_preserve_values_and_details_across_input_order(
             writer.add_record("rows", "F1", {"feature_id": "F1"}, ())
             writer.add_row_cells("F1", ordered, {"S1": 0, "S2": 1})
             writer.finalize(
-                _summary_fixture(
+                explanation_summary(
                     {"samples": [{"sample_key": "S1"}, {"sample_key": "S2"}]},
                     review_only=review_only,
                 )

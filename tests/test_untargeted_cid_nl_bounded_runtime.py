@@ -13,18 +13,19 @@ from time import perf_counter, sleep
 import pytest
 from openpyxl import Workbook
 
-from tests.cid_nl_raw_fixture import TEST_PROFILE, _peak_config, _settings
+from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
+    _current_candidates,
+    _FakeRaw,
+    _FakeThermoRaw,
+    _peak_config,
+    _settings,
+)
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _current_candidates,
-    _discovery_receipts,
-    _FakeRaw,
-    _FakeThermoRaw,
-    _install_runtime_raws,
-)
 from tests.untargeted_partition_fixtures import (
     complete_dense_partition,
     execute_dense_partition,
@@ -154,7 +155,9 @@ def _plan(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
         signal_processing_profile=TEST_PROFILE,
@@ -164,7 +167,7 @@ def _plan(
             for c in values
         },
     )
-    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     if opened_sink is not None:
         opened_sink.append(opened)
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
@@ -271,7 +274,9 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
@@ -281,7 +286,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
     def run(capacity, *, reverse_initial=False):
         from xic_extractor.alignment.drift_evidence import (
@@ -419,7 +424,9 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
@@ -429,7 +436,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
     def run(capacity):
         adapter = UntargetedPartitionPipelineAdapter(

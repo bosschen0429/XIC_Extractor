@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+from tests.membership_fixtures import cid_nl_owner
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
@@ -19,7 +20,6 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships as _infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import (
-    IdentityEvent,
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -38,7 +38,7 @@ def infer_feature_memberships(
 
 @pytest.mark.parametrize("bootstrap", (False, True))
 def test_membership_consumes_the_composed_support_rule(bootstrap: bool) -> None:
-    owners = (_owner("a", "first"), _owner("b", "second"))
+    owners = (cid_nl_owner("a", "first"), cid_nl_owner("b", "second"))
     frame = SampleRtFrame(injection_order={"a": 1, "b": 2})
     default = _infer_feature_memberships(
         owners,
@@ -82,44 +82,6 @@ class _DriftLookup:
         return self.orders.get(sample_stem)
 
 
-def _owner(
-    sample: str,
-    name: str,
-    *,
-    precursor_mz: float = 500.0,
-    apex_rt: float = 10.0,
-    evidence_score: int = 80,
-    seed_event_count: int = 2,
-    supporting_events: tuple[IdentityEvent, ...] = (),
-) -> SampleLocalMS1Owner:
-    event = IdentityEvent(
-        candidate_id=f"{sample}-{name}-primary",
-        sample_stem=sample,
-        raw_file=f"{sample}.raw",
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=precursor_mz,
-        product_mz=precursor_mz - 116.0474,
-        observed_neutral_loss_da=116.0474,
-        seed_rt=apex_rt,
-        evidence_score=evidence_score,
-        seed_event_count=seed_event_count,
-    )
-    return SampleLocalMS1Owner(
-        owner_id=f"OWN-{sample}-{name}",
-        sample_stem=sample,
-        raw_file=f"{sample}.raw",
-        precursor_mz=precursor_mz,
-        owner_apex_rt=apex_rt,
-        owner_peak_start_rt=apex_rt - 0.05,
-        owner_peak_end_rt=apex_rt + 0.05,
-        owner_area=1_000.0,
-        owner_height=100.0,
-        primary_identity_event=event,
-        supporting_events=supporting_events,
-        assignment_reason="same_apex_window",
-    )
-
-
 def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]]:
     return {frozenset(group.owner_ids) for group in result.groups}
 
@@ -128,7 +90,7 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
     samples = tuple(f"s{i:02}" for i in range(24))
     groups = tuple(
         tuple(
-            _owner(
+            cid_nl_owner(
                 sample, f"f{feature}", apex_rt=8.0 + feature + (0.2 if i == 12 else 0)
             )
             for i, sample in enumerate(samples)
@@ -159,7 +121,7 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
     calibration.add_groups(
         tuple(
             tuple(
-                _owner(
+                cid_nl_owner(
                     sample, f"f{feature}", apex_rt=8.0 + feature + (5 if i >= 12 else 0)
                 )
                 for i, sample in enumerate(samples)
@@ -187,9 +149,9 @@ def test_observations_without_direct_clean_support_do_not_calibrate_others(
     samples = ("a", "b", "c", "d", "e")
     groups = tuple(
         tuple(
-            replace(_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
+            replace(cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
             if sample == "e"
-            else _owner(sample, f"f{i}", apex_rt=8.0 + i)
+            else cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i)
             for sample in samples
         )
         for i in range(12)
@@ -209,14 +171,14 @@ def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
     warp = BatchRtWarp((("a", ((7.0, 0.1), (20.0, 0.5))),), 12)
     common_rt = 12.0
     observed = common_rt + warp.offset_min("a", common_rt)
-    assert warp.corrected_rt_min(_owner("a", "f", apex_rt=observed)) == pytest.approx(
-        common_rt
-    )
+    assert warp.corrected_rt_min(
+        cid_nl_owner("a", "f", apex_rt=observed)
+    ) == pytest.approx(common_rt)
 
 
 def test_ms1_only_owner_requires_physical_signal_quality() -> None:
     strong = replace(
-        _owner("a", "ms1"),
+        cid_nl_owner("a", "ms1"),
         primary_identity_event=None,
         selected_integration=IntegrationResult(
             rt_left_min=9.95,
@@ -230,7 +192,7 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
             baseline_residual_mad=1.0,
         ),
     )
-    missing_quality = replace(_owner("b", "ms1"), primary_identity_event=None)
+    missing_quality = replace(cid_nl_owner("b", "ms1"), primary_identity_event=None)
     result = infer_feature_memberships(
         (strong, missing_quality),
         config=AlignmentConfig(),
@@ -250,7 +212,7 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
 
 def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
     ms1 = replace(
-        _owner("a", "ms1"),
+        cid_nl_owner("a", "ms1"),
         primary_identity_event=None,
         selected_integration=IntegrationResult(
             rt_left_min=9.95,
@@ -264,7 +226,7 @@ def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
             baseline_residual_mad=1.0,
         ),
     )
-    cid = _owner("b", "cid")
+    cid = cid_nl_owner("b", "cid")
     result = infer_feature_memberships(
         (ms1, cid),
         config=AlignmentConfig(),
@@ -278,7 +240,8 @@ def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
 
 def test_true_drift_is_stable_without_requiring_distant_pair_edges() -> None:
     owners = tuple(
-        _owner(f"s{index}", "main", apex_rt=10.0 + 0.75 * index) for index in range(4)
+        cid_nl_owner(f"s{index}", "main", apex_rt=10.0 + 0.75 * index)
+        for index in range(4)
     )
     order = {f"s{index}": index for index in range(4)}
 
@@ -305,9 +268,9 @@ def test_true_drift_is_stable_without_requiring_distant_pair_edges() -> None:
 def test_exact_known_identity_is_indivisible_and_does_not_absorb_unbound_owner() -> (
     None
 ):
-    bound_a = _owner("a", "known", apex_rt=8.0)
-    bound_b = _owner("b", "known", apex_rt=12.0)
-    unbound = _owner("c", "lookalike", apex_rt=8.0)
+    bound_a = cid_nl_owner("a", "known", apex_rt=8.0)
+    bound_b = cid_nl_owner("b", "known", apex_rt=12.0)
+    unbound = cid_nl_owner("c", "lookalike", apex_rt=8.0)
     lookup = KnownIstdOwnerLookup(
         reference=cast(Any, None),
         bindings=(
@@ -336,8 +299,8 @@ def test_exact_known_identity_is_indivisible_and_does_not_absorb_unbound_owner()
 
 
 def test_known_identity_sample_conflict_is_reported_without_selection() -> None:
-    left = _owner("same", "left")
-    right = _owner("same", "right", apex_rt=10.2)
+    left = cid_nl_owner("same", "left")
+    right = cid_nl_owner("same", "right", apex_rt=10.2)
     lookup = KnownIstdOwnerLookup(
         reference=cast(Any, None),
         bindings=(
@@ -365,9 +328,9 @@ def test_known_identity_sample_conflict_is_reported_without_selection() -> None:
 
 
 def test_bridge_with_equal_competing_tracks_remains_undecided() -> None:
-    left = _owner("a", "left", apex_rt=10.0)
-    right = _owner("a", "right", apex_rt=11.0)
-    bridge = _owner("b", "bridge", apex_rt=10.5)
+    left = cid_nl_owner("a", "left", apex_rt=10.0)
+    right = cid_nl_owner("a", "right", apex_rt=11.0)
+    bridge = cid_nl_owner("b", "bridge", apex_rt=10.5)
 
     result = infer_feature_memberships(
         (left, bridge, right),
@@ -391,7 +354,7 @@ def test_bridge_with_equal_competing_tracks_remains_undecided() -> None:
 def test_one_by_many_assignment_uses_sorted_feature_tie_break(
     delta: float, ambiguous: bool
 ) -> None:
-    owner = _owner("a", "single")
+    owner = cid_nl_owner("a", "single")
     assignments, ambiguous_owners = _solve_sample_assignment(
         (owner,),
         {
@@ -411,7 +374,7 @@ def test_one_by_many_assignment_uses_sorted_feature_tie_break(
 
 @pytest.mark.parametrize("size", [1, 2, 5])
 def test_assignment_only_preserves_tied_solution_without_alternative_solves(size):
-    owners = tuple(_owner("a", str(i)) for i in range(size))
+    owners = tuple(cid_nl_owner("a", str(i)) for i in range(size))
     candidates = {
         owner.owner_id: tuple(
             _Candidate(f"feature-{i}", 0.25, "supported", "probe", ())
@@ -444,8 +407,8 @@ def test_assignment_only_preserves_tied_solution_without_alternative_solves(size
 def test_many_by_one_assignment_uses_stable_owner_tie_representative(
     delta: float, selected_owner: str, ambiguous: bool
 ) -> None:
-    first = _owner("a", "first")
-    second = _owner("b", "second")
+    first = cid_nl_owner("a", "first")
+    second = cid_nl_owner("b", "second")
     assignments, ambiguous_owners = _solve_sample_assignment(
         (first, second),
         {
@@ -468,7 +431,7 @@ def _long_rt_same_mass_owners(
     *, evidence_score: int = 80, seed_event_count: int = 2
 ) -> tuple[SampleLocalMS1Owner, ...]:
     return tuple(
-        _owner(
+        cid_nl_owner(
             f"s{index}",
             "long-rt",
             apex_rt=10.0 + index,
@@ -547,10 +510,10 @@ def test_sparse_long_rt_same_mass_uses_drift_corrected_support() -> None:
 
 def test_sparse_same_mass_raw_fallback_remains_assignable() -> None:
     owners = (
-        _owner(
+        cid_nl_owner(
             "s0", "raw-fallback", apex_rt=10.0, evidence_score=45, seed_event_count=1
         ),
-        _owner(
+        cid_nl_owner(
             "s1", "raw-fallback", apex_rt=10.1, evidence_score=45, seed_event_count=1
         ),
     )
@@ -625,14 +588,14 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
 
     fallback = infer_feature_memberships(
         (
-            _owner(
+            cid_nl_owner(
                 "s0",
                 "raw-fallback",
                 apex_rt=10.0,
                 evidence_score=45,
                 seed_event_count=1,
             ),
-            _owner(
+            cid_nl_owner(
                 "s1",
                 "raw-fallback",
                 apex_rt=10.1,
@@ -681,14 +644,14 @@ def test_sparse_long_rt_missing_drift_is_unassessable() -> None:
 
 
 def test_repeated_wrappers_and_duplicate_owner_rows_do_not_add_support() -> None:
-    first = _owner("a", "main", apex_rt=10.0)
+    first = cid_nl_owner("a", "main", apex_rt=10.0)
     assert first.primary_identity_event is not None
     support = replace(
         first.primary_identity_event,
         candidate_id="support-1",
         seed_event_count=1,
     )
-    one_wrapper = _owner("b", "main", apex_rt=10.1, supporting_events=(support,))
+    one_wrapper = cid_nl_owner("b", "main", apex_rt=10.1, supporting_events=(support,))
     repeated_wrappers = replace(
         one_wrapper,
         supporting_events=(
@@ -726,8 +689,10 @@ def test_repeated_wrappers_and_duplicate_owner_rows_do_not_add_support() -> None
 
 
 def test_weak_evidence_is_not_promoted_by_nearby_strong_owner() -> None:
-    strong = _owner("a", "strong", apex_rt=10.0)
-    weak = _owner("b", "weak", apex_rt=10.0, evidence_score=10, seed_event_count=1)
+    strong = cid_nl_owner("a", "strong", apex_rt=10.0)
+    weak = cid_nl_owner(
+        "b", "weak", apex_rt=10.0, evidence_score=10, seed_event_count=1
+    )
 
     result = infer_feature_memberships(
         (strong, weak),
@@ -752,8 +717,8 @@ def test_weak_evidence_is_not_promoted_by_nearby_strong_owner() -> None:
 
 def test_irrelevant_sample_in_order_map_does_not_change_membership() -> None:
     owners = (
-        _owner("a", "main", apex_rt=10.0),
-        _owner("b", "main", apex_rt=10.2),
+        cid_nl_owner("a", "main", apex_rt=10.0),
+        cid_nl_owner("b", "main", apex_rt=10.2),
     )
     base = infer_feature_memberships(
         owners,
@@ -772,7 +737,7 @@ def test_irrelevant_sample_in_order_map_does_not_change_membership() -> None:
 def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> None:
     owner_count = 120
     owners = tuple(
-        _owner(
+        cid_nl_owner(
             f"s{index:03d}",
             "main",
             apex_rt=10.0 + index * 0.1,
@@ -824,7 +789,7 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
                 start = 10.03
         owners.append(
             replace(
-                _owner(sample, "peak", apex_rt=apex),
+                cid_nl_owner(sample, "peak", apex_rt=apex),
                 owner_peak_start_rt=start,
                 owner_peak_end_rt=end,
                 peak_shape=shape,

@@ -7,17 +7,19 @@ import json
 import re
 import sqlite3
 import tempfile
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
-from tests.test_alignment_explanation import _summary_fixture
-from tests.test_alignment_explanation_curves import _curve_provenance
+from tests.alignment_explanation_fixtures import explanation_summary
+from tests.inspector_fixtures import (
+    create_inspector_report,
+    link_report_record,
+    read_report_payload,
+)
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -25,35 +27,6 @@ from xic_inspector.api import (
     generate_report,
 )
 from xic_inspector.cli import main as cli_main
-
-
-def _report_data(path: Path) -> dict:
-    text = path.read_text(encoding="utf-8")
-    match = re.search(
-        r'<script[^>]*type="application/json"[^>]*>(.*?)</script>', text, re.S
-    )
-    assert match is not None
-    return json.loads(match.group(1))
-
-
-def _insert_link(
-    connection: sqlite3.Connection, row: tuple[str, str, str, str]
-) -> None:
-    """Insert one flat link through the normalized persisted representation."""
-    candidate_id, sample_id, kind, record_id = row
-    set_id = connection.execute(
-        "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
-    ).fetchone()[0]
-    connection.execute(
-        "INSERT OR IGNORE INTO link_members SELECT ?,c.id FROM candidates c "
-        "JOIN samples s ON s.id=c.sample WHERE c.candidate_id=? AND s.sample_key=?",
-        (set_id, candidate_id, sample_id),
-    )
-    connection.execute(
-        "INSERT OR IGNORE INTO record_links "
-        "SELECT ?, id FROM records WHERE kind=? AND record_id=?",
-        (set_id, kind, record_id),
-    )
 
 
 def _insert_candidate(connection, cid, sid, payload):
@@ -113,129 +86,10 @@ def _delete_links(
         )
 
 
-def _create_mock_db(
-    directory: Path,
-    *,
-    request_id: str = "req-01",
-    attempt_id: str = "att-01",
-    samples: list[dict[str, str]] | None = None,
-) -> tuple[Path, Path, str]:
-    db_path = directory / "alignment_explanation.sqlite"
-    matrix_path = directory / "alignment_matrix.tsv"
-
-    matrix_content = (
-        b"cluster_id\tprecursor_mz\trt_apex_min\tS1\tS2\nrow-01\t500.0\t1.0\t1000\t0\n"
-    )
-    matrix_path.write_bytes(matrix_content)
-    with matrix_path.open("rb") as handle:
-        matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-
-    if samples is None:
-        samples = [
-            {"sample_stem": "s1", "sample_key": "S1"},
-            {"sample_stem": "s2", "sample_key": "S2"},
-        ]
-
-    sid = samples[0]["sample_key"]
-    with ExplanationReportWriter(db_path) as writer:
-        writer.add_candidate(
-            "C1",
-            sid,
-            {
-                "candidate_id": "C1",
-                "sample_key": sid,
-                "precursor_mz": 500.0,
-            },
-        )
-        writer.add_record(
-            "rows",
-            "G1",
-            {
-                "feature_id": "G1",
-                "reason": "Passed alignment",
-            },
-            [("C1", sid)],
-        )
-        writer.add_record(
-            "final_groups",
-            "G1",
-            {"feature_id": "G1", "disposition": "completed"},
-            [("C1", sid)],
-        )
-        writer.add_record(
-            "cell_decisions",
-            "cd-01",
-            {"feature_id": "G1", "sample_id": sid, "quantitative_value": 1000.0},
-            [("C1", sid)],
-        )
-        writer.add_record(
-            "terminal_subjects",
-            "terminal-01",
-            {"observations": [{"physical_peak_key": "obs-01", "rt_apex_min": 1.0}]},
-            [("C1", sid)],
-        )
-        # Add a curve payload for C1
-        curve_envelope = {
-            "schema_version": "curve_payload",
-            "kind": "initial_capture",
-            "sample_id": sid,
-            "candidate_id": "C1",
-            "physical_peak_key": "obs-01",
-            "trace_coordinate": {
-                "mz": 500.0,
-                "rt_min": 0.8,
-                "rt_max": 1.2,
-                "ppm_tol": 10.0,
-            },
-            "curves": {
-                "rt": [0.8, 0.9, 1.0, 1.1, 1.2],
-                "raw": [10.0, 50.0, 1000.0, 40.0, 5.0],
-                "baseline": None,
-                "smoothed": None,
-                "positive": None,
-            },
-            "integration": asdict(
-                IntegrationResult(
-                    rt_left_min=0.9,
-                    rt_apex_min=1.0,
-                    rt_right_min=1.1,
-                    raw_apex_rt_min=1.0,
-                    rt_width_min=0.20000000000000007,
-                    height_raw=1000.0,
-                    height_smoothed=1000.0,
-                    area_raw_counts_seconds=2500.0,
-                )
-            ),
-            "provenance": {
-                **_curve_provenance(),
-                "processing_attempt_id": attempt_id,
-            },
-        }
-        writer.add_curve_payload(
-            sample_id=sid,
-            kind="initial_capture",
-            record_id="obs-01",
-            payload=curve_envelope,
-        )
-        writer.finalize(
-            _summary_fixture(
-                {
-                    "processing_attempt_id": attempt_id,
-                    "matrix_path": str(matrix_path),
-                    "matrix_sha256": matrix_hash,
-                    "samples": samples,
-                },
-                review_only=writer.review_only,
-            )
-        )
-
-    return db_path, matrix_path, matrix_hash
-
-
 def test_interactive_and_offline_review_share_sample_scope_and_values(tmp_path):
     from xic_inspector.api import prepare_report
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     selection = SelectionRequest(
         strategy="query", group_ids=("G1",), sample_ids=("S1",)
     )
@@ -248,7 +102,7 @@ def test_interactive_and_offline_review_share_sample_scope_and_values(tmp_path):
     )
     output = tmp_path / "offline.html"
     generate_report(report, selection, output)
-    assert _report_data(output) == json.loads(json.dumps(prepared.payload))
+    assert read_report_payload(output) == json.loads(json.dumps(prepared.payload))
 
 
 def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path):
@@ -256,7 +110,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
         read_alignment_explanation,
     )
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     detail = read_alignment_explanation(report, candidate_id="C1")
     output = tmp_path / "candidate-query.html"
     result = generate_report(
@@ -266,7 +120,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
     )
 
     assert result.selected_count == 1
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
     assert item["details"]["readable_records"]
     assert {"rows", "final_groups", "cell_decisions"}.issubset(detail["records"])
@@ -275,7 +129,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
 def test_generate_report_sample_strategy_success() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, matrix_hash = _create_mock_db(tmp)
+        db_path, matrix_path, matrix_hash = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
         req = SelectionRequest(strategy="sample", limit=10, seed=0)
@@ -309,7 +163,7 @@ def test_generate_report_sample_strategy_success() -> None:
 
 
 def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     stored_cell = {
         "cell_observation_id": "cell-observation-02",
         "decision_id": "decision-02",
@@ -370,7 +224,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
-        _insert_link(
+        link_report_record(
             connection,
             ("C1", "S1", "method_assessments", "assessment-hold"),
         )
@@ -381,7 +235,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         SelectionRequest(strategy="query", group_ids=("G1",)),
         output,
     )
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
 
     assert set(samples) == {"S1", "S2"}
@@ -421,7 +275,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
         SelectionRequest(strategy="query", group_ids=("G1",), sample_ids=("S1",)),
         scoped_output,
     )
-    scoped_item = _report_data(scoped_output)["items"][0]
+    scoped_item = read_report_payload(scoped_output)["items"][0]
     assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
     scoped_records = {
         record["ref"] for record in scoped_item["details"]["readable_records"]
@@ -433,7 +287,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
 def test_error_code_2_invalid_request() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_db(tmp)
+        db_path, _, _ = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
         # Invalid limit
@@ -479,7 +333,7 @@ def test_error_code_3_source_unavailable() -> None:
 def test_error_code_4_source_invalid_mismatched_matrix() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, _ = _create_mock_db(tmp)
+        db_path, matrix_path, _ = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
         # Tamper with matrix file
@@ -493,7 +347,7 @@ def test_error_code_4_source_invalid_mismatched_matrix() -> None:
 def test_error_code_6_output_aliasing_source() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, _ = _create_mock_db(tmp)
+        db_path, matrix_path, _ = create_inspector_report(tmp)
 
         # Output aliases source DB
         with pytest.raises(InspectorError) as exc_info:
@@ -509,7 +363,7 @@ def test_error_code_6_output_aliasing_source() -> None:
 def test_cancellation_preserves_old_html_and_code_130() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_db(tmp)
+        db_path, _, _ = create_inspector_report(tmp)
         out_html = tmp / "existing.html"
         out_html.write_text("Old unmodified HTML content", encoding="utf-8")
 
@@ -530,7 +384,7 @@ def test_cancellation_preserves_old_html_and_code_130() -> None:
 def test_normalized_sample_scope_semantics() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_db(
+        db_path, _, _ = create_inspector_report(
             tmp,
             samples=[
                 {"sample_stem": "b_sample", "sample_key": "S_B"},
@@ -565,7 +419,7 @@ def test_normalized_sample_scope_semantics() -> None:
 def test_cli_execution() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_db(tmp)
+        db_path, _, _ = create_inspector_report(tmp)
         out_html = tmp / "cli_report.html"
 
         # CLI success
@@ -604,7 +458,7 @@ def test_cli_opens_report_from_run_folder_with_default_output(
 ) -> None:
     alignment = tmp_path / "alignment"
     alignment.mkdir()
-    _create_mock_db(alignment)
+    create_inspector_report(alignment)
     opened = []
     monkeypatch.setattr("xic_inspector.cli.webbrowser.open", opened.append)
 
@@ -629,7 +483,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     from xic_inspector.api import read_evidence_summary
     from xic_inspector.sources import cid_nl
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         for index in range(2, row_count + 1):
             rid = f"row-{index:02d}"
@@ -641,7 +495,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                     json.dumps({"feature_id": "G1"}),
                 ),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 ("C1", "S1", "rows", rid),
             )
@@ -671,7 +525,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     record_property("html_bytes", output.stat().st_size)
     record_property("selected_items", result.selected_count)
     assert result.selected_count == row_count
-    items = _report_data(output)["items"]
+    items = read_report_payload(output)["items"]
     assert {json.loads(item["id"])[-1] for item in items} == {"G1"} | {
         f"row-{index:02d}" for index in range(2, row_count + 1)
     }
@@ -690,7 +544,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
 
 
 def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute("DELETE FROM records WHERE kind='rows'")
         _delete_links(connection, kind="rows")
@@ -700,7 +554,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
             connection,
             *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
-        _insert_link(connection, ("C2", "S2", "final_groups", "G1"))
+        link_report_record(connection, ("C2", "S2", "final_groups", "G1"))
         for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
             connection.execute(
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
@@ -721,7 +575,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
                     ),
                 ),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 (cid, sid, "terminal_subjects", cid),
             )
@@ -753,14 +607,14 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
         output,
     )
     assert result.selected_count == 1
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
     assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         _insert_candidate(
             connection,
@@ -771,7 +625,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ("final_groups", "G1"),
             ("cell_decisions", "cd-01"),
         ):
-            _insert_link(connection, ("C2", "S2", kind, rid))
+            link_report_record(connection, ("C2", "S2", kind, rid))
         connection.execute(
             "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             (
@@ -788,21 +642,21 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ),
         )
         for cid, sid in (("C1", "S1"), ("C2", "S2")):
-            _insert_link(
+            link_report_record(
                 connection,
                 (cid, sid, "cell_decisions", "cd-02"),
             )
     full = tmp_path / "full.html"
     generate_report(report, SelectionRequest(), full)
-    assert _report_data(full)["items"][0]["stratum"] == "null"
+    assert read_report_payload(full)["items"][0]["stratum"] == "null"
     full_samples = {
-        s["sample_id"]: s for s in _report_data(full)["items"][0]["samples"]
+        s["sample_id"]: s for s in read_report_payload(full)["items"][0]["samples"]
     }
     assert full_samples["S1"]["status_kind"] == "rest"
     assert full_samples["S2"]["status_kind"] == "null"
     scoped = tmp_path / "scope.html"
     generate_report(report, SelectionRequest(sample_ids=("S1",)), scoped)
-    item = _report_data(scoped)["items"][0]
+    item = read_report_payload(scoped)["items"][0]
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
     assert all(
@@ -815,7 +669,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
 def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     output = tmp_path / "preserved.html"
     generate_report(report, SelectionRequest(), output)
     before = output.read_bytes()
@@ -844,7 +698,7 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
 def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     tmp_path,
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         _insert_candidate(
             connection,
@@ -866,14 +720,14 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
         output,
     )
     assert result.selected_count == 1
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     assert item["curves"] == []
     assert item["samples"][0]["evidence_status"] == "unavailable"
     assert item["samples"][0]["decision_refs"] == []
 
 
 def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         for sid in ("S1", "S2"):
             _insert_candidate(
@@ -884,7 +738,7 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
     generate_report(
         report, SelectionRequest(strategy="query", candidate_ids=("shared-id",)), output
     )
-    items = _report_data(output)["items"]
+    items = read_report_payload(output)["items"]
     assert len({i["id"] for i in items}) == 2
     assert {tuple(json.loads(i["id"])[-2:]) for i in items} == {
         ("S1", "shared-id"),
@@ -899,7 +753,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
 ):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         blob = connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
         original = json.loads(zlib.decompress(blob))
@@ -937,13 +791,13 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 ("capture_evidence", pid, json.dumps(capture)),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 ("C1", "S1", "capture_evidence", pid),
             )
     output = tmp_path / "stages.html"
     generate_report(report, SelectionRequest(), output)
-    curves = _report_data(output)["items"][0]["curves"]
+    curves = read_report_payload(output)["items"][0]["curves"]
     assert len(curves) == 4
     assert {c["evidence_ref"] for c in curves} >= {2, 3, 4}
     before = output.read_bytes()
@@ -985,7 +839,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
 ):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         original = json.loads(
             zlib.decompress(
@@ -1043,11 +897,11 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ("capture_evidence", 2),
             ("method_assessments", "recovery-method"),
         ):
-            _insert_link(connection, ("C1", "S1", kind, ref))
+            link_report_record(connection, ("C1", "S1", kind, ref))
 
     output = tmp_path / "recovery-origin.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
 
     assert item["details"]["review_summary"]["origin_kinds"] == [expected_kind]
     assert item["review_summary"] == item["details"]["review_summary"]
@@ -1063,7 +917,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
 def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         _delete_links(connection, kind="terminal_subjects", record_id="terminal-01")
         final_group = json.loads(
@@ -1169,11 +1023,11 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
-            _insert_link(connection, ("C1", "S1", kind, ref))
+            link_report_record(connection, ("C1", "S1", kind, ref))
 
     output = tmp_path / "zero-terminal-recovery.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
 
     assert item["witnesses"][0]["observation_id"] is None
     assert item["review_summary"]["observed_sample_count"] == 1
@@ -1194,7 +1048,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
 ):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         coverage = (
             {
@@ -1267,7 +1121,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
-                _insert_link(
+                link_report_record(
                     connection,
                     (candidate_id, "S1", kind, ref),
                 )
@@ -1301,7 +1155,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             ),
         )
         for candidate_id in ("C1", "C2"):
-            _insert_link(
+            link_report_record(
                 connection, (candidate_id, "S1", "initial_edges", "edge-c1-c2")
             )
 
@@ -1311,7 +1165,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
         SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
         output,
     )
-    data = _report_data(output)
+    data = read_report_payload(output)
 
     assert result.selected_count == 1
     assert len(data["items"]) == 1
@@ -1333,7 +1187,7 @@ def test_report_preserves_relationship_availability_without_edges(
     tmp_path,
     availability,
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     if availability is not None:
         with sqlite3.connect(report) as connection:
             summary = json.loads(
@@ -1348,14 +1202,14 @@ def test_report_preserves_relationship_availability_without_edges(
             )
     output = tmp_path / "relationship-availability.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     assert item["relationship_availability"] == (availability or "unavailable")
     assert not item.get("internal_pair_support")
     assert item["samples"][0]["quantitative_value"] == 1000.0
 
 
 def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
-    report, _, _ = _create_mock_db(
+    report, _, _ = create_inspector_report(
         tmp_path,
         samples=[
             {"sample_stem": "sample one", "sample_key": "S1"},
@@ -1385,7 +1239,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             )
         for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
             for kind, ref in (("rows", "G1"), ("final_groups", "G1")):
-                _insert_link(
+                link_report_record(
                     connection,
                     (candidate_id, sample_id, kind, ref),
                 )
@@ -1435,7 +1289,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(payload)),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 ("C3", "S3", kind, ref),
             )
@@ -1495,7 +1349,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 ),
             )
             for candidate_id, sample_id in links:
-                _insert_link(
+                link_report_record(
                     connection, (candidate_id, sample_id, "initial_edges", ref)
                 )
 
@@ -1505,7 +1359,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
         output,
     )
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
 
     assert item["relationship_availability"] == "recorded"
     assert item["internal_pair_support"] == [
@@ -1545,7 +1399,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
 
 
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         _insert_candidate(
             connection,
@@ -1581,7 +1435,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                     "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
-                _insert_link(
+                link_report_record(
                     connection,
                     (candidate_id, "S1", kind, ref),
                 )
@@ -1599,7 +1453,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
             ),
         )
         for candidate_id in ("C1", "C2"):
-            _insert_link(
+            link_report_record(
                 connection,
                 (candidate_id, "S1", "initial_edges", "edge-shared-multirow"),
             )
@@ -1610,7 +1464,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
         SelectionRequest(strategy="query", limit=10, candidate_ids=("C1",)),
         output,
     )
-    items = _report_data(output)["items"]
+    items = read_report_payload(output)["items"]
 
     assert result.selected_count == 2
     assert {item["details"]["source"]["feature_id"] for item in items} == {
@@ -1626,7 +1480,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
 def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolation(
     tmp_path,
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute(
@@ -1656,7 +1510,7 @@ def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolatio
 
     output = tmp_path / "aligned.html"
     generate_report(report, SelectionRequest(), output)
-    curve = _report_data(output)["items"][0]["curves"][0]
+    curve = read_report_payload(output)["items"][0]["curves"][0]
 
     assert curve["raw_rts"] == [0.8, 0.9, 1.0, 1.1, 1.2]
     assert curve["aligned_rts"] == pytest.approx([1.6, 1.8, 2.0, 2.2, 2.4])
@@ -1674,12 +1528,12 @@ def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolatio
         )
     outside = tmp_path / "outside.html"
     generate_report(report, SelectionRequest(), outside)
-    outside_curve = _report_data(outside)["items"][0]["curves"][0]
+    outside_curve = read_report_payload(outside)["items"][0]["curves"][0]
     assert "aligned_rts" not in outside_curve
 
 
 def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute(
@@ -1715,11 +1569,11 @@ def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
 def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     tmp_path,
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     output = tmp_path / "readable.html"
     generate_report(report, SelectionRequest(), output)
 
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     records = item["details"]["records"]
     assert next(r for r in records if r["ref"] == "cd-01")["facts"] == {
         "feature_id": "G1",
@@ -1779,7 +1633,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
 def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     tmp_path,
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='cell_decisions'",
@@ -1816,11 +1670,11 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
-            _insert_link(connection, ("C2", "S2", kind, ref))
+            link_report_record(connection, ("C2", "S2", kind, ref))
 
     output = tmp_path / "null-zero.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
     assert samples["S1"]["quantitative_value"] is None
     assert samples["S2"]["quantitative_value"] == 0
@@ -1847,7 +1701,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
 
 
 def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
@@ -1863,14 +1717,14 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
                 ),
             ),
         )
-        _insert_link(
+        link_report_record(
             connection,
             ("C1", "S1", "cell_decisions", "cd-extra"),
         )
 
     output = tmp_path / "multiple.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     sample = item["samples"][0]
     assert "quantitative_value" not in sample
     assert sample["decision_refs"] == ["cd-01", "cd-extra"]
@@ -1879,7 +1733,7 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
 
 
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         _insert_candidate(
             connection,
@@ -1905,7 +1759,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
-            _insert_link(connection, ("C2", "S2", kind, ref))
+            link_report_record(connection, ("C2", "S2", kind, ref))
         for ref, sample_id, reason_code in (
             (
                 "method-s1",
@@ -1929,7 +1783,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                     ),
                 ),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 (
                     "C1" if sample_id == "S1" else "C2",
@@ -1961,13 +1815,13 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                 ),
             )
             for candidate_id, sample_id in links:
-                _insert_link(
+                link_report_record(
                     connection, (candidate_id, sample_id, "initial_edges", ref)
                 )
 
     output = tmp_path / "related-records.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
     readable = {record["ref"]: record for record in item["details"]["readable_records"]}
 
@@ -1994,7 +1848,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
 
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         for candidate_id in ("C2", "C3"):
             _insert_candidate(
@@ -2032,7 +1886,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                     ),
                 ),
             )
-            _insert_link(
+            link_report_record(
                 connection,
                 (
                     candidate_id,
@@ -2044,7 +1898,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
 
     output = tmp_path / "excluded-candidate.html"
     generate_report(report, SelectionRequest(), output)
-    items = _report_data(output)["items"]
+    items = read_report_payload(output)["items"]
     candidates = {
         item["witnesses"][0]["candidate_id"]: item
         for item in items
@@ -2078,7 +1932,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
     import zlib
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     precursor_mz = 307.1023254394531
     apex_rt = 17.2623
     area = 28578.925063705414
@@ -2096,7 +1950,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
                 ),
             ),
         )
-        _insert_link(
+        link_report_record(
             connection,
             ("C1", "S1", "method_subjects", "format-01"),
         )
@@ -2126,7 +1980,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
 
     output = tmp_path / "formatted-values.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     readable = {record["ref"]: record for record in item["details"]["readable_records"]}
     format_values = {f["value"] for f in readable["format-01"]["fields"]}
     assert "307.1023" in format_values
@@ -2159,7 +2013,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
 def test_source_labels_explain_recorded_group_and_sample_outcome(
     tmp_path, state, destination, sample_count
 ):
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     source_code = "trapezoid_counts_seconds_on_canonical_signal"
     with sqlite3.connect(report) as connection:
         row = {
@@ -2191,7 +2045,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
             "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
             ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
         )
-        _insert_link(
+        link_report_record(
             connection,
             ("C1", "S1", "method_subjects", "method-01"),
         )
@@ -2226,10 +2080,10 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ("final_groups", "G1"),
                 ("cell_decisions", "cd-02"),
             ):
-                _insert_link(connection, ("C2", "S2", kind, rid))
+                link_report_record(connection, ("C2", "S2", kind, rid))
     output = tmp_path / "labels.html"
     generate_report(report, SelectionRequest(), output)
-    item = _report_data(output)["items"][0]
+    item = read_report_payload(output)["items"][0]
     assert len(item["samples"]) == sample_count
     assert ("已建立" if state == "established" else "暫定") in item["title"]
     assert ("定量矩陣" if destination == "matrix" else "封存紀錄") in item[
@@ -2310,7 +2164,7 @@ def _create_nearest_mz_db(directory, rows):
                 {"S1": 0, "S2": 1},
             )
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
@@ -2552,7 +2406,7 @@ def test_nearest_mz_rejects_mixed_modes(conflict):
 def test_nearest_mz_rejects_nonindexed_evidence_without_fallback(tmp_path):
     from xic_inspector.api import prepare_report
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
         prepare_report(
             report,
@@ -2592,7 +2446,7 @@ def test_target_role_requires_query_strategy(strategy):
 def test_target_role_rejects_untargeted_evidence(tmp_path):
     from xic_inspector.api import prepare_report
 
-    report, _, _ = _create_mock_db(tmp_path)
+    report, _, _ = create_inspector_report(tmp_path)
     with pytest.raises(InspectorError, match="Targeted XLSX") as exc:
         prepare_report(report, SelectionRequest(strategy="query", target_role="ISTD"))
     assert exc.value.code == 2
@@ -2614,7 +2468,7 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
     "old_schema", ["alignment_explanation", "alignment_explanation_review"]
 )
 def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
-    path, _matrix, _digest = _create_mock_db(tmp_path)
+    path, _matrix, _digest = create_inspector_report(tmp_path)
     with sqlite3.connect(path) as connection:
         payload = connection.execute(
             "SELECT payload FROM metadata WHERE key='summary'"

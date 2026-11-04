@@ -10,8 +10,8 @@ edit. Global Codex rules own general operating defaults.
 | Project Python, worktree bootstrap, RAW/DLL, validation scale, or environment failure | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
 | Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
 | Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
-| Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
-| Test selection, new regression coverage, fixture design, UI demonstration, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
+| Readiness claim or validation policy | Choose the relevant branch in [`product-validation-contract.md#read-routes`](docs/agent/product-validation-contract.md#read-routes). |
+| Test selection, new regression coverage, fixture design, UI demonstration, or `ledger_snapshot` | Choose the relevant branch in [`testing.md#read-routes`](docs/agent/testing.md#read-routes). |
 | Change UI styling or theme roles | Read [UI Presentation](docs/architecture-contract.md#ui-presentation). |
 | Change import loading in startup-sensitive or lightweight readers | Read [Dependency Direction](docs/architecture-contract.md#dependency-direction). |
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |

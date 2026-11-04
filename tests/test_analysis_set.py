@@ -132,7 +132,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
         _peak_config,
         _settings,
     )
-    from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
+    from tests.cid_nl_runtime_fixtures import build_discovery_receipts
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
     from xic_extractor.raw_reader import read_analysis_set
     from xic_extractor.untargeted_execution.alignment import (
@@ -177,7 +177,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
         )
         for p in selected_paths
     }
-    receipts = _discovery_receipts(tmp_path, selected_paths, candidates)
+    receipts = build_discovery_receipts(tmp_path, selected_paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
         candidate_csvs={},
@@ -237,7 +237,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         _peak_config,
         _settings,
     )
-    from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
+    from tests.cid_nl_runtime_fixtures import build_discovery_receipts
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
     from xic_extractor.untargeted_execution.alignment import (
         prepare_untargeted_alignment_inputs,
@@ -257,7 +257,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         )
         for p in paths
     }
-    receipts = _discovery_receipts(tmp_path, paths, candidates)
+    receipts = build_discovery_receipts(tmp_path, paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
         candidate_csvs={},

@@ -16,6 +16,7 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -23,10 +24,6 @@ from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _discovery_receipts,
-    _install_runtime_raws,
-)
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
@@ -271,7 +268,9 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:grouping-window-invariance",
         signal_processing_profile=TEST_PROFILE,
@@ -281,7 +280,7 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
     observed = []
 
@@ -408,7 +407,9 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:sample-query-rt",
         signal_processing_profile=TEST_PROFILE,
@@ -418,7 +419,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
     warp = BatchRtWarp(
         tuple(
@@ -547,7 +548,9 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:rejected-bounded-recovery",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -557,7 +560,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
             for c in values
         },
     )
-    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
     acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
 
@@ -729,7 +732,9 @@ def test_runtime_recovers_every_authorized_rt_group(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:multi-group-recovery",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
@@ -783,7 +788,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             for sample in context.samples
         )
-    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
@@ -1285,7 +1290,9 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:shared-recovery-claim",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1295,7 +1302,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
@@ -1439,7 +1446,9 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:shared-ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1449,7 +1458,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
@@ -1658,7 +1667,9 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1668,7 +1679,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
@@ -1829,7 +1840,9 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         sample_identity_namespace="study:support-elsewhere",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
@@ -1839,7 +1852,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
@@ -1902,7 +1915,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         complete_untargeted_alignment,
     )
 
-    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_results = []
     execute = bounded_runtime.execute_partition
 

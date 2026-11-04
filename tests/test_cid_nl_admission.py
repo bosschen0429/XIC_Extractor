@@ -5,14 +5,11 @@ from dataclasses import replace
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_physical_peak_evaluation_persistence import _overlapping_triplet_trace
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _discovery_receipts,
-    _install_runtime_raws,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
@@ -116,7 +113,9 @@ def test_review_rows_never_become_alignment_roots(
             else (),
             records=capture.physical_evaluations if candidate.ms1_peak_found else (),
         )
-        receipts.update(_discovery_receipts(folder, (path,), {path.stem: (candidate,)}))
+        receipts.update(
+            build_discovery_receipts(folder, (path,), {path.stem: (candidate,)})
+        )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
             csvs[path.stem], receipt=receipts[path.stem]
@@ -128,7 +127,7 @@ def test_review_rows_never_become_alignment_roots(
         review_csvs={stem: None for stem in stems},
         candidate_receipts=receipts,
     )
-    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         candidates_by_sample=DiscoveryInputSource(batch) if indexed else candidates,

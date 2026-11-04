@@ -12,13 +12,16 @@ import subprocess
 import sys
 import threading
 import time
-from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 
 import pytest
 
-from tests.test_alignment_explanation import _summary_fixture
-from tests.test_xic_inspector_api import _create_mock_db
+from tests.inspector_fixtures import (
+    create_inspector_report,
+    create_nearest_review_batch,
+    create_review_batch,
+)
+from tests.workbench_http import workbench_client
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -77,154 +80,8 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
         workspace.close()
 
 
-def _review_batch(tmp_path, sample_count=2):
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-
-    sample_ids = tuple(f"S{i + 1}" for i in range(sample_count))
-    matrix = tmp_path / "matrix.tsv"
-    matrix.write_text("recorded matrix fixture", encoding="utf-8")
-    report = tmp_path / "review.sqlite"
-    with ExplanationReportWriter(report, review_only=True) as writer:
-        for rid, route, values in (
-            ("a-complete", "matrix", tuple(100 * (i + 1) for i in range(sample_count))),
-            ("b-missing", "matrix", (300,) + ("unavailable",) * (sample_count - 1)),
-            ("z-priority", "matrix", (400,) + ("unresolved",) * (sample_count - 1)),
-            ("archive", "archive", (500,) + ("unresolved",) * (sample_count - 1)),
-        ):
-            keys = []
-            for sid, value in zip(sample_ids, values, strict=True):
-                if isinstance(value, int):
-                    cid = f"{rid}-{sid}"
-                    keys.append((cid, sid))
-                    writer.add_candidate(
-                        cid,
-                        sid,
-                        {
-                            "candidate_id": cid,
-                            "sample_key": sid,
-                            "precursor_mz": value,
-                            "rt_apex_min": 1,
-                        },
-                    )
-            writer.add_record(
-                "rows",
-                rid,
-                {
-                    "feature_id": rid,
-                    "route": {"destination": route, "reason": "recorded"},
-                },
-                keys,
-            )
-            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
-            writer.add_row_cells(
-                rid,
-                [
-                    {
-                        "sample_key": sid,
-                        "variant": "numeric" if isinstance(value, int) else value,
-                        "value": value if isinstance(value, int) else None,
-                    }
-                    for sid, value in zip(sample_ids, values, strict=True)
-                ],
-                {sid: i for i, sid in enumerate(sample_ids)},
-            )
-        writer.add_candidate(
-            "orphan",
-            "S1",
-            {
-                "candidate_id": "orphan",
-                "sample_key": "S1",
-                "precursor_mz": 600,
-                "rt_apex_min": 1,
-            },
-        )
-        writer.finalize(
-            _summary_fixture(
-                {
-                    "matrix_path": str(matrix),
-                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [
-                        {"sample_key": s, "sample_stem": s} for s in sample_ids
-                    ],
-                    "selection_evidence_capability": "recorded_decisions",
-                },
-                review_only=writer.review_only,
-            )
-        )
-    return report, matrix
-
-
-def _nearest_review_batch(tmp_path):
-    """Saved matrix rows whose review order differs from numeric proximity."""
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-
-    matrix = tmp_path / "nearest-matrix.tsv"
-    matrix.write_text("saved near-search fixture", encoding="utf-8")
-    report = tmp_path / "nearest-review.sqlite"
-    rows = [(f"far-{i:02}", ((200.0 + i, 1.0),), False) for i in range(28)] + [
-        ("near-a", ((123.3980, None),), False),
-        ("near-b", ((123.4200, 5.0),), False),
-        ("near-c", ((123.4567, 10.0),), True),
-        ("missing-mz", ((None, 1.0),), False),
-        ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
-    ]
-    with ExplanationReportWriter(report, review_only=True) as writer:
-        for rid, witnesses, unresolved in rows:
-            keys = []
-            for index, (mz, rt) in enumerate(witnesses):
-                cid = f"{rid}-{index}"
-                keys.append((cid, "S1"))
-                writer.add_candidate(
-                    cid,
-                    "S1",
-                    {
-                        "candidate_id": cid,
-                        "sample_key": "S1",
-                        "precursor_mz": mz,
-                        "rt_apex_min": rt,
-                    },
-                )
-            writer.add_record(
-                "rows",
-                rid,
-                {
-                    "feature_id": rid,
-                    "route": {"destination": "matrix", "reason": "recorded"},
-                },
-                keys,
-            )
-            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
-            writer.add_row_cells(
-                rid,
-                [
-                    {
-                        "sample_key": "S1",
-                        "variant": "unresolved" if unresolved else "numeric",
-                        "value": None if unresolved else 100.0,
-                    }
-                ],
-                {"S1": 0},
-            )
-        writer.finalize(
-            _summary_fixture(
-                {
-                    "matrix_path": str(matrix),
-                    "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [{"sample_key": "S1", "sample_stem": "S1"}],
-                    "selection_evidence_capability": "recorded_decisions",
-                },
-                review_only=writer.review_only,
-            )
-        )
-    return report, matrix
-
-
 def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path):
-    report, matrix = _nearest_review_batch(tmp_path)
+    report, matrix = create_nearest_review_batch(tmp_path)
     before = [path.read_bytes() for path in (report, matrix)]
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
     try:
@@ -277,7 +134,7 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
     from xic_inspector.sources.untargeted_overview import review_overview
 
     sample_count = 32
-    report, _ = _review_batch(tmp_path, sample_count=sample_count)
+    report, _ = create_review_batch(tmp_path, sample_count=sample_count)
     summary = alignment_explanation.read_explanation_metadata(report).summary
 
     def forbidden(*args, **kwargs):
@@ -295,7 +152,7 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
 
 
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):
-    report, matrix = _review_batch(tmp_path)
+    report, matrix = create_review_batch(tmp_path)
     before = [p.read_bytes() for p in (report, matrix)]
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
     try:
@@ -363,7 +220,7 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     config.mkdir()
     private = config / "workspace.json"
     private.write_text("private-local-state", encoding="utf-8")
-    with _client(ReviewWorkspace(config_dir=config)) as request:
+    with workbench_client(ReviewWorkspace(config_dir=config)) as request:
         for name in ("targeted-method.xlsx", "targets.xlsx"):
             status, payload, headers = request(f"/examples/{name}")
             assert status == 200
@@ -381,42 +238,6 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
             == 403
         )
     assert private.read_text(encoding="utf-8") == "private-local-state"
-
-
-@contextmanager
-def _client(workspace):
-    server = create_server(workspace, port=0)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    connection = http.client.HTTPConnection(*server.server_address, timeout=10)
-    connection.request("GET", "/api/session")
-    response = connection.getresponse()
-    cookie = response.getheader("Set-Cookie").split(";", 1)[0]
-    response.read()
-
-    def request(path, values=None, *, headers=None):
-        body = json.dumps(values).encode() if values is not None else None
-        actual_headers = {"Cookie": cookie, "X-XIC-Client": "workbench"}
-        if body is not None:
-            actual_headers["Content-Type"] = "application/json"
-        actual_headers.update(headers or {})
-        connection.request(
-            "POST" if body is not None else "GET", path, body, actual_headers
-        )
-        result = connection.getresponse()
-        data = result.read()
-        if result.getheader("Content-Type", "").startswith("application/json"):
-            data = json.loads(data)
-        return result.status, data, dict(result.getheaders())
-
-    try:
-        yield request
-    finally:
-        connection.close()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-        workspace.close()
 
 
 @pytest.mark.parametrize(
@@ -448,7 +269,7 @@ def test_disconnected_response_does_not_send_an_error_or_acknowledge_completion(
     )
 
     def controlled_server(*args, **kwargs):
-        server = real_create_server(*args, **kwargs)
+        server = create_server(*args, **kwargs)
         handler_type = server.RequestHandlerClass
         setup = handler_type.setup
 
@@ -475,9 +296,8 @@ def test_disconnected_response_does_not_send_an_error_or_acknowledge_completion(
         )
         return server
 
-    real_create_server = create_server
-    monkeypatch.setattr(sys.modules[__name__], "create_server", controlled_server)
-    with _client(workspace) as request:
+    monkeypatch.setattr("xic_workbench.server.create_server", controlled_server)
+    with workbench_client(workspace) as request:
         with pytest.raises(
             (http.client.RemoteDisconnected, http.client.IncompleteRead)
         ):
@@ -500,7 +320,7 @@ def test_application_io_failure_is_still_reported_to_a_connected_client(
         raise failure_type("application input unavailable")
 
     monkeypatch.setattr(workspace.analysis, "state", unavailable)
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         status, payload, _headers = request("/api/analysis")
 
     assert status == 400
@@ -517,7 +337,7 @@ def test_http_reuses_connection_for_assets_and_status(tmp_path, monkeypatch):
         return connection, address
 
     monkeypatch.setattr(ThreadingHTTPServer, "get_request", record_accept)
-    with _client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
         for _ in range(6):
             assert request("/assets/analysis.js")[0] == 200
             status, payload, _ = request("/api/analysis")
@@ -527,7 +347,7 @@ def test_http_reuses_connection_for_assets_and_status(tmp_path, monkeypatch):
 
 
 def test_http_closes_rejected_request_before_accepting_another(tmp_path):
-    with _client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
         status, _, headers = request(
             "/api/open", {"source": "."}, headers={"Cookie": ""}
         )
@@ -537,9 +357,9 @@ def test_http_closes_rejected_request_before_accepting_another(tmp_path):
 
 
 def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
-    db, matrix, _ = _create_mock_db(tmp_path)
+    db, matrix, _ = create_inspector_report(tmp_path)
     before = [hashlib.sha256(path.read_bytes()).hexdigest() for path in (db, matrix)]
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         status, page, _ = request("/api/open", {"source": str(tmp_path)})
         assert status == 200
         assert (page["run_total"], page["matched_count"], page["selected_count"]) == (
@@ -600,7 +420,7 @@ def test_http_open_explains_unreadable_report_in_plain_language(tmp_path):
     report = tmp_path / "alignment_explanation.sqlite"
     with sqlite3.connect(report) as connection:
         connection.execute("CREATE TABLE unrelated (value TEXT)")
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         status, body, _ = request("/api/open", {"source": str(report)})
     assert status == 400
     assert body["error"].startswith("無法讀取這份結果")
@@ -613,7 +433,7 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
     from xic_inspector.api import PreparedReport
     from xic_inspector.rendering.html_builder import build_report_html
 
-    report, _ = _review_batch(tmp_path)
+    report, _ = create_review_batch(tmp_path)
     rendered = []
     to_html = PreparedReport.to_html
 
@@ -630,7 +450,7 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
     monkeypatch.setattr(
         "xic_workbench.workspace.build_report_html", record_snapshot_render
     )
-    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
         assert request("/api/open", {"source": str(report)})[0] == 200
         views = []
         for sample_id, expected_value in (("S1", 100), ("S2", 200)):
@@ -650,7 +470,7 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
 
         other = tmp_path / "other"
         other.mkdir()
-        db, _, _ = _create_mock_db(other)
+        db, _, _ = create_inspector_report(other)
         assert request("/api/open", {"source": str(db)})[0] == 200
         report.unlink()
 
@@ -681,8 +501,8 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
 def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_path):
     from importlib.resources import files
 
-    db, _, _ = _create_mock_db(tmp_path)
-    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    db, _, _ = create_inspector_report(tmp_path)
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         _, detail, _ = request("/api/detail", {"item_id": page["items"][0]["id"]})
         url = f"/api/views/{detail['view_id']}"
@@ -733,7 +553,7 @@ def test_http_rejects_cross_origin_or_unidentified_api_calls(
         return send(connection, data)
 
     monkeypatch.setattr(http.client.HTTPConnection, "send", delayed_body)
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         assert request("/api/open", {"source": "."}, headers=headers)[0] == 403
 
 
@@ -749,7 +569,7 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
         return "" if kind == "folder" else str(tmp_path / "chosen.sqlite")
 
     monkeypatch.setattr(server, "choose_path", choose)
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         status, body, _ = request(
             "/api/pick", {"kind": "report", "path": str(tmp_path)}
         )
@@ -780,8 +600,8 @@ def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path)
     from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
 
     workbook = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
-    report, matrix = _review_batch(tmp_path)
-    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    report, matrix = create_review_batch(tmp_path)
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
         urls = []
         for source, product in ((workbook, workbook), (report, matrix)):
             status, page, _ = request("/api/open", {"source": str(source)})
@@ -805,7 +625,7 @@ def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path)
 def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypatch):
     from xic_workbench import acquisition
 
-    db, _, _ = _create_mock_db(tmp_path)
+    db, _, _ = create_inspector_report(tmp_path)
     entered = threading.Event()
 
     def blocked_export(*args, is_cancelled, **kwargs):
@@ -816,7 +636,7 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         raise acquisition.CurveAcquisitionCancelled()
 
     monkeypatch.setattr(acquisition, "export_explanation_curves", blocked_export)
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
@@ -910,8 +730,8 @@ def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_p
     from http.cookies import SimpleCookie
 
     with (
-        _client(ReviewWorkspace(config_dir=tmp_path / "a")) as a,
-        _client(ReviewWorkspace(config_dir=tmp_path / "b")) as b,
+        workbench_client(ReviewWorkspace(config_dir=tmp_path / "a")) as a,
+        workbench_client(ReviewWorkspace(config_dir=tmp_path / "b")) as b,
     ):
         jar = SimpleCookie()
         for request in (a, b, a):

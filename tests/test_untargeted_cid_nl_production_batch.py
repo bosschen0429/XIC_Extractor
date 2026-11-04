@@ -17,24 +17,24 @@ import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
 import xic_extractor.untargeted_execution.partition.request as input_owner
+from tests.alignment_explanation_fixtures import explanation_summary
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
+    _current_candidates,
+    _FakeRaw,
     _multi_tag_settings,
     _peak_config,
     _settings,
 )
+from tests.cid_nl_runtime_fixtures import (
+    build_discovery_receipts,
+    install_runtime_raw,
+    install_runtime_raws,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_alignment_explanation import _summary_fixture
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _current_candidates,
-    _discovery_receipts,
-    _FakeRaw,
-    _install_runtime_raw,
-    _install_runtime_raws,
-)
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
@@ -527,47 +527,24 @@ print(json.dumps({'curves': curves, 'links': links}))
         assert {normalize(item) for item in source_values} <= linked
 
 
-@pytest.mark.parametrize(
-    (
-        "group_sizes",
-        "method_mode",
-        "nearby",
-        "family_context",
-        "family_precursor_delta",
-    ),
-    (
-        ((2,), "single", False, False, 0.0),
-        ((1, 1), "single", False, False, 0.0),
-        ((2, 2), "single", False, False, 0.0),
-        pytest.param((2,), "single", True, False, 0.0, id="nearby-single"),
-        pytest.param((2,), "union", True, False, 0.0, id="nearby-or-different-tags"),
-        pytest.param(
-            (2,), "intersection", True, False, 0.0, id="nearby-and-incomplete"
-        ),
-        pytest.param(
-            (2,), "single", False, True, 0.0, id="overlapping-family-one-peak"
-        ),
-        pytest.param(
-            (4,),
-            "single",
-            False,
-            True,
-            0.0065,
-            id="overlapping-family-across-fixed-subject-boundary",
-        ),
-    ),
-)
-@pytest.mark.parametrize("indexed_input", (False, True), ids=("eager", "indexed"))
-def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
-    tmp_path: Path,
-    monkeypatch,
-    group_sizes: tuple[int, ...],
-    method_mode,
-    nearby,
-    family_context,
-    family_precursor_delta,
-    indexed_input,
-) -> None:
+@pytest.fixture(params=(False, True), ids=("eager", "indexed"))
+def replay_indexed_input(request):
+    return request.param
+
+
+@pytest.fixture
+def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
+    """Run persisted Discovery through the real adapter; keep each test isolated.
+
+    Only the end-to-end matrix test expands the eight scientific scenarios.
+    The owner-boundary tests use the two-sample single-tag baseline.
+    """
+    group_sizes, method_mode, nearby, family_context, family_precursor_delta = (
+        request.param
+        if hasattr(request, "param")
+        else ((2,), "single", False, False, 0.0)
+    )
+    indexed_input = replay_indexed_input
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
@@ -585,7 +562,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
-    from xic_extractor.processing_identity import IdentityContractError
 
     separate_groups = len(group_sizes) == 2
     sample_stems = tuple(f"S{index + 1}" for index in range(sum(group_sizes)))
@@ -617,7 +593,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     source_raws = {}
-    opened_raws = _install_runtime_raws(
+    opened_raws = install_runtime_raws(
         monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path
     )
     receipts = {}
@@ -750,7 +726,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             records=discovery.physical_evaluations,
         )
         receipts.update(
-            _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
+            build_discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = tuple(
@@ -1241,12 +1217,96 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ),
         ),
     )
+    try:
+        yield SimpleNamespace(
+            completed=completed,
+            case=SimpleNamespace(
+                group_sizes=group_sizes,
+                method_mode=method_mode,
+                nearby=nearby,
+                family_context=family_context,
+                family_precursor_delta=family_precursor_delta,
+                indexed_input=indexed_input,
+            ),
+            inputs=SimpleNamespace(
+                candidates=candidates,
+                paths=paths,
+                center_rt=center_rt,
+                peak_config=peak_config,
+                profile=profile,
+                settings=settings,
+                receipts=receipts,
+                sample_stems=sample_stems,
+                separate_groups=separate_groups,
+                source_raws=source_raws,
+                opened_raws=opened_raws,
+                source_evidence=source_evidence,
+                source_records=source_records,
+                physical_facts=physical_facts,
+            ),
+            trace=SimpleNamespace(
+                captured_batches=captured_batches,
+                captured_peaks=captured_peaks,
+                bound_captures=bound_captures,
+                binding_rechecks=binding_rechecks,
+                completed_contexts=completed_contexts,
+                consumed_captures=consumed_captures,
+                consumed_contexts=consumed_contexts,
+                hypothesis_universe_compositions=hypothesis_universe_compositions,
+                mint_args=mint_args,
+                mint_rechecks=mint_rechecks,
+                obsolete_marker=obsolete_marker,
+                preparation_fingerprints=preparation_fingerprints,
+                projection_builds=projection_builds,
+                retained_candidate_batches=retained_candidate_batches,
+                retained_captures=retained_captures,
+                retained_cell_batches=retained_cell_batches,
+                retained_contexts=retained_contexts,
+                retained_initial_edges=retained_initial_edges,
+                runtime_fingerprints=runtime_fingerprints,
+                runtime_results=runtime_results,
+            ),
+        )
+    finally:
+        completed.close()
+
+
+@pytest.mark.parametrize(
+    "profile_replay",
+    (
+        pytest.param(((2,), "single", False, False, 0.0), id="one-group"),
+        pytest.param(((1, 1), "single", False, False, 0.0), id="two-singletons"),
+        pytest.param(((2, 2), "single", False, False, 0.0), id="two-supported-groups"),
+        pytest.param(((2,), "single", True, False, 0.0), id="nearby-single"),
+        pytest.param(((2,), "union", True, False, 0.0), id="nearby-or-different-tags"),
+        pytest.param(
+            ((2,), "intersection", True, False, 0.0), id="nearby-and-incomplete"
+        ),
+        pytest.param(
+            ((2,), "single", False, True, 0.0), id="overlapping-family-one-peak"
+        ),
+        pytest.param(
+            ((4,), "single", False, True, 0.0065),
+            id="overlapping-family-across-fixed-subject-boundary",
+        ),
+    ),
+    indirect=True,
+)
+def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
+    tmp_path: Path,
+    profile_replay,
+) -> None:
+    completed = profile_replay.completed
+    inputs = profile_replay.inputs
+    trace = profile_replay.trace
+    case = profile_replay.case
+
     publication = completed.publication_inputs
     assert publication.alignment_config == AlignmentConfig(anchor_min_seed_events=1)
     assert publication.known_istd_reference_provenance is None
     assert dict(publication.ms1_apex_mz_by_candidate) == {
         candidate.candidate_id: candidate.ms1_apex_mz
-        for sample_candidates in candidates.values()
+        for sample_candidates in inputs.candidates.values()
         for candidate in sample_candidates
         if candidate.ms1_apex_mz is not None
     }
@@ -1255,36 +1315,38 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for sample, sample_candidates in publication.candidates_by_sample.items()
     } == {
         sample: tuple(candidate.candidate_id for candidate in sample_candidates)
-        for sample, sample_candidates in candidates.items()
+        for sample, sample_candidates in inputs.candidates.items()
     }
     assert completed.processing_attempt_id == (
         completed.application_result.processing_attempt.processing_attempt_id
     )
-    composed_universes = [item[1:] for item in hypothesis_universe_compositions]
+    composed_universes = [item[1:] for item in trace.hypothesis_universe_compositions]
     assert len(composed_universes) == len(set(composed_universes)), (
         {
             owner_name: sum(
-                item[0] == owner_name for item in hypothesis_universe_compositions
+                item[0] == owner_name for item in trace.hypothesis_universe_compositions
             )
-            for owner_name in {item[0] for item in hypothesis_universe_compositions}
+            for owner_name in {
+                item[0] for item in trace.hypothesis_universe_compositions
+            }
         },
-        hypothesis_universe_compositions,
+        trace.hypothesis_universe_compositions,
     )
     retained_hypotheses_by_id = {
         candidate.peak_hypothesis_id: candidate.peak_hypothesis
-        for candidates in retained_candidate_batches
-        for candidate in candidates
+        for retained_candidates in trace.retained_candidate_batches
+        for candidate in retained_candidates
     }
     assert all(
         capture.selected_hypothesis is None
         or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
         == capture.selected_hypothesis
-        for capture in retained_captures
+        for capture in trace.retained_captures
     )
     assert all(
         retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
         == support.hypothesis
-        for cells in retained_cell_batches
+        for cells in trace.retained_cell_batches
         for cell in cells
         for support in cell.group_context.supports
     )
@@ -1292,10 +1354,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     retained_discovery = tuple(completed.discovery_physical_records)
     # Indexed input exposes published candidate bindings lazily; eager input
     # also retains the source-only records behind merged representatives.
-    expected_retained = source_records if indexed_input else source_evidence
+    expected_retained = (
+        inputs.source_records if case.indexed_input else inputs.source_evidence
+    )
     assert {item.candidate_id for item in retained_discovery} == set(expected_retained)
     for retained in retained_discovery:
-        source = source_evidence[retained.candidate_id]
+        source = inputs.source_evidence[retained.candidate_id]
         assert (
             retained.evaluation.retained_prepared_signal
             == source.evaluation.retained_prepared_signal
@@ -1306,7 +1370,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     persisted_capture_evidence = tuple(completed.capture_evidence)
     runtime_captures = tuple(
         evidence
-        for result in runtime_results
+        for result in trace.runtime_results
         for sample_result in result.sample_results
         for evidence in (
             *sample_result.adapter_result.capture_evidence,
@@ -1381,11 +1445,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
         )
 
-    assert preparation_fingerprints == [], "preparation must not read RAW content"
-    assert obsolete_marker.read_bytes() == b"obsolete attempt status"
-    assert runtime_fingerprints == [], (
+    assert trace.preparation_fingerprints == [], "preparation must not read RAW content"
+    assert trace.obsolete_marker.read_bytes() == b"obsolete attempt status"
+    assert trace.runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
-        runtime_fingerprints,
+        trace.runtime_fingerprints,
     )
     assert (
         completed.runtime_receipt.supervisor.terminal_outcome
@@ -1422,7 +1486,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert len(rss) == 1
     assert rss[0].availability is RuntimeMetricAvailability.MEASURED
     assert rss[0].value == 123456
-    _assert_jobs_match_direct_construction(captured_batches[0])
+    _assert_jobs_match_direct_construction(trace.captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -1442,57 +1506,73 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        candidates_by_sample=inputs.candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
-    assert len(retained_contexts) == len(completed.application_result.children)
-    assert len(retained_contexts) == len(consumed_contexts)
+    assert len(trace.retained_contexts) == len(completed.application_result.children)
+    assert len(trace.retained_contexts) == len(trace.consumed_contexts)
     # This fixture keeps the frozen partition; Backfill can add risk decisions.
     # The completed content, including those decisions, must survive finalization
     # and the spool. Python object identity is not a persisted contract.
-    assert len(completed_contexts) == len(retained_contexts)
-    if family_precursor_delta:
-        assert any(context.backfill_membership_risks for context in completed_contexts)
+    assert len(trace.completed_contexts) == len(trace.retained_contexts)
+    if case.family_precursor_delta:
+        assert any(
+            context.backfill_membership_risks for context in trace.completed_contexts
+        )
     assert all(
         retained.partition_transition == final.partition_transition
         and retained.processing_owners == final.processing_owners
-        for retained, final in zip(retained_contexts, completed_contexts, strict=True)
+        for retained, final in zip(
+            trace.retained_contexts,
+            trace.completed_contexts,
+            strict=True,
+        )
     )
     assert all(
         retained == consumed
         for retained, consumed in zip(
-            completed_contexts, consumed_contexts, strict=True
+            trace.completed_contexts,
+            trace.consumed_contexts,
+            strict=True,
         )
     )
     # Bootstrap captures cross a disk handoff; preserve content, not addresses.
-    for retained, consumed in zip(retained_captures, consumed_captures, strict=True):
+    for retained, consumed in zip(
+        trace.retained_captures,
+        trace.consumed_captures,
+        strict=True,
+    ):
         assert retained.candidate_id == consumed.candidate_id
         assert retained.selected_hypothesis == consumed.selected_hypothesis
         assert list(retained.trace.rt) == list(consumed.trace.rt)
         assert list(retained.trace.intensity) == list(consumed.trace.intensity)
     for context, child in zip(
-        completed_contexts, completed.application_result.children, strict=True
+        trace.completed_contexts,
+        completed.application_result.children,
+        strict=True,
     ):
         assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.grouping_result == context
-    assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
+    assert tuple(completed.initial_edges) == tuple(trace.retained_initial_edges)
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
-    assert len(projection_builds) == len(children)
+    assert len(trace.projection_builds) == len(children)
     # Binding consumes the closed capture; it must not repeat physical selection.
-    assert not any(binding_rechecks)
-    if method_mode != "intersection":
-        assert binding_rechecks
-        assert mint_rechecks
-        assert mint_args
-    assert len(mint_rechecks) == len(mint_args)
-    assert all(counts == {"prepare": 0, "evaluate": 0} for counts in mint_rechecks)
-    if family_context:
+    assert not any(trace.binding_rechecks)
+    if case.method_mode != "intersection":
+        assert trace.binding_rechecks
+        assert trace.mint_rechecks
+        assert trace.mint_args
+    assert len(trace.mint_rechecks) == len(trace.mint_args)
+    assert all(
+        counts == {"prepare": 0, "evaluate": 0} for counts in trace.mint_rechecks
+    )
+    if case.family_context:
         assert len(matrix_rows) == 1
-        if family_precursor_delta:
-            batch = captured_batches[0]
+        if case.family_precursor_delta:
+            batch = trace.captured_batches[0]
             assert len(batch.subject_batch.subjects) == 3
             assert len(children) == 2
             assert sorted(
@@ -1545,7 +1625,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for assessment in completed.method_assessments
             )
             assert len(writer.matrix.clusters) == 3
-            assert len(writer.matrix.cells) == 3 * len(sample_stems)
+            assert len(writer.matrix.cells) == 3 * len(inputs.sample_stems)
             (matrix_row,) = matrix_rows
             assert matrix_row["S1"] == ""
             assert matrix_row["S2"]
@@ -1561,37 +1641,37 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
             assert matrix_row["S4"]
         else:
-            assert len(writer.matrix.cells) == len(sample_stems)
+            assert len(writer.matrix.cells) == len(inputs.sample_stems)
         close_and_verify_persisted_curves()
         return
-    if nearby:
-        assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
-        batch = captured_batches[0]
+    if case.nearby:
+        assert len(matrix_rows) == (0 if case.method_mode == "intersection" else 1)
+        batch = trace.captured_batches[0]
         assert len(batch.subject_batch.subjects) == 1
-        for result in runtime_results[0].sample_results:
+        for result in trace.runtime_results[0].sample_results:
             stem = result.job.sample.metadata.raw_stem
             (candidate,) = batch.context.candidates_by_sample[stem]
             record = batch.context.physical_records_by_candidate[candidate.candidate_id]
             assert record.work_item.precursor_mz == candidate.precursor_mz
             assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
-            assert record.evaluation.facts == physical_facts[stem]
+            assert record.evaluation.facts == inputs.physical_facts[stem]
             assert fixture_assessment(result).content.method_result == (
-                "HOLD" if method_mode == "intersection" else "SUPPORT"
+                "HOLD" if case.method_mode == "intersection" else "SUPPORT"
             )
-        if method_mode == "intersection":
+        if case.method_mode == "intersection":
             assert writer.matrix.cells == ()
             assert writer.matrix.clusters == ()
             assert all(
                 "incomplete_composite_requirement"
                 in fixture_assessment(result).content.reason_codes
-                for result in runtime_results[0].sample_results
+                for result in trace.runtime_results[0].sample_results
             )
             _assert_composite_no_input_exclusion_coverage(
-                completed, runtime_results[0], batch
+                completed, trace.runtime_results[0], batch
             )
             close_and_verify_persisted_curves()
             return
-        if method_mode == "union":
+        if case.method_mode == "union":
             (child,) = completed.application_result.children
             assert sorted(
                 len(group.member_subjects)
@@ -1600,63 +1680,66 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             selected_cells = tuple(
                 cell for cell in writer.matrix.cells if cell.selected_integration
             )
-            assert {cell.sample_stem for cell in selected_cells} == set(sample_stems)
+            assert {cell.sample_stem for cell in selected_cells} == set(
+                inputs.sample_stems
+            )
             for cell in selected_cells:
-                facts = physical_facts[cell.sample_stem]
+                facts = inputs.physical_facts[cell.sample_stem]
                 assert cell.area == facts.area_counts_seconds
                 assert cell.selected_integration is not None
                 assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
             close_and_verify_persisted_curves()
             return
-    assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
+    assert len(writer.matrix.cells) == len(case.group_sizes) * len(inputs.sample_stems)
     for cell in writer.matrix.cells:
         if cell.selected_integration is None:
-            assert separate_groups
+            assert inputs.separate_groups
             assert not writer.production_decisions.cell(
                 cell.cluster_id, cell.sample_stem
             ).write_matrix_value
             continue
-        facts = physical_facts[cell.sample_stem]
+        facts = inputs.physical_facts[cell.sample_stem]
         assert cell.area == facts.area_counts_seconds
         assert cell.selected_integration is not None
         assert cell.selected_integration.area_raw_counts_seconds != cell.area
         assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
         assert cell.selected_integration.height_smoothed == facts.height
-    expected_row_count = sum(size > 1 for size in group_sizes)
+    expected_row_count = sum(size > 1 for size in case.group_sizes)
     assert len(matrix_rows) == expected_row_count
-    for sample_stem, facts in physical_facts.items():
+    for sample_stem, facts in inputs.physical_facts.items():
         sample_values = [
             float(row[sample_stem]) for row in matrix_rows if row[sample_stem]
         ]
         assert sample_values == pytest.approx(
             [facts.area_counts_seconds] if expected_row_count else []
         )
-    if nearby:
+    if case.nearby:
         assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
         assert len(matrix_rows) == 1
         close_and_verify_persisted_curves()
         return
-    if separate_groups:
+    if inputs.separate_groups:
         (child,) = completed.application_result.children
         scientific = child.scientific_core
         assert len(scientific.final_population) == 2
-        assert len(scientific.cell_observations) == 2 * len(sample_stems)
+        assert len(scientific.cell_observations) == 2 * len(inputs.sample_stems)
         # Each sample's SUPPORT belongs to its own group. A group with K direct
         # supports revisits the other samples' windows, which hold no peak;
         # below K the other samples stay unsearched outside-group cells.
-        revisited = min(group_sizes) >= 2
+        revisited = min(case.group_sizes) >= 2
         assert sum(
             cell.evidence_states
             == (("unavailable",) if revisited else ("not_searched",))
             for cell in scientific.cell_observations
-        ) == len(sample_stems)
+        ) == len(inputs.sample_stems)
         assert all(
-            sum(bool(row[stem]) for stem in sample_stems) == 2 for row in matrix_rows
+            sum(bool(row[stem]) for stem in inputs.sample_stems) == 2
+            for row in matrix_rows
         )
         assert all(
             result.adapter_result.assessment_input.assessment.content.method_result
             == "SUPPORT"
-            for result in runtime_results[0].sample_results
+            for result in trace.runtime_results[0].sample_results
         )
         assert (
             any(
@@ -1669,30 +1752,41 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         close_and_verify_persisted_curves()
         return
 
+    close_and_verify_persisted_curves()
+
+
+def test_profile_replay_rejects_changed_observation_inputs(profile_replay) -> None:
+    inputs = profile_replay.inputs
+    trace = profile_replay.trace
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         PeakObservationContractError,
         mint_peak_observation_ref,
         physical_peak_observation_integration,
     )
 
-    capture = captured_peaks[0]
+    capture = trace.captured_peaks[0]
     evaluation = capture.physical_evaluation
     assert evaluation is not None
     integration = physical_peak_observation_integration(evaluation)
     prepared = prepare_physical_signal(
-        capture.trace.rt, capture.trace.intensity, profile=profile
+        capture.trace.rt, capture.trace.intensity, profile=inputs.profile
     )
     assert prepared.prepared is not None
     observation_args = dict(
-        processing_owners=captured_batches[0].jobs[0].processing_owners,
-        sample=captured_batches[0].jobs[0].sample,
+        processing_owners=trace.captured_batches[0].jobs[0].processing_owners,
+        sample=trace.captured_batches[0].jobs[0].sample,
         trace=capture.trace,
         integration=integration,
         selection_intensity=prepared.prepared.positive_signal,
-        resolver_mode=peak_config.resolver_mode,
+        resolver_mode=inputs.peak_config.resolver_mode,
         proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,
-        signal_processing_profile=profile,
+        signal_processing_profile=inputs.profile,
     )
     for substitution in (
         {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
@@ -1707,15 +1801,32 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         with pytest.raises((PeakObservationContractError, ValueError)):
             mint_peak_observation_ref(**(observation_args | substitution))
 
-    bound_capture, binding_args = bound_captures[0]
-    changed_source = capture_peak(
+    bound_capture, binding_args = trace.bound_captures[0]
+    changed_source = capture_owner.capture_peak_hypotheses(
         scope=bound_capture.scope,
         candidate_id=bound_capture.candidate_id,
         trace=replace(bound_capture.trace, source="different-capture-source"),
     )
     with pytest.raises(capture_owner.SampleLocalCaptureError):
-        bind_capture(changed_source, **binding_args)
-    batch = captured_batches[0]
+        capture_owner.bind_owner_backed_capture_hypothesis(
+            changed_source, **binding_args
+        )
+
+
+def test_profile_replay_retains_positive_and_empty_backfill_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    profile_replay,
+) -> None:
+    inputs = profile_replay.inputs
+    trace = profile_replay.trace
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection import capture as capture_owner
+
+    batch = trace.captured_batches[0]
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
     )
@@ -1726,7 +1837,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     job = batch.jobs[0]
     recovery_raw = partition_workers.open_raw(
-        paths[0],
+        inputs.paths[0],
         tmp_path,
         expected_acquisition_source=resolve_request_acquisition_source(
             processing_owners=job.processing_owners, sample=job.sample
@@ -1736,21 +1847,23 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         processing_owners=job.processing_owners,
         sample=job.sample,
         method_subject=job.method_subject,
-        group_center_rt=center_rt,
+        group_center_rt=inputs.center_rt,
         group_center_mz=job.method_subject.precursor_mz,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
-        peak_config=peak_config,
+        peak_config=inputs.peak_config,
         raw=recovery_raw,
-        settings=settings,
-        signal_processing_profile=profile,
+        settings=inputs.settings,
+        signal_processing_profile=inputs.profile,
     )
     recovered = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
     (observation,) = recovered.assessment.candidate_peaks
     acquired = recovered.acquisition.traces[0]
     recovery_prepared = prepare_physical_signal(
-        acquired.trace.rt, acquired.trace.intensity, profile=profile
+        acquired.trace.rt,
+        acquired.trace.intensity,
+        profile=inputs.profile,
     )
     assert observation.capture_stage == "method_backfill"
     assert observation.physical_evaluation is not None
@@ -1782,7 +1895,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 }
             )
         )
-    original_intensity = source_raws[paths[0]].intensity
+    original_intensity = inputs.source_raws[inputs.paths[0]].intensity
     recovery_evaluations = []
     evaluate_recovery = capture_owner.evaluate_physical_peak
 
@@ -1804,7 +1917,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             isolated = original_intensity * 0.0
             for offset in offsets:
                 isolated[len(isolated) // 2 + offset] = float(max(original_intensity))
-            source_raws[paths[0]].intensity = isolated
+            inputs.source_raws[inputs.paths[0]].intensity = isolated
             unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
             assert unavailable.assessment.candidate_peaks == ()
             assert unavailable.assessment.content.method_result == "HOLD"
@@ -1816,7 +1929,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 "sample_local_background_qualified_peak_in_context"
             )
 
-        source_raws[paths[0]].intensity = original_intensity * 0.0
+        inputs.source_raws[inputs.paths[0]].intensity = original_intensity * 0.0
         unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
         assert unavailable.assessment.candidate_peaks == ()
         assert unavailable.assessment.content.method_result == "HOLD"
@@ -1831,7 +1944,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
         # The external vendor can return an empty chromatogram for a valid
         # native scan window. Keep the acquisition and scientific owners live.
-        vendor = opened_raws[paths[0]][-1]
+        vendor = inputs.opened_raws[inputs.paths[0]][-1]
         vendor_chromatogram = vendor.GetChromatogramData
 
         def empty_vendor_chromatogram(*args):
@@ -1858,7 +1971,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert len(retained_empty.trace.rt) == len(retained_empty.trace.intensity) == 0
 
     finally:
-        source_raws[paths[0]].intensity = original_intensity
+        inputs.source_raws[inputs.paths[0]].intensity = original_intensity
         recovery_raw.__exit__(None, None, None)
 
     # The actual recovery owner ran above under this request and attempt.
@@ -1888,12 +2001,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 },
             )
         sink.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "processing_attempt_id": (
                         job.processing_owners.attempt.processing_attempt_id
                     ),
-                    "matrix_path": str(matrix_path),
                 },
                 review_only=sink.review_only,
             )
@@ -1901,6 +2013,21 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
     )
+
+
+def test_profile_replay_rejects_changed_partition_inputs(
+    tmp_path: Path, profile_replay
+) -> None:
+    inputs = profile_replay.inputs
+    trace = profile_replay.trace
+    case = profile_replay.case
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import IdentityContractError
+
+    batch = trace.captured_batches[0]
     from xic_extractor.untargeted_execution.partition.models import (
         UntargetedPartitionError,
     )
@@ -1932,26 +2059,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             build_sample_jobs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
-    if not indexed_input:
+    if not case.indexed_input:
         wrong_records = dict(batch.context.physical_records_by_candidate)
         keys = tuple(wrong_records)
         wrong_records[keys[0]] = wrong_records[keys[1]]
         with pytest.raises(IdentityContractError, match="crossed candidate"):
             alignment_adapter.prepare_eager_untargeted_plan(
-                raw_paths=paths,
+                raw_paths=inputs.paths,
                 sample_metadata=tuple(
                     sample.metadata for sample in batch.context.samples
                 ),
-                settings=settings,
-                peak_config=peak_config,
+                settings=inputs.settings,
+                peak_config=inputs.peak_config,
                 candidates_by_sample=batch.context.candidates_by_sample,
-                discovery_receipts_by_sample=receipts,
+                discovery_receipts_by_sample=inputs.receipts,
                 dll_dir=tmp_path,
                 sample_identity_namespace="test:physical-replay",
-                signal_processing_profile=profile,
+                signal_processing_profile=inputs.profile,
                 physical_records_by_candidate=wrong_records,
             )
-    close_and_verify_persisted_curves()
 
 
 def _subject_proof_record(
@@ -2362,7 +2488,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -2381,7 +2507,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         len({subject.method_subject_id for subject in batch.subject_batch.subjects})
         == 2
     )
-    _install_runtime_raws(
+    install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -2514,7 +2640,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         ),
         settings=settings,
         peak_config=peak_config,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": candidates},
@@ -2592,7 +2718,7 @@ def _source_verification_inputs(tmp_path: Path):
             settings=settings,
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=_discovery_receipts(
+            discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path, (path,), {"S1": candidates}
             ),
             dll_dir=tmp_path,
@@ -2617,7 +2743,7 @@ def test_production_reuses_source_verification_across_runtime_opens(
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
     monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
     plan = prepare_eager_untargeted_plan(**arguments)
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path
     )
     execute_untargeted_plan(
@@ -2727,7 +2853,9 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:source-verification",
     )
@@ -2776,7 +2904,7 @@ def test_production_rejects_source_change_after_input_verification(
         replacement = tmp_path / "replacement.synthetic"
         replacement.write_bytes(path.read_bytes())
         replacement.replace(path)
-    _install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         execute_untargeted_plan(
             plan,
@@ -2822,7 +2950,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, (raw_path,), {"S1": candidates}
         ),
         dll_dir=tmp_path,
@@ -2890,7 +3018,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         settings=settings,
         peak_config=peak_config,
     )
-    receipts = _discovery_receipts(
+    receipts = build_discovery_receipts(
         tmp_path,
         (raw_path,),
         {"S1": candidates},
@@ -3021,7 +3149,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             settings=crossed_settings,
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=_discovery_receipts(
+            discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path,
                 (raw_path,),
                 {"S1": candidates},
@@ -3073,7 +3201,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
             {"S1": candidates},
@@ -3087,7 +3215,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
             for c in values
         },
     )
-    vendor_raw = _install_runtime_raw(
+    vendor_raw = install_runtime_raw(
         monkeypatch,
         source_raw=source_raw,
         raw_path=raw_path,
@@ -3343,7 +3471,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -3357,7 +3485,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -3449,7 +3577,9 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:canonical-batch",
         signal_processing_profile=TEST_PROFILE,
@@ -3459,7 +3589,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
@@ -3587,7 +3717,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:known-istd",
         signal_processing_profile=TEST_PROFILE,
@@ -3597,7 +3729,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_plain = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -3913,7 +4045,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
             candidates_by_sample,
@@ -3927,7 +4059,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             for c in values
         },
     )
-    opened = _install_runtime_raws(
+    opened = install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -4241,7 +4373,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=_discovery_receipts(
+        discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, raw_paths, candidates_by_sample
         ),
         dll_dir=tmp_path,
@@ -4253,7 +4385,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             for c in values
         },
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
 
     runtime = execute_dense_partition(
         batch,

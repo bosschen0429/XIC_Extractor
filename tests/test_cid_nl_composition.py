@@ -11,12 +11,9 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _peak_config,
 )
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _discovery_receipts,
-    _install_runtime_raws,
 )
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
@@ -136,7 +133,9 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:composition",
         signal_processing_profile=TEST_PROFILE,
@@ -147,7 +146,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         },
     )
     assert len(batch.subject_batch.subjects) == 1
-    _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     runtime = execute_dense_partition(
         batch,

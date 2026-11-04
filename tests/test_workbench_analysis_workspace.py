@@ -2,18 +2,18 @@
 
 import pytest
 
-from tests.test_targeted_method_files import rows
-from tests.test_xic_workbench import _client
+from tests.targeted_fixtures import targeted_rows
+from tests.workbench_http import workbench_client
 from xic_workbench.workspace import ReviewWorkspace
 
 
 def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_path):
     config_dir = tmp_path / "config"
     workspace = ReviewWorkspace(config_dir=config_dir)
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         _, original, _ = request("/api/config")
         settings = original["settings"]
-        targets = rows()
+        targets = targeted_rows()
         targets[1]["future_annotation"] = "keep this exact metadata"
         status, saved, _ = request(
             "/api/targeted/method/save",
@@ -46,7 +46,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
             {
                 "name": "method B",
                 "settings": original["settings"],
-                "targets": rows()[:1],
+                "targets": targeted_rows()[:1],
             },
         )
         assert status == 200
@@ -84,11 +84,11 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
 )
 def test_method_save_rejects_invalid_name_without_writing(tmp_path, name):
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         status, _, _ = request(
             "/api/targeted/method/save",
-            {"name": name, "settings": config["settings"], "targets": rows()},
+            {"name": name, "settings": config["settings"], "targets": targeted_rows()},
         )
         assert status == 400
         assert request("/api/config")[1]["targeted_methods"] == []
@@ -97,9 +97,13 @@ def test_method_save_rejects_invalid_name_without_writing(tmp_path, name):
 
 def test_existing_method_rejected_and_bootstrap_omits_incomplete_folders(tmp_path):
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
-        values = {"name": "original", "settings": config["settings"], "targets": rows()}
+        values = {
+            "name": "original",
+            "settings": config["settings"],
+            "targets": targeted_rows(),
+        }
         assert request("/api/targeted/method/save", values)[0] == 200
         root = tmp_path / "config" / "methods"
         before = (root / "original.xlsx").read_bytes()
@@ -126,7 +130,7 @@ def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path
 
     source = targets_template_path().parent / name
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         original = request("/api/config")[1]
         status, result, _ = request(
             "/api/istd/upload",
@@ -155,7 +159,7 @@ def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
     import base64
 
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         for name, payload in [
             ("bad.xls", b"bad"),
             ("bad.xlsx", b"bad"),
@@ -190,7 +194,7 @@ def test_istd_http_preview_and_upload_share_method_applicability(
     source = targets_template_path().with_suffix(".xlsx")
     snapshot = method_details(method)["draft"]
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
+    with workbench_client(workspace) as request:
         for action, values in [
             ("istd", {"path": str(source)}),
             (

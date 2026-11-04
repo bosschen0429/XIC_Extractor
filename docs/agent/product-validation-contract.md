@@ -3,6 +3,19 @@
 This file owns product-readiness language and LC-MS/MS evidence guardrails. The
 full domain evidence contract remains in `docs/lc-msms-evidence-rules.md`.
 
+## Read Routes
+
+Choose by the claim being made. Ordinary regression verification does not
+require reading promotion or writer-authority rules. Use each matching row
+when a change affects more than one claim.
+
+| Need | Read |
+| --- | --- |
+| Choose evidence for a refactor, reliability/performance change, or workflow edit | [Product And Validation Discipline](#product-and-validation-discipline), then [Testing](testing.md#read-routes) |
+| Change a scientific decision or interpret method evidence | [Product And Validation Discipline](#product-and-validation-discipline) and [Domain Evidence Guardrails](#domain-evidence-guardrails) |
+| Trace an intended change across acquisition, qualification, persistence, or publication | [Cross-Owner Expected Differences](#cross-owner-expected-differences) |
+| Interpret readiness, promote a capability, or change writer authority | [Source-Of-Truth Boundaries](#source-of-truth-boundaries), [Lane Readiness](#lane-readiness-and-promotion-semantics), and [Promotion Packet](#promotion-packet-contract) |
+
 ## Source-Of-Truth Boundaries
 
 Rewritten development notes may become repo source-of-truth only after their

@@ -9,7 +9,7 @@ import re
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from tests.test_xic_workbench import _client
+from tests.workbench_http import workbench_client
 from xic_inspector.api import (
     InspectorError,
     SelectionRequest,
@@ -281,7 +281,7 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
     batch.mkdir()
     (raw_dir / "Sample A.raw").rename(batch / "Sample A.raw")
     before = workbook.read_bytes()
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         _, page, _ = request("/api/open", {"source": str(workbook)})
         item = next(item for item in page["items"] if item["title"] == "Analyte")
         assert item["observed_sample_ids"] == []
@@ -374,7 +374,7 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
 def test_targeted_http_review_preserves_values_scope_and_source(workbook):
     before = hashlib.sha256(workbook.read_bytes()).hexdigest()
     files = set(workbook.parent.iterdir())
-    with _client(ReviewWorkspace()) as request:
+    with workbench_client(ReviewWorkspace()) as request:
         status, page, _ = request("/api/open", {"source": str(workbook.parent)})
         assert status == 200
         assert page["source_kind"] == "targeted_workbook"

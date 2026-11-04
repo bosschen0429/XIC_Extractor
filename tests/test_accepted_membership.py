@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from tests.test_feature_membership_inference import _owner
+from tests.membership_fixtures import cid_nl_owner
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
@@ -48,7 +48,7 @@ def test_local_density_preserves_closed_radius_and_duplicate_coordinates(
         10.0 - radius,
         20.0,
     ]
-    owners = tuple(_owner(str(i), str(i), apex_rt=rt) for i, rt in enumerate(rts))
+    owners = tuple(cid_nl_owner(str(i), str(i), apex_rt=rt) for i, rt in enumerate(rts))
     frame = SampleRtFrame()
     if corrected:
         frame = frame.with_coordinate_override(lambda owner: owner.owner_apex_rt / 2)
@@ -90,7 +90,7 @@ def test_local_density_preserves_closed_radius_and_duplicate_coordinates(
 )
 def test_final_membership_rejects_separated_rt_populations(seconds, expected_sizes):
     owners = tuple(
-        _owner(str(i), str(i), apex_rt=10 + second / 60)
+        cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
         for i, second in enumerate(seconds)
     )
     result = infer_feature_memberships(
@@ -111,7 +111,7 @@ def test_population_gap_does_not_use_raw_rt_when_a_member_lacks_coordinates():
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
     owners = tuple(
-        _owner(sample, sample, apex_rt=rt)
+        cid_nl_owner(sample, sample, apex_rt=rt)
         for sample, rt in (("a", 10), ("b", 10.02), ("c", 10.04), ("d", 10.5))
     )
     frame = SampleRtFrame().with_sample_calibration(
@@ -127,7 +127,7 @@ def test_population_gap_does_not_use_raw_rt_when_a_member_lacks_coordinates():
 
 def test_population_gap_uses_corrected_not_measured_rt():
     owners = tuple(
-        _owner(str(i), str(i), apex_rt=rt)
+        cid_nl_owner(str(i), str(i), apex_rt=rt)
         for i, rt in enumerate((10, 10.02, 10.5, 10.52))
     )
     result = infer_feature_memberships(
@@ -161,9 +161,9 @@ def test_final_membership_uses_weak_common_frame_without_mixing_raw(
     )
     frame = SampleRtFrame().with_sample_calibration(calibration)
     owners = (
-        _owner("a", "shifted", apex_rt=11),
-        _owner("b", "reference", apex_rt=16),
-        _owner("d" if missing_sample else "c", "last", apex_rt=16),
+        cid_nl_owner("a", "shifted", apex_rt=11),
+        cid_nl_owner("b", "reference", apex_rt=16),
+        cid_nl_owner("d" if missing_sample else "c", "last", apex_rt=16),
     )
     result = infer_feature_memberships(
         owners, rules=CID_NL_GROUPING_RULES, config=AlignmentConfig(), rt_frame=frame
@@ -187,9 +187,9 @@ def test_final_membership_uses_weak_common_frame_without_mixing_raw(
 
 
 def test_weak_final_owner_is_selected_without_granting_quantitation():
-    strong = _owner("a", "strong")
+    strong = cid_nl_owner("a", "strong")
     weak = replace(
-        _owner("b", "weak", evidence_score=1),
+        cid_nl_owner("b", "weak", evidence_score=1),
         is_provisional=True,
         quantification_eligible=False,
     )
@@ -211,7 +211,7 @@ def test_weak_calibration_halves_only_rt_cost_not_mass_or_shape():
     x = np.linspace(-0.6, 0.6, 121)
     owners = tuple(
         replace(
-            _owner(s, s, apex_rt=rt, precursor_mz=mz),
+            cid_nl_owner(s, s, apex_rt=rt, precursor_mz=mz),
             owner_peak_start_rt=9.0,
             owner_peak_end_rt=11.0,
             peak_shape=prepare_local_peak_shape(
@@ -251,7 +251,7 @@ def test_soft_shape_contradiction_is_selected_and_recorded():
     x = np.linspace(-0.6, 0.6, 121)
     owners = tuple(
         replace(
-            _owner(s, s),
+            cid_nl_owner(s, s),
             peak_shape=prepare_local_peak_shape(
                 x + 10,
                 np.exp(-0.5 * (x / width) ** 2),
@@ -270,9 +270,9 @@ def test_soft_shape_contradiction_is_selected_and_recorded():
 
 def test_competition_selects_one_without_losing_other_owners():
     owners = (
-        _owner("a", "early", apex_rt=10),
-        _owner("a", "late", apex_rt=10.2),
-        _owner("b", "bridge", apex_rt=10.1),
+        cid_nl_owner("a", "early", apex_rt=10),
+        cid_nl_owner("a", "late", apex_rt=10.2),
+        cid_nl_owner("b", "bridge", apex_rt=10.1),
     )
     result = infer(owners)
     assert sorted(len(g.owner_ids) for g in result.groups) == [1, 2]
@@ -286,8 +286,8 @@ def test_competition_selects_one_without_losing_other_owners():
 
 def test_same_sample_singleton_swap_is_not_a_competing_membership():
     owners = (
-        _owner("a", "early", apex_rt=10),
-        _owner("a", "late", apex_rt=10.2),
+        cid_nl_owner("a", "early", apex_rt=10),
+        cid_nl_owner("a", "late", apex_rt=10.2),
     )
     result = infer(owners)
     assert sorted(len(g.owner_ids) for g in result.groups) == [1, 1]
@@ -312,7 +312,7 @@ def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
         ("s5", "early", 10.75),
         ("s5", "late", 11.25),
     )
-    owners = tuple(_owner(s, name, apex_rt=rt) for s, name, rt in specification)
+    owners = tuple(cid_nl_owner(s, name, apex_rt=rt) for s, name, rt in specification)
     if reverse:
         owners = tuple(
             replace(owner, owner_id=f"renamed-{i}")
@@ -331,9 +331,9 @@ def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
 
 def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
     owners = (
-        _owner("a", "early", apex_rt=10),
-        _owner("a", "late", apex_rt=10.4),
-        _owner("b", "bridge", apex_rt=10.05),
+        cid_nl_owner("a", "early", apex_rt=10),
+        cid_nl_owner("a", "late", apex_rt=10.4),
+        cid_nl_owner("b", "bridge", apex_rt=10.05),
     )
 
     def selected(items):
@@ -348,20 +348,22 @@ def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
 
 def test_mass_chain_cannot_escape_full_group_tolerance():
     owners = tuple(
-        _owner(str(i), str(i), precursor_mz=500 + 0.02 * i) for i in range(3)
+        cid_nl_owner(str(i), str(i), precursor_mz=500 + 0.02 * i) for i in range(3)
     )
     result = infer(owners)
     assert sorted(len(g.owner_ids) for g in result.groups) == [1, 2]
 
 
 def test_rt_chain_cannot_expand_the_declared_candidate_universe():
-    owners = tuple(_owner(str(i), str(i), apex_rt=10 + i * 1.6) for i in range(3))
+    owners = tuple(cid_nl_owner(str(i), str(i), apex_rt=10 + i * 1.6) for i in range(3))
     result = infer(owners)
     assert max(len(g.owner_ids) for g in result.groups) < 3
 
 
 def test_coherent_group_is_not_penalized_for_having_more_samples():
-    owners = tuple(_owner(str(i), str(i), apex_rt=10 + i * 0.08) for i in range(8))
+    owners = tuple(
+        cid_nl_owner(str(i), str(i), apex_rt=10 + i * 0.08) for i in range(8)
+    )
     assert len(infer(owners).groups) == 1
 
 
@@ -369,7 +371,7 @@ def test_complete_group_cost_prevents_blind_pair_chain_union():
     from xic_extractor.alignment.membership_selection import MembershipComparison
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 
-    owners = tuple(_owner(s, s) for s in "abc")
+    owners = tuple(cid_nl_owner(s, s) for s in "abc")
     comparison = MembershipComparison(
         owners,
         rules=CID_NL_GROUPING_RULES,
@@ -392,7 +394,7 @@ def test_group_trend_cost_preserves_ninety_second_boundary(span_min):
     from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 
     owners = tuple(
-        _owner(s, s, apex_rt=rt)
+        cid_nl_owner(s, s, apex_rt=rt)
         for s, rt in (("a", 10.0), ("b", 10.0), ("c", 10.0 + span_min))
     )
     comparison = MembershipComparison(

@@ -10,7 +10,10 @@ from dataclasses import asdict
 
 import pytest
 
-from tests.test_alignment_explanation import _owner_run, _summary_fixture
+from tests.alignment_explanation_fixtures import (
+    explanation_summary,
+    run_alignment_fixture,
+)
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
 )
@@ -37,7 +40,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     tmp_path, monkeypatch
 ) -> None:
     """A1: Run real pipeline fixtures, verify DB re-read and curve fidelity."""
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -113,7 +116,7 @@ def test_missing_bound_matrix_rejects_generation(
 
     with ExplanationReportWriter(fake_db) as writer:
         writer.finalize(
-            _summary_fixture(
+            explanation_summary(
                 {
                     "processing_attempt_id": "att-1",
                     "matrix_path": str(matrix_file),
@@ -132,7 +135,7 @@ def test_missing_bound_matrix_rejects_generation(
 
 def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) -> None:
     """A4: Metadata queries read 0 curves; generation reads only needed curves."""
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -163,7 +166,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
 
 def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     """The CLI callable embeds its resources; browser execution is separate."""
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -218,7 +221,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
 
 def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     """A7: Cancel, error, or failure does not leave partial/broken HTML."""
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -254,7 +257,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
 
     from xic_extractor.configuration.mass_recalibration import MassRecalibration
 
-    completed, writer, candidates, matrix, config = _owner_run(
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     import xic_extractor.applications.untargeted.application as application

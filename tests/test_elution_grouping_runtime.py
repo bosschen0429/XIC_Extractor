@@ -6,10 +6,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
-from tests.test_untargeted_cid_nl_real_data_runtime import (
-    _discovery_receipts,
-    _install_runtime_raws,
-)
+from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
@@ -109,13 +106,15 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         settings=settings,
         peak_config=config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:elution-pattern",
         signal_processing_profile=profile,
         physical_records_by_candidate=records,
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
@@ -332,13 +331,15 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         settings=settings,
         peak_config=config,
         candidates_by_sample=candidates,
-        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        discovery_receipts_by_sample=build_discovery_receipts(
+            tmp_path, paths, candidates
+        ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:hold-reuse-beside-searches",
         signal_processing_profile=profile,
         physical_records_by_candidate=records,
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
 
     monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)

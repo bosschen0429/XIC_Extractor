@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+from tests.inspector_fixtures import create_inspector_report, link_report_record
 from tests.raw_header_fakes import install_fake_raw_headers
-from tests.test_xic_inspector_api import _create_mock_db, _insert_link
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings, write_targets
@@ -434,13 +434,13 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 ):
     from shutil import copyfile
 
-    from tests.test_xic_workbench import _review_batch
+    from tests.inspector_fixtures import create_review_batch
     from xic_extractor.alignment_explanation.storage import (
         EXPLANATION_ARTIFACT_NAME,
     )
     from xic_workbench import server
 
-    original, _ = _review_batch(tmp_path)
+    original, _ = create_review_batch(tmp_path)
     batch = tmp_path / "completed-batch"
     alignment = batch / "alignment"
     alignment.mkdir(parents=True)
@@ -1197,10 +1197,10 @@ def test_istd_warning_distinguishes_confirmation_from_signal(analysis_feedback):
 def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     workbench, tmp_path
 ):
-    from tests.test_xic_workbench import _nearest_review_batch
+    from tests.inspector_fixtures import create_nearest_review_batch
 
     page = workbench
-    report, matrix = _nearest_review_batch(tmp_path)
+    report, matrix = create_nearest_review_batch(tmp_path)
     before = [path.read_bytes() for path in (report, matrix)]
     curve_requests = []
     page.on(
@@ -1262,10 +1262,10 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
 def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     workbench, tmp_path
 ):
-    from tests.test_xic_workbench import _nearest_review_batch
+    from tests.inspector_fixtures import create_nearest_review_batch
 
     page = workbench
-    report, _ = _nearest_review_batch(tmp_path)
+    report, _ = create_nearest_review_batch(tmp_path)
     _view(page, "review")
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
@@ -1315,7 +1315,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
     page = workbench
-    db, _, _ = _create_mock_db(tmp_path)
+    db, _, _ = create_inspector_report(tmp_path)
     # Keep the existing curve-bearing fixture, extending only review row scope
     # beyond the UI's 25-item page. No scientific values are asserted here.
     groups = {"row-01": "G1"}
@@ -1335,7 +1335,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                     "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
                     (kind, identity, json.dumps(payload)),
                 )
-                _insert_link(connection, ("C1", "S1", kind, identity))
+                link_report_record(connection, ("C1", "S1", kind, identity))
     _view(page, "review")
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
@@ -1389,13 +1389,13 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
 def test_review_download_survives_reload_and_keeps_original_product(
     workbench, tmp_path, targeted
 ):
+    from tests.inspector_fixtures import create_review_batch
     from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
-    from tests.test_xic_workbench import _review_batch
 
     if targeted:
         source = product = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
     else:
-        source, product = _review_batch(tmp_path)
+        source, product = create_review_batch(tmp_path)
     page = workbench
     _view(page, "review")
     page.locator("#source").fill(str(source))
@@ -1416,9 +1416,9 @@ def test_review_download_survives_reload_and_keeps_original_product(
 def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     workbench, tmp_path
 ):
-    from tests.test_xic_workbench import _review_batch
+    from tests.inspector_fixtures import create_review_batch
 
-    report, _ = _review_batch(tmp_path)
+    report, _ = create_review_batch(tmp_path)
     page = workbench
     _view(page, "review")
     page.locator("#source").fill(str(report))
@@ -1474,12 +1474,12 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 
     monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
     page = workbench
-    from tests.test_xic_workbench import _review_batch
+    from tests.inspector_fixtures import create_review_batch
 
     db = (
-        _create_mock_db(tmp_path, samples=[{"sample_key": "S1"}])[0]
+        create_inspector_report(tmp_path, samples=[{"sample_key": "S1"}])[0]
         if sample_count == 1
-        else _review_batch(tmp_path, sample_count=sample_count)[0]
+        else create_review_batch(tmp_path, sample_count=sample_count)[0]
     )
     _view(page, "review")
     page.locator("#source").fill(str(db))
@@ -2396,14 +2396,14 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
 
 def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
 
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
 
     page = workbench
     # Format decoding belongs to the upload owner tests. This case exercises
     # the browser's drop/preview/cancel/confirm wiring with one real workbook.
     path = tmp_path / "renamed.xlsx"
-    save_target_table(rows(), path)
+    save_target_table(targeted_rows(), path)
     batch = page.locator("#t-data_dir").input_value()
     for confirm in [False, True]:
         transfer = page.evaluate_handle(
@@ -2490,23 +2490,23 @@ def test_untargeted_istd_shared_upload_and_persistence(
 ):
     import csv
 
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
     from xic_extractor.configuration.targets import read_istd_targets
 
     page = workbench
     path = tmp_path / f"shared.{extension}"
     if extension == "xlsx":
-        save_target_table(rows(), path)
+        save_target_table(targeted_rows(), path)
     else:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=list(dict.fromkeys(k for r in rows() for k in r)),
+                fieldnames=list(dict.fromkeys(k for r in targeted_rows() for k in r)),
                 delimiter="\t",
             )
             writer.writeheader()
-            writer.writerows(rows())
+            writer.writerows(targeted_rows())
     original_targets = page.locator("#target-preview").inner_text()
     page.get_by_role("button", name="Untargeted", exact=True).click()
     expect(page.get_by_role("link", name="下載共用清單範例 XLSX")).to_be_visible()
@@ -2570,11 +2570,11 @@ def test_untargeted_istd_shared_upload_and_persistence(
 
 
 def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path):
-    from tests.test_targeted_method_files import rows
+    from tests.targeted_fixtures import targeted_rows
     from xic_extractor.configuration.targeted_method_files import save_target_table
 
     page = workbench
-    targets = rows()
+    targets = targeted_rows()
     targets.append({**targets[0], "label": "RNA standard", "method": "R"})
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
@@ -2919,10 +2919,10 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     tmp_path,
     mode,
 ):
-    from tests.test_xic_workbench import _nearest_review_batch
+    from tests.inspector_fixtures import create_nearest_review_batch
 
     page = workbench
-    report, matrix = _nearest_review_batch(tmp_path)
+    report, matrix = create_nearest_review_batch(tmp_path)
     original = [path.read_bytes() for path in (report, matrix)]
     _view(page, "review")
     page.locator("#source").fill(str(report))
