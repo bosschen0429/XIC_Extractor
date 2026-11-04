@@ -37,17 +37,6 @@ contract determines what must be investigated, not extra headings that every
 PR must contain. Expand technical detail only when it changes the reviewer's
 decision; keep construction history and internal checklists out of the body.
 
-## Review Focus
-
-Review the uncertainty left by the diff and its existing evidence. A local fix
-with a decisive regression oracle does not need a separate adversarial round.
-A further pass earns its cost by answering a concrete uncovered question:
-whether an expected value is independently justified, whether a scientific
-trade-off is accepted, or whether a changed owner/persistence/publication
-handoff preserves the consumer's result. Follow the affected production path
-and use a counterexample capable of changing that judgment. A different reviewer
-repeating the same assumptions is not independent evidence.
-
 Review comments are evidence, not scope authority. Fix a comment when it proves
 an Issue/public-contract violation or a reachable loss introduced by the diff.
 Otherwise route or reject it with the relevant locator.
