@@ -185,7 +185,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/product/",
     "docs/user/",
     "docs/agent/",
-    "docs/superpowers/schemas/",
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
     "tests/fixtures/",
@@ -245,7 +244,6 @@ DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
     "tools/",
     "docs/superpowers/file-management/docs-cleanup/referrers/",
 )
-DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
 PRIVATE_HISTORY_SIGNALS = [
     "implementation diary",
     "command log",
@@ -271,7 +269,6 @@ class DocPathClassification:
     is_validation_or_fixture: bool
     is_governance_artifact: bool
     is_legacy_history: bool
-    is_specs_index: bool
     is_superpowers_spec: bool
     is_docs_root_file: bool
     is_allowed_docs_root_file: bool
@@ -308,7 +305,6 @@ class DocClassification:
     is_validation_or_fixture: bool
     is_governance_artifact: bool
     is_legacy_history: bool
-    is_specs_index: bool
     is_superpowers_spec: bool
     is_docs_root_file: bool
     is_allowed_docs_root_file: bool
@@ -506,10 +502,7 @@ def validation_readme_reference_scope(
 def classify_doc_path(path: str) -> DocPathClassification:
     normalized = normalize_path_text(path).lstrip("./")
     normalized_lower = normalized.lower()
-    is_specs_index = normalized_lower == DOC_ROUTING_SCHEMAS_INDEX_PATH
-    is_superpowers_spec = (
-        normalized_lower.startswith(SUPERPOWERS_SPEC_DIR) and not is_specs_index
-    )
+    is_superpowers_spec = normalized_lower.startswith(SUPERPOWERS_SPEC_DIR)
     is_docs_root_file = is_docs_root_file_path(normalized)
     is_allowed_docs_root_file = normalized in DOC_ROOT_ALLOWLIST_FILES
     retired_tracked_dir = retired_tracked_dir_for_path(normalized)
@@ -534,7 +527,6 @@ def classify_doc_path(path: str) -> DocPathClassification:
         is_legacy_history=path_startswith_any(
             normalized, DOC_ROUTING_LEGACY_HISTORY_PREFIXES
         ),
-        is_specs_index=is_specs_index,
         is_superpowers_spec=is_superpowers_spec,
         is_docs_root_file=is_docs_root_file,
         is_allowed_docs_root_file=is_allowed_docs_root_file,
@@ -632,7 +624,6 @@ def classify_doc(path: str, text: str) -> DocClassification:
         is_validation_or_fixture=path_classification.is_validation_or_fixture,
         is_governance_artifact=path_classification.is_governance_artifact,
         is_legacy_history=path_classification.is_legacy_history,
-        is_specs_index=path_classification.is_specs_index,
         is_superpowers_spec=path_classification.is_superpowers_spec,
         is_docs_root_file=path_classification.is_docs_root_file,
         is_allowed_docs_root_file=path_classification.is_allowed_docs_root_file,

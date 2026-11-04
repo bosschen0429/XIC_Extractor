@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics.docs_policy import (
-    DOC_ROUTING_SCHEMAS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
@@ -455,8 +454,3 @@ def test_lifecycle_managed_not_overridden_by_metadata() -> None:
     )
 
     assert classification.is_lifecycle_managed
-
-
-def test_superpowers_schema_index_constant_matches_case_sensitive_path() -> None:
-    assert DOC_ROUTING_SCHEMAS_INDEX_PATH == "docs/superpowers/schemas/README.md"
-    assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()

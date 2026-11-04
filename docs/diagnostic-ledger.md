@@ -862,8 +862,7 @@ paired performance evidence, and the batching decision remains
 
 ### 2026-07-24 Acquisition Source And Reusable Artifact Capability
 
-Issue #124 is source-qualified in
-`docs/superpowers/validation/acquisition_source_capability_probe/README.md`.
+Issue #124 measured the acquisition source surface.
 
 Reusable conclusion:
 

@@ -19,9 +19,6 @@ CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
 PROJECT_ROOT = Path(__file__).parents[1]
-MAINTAINED_VALIDATION_HTML = (
-    "docs/superpowers/validation/evidence_overlay_interpretation_guide.html",
-)
 
 
 def _isolated_git_subprocess_env() -> dict[str, str]:
@@ -807,7 +804,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/schemas/README.md"
+    referrer_path = "docs/superpowers/fixtures/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -828,7 +825,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
         root / referrer_path,
         "\n".join(
             [
-                "# Schemas",
+                "# Fixtures",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
@@ -1363,7 +1360,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/schemas/README.md"
+    referrer_path = "docs/superpowers/fixtures/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -1384,7 +1381,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
         root / referrer_path,
         "\n".join(
             [
-                "# Schemas",
+                "# Fixtures",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",

@@ -13,10 +13,8 @@ evidence. It is not an implementation-planning or project-history archive.
 
 | Directory | Durable role |
 | --- | --- |
-| `schemas/` | Checker-consumed schema descriptions; runtime resources follow the consuming package under the [placement rules](../project-layout.md). |
 | `validation/` | Checker-readable validation packets, inventories, compact summaries, and retained evidence. |
 | `fixtures/` | Small test/checker fixtures and expected-output oracles. |
-| `file-management/` | Current machine-readable file-management contracts only. |
 | `handoffs/` | Ignored local continuation workspace; tracked historical handoffs are not retained. |
 
 ## Construction Work
@@ -28,16 +26,14 @@ work is in progress.
 
 Do not add tracked Markdown under `plans/`, `specs/`, or `closeouts/` for new
 construction work. A durable decision must be written into its canonical
-`docs/product/`, `docs/agent/`, architecture, evidence, schema, or validation
-owner. A temporary plan has no permanent repo role after that absorption.
+`docs/product/`, `docs/agent/`, architecture, evidence, or validation owner. A temporary plan has no permanent repo role after that absorption.
 
 ## Public Repo Boundary
 
 Keep only artifacts that remain useful without reconstructing a past branch:
 
 - current product, user, architecture, validation, and agent contracts;
-- machine-readable schemas, fixtures, and retained
-  regression evidence;
+- fixtures and retained regression evidence;
 - compact evidence summaries that a current checker or decision still consumes.
 
 Do not retain command chronology, branch sequencing, review diaries, dated

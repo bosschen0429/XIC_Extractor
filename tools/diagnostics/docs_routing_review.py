@@ -725,18 +725,8 @@ def _archived_retention_anchor(record: DocsRoutingCandidate) -> bool:
     return exit_rule.startswith("keep ")
 
 
-def _is_specs_index_path(path: str) -> bool:
-    return classify_doc_path(path).is_specs_index
-
-
-def _is_superpowers_spec_path(path: str) -> bool:
-    return classify_doc_path(path).is_superpowers_spec
-
-
 def _topic_role(classification: DocClassification, disposition: str) -> str:
     placement = classification.placement
-    if classification.is_specs_index:
-        return "repo_supporting_artifact"
     if disposition in {
         "formalize_then_obsidian",
         "invalid_repo_placement",

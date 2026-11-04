@@ -113,7 +113,6 @@ XIC_Extractor/
 | `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
 | `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
-| `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
 | `assets/` | Icons and screenshots |
@@ -210,7 +209,7 @@ does not prove the frozen artifact.
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。
 8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
    執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
-   schema 描述留在 `docs/superpowers/schemas/`。
+   schema 與該 checker 的 validation contract 放在一起。
    不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
 9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。
