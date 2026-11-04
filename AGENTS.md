@@ -7,7 +7,7 @@ rules own general operating defaults.
 
 | Task | Read |
 | --- | --- |
-| Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`parameter-settings.md`](docs/agent/parameter-settings.md) |
+| Python runner, worktree setup, RAW/DLL, validation scale, environment failure | [`local-execution.md`](docs/agent/local-execution.md) |
 | Product terminology | [`domain-glossary.md`](docs/product/domain-glossary.md) |
 | Product behavior or method evidence | [`docs/product/README.md`](docs/product/README.md) |
 | Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |

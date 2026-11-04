@@ -102,8 +102,7 @@ The Untargeted Matrix currently comes from CID-NL Discovery. Other Discovery
 methods, such as Delta Mass / Pt pattern, produce diagnostic candidates for
 review and do not yet publish a Matrix; a diagnostic candidate or review plot
 alone does not establish support for quantitative output. Exact rules are in the
-[product topic index](docs/product/README.md) and
-[LC-MS/MS evidence rules](docs/lc-msms-evidence-rules.md).
+[product topic index](docs/product/README.md).
 
 ## Get Help
 
@@ -122,4 +121,4 @@ analysis task you want to complete.
 Start with the [repository layout](docs/project-layout.md#repository-tree)
 and [architecture reading guide](docs/architecture-contract.md#reading-the-code).
 Coding agents start at [AGENTS.md](AGENTS.md); developer worktree setup and
-validation use [Local Execution](docs/agent/parameter-settings.md#runner-and-environment).
+validation use [Local Execution](docs/agent/local-execution.md#runner-and-environment).

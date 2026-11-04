@@ -181,7 +181,7 @@ Execution scheduling is automatic; actual workers are recorded in run metadata.
 Result review is described [above](#review-the-batch). Operator validation uses
 `.venv\Scripts\python.exe scripts\validation_harness.py --help` for suite
 selection, dry-run and baseline comparison. For developer environment and
-RAW-run constraints, see [Local Execution](../agent/parameter-settings.md).
+RAW-run constraints, see [Local Execution](../agent/local-execution.md).
 Regression checks do not establish method-wide scientific readiness.
 
 ## Troubleshooting

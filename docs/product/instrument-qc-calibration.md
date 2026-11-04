@@ -6,9 +6,15 @@ activation contract promotes a correction or gate.
 
 ## Contract
 
+- SDO/LEK are dedicated clean standards, expected only in their own samples.
+  MixSTDs are non-biological clean standards with ISTDs and external standards;
+  non-ISTD MixSTD targets are external standards, not biological anchors unless
+  spiked or validated.
 - Clean standards diagnose instrument/method behavior in a clean sample
   matrix. Clean standards alone cannot represent biological sample-matrix
-  effects.
+  effects. Calibration-derived production changes need current-code biological
+  transfer evidence, row-level coverage or exclusion policy, and
+  machine-readable GO/NO-GO blockers.
 - Biological QC ISTDs are the primary anchors for biological sample-matrix
   RT/response
   transfer evidence when they exist.
@@ -88,4 +94,3 @@ activation contract promotes a correction or gate.
 ## See Also
 
 - [Sample metadata and QC](sample-metadata-qc.md)
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)

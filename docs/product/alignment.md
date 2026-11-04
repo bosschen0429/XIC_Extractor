@@ -461,7 +461,7 @@ cost and risk. Explicit known-identity constraints remain separate from inferred
 Bootstrap seed support consumes Discovery evidence scores and the existing MS2
 seed count. Alignment does not turn peak SNR into identity or Matrix write
 authority. Measurement-quality facts belong to the
-[peak signal-quality owner](signal-processing-rationale.md#short-scale-signal-quality).
+[peak signal-quality owner](signal-processing.md#short-scale-signal-quality).
 The current `anchor_min_seed_events` in `CID_NL_ALIGNMENT_CONFIG` is 1: an MS1-only
 physical observation counts as one event rather than using the generic default
 of 2. Final membership does not inherit this seed-rating gate. MS1-only Target

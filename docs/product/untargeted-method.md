@@ -88,4 +88,3 @@ by itself:
 - [Backfill](backfill.md)
 - [Quant Matrix](quant-matrix.md)
 - [Decision Policy](decision-policy.md)
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)

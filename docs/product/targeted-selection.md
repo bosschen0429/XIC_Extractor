@@ -228,7 +228,7 @@ Analytes use `localized_total_envelope` measurements. Known ISTDs retain
 reference-first localization and `reference_localized_contour_peak` geometry. Their acquired support is assessed
 on the body, not a half-prominence apex core. Both Targeted roles preserve
 measurable poor-top contours; Discovery and bounded Backfill retain their
-separate qualification policies. [Signal processing](signal-processing-rationale.md)
+separate qualification policies. [Signal processing](signal-processing.md)
 owns the quantitative signal and units.
 
 For named Target identity, own CID-NL support requires a compatible recorded
@@ -571,8 +571,8 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 
 ## See Also
 
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Discovery](discovery.md#cid-nl-support-relations)
-- [Quantitation context](signal-processing-rationale.md#quantitation-context)
+- [Discovery](discovery.md#cid-nl-support-relations) | [Signal processing](signal-processing.md)
+- [Quantitation context](signal-processing.md#quantitation-context)
 - [Decision policy](decision-policy.md)
 Use the [workbench](workbench.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT

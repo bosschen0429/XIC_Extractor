@@ -2,9 +2,7 @@
 
 This page owns the canonical MS1 signal, physical peak qualification,
 boundaries and area, and the reasons for them. Targeted measurement policy on top
-of these physical answers is in [Targeted Selection](targeted-selection.md);
-cross-workflow evidence principles are in
-[LC-MS/MS evidence rules](../lc-msms-evidence-rules.md).
+of these physical answers is in [Targeted Selection](targeted-selection.md).
 
 ## Design Principle
 
@@ -366,6 +364,8 @@ windows are method parameters (see [Area changes](#area-changes)).
   height, area, scan support and shape share one canonical signal.
 - Physical questions do not cross profile-bound segment universes. A changed
   interpretation mints a new question; saved answers are never rewritten.
+- Canonical region audit projects the selected segment; it never proposes
+  merges or grants authority.
 - Morphology supplies boundary and shape evidence, not identity. RT, target
   window, MS2/NL opportunity, CID-NL evidence and cross-sample gates decide
   acceptance ([decision policy](decision-policy.md)).

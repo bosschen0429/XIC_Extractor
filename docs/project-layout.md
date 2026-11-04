@@ -53,7 +53,6 @@ XIC_Extractor/
 │   ├── product/               產品行為與科學規則；README.md 依主題找文件
 │   ├── agent/                 按任務讀的執行、驗證與交付規則
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
-│   ├── lc-msms-evidence-rules.md LC-MS/MS 證據判讀規則
 │   ├── diagnostic-ledger.md   昂貴診斷的結論與重跑條件
 │   └── project-layout.md      本檔
 ├── config/                    未追蹤的本機狀態與設定範本；公開 Targeted 範例在 xic_extractor/configuration/data/
@@ -68,7 +67,7 @@ XIC_Extractor/
 
 `xic_extractor/output/` 是輸出**程式**；根目錄 `output/` 是不追蹤的執行**產物**。
 `alignment/` 同時容納演算法、流程、I/O 與交付 adapter，不是純計算層；正式 owner 見
-[責任表](architecture-contract.md#ownership-map)。`docs/` 根目錄只放上面四份文件。
+[責任表](architecture-contract.md#ownership-map)。`docs/` 根目錄只放上面三份文件。
 
 ## 新檔案放哪裡
 
@@ -90,7 +89,6 @@ XIC_Extractor/
 | 內容 | 位置 |
 | --- | --- |
 | 產品行為與科學規則 | `docs/product/<topic>.md` |
-| LC-MS/MS 證據判讀 | `docs/lc-msms-evidence-rules.md` |
 | Readiness 與 expected-diff | `docs/agent/product-validation-contract.md` |
 | Writer authority | [`decision-policy.md`](product/decision-policy.md#writer-authority) |
 | 架構與依賴 | `docs/architecture-contract.md` |

@@ -1,8 +1,7 @@
 # Product Validation Contract
 
 This file owns readiness claims, expected differences and validation discipline.
-How evidence is interpreted is in
-[LC-MS/MS evidence rules](../lc-msms-evidence-rules.md).
+How evidence is interpreted is in [`docs/product/`](../product/README.md).
 
 Ordinary regression verification does not need this file. Read it when a change
 claims readiness, changes a scientific decision, or can change selected values,
@@ -60,6 +59,11 @@ evidence, or no rollback path stops the change.
   matrix-writing authority without an explicit activation/export contract.
 - Diagnostic TSVs, shadow reports, wrappers, and sidecars prove observability,
   not product usability.
+- Keep audit and production gates separate. Sparse, extrapolated or
+  low-coverage evidence stays review-only until a production policy exists.
+- When manual EIC/MS2 review contradicts a diagnostic label, find whether the
+  shared rule, the wording or the reviewed row is wrong. Fix the shared rule
+  with regression tests; do not encode one-off sample or target exceptions.
 - Use the documented runner for RAW execution and the method's actual
   acceptance check for its results. A diagnostic, method, or RAW label alone
   does not create another gate.

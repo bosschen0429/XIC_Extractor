@@ -118,6 +118,12 @@ Keep these facts on separate axes:
 - `missing` means no completed scientific evaluation; `absent` means a completed
   evaluation found no supported hypothesis.
 - `unassessable` is a reviewed evidence conclusion, not a pending-review status.
+- Missing DDA MS2/product/NL evidence is `not_observed` by default. It is
+  negative evidence only when acquisition opportunity, local sensitivity,
+  precursor selection or scan coverage, and comparable positive controls show it
+  should have been observed; a DDA trigger alone does not show that. A scan-free
+  peak never gains ranking priority over a reference peak whose MS2 lacks target
+  support.
 - Staleness is a relationship between an immutable artifact and the request or
   input now being evaluated; an artifact is never mutated to call it fresh.
 
@@ -203,6 +209,17 @@ Shared lane:
 - Sample metadata, QC roles, blanks, batches and Matrix annotations can be shown
   as metadata. They never change quantitative output or counted detection
   without a separate expected-diff gate.
+- Shared evidence concepts (traces, candidates, boundaries, regions, integration
+  audit, product/NL evidence) use common low-level models when that prevents
+  schema drift, but only once their semantics match.
+- Targeted outputs can serve as benchmarks or shared evidence, but target labels
+  and Targeted pass/fail logic never leak into Untargeted Matrix identity
+  without an approved contract. Targeted lessons feed Untargeted at the rule
+  level: a correction names the shared rule it changes, the cases it improves and
+  the guard cases showing it does not overfit one target or sample.
+- In Untargeted identity, RAW-overlay or raw-mode grouping is a hypothesis
+  source: it does not change labels by itself, nor mask a named wrong-peak
+  conflict or a complete positive evidence chain.
 
 ## One Word, One Meaning
 

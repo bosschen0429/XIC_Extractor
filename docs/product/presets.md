@@ -133,7 +133,7 @@ the runner keeps no second scientific preset. An explicit `--blank-library`
 binds the same library in Discovery and Alignment; its suitability must be
 established separately. ISTD input follows the normal Alignment targets CSV,
 and resolved inputs are shown before RAW work. See
-[local validation commands](../agent/parameter-settings.md#validation-scale).
+[local validation commands](../agent/local-execution.md#validation-scale).
 
 ## Verification
 
@@ -144,6 +144,6 @@ and resolved inputs are shown before RAW work. See
 
 ## See Also
 
-- [Parameter settings](../agent/parameter-settings.md)
-- [Discovery](discovery.md) | [Signal processing](signal-processing-rationale.md)
+- [Parameter settings](../agent/local-execution.md)
+- [Discovery](discovery.md) | [Signal processing](signal-processing.md)
 - [Diagnostic ledger](../diagnostic-ledger.md)

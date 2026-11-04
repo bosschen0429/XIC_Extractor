@@ -1,7 +1,8 @@
-"""CI guard: relative links in tracked Markdown resolve.
+"""CI guard: relative links in tracked Markdown and HTML resolve.
 
 Each relative link must point at a tracked file or directory, so a moved or
-deleted document cannot leave a dangling route.
+deleted document cannot leave a dangling route. Absolute paths (``/...``) are
+server routes and are not checked.
 
 Exit code 0 when clean, 1 with one line per problem otherwise.
 """
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _FENCE_RE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 _LINK_RE = re.compile(r"\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
+_HREF_RE = re.compile(r'\bhref="([^"]+)"')
 _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
@@ -32,6 +34,10 @@ def tracked_paths(root: Path) -> tuple[str, ...]:
     return tuple(path for path in output.decode("utf-8").split("\0") if path)
 
 
+def html_link_targets(text: str) -> tuple[str, ...]:
+    return tuple(_HREF_RE.findall(text))
+
+
 def markdown_link_targets(text: str) -> tuple[str, ...]:
     text = _INLINE_CODE_RE.sub("", _FENCE_RE.sub("", text))
     return tuple(match.group(1) for match in _LINK_RE.finditer(text))
@@ -40,9 +46,14 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
 def broken_links(
     source: str, text: str, tracked: set[str], directories: set[str]
 ) -> list[str]:
+    targets = (
+        html_link_targets(text)
+        if source.endswith(".html")
+        else markdown_link_targets(text)
+    )
     problems: list[str] = []
-    for target in markdown_link_targets(text):
-        if target.startswith("#") or _SCHEME_RE.match(target):
+    for target in targets:
+        if target.startswith(("#", "/")) or _SCHEME_RE.match(target):
             continue
         path = target.split("#", 1)[0].split("?", 1)[0]
         if not path:
@@ -63,7 +74,7 @@ def check(root: Path) -> list[str]:
     }
     problems: list[str] = []
     for path in paths:
-        if not path.endswith(".md"):
+        if not path.endswith((".md", ".html")):
             continue
         source = root / path
         if not source.is_file():

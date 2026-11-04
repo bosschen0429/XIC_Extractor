@@ -5,8 +5,7 @@
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
 are navigation labels, not current source-of-truth links or retention reasons.
 Current governing owners live
-in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
-`docs/lc-msms-evidence-rules.md`, and validation/control-plane artifacts.
+in the entry status text, `docs/product/` and `docs/architecture-contract.md`.
 
 ---
 
@@ -35,7 +34,7 @@ workflow owner rather than chaining similarly named commands.
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
 | Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
-| Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
+| Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping`, then `tools.diagnostics.grouping_experiment replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
 | Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](#duplicate_quantificationpy) |
 | Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
@@ -83,7 +82,7 @@ production, or summarize cost/parity for production decisions.
 One launch configuration binds the tissue subset or full cohort to the current
 Discovery and Alignment CLIs. `--preflight-only` prints resolved defaults
 without RAW acquisition. It does not determine scientific readiness.
-See [Local Execution](../../docs/agent/parameter-settings.md#validation-scale)
+See [Local Execution](../../docs/agent/local-execution.md#validation-scale)
 and [Presets](../../docs/product/presets.md#tissue-validation-defaults).
 
 Maintenance note: P2/P2b/P2c AsLS-vs-linear-edge gates were retired after the

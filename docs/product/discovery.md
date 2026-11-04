@@ -71,7 +71,7 @@ the nearest valleys of at least four times the local raw-noise MAD. A valley at
 or below half the smaller apex separates peaks; a shallow shoulder stays one
 envelope. This gate can reject short or rippled real signals. It is not
 chemical identity and does not replace cross-sample support. The
-[signal processing rationale](signal-processing-rationale.md) owns the
+[signal processing rationale](signal-processing.md) owns the
 method and its evidence.
 
 ### Precursor basis
@@ -191,6 +191,10 @@ lab has no mature DIA method.
   event prefers independently compatible precursor/loss evidence, then the
   smaller independent loss error, then product intensity. An inferred equality
   never supplies a zero-error advantage.
+- **Assignment.** Product ions, neutral losses, adducts and in-source fragments
+  are evidence only when co-eluting, boundary-aligned and assigned to the same
+  precursor or candidate. Shared class fragments or common neutral losses
+  support class confidence, not analyte-specific proof.
 - **Composite methods.** OR requires any configured loss; AND requires every
   configured loss on the same physical peak in the same sample. Different peaks
   or samples cannot pool evidence into AND support. One scan can support two
@@ -215,6 +219,31 @@ A subject with at least one evaluated result, every evaluated result `HOLD` or
 `composite_requirement_not_supported`). Each feature-backed candidate needs its
 own evaluated `HOLD` or `REJECT`; an unsearched slot cannot supply negative
 evidence.
+
+## RAW evidence is a query
+
+A RAW-backed claim answers one reproducible query, so it keeps its scan filter,
+trace type, mass window, RT window, extraction backend and processing basis.
+
+- The scan filter selects which scans contribute; it is not display metadata.
+- Mass-range XIC, TIC, base-peak, neutral-loss and product-ion views are
+  different evidence; compare traces only when both queries are known.
+- Name which view drove a decision: raw, smoothed, detection, boundary or
+  quantitation basis.
+- Peak detection is a strategy over the query result. Vendor integration (ICIS,
+  Avalon, Genesis) parity is not claimed without deliberately mapped settings.
+- Manual review and overrides are review-layer facts; they never rewrite
+  automatic rules.
+- Compare acquisition methods by their role: a high-resolution full-scan MS1 run
+  can be Discovery evidence while a lower-resolution DDA run supports found
+  bases. Absent DDA MS2 is not negative evidence unless the inclusion list shows
+  the candidate should have been queried.
+
+A zero in an extracted trace does not prove ion absence. Inspect the acquired
+centroid stream, adjacent scans and scan mode before changing the mass window or
+peak algorithm. Sources:
+[Xcalibur 4.6 Qual Browser User Guide](https://docs.thermofisher.com/v/u/Xcalibur-4.6-Qual-Browser-User-Guide)
+and [Thermo RawFileReader](https://github.com/thermofisherlsms/RawFileReader).
 
 ## Blank qualification
 
@@ -308,5 +337,4 @@ truth. Vendor RAW-to-mzML conversion is not an implicit product dependency.
 ## See Also
 
 - [Alignment](alignment.md) | [Backfill](backfill.md) | [Untargeted method](untargeted-method.md)
-- [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Presets](presets.md)

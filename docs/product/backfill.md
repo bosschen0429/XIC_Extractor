@@ -249,7 +249,7 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    Newly added cross-sample shape contradictions contribute soft cost and risk,
    while mass, identity, measurement and physical uniqueness remain constraints.
 7. Direct observations and Backfill observations use the shared
-   [physical-view evidence rule](../lc-msms-evidence-rules.md#physical-peak-view-equivalence).
+   [physical-view evidence rule](#physical-peak-view-equivalence).
    Different bounds or context-dependent apices do not establish
    different peaks. A Matrix row's Direct member keeps its existing value;
    another row cannot Backfill the same measured peak. Competing Backfills have
@@ -295,6 +295,31 @@ retain their own provenance and authority boundaries.
 Canonical final-cell and cell-decision identity encodings retain their existing
 empty repair fields at the serialization boundary. These fields do not represent
 an additional runtime repair path or change published identities.
+
+
+## Physical Peak View Equivalence
+
+`peak_detection.physical_peak_equivalence` compares views for Alignment claim
+resolution and reports `same`, `distinct` or `unresolved`; none is a chemical
+identification. Comparison never changes a selected integral or grants
+membership.
+
+- Views must share an acquisition source and overlapping extraction m/z
+  intervals.
+- Same-apex views are equivalent when their samples are identical in the common
+  selected interval. Small flank differences are allowed when both intervals
+  keep exactly the same raw peak maximum, the overlap has at least five matching
+  acquisition times, and the integral of the absolute signal difference is at
+  most 5% of the integral of the pointwise maximum in that overlap. This is a
+  comparison tolerance, not an error estimate; neither trace is rescaled.
+- Different apices need identical measured overlap around both apices and the
+  physical segment owner assigning both queries to one lobe. Resolved separate
+  lobes stay distinct. Nearby RT, overlapping bounds, similar area or high
+  correlation alone prove neither identity nor separation.
+- Alignment applies occupancy on top: existing Direct values remain; competing
+  eligible Backfills do not create duplicate members or cells. `unresolved`
+  does not establish a competing claim, since same-apex windows can contain
+  different ions. Archive rows do not occupy Matrix peaks.
 
 ## Surfaces
 
