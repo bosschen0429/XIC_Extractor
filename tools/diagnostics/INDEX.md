@@ -113,13 +113,6 @@ CLI reports and audits over alignment outputs (cells, families, owner
 decisions, RT calibration).
 
 
-### `targeted_gt_alignment_audit.py`
-
-**Purpose**: Audit untargeted alignment against targeted workbook GT.
-**Topic group**: `targeted_gt_alignment_audit.py` + `_io`, `_models`, `_analysis`, `_writers`, `_utils` (6 files)
-
----
-
 ### `alignment_health_packet.py`
 
 **Purpose**: Build a no-RAW alignment health packet from existing alignment
