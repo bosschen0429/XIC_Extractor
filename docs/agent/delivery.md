@@ -20,6 +20,23 @@ How work moves from an Issue to a merged PR.
 - Review comments are input, not scope. Fix a comment that shows a real defect
   introduced by the diff or a missed acceptance; otherwise answer it.
 
+## Acceptance Review
+
+Before declaring implementation complete, match every current acceptance
+criterion (the Issue plus latest user decisions) to an observed result or an
+explicit not-applicable rationale. Missing, failed or unrun required checks
+remain incomplete even when CI is green.
+
+During PR review, verify that the cited evidence applies to the reviewed code,
+inputs and real entry path, and that actual changes match the
+[Expected-Diff Contract](product-validation-contract.md#expected-diff-contract).
+Unit tests do not replace RAW, browser or other real-interface validation when
+the acceptance criterion requires it.
+
+Keep this reconciliation in the implementation report, PR Evidence or linked
+Issue. Reuse applicable retained evidence; do not rerun it merely because the
+final change only affects documentation.
+
 ## Before Push
 
 - Confirm the branch and what is staged, run the checks the diff affects, and
