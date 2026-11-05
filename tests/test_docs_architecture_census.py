@@ -607,6 +607,9 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "explanation-readers-stay-readonly",
         "main-chain-layers",
         "acquisition-stays-inner",
+        "extraction-backends-delegate",
+        "completed-evidence-readers-do-not-load-raw",
+        "alignment-domain-models-stay-pure",
         "sample-metadata-no-instrument-qc",
         "grouping-and-cell-consume-method-answers",
     }
@@ -614,6 +617,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "targeted-untargeted-independent",
         "main-chain-layers",
         "grouping-and-cell-consume-method-answers",
+        "alignment-domain-models-stay-pure",
     }
     assert all(
         contract["type"] == "forbidden" and contract["allow_indirect_imports"] is False
@@ -624,6 +628,10 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
     assert method["type"] == "forbidden"
     assert method["allow_indirect_imports"] is True
     assert not method.get("ignore_imports")
+    # Shared configuration lazily reads workbooks, so only direct imports count.
+    domain_models = contracts["alignment-domain-models-stay-pure"]
+    assert domain_models["type"] == "forbidden"
+    assert domain_models["allow_indirect_imports"] is True
     independence = contracts["targeted-untargeted-independent"]
     assert independence["type"] == "independence"
     assert independence["modules"] == [
