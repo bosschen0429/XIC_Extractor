@@ -508,7 +508,11 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         next(
             step for step in workflow["jobs"][job]["steps"] if step.get("name") == name
         )
-        for job, name in (("python-tests", "Test"), ("browser", "Browser test"))
+        for job, name in (
+            ("python-tests", "Test"),
+            ("browser", "Plan browser coverage"),
+            ("browser", "Browser test"),
+        )
     ]
     selection = (
         " and ".join(
@@ -522,7 +526,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     )
     plan_lines = [selection, *(files if files is not None else ("ALL",))]
     for step in steps:
-        for name, value in step["env"].items():
+        for name, value in step.get("env", {}).items():
             monkeypatch.setenv(name, str(value))
     calls_path = tmp_path / "calls.jsonl"
     monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
@@ -530,6 +534,8 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     monkeypatch.setenv("XIC_CI_TEST_FAILED_PHASE", failed_phase)
     monkeypatch.setenv("XIC_CI_TEST_FAILED_CODE", str(failed_code))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.txt"))
+    output_path = tmp_path / "outputs.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
     (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
     # Run the actual workflow control flow; only the expensive child commands
     # are replaced. PowerShell still owns ordering, argument quoting and exit.
@@ -557,6 +563,17 @@ function .\.venv\Scripts\python.exe {
 """
     results = []
     for index, step in enumerate(steps):
+        if step.get("name") == "Browser test":
+            assert step["if"] == "steps.browser-plan.outputs.required == 'true'"
+            outputs = dict(
+                line.split("=", 1)
+                for line in output_path.read_text("utf-8-sig").splitlines()
+            )
+            if outputs["required"] != "true":
+                assert "NOT RUN" in (tmp_path / "summary.txt").read_text("utf-8-sig")
+                continue
+            monkeypatch.setenv("XIC_BROWSER_MARKERS", outputs["marker_expression"])
+
         actual_script = script + step["run"].replace(
             "${{ github.event_name }}", event
         ).replace("${{ github.event.pull_request.base.sha }}", "base").replace(

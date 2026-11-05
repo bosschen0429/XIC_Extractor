@@ -186,16 +186,11 @@ jobs:
         shell: pwsh
         working-directory: repo-3.12-browser
         run: uv sync --locked --extra dev --group dev --python 3.12
-      - name: Browser test
+      - name: Plan browser coverage
+        id: browser-plan
         shell: pwsh
         working-directory: repo-3.12-browser
-        env:
-          XIC_PLAYWRIGHT_CHANNEL: ""
-          OPENBLAS_NUM_THREADS: "1"
-          XIC_BROWSER_DEADLINE_SCALE: "3"
         run: |
-          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
-          $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = "not current_repository_census and not serial_ci"
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
@@ -205,10 +200,26 @@ jobs:
             $markerExpression = $plan[0]
           }
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ($markerExpression -match 'not browser_e2e') {
-            "- browser_tests=not relevant to this change" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            exit 0
+          "marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $required = $markerExpression -notmatch 'not browser_e2e'
+          "required=$($required.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if (-not $required) {
+            "- browser_tests=NOT RUN (not relevant to this change)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            Write-Output '::notice title=Browser tests not run::Not relevant to this change; this is not a passing test run.'
           }
+      - name: Browser test
+        if: steps.browser-plan.outputs.required == 'true'
+        shell: pwsh
+        working-directory: repo-3.12-browser
+        env:
+          XIC_PLAYWRIGHT_CHANNEL: ""
+          OPENBLAS_NUM_THREADS: "1"
+          XIC_BROWSER_DEADLINE_SCALE: "3"
+          XIC_BROWSER_MARKERS: ${{ steps.browser-plan.outputs.marker_expression }}
+        run: |
+          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
+          $env:PATH = "$venvScripts;$env:PATH"
+          $markerExpression = $env:XIC_BROWSER_MARKERS
           $started = Get-Date
           & .\.venv\Scripts\python.exe -m playwright install chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

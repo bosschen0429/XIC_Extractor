@@ -3172,6 +3172,8 @@
     checklist("targeted");
     checklist("untargeted");
     document.body.classList.remove("booting");
+    document.body.inert = false;
+    document.body.removeAttribute("aria-busy");
     await act(reloadIstd);
     let tick = 0;
     let polling = false;
@@ -3195,6 +3197,8 @@
     }, 750);
   } catch (error) {
     document.body.classList.remove("booting");
+    document.body.inert = false;
+    document.body.removeAttribute("aria-busy");
     ui.toast(error.message, "error");
   }
 })();
