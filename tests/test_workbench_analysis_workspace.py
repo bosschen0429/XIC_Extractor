@@ -7,6 +7,52 @@ from tests.workbench_http import workbench_client
 from xic_workbench.workspace import ReviewWorkspace
 
 
+def test_untargeted_method_preview_does_not_replace_the_saved_batch(tmp_path):
+    from xic_extractor.presets import load_preset
+    from xic_workbench.methods import method_details, save_method
+    from xic_workbench.untargeted_config import read_untargeted_config
+
+    current = tmp_path / "current_discovery_method.toml"
+    draft = method_details("dna_dr")["draft"]
+    draft["name"] = "Saved method"
+    save_method(draft, current)
+    saved_bytes = current.read_bytes()
+    draft["name"] = "Edited method"
+    draft["overrides"]["ms2_precursor_tol_da"] = 0.37
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+        status, preview, _ = request("/api/method", {"draft": draft})
+        assert status == 200
+        assert preview["path"] == str(current)
+        assert preview["preset"]["name"] == "Edited method"
+        assert current.read_bytes() == saved_bytes
+        assert not (tmp_path / "discovery_gui.json").exists()
+
+        status, _, _ = request(
+            "/api/untargeted/save",
+            {"preset": preview["path"], "preset_snapshot": preview["draft"]},
+        )
+        assert status == 200
+        saved = load_preset(current)
+        assert saved.name == "Edited method"
+        assert saved.discovery_overrides["ms2_precursor_tol_da"] == 0.37
+        assert "preset_snapshot" not in read_untargeted_config(config_dir=tmp_path)
+        assert (
+            request("/api/method", {"preset": str(current)})[1]["preset"]["name"]
+            == "Edited method"
+        )
+
+
+def test_invalid_untargeted_method_preview_writes_nothing(tmp_path):
+    from xic_workbench.methods import method_details
+
+    draft = method_details("dna_dr")["draft"]
+    draft["tags"] = []
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+        assert request("/api/method", {"draft": draft})[0] == 400
+    assert not (tmp_path / "current_discovery_method.toml").exists()
+    assert not (tmp_path / "discovery_gui.json").exists()
+
+
 def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_path):
     config_dir = tmp_path / "config"
     workspace = ReviewWorkspace(config_dir=config_dir)

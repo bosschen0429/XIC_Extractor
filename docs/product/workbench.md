@@ -27,6 +27,13 @@ no run overwrites another.
 Matrix curation is optional and previews the existing owner's decisions before
 writing a separate matrix; it never overwrites the original matrix.
 
+Applying an edited method changes the browser's batch draft, not its saved
+method file. **保存批次設定** or starting analysis saves the draft; **另存方法檔**
+exports a reusable method without applying it. **開始新批次** clears RAW and
+acquisition-information inputs and the displayed samples, retaining the method,
+targets/internal standards and output location. Confirmed sample annotations
+remain bound to their RAW folder, not carried into another folder.
+
 ## Review does not change results
 
 - Review reads completed evidence. Opening a result, filtering, loading curves,

@@ -170,7 +170,7 @@
   function dirty(kind, value = true) {
     state.dirty[kind] = value;
     const note = $(`${kind === "targeted" ? "target" : "untargeted"}-dirty`);
-    note.textContent = value ? "有尚未儲存的變更；開始分析時會一併儲存。" : "";
+    note.textContent = value ? "批次設定尚未保存；按「保存批次設定」或開始分析才會留下變更。" : "";
     note.className = `dirty-note${value ? " unsaved" : ""}`;
     if (kind === "targeted") {
       clearTimeout(methodTimer);
@@ -570,9 +570,10 @@
       const input = $(`t-${spec.key}`);
       if (!input) continue;
       if (spec.kind === "checkbox") values[spec.key] = String(input.checked);
-      // A field left blank over a template path keeps saving the template.
-      else if (input.value || !isTemplatePath(String(values[spec.key] ?? "")))
-        values[spec.key] = input.value;
+      // The existing placeholder represents an unselected RAW folder, including
+      // after starting a new batch; never fall back to the previous real folder.
+      else values[spec.key] = input.value ||
+        (isTemplatePath(String(spec.default ?? "")) ? spec.default : "");
     }
     return values;
   }
@@ -1011,7 +1012,7 @@
   function untargetedValues() {
     const values = {
       ...state.config.untargeted,
-      preset: $("u-preset").value,
+      preset: state.method?.key || $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
     };
@@ -1031,8 +1032,10 @@
       const snapshotOverrides = values.preset_snapshot.overrides;
       for (const key of ["rt_min", "rt_max"]) {
         delete snapshotOverrides[key];
-        if (Object.hasOwn(values.overrides, key)) snapshotOverrides[key] = values.overrides[key];
       }
+      // Retain valid imported parameters that have no editor control. Only
+      // displayed controls override them; unchecked RT cropping removes bounds.
+      Object.assign(snapshotOverrides, values.overrides);
     }
     return values;
   }
@@ -1044,13 +1047,31 @@
     if (!quiet) done("Untargeted 批次設定已儲存。");
   }
   async function loadMethod(preset, overrides = {}) {
-    const data = await api("/api/method", { preset });
-    state.method = data;
-    if (![...$("u-preset").options].some((option) => option.value === preset)) {
-      const option = el("option", data.preset.name);
+    let data;
+    try {
+      data = await api("/api/method", { preset });
+    } catch (error) {
+      if (state.method) $("u-preset").value = state.method.key;
+      throw error;
+    }
+    await applyMethodDetails(data, preset, overrides);
+  }
+  async function applyMethodDetails(data, preset, overrides = {}) {
+    // An applied draft is the current choice, not a reusable method file.
+    // Switching away must not leave an option that reloads absent or old bytes.
+    const previousDraft = state.method?.path;
+    if (previousDraft && previousDraft !== preset) {
+      for (const item of [...$("u-preset").options])
+        if (item.value === previousDraft) item.remove();
+    }
+    state.method = { ...data, key: preset };
+    let option = [...$("u-preset").options].find((item) => item.value === preset);
+    if (!option) {
+      option = el("option", data.preset.name);
       option.value = preset;
       $("u-preset").append(option);
     }
+    if (data.path) option.textContent = data.preset.name;
     $("u-preset").value = preset;
     const tuning = $("method-tuning");
     tuning.replaceChildren();
@@ -1106,7 +1127,6 @@
   }
   function renderMethodEditor() {
     $("method-name").value = state.draft.name;
-    $("method-description").value = state.draft.description || "";
     $("method-combine").value = state.draft.combine_mode;
     $("method-error").hidden = true;
     const body = $("method-tags");
@@ -1162,27 +1182,25 @@
   }
   async function saveMethod(apply) {
     state.draft.name = $("method-name").value;
-    state.draft.description = $("method-description").value;
     state.draft.combine_mode = $("method-combine").value;
     const path = apply
       ? null
       : await requestPath(
-          "另存方法 preset",
+          "另存方法檔",
           `${state.config.config_dir}/my-method.toml`,
         );
     if (!apply && !path) return;
     try {
-      const result = await api("/api/method/save", {
-        draft: state.draft,
-        path,
-        apply,
-      });
       if (apply) {
-        await loadMethod(result.path);
+        const result = await api("/api/method", { draft: state.draft });
+        await applyMethodDetails(result, result.path);
         dirty("untargeted");
         $("method-editor").close();
-        done("方法已套用至本次執行。");
-      } else done(`方法已儲存：${result.path}。目前執行方法維持原設定。`);
+        done("方法已套用至批次設定；尚未保存。開始分析時也會一併保存。");
+      } else {
+        const result = await api("/api/method/save", { draft: state.draft, path });
+        done(`方法檔已另存：${result.path}。目前批次設定不變。`);
+      }
     } catch (error) {
       $("method-error").hidden = false;
       $("method-error").textContent = error.message;
@@ -1820,9 +1838,12 @@
     if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
     if (kind === "targeted" && !values.targets.length)
       throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
-    if (kind === "untargeted") await saveUntargeted(true);
     const action = kind === "samples" ? sampleAction(values.page) : null;
     state.analysis = await api("/api/analysis/start", { kind, values });
+    if (kind === "untargeted") {
+      state.config.untargeted = values;
+      dirty("untargeted", false);
+    }
     if (action) state.sampleJobAction = {jobId: state.analysis.job.job_id, action};
     if (kind === "targeted") {
       state.config.settings = { ...values.settings };
@@ -2639,6 +2660,7 @@
       $("target-result").hidden = true;
       dirty("targeted");
       focusField("t-data_dir");
+      done("已開始新批次：保留目標清單、方法與結果存放位置，請選擇新的 RAW 資料夾。");
     };
     $("targeted-data").addEventListener("input", (event) => {
       if (event.target.id === "t-data_dir" && event.target.value !== event.target.dataset.batchPath) {
@@ -2753,8 +2775,7 @@
       });
     $("method-edit").onclick = () => {
       if (!state.method) return;
-      state.draft = structuredClone(state.method.draft);
-      state.draft.overrides = untargetedValues().overrides;
+      state.draft = untargetedValues().preset_snapshot;
       renderMethodEditor();
       $("method-editor").showModal();
     };
@@ -2778,7 +2799,6 @@
     };
     $("method-add-tag").onclick = () => {
       state.draft.name = $("method-name").value;
-      state.draft.description = $("method-description").value;
       state.draft.combine_mode = $("method-combine").value;
       state.draft.tags.push({
         enabled: true,
@@ -2901,23 +2921,17 @@
           await copyIstd();
         await api("/api/open-local", { path: $("u-targets_csv").value });
       });
-    for (const id of ["untargeted-new", "untargeted-clear"])
-      $(id).onclick = () =>
-        act(async () => {
-          for (const key of ["raw_dir"])
-            $(`u-${key}`).value = "";
-          sampleRawDir = "";
-          $("sequence-source").value = "";
-          clearSamples("untargeted");
-          $("untargeted-result").hidden = true;
-          if (id === "untargeted-clear") {
-            $("u-targets_csv").value = "";
-            await reloadIstd();
-            await loadMethod("dna_dr");
-          }
-          dirty("untargeted");
-        });
     let sampleRawDir = $("u-raw_dir").value;
+    $("untargeted-new").onclick = () => {
+      $("u-raw_dir").value = "";
+      sampleRawDir = "";
+      $("sequence-source").value = "";
+      clearSamples("untargeted");
+      $("untargeted-result").hidden = true;
+      dirty("untargeted");
+      focusField("u-raw_dir");
+      done("已開始新批次：保留方法、內標與結果存放位置，請選擇新的 RAW 資料夾。");
+    };
     $("u-raw_dir").addEventListener("input", () => {
       const nextRawDir = $("u-raw_dir").value;
       if (nextRawDir === sampleRawDir) return;

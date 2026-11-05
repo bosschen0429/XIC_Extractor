@@ -422,18 +422,20 @@ class AnalysisWorkspace:
             write_untargeted_config(values, config_dir=self.config_dir)
             return {"message": "批次與方法設定已儲存。"}
         if action == "method":
-            from xic_workbench.methods import method_details
+            from xic_workbench.methods import method_details, preset_from_payload
 
+            if "draft" in values:
+                return {
+                    **method_details(preset_from_payload(values["draft"])),
+                    "path": str(
+                        (self.config_dir / "current_discovery_method.toml").resolve()
+                    ),
+                }
             return method_details(values["preset"])
         if action == "method/save":
             from xic_workbench.methods import save_method
 
-            destination = (
-                self.config_dir / "current_discovery_method.toml"
-                if values.get("apply")
-                else Path(values["path"])
-            )
-            return save_method(values["draft"], destination)
+            return save_method(values["draft"], Path(values["path"]))
         if action == "samples/save":
             from xic_workbench.samples import save_batch_samples
 

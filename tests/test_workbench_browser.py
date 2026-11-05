@@ -976,6 +976,211 @@ def test_add_ion_after_deleting_middle_position_keeps_names_unique(
     assert len({p["offset_mz"] for p in positions}) == 4
 
 
+def test_untargeted_method_apply_is_draft_until_saved(workbench, config_dir, tmp_path):
+    from xic_extractor.presets import load_preset
+
+    page = workbench
+    _view(page, "untargeted")
+    current = config_dir / "current_discovery_method.toml"
+    page.locator("#method-edit").click()
+    page.locator("#method-name").fill("Saved method")
+    page.locator("#method-apply").click()
+    expect(page.locator("#method-editor")).not_to_be_visible()
+    assert not current.exists(), "Applying a draft must not save it"
+    page.locator("#untargeted-save").click()
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    assert load_preset(current).name == "Saved method"
+    saved_bytes = current.read_bytes()
+
+    page.locator("#method-edit").click()
+    page.locator("#method-name").fill("Unsaved method")
+    reusable = tmp_path / "reusable.toml"
+    page.locator("#method-save-as").click()
+    page.locator("#path-dialog-value").fill(str(reusable))
+    with page.expect_response("**/api/method/save"):
+        page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    assert load_preset(reusable).name == "Unsaved method"
+    assert current.read_bytes() == saved_bytes
+    expect(page.locator("#u-preset option:checked")).to_have_text("Saved method")
+    page.locator("#method-apply").click()
+    expect(page.locator("#method-editor")).not_to_be_visible()
+    expect(page.locator("#u-preset option:checked")).to_have_text("Unsaved method")
+    assert current.read_bytes() == saved_bytes
+    page.reload()
+    expect(page.locator("#u-preset option:checked")).to_have_text("Saved method")
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+
+
+def test_switching_method_discards_the_unsaved_applied_choice(workbench):
+    page = workbench
+    _view(page, "untargeted")
+    page.locator("#method-edit").click()
+    page.locator("#method-name").fill("Discarded draft")
+    page.locator("#method-apply").click()
+    expect(page.locator("#method-editor")).not_to_be_visible()
+    with page.expect_response("**/api/method"):
+        page.locator("#u-preset").select_option("rna_ribose")
+    expect(page.locator("#u-preset")).to_have_value("rna_ribose")
+    expect(page.locator("#u-preset option", has_text="Discarded draft")).to_have_count(
+        0
+    )
+    page.locator("#untargeted-save").click()
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    page.reload()
+    expect(page.locator("#u-preset")).to_have_value("rna_ribose")
+    expect(page.locator("#method-preview")).to_contain_text("RNA_ribose")
+
+
+def test_untargeted_method_edit_keeps_hidden_values_and_start_saves_draft(
+    workbench, fake_runs, config_dir, tmp_path
+):
+    from xic_extractor.presets import apply_to_discovery, load_preset
+    from xic_workbench.methods import method_details, save_method
+
+    imported = tmp_path / "imported.toml"
+    draft = method_details("dna_dr")["draft"]
+    draft["description"] = "Imported recipe note"
+    draft["overrides"]["ms2_precursor_tol_da"] = 0.37
+    draft["overrides"]["rt_min"] = 1.5
+    save_method(draft, imported)
+    original = imported.read_bytes()
+    page = workbench
+    _view(page, "untargeted")
+    page.locator("#method-import").click()
+    page.locator("#path-dialog-value").fill(str(imported))
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    expect(page.locator("#u-preset")).to_have_value(str(imported))
+    expect(page.get_by_text("Imported recipe note", exact=True)).to_have_count(0)
+    page.get_by_text("調整本次方法參數", exact=True).click()
+    page.locator("#tune-nl_tolerance_ppm").fill("17")
+    page.locator("#u-rt-crop").uncheck()
+    page.locator("#method-edit").click()
+    expect(page.get_by_role("textbox", name="說明", exact=True)).to_have_count(0)
+    page.locator("#method-name").fill("Edited method")
+    page.locator("#method-apply").click()
+    expect(page.locator("#method-editor")).not_to_be_visible()
+    expect(page.get_by_text("Imported recipe note", exact=True)).to_have_count(0)
+    expect(page.locator("#tune-nl_tolerance_ppm")).to_have_value("17")
+    expect(page.locator("#u-rt-crop")).not_to_be_checked()
+
+    page.locator("#u-raw_dir").fill(str(tmp_path / "next-batch"))
+    fake_runs.release.set()
+    _start(page, "untargeted")
+    _wait_for_analysis_status(page, "已完成")
+    request = fake_runs.requests[-1]
+    settings = apply_to_discovery(request.preset_snapshot)
+    assert settings.ms2_precursor_tol_da == 0.37
+    assert settings.nl_tolerance_ppm == 17
+    assert settings.rt_min is None
+    assert imported.read_bytes() == original
+    current = config_dir / "current_discovery_method.toml"
+    assert load_preset(current).name == "Edited method"
+    assert load_preset(current).description == "Imported recipe note"
+    page.reload()
+    expect(page.locator("#u-preset option:checked")).to_have_text("Edited method")
+    expect(page.locator("#tune-nl_tolerance_ppm")).to_have_value("17")
+    expect(page.locator("#u-rt-crop")).not_to_be_checked()
+
+
+@pytest.mark.parametrize("kind", ["targeted", "untargeted"])
+def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch, kind
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    previous, following = tmp_path / "previous", tmp_path / "following"
+    for folder, group, excluded in (
+        (previous, "Previous group", True),
+        (following, "Following group", False),
+    ):
+        _placeholder_batch(folder, ("S1",))
+        save_batch_samples(
+            config_dir,
+            folder,
+            [
+                asdict(
+                    SampleMetadata(
+                        "S1",
+                        "S1",
+                        group=group,
+                        excluded=excluded,
+                        exclusion_reason="previous exclusion" if excluded else "",
+                    )
+                )
+            ],
+        )
+    _view(page, kind)
+    raw, sequence, output, prefix, new, save = (
+        (
+            "t-data_dir",
+            "t-injection_order_source",
+            "t-output_dir",
+            "t-",
+            "target-new",
+            "target-save",
+        )
+        if kind == "targeted"
+        else (
+            "u-raw_dir",
+            "sequence-source",
+            "u-output_dir",
+            "",
+            "untargeted-new",
+            "untargeted-save",
+        )
+    )
+    targets = page.locator("#target-preview").text_content()
+    if kind == "untargeted":
+        with page.expect_response("**/api/method"):
+            page.locator("#u-preset").select_option("rna_ribose")
+        page.get_by_text("調整本次方法參數", exact=True).click()
+        page.locator("#tune-nl_tolerance_ppm").fill("17")
+    istd = page.locator("#u-targets_csv").input_value()
+    page.locator(f"#{output}").fill(str(tmp_path / "deliveries"))
+    page.locator(f"#{raw}").fill(str(previous))
+    page.locator(f"#{sequence}").fill(
+        str(sample_annotations_path(config_dir, previous))
+    )
+    page.locator(f"#{prefix}samples-refresh").click()
+    expect(page.locator(f"#{prefix}samples-count")).to_have_text("1 個樣本")
+    expect(page.locator(f"#{prefix}role-summary")).to_contain_text("排除 1")
+    page.locator(f"#{new}").click()
+    expect(page.locator(f"#{raw}")).to_have_value("")
+    expect(page.locator(f"#{sequence}")).to_have_value("")
+    expect(page.locator(f"#{prefix}samples-count")).to_have_text("尚未讀取樣本")
+    page.locator(f"#{save}").click()
+    expect(
+        page.locator(f"#{'target' if kind == 'targeted' else kind}-dirty")
+    ).to_be_empty()
+    page.reload()
+    expect(page.locator(f"#{raw}")).to_have_value("")
+    expect(page.locator(f"#{sequence}")).to_have_value("")
+    expect(page.locator(f"#{output}")).to_have_value(str(tmp_path / "deliveries"))
+    if kind == "untargeted":
+        expect(page.locator("#u-preset")).to_have_value("rna_ribose")
+        expect(page.locator("#tune-nl_tolerance_ppm")).to_have_value("17")
+        expect(page.locator("#u-targets_csv")).to_have_value(istd)
+    else:
+        expect(page.locator("#target-preview")).to_have_text(targets)
+    page.locator(f"#{raw}").fill(str(following))
+    page.locator(f"#{prefix}samples-refresh").click()
+    expect(page.locator(f"#{prefix}samples-count")).to_have_text("1 個樣本")
+    fake_runs.release.set()
+    _start(page, kind)
+    _wait_for_analysis_status(page, "已完成")
+    if kind == "untargeted":
+        samples = fake_runs.requests[-1].sample_metadata
+        assert [(s.raw_stem, s.group, s.excluded) for s in samples] == [
+            ("S1", "Following group", False)
+        ]
+    else:
+        assert fake_runs.sample_annotations[-1] == sample_annotations_path(
+            config_dir, following
+        )
+    previous_rows = load_sample_metadata(sample_annotations_path(config_dir, previous))
+    assert previous_rows[0].excluded is True
+
+
 def test_target_list_save_and_load_preserves_batch(workbench):
     page = workbench
     original_batch = page.locator("#t-data_dir").input_value()
@@ -2613,7 +2818,8 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#istd-summary")).to_have_text(
         "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
     )
-    page.locator("#untargeted-clear").click()
+    page.locator("#u-targets_csv").fill("")
+    page.locator("#u-targets_csv").press("Tab")
     expect(page.locator("#istd-summary")).to_have_text("本次不使用內標清單。")
     expect(page.locator("#istd-preview")).to_be_empty()
     page.get_by_role("button", name="Targeted", exact=True).click()

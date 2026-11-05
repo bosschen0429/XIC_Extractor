@@ -21,17 +21,20 @@ Excel workbook, read from batch summary to the individual results needing attent
 6. The finished run opens its result. Each run writes a new
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
-**開始新批次** clears the RAW directory, injection-order source and displayed results while retaining
-targets, DLL, and the selected strategy. The environment section remains available
-for machine-path corrections. Settings edited after a run apply to the next
-analysis only; an opened result keeps the settings it ran with.
+**開始新批次** clears the RAW directory, injection-order source and displayed
+samples while retaining targets, DLL, the selected strategy and result location.
+Confirmed groups and exclusions stay with their original RAW folder. Settings
+edited after a run apply to the next analysis only; an opened result keeps the
+settings it ran with.
 
 The GUI and CLI use the same Targeted pipeline and `config/workspace.json` current
 work state. A fresh workspace has no selected targets. Download the method or
 target-table XLSX example from the target-list card and save a copy. Drag the file
 onto the import area or click **選擇檔案** (no pasted path). Workbench detects the
 file type and previews targets and ISTD pairs; **確認匯入並取代** applies the list,
-while **取消** leaves current work unchanged. **保存目前工作** writes local JSON; **另存清單** creates a reusable XLSX.
+while **取消** leaves current work unchanged. **保存批次設定** saves the current
+setup for reopening; starting analysis also saves it. **另存清單** creates a
+reusable XLSX, without changing the current batch.
 Reading settings never creates or imports old CSV working copies.
 
 Keep real machine paths in ignored runtime files. Do not commit local RAW, DLL,

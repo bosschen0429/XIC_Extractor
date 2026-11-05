@@ -94,7 +94,7 @@ def run_smoke(report_path: Path) -> int:
         destination = report_path.parent / "smoke-method.toml"
         request(
             "/api/method/save",
-            {"draft": method["draft"], "path": str(destination), "apply": False},
+            {"draft": method["draft"], "path": str(destination)},
         )
         expected = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
         actual = bind_cid_nl_recipe(load_preset(destination), "full")

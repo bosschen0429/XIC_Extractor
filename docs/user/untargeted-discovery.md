@@ -26,12 +26,21 @@ input to downstream analysis, not a normalized or batch-corrected result.
    standards are marked not applicable, not ND; changing the method refreshes
    this selection.
 6. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
-   or custom NL tags and their combination. Apply the method to the current run.
+   or custom NL tags and their combination. **套用至批次設定** updates the current
+   draft without overwriting its saved method. Imported parameters without a GUI
+   control are retained.
 7. Press **開始 Untargeted 分析**. The finished run opens its result; **返回設定**
    goes back to the setup of the next analysis.
 
-The GUI stores local Untargeted settings in `config/discovery_gui.json`. This is
-machine-local state and should stay untracked.
+**保存批次設定** saves the setup for reopening; starting analysis also saves it.
+**另存方法檔…** exports a reusable TOML without applying the edited method to the
+current batch. **開始新批次** clears RAW, acquisition information and the displayed
+samples, keeping the method, tuning, internal-standard list and result location.
+Confirmed groups and exclusions remain with their original RAW folder.
+
+The GUI stores local Untargeted settings in `config/discovery_gui.json` and its
+edited method in `config/current_discovery_method.toml`. These are machine-local
+state and should stay untracked.
 
 GUI and CLI default to each RAW file's full acquisition RT range, read from
 instrument metadata. Optional RT cropping accepts one or both finite,
@@ -39,7 +48,7 @@ non-negative bounds; an unspecified end remains automatic. Explicit cropping
 is limited to the acquired span. Target-list RT windows remain compound search
 windows, not acquisition bounds.
 
-## Modes
+## CLI Workflows
 
 | Mode | Use when | Input |
 | --- | --- | --- |
@@ -47,8 +56,8 @@ windows, not acquisition bounds.
 | `discovery_only` | You want to inspect candidates from one RAW file | Single RAW file |
 | `align_only` | Discovery was already run and you want to align existing outputs | RAW directory plus `discovery_batch_index.csv` |
 
-For directory-level discovery-only batches, use the CLI discovery workflow. In
-the GUI, use `full` when starting from a RAW directory.
+These partial workflows are CLI uses. The GUI always runs the complete analysis
+from a RAW directory, including Backfill; it has no mode selector.
 
 ## Inputs
 

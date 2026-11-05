@@ -66,8 +66,8 @@ def list_methods() -> list[dict[str, Any]]:
     return methods
 
 
-def method_details(preset: str | Path) -> dict[str, Any]:
-    loaded = load_preset(preset)
+def method_details(preset: str | Path | Preset) -> dict[str, Any]:
+    loaded = preset if isinstance(preset, Preset) else load_preset(preset)
     overrides: dict[str, object] = dict(loaded.discovery_overrides)
     _validate_gui_method(loaded, overrides)
     settings = apply_to_discovery(loaded, explicit_tuning_overrides=overrides or None)
