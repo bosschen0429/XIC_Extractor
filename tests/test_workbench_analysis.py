@@ -239,9 +239,8 @@ def test_artifact_urls_serve_only_registered_published_files(tmp_path):
         analysis.close()
 
 
-@pytest.mark.parametrize("mode", ["full", "align_only"])
 def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
-    tmp_path, monkeypatch, mode
+    tmp_path, monkeypatch
 ):
     from xic_workbench import untargeted
 
@@ -294,13 +293,10 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         jobs.start(
             "untargeted",
             {
-                "mode": mode,
                 "preset": "dna_dr",
                 "raw_dir": str(raw_dir),
-                "raw_file": "",
                 "dll_dir": str(dll_dir),
                 "output_dir": str(tmp_path / "output"),
-                "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": str(sequence),
                 "samples": None,
@@ -348,13 +344,10 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
         jobs.start(
             "untargeted",
             {
-                "mode": "discovery_only",
                 "preset": "dna_dr",
                 "raw_dir": "",
-                "raw_file": str(tmp_path / "one.raw"),
                 "dll_dir": str(tmp_path / "dll"),
                 "output_dir": str(tmp_path / "output"),
-                "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
                 "samples": None,
@@ -449,13 +442,10 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
         jobs.start(
             "untargeted",
             {
-                "mode": "full",
                 "preset": "dna_dr",
                 "raw_dir": str(raw_dir),
-                "raw_file": "",
                 "dll_dir": str(dll_dir),
                 "output_dir": str(tmp_path / "output"),
-                "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
                 "samples": samples,
@@ -513,13 +503,10 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
         jobs.start(
             "untargeted",
             {
-                "mode": "align_only",
                 "preset": "dna_dr",
                 "raw_dir": str(tmp_path / "raws"),
-                "raw_file": "",
                 "dll_dir": str(tmp_path / "dll"),
                 "output_dir": str(tmp_path / "output"),
-                "discovery_batch_index": str(tmp_path / "batch.csv"),
                 "targets_csv": "",
                 "sequence_source": "",
                 "samples": None,
@@ -594,9 +581,9 @@ def test_http_targeted_bootstrap_explains_active_source(tmp_path):
     with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
-        assert config["settings"]["parallel_workers"] == "0"
+        assert config["settings"]["parallel_workers"] == ""
         summary = config["targeted_method"]
-        assert summary["warnings"]
+        assert not any("parallel_workers" in w for w in summary["warnings"])
         assert config["settings_source"] == "workspace.json"
 
 
@@ -615,7 +602,7 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         config = workspace.bootstrap()
         assert config["settings"]["data_dir"] == "C:/launch-batch"
         assert config["settings"]["dll_dir"] == "C:/preferred-dll"
-        assert config["settings"]["parallel_workers"] == "0"
+        assert config["settings"]["parallel_workers"] == ""
         assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
         assert config["targeted_method"]["warnings"]
     finally:
@@ -719,13 +706,10 @@ def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
         jobs.start(
             "untargeted",
             {
-                "mode": "full",
                 "preset": "dna_dr",
                 "raw_dir": str(raw_dir),
-                "raw_file": "",
                 "dll_dir": str(tmp_path),
                 "output_dir": str(tmp_path / "output"),
-                "discovery_batch_index": "",
                 "targets_csv": "",
                 "sequence_source": "",
                 "samples": stale,

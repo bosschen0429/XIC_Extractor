@@ -187,9 +187,6 @@ class AnalysisJobs:
                 )
 
     def _prepare_untargeted(self, values: dict[str, Any]) -> Any:
-        from xic_extractor.configuration.execution_profile import (
-            resolve_execution_profile,
-        )
         from xic_workbench.samples import (
             apply_raw_chronology,
             read_batch_samples,
@@ -198,11 +195,7 @@ class AnalysisJobs:
         from xic_workbench.untargeted import UntargetedRun, parse_request
         from xic_workbench.untargeted_config import write_untargeted_config
 
-        if (
-            values.get("raw_dir")
-            and values.get("dll_dir")
-            and values.get("mode", "full") in {"full", "align_only"}
-        ):
+        if values.get("raw_dir") and values.get("dll_dir"):
             raw_dir = Path(values["raw_dir"])
             # A folder's confirmed metadata decides the run, whatever rows the
             # page still holds; without annotations the alignment owner resolves
@@ -222,16 +215,6 @@ class AnalysisJobs:
                 values["samples"] = apply_raw_chronology(
                     values["samples"], raw_dir=raw_dir, dll_dir=Path(values["dll_dir"])
                 )
-        if values.get("execution_profile") is None:
-            from xic_workbench.config_io import read_settings
-
-            profile = resolve_execution_profile(
-                read_settings(config_dir=self.config_dir)
-            )
-            values["execution_profile"] = {
-                "parallel_workers": profile.parallel_workers,
-                "alignment_workers": profile.alignment_workers,
-            }
         request = parse_request(values)
         from xic_workbench.config_io import write_dll_dir
 

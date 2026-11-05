@@ -146,13 +146,9 @@ def test_targeted_fields_are_batch_and_machine_only():
         "data_dir",
         "dll_dir",
         "injection_order_source",
-        "parallel_workers",
     }
     assert fields["data_dir"]["scope"] == "batch"
     assert fields["dll_dir"]["scope"] == "environment"
-    assert fields["parallel_workers"]["scope"] == "runtime"
-    assert fields["parallel_workers"]["default"] == ""
-    assert fields["parallel_workers"]["min"] == 1
 
 
 def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_summary(

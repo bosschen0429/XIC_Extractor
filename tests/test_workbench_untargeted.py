@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import math
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -36,9 +35,9 @@ def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
 
     restored = read_untargeted_config(config_dir=tmp_path)
 
-    assert restored["mode"] == "align_only"
-    assert restored["backfill_enabled"] is False
-    assert restored["alignment_enabled"] is True
+    assert "mode" not in restored
+    assert "backfill_enabled" not in restored
+    assert "alignment_enabled" not in restored
     # Roles now live in the folder's confirmed sample metadata.
     assert "custom_roles" not in restored
     assert "unknown" not in restored
@@ -293,7 +292,7 @@ def test_method_adapter_preserves_long_rt_windows(tmp_path) -> None:
     assert restored["effective_values"]["rt_min"] == 65.0
     assert restored["effective_values"]["rt_max"] == 120.0
     assert restored["preview"]["rt_range_mode"] == "crop"
-    request = _request_values(tmp_path, "full")
+    request = _request_values(tmp_path)
     request["preset"] = str(destination)
     request["overrides"] = {}
     parse_request(request)
@@ -347,26 +346,22 @@ def test_method_adapter_rejects_invalid_owner_rt_without_writing(
     assert not destination.exists()
 
 
-def _request_values(tmp_path, mode: str) -> dict:
+def _request_values(tmp_path) -> dict:
     return {
-        "mode": mode,
         "preset": "dna_dr",
         "overrides": {},
         "raw_dir": str(tmp_path / "raws"),
-        "raw_file": str(tmp_path / "one.raw"),
         "dll_dir": str(tmp_path / "dll"),
         "output_dir": str(tmp_path / "output"),
-        "discovery_batch_index": str(tmp_path / "batch.csv"),
         "targets_csv": "",
         "samples": None,
-        "execution_profile": {"parallel_workers": 2, "alignment_workers": 3},
     }
 
 
 def test_parse_request_preserves_sample_metadata_and_rejects_bad_method(
     tmp_path,
 ) -> None:
-    values = _request_values(tmp_path, "full")
+    values = _request_values(tmp_path)
     values["samples"] = [
         {
             "sample_name": "Alpha",
@@ -386,57 +381,20 @@ def test_parse_request_preserves_sample_metadata_and_rejects_bad_method(
 
     assert request.sample_metadata is not None
     assert request.sample_metadata[0].exclusion_reason == "operator exclusion"
-    assert request.execution_profile.alignment_workers == 3
+    assert request.execution_profile.alignment_workers == 4
 
     values["overrides"] = {"invented_knob": 1}
     with pytest.raises(ValueError, match="unknown CID-NL recipe override"):
         parse_request(values)
 
 
-def test_discovery_only_publishes_owner_outputs_and_progress(
+def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     tmp_path, monkeypatch
 ) -> None:
     import xic_workbench.untargeted as module
 
-    values = _request_values(tmp_path, "discovery_only")
-    raw = tmp_path / "one.raw"
-    raw.write_bytes(b"")
-    output = tmp_path / "output"
-    output.mkdir()
-    candidates = output / "discovery_candidates.csv"
-    review = output / "discovery_review.csv"
-    candidates.write_text("candidate_id\na\n", encoding="utf-8")
-    review.write_text("review_priority\nHIGH\nLOW\n", encoding="utf-8")
-    monkeypatch.setattr(
-        module,
-        "run_discovery",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            candidates_csv=candidates,
-            review_csv=review,
-        ),
-    )
-    progress = []
-
-    summary = UntargetedRun(
-        parse_request(values),
-        progress=lambda current, total, label: progress.append((current, total, label)),
-        should_cancel=lambda: False,
-    ).execute()
-
-    assert summary["mode"] == "discovery_only"
-    assert summary["candidate_counts"] == {"HIGH": 1, "MEDIUM": 0, "LOW": 1, "total": 2}
-    assert summary["published_paths"] == [str(candidates), str(review)]
-    assert progress == [(0, 1, "Discovery..."), (1, 1, "完成")]
-
-
-@pytest.mark.parametrize("backfill_enabled", (True, False))
-def test_alignment_mode_emits_review_evidence_without_full_audit(
-    tmp_path, monkeypatch, backfill_enabled
-) -> None:
-    import xic_workbench.untargeted as module
-
-    values = _request_values(tmp_path, "align_only")
-    values["backfill_enabled"] = backfill_enabled
+    values = _request_values(tmp_path)
+    values["preset_snapshot"] = method_details("dna_dr")["draft"]
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     (tmp_path / "dll").mkdir()
@@ -456,6 +414,18 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
 
     evidence, _fixture_matrix = create_review_batch(output)
     locator = SimpleNamespace(report_path=evidence)
+    raw = raw_dir / "A.raw"
+    raw.touch()
+    monkeypatch.setattr(
+        module, "read_analysis_set", lambda *_args: SimpleNamespace(raw_paths=(raw,))
+    )
+    monkeypatch.setattr(
+        module,
+        "run_discovery_batch",
+        lambda *_args, **_kwargs: DiscoveryBatchOutputs(
+            batch_index_csv=batch, per_sample=()
+        ),
+    )
     captured = {}
 
     def align(request, context=None):
@@ -472,13 +442,14 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     ).execute()
 
     assert captured["request"].publication.emit_alignment_explanation is True
-    assert captured["request"].alignment_config.backfill_enabled is backfill_enabled
+    assert captured["request"].alignment_config.backfill_enabled is True
     assert captured["request"].publication.explanation_full_audit is False
     assert summary["overview"]["matrix_count"] == 3
     assert summary["overview"]["complete_count"] == 1
     assert summary["overview"]["unresolved_count"] == 1
     assert summary["evidence"] is locator
     assert summary["published_paths"] == [
+        str(batch),
         str(review),
         str(matrix),
         str(evidence),
@@ -490,7 +461,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
 ) -> None:
     import xic_workbench.untargeted as module
 
-    values = _request_values(tmp_path, "full")
+    values = _request_values(tmp_path)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     raw = raw_dir / "A.raw"
@@ -525,7 +496,6 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
         progress=lambda *args: progress.append(args),
         should_cancel=lambda: False,
     ).execute()
-    assert summary["mode"] == "full"
     assert summary["published_paths"] == [str(index)]
     assert progress[-1] == (2, 2, "完成")
 
@@ -546,7 +516,7 @@ def test_saved_custom_method_snapshot_preserves_full_effective_values(tmp_path):
     # A full owner-written TOML includes fields without editor controls.
     loaded = method_details(path)["draft"]
     loaded["overrides"]["ms2_precursor_tol_da"] = 0.37
-    values = _request_values(tmp_path, "full")
+    values = _request_values(tmp_path)
     values["preset_snapshot"] = loaded
     request = parse_request(values)
     assert apply_to_discovery(request.preset_snapshot).ms2_precursor_tol_da == 0.37
@@ -598,9 +568,8 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
     save_method(draft, preset_path)
     targets_path = tmp_path / "targets.csv"
     targets_path.write_text("label,mz\nISTD,100\n")
-    values = _request_values(tmp_path, "discovery_only")
+    values = _request_values(tmp_path)
     values.update(preset=str(preset_path), targets_csv=str(targets_path))
-    values["execution_profile"] = {"parallel_workers": 3, "alignment_workers": 4}
     submitted = []
     jobs = AnalysisJobs(config_dir)
     monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
@@ -609,10 +578,16 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         runner = jobs._runner
         draft["overrides"]["nl_tolerance_ppm"] = 25
         save_method(draft, preset_path)
-        values["execution_profile"]["parallel_workers"] = 7
         targets_path.write_text("label,mz\nCHANGED,200\n")
         assert runner._build_settings().nl_tolerance_ppm == 12.5
-        assert runner.request.execution_profile.parallel_workers == 3
+        from xic_extractor.configuration.execution_profile import (
+            default_parallel_workers,
+        )
+
+        assert (
+            runner.request.execution_profile.parallel_workers
+            == default_parallel_workers()
+        )
         assert runner.request.execution_profile.alignment_workers == 4
         assert runner.request.targets_csv.read_text() == "label,mz\nISTD,100\n"
         # Exercise the dispatched runner; only RAW computation is substituted.
@@ -646,7 +621,7 @@ def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
     config_dir.mkdir()
     write_settings({"dll_dir": "original"}, config_dir=config_dir)
     original = (config_dir / "workspace.json").read_bytes()
-    values = _request_values(tmp_path, "discovery_only")
+    values = _request_values(tmp_path)
     values["targets_csv"] = str(tmp_path / "missing.csv")
     submitted = []
     jobs = AnalysisJobs(config_dir)
@@ -661,105 +636,6 @@ def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
         jobs.close()
 
 
-@pytest.mark.parametrize("backfill_enabled", (True, False))
-def test_alignment_off_runs_actual_sample_local_batch_without_matrix(
-    tmp_path, monkeypatch, backfill_enabled
-):
-    import xic_workbench.untargeted as module
-    from tests.test_discovery_pipeline import _FakeRawHandle, _peak_kwargs, _scan_event
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
-
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    paths = tuple(raw_dir / f"{stem}.raw" for stem in ("A", "B"))
-    for path in paths:
-        path.write_bytes(path.stem.encode())
-    install_raw_sample_headers(
-        monkeypatch,
-        lambda path: SimpleNamespace(
-            sample_name=path.stem,
-            sample_type="Unknown",
-            comment="",
-            instrument_method="",
-        ),
-        lambda path: 0 if path.stem == "A" else 10,
-    )
-    opened = []
-    from xic_extractor.raw_reader import open_raw as open_header
-
-    def open_raw(path, dll_dir, *, expected_acquisition_source=None, **_kwargs):
-        if expected_acquisition_source is None:
-            return open_header(path, dll_dir=dll_dir)
-        raw = _FakeRawHandle(
-            [
-                _scan_event(
-                    scan_number=100,
-                    rt=8.0,
-                    precursor_mz=500.0,
-                    masses=[383.9526],
-                    intensities=[9000.0],
-                )
-            ],
-            **_peak_kwargs(8.0, 1000.0 if path.stem == "A" else 2300.0),
-        )
-        raw.acquisition_source = expected_acquisition_source
-        opened.append(raw)
-        return raw
-
-    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
-    monkeypatch.setattr(
-        module,
-        "run_untargeted_application",
-        lambda *_a, **_k: pytest.fail("disabled Alignment ran"),
-    )
-    values = _request_values(tmp_path, "full")
-    values.update(
-        alignment_enabled=False,
-        backfill_enabled=backfill_enabled,
-        targets_csv=str(tmp_path / "unused-missing-targets.xlsx"),
-        execution_profile={"parallel_workers": 1, "alignment_workers": 1},
-    )
-    summary = UntargetedRun(
-        parse_request(values), progress=lambda *_a: None, should_cancel=lambda: False
-    ).execute()
-    assert summary["modules"] == {"alignment": "not_run", "backfill": "not_run"}
-    assert summary["matrix_tsv"] is None and summary["alignment_outputs"] == {}
-    output = tmp_path / "output"
-    assert not list(output.glob("alignment*"))
-    with (output / "discovery_batch_index.csv").open(
-        encoding="utf-8-sig", newline=""
-    ) as handle:
-        rows = list(csv.DictReader(handle))
-    assert len(rows) == 2
-    for path in output.rglob("discovery_candidates.csv"):
-        (candidate,) = read_discovery_candidates_csv(path)
-        expected_height = {"A": 1000.0, "B": 2300.0}[candidate.sample_stem]
-        assert candidate.ms1_area == pytest.approx(
-            expected_height
-            * 0.1
-            * math.sqrt(2.0 * math.pi)
-            * 60.0
-            * math.erf(math.sqrt(math.log(10))),
-            rel=0.01,
-        )
-        assert candidate.matched_tag_names == ("DNA_dR",)
-    assert len(list(output.rglob("discovery_candidates.csv"))) == 2
-    assert opened and all(raw.closed for raw in opened)
-
-
-def test_invalid_module_switches_fail_before_execution(tmp_path):
-    values = _request_values(tmp_path, "align_only")
-    values["alignment_enabled"] = False
-    with pytest.raises(ValueError, match="align_only requires"):
-        parse_request(values)
-    values["alignment_enabled"] = True
-    values["backfill_enabled"] = "false"
-    with pytest.raises(TypeError, match="backfill_enabled must be a boolean"):
-        parse_request(values)
-
-
 @pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
 def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
     from dataclasses import replace
@@ -771,7 +647,6 @@ def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
 
     request = parse_request(
         dict(
-            mode="discovery_only",
             raw_dir=str(tmp_path),
             dll_dir=str(tmp_path),
             output_dir=str(tmp_path / "out"),

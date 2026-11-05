@@ -43,8 +43,6 @@
   };
   const pathFields = [
     ["raw_dir", "RAW 資料夾", "folder"],
-    ["raw_file", "單一 RAW", "raw"],
-    ["discovery_batch_index", "Discovery batch index", "csv"],
     ["output_dir", "輸出資料夾", "folder"],
     ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
   ];
@@ -85,7 +83,7 @@
       rawDir: "u-raw_dir",
       dll: "u-dll_dir",
       output: "u-output_dir",
-      step: 4,
+      step: 3,
     },
   };
   const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
@@ -158,7 +156,6 @@
       .querySelectorAll("[data-analysis-idle]")
       .forEach((node) => (node.disabled = isBusy() ||
         (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
-    moduleFields();
     document.dispatchEvent(
       new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
     );
@@ -407,19 +404,7 @@
       );
       items.push(...sampleItems("targeted"));
     } else {
-      const mode = currentMode();
-      if (mode === "discovery_only")
-        items.push(pathItem("單一 RAW", "u-raw_file", "尚未選擇 RAW 檔"));
-      if (mode === "align_only")
-        items.push(
-          pathItem(
-            "Discovery batch index",
-            "u-discovery_batch_index",
-            "尚未選擇既有 Discovery 結果",
-          ),
-        );
-      if (mode !== "discovery_only")
-        items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
       items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
       items.push(readerItem("u-dll_dir"));
       const preset = $("u-preset");
@@ -431,7 +416,7 @@
           "u-preset",
         ),
       );
-      if (mode !== "discovery_only") items.push(...sampleItems("untargeted"));
+      items.push(...sampleItems("untargeted"));
     }
     const list = $(`${kind === "targeted" ? "target" : "untargeted"}-checklist`);
     list.replaceChildren(
@@ -981,47 +966,9 @@
   }
 
   // Untargeted
-  // "Batch Discovery" is the full run without its Alignment stage; the
-  // saved run state keeps that as mode "full" with Alignment disabled.
-  function currentChoice() {
-    return (
-      document.querySelector('input[name="u-mode"]:checked')?.value || "full"
-    );
-  }
-  function currentMode() {
-    const choice = currentChoice();
-    return choice === "discovery_batch" ? "full" : choice;
-  }
-  function alignmentRuns() {
-    return ["full", "align_only"].includes(currentChoice());
-  }
-  function setMode(value) {
-    const input = document.querySelector(
-      `input[name="u-mode"][value="${value}"]`,
-    );
-    (input || document.querySelector('input[name="u-mode"]')).checked = true;
-  }
-  function moduleFields() {
-    const alignment = alignmentRuns();
-    $("u-backfill-enabled").parentElement.hidden = !alignment;
-    $("u-backfill-enabled").disabled = isBusy() || !alignment;
-    $("istd-path-field").parentElement.hidden = !alignment;
-  }
-  function modeFields() {
-    const mode = currentMode();
-    moduleFields();
-    $("u-raw_dir-row").hidden = mode === "discovery_only";
-    $("u-raw_file-row").hidden = mode !== "discovery_only";
-    $("u-discovery_batch_index-row").hidden = mode !== "align_only";
-    $("sample-section").hidden = mode === "discovery_only";
-    checklist("untargeted");
-  }
   function untargetedValues() {
     const values = {
       ...state.config.untargeted,
-      mode: currentMode(),
-      alignment_enabled: alignmentRuns(),
-      backfill_enabled: $("u-backfill-enabled").checked,
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
@@ -2056,14 +2003,7 @@
             "download",
           ),
         );
-      } else
-        container.append(
-          el(
-            "p",
-            "Discovery-only 會輸出候選與檢閱表；跨樣本檢閱需完成 Alignment。",
-            "subtle",
-          ),
-        );
+      }
       if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
         actions.prepend(
           button(
@@ -2675,7 +2615,6 @@
       $("target-import-preview").close();
       $("target-import-status").textContent = `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
     };
-    $("u-mode").addEventListener("change", modeFields);
     $("u-preset").onchange = () =>
       act(async () => {
         await loadMethod($("u-preset").value);
@@ -2831,7 +2770,7 @@
     for (const id of ["untargeted-new", "untargeted-clear"])
       $(id).onclick = () =>
         act(async () => {
-          for (const key of ["raw_dir", "raw_file", "discovery_batch_index"])
+          for (const key of ["raw_dir"])
             $(`u-${key}`).value = "";
           sampleRawDir = "";
           $("u-output_dir").value = "";
@@ -3026,13 +2965,7 @@
       "targets",
       state.config.untargeted.targets_csv,
     ).placeholder = "留空不使用 · 可拖曳 XLSX、CSV、TSV 到這裡";
-    setMode(
-      state.config.untargeted.mode === "full" &&
-        state.config.untargeted.alignment_enabled === false
-        ? "discovery_batch"
-        : state.config.untargeted.mode,
-    );
-    $("u-backfill-enabled").checked = state.config.untargeted.backfill_enabled !== false;
+
     $("sequence-source").value = state.config.untargeted.sequence_source || "";
     for (const method of state.config.methods) {
       const option = el("option", method.display_name);
@@ -3058,7 +2991,6 @@
     targetCount();
     renderRoleSummary("targeted");
     renderRoleSummary("untargeted");
-    modeFields();
     state.analysis = state.config.analysis;
     const loadedSamples = state.analysis.results.samples;
     const loadedPage = loadedSamples?.page || "untargeted";

@@ -497,31 +497,42 @@ def test_navigation_and_theme_survive_reload(workbench):
     expect(page.locator("#workspace-untargeted")).to_be_visible()
 
 
-def test_untargeted_module_switches_persist_and_follow_mode(workbench):
+def test_untargeted_only_submits_complete_analysis(workbench, config_dir):
     page = workbench
-    _view(page, "untargeted")
-    batch = page.locator("input[name=u-mode][value=discovery_batch]")
-    backfill = page.locator("#u-backfill-enabled")
-    expect(page.locator("input[name=u-mode][value=full]")).to_be_checked()
-    expect(backfill).to_be_checked()
-    backfill.uncheck()
-    batch.check()
-    expect(backfill).to_be_hidden()
-    with page.expect_response(
-        lambda response: response.url.endswith("/api/untargeted/save")
-    ):
-        page.locator("#untargeted-save").click()
+    draft = config_dir / "discovery_gui.json"
+    draft.write_text(
+        json.dumps(
+            {
+                "mode": "align_only",
+                "alignment_enabled": False,
+                "backfill_enabled": False,
+                "discovery_batch_index": "missing.csv",
+            }
+        )
+    )
     page.reload()
-    # Batch Discovery persists as a full run without Alignment.
-    expect(batch).to_be_checked()
-    expect(backfill).to_be_hidden()
-    page.locator("input[name=u-mode][value=align_only]").check()
-    expect(backfill).to_be_enabled()
-    expect(backfill).not_to_be_checked()
-    page.locator("input[name=u-mode][value=discovery_only]").check()
-    expect(backfill).to_be_hidden()
-    page.locator("input[name=u-mode][value=full]").check()
-    expect(backfill).to_be_enabled()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    _view(page, "untargeted")
+    for selector in (
+        "input[name=u-mode]",
+        "#u-backfill-enabled",
+        "#u-discovery_batch_index",
+        "#u-raw_file",
+    ):
+        expect(page.locator(selector)).to_have_count(0)
+    with page.expect_request("**/api/untargeted/save") as sent:
+        page.locator("#untargeted-save").click()
+    retired = {
+        "mode",
+        "backfill_enabled",
+        "alignment_enabled",
+        "raw_file",
+        "discovery_batch_index",
+        "execution_profile",
+    }
+    assert not retired & sent.value.post_data_json.keys()
+    expect(page.locator("#toasts")).to_contain_text("已儲存")
+    assert not retired & json.loads(draft.read_text()).keys()
 
 
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
@@ -1050,28 +1061,13 @@ def test_empty_targeted_run_explains_where_to_add_a_target(workbench):
     assert requests == []
 
 
-@pytest.mark.parametrize(
-    ("mode", "input_label"),
-    [
-        ("full", "RAW 資料夾"),
-        ("discovery_only", "單一 RAW"),
-        ("align_only", "Discovery batch index"),
-    ],
-)
-def test_readiness_lists_mode_inputs_without_blocking_submit(
-    workbench, mode, input_label
-):
+def test_readiness_lists_analysis_inputs_without_blocking_submit(workbench):
     page = workbench
     _view(page, "untargeted")
-    page.locator(f"input[name=u-mode][value={mode}]").check()
     checklist = page.locator("#untargeted-checklist")
-    expect(checklist.locator("li.todo").filter(has_text=input_label)).to_have_count(1)
-    expect(checklist).to_contain_text("RawFileReader DLL")
+    expect(checklist).to_contain_text("RAW 資料夾")
+    expect(checklist).to_contain_text("RAW 讀取環境")
     expect(checklist).to_contain_text("輸出資料夾")
-    for label in {"RAW 資料夾", "單一 RAW", "Discovery batch index"} - (
-        {input_label, "RAW 資料夾"} if mode == "align_only" else {input_label}
-    ):
-        expect(checklist).not_to_contain_text(label)
     expect(page.locator("button[form=untargeted-form][type=submit]")).to_be_enabled()
 
 
@@ -1125,9 +1121,7 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
     page = workbench
     if kind == "untargeted":
         _view(page, kind)
-        page.locator("input[name=u-mode][value=discovery_only]").check()
-        page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
-        page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+        page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))
         page.locator("#u-output_dir").fill(str(tmp_path / "results"))
     _start(page, kind)
     expect(page.locator("#analysis-job-message")).to_contain_text(
@@ -3557,8 +3551,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
         "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
     }
     _view(page, "untargeted")
-    page.locator("input[name=u-mode][value=discovery_only]").check()
-    page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
+    page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))
     page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#u-output_dir").fill(str(run_output))
     _start(page, "untargeted")
