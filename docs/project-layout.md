@@ -69,6 +69,12 @@ XIC_Extractor/
 
 ## 新檔案放哪裡
 
+Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與工具依慣例讀取的
+設定可留在 root；工具實作依下列責任歸位，不因執行方便而新增 root 檔案。
+一次性工具輸入、分析腳本及其產物集中在 ignored `output/<purpose>/`；
+有持續維護需求時才移入正式工具目錄。工具管理的 cache 與狀態沿用其設定位置，
+失效後清理，不另建目錄搬存。Worktree 與驗證輸入不視為可隨手清除的 cache。
+
 1. HTML 互動、本機 transport、workflow adapter → `xic_workbench/`。
 2. Public CLI → `scripts/run_<purpose>.py`，並在 `pyproject.toml` 註冊 entry point。
 3. 可重用的 domain 邏輯 → `xic_extractor/<owner>/`；owner 查 architecture contract。
