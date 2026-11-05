@@ -10,15 +10,12 @@ def test_score_breakdown_fields_preserves_public_projection_order() -> None:
         positive_points=40,
         negative_points=5,
         raw_score=85,
-        score_confidence="HIGH",
-        confidence="MEDIUM",
         support_labels=("strict_nl_ok", "local_sn_strong"),
         concern_labels=("trace_quality_review",),
         cap_labels=("trace_quality_cap",),
     )
 
     assert score_breakdown_fields(score) == (
-        ("Final Confidence", "MEDIUM"),
         ("Caps", "trace_quality_cap"),
         ("Raw Score", "85"),
         ("Support", "strict_nl_ok; local_sn_strong"),

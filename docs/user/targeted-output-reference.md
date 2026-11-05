@@ -74,7 +74,6 @@ the workbook in Inspector and use its attention filter.
 | Role | `Analyte` or `ISTD`; retained for established ISTD readers |
 | Group | Sample grouping |
 | NL | Recorded neutral-loss status; retained for existing evidence readers |
-| Confidence | Recorded confidence; not an independent detection or publication gate |
 | Int / PeakWidth | Raw apex intensity and peak width |
 
 Internal projection code lists are not part of this table. Internal long-row

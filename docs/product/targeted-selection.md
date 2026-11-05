@@ -213,8 +213,8 @@ MS2 product as proof of unique support.
 `peak_detection.targeted_context` compares the retained populations and reuses
 sample/target groupings and ion-level retention uncertainty across cells;
 `extraction.targeted_peak_selection` scores the chosen measurement without
-letting review-blocker count select a cleaner substitute. Scores and confidence
-remain descriptive evidence. `extraction.targeted_batch_selection` selects
+letting review-blocker count select a cleaner substitute. Numeric scores remain
+descriptive evidence. `extraction.targeted_batch_selection` selects
 among the retained regions before formal capture/grouping.
 It neither reopens RAW nor refits the baseline.
 
@@ -256,12 +256,12 @@ available despite poor top shape or uncertain moderate RT displacement.
 This does not override a counted paired ISTD: a peak outside its paired-position
 tolerance is ND, even with neutral-loss support. Chemical support alone does not
 resolve that positional contradiction.
-Legacy RT/score labels alone do not create product review actions. Explicit
+RT/score labels alone do not create product review actions. Explicit
 batch-context displacement, missing calibration, viable competition and
 uncertain transfer are separate actionable explanations. A finalized paired
 ISTD identity can resolve those localization concerns; it does not clear
 independent morphology, signal-gap or mixed-area concerns. Unresolved morphology or overlap concerns can require quality
-review independently of identity. Confidence and reason labels describe source
+review independently of identity. Reason labels describe source
 evidence; they do not start a second candidate ranking.
 
 The Targeted handoff retains all candidate physical evaluations, acquired
@@ -289,7 +289,7 @@ substitute another candidate.
 
 For an NL-required analyte, counting needs a chemical identity: its own
 finalized CID-NL-supported hypothesis, or the identity of its paired
-isotope-labelled ISTD. A positive numeric cell, legacy confidence, pair/ratio
+isotope-labelled ISTD. A positive numeric cell, pair/ratio
 label or acquisition-stage detection flag cannot supply that authority. The
 existing product projection renders the finalized method answer and retained
 review facts. ISTD expected-presence, MS1-only, RT and quality policies remain
@@ -452,7 +452,7 @@ those facts itself.
 - Finalized CSV/workbook RT, area, and bounds render the cell owner's numeric
   answer even when `Counted Detection` is false, except a paired analyte peak
   outside its [paired-ISTD position](#paired-istd-identity).
-- Count, confidence, and review remain separate evidence/policy fields.
+- Counting and review render the same product projection.
 - A typed no-write clears the retained peak before rendering.
 - Missing NL alone is not another writer veto.
 - Accepted MS1-only cells in Untargeted output follow the same distinction.
@@ -475,12 +475,11 @@ those facts itself.
   precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge
   scans are present, `valid_ms2_scan_count` still records them but
   `matched_scan_count` is zero. The existing Targeted product projection owns
-  counted detection; `count_no_ms2_as_detected` applies only to legacy outputs
-  without that projection and cannot override it.
+  counted detection; `count_no_ms2_as_detected` cannot override it.
 - Region, boundary, and selected-envelope logic provide candidate-evaluation
   evidence.
 - Before region, boundary, or selected-envelope logic changes any selected
-  peak, area, confidence, reason, product state, counted detection, workbook
+  peak, area, reason, product state, counted detection, workbook
   value, or matrix value, the change requires expected-diff review.
 - Selected-hypothesis public behavior must preserve compatibility
   projections unless an explicit schema/versioning plan changes the
@@ -530,7 +529,6 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 | RT / Area / PeakStart / PeakEnd | Retained cell-owner measurements |
 | `NL Evidence` / `Reason` | Human-readable observations and review context |
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
-| Confidence | Advanced review context rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and candidate-evaluation evidence |
 | Current-sample paired RT reference | Method offset transferred by a credible observed ISTD |
 | Expected-diff packets | Required gate for output-changing behavior |
@@ -540,7 +538,7 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 - **Consumes:** owner-issued `TargetSearchScope`.
 - **Owns:** fixed `TargetKey` row projection, pre-cell
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
-  typed confidence/reason/product-state/counting decisions, existing Review Queue
+  typed reason/product-state/counting decisions, existing Review Queue
   routing, and target-pair RT rules.
 - **Selected value:** `ProductionCellDecision` owns the selected numeric value.
   Targeted projection renders that decision and its retained physical
@@ -553,7 +551,7 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 
 ## Verification
 
-- Focused tests for selected peak, area, confidence, reason, product state, and counted detection.
+- Focused tests for selected peak, area, reason, product state, and counted detection.
 - Expected-diff packet for workbook/CSV or matrix-impacting changes.
 - Schema/versioning review when output fields or compatibility projection change.
 - RAW-tier evidence label matching the product claim.

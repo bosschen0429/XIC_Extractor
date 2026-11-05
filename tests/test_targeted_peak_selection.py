@@ -47,8 +47,8 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
         n_prominent_peaks=2,
         candidates=(selected, rejected),
         candidate_scores=(
-            _score(selected, confidence="HIGH"),
-            _score(rejected, confidence="LOW"),
+            _score(selected, nl_supported=True),
+            _score(rejected, nl_supported=False),
         ),
     )
     hypotheses = targeted_peak_selection.build_production_peak_hypotheses(
@@ -109,7 +109,7 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
         candidate_scores=(
             _score(
                 candidate,
-                confidence="LOW",
+                nl_supported=False,
                 concern_labels=("no_ms2",),
                 cap_labels=("no_ms2_cap",),
             ),
@@ -147,7 +147,7 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
     assert hypothesis.evidence.decision_semantics.not_counted_reasons == ()
 
 
-def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_stale(
+def test_selected_hypothesis_uses_final_peak_result_reason_when_score_is_stale(
     tmp_path,
 ) -> None:
     candidate = _candidate(8.50)
@@ -158,9 +158,8 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="VERY_LOW",
-        reason="decision: review only, not counted; cap: VERY_LOW",
-        candidate_scores=(_score(candidate, confidence="HIGH"),),
+        reason="decision: physical peak review",
+        candidate_scores=(_score(candidate, nl_supported=True),),
     )
 
     selected = targeted_peak_selection.selected_peak_hypothesis(
@@ -173,10 +172,7 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
     )
 
     assert selected is not None
-    assert selected.evidence.confidence == "VERY_LOW"
-    assert selected.evidence.reason == (
-        "decision: review only, not counted; cap: VERY_LOW"
-    )
+    assert selected.evidence.reason == ("decision: physical peak review")
 
 
 @pytest.mark.parametrize(
@@ -251,7 +247,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     first_ms2 = replace(_ms2_evidence(), best_scan_rt=first.peak.rt)
     second_ms2 = replace(_ms2_evidence(), best_scan_rt=second.peak.rt)
     # The handoff consumes the first-stage choice, even when another candidate
-    # has stronger confidence and more strict-NL support labels.
+    # has a stronger score and more strict-NL support labels.
     peak_result = PeakDetectionResult(
         status="OK",
         peak=selected.peak,
@@ -259,19 +255,18 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         max_smoothed=float(intensity.max()),
         n_prominent_peaks=2,
         candidates=candidates,
-        confidence="VERY_LOW" if selected_index == 0 else "HIGH",
         reason="decision: candidate selected",
         candidate_scores=(
             _score(
                 first,
-                confidence="VERY_LOW",
+                nl_supported=False,
                 raw_score=20,
                 support_labels=("strict_nl_ok",),
                 concern_labels=("rt_centrality_poor", "shape_poor"),
             ),
             _score(
                 second,
-                confidence="HIGH",
+                nl_supported=True,
                 raw_score=120,
                 support_labels=("strict_nl_ok", "candidate_aligned_ms2_nl"),
                 concern_labels=(),
@@ -312,7 +307,6 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         == handoff.selected_hypothesis.hypothesis_id
     )
     assert handoff.candidate_ms2_evidence == (first_ms2, second_ms2)[selected_index]
-    assert handoff.peak_result.confidence == peak_result.confidence
     assert f"{selected.peak.rt:.5f}" in handoff.selected_hypothesis.hypothesis_id
     assert handoff.selected_hypothesis.integration.rt_apex_min == pytest.approx(
         selected.peak.rt
@@ -502,7 +496,7 @@ def _candidate(
 def _score(
     candidate: PeakCandidate,
     *,
-    confidence: str,
+    nl_supported: bool,
     raw_score: int | None = None,
     support_labels: tuple[str, ...] | None = None,
     concern_labels: tuple[str, ...] | None = None,
@@ -510,23 +504,20 @@ def _score(
 ) -> PeakCandidateScore:
     return PeakCandidateScore(
         candidate=candidate,
-        confidence=confidence,
-        reason=f"decision: {confidence.lower()}",
-        raw_score=(
-            raw_score if raw_score is not None else 90 if confidence == "HIGH" else 40
-        ),
+        reason="decision: accepted" if nl_supported else "decision: review",
+        raw_score=(raw_score if raw_score is not None else 90 if nl_supported else 40),
         support_labels=(
             support_labels
             if support_labels is not None
             else ("strict_nl_ok",)
-            if confidence == "HIGH"
+            if nl_supported
             else ()
         ),
         concern_labels=(
             concern_labels
             if concern_labels is not None
             else ()
-            if confidence == "HIGH"
+            if nl_supported
             else ("low_score",)
         ),
         cap_labels=cap_labels,

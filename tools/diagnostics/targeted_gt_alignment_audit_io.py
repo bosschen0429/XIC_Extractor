@@ -49,7 +49,6 @@ def _load_target_ground_truth(config: AuditConfig) -> list[TargetGroundTruth]:
                 target_peak_end_min=_to_float(analyte.get("PeakEnd")),
                 target_peak_width_min=_to_float(analyte.get("PeakWidth")),
                 target_area=_to_float(analyte.get("Area")),
-                target_confidence=str(analyte.get("Confidence") or ""),
                 target_nl_ok=str(analyte.get("NL") or ""),
                 target_reason=str(analyte.get("Reason") or ""),
                 istd_rt_min=istd_rt,

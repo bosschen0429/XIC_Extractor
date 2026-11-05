@@ -42,7 +42,6 @@ class CommonEvidence:
     ms2_present: bool | None = None
     nl_match: bool | None = None
     ms2_trace_strength: str = ""
-    confidence: str = ""
     evidence_score: int | None = None
     review_priority: str = ""
     reason: str = ""
@@ -68,7 +67,6 @@ class EvidenceSignalSet:
     ms2_present: bool | None = None
     nl_match: bool | None = None
     raw_score: float | None = None
-    confidence: str = ""
     cap_labels: tuple[str, ...] = ()
     reason: str = ""
     rejection_reason: str = ""
@@ -140,11 +138,10 @@ def decision_semantics_from_signal_set(
         consistency,
     )
     review_reasons = _decision_review_reasons(concerns, caps, consistency)
-    not_counted_reasons = _decision_not_counted_reasons(
-        signals,
-        caps,
-        support_reasons=support_reasons,
-        consistency=consistency,
+    not_counted_reasons = (
+        ("missing_ms2_policy_not_counted",)
+        if "no_ms2_cap" in caps and not signals.count_no_ms2_as_detected
+        else ()
     )
     exclusion_reasons = _decision_exclusion_reasons(concerns, caps)
     ambiguity_reasons = _decision_ambiguity_reasons(signals, concerns)
@@ -267,65 +264,6 @@ def _decision_review_reasons(
     if caps & {"anchor_mismatch_cap"} or "anchor_mismatch" in concerns:
         reasons.append("paired_istd_rt_review")
     return tuple(reasons)
-
-
-def _decision_not_counted_reasons(
-    signals: EvidenceSignalSet,
-    caps: frozenset[str],
-    *,
-    support_reasons: tuple[str, ...],
-    consistency: tuple[str, ...],
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    confidence = signals.confidence.strip().upper()
-    reason = signals.reason.strip().lower()
-    legacy_review_only = confidence == "VERY_LOW" or "review only" in reason
-    support = set(support_reasons)
-    missing_ms2_policy_not_counted = (
-        "no_ms2_cap" in caps and not signals.count_no_ms2_as_detected
-    )
-    hard_not_counted_caps = caps & {"zero_area_cap", "hard_quality_flag_cap"}
-    strict_nl_supported = "candidate_aligned_ms2_nl" in support
-    anchor_mismatch_policy_not_counted = (
-        "anchor_mismatch_cap" in caps and not strict_nl_supported
-    )
-    if missing_ms2_policy_not_counted:
-        hard_not_counted_caps = hard_not_counted_caps | {"no_ms2_cap"}
-    if anchor_mismatch_policy_not_counted:
-        hard_not_counted_caps = hard_not_counted_caps | {"anchor_mismatch_cap"}
-    paired_supported_nl_dropout = (
-        "nl_fail_cap" in caps
-        and "plausible_nl_dropout" in consistency
-        and "ms1_coherent" in support
-        and "role_aware_rt_support" in support
-        and "paired_area_ratio_support" in support
-        and not hard_not_counted_caps
-    )
-    if paired_supported_nl_dropout:
-        return ()
-
-    if missing_ms2_policy_not_counted:
-        reasons.append("missing_ms2_policy_not_counted")
-        reasons.append("missing_ms2_compatibility_cap")
-    if anchor_mismatch_policy_not_counted:
-        reasons.append("paired_istd_rt_mismatch_policy")
-        reasons.append("paired_istd_rt_mismatch_cap")
-
-    legacy_not_counted_allowed = legacy_review_only and (
-        "no_ms2_cap" not in caps
-        or not signals.count_no_ms2_as_detected
-        or bool(caps - {"no_ms2_cap"})
-    )
-    if legacy_not_counted_allowed:
-        if not reasons or caps & {"zero_area_cap", "hard_quality_flag_cap"}:
-            reasons.append("legacy_review_only_projection")
-        if "zero_area_cap" in caps:
-            reasons.append("zero_area_compatibility_cap")
-        if "hard_quality_flag_cap" in caps:
-            reasons.append("hard_quality_flag_compatibility_cap")
-        if "anchor_mismatch_cap" in caps:
-            reasons.append("anchor_mismatch_compatibility_cap")
-    return tuple(dict.fromkeys(reasons))
 
 
 def _decision_exclusion_reasons(

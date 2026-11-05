@@ -846,11 +846,9 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     expected_rows = [
         {
             **_formatted_long_success_row("NoNL", results["NoNL"], nl=""),
-            "Confidence": "LOW",
         },
         {
             **_formatted_long_success_row("WithNL", results["WithNL"], nl="OK"),
-            "Confidence": "LOW",
         },
     ]
     for row, expected in zip(long_rows, expected_rows, strict=True):
@@ -1380,7 +1378,6 @@ def test_istd_single_pass_preserves_scoring_metadata_without_ms2_promotion(
                     9.05,
                     1500.0,
                     2000.0,
-                    confidence="LOW",
                     reason="concerns: rt_prior (major)",
                     severities=((2, "rt_prior"),),
                 )
@@ -1391,11 +1388,8 @@ def test_istd_single_pass_preserves_scoring_metadata_without_ms2_promotion(
     output = _run(config, targets)
 
     result = output.file_results[0].results["ISTD"]
-    assert result.peak_result.confidence == "LOW"
     assert result.peak_result.reason == "concerns: rt_prior (major)"
-    assert result.confidence == "LOW"
     assert result.selection_decision is not None
-    assert result.confidence == result.selection_decision.projected_confidence
     assert result.severities == ((2, "rt_prior"),)
 
 
@@ -1429,7 +1423,7 @@ def test_run_does_not_publish_peak_nl_without_a_physical_peak(
     assert diagnostics[0]["Reason"] == "Physical peak unavailable: peak_not_found"
 
 
-def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
+def test_run_reports_nd_without_peak_scoped_nl(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1461,7 +1455,6 @@ def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
             "PeakStart": "ND",
             "PeakEnd": "ND",
             "PeakWidth": "ND",
-            "Confidence": "VERY_LOW",
             "Reason": "搜尋範圍內沒有可定量的 MS1 峰。",
         }
     ]
@@ -1474,12 +1467,11 @@ def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
     assert long_rows[0]["Counted Detection"] == "FALSE"
     assert "missing_positive_ms1_peak" in long_rows[0]["Projection Not Counted Reasons"]
     result = output.file_results[0].results["WithNL"]
-    assert result.confidence == ""
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.product_state == "not_counted"
 
 
-def test_run_leaves_confidence_blank_for_file_error_rows(
+def test_run_reports_file_error_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1507,7 +1499,6 @@ def test_run_leaves_confidence_blank_for_file_error_rows(
             "PeakStart": "ERROR",
             "PeakEnd": "ERROR",
             "PeakWidth": "ERROR",
-            "Confidence": "",
             "Reason": "RAW 檔無法處理。",
         }
     ]
@@ -1624,7 +1615,7 @@ def test_run_writes_neutral_loss_diagnostics(
     assert reason_part in diagnostics[0]["Reason"]
 
 
-def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
+def test_istd_no_ms2_keeps_ms1_peak_and_writes_evidence_diagnostic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1650,14 +1641,6 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
     diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert any(
         record["Target"] == "ISTD" and record["Issue"] == "NO_MS2"
-        for record in diagnostics
-    )
-    assert any(
-        record["Target"] == "ISTD"
-        and record["Issue"] == "ISTD_CONFIDENCE"
-        and "confidence=MEDIUM" in record["Reason"]
-        and "flags=NO_MS2" in record["Reason"]
-        and "MS1 peak retained" in record["Reason"]
         for record in diagnostics
     )
 
@@ -1792,7 +1775,6 @@ def test_istd_far_peak_uses_expected_rt_as_identity_prior(
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
         scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
         preferred_rts.append(preferred_rt)
@@ -1841,7 +1823,6 @@ def test_istd_near_peak_uses_expected_rt_as_identity_prior(
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
         scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
         preferred_rts.append(preferred_rt)
@@ -1968,7 +1949,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
     assert raw.windows == [(0.0, 20.0)]
 
 
-def test_istd_low_confidence_peak_keeps_single_complete_context(
+def test_istd_peak_keeps_single_complete_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1988,7 +1969,6 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
                     9.05,
                     100.0,
                     200.0,
-                    confidence="VERY_LOW",
                     reason="decision: review only, not counted",
                 ),
             ]
@@ -2057,12 +2037,10 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     )
     long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["Confidence"] == "LOW"
     assert analyte_row["Product State"] == "detected_flagged"
     assert "targeted_reference_displacement" in analyte_row["Projection Review Reasons"]
     assert analyte_row["Counted Detection"] == "TRUE"
     assert analyte_row["Projection Conflict Reasons"] == ""
-    assert output.file_results[0].results["Analyte"].confidence == "LOW"
     # Expected RT and the paired offset are identity priors, not DDA anchor crops.
     assert all(record.issue != "NL_ANCHOR_FALLBACK" for record in output.diagnostics)
     assert output.file_results[0].results["Analyte"].candidate_ms2_evidence.nl_match
@@ -2132,7 +2110,6 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
         scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
         preferred_rts.append(preferred_rt)
@@ -2266,13 +2243,11 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     assert analyte_row["RT"] == expected_peak["Analyte_RT"]
     assert analyte_row["Area"] == expected_peak["Analyte_Area"]
-    assert analyte_row["Confidence"] == "VERY_LOW"
     assert analyte_row["Product State"] == "not_counted"
     assert analyte_row["Counted Detection"] == "FALSE"
     assert (
         "cid_nl_method_not_supported" in analyte_row["Projection Not Counted Reasons"]
     )
-    assert output.file_results[0].results["Analyte"].confidence == "LOW"
     selected_peak = output.file_results[0].results["Analyte"].peak_result.peak
     assert selected_peak is not None
     istd_rt = output.file_results[0].results["ISTD"].reported_rt
@@ -2352,7 +2327,6 @@ def _ok_peak(
     intensity: float,
     area: float,
     *,
-    confidence: str | None = None,
     reason: str | None = None,
     severities: tuple[tuple[int, str], ...] = (),
     quality_flags: tuple[str, ...] = (),
@@ -2390,7 +2364,6 @@ def _ok_peak(
         max_smoothed=intensity,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence=confidence,
         reason=reason,
         severities=severities,
         candidate_scores=(
@@ -2427,7 +2400,6 @@ def _peak_sequence(results: list[PeakDetectionResult]):
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
         scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
         cached = by_candidates.get(candidates_result)
@@ -2464,7 +2436,6 @@ def _capturing_peak_sequence(
         preferred_rt: float | None = None,
         strict_preferred_rt: bool = False,
         scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
         cached = by_candidates.get(candidates_result)
@@ -2643,7 +2614,6 @@ def _core_long_row(row: dict[str, str]) -> dict[str, str]:
         "PeakStart",
         "PeakEnd",
         "PeakWidth",
-        "Confidence",
         "Reason",
     )
     return {header: row[header] for header in core_headers}
@@ -2690,7 +2660,6 @@ def _formatted_long_success_row(
         "PeakStart": peak[f"{label}_PeakStart"],
         "PeakEnd": peak[f"{label}_PeakEnd"],
         "PeakWidth": peak[f"{label}_PeakWidth"],
-        "Confidence": "HIGH",
         "Reason": "MS2 見到預期的中性丟失。" if nl == "OK" else "MS1 峰形合格。",
     }
 
@@ -2741,7 +2710,6 @@ def _typed_candidate_score(
     )
     return PeakCandidateScore(
         candidate=candidate,
-        confidence="HIGH",
         reason="decision: accepted by typed fixture",
         raw_score=95,
         support_labels=("legacy_fixture_support",),

@@ -64,7 +64,7 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "其次 QC／pooled_qc 角色歸 QC，其餘 Other。",
         "",
     ),
-    ("XIC Results", "NL / Confidence", "中性丟失摘要與信心分級，供追查用。", ""),
+    ("XIC Results", "NL", "中性丟失摘要，供追查用。", ""),
     ("XIC Results", "Int / PeakWidth", "原始峰頂強度與峰寬。", "counts / min"),
     ("Targets", "Label / Role", "目標名稱；ISTD 或 Analyte。", ""),
     ("Targets", "ISTD Pair", "analyte 配對的 ISTD；空白＝未設定。", ""),

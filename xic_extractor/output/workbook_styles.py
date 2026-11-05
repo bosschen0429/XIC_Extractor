@@ -44,7 +44,6 @@ TEXT_HEADERS = frozenset(
         "Role",
         "Group",
         "NL",
-        "Confidence",
         "Counted Detection",
     }
 )

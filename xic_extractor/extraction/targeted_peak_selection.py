@@ -113,7 +113,6 @@ class TargetedCandidateAssessment:
         default_factory=dict
     )
     paired_istd_fwhm: float | None = None
-    istd_confidence_note: str | None = None
     paired_istd_anchor_rt: float | None = None
 
     def method_admits(self, candidate: PeakCandidate) -> bool:
@@ -191,7 +190,6 @@ class TargetedCandidateAssessment:
         selected_segment: PhysicalSegment | None,
         competing_region_count: int,
         scoring_context_builder: ScoringContextBuilder | None,
-        istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
     ) -> PeakDetectionResult:
         selected = next(
@@ -242,7 +240,6 @@ class TargetedCandidateAssessment:
                 True if scoring_context_builder is None else self.strict_preferred_rt
             ),
             scoring_context_builder=scoring_context_builder,
-            istd_confidence_note=istd_confidence_note,
             evidence_role="ISTD" if self.target.is_istd else "Analyte",
             istd_pair=self.target.istd_pair,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
@@ -543,7 +540,6 @@ def select_targeted_peak(
             peak=None,
             candidates=(),
             n_prominent_peaks=0,
-            confidence=None,
             reason=physical_evaluation.reason,
             severities=(),
             score_breakdown=(),
@@ -579,7 +575,7 @@ def _with_final_selected_result_evidence(
     hypotheses: tuple[PeakHypothesis, ...],
     peak_result: PeakDetectionResult,
 ) -> tuple[PeakHypothesis, ...]:
-    if peak_result.confidence is None and not peak_result.reason:
+    if not peak_result.reason:
         return hypotheses
     updated: list[PeakHypothesis] = []
     for hypothesis in hypotheses:
@@ -591,7 +587,6 @@ def _with_final_selected_result_evidence(
                 hypothesis,
                 evidence=replace(
                     hypothesis.evidence,
-                    confidence=peak_result.confidence or hypothesis.evidence.confidence,
                     reason=peak_result.reason or hypothesis.evidence.reason,
                 ),
             )

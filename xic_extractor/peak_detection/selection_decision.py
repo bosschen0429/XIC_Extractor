@@ -18,7 +18,6 @@ class PeakHypothesisSelectionDecision:
     selected_candidate_id: str
     trace_group_id: str
     decision_class: DecisionClass
-    projected_confidence: str
     projected_reason: str
     support_reasons: tuple[str, ...] = ()
     conflict_reasons: tuple[str, ...] = ()
@@ -34,7 +33,6 @@ def selection_decision_from_hypothesis(
     hypothesis: PeakHypothesis,
     *,
     peak_result: PeakDetectionResult | None = None,
-    fallback_confidence: str = "",
     fallback_reason: str = "",
 ) -> PeakHypothesisSelectionDecision:
     validate_peak_hypothesis_selection_authority(
@@ -42,7 +40,6 @@ def selection_decision_from_hypothesis(
         consumer="selection_decision_from_hypothesis",
     )
     if peak_result is not None:
-        fallback_confidence = _fallback_confidence(peak_result)
         fallback_reason = _fallback_reason(peak_result)
 
     evidence = hypothesis.evidence
@@ -68,9 +65,6 @@ def selection_decision_from_hypothesis(
         selected_candidate_id=hypothesis.hypothesis_id,
         trace_group_id=hypothesis.trace_group_id,
         decision_class=decision_class,
-        projected_confidence=(
-            evidence.projected_confidence or evidence.confidence or fallback_confidence
-        ),
         projected_reason=(
             evidence.projected_reason or evidence.reason or fallback_reason
         ),
@@ -82,12 +76,6 @@ def selection_decision_from_hypothesis(
         ambiguity_reasons=ambiguity_reasons,
         evidence_sources=_evidence_sources(hypothesis),
     )
-
-
-def _fallback_confidence(peak_result: PeakDetectionResult) -> str:
-    if peak_result.peak is None:
-        return ""
-    return peak_result.confidence or "HIGH"
 
 
 def _fallback_reason(peak_result: PeakDetectionResult) -> str:
@@ -144,10 +132,6 @@ def _evidence_sources(hypothesis: PeakHypothesis) -> tuple[str, ...]:
         or any("trace_morphology" in reason for reason in reasons)
     ):
         sources.append("trace_morphology")
-    if (
-        evidence.evidence_facts is not None
-        or evidence.projected_confidence
-        or evidence.projected_reason
-    ):
+    if evidence.evidence_facts is not None or evidence.projected_reason:
         sources.append("typed_candidate_evidence_facts")
     return tuple(dict.fromkeys(sources))

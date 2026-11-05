@@ -9,7 +9,6 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.hypotheses import EvidenceVector
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.scoring_models import (
-    Confidence,
     ScoringContext,
 )
 from xic_extractor.peak_detection.signal_quality import measure_signal_quality
@@ -76,7 +75,6 @@ def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
     )
     scored = score_candidate(cand, ctx, prior_rt=10.0)
     assert len(scored.severities) == 10
-    assert scored.confidence == Confidence.HIGH
     assert scored.reason.startswith("decision: accepted")
     assert "candidate_aligned_ms2_nl" in scored.reason
     assert "role_aware_rt_support" in scored.reason
@@ -107,7 +105,6 @@ def test_score_candidate_records_positive_and_negative_evidence() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.HIGH
     assert scored.evidence_score.raw_score >= 80
     assert "strict_nl_ok" in scored.evidence_score.support_labels
     assert "rt_prior_close" in scored.evidence_score.support_labels
@@ -376,7 +373,7 @@ def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
     assert scored.evidence_facts.chemical.ms2_trace_strength == "weak"
 
 
-def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
+def test_score_candidate_keeps_nl_failure_and_dropout_evidence() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
     y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
@@ -399,7 +396,6 @@ def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.MEDIUM
     assert "nl_fail" in scored.evidence_score.concern_labels
     assert "nl_fail_cap" in scored.evidence_score.cap_labels
     assert "plausible_nl_dropout_review" in scored.reason
@@ -460,7 +456,6 @@ def test_score_candidate_no_nl_target_records_no_nl_support() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.HIGH
     assert "no_nl_required" in scored.evidence_score.support_labels
     assert "no_ms2" not in scored.evidence_score.concern_labels
     assert "no_ms2_cap" not in scored.evidence_score.cap_labels
@@ -493,7 +488,6 @@ def test_score_candidate_no_ms2_default_reason_is_not_counted() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.VERY_LOW
     assert "no_ms2_cap" in scored.evidence_score.cap_labels
     assert scored.reason.startswith("decision: not_counted")
     assert "missing_ms2_policy_not_counted" in scored.reason
@@ -525,7 +519,6 @@ def test_score_candidate_no_ms2_allowed_reason_is_accepted() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.MEDIUM
     assert "no_ms2_cap" in scored.evidence_score.cap_labels
     assert scored.reason.startswith("decision: review")
     assert "missing_ms2_not_observed" in scored.reason
@@ -581,7 +574,6 @@ def test_score_candidate_caps_out_of_window_peak_without_rt_prior() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=None)
 
-    assert scored.confidence == Confidence.LOW
     assert "rt_window_cap" in scored.evidence_score.cap_labels
     assert "rt_centrality_poor" in scored.evidence_score.concern_labels
     assert scored.reason.startswith("decision: review")
@@ -611,7 +603,6 @@ def test_score_candidate_allows_out_of_window_peak_with_close_rt_prior() -> None
 
     scored = score_candidate(cand, ctx, prior_rt=15.166)
 
-    assert scored.confidence == Confidence.LOW
     assert "rt_window_cap" not in scored.evidence_score.cap_labels
     assert "rt_prior_close" in scored.evidence_score.support_labels
     assert "rt_centrality_poor" in scored.evidence_score.concern_labels
@@ -641,7 +632,6 @@ def test_score_candidate_keeps_in_window_edge_peak_as_rt_centrality_concern() ->
 
     scored = score_candidate(cand, ctx, prior_rt=None)
 
-    assert scored.confidence == Confidence.LOW
     assert "rt_window_cap" not in scored.evidence_score.cap_labels
     assert "rt_centrality_poor" in scored.evidence_score.concern_labels
     assert "targeted_rt_conflict" in scored.reason
@@ -685,24 +675,20 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
         rt_max=11.0,
     )
 
-    note = "paired ISTD confirmed"
     if evidence_context is None:
-        scored = score_candidate(cand, ctx, prior_rt=10.0, istd_confidence_note=note)
+        scored = score_candidate(cand, ctx, prior_rt=ctx.rt_prior)
     else:
         scored = score_candidate(
             cand,
             ctx,
             prior_rt=ctx.rt_prior,
-            istd_confidence_note=note,
             **evidence_context,
         )
 
-    assert scored.confidence == Confidence.LOW
     assert scored.evidence_facts is not None
     assert "too_broad" in scored.evidence_facts.trace.quality_flags
     assert "hard_quality_flag_conflict" in scored.reason
     assert ("weak candidate: too_broad" in scored.reason) is include_quality_note
-    assert scored.reason.endswith(f"; {note}")
     assert scored.quality_penalty == 1
     assert scored.selection_quality_penalty == 1
     assert scored.evidence_score is not None
@@ -738,7 +724,6 @@ def test_score_candidate_formats_adap_like_quality_flags_as_minor_concerns() -> 
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.LOW
     assert scored.quality_penalty == 0
     assert scored.selection_quality_penalty == 0.5
     assert (1, "low trace continuity") in scored.severities
@@ -775,7 +760,6 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.LOW
     assert "low_trace_continuity" in scored.evidence_score.concern_labels
     assert "trace_quality_cap" not in scored.evidence_score.cap_labels
     assert "trace_morphology_conflict" in scored.reason
@@ -814,7 +798,6 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.LOW
     assert "cwt_same_apex_support" in scored.evidence_score.support_labels
     assert "low_trace_continuity" in scored.evidence_score.concern_labels
     assert "poor_edge_recovery" in scored.evidence_score.concern_labels
@@ -857,7 +840,6 @@ def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags()
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert scored.confidence == Confidence.LOW
     assert scored.quality_penalty == 0
     assert scored.selection_quality_penalty == 0.5
     assert (1, "low scan support") in scored.severities

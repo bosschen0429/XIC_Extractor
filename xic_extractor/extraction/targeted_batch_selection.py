@@ -67,8 +67,6 @@ def _with_context_reasons(
             ),
             rt=result.reported_rt,
             area=result.reported_peak_area,
-            confidence=result.confidence,
-            nl_status=result.nl_token or "",
             cid_nl_supported=result.selected_cid_nl_supported,
             support_reasons=projection.support_reasons,
             review_reasons=tuple(dict.fromkeys((*projection.review_reasons, *review))),
@@ -77,7 +75,6 @@ def _with_context_reasons(
             ),
             not_counted_reasons=projection.not_counted_reasons,
             exclusion_reasons=projection.exclusion_reasons,
-            legacy_evidence=projection.legacy_evidence,
         ),
     )
 
@@ -140,7 +137,6 @@ def complete_targeted_candidate_batch(
                 selected_segment=selected_region.segment if selected_region else None,
                 competing_region_count=len(batch.competing_regions(population)),
                 scoring_context_builder=builder,
-                istd_confidence_note=assessment.istd_confidence_note,
                 paired_istd_anchor_rt=assessment.paired_istd_anchor_rt,
             )
             result = assessment.complete_result(

@@ -35,9 +35,6 @@ class ExtractionResultLike(Protocol):
     def target_label(self) -> str: ...
 
     @property
-    def confidence(self) -> str: ...
-
-    @property
     def reason(self) -> str: ...
 
     @property
@@ -117,7 +114,6 @@ def _long_output_rows(
             "PeakStart": "",
             "PeakEnd": "",
             "PeakWidth": "",
-            "Confidence": "",
             "Reason": "",
             **{header: "" for header in TARGETED_PRODUCT_PROJECTION_HEADERS},
         }
@@ -138,7 +134,6 @@ def _long_output_rows(
             row["NL Evidence"] = display_nl_evidence(
                 result.nl_token, configured=target.neutral_loss_da is not None
             )
-            row["Confidence"] = _display_confidence(result)
             row.update(_projection_fields(result.targeted_product_projection))
             row["Reason"] = _display_reason(result, row)
         rows.append(row)
@@ -160,7 +155,6 @@ def _projection_fields(
         "Projection Conflict Reasons": _join_reasons(projection.conflict_reasons),
         "Projection Not Counted Reasons": _join_reasons(projection.not_counted_reasons),
         "Projection Exclusion Reasons": _join_reasons(projection.exclusion_reasons),
-        "Legacy Authority Status": projection.legacy_authority_status,
         "Benchmark Eligibility State": projection.benchmark_eligibility_state,
     }
 
@@ -176,17 +170,6 @@ def _display_reason(result: ExtractionResultLike, row: dict[str, str]) -> str:
     return result.reason
 
 
-def _display_confidence(result: ExtractionResultLike) -> str:
-    projection = result.targeted_product_projection
-    if projection is not None and projection.product_state in {
-        "ambiguous",
-        "excluded",
-        "not_counted",
-    }:
-        return "VERY_LOW"
-    return result.confidence
-
-
 def _error_projection_fields() -> dict[str, str]:
     return {
         "Product State": "excluded",
@@ -198,7 +181,6 @@ def _error_projection_fields() -> dict[str, str]:
         "Projection Conflict Reasons": "",
         "Projection Not Counted Reasons": "",
         "Projection Exclusion Reasons": "file_error",
-        "Legacy Authority Status": "retired",
         "Benchmark Eligibility State": "",
     }
 

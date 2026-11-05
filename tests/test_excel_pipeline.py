@@ -147,7 +147,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Role",
         "Group",
         "NL",
-        "Confidence",
         "Int",
         "PeakWidth",
     ]
@@ -167,7 +166,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["PeakWidth"] == 0.3
     assert record["NL Evidence"] == "已觀察到（質量偏差偏大）"
     assert record["NL"] == "⚠ 12.3ppm"
-    assert record["Confidence"] == "LOW"
     assert record["Review"] == "Check"
     assert record["Review Reason"].replace("\n", "") == "證據需檢查"
     assert not ws.merged_cells.ranges
@@ -268,7 +266,6 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
             "NL Evidence": "所選峰未見預期的中性丟失",
-            "Confidence": "LOW",
             "Counted Detection": counted,
             "Product State": state,
             "Projection Support Reasons": support,
@@ -378,7 +375,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
         max_smoothed=450.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="LOW",
         reason="concerns: local_sn (minor)",
         severities=((1, "local_sn"),),
         score_breakdown=(
@@ -387,7 +383,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
             ("Negative Points", "0"),
             ("Raw Score", "90"),
             ("Caps", ""),
-            ("Final Confidence", "HIGH"),
             ("Support", "strict_nl_ok; local_sn_strong"),
             ("Concerns", ""),
         ),
@@ -398,7 +393,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
         target_label="WithNL",
         role="Analyte",
         istd_pair="",
-        confidence="LOW",
         reason="concerns: local_sn (minor)",
         severities=((1, "local_sn"),),
         quality_penalty=1,
@@ -411,8 +405,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
             projection_reason="decision: detected_flagged; review: local_sn_minor",
             support_reasons=("ms1_peak_present",),
             review_reasons=("local_sn_minor",),
-            legacy_evidence={"confidence": "LOW"},
-            legacy_authority_status="evidence_only",
         ),
     )
     diagnostics = []

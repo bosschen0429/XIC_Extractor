@@ -167,7 +167,6 @@ def _as_output_dict(row: object) -> dict[str, object]:
             "target_peak_end_min": _format_float(row.target_peak_end_min, 4),
             "target_peak_width_min": _format_float(row.target_peak_width_min, 4),
             "target_area": _format_float(row.target_area, 2),
-            "target_confidence": row.target_confidence,
             "target_nl_ok": row.target_nl_ok,
             "target_reason": row.target_reason,
             "istd_rt_min": _format_float(row.istd_rt_min, 4),

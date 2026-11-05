@@ -85,7 +85,6 @@ class PeakCandidatesResult:
 @dataclass(frozen=True)
 class PeakCandidateScore:
     candidate: PeakCandidate
-    confidence: str
     reason: str
     raw_score: int | None = None
     support_labels: tuple[str, ...] = ()
@@ -106,7 +105,6 @@ class PeakDetectionResult:
     max_smoothed: float | None
     n_prominent_peaks: int
     candidates: tuple[PeakCandidate, ...] = ()
-    confidence: str | None = None
     reason: str | None = None
     severities: tuple[tuple[int, str], ...] = ()
     score_breakdown: tuple[tuple[str, str], ...] = ()

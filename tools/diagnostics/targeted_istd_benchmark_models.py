@@ -50,7 +50,6 @@ class TargetedPoint:
     rt: float | None
     area: float | None
     nl: str
-    confidence: str
     reason: str
 
     @property

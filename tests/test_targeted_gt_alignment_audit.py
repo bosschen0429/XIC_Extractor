@@ -142,7 +142,6 @@ def test_targeted_gt_audit_writes_outputs_and_escapes_formula_values(
             "target_peak_end_min",
             "target_peak_width_min",
             "target_area",
-            "target_confidence",
             "target_nl_ok",
             "target_reason",
             "istd_rt_min",
@@ -153,7 +152,6 @@ def test_targeted_gt_audit_writes_outputs_and_escapes_formula_values(
             "sample_stem",
             "group",
             "gt_target_rt_min",
-            "gt_target_confidence",
             "gt_peak_start_min",
             "gt_peak_end_min",
             "family_count_total",
@@ -425,7 +423,6 @@ def _write_target_workbook(
             "PeakStart",
             "PeakEnd",
             "PeakWidth",
-            "Confidence",
             "Reason",
         ],
     )
@@ -444,7 +441,6 @@ def _write_target_workbook(
                 peak_start,
                 peak_end,
                 peak_end - peak_start,
-                "HIGH",
                 "targeted reason",
             ],
         )
@@ -462,7 +458,6 @@ def _write_target_workbook(
                 peak_start,
                 peak_end,
                 peak_end - peak_start,
-                "HIGH",
                 "istd reason",
             ],
         )

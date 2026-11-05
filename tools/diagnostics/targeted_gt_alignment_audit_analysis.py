@@ -43,7 +43,6 @@ def _classify_sample(
         "sample_stem": target.sample_stem,
         "group": target.group,
         "gt_target_rt_min": _format_float(target.target_rt_min, 4),
-        "gt_target_confidence": target.target_confidence,
         "gt_peak_start_min": _format_float(target.target_peak_start_min, 4),
         "gt_peak_end_min": _format_float(target.target_peak_end_min, 4),
         "family_count_total": len({cell["feature_id"] for cell in cells}),

@@ -16,8 +16,6 @@ def test_projection_counts_istd_dropout_without_legacy_nl_authority() -> None:
         TargetedProductContext(role="ISTD", expected_present=True),
         rt=11.9888,
         area=1.55e7,
-        confidence="VERY_LOW",
-        nl_status="NL_FAIL",
         support_reasons=("ms1_peak_present", "trace_coherent"),
         review_reasons=("plausible_dda_nl_dropout",),
     )
@@ -26,17 +24,12 @@ def test_projection_counts_istd_dropout_without_legacy_nl_authority() -> None:
     assert projection.counted_detection is True
     assert projection.review_state == "flagged"
     assert "plausible_dda_nl_dropout" in projection.review_reasons
-    assert projection.legacy_evidence["confidence"] == "VERY_LOW"
-    assert projection.legacy_evidence["nl_status"] == "NL_FAIL"
-    assert projection.legacy_authority_status == "evidence_only"
 
 
-def test_same_legacy_tokens_can_project_to_different_product_counts() -> None:
+def test_same_nl_evidence_can_project_to_different_product_counts() -> None:
     shared = {
         "rt": 11.9888,
         "area": 1.55e7,
-        "confidence": "VERY_LOW",
-        "nl_status": "NL_FAIL",
         "support_reasons": ("ms1_peak_present", "trace_coherent"),
         "review_reasons": ("plausible_dda_nl_dropout",),
     }
@@ -63,8 +56,6 @@ def test_projection_blocks_when_ms1_peak_is_not_positive() -> None:
         TargetedProductContext(role="ISTD", expected_present=True),
         rt=11.9888,
         area=0.0,
-        confidence="HIGH",
-        nl_status="OK",
         support_reasons=("ms1_peak_present",),
     )
 
@@ -80,8 +71,6 @@ def test_expected_istd_without_required_nl_is_not_confirmed() -> None:
         ),
         rt=8.5,
         area=1234.5,
-        confidence="HIGH",
-        nl_status="NO_MS2",
         support_reasons=("ms1_peak_present",),
         review_reasons=("plausible_dda_nl_dropout",),
     )
@@ -96,8 +85,6 @@ def test_backfill_label_alone_does_not_confirm_istd() -> None:
         ),
         rt=8.5,
         area=1234.5,
-        confidence="HIGH",
-        nl_status="NO_MS2",
         review_reasons=("BACKFILL_ACCEPTED",),
     )
     assert projection.counted_detection is False
@@ -111,8 +98,6 @@ def test_backfill_does_not_override_unresolved_identity_or_missing_quantity() ->
             ),
             rt=8.5,
             area=area,
-            confidence="HIGH",
-            nl_status="NO_MS2",
             backfill_supported=True,
             conflict_reasons=conflicts,
         )
@@ -134,8 +119,6 @@ def _analyte(
         TargetedProductContext(role="Analyte", neutral_loss_required=True),
         rt=9.1,
         area=2.0e5,
-        confidence="LOW",
-        nl_status="OK" if cid_nl else "NL_FAIL",
         cid_nl_supported=cid_nl,
         paired_istd_identity=identity,
         backfill_supported=backfill,
@@ -151,8 +134,6 @@ def _istd(*, cid_nl: bool = True, backfill: bool = False) -> object:
         ),
         rt=9.0,
         area=5.0e6,
-        confidence="HIGH",
-        nl_status="OK" if cid_nl else "NL_FAIL",
         cid_nl_supported=cid_nl,
         backfill_supported=backfill,
         support_reasons=_COHERENT,

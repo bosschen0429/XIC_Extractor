@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -14,26 +13,10 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.evidence_facts import CandidateEvidenceFacts
 
 
-class Confidence(Enum):
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-    VERY_LOW = "VERY_LOW"
-
-
-CONFIDENCE_RANK = {
-    Confidence.HIGH: 0,
-    Confidence.MEDIUM: 1,
-    Confidence.LOW: 2,
-    Confidence.VERY_LOW: 3,
-}
-
-
 @dataclass(frozen=True)
 class ScoredCandidate:
     candidate: Any
     severities: tuple[tuple[int, str], ...]
-    confidence: Confidence
     reason: str
     prior_rt: float | None
     quality_penalty: int = 0
@@ -76,7 +59,3 @@ class ScoringContext:
     active_trace_source: str = ""
     morphology_trace_method: str = ""
     morphology_trace_window_points: int | None = None
-
-
-def confidence_from_value(value: str) -> Confidence:
-    return Confidence(value)

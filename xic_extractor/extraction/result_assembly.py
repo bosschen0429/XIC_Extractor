@@ -125,7 +125,6 @@ def build_extraction_result(
         target_label=_result_target_label(target, selected_hypothesis),
         role=_result_role(target, selected_hypothesis),
         istd_pair=_result_istd_pair(target, selected_hypothesis),
-        confidence=_result_confidence(peak_result, resolved_selection_decision),
         reason=_result_reason(peak_result, resolved_selection_decision),
         severities=peak_result.severities,
         prior_rt=(
@@ -179,10 +178,6 @@ def reproject_extraction_result(
     updated = replace(
         result,
         selection_decision=resolved_selection_decision,
-        confidence=_result_confidence(
-            result.peak_result,
-            resolved_selection_decision,
-        ),
         reason=_result_reason(
             result.peak_result,
             resolved_selection_decision,
@@ -238,17 +233,6 @@ def _result_selection_decision(
         selected_hypothesis,
         peak_result=peak_result,
     )
-
-
-def _result_confidence(
-    peak_result: PeakDetectionResult,
-    selection_decision: PeakHypothesisSelectionDecision | None,
-) -> str:
-    if selection_decision is not None:
-        return selection_decision.projected_confidence
-    if peak_result.peak is None:
-        return ""
-    return peak_result.confidence or "HIGH"
 
 
 def _result_reason(

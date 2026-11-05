@@ -15,7 +15,6 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
-    projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
@@ -500,7 +499,6 @@ def test_candidate_facts_drive_semantics_and_projection_without_score_labels() -
     assert semantics.decision_class == "accepted"
     assert "ms1_coherent" in semantics.support_reasons
     assert "candidate_aligned_ms2_nl" in semantics.support_reasons
-    assert projected_confidence_from_candidate_facts(facts, semantics) == "HIGH"
     assert projected_reason_from_candidate_facts(facts, semantics).startswith(
         "decision: accepted"
     )
@@ -532,7 +530,6 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
         candidate,
         ctx,
         prior_rt=ctx.rt_prior,
-        istd_confidence_note="paired ISTD confirmed",
         evidence_role="Analyte",
         istd_pair="ISTD",
         paired_istd_anchor_rt=7.8,
@@ -545,9 +542,7 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
     assert facts.rt.role == "Analyte"
     assert facts.rt.istd_pair == "ISTD"
     assert facts.chemical.ms2_present is False
-    assert scored.confidence.value == "VERY_LOW"
     assert "missing_ms2_policy_not_counted" in scored.reason
-    assert scored.reason.endswith("; paired ISTD confirmed")
 
     summary = candidate_score_summary(scored)
     assert summary.evidence_facts is not None
@@ -555,7 +550,6 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
     assert summary.evidence_facts.rt.role == "Analyte"
     assert summary.evidence_facts.chemical.ms2_present is False
     assert summary.evidence_facts.area == candidate.peak.area
-    assert summary.confidence == scored.confidence.value
     assert summary.reason == scored.reason
     assert scored.evidence_score is not None
     assert summary.raw_score == scored.evidence_score.raw_score
@@ -601,7 +595,7 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
     assert "paired_istd_rt_support" not in semantics.support_reasons
 
 
-def test_nl_fail_with_paired_istd_rt_mismatch_is_not_counted() -> None:
+def test_nl_fail_with_paired_istd_rt_mismatch_retains_review_evidence() -> None:
     candidate = _candidate(11.25, proposal_sources=("local_minimum",))
     ctx = ScoringContext(
         rt_array=np.asarray([11.1, 11.2, 11.25, 11.3, 11.4]),
@@ -636,9 +630,9 @@ def test_nl_fail_with_paired_istd_rt_mismatch_is_not_counted() -> None:
 
     assert facts.rt.paired_istd_delta_min == 1.25
     assert facts.rt.paired_istd_status == "far"
-    assert semantics.decision_class == "not_counted"
+    assert semantics.decision_class == "review"
     assert "anchor_conflict" in semantics.conflict_reasons
-    assert "paired_istd_rt_mismatch_policy" in semantics.not_counted_reasons
+    assert semantics.not_counted_reasons == ()
     assert "candidate_aligned_ms2_nl" not in semantics.support_reasons
 
 

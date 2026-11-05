@@ -44,7 +44,6 @@ class TargetGroundTruth:
     target_peak_end_min: float | None
     target_peak_width_min: float | None
     target_area: float | None
-    target_confidence: str
     target_nl_ok: str
     target_reason: str
     istd_rt_min: float | None

@@ -17,10 +17,8 @@ def test_anchor_mismatch_is_diagnostic_without_changing_quantification() -> None
         n_points=15,
         max_smoothed=5000.0,
         n_prominent_peaks=1,
-        confidence="HIGH",
         reason="decision: accepted",
         score_breakdown=(
-            ("Final Confidence", "HIGH"),
             ("Caps", ""),
             ("Raw Score", "90"),
             ("Support", "strict_nl_ok"),
@@ -38,6 +36,5 @@ def test_anchor_mismatch_is_diagnostic_without_changing_quantification() -> None
         strict_preferred_rt=True,
     )
     assert diagnostic is not None and diagnostic.issue == "ANCHOR_RT_MISMATCH"
-    assert peak_result.confidence == "HIGH"
     assert peak_result.peak.area == 8000.0
     assert dict(peak_result.score_breakdown)["Raw Score"] == "90"

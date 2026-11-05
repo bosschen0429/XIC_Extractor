@@ -72,7 +72,6 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
         max_smoothed=450.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="LOW",
         reason="concerns: local_sn (minor)",
         severities=((1, "local_sn"),),
     )
@@ -82,7 +81,6 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
         target_label="WithNL",
         role="Analyte",
         istd_pair="ISTD",
-        confidence="LOW",
         reason="concerns: local_sn (minor)",
         severities=((1, "local_sn"),),
         prior_rt=None,
@@ -96,8 +94,6 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
             projection_reason="decision: detected_flagged; review: local_sn_minor",
             support_reasons=("ms1_peak_present",),
             review_reasons=("local_sn_minor",),
-            legacy_evidence={"confidence": "LOW"},
-            legacy_authority_status="evidence_only",
         ),
     )
 
@@ -137,7 +133,8 @@ def test_row_builders_use_smoothed_rt_and_preserve_area() -> None:
     assert long_row["Area"] == "123.45"
     assert long_row["Int"] == "500"
     assert long_row["IntSmoothed"] == "450"
-    assert long_row["Confidence"] == "LOW"
+    assert "Confidence" not in long_row
+    assert "Legacy Authority Status" not in long_row
 
 
 def test_row_builders_report_selected_candidate_nl_before_target_window_nl() -> None:
@@ -167,8 +164,6 @@ def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
             ),
             support_reasons=("ms1_peak_present",),
             not_counted_reasons=("false_positive_peak",),
-            legacy_evidence={"confidence": "VERY_LOW", "nl_status": "NL_FAIL"},
-            legacy_authority_status="evidence_only",
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -195,7 +190,6 @@ def test_long_rows_use_targeted_product_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
-        confidence="VERY_LOW",
         targeted_product_projection=TargetedProductProjection(
             product_state="detected_flagged",
             counted_detection=True,
@@ -205,8 +199,6 @@ def test_long_rows_use_targeted_product_projection() -> None:
             ),
             support_reasons=("ms1_peak_present",),
             review_reasons=("plausible_dda_nl_dropout",),
-            legacy_evidence={"confidence": "VERY_LOW", "nl_status": "NL_FAIL"},
-            legacy_authority_status="evidence_only",
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -214,7 +206,6 @@ def test_long_rows_use_targeted_product_projection() -> None:
     long_row = _long_output_rows(file_result, [target])[0]
 
     assert long_row["NL"] == "NL_FAIL"
-    assert long_row["Confidence"] == "VERY_LOW"
     # A possible DDA dropout is a given fact under CID, not the reason.
     assert long_row["Reason"] == "有 MS1 峰。"
     assert long_row["Product State"] == "detected_flagged"
@@ -226,7 +217,6 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
-        confidence="VERY_LOW",
         reason="decision: review only, not counted; cap: VERY_LOW due to nl fail",
         targeted_product_projection=TargetedProductProjection(
             product_state="detected_flagged",
@@ -238,8 +228,6 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
             ),
             support_reasons=("role_aware_rt_support",),
             review_reasons=("plausible_dda_nl_dropout",),
-            legacy_evidence={"confidence": "VERY_LOW", "nl_status": "NL_FAIL"},
-            legacy_authority_status="evidence_only",
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -252,11 +240,10 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
     assert "未計入" not in long_row["Reason"]
 
 
-def test_long_row_confidence_follows_not_counted_projection() -> None:
+def test_long_row_reason_follows_not_counted_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("OK", 125.0, 0.5, 1, 1, 1)),
-        confidence="HIGH",
         reason="decision: accepted",
         targeted_product_projection=TargetedProductProjection(
             product_state="not_counted",
@@ -267,8 +254,6 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
             ),
             support_reasons=("candidate_aligned_ms2_nl",),
             not_counted_reasons=("missing_positive_ms1_peak",),
-            legacy_evidence={"confidence": "HIGH", "nl_status": "OK"},
-            legacy_authority_status="evidence_only",
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -277,7 +262,6 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
 
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
-    assert long_row["Confidence"] == "VERY_LOW"
     assert long_row["Reason"] == "沒有 MS1 峰。"
 
 
@@ -321,22 +305,19 @@ def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> No
         product_state="not_counted",
         counted_detection=False,
         review_state="review_required",
-        projection_reason="decision: not_counted; review: legacy_confidence_review",
-        review_reasons=(
-            "legacy_confidence_review",
-            "selected_envelope_split_supported",
+        projection_reason=(
+            "decision: not_counted; review: selected_envelope_split_supported"
         ),
+        review_reasons=("selected_envelope_split_supported",),
         not_counted_reasons=("selected_envelope_boundary_externalize",),
     )
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
     assert row["Reason"] == (
-        "未計入：峰或積分邊界未定。另需注意：信心分級偏低；有多個峰段，邊界需檢查。"
+        "未計入：峰或積分邊界未定。另需注意：有多個峰段，邊界需檢查。"
     )
-    assert row["Projection Review Reasons"] == (
-        "legacy_confidence_review; selected_envelope_split_supported"
-    )
+    assert row["Projection Review Reasons"] == ("selected_envelope_split_supported")
 
 
 def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
@@ -370,18 +351,15 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
     selected_long = _long_output_rows(selected_file, [target])[0]
     fallback_long = _long_output_rows(fallback_file, [target])[0]
     for header, fallback_value in fallback_long.items():
-        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason", "Confidence"}:
+        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
             continue
         assert selected_long[header] == fallback_value
-    assert fallback_long["Confidence"] == "LOW"
-    # The two fixtures have different finalized identity decisions. Legacy
-    # display confidence follows that decision; measured values do not change.
+    # The fixtures differ in finalized identity, not their measured values.
     assert fallback_long["Counted Detection"] == "TRUE"
     assert selected_long["Counted Detection"] == "FALSE"
     assert (
         selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
     )
-    assert selected_long["Confidence"] == "VERY_LOW"
     assert selected_long["Reason"] == "未設定配對 ISTD，無法確認身分。"
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
@@ -418,7 +396,6 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["PeakEnd"] == "9.3000"
     assert long_row["PeakWidth"] == "0.4200"
     assert long_row["NL"] == "WARN_12.3ppm"
-    assert long_row["Confidence"] == "LOW"
     assert long_row["Reason"] == "MS2 見到預期的中性丟失。另需注意：局部訊噪比偏弱。"
 
 
@@ -438,7 +415,6 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
         target_label="WithNL",
         role="Analyte",
         istd_pair="",
-        confidence="",
         reason="",
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -493,7 +469,7 @@ def _selected_hypothesis_with_integration(
         analysis_mode="targeted",
         resolver_mode="local_minimum",
         integration=integration,
-        evidence=EvidenceVector(confidence="LOW", reason="selected spine"),
+        evidence=EvidenceVector(reason="selected spine"),
         audit=AuditTrail(selected=True),
     )
 

@@ -52,8 +52,8 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
         n_prominent_peaks=2,
         candidates=(selected, rejected),
         candidate_scores=(
-            _score(selected, raw_score=92, confidence="HIGH"),
-            _score(rejected, raw_score=58, confidence="LOW"),
+            _score(selected, raw_score=92, nl_supported=True),
+            _score(rejected, raw_score=58, nl_supported=False),
         ),
         selection_reference_rt=8.45,
     )
@@ -79,7 +79,7 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     assert hypotheses[0].evidence.support_labels == ("strict_nl_ok", "shape_clean")
     assert hypotheses[0].integration.boundary_sources == ("candidate_interval",)
     assert hypotheses[1].audit.proposal_sources == ("local_minimum",)
-    assert hypotheses[1].audit.rejection_reason == "lower_confidence"
+    assert hypotheses[1].audit.rejection_reason == "lower_score"
     assert hypotheses[1].evidence.nl_match is False
     assert hypotheses[1].evidence.concern_labels == ("nl_fail",)
 
@@ -125,7 +125,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     )
     score = PeakCandidateScore(
         candidate=selected,
-        confidence="MEDIUM",
         reason="decision: medium with trace support",
         raw_score=73,
         support_labels=(
@@ -184,7 +183,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     )[0]
 
     evidence = hypothesis.evidence
-    assert evidence.confidence == "MEDIUM"
     assert evidence.raw_score == 73
     assert evidence.support_labels == (
         "strict_nl_ok",
@@ -227,7 +225,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     assert evidence.common.nl_match is True
     assert evidence.common.ms2_trace_strength == "strong"
     assert evidence.common.neutral_loss_error_ppm == 1.23
-    assert evidence.common.confidence == "MEDIUM"
     assert evidence.common.evidence_score == 73
     assert evidence.common.reason == "decision: medium with trace support"
 
@@ -405,16 +402,15 @@ def _score(
     candidate: PeakCandidate,
     *,
     raw_score: int,
-    confidence: str,
+    nl_supported: bool,
 ) -> PeakCandidateScore:
     return PeakCandidateScore(
         candidate=candidate,
-        confidence=confidence,
-        reason=f"decision: {confidence.lower()}",
+        reason="decision: accepted" if nl_supported else "decision: review",
         raw_score=raw_score,
         support_labels=("strict_nl_ok", "shape_clean"),
-        concern_labels=() if confidence == "HIGH" else ("nl_fail",),
-        cap_labels=() if confidence == "HIGH" else ("nl_fail_cap",),
+        concern_labels=() if nl_supported else ("nl_fail",),
+        cap_labels=() if nl_supported else ("nl_fail_cap",),
     )
 
 
