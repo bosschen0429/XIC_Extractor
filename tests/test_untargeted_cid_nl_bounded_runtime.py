@@ -1726,7 +1726,9 @@ def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
-@pytest.mark.parametrize("managed_call", [False, True])
+@pytest.mark.parametrize(
+    "managed_call", [False, pytest.param(True, marks=pytest.mark.requires_dotnet)]
+)
 def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     tmp_path: Path, monkeypatch, managed_call: bool, raw_workers: int
 ):

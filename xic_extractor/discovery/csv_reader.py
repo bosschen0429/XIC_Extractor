@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import cast
 
 from xic_extractor.discovery.batch_contract import (
@@ -192,7 +192,7 @@ def read_discovery_batch_index(
             ) from exc
         sample_order.append(sample_stem)
         candidate_csvs[sample_stem] = _resolve_artifact_path(path.parent, candidate_csv)
-        raw_files[sample_stem] = Path(raw_file) if raw_file else None
+        raw_files[sample_stem] = _raw_file_path(raw_file) if raw_file else None
         review_csvs[sample_stem] = (
             _resolve_artifact_path(path.parent, review_csv) if review_csv else None
         )
@@ -368,7 +368,7 @@ def _parse_candidate_row(
             path, row_number, row, "ms2_product_max_intensity"
         ),
         reason=_required_text(path, row_number, row, "reason"),
-        raw_file=Path(_machine_field(row, "raw_file")),
+        raw_file=_raw_file_path(_machine_field(row, "raw_file")),
         sample_stem=sample_stem,
         best_ms2_scan_id=best_ms2_scan_id,
         seed_scan_ids=_parse_int_tuple(path, row_number, row, "seed_scan_ids"),
@@ -424,6 +424,12 @@ def _parse_provisional_decision(
     row: dict[str, str],
 ) -> bool:
     return _parse_bool(path, row_number, row, "is_provisional")
+
+
+def _raw_file_path(value: str) -> Path:
+    """Read Windows-authored RAW locators without treating backslashes as names."""
+    windows_path = PureWindowsPath(value)
+    return Path(windows_path.as_posix() if windows_path.drive else value)
 
 
 def _resolve_artifact_path(parent: Path, value: str) -> Path:

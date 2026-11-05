@@ -34,8 +34,8 @@ contracts before running an analysis.
 
 ### Run the HTML workbench
 
-The analysis workflow runs on **Windows 10 or 11**. To run from source, install
-Python **3.12** and `uv`, then open PowerShell:
+The analysis workflow runs on **Windows 10 or 11** with Python **3.12 or 3.13**.
+To run from source, install `uv`, then open PowerShell:
 
 ```powershell
 git clone https://github.com/bosschen0429/XIC_Extractor.git
@@ -43,6 +43,12 @@ cd XIC_Extractor
 uv sync --locked
 uv run xic-workbench
 ```
+
+`uv` finds or downloads a compatible Python automatically. To choose 3.13
+explicitly, use `uv sync --locked --python 3.13`. Windows release packages keep
+Python 3.12 as their build baseline. Linux runs the non-browser, non-build
+compatibility tests in CI; this does not yet claim full Linux analysis or
+desktop-package support. See [testing](docs/agent/testing.md).
 
 The command opens a local browser workspace for analysis and result review.
 On later launches, double-click `launch_gui.vbs` for a console-free start, or

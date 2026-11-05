@@ -317,7 +317,7 @@ class RawFileHandle:
         comment = str(getattr(info, "Comment", "") or "").strip()
         creation_date = _to_python_datetime(getattr(raw, "CreationDate", None))
         file_name = str(getattr(raw, "FileName", "") or "").strip()
-        raw_stem = Path(file_name).stem if file_name else ""
+        raw_stem = PureWindowsPath(file_name).stem if file_name else ""
         return RawSampleHeader(
             raw_path=file_name,
             raw_stem=raw_stem,

@@ -31,7 +31,8 @@ def test_to_python_datetime() -> None:
     assert py_dt == datetime(2026, 1, 9, 18, 6, 51, 960000)
 
 
-def test_raw_file_handle_sample_header() -> None:
+@pytest.mark.parametrize("raw_file", [r"C:\data\sample_a.raw", "/data/sample_a.raw"])
+def test_raw_file_handle_sample_header(raw_file: str) -> None:
     fake_info = SimpleNamespace(
         SampleName="Sample_A",
         SampleId="ID_123",
@@ -46,7 +47,7 @@ def test_raw_file_handle_sample_header() -> None:
         CreationDate=SimpleNamespace(
             Year=2026, Month=3, Day=15, Hour=10, Minute=30, Second=0, Millisecond=0
         ),
-        FileName=r"C:\data\sample_a.raw",
+        FileName=raw_file,
         Dispose=lambda: None,
     )
     fake_thermo = _ThermoApi(
@@ -61,7 +62,7 @@ def test_raw_file_handle_sample_header() -> None:
     header = handle.sample_header
 
     assert isinstance(header, RawSampleHeader)
-    assert header.raw_path == r"C:\data\sample_a.raw"
+    assert header.raw_path == raw_file
     assert header.raw_stem == "sample_a"
     assert header.sample_name == "Sample_A"
     assert header.sample_id == "ID_123"

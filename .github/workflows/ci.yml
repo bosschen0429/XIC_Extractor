@@ -166,6 +166,33 @@ jobs:
           Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 Name, Id, CPU, WorkingSet64 | Format-Table -AutoSize
           Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
+  compatibility:
+    name: Compatibility (Python 3.13, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.13"
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev --group dev --python 3.13
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Test portable runtime
+        run: >-
+          uv run --no-sync python -m pytest
+          -m "not browser_e2e and not packaging_build and not current_repository_census and not serial_ci and not requires_dotnet"
+          -n 4 --dist loadfile -q --tb=short --durations=10
+
   browser:
     name: Browser (Windows Chromium)
     # A fresh pytest process still inherits the VM's Winsock/resource state.
@@ -253,14 +280,14 @@ jobs:
           retention-days: 7
 
   test:
-    # Preserve the required check's name while both independent lanes report.
+    # Preserve the branch-protection check name; it gates compatibility too.
     name: test (Python 3.12)
-    needs: [python-tests, browser]
+    needs: [python-tests, browser, compatibility]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require both test lanes
+      - name: Require every test lane
         shell: pwsh
         env:
           TEST_LANE_RESULTS: ${{ toJSON(needs) }}

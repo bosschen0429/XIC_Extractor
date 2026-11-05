@@ -402,8 +402,15 @@ def test_real_data_discovery_settings_change_processing_request_identity(
 
 def test_adapter_input_key_change_invalidates_request_not_source_content(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_path = _raw(tmp_path / "sample_a.raw", b"source-a")
+    source = _source_identity(original_path)
+    # Isolate adapter binding from file revision: a POSIX rename changes ctime.
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_inputs.build_local_acquisition_source_identity",
+        lambda *_args, **_kwargs: source,
+    )
     config = _config(tmp_path)
     original = _request(
         config,

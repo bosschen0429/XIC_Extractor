@@ -10,9 +10,16 @@ decision oracle changed.
 
 ## Runner And Environment
 
-Use Windows Native and the current checkout's .venv\Scripts\python.exe for
-project tests, scripts, and RAW commands. Each worktree owns its .venv; linked
-worktrees share only .uv-cache. Do not borrow another checkout's interpreter.
+Use the current checkout's .venv\Scripts\python.exe on Windows, or
+.venv/bin/python on Linux, for project tests and scripts. Formal RAW validation
+uses Windows Native. Each worktree owns its .venv; linked worktrees share only
+.uv-cache. Do not borrow another checkout's interpreter.
+
+A .venv belongs to one OS. When checking another Python or OS against the same
+checkout, use a separate, checkout-owned environment and keep the normal .venv
+intact. Set UV_PROJECT_ENVIRONMENT when syncing it. On WSL, keep that environment
+and pytest temporary files on the Linux filesystem rather than a Windows mount;
+keep source changes and evidence in this checkout and ignored output/.
 
 Check a worktree after setup changes or an environment failure with:
 

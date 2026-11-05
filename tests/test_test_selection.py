@@ -649,13 +649,16 @@ function .\.venv\Scripts\python.exe {
 
 
 @pytest.mark.parametrize(
-    "python_result", ("success", "failure", "cancelled", "skipped")
+    "failed_lane,result",
+    [(None, "success")]
+    + [
+        (lane, result)
+        for lane in ("python-tests", "browser", "compatibility")
+        for result in ("failure", "cancelled", "skipped")
+    ],
 )
-@pytest.mark.parametrize(
-    "browser_result", ("success", "failure", "cancelled", "skipped")
-)
-def test_ci_required_check_rejects_either_unsuccessful_lane(
-    tmp_path, monkeypatch, python_result, browser_result
+def test_ci_required_check_rejects_any_unsuccessful_lane(
+    tmp_path, monkeypatch, failed_lane, result
 ):
     pwsh = shutil.which("pwsh")
     if pwsh is None:
@@ -663,7 +666,7 @@ def test_ci_required_check_rejects_either_unsuccessful_lane(
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     gate = jobs["test"]
     assert gate["name"] == "test (Python 3.12)"
-    assert set(gate["needs"]) == {"python-tests", "browser"}
+    assert set(gate["needs"]) == {"python-tests", "browser", "compatibility"}
     assert gate["if"] == "${{ always() }}"
     assert jobs["browser"]["runs-on"] == "windows-latest"
     assert "needs" not in jobs["browser"]
@@ -671,8 +674,8 @@ def test_ci_required_check_rejects_either_unsuccessful_lane(
         "TEST_LANE_RESULTS",
         json.dumps(
             {
-                "python-tests": {"result": python_result},
-                "browser": {"result": browser_result},
+                lane: {"result": result if lane == failed_lane else "success"}
+                for lane in gate["needs"]
             }
         ),
     )
@@ -686,6 +689,6 @@ def test_ci_required_check_rejects_either_unsuccessful_lane(
         text=True,
         timeout=30,
     )
-    assert (result.returncode == 0) == (python_result == browser_result == "success"), (
+    assert (result.returncode == 0) == (failed_lane is None), (
         result.stdout + result.stderr
     )

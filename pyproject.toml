@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xic-extractor"
 version = "1.0.0"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "ijson>=3.4,<4",
     "matplotlib>=3.10.9",
@@ -54,6 +54,7 @@ testpaths = ["tests"]
 addopts = "-p no:cacheprovider --tb=short"
 tmp_path_retention_policy = "failed"
 markers = [
+    "requires_dotnet: exercises a real managed .NET runtime, not a fake RAW reader. Excluded from the portable compatibility lane; covered by the primary Windows test lane.",
     "browser_e2e: runs the shipped HTML workbench in locked Playwright Chromium without RAW/DLL analysis. CI selects this on workbench/review and browser-test infrastructure changes and on master.",
     "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
     "packaging_build: builds installable wheel or PyInstaller outputs. Run for packaging-authority changes and on the primary main-branch test job; ordinary PRs and compatibility runs keep the cheaper packaging contract tests.",
