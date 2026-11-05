@@ -286,17 +286,25 @@ def _step_parameters(
     return parsed
 
 
-def export_matrix_curation(
+@dataclass(frozen=True)
+class CurationEvaluation:
+    """The same owner decisions feed a read-only preview and the existing writer."""
+
+    tables: Mapping[str, StepTable]
+    summary: dict[str, Any]
+    preview: dict[str, Any]
+
+
+def prepare_matrix_curation(
     *,
     source: CurationSource,
     sample_metadata: Sequence[SampleMetadata] | None,
     sample_source: str,
     steps: Mapping[str, Mapping[str, object]],
-    output_dir: Path,
     istd_windows: Sequence[IstdWindow] | None = None,
     istd_source: str = "",
-) -> Path:
-    """Write the curated Matrix and per-feature decisions into a new folder.
+) -> CurationEvaluation:
+    """Evaluate once without writing; preview and export consume these decisions.
 
     Each enabled step judges the original Matrix on its own. A feature is kept
     when it is an internal standard or every enabled step keeps it. Sources are
@@ -433,15 +441,17 @@ def export_matrix_curation(
         if final_keep[index]:
             kept_rows.append(row)
 
-    output_dir.mkdir(parents=True, exist_ok=False)
-    write_tsv(output_dir / "analysis_matrix.tsv", kept_rows, header)
-    write_tsv(output_dir / "feature_decisions.tsv", decision_rows, decision_columns)
-    for name, table in tables.items():
-        write_tsv(output_dir / name, table.rows, table.columns)
+    export_tables = {
+        "analysis_matrix.tsv": StepTable(tuple(header), tuple(kept_rows)),
+        "feature_decisions.tsv": StepTable(
+            tuple(decision_columns), tuple(decision_rows)
+        ),
+        **tables,
+    }
     if binding.samples is not None:
-        write_tsv(
-            output_dir / "sample_metadata.tsv",
-            [
+        export_tables["sample_metadata.tsv"] = StepTable(
+            ("matrix_column", *SAMPLE_METADATA_COLUMNS),
+            tuple(
                 {
                     "matrix_column": column,
                     "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
@@ -449,8 +459,7 @@ def export_matrix_curation(
                     "excluded": "TRUE" if row.excluded else "FALSE",
                 }
                 for column, row in zip(samples, binding.samples, strict=True)
-            ],
-            ("matrix_column", *SAMPLE_METADATA_COLUMNS),
+            ),
         )
     summary = {
         "steps": [
@@ -483,9 +492,78 @@ def export_matrix_curation(
         "kept_feature_count": len(kept_rows),
         "sample_count": len(samples),
     }
+    preview_steps = []
+    protected = sum(bool(label) for label in istd_labels)
+    for step in enabled:
+        result = results[step.key]
+        kept = sum(
+            bool(label) or keep
+            for label, keep in zip(istd_labels, result.keep, strict=True)
+        )
+        item = {
+            "key": step.key,
+            "label": step.label,
+            "kept": kept,
+            "removed": len(rows) - kept,
+            "protected": protected,
+            "undetermined": sum(
+                row.get("same_compound_relation_undetermined") == "TRUE"
+                for row in result.rows
+            ),
+        }
+        if step is FINITE_FRACTION_STEP:
+            denominator = len(result.summary["eligible_matrix_columns"])
+            threshold = parameters[step.key]["min_finite_fraction"]
+            item["eligible_sample_count"] = denominator
+            item["minimum_finite_count"] = sum(
+                n / denominator < threshold for n in range(denominator + 1)
+            )
+        preview_steps.append(item)
+    return CurationEvaluation(
+        export_tables,
+        summary,
+        {
+            "feature_count": len(rows),
+            "kept": len(kept_rows),
+            "removed": len(rows) - len(kept_rows),
+            "protected": protected,
+            "istd_count": len(windows),
+            "steps": preview_steps,
+        },
+    )
+
+
+def export_matrix_curation(
+    *,
+    source: CurationSource,
+    sample_metadata: Sequence[SampleMetadata] | None,
+    sample_source: str,
+    steps: Mapping[str, Mapping[str, object]],
+    output_dir: Path,
+    istd_windows: Sequence[IstdWindow] | None = None,
+    istd_source: str = "",
+) -> Path:
+    """Write the curated Matrix and per-feature decisions into a new folder.
+
+    Each enabled step judges the original Matrix on its own. A feature is kept
+    when it is an internal standard or every enabled step keeps it. Sources are
+    never modified.
+    """
+    evaluation = prepare_matrix_curation(
+        source=source,
+        sample_metadata=sample_metadata,
+        sample_source=sample_source,
+        steps=steps,
+        istd_windows=istd_windows,
+        istd_source=istd_source,
+    )
+    output_dir.mkdir(parents=True, exist_ok=False)
+    for name, table in evaluation.tables.items():
+        write_tsv(output_dir / name, table.rows, table.columns)
     # Written last: a folder without the summary is an incomplete export.
     summary_path = output_dir / SUMMARY_NAME
     summary_path.write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(evaluation.summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
     return summary_path

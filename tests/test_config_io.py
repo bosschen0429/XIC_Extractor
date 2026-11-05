@@ -36,7 +36,7 @@ def test_old_csv_inputs_are_not_read_or_rewritten(tmp_path):
     assert read_targets(config_dir=tmp_path) == []
     write_settings({"parallel_workers": "2"}, config_dir=tmp_path)
     assert all(path.read_bytes() == content for path, content in originals.items())
-    assert read_settings(config_dir=tmp_path)["parallel_workers"] == "2"
+    assert read_settings(config_dir=tmp_path)["parallel_workers"] == ""
 
 
 def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources(
@@ -53,7 +53,7 @@ def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources
     write_settings({"dll_dir": "new-dll"}, config_dir=tmp_path)
     values = read_settings(config_dir=tmp_path)
     assert values["data_dir"] == "local"
-    assert values["parallel_workers"] == "1"
+    assert values["parallel_workers"] == ""
     assert values["injection_order_source"] == "prior.csv"
     assert values["dll_dir"] == "new-dll"
 

@@ -309,6 +309,12 @@ def create_server(
                 ):
                     raise ValueError("請選擇資料夾或檔案類型。")
                 result = {"path": choose_path(kind, current)}
+            elif path == "/api/matrix-curation/preview":
+                from xic_workbench.matrix_curation import preview_curation
+
+                # Read-only computation runs on this HTTP request thread, without
+                # holding the mutable workspace lock or blocking status/queries.
+                result = preview_curation(workspace.analysis.config_dir, values)
             elif path == "/api/analysis/start":
                 if not isinstance(values.get("values"), dict):
                     raise ValueError("請提供分析設定。")

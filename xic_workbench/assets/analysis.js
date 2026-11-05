@@ -156,6 +156,7 @@
       .querySelectorAll("[data-analysis-idle]")
       .forEach((node) => (node.disabled = isBusy() ||
         (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
+    if ($("curation-export")) $("curation-export").disabled = isBusy() || !state.curation?.previewRequest;
     document.dispatchEvent(
       new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
     );
@@ -2051,6 +2052,7 @@
     return state.config.preferences.matrix_curation?.steps || {};
   }
   async function detectCuration() {
+    invalidateCurationPreview();
     const request = (state.curation.request += 1);
     const sourceDir = $("curation-source_dir").value.trim();
     state.curation.detection = null;
@@ -2172,7 +2174,7 @@
     }
     lock();
   }
-  async function startCuration() {
+  function curationRequest() {
     const detection = state.curation.detection;
     if (!detection) throw new Error("請先選擇可讀取的 Alignment 輸出資料夾。");
     const steps = {};
@@ -2193,18 +2195,62 @@
     }
     if (!Object.keys(steps).length)
       throw new Error("請至少啟用一個可用的整理步驟。");
-    state.config.preferences = await api("/api/preferences", {
-      matrix_curation: { steps: remembered },
-    });
     const sourceDir = detection.source_dir;
-    await startJob("curation", {
+    return { remembered, values: {
       source_dir: sourceDir,
       sample_metadata_path: $("curation-sample_metadata").value.trim(),
       istd_path: $("curation-istd").value.trim(),
-      samples:
-        sourceDir === state.curation.runSource ? state.curation.samples : null,
+      samples: sourceDir === state.curation.runSource ? state.curation.samples : null,
       steps,
-    });
+    }};
+  }
+  function invalidateCurationPreview() {
+    state.curation.previewRequest = null;
+    $("curation-preview").textContent = "設定已變更，請更新預覽。";
+    lock();
+  }
+  async function previewCuration() {
+    if (state.curation.previewBusy) return;
+    const {values} = curationRequest();
+    const submitted = JSON.stringify(values);
+    state.curation.previewBusy = true;
+    state.curation.previewRequest = null;
+    $("curation-preview-refresh").disabled = true;
+    $("curation-preview").textContent = "正在計算預覽；仍可修改設定或檢閱結果。";
+    lock();
+    try {
+      const preview = await api("/api/matrix-curation/preview", values);
+      if (JSON.stringify(curationRequest().values) !== submitted) return;
+      const host = $("curation-preview");
+      host.replaceChildren(el("p", `原始 ${preview.feature_count} 列 → 保留 ${preview.kept} 列、移除 ${preview.removed} 列。`));
+      host.append(el("p", preview.istd_count ? `本次 ${preview.istd_count} 個內標，保護 ${preview.protected} 列。` : "本次沒有 ISTD 保護。"));
+      const table = el("table");
+      const head = el("tr");
+      for (const name of ["步驟", "保留", "移除", "ISTD 保護", "無法判定"]) head.append(el("th", name));
+      table.append(head);
+      for (const step of preview.steps) {
+        const row = el("tr");
+        for (const value of [step.label, step.kept, step.removed, step.protected, step.undetermined]) row.append(el("td", String(value)));
+        table.append(row);
+        if (step.eligible_sample_count != null)
+          host.append(el("p", `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值（僅計未排除的 study_sample）；這是數值可用率，不是偵測率。`));
+      }
+      host.append(table);
+      for (const step of state.curation.detection.steps.filter(step => step.unavailable_reason))
+        host.append(el("p", `${step.label}：未執行，${preview.feature_count} 列無法判定；${step.unavailable_reason}`, "subtle"));
+      state.curation.previewRequest = submitted;
+    } finally {
+      state.curation.previewBusy = false;
+      $("curation-preview-refresh").disabled = false;
+      lock();
+    }
+  }
+  async function startCuration() {
+    const {values, remembered} = curationRequest();
+    if (JSON.stringify(values) !== state.curation.previewRequest)
+      throw new Error("請先更新預覽，確認保留與移除列數。");
+    state.config.preferences = await api("/api/preferences", {matrix_curation: {steps: remembered}});
+    await startJob("curation", values);
   }
   async function openInspectorExport(source) {
     state.exportSource = source;
@@ -2913,6 +2959,8 @@
       };
       $("analysis-result").scrollIntoView({behavior: "smooth", block: "start"});
     });
+    $("curation-preview-refresh").onclick = () => act(previewCuration);
+    $("curation-form").addEventListener("input", invalidateCurationPreview);
     $("about-workspace").onclick = () => $("about-dialog").showModal();
     $("shutdown-workspace").onclick = () => act(shutdown);
     document.addEventListener("xic:review-busy", (event) => {

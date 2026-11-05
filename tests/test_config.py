@@ -111,7 +111,7 @@ def test_defaults_are_only_batch_and_machine():
 
 
 @pytest.mark.parametrize("workers", ["", "2", "5"])
-def test_targeted_and_discovery_share_saved_worker_budget(
+def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
     tmp_path, workers, monkeypatch
 ):
     from xic_extractor.configuration.execution_profile import load_execution_profile
@@ -127,7 +127,7 @@ def test_targeted_and_discovery_share_saved_worker_budget(
         targets=[_target_row()],
     )
     write_settings({"parallel_workers": workers}, config_dir=config_dir)
-    assert read_work_settings(config_dir=config_dir)["parallel_workers"] == workers
+    assert read_work_settings(config_dir=config_dir)["parallel_workers"] == ""
     monkeypatch.setattr(
         "xic_extractor.configuration.execution_profile.runtime_root", lambda: tmp_path
     )
@@ -138,7 +138,9 @@ def test_targeted_and_discovery_share_saved_worker_budget(
             == load_execution_profile().parallel_workers
         )
         if workers:
-            assert prepared.config.parallel_workers == int(workers)
+            assert load_execution_profile(
+                parallel_workers=int(workers)
+            ).parallel_workers == int(workers)
     finally:
         prepared.cleanup()
 

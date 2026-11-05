@@ -59,8 +59,9 @@ its older DLLs are not supported. See [reader setup details](docs/user/README.md
 for manual installation and existing DLL overrides.
 
 Choose a workflow, select the batch inputs, load a method, and run. After
-completion, open the result from the workspace rather than searching through
-intermediate files. Closing a tab does not cancel an active analysis; use the
+completion, the same page shows the saved overview, review and downloads. Use
+**開啟既有結果** to reopen a completed result without RAW files. Settings edits
+apply to the next analysis, not the displayed result. Closing a tab does not cancel an active analysis; use the
 workspace's cancellation control. Use **結束工作區** when finished.
 
 ## Read Your Results
@@ -74,7 +75,9 @@ sample; request its XIC when needed. [Workbook reading guide](docs/user/targeted
 columns are samples, and cells contain published areas. Use workbench review
 to investigate a feature, an unexpected value, or a missing cell. Optional
 **矩陣整理** writes a separate curated result without changing the source
-Matrix. [Matrix reading guide](docs/user/untargeted-discovery.md#read-and-use-the-matrix).
+Matrix. Preview each step’s kept, removed, ISTD-protected and undetermined rows
+before exporting. Preview and export use the same curation decisions.
+[Matrix reading guide](docs/user/untargeted-discovery.md#read-and-use-the-matrix).
 
 To reopen a completed batch or workbook:
 

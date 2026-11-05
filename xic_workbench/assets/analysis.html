@@ -245,6 +245,14 @@
     <div class="analysis-main">
       <form id="curation-form" class="steps">
         <section class="card step">
+          <div class="step-body">
+            <h2>整理影響預覽</h2>
+            <p>各步驟分別判斷原始矩陣；ISTD 保護計入保留列，無法判定的註記可能與移除列重疊。</p>
+            <button id="curation-preview-refresh" type="button">更新預覽</button>
+            <div id="curation-preview" aria-live="polite">選擇來源並設定步驟後，先預覽影響，再產生新矩陣。</div>
+          </div>
+        </section>
+        <section class="card step">
           <div class="step-head">
             <span class="step-no">1</span>
             <div>
@@ -276,10 +284,12 @@
         <button
           type="submit"
           form="curation-form"
+          id="curation-export"
+          disabled
           class="primary large block"
           data-analysis-idle
         >
-          <svg class="icon"><use href="#i-play" /></svg>開始整理
+          <svg class="icon"><use href="#i-play" /></svg>產生新矩陣
         </button>
       </section>
       <div class="job-slot" data-job-slot="curation"></div>

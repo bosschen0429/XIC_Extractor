@@ -350,3 +350,41 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
     assert result.returncode == 0, result.stderr
     for name in OUTPUT_FILES - {"matrix_curation_summary.json"}:
         assert (output / name).read_bytes() == (cli_output / name).read_bytes()
+
+
+@pytest.mark.parametrize("protected", [False, True])
+def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, protected):
+    from xic_extractor.matrix_curation.export import (
+        export_matrix_curation,
+        locate_curation_source,
+        prepare_matrix_curation,
+        read_sample_metadata_file,
+    )
+    from xic_extractor.matrix_curation.istd import IstdWindow
+
+    folder, samples = _inputs(tmp_path)
+    before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    arguments = dict(
+        source=locate_curation_source(folder),
+        sample_metadata=read_sample_metadata_file(samples),
+        sample_source=str(samples),
+        steps={"finite_fraction": {"min_finite_fraction": 2 / 3}},
+        istd_windows=(IstdWindow("blank-only", 104, 2, 3),) if protected else (),
+    )
+    preview = prepare_matrix_curation(**arguments).preview
+    assert {
+        str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
+    } == before
+    assert preview["kept"] == 2 + protected
+    assert preview["removed"] == 2 - protected
+    step = preview["steps"][0]
+    assert (step["minimum_finite_count"], step["eligible_sample_count"]) == (2, 3)
+    assert step["protected"] == int(protected)
+    assert step["undetermined"] == 0
+    output = tmp_path / "export"
+    export_matrix_curation(**arguments, output_dir=output)
+    _, rows = read_tsv_with_header(output / "analysis_matrix.tsv")
+    assert len(rows) == preview["kept"]
+    assert [row["Mz"] for row in rows] == (
+        ["101.0000", "103.0000", "104.0000"] if protected else ["101.0000", "103.0000"]
+    )

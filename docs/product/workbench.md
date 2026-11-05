@@ -13,7 +13,15 @@ owns command arguments.
 
 The HTML workbench is the primary human surface; script CLIs remain
 reproducible automation and diagnostic surfaces. Both call the same application
-and scientific owners, so a result does not depend on which route started it.
+and scientific owners, so the same effective request has the same scientific
+behavior. The GUI runs complete Untargeted analysis with Backfill enabled;
+single-RAW Discovery, Alignment-only and disabling Backfill remain CLI uses.
+Worker counts come from the shared execution profile, not saved GUI settings.
+
+The analysis page presents the completed overview, review and downloads together.
+Opening existing results uses that same review surface without RAW or DLL access.
+Matrix curation is optional and previews the existing owner's decisions before
+writing a separate matrix; it never overwrites the original matrix.
 
 ## Review does not change results
 

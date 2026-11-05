@@ -252,13 +252,13 @@ def test_real_browser_reload_and_multiple_tabs_retire_only_after_last_close(
             first = context.new_page()
             first.on("pageerror", lambda error: browser_errors.append(str(error)))
             first.goto(url)
-            expect(first.locator("#t-dll_dir")).to_be_visible()
+            expect(first.locator("#t-data_dir")).to_be_visible()
             first.reload()
-            expect(first.locator("#t-dll_dir")).to_be_visible()
+            expect(first.locator("#t-data_dir")).to_be_visible()
             second = context.new_page()
             second.on("pageerror", lambda error: browser_errors.append(str(error)))
             second.goto(url)
-            expect(second.locator("#t-dll_dir")).to_be_visible()
+            expect(second.locator("#t-data_dir")).to_be_visible()
             first.close()
             assert process.poll() is None
             assert _request(url, "/api/review")[0] == 200
@@ -389,6 +389,15 @@ def _view(page, name):
     ):
         page.locator(f".topbar [data-view='{name}']").click()
     expect(page.locator(f"#workspace-{name}")).to_be_visible()
+
+
+def _set_reader_path(page, value):
+    # Machine setup is a precondition here, not the user-facing analysis journey.
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        value,
+    )
 
 
 def _open_results(page):
@@ -2464,12 +2473,12 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
     fake_runs.release.set()
     page.locator("#t-data_dir").fill(str(raw_dir))
-    page.locator("#t-dll_dir").fill(str(tmp_path))
+    _set_reader_path(page, str(tmp_path))
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
     _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
-    page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
+    _set_reader_path(page, str(tmp_path / "next-dll"))
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
     assert (
@@ -3078,7 +3087,6 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
@@ -3265,7 +3273,6 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
 
     # A new batch named the same way reuses the confirmed batch by name.
     _view(page, "untargeted")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     second = tmp_path / "second"
     _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
     page.locator("#u-raw_dir").fill(str(second))
@@ -3504,7 +3511,6 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
 
@@ -3537,7 +3543,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
 
 
 def test_matrix_curation_from_a_run_and_from_an_existing_folder(
-    workbench, fake_runs, config_dir, tmp_path
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
     from tests.test_matrix_curation import (
         alignment_output,
@@ -3557,14 +3563,15 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     }
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#u-output_dir").fill(str(run_output))
     _start(page, "untargeted")
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
 
     # After a run only the threshold is needed: folder and samples come along.
-    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
+    page.locator("#untargeted-result").get_by_role(
+        "button", name="選用：整理矩陣"
+    ).click()
     expect(page.locator("#result-curation")).to_be_visible()
     expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
     step = page.locator("#curation-step-finite_fraction")
@@ -3577,6 +3584,33 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     )
     expect(page.locator("#curation-source")).to_contain_text("內標清單")
     page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
+    from xic_workbench import matrix_curation
+
+    preview = matrix_curation.preview_curation
+    released = threading.Event()
+    entered = threading.Event()
+
+    def slow_preview(*args, **kwargs):
+        entered.set()
+        assert released.wait(HANDSHAKE_TIMEOUT_S)
+        return preview(*args, **kwargs)
+
+    monkeypatch.setattr(matrix_curation, "preview_curation", slow_preview)
+    page.locator("#curation-preview-refresh").click()
+    try:
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        expect(page.locator("#curation-preview")).to_contain_text("正在計算")
+        # A pending preview must not hold the server's mutable-workspace lock.
+        with page.expect_response("**/api/preferences"):
+            page.locator("#theme-toggle").click()
+        expect(
+            page.locator("#curation-finite_fraction-min_finite_fraction")
+        ).to_be_enabled()
+    finally:
+        released.set()
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
+    expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
+    expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
     result = page.locator("#curation-result")
@@ -3590,6 +3624,9 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # An existing folder without sample data names the reason; choosing a
     # sample file makes the step available, and the last threshold returns.
     page.reload()
+    page.locator("#untargeted-result").get_by_role(
+        "button", name="選用：整理矩陣"
+    ).click()
     expect(page.locator("#result-curation")).to_be_visible()
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
@@ -3604,6 +3641,10 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-finite_fraction-min_finite_fraction")).to_have_value(
         "0.6"
     )
+    page.locator("#curation-preview-refresh").click()
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
+    expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
+    expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
     expect(result).to_contain_text(str(existing))

@@ -12,6 +12,7 @@ from xic_extractor.matrix_curation.export import (
     describe_steps,
     export_matrix_curation,
     locate_curation_source,
+    prepare_matrix_curation,
     read_run_istd,
     read_run_samples,
     read_sample_metadata_file,
@@ -140,6 +141,30 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
             if path.is_file()
         ],
     }
+
+
+def preview_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
+    source = locate_curation_source(Path(str(values.get("source_dir") or "")))
+    metadata, sample_source = resolve_samples(
+        config_dir,
+        source,
+        sample_metadata_path=str(values.get("sample_metadata_path") or ""),
+        samples=values.get("samples"),
+    )
+    istd, istd_source = resolve_istd(
+        source, istd_path=str(values.get("istd_path") or "")
+    )
+    steps = values.get("steps")
+    if not isinstance(steps, dict):
+        raise ValueError("請至少啟用一個整理步驟。")
+    return prepare_matrix_curation(
+        source=source,
+        sample_metadata=metadata,
+        sample_source=_summary_label(sample_source),
+        steps=steps,
+        istd_windows=istd,
+        istd_source=_istd_label(source, istd_source),
+    ).preview
 
 
 def _summary_label(sample_source: dict[str, str] | None) -> str:
