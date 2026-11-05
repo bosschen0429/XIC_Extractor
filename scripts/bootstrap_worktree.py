@@ -215,7 +215,7 @@ def inspect_state(root: Path) -> BootstrapState:
     stamp_path = root / ".venv" / STAMP_NAME
     try:
         stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError, json.JSONDecodeError, OSError:
         return BootstrapState(
             ready=False,
             reason="bootstrap stamp is missing or invalid",
@@ -353,7 +353,7 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
     source = _shared_cache_dir(root).parent / ".env.xic-local"
     try:
         text = source.read_bytes().decode("utf-8")
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return {
             "ready": False,
             "reason": "main worktree local env is unavailable",

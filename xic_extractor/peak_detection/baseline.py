@@ -306,7 +306,7 @@ def compute_asls_residual_mad(
     else:
         try:
             baseline = asls_baseline(values)
-        except (ValueError, FloatingPointError):
+        except ValueError, FloatingPointError:
             return None, None
     if baseline.shape != values.shape:
         if baseline_values is not None:

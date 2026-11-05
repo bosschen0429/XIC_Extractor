@@ -93,7 +93,7 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
     try:
         loaded = json.loads((source_dir / RUN_METADATA_NAME).read_text("utf-8"))
         run = loaded if isinstance(loaded, dict) else {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
     raw_dir, dll_dir = (
         Path(value) if isinstance(value, str) and value.strip() else None
@@ -146,7 +146,7 @@ def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
         return windows_from_explanation(
             read_explanation_summary(source.explanation_path)
         )
-    except (ExplanationError, ValueError):
+    except ExplanationError, ValueError:
         return None
 
 
@@ -203,7 +203,7 @@ def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | Non
 
     try:
         return read_analysis_set(source.raw_dir, source.dll_dir).sample_metadata
-    except (OSError, RawReaderError, ValueError):
+    except OSError, RawReaderError, ValueError:
         return None
 
 
@@ -273,7 +273,7 @@ def _step_parameters(
         raw = values.get(parameter.key)
         try:
             number = float(raw)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             number = math.nan
         if not math.isfinite(number) or not (
             parameter.minimum <= number <= parameter.maximum

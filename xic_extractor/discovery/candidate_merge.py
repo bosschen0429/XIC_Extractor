@@ -895,7 +895,7 @@ def _optional_int(value: Any) -> int:
         return 0
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -904,7 +904,7 @@ def _optional_float(value: Any) -> float | None:
         return None
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return parsed if math.isfinite(parsed) else None
 

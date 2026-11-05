@@ -339,7 +339,7 @@ def test_append_does_not_retain_payload_and_reads_do_not_cache(tmp_path):
 
 def test_failed_append_does_not_publish_or_consume_partition_key(tmp_path):
     store = StreamedResultStore(tmp_path, ())
-    with pytest.raises((AttributeError, TypeError)):
+    with pytest.raises((AttributeError, TypeError, pickle.PicklingError)):
         store.append("retry", Payload((lambda: None,)))
     assert list(tmp_path.iterdir()) == []
     with pytest.raises(IndexError):

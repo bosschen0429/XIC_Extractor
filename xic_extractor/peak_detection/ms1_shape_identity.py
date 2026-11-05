@@ -124,7 +124,9 @@ def prepare_local_peak_shape(
         peak_height = float(np.max(primary))
         half_height_count = int(np.sum(primary >= 0.5 * peak_height))
         edges = (float(primary[0] / peak_height), float(primary[-1] / peak_height))
-    smoothed = np.asarray(gaussian_smooth_values(primary, points=smooth_points))
+    smoothed = np.asarray(
+        gaussian_smooth_values(primary, points=smooth_points), dtype=float
+    )
     max_intensity = float(np.max(smoothed))
     if max_intensity <= 0:
         return LocalPeakShape(half_window_min, (None,) * grid_size, source_count)
@@ -324,7 +326,7 @@ def _local_shape_comparison_result(
 
 
 def gaussian_smooth_values(
-    values: Sequence[float | int | None],
+    values: Iterable[float | int | None],
     *,
     points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
 ) -> tuple[float, ...]:
@@ -361,8 +363,8 @@ def _pearson_similarity(
     return float(np.corrcoef(x, y)[0, 1]), count
 
 
-def _float_array(values: Sequence[float | int | None]) -> np.ndarray:
+def _float_array(values: Iterable[float | int | None]) -> np.ndarray:
     try:
         return np.asarray(tuple(values), dtype=float)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return np.array([], dtype=float)

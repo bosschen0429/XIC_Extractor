@@ -88,7 +88,7 @@ def write_dll_dir(dll_dir: str, *, config_dir: Path | None = None) -> None:
 def _read_json_object(path: Path) -> dict:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return {}
     return payload if isinstance(payload, dict) else {}
 

@@ -549,7 +549,7 @@ def _safe_float(value: object | None) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

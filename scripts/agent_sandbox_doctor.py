@@ -346,8 +346,9 @@ def _inspect_python_runtime(
                 ),
             )
         )
-    major_minor = tuple(version[:2])
-    if not ((3, 11) <= major_minor < (3, 14)):
+    requested_python = (workspace_root / ".python-version").read_text().strip()
+    expected_version = tuple(int(part) for part in requested_python.split("."))
+    if tuple(version[: len(expected_version)]) != expected_version:
         findings.append(
             Finding(
                 severity="blocker",
@@ -355,7 +356,7 @@ def _inspect_python_runtime(
                 message=(
                     "Python "
                     + ".".join(str(part) for part in version[:3])
-                    + " is outside the project contract >=3.11,<3.14."
+                    + f" does not match .python-version ({requested_python})."
                 ),
                 next_action=(
                     "Run the canonical worktree bootstrap, then use that "

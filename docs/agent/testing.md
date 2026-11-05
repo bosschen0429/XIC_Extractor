@@ -94,11 +94,18 @@ import graph and the paths tests and code name; a new test file needs no
 registration. Pull-request CI runs that selection, master runs every test, and
 anything the derivation cannot place runs every test.
 
-For a known failure or a bounded behavior, run its existing pytest file or node
-directly. When the affected tests are unclear, use the selector:
+For local changes, use the selector as the default validation entry point:
 
     .venv\Scripts\python.exe -m tools.testing.test_selection
-    .venv\Scripts\python.exe -m tools.testing.test_selection --all
+
+For a known failure or a bounded behavior, run its existing pytest file or node
+directly. Use the selector's `--all` option when intentionally broadening to all
+test files. Plain `pytest` without a target still collects the whole suite; it
+does not derive affected tests.
+
+Pytest's cache provider stays enabled, retaining state for `--lf` and `--ff`
+under ignored `.pytest_cache/`. This state is not an affected-test selection or
+a cache of imported test modules; default coverage remains unchanged.
 
 Use `--print` to inspect the marker expression and candidate files without
 running tests. Caller `-m` filters are included;
@@ -126,12 +133,21 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. The browser lane runs on its own GitHub-hosted Windows
-VM, independently of the scientific and packaging tests. Relevance selects the
-lane; a selected lane runs every browser test. The required `test (Python 3.12)`
-check succeeds only when both the Python and browser jobs succeed. Failures,
-cancellations, and skipped jobs fail that check. Browser deadlines are hang
-watchdogs: CI sets
+explicit local opt-in. The browser lane runs on dedicated GitHub-hosted Windows
+VMs, independently of the scientific and packaging tests. Relevance selects the
+lane on PRs and on master pushes, each judged by its own changed range, so a
+merge whose PR skipped the lane does not run it again on master. A selected lane
+runs every browser test exactly once across three independent Windows VMs, with
+one process per VM. The `tools.testing.test_sharding` pytest plugin splits the
+sorted node IDs left after marker selection; adding a case needs no registry.
+Each case keeps its own browser context, loopback server, config and evidence
+directory. Every shard must succeed, and one failure does not cancel the others.
+CI installs only the locked Chromium headless
+shell already used by the launch fixture, not an unused headed browser.
+The required `test (Python 3.12)`
+check succeeds only when the Linux Python, Windows integration and browser jobs
+succeed. Failures, cancellations, and skipped jobs fail that check. Browser
+deadlines are hang watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
 while local runs keep Playwright's defaults. Browser failures retain
 `browser-trace.zip` and `browser-events.json` in unique directories under ignored
@@ -147,8 +163,7 @@ Request failures are diagnostic, since navigation/download can intentionally
 abort requests. Workbench console errors and page exceptions fail tests;
 Inspector contexts preserve their page-exception gate and record console errors
 as diagnostics.
-`tools.testing.test_selection` owns
-change relevance; master runs the lane.
+`tools.testing.test_selection` owns change relevance.
 
 ## RAW And Scientific Validation
 
@@ -156,6 +171,22 @@ Default pytest must not depend on local RAW paths. Synthetic/unit tests prove
 engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 85RAW runs are validation evidence only when the active Issue and method owner
 require them.
+
+All runtime lanes use the same locked Python 3.15 stack. Linux owns the ordinary
+suite, including fake-reader, PowerShell release-script, embedded-JavaScript and
+`requires_dotnet` checks. The Linux job provisions .NET 8 and selects CoreCLR
+through `PYTHONNET_RUNTIME=coreclr`; it requires neither RAW nor a browser.
+Windows integration runs only `windows_only` cases (Windows DLL search and file
+locking) in one process, followed by the relevant serial packaging builds.
+Linux splits its cases across two VMs with the same sharding plugin; each VM's
+four workers use work stealing rather than keeping a whole slow test file on one
+worker.
+Both jobs use the same affected-test plan on PRs; master runs their complete,
+disjoint portions. Browser checks retain their separate Windows VMs, and the
+census runs once in lint. The required `test (Python 3.12)` name is retained only
+for branch protection: it aggregates these three test lanes and runs no 3.12
+interpreter. Default pytest contains no private-RAW-path tests; use the explicit
+configured RAW validation runner for RAW-backed evidence.
 
 Use the method-specific acceptance check when RAW-backed evidence is needed.
 The runner owns input checks and run metadata; tests do not require a separate

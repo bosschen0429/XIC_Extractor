@@ -91,7 +91,7 @@ def filter_cid_nl_recipe_presets(
         preset = load_preset(preset_name)
         try:
             bind_cid_nl_recipe(preset, route)
-        except (PresetError, ValueError):
+        except PresetError, ValueError:
             continue
         accepted.append(preset_name)
     return tuple(accepted)

@@ -67,7 +67,7 @@ class DesktopInstance:
     def _running_url(self) -> str | None:
         try:
             record = json.loads(self._record.read_text(encoding="utf-8"))
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError, ValueError:
             # The lock owner may still be starting or replacing an old record.
             return None
         url = record.get("url") if isinstance(record, dict) else None
@@ -97,7 +97,7 @@ class DesktopInstance:
             data = json.loads(response.read())
             if response.status == 200 and data.get("desktop_key") == self.key:
                 return url
-        except (OSError, http.client.HTTPException, ValueError):
+        except OSError, http.client.HTTPException, ValueError:
             # A previous server can exit between reading the record and connecting.
             return None
         finally:

@@ -34,8 +34,8 @@ contracts before running an analysis.
 
 ### Run the HTML workbench
 
-The analysis workflow runs on **Windows 10 or 11**. To run from source, install
-Python **3.12** and `uv`, then open PowerShell:
+The analysis workflow runs on **Windows 10 or 11** with Python **3.15**.
+To run from source, install a current version of `uv`, then open PowerShell:
 
 ```powershell
 git clone https://github.com/bosschen0429/XIC_Extractor.git
@@ -43,6 +43,14 @@ cd XIC_Extractor
 uv sync --locked
 uv run xic-workbench
 ```
+
+`uv` finds or downloads Python 3.15 automatically. If an older `uv` cannot find
+that version, update `uv` first. Windows release packages and all CI lanes use
+the same locked Python 3.15 dependency stack. Linux owns ordinary CI tests,
+including .NET/CoreCLR integration; Windows retains OS-specific, browser and
+packaging checks. This does not yet claim full Linux analysis or desktop-package
+support. See
+[testing](docs/agent/testing.md).
 
 The command opens a local browser workspace for analysis and result review.
 On later launches, double-click `launch_gui.vbs` for a console-free start, or
@@ -125,3 +133,8 @@ Start with the [repository layout](docs/project-layout.md#repository-tree)
 and [architecture reading guide](docs/architecture-contract.md#reading-the-code).
 Coding agents start at [AGENTS.md](AGENTS.md); developer worktree setup and
 validation use [Local Execution](docs/agent/local-execution.md#runner-and-environment).
+
+For local changes, run `.venv\Scripts\python.exe -m tools.testing.test_selection`
+by default. Known test files or failing nodes can be run directly; plain
+`pytest` without a target still collects the whole suite. See
+[test selection](docs/agent/testing.md#affected-test-selection).

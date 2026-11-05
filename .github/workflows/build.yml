@@ -26,15 +26,16 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.2.0
         with:
+          version: "0.13.7"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install locked dependencies
         shell: pwsh
-        run: uv sync --locked --extra dev --group dev --python 3.12
+        run: uv sync --locked --extra dev --group dev --python 3.15
 
       - name: Verify same-SHA CI for release
         id: verify_ci

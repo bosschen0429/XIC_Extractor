@@ -18,15 +18,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
+          version: "0.13.7"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - id: install
         run: uv sync --locked --all-extras --dev
       - run: uv run ruff check xic_extractor xic_inspector xic_workbench scripts tools tests
@@ -54,20 +56,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
+          version: "0.13.7"
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: uv sync --locked --all-extras --dev
       - run: uv run mypy xic_extractor scripts xic_workbench xic_inspector tools
 
-  python-tests:
-    name: Python tests (3.12)
+  windows-integration:
+    name: Windows integration (3.15)
     # Keep post-merge work off the PR runner. Label an independent PR to use
     # hosted capacity too; this is explicit routing, not an idle-runner probe.
     runs-on: ${{ (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:hosted-windows')) && 'windows-latest' || 'self-hosted' }}
@@ -76,27 +81,29 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          path: repo-3.12-tests
+          path: repo-3.15-tests
           submodules: false
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.12"
-          working-directory: repo-3.12-tests
+          version: "0.13.7"
+          python-version: "3.15"
+          working-directory: repo-3.15-tests
       - name: Install
         shell: pwsh
-        working-directory: repo-3.12-tests
+        working-directory: repo-3.15-tests
         run: |
           $started = Get-Date
-          uv sync --locked --extra dev --group dev --python 3.12
+          uv sync --locked --extra dev --group dev --python 3.15
           $exitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "### Python 3.12 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "### Python 3.15 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- runner_environment=$env:RUNNER_ENVIRONMENT" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
       - name: Test
         shell: pwsh
-        working-directory: repo-3.12-tests
+        working-directory: repo-3.15-tests
         env:
           # xdist owns parallelism; native BLAS pools must not multiply its
           # worker budget and starve subprocess deadlines.
@@ -127,18 +134,18 @@ jobs:
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $runSelected = -not $selectedSubset -or $testTargets.Count -gt 0
           $started = Get-Date
-          $parallelStarted = Get-Date
-          $parallelMarkers = "($markerExpression) and not browser_e2e"
-          $parallelExitCode = 0
+          $windowsStarted = Get-Date
+          $windowsMarkers = "($markerExpression) and windows_only and not browser_e2e"
+          $windowsExitCode = 0
           if ($runSelected) {
-            & .\.venv\Scripts\python.exe -m pytest -m $parallelMarkers -n 4 --dist loadfile -v --tb=short --durations=10 @testTargets
-            $parallelExitCode = $LASTEXITCODE
+            & .\.venv\Scripts\python.exe -m pytest -m $windowsMarkers -n 0 -v --tb=short --durations=10 @testTargets
+            $windowsExitCode = $LASTEXITCODE
             # Exit 5: the selected files hold no test these markers keep.
-            if ($selectedSubset -and $parallelExitCode -eq 5) { $parallelExitCode = 0 }
+            if ($selectedSubset -and $windowsExitCode -eq 5) { $windowsExitCode = 0 }
           }
-          $parallelElapsed = [math]::Round(((Get-Date) - $parallelStarted).TotalSeconds, 1)
+          $windowsElapsed = [math]::Round(((Get-Date) - $windowsStarted).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- windows_test_seconds=$windowsElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
           $serialTargets = @()
           if ($runPackagingBuild) {
@@ -156,7 +163,7 @@ jobs:
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
+          if ($windowsExitCode -ne 0) { exit $windowsExitCode }
           exit $serialExitCode
       - name: Runner load on failure
         # Name the processes and socket states behind a machine stall.
@@ -166,35 +173,108 @@ jobs:
           Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 Name, Id, CPU, WorkingSet64 | Format-Table -AutoSize
           Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
+  python-tests:
+    name: Python tests (3.15, Linux, shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    timeout-minutes: 30
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      PYTHONNET_RUNTIME: coreclr
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "0.13.7"
+          python-version: "3.15"
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+          check-latest: false
+          skip-lts-prepass: true
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev --group dev --python 3.15
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Test
+        shell: pwsh
+        run: |
+          $markerExpression = "not current_repository_census and not serial_ci"
+          $testTargets = @()
+          $selectedSubset = $false
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $baseSha = "${{ github.event.pull_request.base.sha }}"
+            $headSha = "${{ github.event.pull_request.head.sha }}"
+            $plan = @(uv run --no-sync python -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $markerExpression = $plan[0]
+            $selectedFiles = @($plan | Select-Object -Skip 1)
+            if ($selectedFiles -notcontains 'ALL') {
+              $testTargets = $selectedFiles
+              $selectedSubset = $true
+            }
+          }
+          $selectionSummary = if ($selectedSubset) { $testTargets.Count } else { 'all' }
+          "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          $markers = "($markerExpression) and not windows_only and not browser_e2e"
+          "- marker_expression=$markers" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          if ($selectedSubset -and $testTargets.Count -eq 0) {
+            Write-Output '::notice title=Python tests not run::No affected test files; this is not a passing test run.'
+            exit 0
+          }
+          uv run --no-sync python -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $markers -n 4 --dist worksteal -q --tb=short --durations=10 @testTargets
+          $testExitCode = $LASTEXITCODE
+          if ($selectedSubset -and $testExitCode -eq 5) {
+            Write-Output '::notice title=Python tests not run::No selected tests belong to the Linux lane.'
+            exit 0
+          }
+          exit $testExitCode
+
   browser:
-    name: Browser (Windows Chromium)
+    name: Browser (Windows Chromium, shard ${{ matrix.shard }})
     # A fresh pytest process still inherits the VM's Winsock/resource state.
     # Keep Chromium and loopback HTTP off the scientific/build-test machine.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          path: repo-3.12-browser
+          path: repo-3.15-browser
           submodules: false
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.12"
-          working-directory: repo-3.12-browser
+          version: "0.13.7"
+          python-version: "3.15"
+          working-directory: repo-3.15-browser
       - name: Install
         shell: pwsh
-        working-directory: repo-3.12-browser
-        run: uv sync --locked --extra dev --group dev --python 3.12
+        working-directory: repo-3.15-browser
+        run: uv sync --locked --extra dev --group dev --python 3.15
       - name: Plan browser coverage
         id: browser-plan
         shell: pwsh
-        working-directory: repo-3.12-browser
+        working-directory: repo-3.15-browser
         run: |
           $markerExpression = "not current_repository_census and not serial_ci"
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            $baseSha = "${{ github.event.pull_request.base.sha }}"
-            $headSha = "${{ github.event.pull_request.head.sha }}"
+          # A push applies the PR's relevance rule to the pushed range, so a
+          # merge whose PR skipped this lane does not run it again on master.
+          $baseSha = "${{ github.event.pull_request.base.sha || github.event.before }}"
+          $headSha = "${{ github.event.pull_request.head.sha || github.sha }}"
+          if ($baseSha -notmatch '^0*$') {
             $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $markerExpression = $plan[0]
@@ -210,7 +290,7 @@ jobs:
       - name: Browser test
         if: steps.browser-plan.outputs.required == 'true'
         shell: pwsh
-        working-directory: repo-3.12-browser
+        working-directory: repo-3.15-browser
         env:
           XIC_PLAYWRIGHT_CHANNEL: ""
           OPENBLAS_NUM_THREADS: "1"
@@ -221,7 +301,8 @@ jobs:
           $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = $env:XIC_BROWSER_MARKERS
           $started = Get-Date
-          & .\.venv\Scripts\python.exe -m playwright install chromium
+          # The launch fixture already uses headless shell, never headed Chromium.
+          & .\.venv\Scripts\python.exe -m playwright install --only-shell chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_install_seconds=$installElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -229,7 +310,9 @@ jobs:
           # Relevance decides whether to run; every relevant change gets the
           # complete lane. Zero collected tests is a failure, never a green gate.
           $browserMarkers = "($markerExpression) and browser_e2e"
-          & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10
+          # Separate Windows VMs own disjoint cases; don't concentrate concurrent
+          # Chromium/loopback traffic on one VM. Every matrix result is required.
+          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -244,23 +327,23 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-browser-traces
+          name: workbench-browser-traces-${{ matrix.shard }}
           path: |
-            repo-3.12-browser/tmp_runtime/**/browser-trace.zip
-            repo-3.12-browser/output/browser-failures/**/browser-trace.zip
-            repo-3.12-browser/output/browser-failures/**/browser-events.json
+            repo-3.15-browser/tmp_runtime/**/browser-trace.zip
+            repo-3.15-browser/output/browser-failures/**/browser-trace.zip
+            repo-3.15-browser/output/browser-failures/**/browser-events.json
           if-no-files-found: ignore
           retention-days: 7
 
   test:
-    # Preserve the required check's name while both independent lanes report.
+    # Legacy branch-protection name only; this job does not run Python 3.12.
     name: test (Python 3.12)
-    needs: [python-tests, browser]
+    needs: [python-tests, windows-integration, browser]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require both test lanes
+      - name: Require every test lane
         shell: pwsh
         env:
           TEST_LANE_RESULTS: ${{ toJSON(needs) }}
