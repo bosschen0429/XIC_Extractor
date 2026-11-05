@@ -18,6 +18,10 @@ behavior. The GUI runs complete Untargeted analysis with Backfill enabled;
 single-RAW Discovery, Alignment-only and disabling Backfill remain CLI uses.
 Worker counts come from the shared execution profile, not saved GUI settings.
 
+Setup presents data, method/targets, then samples and internal standards. Import
+and file tools are collapsible; sample conflicts, exclusions and method-specific
+internal-standard applicability remain visible.
+
 The page shows either the setup of the next analysis or one opened result,
 never both. A finished run opens its result, with overview, review and
 downloads; **返回設定** returns to setup. Opening existing results uses that same
@@ -26,6 +30,13 @@ result view without RAW or DLL access. Each GUI run writes a new
 no run overwrites another.
 Matrix curation is optional and previews the existing owner's decisions before
 writing a separate matrix; it never overwrites the original matrix.
+
+Applying an edited method changes the browser's batch draft, not its saved
+method file. **保存批次設定** or starting analysis saves the draft; **另存方法檔**
+exports a reusable method without applying it. **開始新批次** clears RAW and
+acquisition-information inputs and the displayed samples, retaining the method,
+targets/internal standards and output location. Confirmed sample annotations
+remain bound to their RAW folder, not carried into another folder.
 
 ## Review does not change results
 
@@ -49,6 +60,11 @@ writing a separate matrix; it never overwrites the original matrix.
 
 The workbench can read new XIC curves from RAW beside saved results. These
 curves are diagnostic views, not product measurements.
+
+Opening a saved result asks only for its result location. RAW and DLL sources
+belong to the selected result's **RAW 曲線設定（選用）**, not the result opener.
+Targeted curves still start from the sample row; Untargeted retains its group
+sample selection and acquisition-range controls.
 
 - An Untargeted group member without its own retained apex is read at the median
   m/z and apex RT of the group's observed samples. That group-position curve is

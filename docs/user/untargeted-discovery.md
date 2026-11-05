@@ -17,21 +17,32 @@ input to downstream analysis, not a normalized or batch-corrected result.
 3. Set the RAW folder. **結果存放位置** has a default; each run creates its own
    `<date>_<time>_untargeted_<RAW folder>` folder there, so earlier results are
    never overwritten. Reader setup supplies the shared DLL directory.
-4. Import the Word **上機資訊** to match file names and injection order. Check
-   unmatched or ambiguous entries; alphabetical file order is not injection order.
-5. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
-   then choose or drop an XLSX, CSV or TSV file. Only `role=istd` rows are used;
+4. Choose a CID-NL starting method and open **編輯方法** to select dR, R, MeR,
+   or custom NL tags and their combination. **套用至批次設定** updates the draft;
+   **方法檔案工具** contains import and new-method actions. Parameters without a
+   GUI control are retained.
+5. Check the sample summary. Open **樣本匯入與分組工具** to import **上機資訊**
+   or collaborator annotations and inspect unmatched or ambiguous entries.
+   Alphabetical file order is not injection order.
+6. Check the **內標** applicability summary below the samples. Choose or drop an
+   XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and shared
+   XLSX example. Only `role=istd` rows are used;
    the preview shows method-compatible standards and skipped rows. A dR method
    uses dR standards, not R standards such as `[13C,15N2]-8-oxo-Guo`. Incompatible
    standards are marked not applicable, not ND; changing the method refreshes
    this selection.
-6. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
-   or custom NL tags and their combination. Apply the method to the current run.
 7. Press **開始 Untargeted 分析**. The finished run opens its result; **返回設定**
    goes back to the setup of the next analysis.
 
-The GUI stores local Untargeted settings in `config/discovery_gui.json`. This is
-machine-local state and should stay untracked.
+**保存批次設定** saves the setup for reopening; starting analysis also saves it.
+**另存方法檔…** exports a reusable TOML without applying the edited method to the
+current batch. **開始新批次** clears RAW, acquisition information and the displayed
+samples, keeping the method, tuning, internal-standard list and result location.
+Confirmed groups and exclusions remain with their original RAW folder.
+
+The GUI stores local Untargeted settings in `config/discovery_gui.json` and its
+edited method in `config/current_discovery_method.toml`. These are machine-local
+state and should stay untracked.
 
 GUI and CLI default to each RAW file's full acquisition RT range, read from
 instrument metadata. Optional RT cropping accepts one or both finite,
@@ -39,7 +50,7 @@ non-negative bounds; an unspecified end remains automatic. Explicit cropping
 is limited to the acquired span. Target-list RT windows remain compound search
 windows, not acquisition bounds.
 
-## Modes
+## CLI Workflows
 
 | Mode | Use when | Input |
 | --- | --- | --- |
@@ -47,8 +58,8 @@ windows, not acquisition bounds.
 | `discovery_only` | You want to inspect candidates from one RAW file | Single RAW file |
 | `align_only` | Discovery was already run and you want to align existing outputs | RAW directory plus `discovery_batch_index.csv` |
 
-For directory-level discovery-only batches, use the CLI discovery workflow. In
-the GUI, use `full` when starting from a RAW directory.
+These partial workflows are CLI uses. The GUI always runs the complete analysis
+from a RAW directory, including Backfill; it has no mode selector.
 
 ## Inputs
 

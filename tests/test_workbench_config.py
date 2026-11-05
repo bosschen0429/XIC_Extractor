@@ -8,6 +8,25 @@ from xic_workbench import config_io, untargeted_config
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 
 
+def test_saving_builtin_method_keeps_existing_config_shape(tmp_path):
+    from xic_workbench.methods import method_details
+
+    untargeted_config.write_untargeted_config(
+        {
+            "preset": "rna_ribose",
+            "preset_snapshot": method_details("rna_ribose")["draft"],
+            "raw_dir": "next-batch",
+            "overrides": {"nl_tolerance_ppm": 17},
+        },
+        config_dir=tmp_path,
+    )
+    saved = json.loads((tmp_path / "discovery_gui.json").read_text(encoding="utf-8"))
+    assert set(saved) == set(untargeted_config.DEFAULT_CONFIG)
+    assert saved["preset"] == "rna_ribose"
+    assert saved["overrides"] == {"nl_tolerance_ppm": 17}
+    assert not (tmp_path / "current_discovery_method.toml").exists()
+
+
 @pytest.mark.parametrize("preset", ["", "  ", None])
 def test_blank_discovery_preset_uses_default_without_rewriting_config(tmp_path, preset):
     path = tmp_path / "discovery_gui.json"

@@ -1108,6 +1108,9 @@ th.num {
   background: var(--danger-soft);
   color: var(--danger);
 }
+#curve-source-status:empty {
+  display: none;
+}
 
 /* Review: grid */
 .targeted-overview {

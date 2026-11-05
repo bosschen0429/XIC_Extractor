@@ -101,6 +101,27 @@
 .method-section .button-row {
   margin-top: 10px;
 }
+.setup-tools {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.setup-tools > summary {
+  color: var(--muted);
+  font-size: 13px;
+}
+.setup-tools > * + * {
+  margin-top: 12px;
+}
+.istd-review {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.istd-review h3 {
+  font-size: 14px;
+}
+.istd-review .target-preview {
+  overflow-x: auto;
+}
 .method-preview {
   margin-top: 10px;
 }
@@ -228,7 +249,10 @@
   justify-content: space-between;
   gap: 10px;
 }
-#samples-summary:empty {
+[data-part="samples-summary"]:empty,
+[data-part="samples-source"]:empty,
+.sample-summary:has(.chip-row:empty),
+#istd-import-status:empty {
   display: none;
 }
 

@@ -293,7 +293,7 @@
           </div>
         </div>
         <details id="source-settings" open>
-          <summary>結果位置與曲線來源</summary>
+          <summary>結果位置</summary>
           <form id="open-form" class="path-line">
             <label for="source">結果</label
             ><input
@@ -325,42 +325,8 @@
               </button></span
             >
           </form>
-          <p class="subtle">開啟與下載保存的結果不需要 RAW 或 DLL；只有讀取新曲線時需要。</p>
+          <p class="subtle">選擇已完成的結果即可檢閱與下載，不需要 RAW 或 DLL。</p>
 
-          <div class="path-line">
-            <label for="raw-dir">RAW</label
-            ><input
-              id="raw-dir"
-              type="text"
-              class="path"
-              placeholder="看 XIC 時需要"
-              data-idle
-            /><button
-              type="button"
-              data-browse="raw-dir"
-              data-kind="folder"
-              data-idle
-            >
-              瀏覽
-            </button>
-          </div>
-          <div class="path-line">
-            <label for="dll-dir">RawFileReader DLL</label
-            ><input
-              id="dll-dir"
-              type="text"
-              class="path"
-              placeholder="看 XIC 時需要"
-              data-idle
-            /><button
-              type="button"
-              data-browse="dll-dir"
-              data-kind="folder"
-              data-idle
-            >
-              瀏覽
-            </button>
-          </div>
         </details>
       </section>
       <div
@@ -518,51 +484,90 @@
               <summary>來源明細</summary>
               <code id="item-identity"></code>
             </details>
-            <details class="acquisition-panel">
+            <details class="acquisition-panel" id="curve-settings">
               <summary class="section-heading">
-                <span><svg class="icon"><use href="#i-peak" /></svg>擷取設定</span>
+                <span><svg class="icon"><use href="#i-peak" /></svg>RAW 曲線設定（選用）</span>
                 <span id="sample-count" class="chip"></span>
               </summary>
-              <div id="sample-list" class="sample-list"></div>
-              <div class="acquisition-actions">
-                <details class="parameters">
-                  <summary>擷取範圍</summary>
-                  <div>
-                    <label
-                      >m/z 容差
-                      <input
-                        id="ppm"
-                        type="number"
-                        min="0.0001"
-                        step="any"
-                        value="5"
-                        data-idle
-                      />
-                      ppm</label
-                    ><label
-                      >峰頂前後
-                      <input
-                        id="padding"
-                        type="number"
-                        min="0.0001"
-                        step="any"
-                        value="0.5"
-                        data-idle
-                      />
-                      min</label
-                    >
-                  </div>
-                </details>
-                <button id="cancel" type="button" hidden>
-                  <svg class="icon"><use href="#i-stop" /></svg>取消載入</button
-                ><button id="load-curves" type="button" class="primary">
-                  <svg class="icon"><use href="#i-peak" /></svg>載入 XIC
+              <p class="subtle">讀取診斷曲線不會改寫已保存的面積或判定。</p>
+              <p id="curve-source-status" class="inline-status error"></p>
+              <div class="path-line">
+                <label for="raw-dir">RAW</label
+                ><input
+                  id="raw-dir"
+                  type="text"
+                  class="path"
+                  placeholder="看 XIC 時需要"
+                  data-idle
+                /><button
+                  type="button"
+                  data-browse="raw-dir"
+                  data-kind="folder"
+                  data-idle
+                >
+                  瀏覽
                 </button>
               </div>
-              <p id="acquisition-hint" class="acquisition-hint"></p>
-              <div id="job-progress" class="job-progress" hidden>
-                <progress id="progress"></progress
-                ><span id="job-message"></span>
+              <div class="path-line">
+                <label for="dll-dir">RawFileReader DLL</label
+                ><input
+                  id="dll-dir"
+                  type="text"
+                  class="path"
+                  placeholder="看 XIC 時需要"
+                  data-idle
+                /><button
+                  type="button"
+                  data-browse="dll-dir"
+                  data-kind="folder"
+                  data-idle
+                >
+                  瀏覽
+                </button>
+              </div>
+              <p id="targeted-curve-help" class="subtle" hidden>設定來源後，點選樣本列的「看 XIC」。</p>
+              <div id="group-curve-settings">
+                <div id="sample-list" class="sample-list"></div>
+                <div class="acquisition-actions">
+                  <details class="parameters">
+                    <summary>擷取範圍</summary>
+                    <div>
+                      <label
+                        >m/z 容差
+                        <input
+                          id="ppm"
+                          type="number"
+                          min="0.0001"
+                          step="any"
+                          value="5"
+                          data-idle
+                        />
+                        ppm</label
+                      ><label
+                        >峰頂前後
+                        <input
+                          id="padding"
+                          type="number"
+                          min="0.0001"
+                          step="any"
+                          value="0.5"
+                          data-idle
+                        />
+                        min</label
+                      >
+                    </div>
+                  </details>
+                  <button id="cancel" type="button" hidden>
+                    <svg class="icon"><use href="#i-stop" /></svg>取消載入</button
+                  ><button id="load-curves" type="button" class="primary">
+                    <svg class="icon"><use href="#i-peak" /></svg>載入 XIC
+                  </button>
+                </div>
+                <p id="acquisition-hint" class="acquisition-hint"></p>
+                <div id="job-progress" class="job-progress" hidden>
+                  <progress id="progress"></progress
+                  ><span id="job-message"></span>
+                </div>
               </div>
             </details>
             <section id="inline-curves" hidden aria-label="群組 XIC">

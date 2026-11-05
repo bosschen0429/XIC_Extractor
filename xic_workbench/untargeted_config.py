@@ -67,4 +67,14 @@ def write_untargeted_config(
     path = destination / CONFIG_NAME
     existing = _read_json_object(path)
     merged = _merge_known_keys({**existing, **config})
+    current_method = (destination / "current_discovery_method.toml").resolve()
+    if (
+        "preset_snapshot" in config
+        and Path(merged["preset"]).resolve() == current_method
+    ):
+        from xic_workbench.methods import save_method
+
+        # Applying an edited method only changes the browser draft. The existing
+        # local method file is written together with an explicit save or run.
+        save_method(config["preset_snapshot"], current_method)
     _write_json_object(path, merged)
