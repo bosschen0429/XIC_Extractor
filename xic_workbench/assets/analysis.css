@@ -77,9 +77,6 @@
 .step-body > * + * {
   margin-top: 12px;
 }
-.step-body.mode-options > * {
-  margin-top: 0;
-}
 .step-body > .path-line:first-child,
 #untargeted-paths > .path-line:first-child {
   margin-top: 0;
@@ -167,56 +164,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-}
-
-/* Mode options */
-.mode-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-}
-.mode-option {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  cursor: pointer;
-  transition:
-    border-color 0.12s,
-    background 0.12s,
-    box-shadow 0.12s;
-}
-.mode-option:hover {
-  border-color: var(--accent-line);
-}
-.mode-option:has(input:checked) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.mode-option:has(input:focus-visible) {
-  box-shadow: var(--focus);
-}
-.mode-option input {
-  margin-top: 3px;
-}
-.mode-option span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mode-option strong {
-  font-size: 14px;
-  font-weight: 650;
-}
-.mode-option small {
-  color: var(--subtle);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 /* Target preview */
@@ -349,6 +296,8 @@
   font-weight: 600;
 }
 .checklist small {
+  max-width: 100%;
+  min-width: 0;
   grid-column: 2;
   overflow: hidden;
   color: var(--subtle);
@@ -642,9 +591,6 @@
     max-height: none;
     overflow: visible;
   }
-  .mode-options {
-    grid-template-columns: 1fr;
-  }
 }
 @media (max-width: 700px) {
   .page-header {
@@ -671,9 +617,15 @@
   margin: 8px 0;
 }
 .settings-warning { color: var(--warning, #a76816); }
-.path-line > small.field-help { grid-column: 2 / -1; margin-top: -4px; }
-#targeted-execution .settings-grid { grid-template-columns: minmax(0, 1fr); }
-#targeted-execution .field input { max-width: 228px; }
+.path-line > small.field-help {
+  grid-column: 2 / -1;
+  margin-top: -4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 860px) {
+  .path-line > small.field-help { grid-column: 1 / -1; }
+}
 
 .settings-source {
   color: var(--muted);

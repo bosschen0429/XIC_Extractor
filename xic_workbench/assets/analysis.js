@@ -7,6 +7,8 @@
     targets: [],
     identificationMethods: {},
     sampleSets: { targeted: null, untargeted: null },
+    sampleRevisions: { targeted: 0, untargeted: 0 },
+    sampleJobAction: null,
     pendingExclusions: new Set(),
     editing: "untargeted",
     method: null,
@@ -355,8 +357,10 @@
       checklist(prefix === "t-" ? "targeted" : "untargeted");
     });
     input.addEventListener("change", () => act(async () => {
-      if (await validate() && ["data_dir", "raw_dir"].includes(key))
-        await previewSamples(prefix === "t-" ? "targeted" : "untargeted");
+      const page = prefix === "t-" ? "targeted" : "untargeted";
+      const action = ["data_dir", "raw_dir"].includes(key) ? sampleAction(page) : null;
+      if (await validate() && action && currentSampleAction(action))
+        await previewSamples(page, action);
     }));
     if (input.value && key !== "dll_dir") act(validate);
     return input;
@@ -1210,7 +1214,17 @@
     renderGroupCards(page);
     checklist(page);
   }
-  function applySampleResult(page, result) {
+  // Revisions belong to user actions, including the validation before a preview.
+  // A completed request may update only the display it still owns.
+  function sampleAction(page, advance = true) {
+    if (advance) state.sampleRevisions[page] += 1;
+    return {page, revisions: {...state.sampleRevisions}};
+  }
+  function currentSampleAction(action) {
+    return action && state.sampleRevisions[action.page] === action.revisions[action.page];
+  }
+  function applySampleResult(page, result, action) {
+    if (!currentSampleAction(action)) return false;
     state.sampleSets[page] = {
       rows: result.samples,
       overview: result.overview || null,
@@ -1219,19 +1233,23 @@
     };
     renderSampleSummary(result.summary, sampleId(page, "samples"));
     renderRoleSummary(page);
-    if (result.summary?.confirmed) mirrorSamples(page);
+    if (result.summary?.confirmed) mirrorSamples(page, action);
     if (state.editing === page && $("sample-editor").open) renderSamples();
+    return true;
   }
   // The other flow on the same folder shows the same confirmed rows.
-  function mirrorSamples(page) {
+  function mirrorSamples(page, action) {
     const rawDir = $(samplePages[page].rawDir).value;
     for (const [other, spec] of Object.entries(samplePages))
-      if (other !== page && $(spec.rawDir).value === rawDir) {
+      if (other !== page && $(spec.rawDir).value === rawDir &&
+          state.sampleRevisions[other] === action.revisions[other]) {
+        state.sampleRevisions[other] += 1;
         state.sampleSets[other] = state.sampleSets[page];
         renderRoleSummary(other);
       }
   }
   function clearSamples(page) {
+    sampleAction(page);
     state.sampleSets[page] = emptySamples();
     $(sampleId(page, "samples-summary")).textContent = "";
     $(sampleId(page, "samples-conflicts")).hidden = true;
@@ -1730,22 +1748,24 @@
     const set = state.sampleSets[page];
     if (!set.rows.length) return;
     const rawDir = $(samplePages[page].rawDir).value;
+    const action = sampleAction(page);
     const saved = await api("/api/samples/save", {
       raw_dir: rawDir,
       samples: set.rows,
     });
+    if (!currentSampleAction(action)) return;
     set.overview = saved.overview;
     set.source = "confirmed";
-    mirrorSamples(page);
+    mirrorSamples(page, action);
     renderRoleSummary(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
   }
-  async function previewSamples(page) {
+  async function previewSamples(page, action) {
     const spec = samplePages[page];
     const values = {raw_dir: $(spec.rawDir).value, sequence_source: $(spec.sequence).value};
     const result = await api("/api/samples/preview", values);
     if ($(spec.rawDir).value !== values.raw_dir || $(spec.sequence).value !== values.sequence_source) return;
-    applySampleResult(page, result);
+    applySampleResult(page, result, action);
   }
   async function scanSamples(page, importSequence = false) {
     const spec = samplePages[page];
@@ -1764,7 +1784,9 @@
     if (kind === "targeted" && !values.targets.length)
       throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
     if (kind === "untargeted") await saveUntargeted(true);
+    const action = kind === "samples" ? sampleAction(values.page) : null;
     state.analysis = await api("/api/analysis/start", { kind, values });
+    if (action) state.sampleJobAction = {jobId: state.analysis.job.job_id, action};
     if (kind === "targeted") {
       state.config.settings = { ...values.settings };
       state.config.targeted_method = await api("/api/targeted/method", {});
@@ -1874,9 +1896,12 @@
       if (job.kind === "samples") {
         const result = state.analysis.results.samples;
         const page = result.page || "untargeted";
-        applySampleResult(page, result);
-        if (page === "untargeted") dirty("untargeted");
-        done(`已讀取 ${result.samples.length} 個樣本。`);
+        const action = state.sampleJobAction?.jobId === job.job_id
+          ? state.sampleJobAction.action : null;
+        if (applySampleResult(page, result, action)) {
+          if (page === "untargeted") dirty("untargeted");
+          done(`已讀取 ${result.samples.length} 個樣本。`);
+        }
       } else if (job.kind === "curation")
         done(`矩陣整理完成：${state.analysis.results.curation.output_dir}`);
       else if (job.kind === "inspector") {
@@ -2425,6 +2450,8 @@
   function setDllDir(value) {
     readerValidation++;
     clearTimeout(readerTimer);
+    if (state.config.settings.dll_dir !== value)
+      for (const page of Object.keys(samplePages)) clearSamples(page);
     state.config.settings.dll_dir = value;
     state.config.untargeted.dll_dir = value;
     for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
@@ -2726,6 +2753,8 @@
         }
       });
     for (const [page, spec] of Object.entries(samplePages)) {
+      for (const part of ["samples-refresh", "samples-import"])
+        $(sampleId(page, part)).addEventListener("pointerdown", () => sampleAction(page));
       $(sampleId(page, "samples-refresh")).onclick = () =>
         act(() => scanSamples(page));
       $(sampleId(page, "samples-import")).onclick = () =>
@@ -2754,7 +2783,7 @@
       $(sampleId(page, "samples-carry")).onclick = () =>
         act(() => openAnnotations(page, "carry"));
       // A different 上機資訊 makes the loaded rows stale until read again.
-      $(spec.sequence).addEventListener("change", () => clearSamples(page));
+      $(spec.sequence).addEventListener("input", () => clearSamples(page));
     }
     $("sample-filter").oninput = renderSamples;
     // Pending marks without a reason never outlive the editor.
@@ -2774,6 +2803,7 @@
       for (const [page, spec] of Object.entries(samplePages)) {
         const set = state.sampleSets[page];
         if (!set.rows.length || $(spec.rawDir).value !== raw_dir) continue;
+        sampleAction(page);
         state.sampleSets[page] = {
           ...set,
           rows: samples,
@@ -2843,7 +2873,7 @@
           dirty("untargeted");
         });
     let sampleRawDir = $("u-raw_dir").value;
-    $("u-raw_dir").addEventListener("change", () => {
+    $("u-raw_dir").addEventListener("input", () => {
       const nextRawDir = $("u-raw_dir").value;
       if (nextRawDir === sampleRawDir) return;
       sampleRawDir = nextRawDir;
@@ -3073,6 +3103,9 @@
     renderRoleSummary("targeted");
     renderRoleSummary("untargeted");
     state.analysis = state.config.analysis;
+    if (state.analysis.job?.kind === "samples")
+      state.sampleJobAction = {jobId: state.analysis.job.job_id,
+        action: sampleAction(pageOf(state.analysis.job), false)};
     const loadedSamples = state.analysis.results.samples;
     const loadedPage = loadedSamples?.page || "untargeted";
     const loadedSpec = samplePages[loadedPage];
@@ -3080,7 +3113,7 @@
         loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
         loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
         loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value)
-      applySampleResult(loadedPage, loadedSamples);
+      applySampleResult(loadedPage, loadedSamples, sampleAction(loadedPage, false));
     renderResults();
     selectView(
       ["targeted", "untargeted"].includes(state.config.preferences.view)

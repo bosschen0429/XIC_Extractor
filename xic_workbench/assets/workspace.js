@@ -1243,8 +1243,8 @@ window.XicUi = (() => {
       });
       if (!path) return;
       target.value = path;
-      target.dispatchEvent(new Event("change", { bubbles: true }));
       target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
     } catch (error) {
       window.XicUi.toast(error.message, "error");
     } finally {

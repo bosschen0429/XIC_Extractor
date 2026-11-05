@@ -3723,3 +3723,119 @@ def test_results_stay_in_analysis_page_without_raw(
     with page.expect_download() as pending:
         page.locator("#result-download").click()
     assert Path(pending.value.path()).read_bytes() == artifact.read_bytes()
+
+
+def test_sample_refresh_keeps_the_latest_action_when_sequence_blurs(
+    workbench, config_dir, tmp_path
+):
+    page = workbench
+    batch = tmp_path / "confirmed-batch"
+    _placeholder_batch(batch, ("A", "B", "C", "D"))
+    save_batch_samples(
+        config_dir,
+        batch,
+        [
+            {
+                "sample_name": name,
+                "raw_stem": name,
+                "sample_role": "study_sample",
+                "group": name,
+                "excluded": False,
+                "exclusion_reason": "",
+            }
+            for name in ("A", "B", "C", "D")
+        ],
+    )
+    _view(page, "untargeted")
+    page.locator("#u-raw_dir").fill(str(batch))
+    page.locator("#u-raw_dir").press("Tab")
+    # Force the previously intermittent order by an observable completion,
+    # not a sleep: the automatic preview has populated the summary first.
+    expect(page.locator("#samples-count")).to_have_text("4 個樣本")
+    page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-count")).to_have_text("4 個樣本")
+    expect(page.locator("#samples-source")).to_contain_text("已確認的樣品資訊")
+
+
+def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
+    workbench, config_dir, tmp_path
+):
+    page = workbench
+    batch = tmp_path / "confirmed-batch"
+    _placeholder_batch(batch, ("A", "B"))
+
+    def save_group(group):
+        save_batch_samples(
+            config_dir,
+            batch,
+            [
+                {
+                    "sample_name": name,
+                    "raw_stem": name,
+                    "sample_role": "study_sample",
+                    "group": group,
+                    "excluded": False,
+                    "exclusion_reason": "",
+                }
+                for name in ("A", "B")
+            ],
+        )
+
+    save_group("Older")
+    pending = []
+
+    def hold_preview(route):
+        response = route.fetch()
+        assert {row["group"] for row in response.json()["samples"]} == {"Older"}
+        pending.append((route, response))
+        page.evaluate("window.previewHeld = true")
+
+    page.route("**/api/samples/preview", hold_preview)
+    _view(page, "untargeted")
+    with page.expect_request("**/api/samples/preview"):
+        page.locator("#u-raw_dir").fill(str(batch))
+        page.locator("#u-raw_dir").press("Tab")
+    page.wait_for_function("window.previewHeld === true")
+    save_group("Latest")
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    with page.expect_response("**/api/samples/preview") as released:
+        route, response = pending.pop()
+        route.fulfill(response=response)
+    released.value.finished()
+    # Observe the render after the released response, not an earlier DOM snapshot.
+    page.evaluate("() => new Promise(requestAnimationFrame)")
+    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    expect(page.locator("#role-summary")).not_to_contain_text("Older")
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_narrow_path_error_leaves_a_usable_input(workbench, tmp_path, theme):
+    page = workbench
+    page.set_viewport_size({"width": 760, "height": 950})
+    if theme == "dark":
+        page.locator("#theme-toggle").click()
+    path = page.locator("#t-data_dir")
+    path.fill(str(tmp_path / ("missing-folder-" * 12)))
+    path.press("Tab")
+    expect(page.locator("#t-data_dir-problem")).to_contain_text("路徑不存在或無法讀取")
+    assert (
+        path.bounding_box()["width"]
+        > page.locator('[data-browse="t-data_dir"]').bounding_box()["width"]
+    )
+    overflow = page.evaluate("""() => [...document.querySelectorAll('body *')]
+        .filter(node => node.getBoundingClientRect().right > innerWidth)
+        .map(node => ({tag: node.tagName, id: node.id, cls: node.className,
+                       right: node.getBoundingClientRect().right})).slice(0, 12)""")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (
+        overflow
+    )
+
+
+def test_folder_picker_automatically_lists_samples(workbench, tmp_path, monkeypatch):
+    batch = tmp_path / "picked"
+    _placeholder_batch(batch, ("A", "B"))
+    monkeypatch.setattr("xic_workbench.server.choose_path", lambda *args: str(batch))
+    workbench.locator('[data-browse="t-data_dir"]').click()
+    expect(workbench.locator("#t-samples-count")).to_have_text("2 個樣本")
