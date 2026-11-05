@@ -165,10 +165,11 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 require them.
 
 All runtime lanes use the same locked Python 3.15 stack. Linux owns the ordinary
-suite, including fake-reader, PowerShell release-script and embedded-JavaScript
-checks, without RAW, .NET or a browser. Windows integration runs only
-`windows_only` cases (Windows DLL search and file locking) and `requires_dotnet`
-cases (real managed calls), followed by the relevant serial packaging builds.
+suite, including fake-reader, PowerShell release-script, embedded-JavaScript and
+`requires_dotnet` checks. The Linux job provisions .NET 8 and selects CoreCLR
+through `PYTHONNET_RUNTIME=coreclr`; it requires neither RAW nor a browser.
+Windows integration runs only `windows_only` cases (Windows DLL search and file
+locking), followed by the relevant serial packaging builds.
 Both jobs use the same affected-test plan on PRs; master runs their complete,
 disjoint portions. Browser checks retain their separate Windows VM, and the
 census runs once in lint. The required `test (Python 3.12)` name is retained only

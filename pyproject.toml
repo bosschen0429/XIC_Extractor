@@ -55,7 +55,7 @@ addopts = "--tb=short"
 tmp_path_retention_policy = "failed"
 markers = [
     "windows_only: exercises Windows-specific DLL loading or file-locking behavior. CI runs these only in the Windows integration lane.",
-    "requires_dotnet: exercises a real managed .NET runtime, not a fake RAW reader. CI runs these only in the Windows integration lane.",
+    "requires_dotnet: exercises a real managed .NET runtime, not a fake RAW reader. CI covers these in the Linux lane with CoreCLR.",
     "browser_e2e: runs the shipped HTML workbench in locked Playwright Chromium without RAW/DLL analysis. CI selects this on workbench/review and browser-test infrastructure changes and on master.",
     "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
     "packaging_build: builds installable wheel or PyInstaller outputs. CI runs these serially in the Windows integration lane for packaging-authority changes and on master; other PRs keep the cheaper packaging contract tests.",

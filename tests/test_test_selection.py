@@ -564,7 +564,7 @@ function .\.venv\Scripts\python.exe {
         }
     } elseif ($args[1] -eq 'pytest') {
         $pytestArgs = $args | Select-Object -Skip 2
-        $phase = if ($pytestArgs -match 'windows_only or requires_dotnet') { 'windows' }
+        $phase = if ($pytestArgs -match 'and windows_only') { 'windows' }
             elseif ($pytestArgs -contains '4') { 'parallel' }
             elseif ($pytestArgs -contains '-m') { 'browser' } else { 'serial' }
         if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
@@ -670,8 +670,8 @@ function uv {
             assert int(in_windows) + int(in_linux) + int(in_browser) == int(
                 selected_expression.evaluate(marked.__contains__)
             ), marked
-        assert not (in_linux and marked & {"windows_only", "requires_dotnet"})
-        assert not (in_windows and not marked & {"windows_only", "requires_dotnet"})
+        assert not (in_linux and "windows_only" in marked)
+        assert not (in_windows and "windows_only" not in marked)
         assert not ((in_windows or in_linux) and "browser_e2e" in marked)
         assert not (in_browser and "browser_e2e" not in marked)
 

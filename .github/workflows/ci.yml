@@ -131,7 +131,7 @@ jobs:
           $runSelected = -not $selectedSubset -or $testTargets.Count -gt 0
           $started = Get-Date
           $parallelStarted = Get-Date
-          $parallelMarkers = "($markerExpression) and (windows_only or requires_dotnet) and not browser_e2e"
+          $parallelMarkers = "($markerExpression) and windows_only and not browser_e2e"
           $parallelExitCode = 0
           if ($runSelected) {
             & .\.venv\Scripts\python.exe -m pytest -m $parallelMarkers -n 4 --dist loadfile -v --tb=short --durations=10 @testTargets
@@ -175,6 +175,7 @@ jobs:
     timeout-minutes: 30
     env:
       OPENBLAS_NUM_THREADS: "1"
+      PYTHONNET_RUNTIME: coreclr
     steps:
       - uses: actions/checkout@v6
         with:
@@ -183,6 +184,11 @@ jobs:
         with:
           version: "0.13.7"
           python-version: "3.15"
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+          check-latest: false
+          skip-lts-prepass: true
       - name: Install locked dependencies
         run: uv sync --locked --extra dev --group dev --python 3.15
       - uses: actions/setup-node@v7
@@ -209,7 +215,7 @@ jobs:
           }
           $selectionSummary = if ($selectedSubset) { $testTargets.Count } else { 'all' }
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          $markers = "($markerExpression) and not windows_only and not requires_dotnet and not browser_e2e"
+          $markers = "($markerExpression) and not windows_only and not browser_e2e"
           "- marker_expression=$markers" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           if ($selectedSubset -and $testTargets.Count -eq 0) {
             Write-Output '::notice title=Python tests not run::No affected test files; this is not a passing test run.'
