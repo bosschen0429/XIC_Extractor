@@ -173,7 +173,6 @@ def test_build_extraction_result_uses_selection_decision_projection() -> None:
             "selected_envelope_boundary_defer",
             "legacy_review_only_projection",
         ),
-        legacy_projection_status="active_policy_remaining",
     )
 
     result = build_extraction_result(
@@ -1165,7 +1164,6 @@ def _selected_hypothesis_with_integration(
                 decision_class="review",
                 support_reasons=support_reasons,
                 review_reasons=("trace_morphology_review",),
-                compatibility_labels=("trace_quality_cap",),
             ),
         ),
         audit=AuditTrail(selected=selected),

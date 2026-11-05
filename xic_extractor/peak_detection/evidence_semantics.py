@@ -57,7 +57,6 @@ class EvidenceDecisionSemantics:
     not_counted_reasons: tuple[str, ...] = ()
     exclusion_reasons: tuple[str, ...] = ()
     ambiguity_reasons: tuple[str, ...] = ()
-    compatibility_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -186,9 +185,6 @@ def decision_semantics_from_signal_set(
         not_counted_reasons=not_counted_reasons,
         exclusion_reasons=exclusion_reasons,
         ambiguity_reasons=ambiguity_reasons,
-        compatibility_labels=tuple(
-            sorted(support | concerns | sources | caps | quality_flags)
-        ),
     )
 
 

@@ -599,9 +599,6 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
     assert facts.rt.paired_istd_status == "close"
     assert semantics.support_reasons.count("role_aware_rt_support") == 1
     assert "paired_istd_rt_support" not in semantics.support_reasons
-    assert not {
-        "paired_istd_rt_close",
-    }.intersection(semantics.compatibility_labels)
 
 
 def test_nl_fail_with_paired_istd_rt_mismatch_is_not_counted() -> None:
