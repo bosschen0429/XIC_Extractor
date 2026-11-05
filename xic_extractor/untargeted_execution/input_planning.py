@@ -216,7 +216,7 @@ def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
         return False
     try:
         CidNlDiscoveryMethodSpec(settings=settings)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return True
 
@@ -226,7 +226,7 @@ def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
 
     try:
         CidNlDiscoveryMethodSpec(settings=settings)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return True
 

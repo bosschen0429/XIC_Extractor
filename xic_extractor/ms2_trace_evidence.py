@@ -127,5 +127,5 @@ def _trace_strength(
 def _is_finite(value: float) -> bool:
     try:
         return math.isfinite(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False

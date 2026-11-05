@@ -416,7 +416,7 @@ def _float_values(values: Iterable[object]) -> list[float]:
             if not isinstance(value, int | float | str):
                 continue
             parsed.append(float(value))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return parsed
 
@@ -428,7 +428,7 @@ def _to_int(value: object) -> int:
         if not isinstance(value, int | float | str):
             return 0
         return int(float(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 

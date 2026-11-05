@@ -366,5 +366,5 @@ def _pearson_similarity(
 def _float_array(values: Iterable[float | int | None]) -> np.ndarray:
     try:
         return np.asarray(tuple(values), dtype=float)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return np.array([], dtype=float)

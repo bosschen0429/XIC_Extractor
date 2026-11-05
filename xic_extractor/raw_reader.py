@@ -152,7 +152,7 @@ def _to_python_datetime(dt: Any) -> datetime | None:
             int(dt.Second),
             int(getattr(dt, "Millisecond", 0)) * 1000,
         )
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return None
 
 
@@ -310,7 +310,7 @@ class RawFileHandle:
                 row_val = int(row_number_raw)
                 if row_val > 0:
                     row_number = row_val
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 pass
         sample_type = str(getattr(info, "SampleType", "") or "Unknown").strip()
         vial = str(getattr(info, "Vial", "") or "").strip()
@@ -1425,7 +1425,7 @@ def _extract_precursor_mz(filter_obj: Any) -> float:
     if callable(get_reaction):
         try:
             precursor = _positive_float_or_none(get_reaction(0).PrecursorMass)
-        except (AttributeError, IndexError, TypeError, ValueError):
+        except AttributeError, IndexError, TypeError, ValueError:
             precursor = None
         if precursor is not None:
             return precursor
@@ -1461,7 +1461,7 @@ def _read_precursor_metadata(
     if callable(get_reaction):
         try:
             reaction = get_reaction(0)
-        except (AttributeError, IndexError, TypeError, ValueError):
+        except AttributeError, IndexError, TypeError, ValueError:
             pass
     if reaction is None:
         reactions = getattr(getattr(filter_obj, "Filter", None), "Reactions", ())
@@ -1487,7 +1487,7 @@ def _positive_integer_or_none(value: Any) -> int | None:
 def _finite_float_or_none(value: Any) -> float | None:
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return parsed if math.isfinite(parsed) else None
 

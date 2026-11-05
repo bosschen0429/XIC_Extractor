@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts import agent_sandbox_doctor
 
 
@@ -72,10 +74,15 @@ def test_runtime_owner_rejects_wsl_for_windows_owned_checkout() -> None:
     assert findings[0].severity == "blocker"
 
 
-def test_python_runtime_requires_supported_worktree_interpreter(
+@pytest.mark.parametrize("pinned_version", [(3, 12, 8), (3, 15, 2)])
+def test_python_runtime_requires_pinned_worktree_interpreter(
     tmp_path: Path,
+    pinned_version: tuple[int, int, int],
 ) -> None:
     expected = tmp_path / ".venv" / "Scripts" / "python.exe"
+    (tmp_path / ".python-version").write_text(
+        ".".join(str(part) for part in pinned_version[:2]), encoding="utf-8"
+    )
 
     outside_findings = agent_sandbox_doctor._inspect_python_runtime(
         workspace_root=tmp_path,
@@ -87,7 +94,7 @@ def test_python_runtime_requires_supported_worktree_interpreter(
         workspace_root=tmp_path,
         os_name="nt",
         executable=expected,
-        version=(3, 12, 8),
+        version=pinned_version,
     )
 
     assert {finding.code for finding in outside_findings} == {

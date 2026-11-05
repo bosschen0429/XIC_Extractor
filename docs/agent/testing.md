@@ -164,14 +164,15 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 85RAW runs are validation evidence only when the active Issue and method owner
 require them.
 
-The compatibility CI lane runs Python 3.13 on Windows and Linux with Node.js
+The primary Windows test, browser and release-build lanes use Python 3.15.
+The Linux compatibility lane uses the same locked Python 3.15 stack with Node.js
 for embedded-JavaScript checks, but without RAW, .NET, or a browser. It runs the
 ordinary suite, including fake-reader tests; `requires_dotnet` marks the cases
 that call a real managed runtime. OS-specific tests retain their platform guards;
 optional host-tool checks report skips when unavailable. Browser, build, census,
 and serial coverage remain in the existing dedicated lanes. The
 required check retains its `test (Python 3.12)` name for branch protection and
-also requires both compatibility jobs to succeed.
+also requires the Linux compatibility lane to succeed.
 
 Use the method-specific acceptance check when RAW-backed evidence is needed.
 The runner owns input checks and run metadata; tests do not require a separate

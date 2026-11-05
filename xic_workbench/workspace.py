@@ -520,7 +520,7 @@ class ReviewWorkspace:
                     message="診斷曲線已載入；當次分析紀錄與量值保持原樣。",
                     receipt=receipt,
                 )
-        except (CurveAcquisitionCancelled, InspectorCancelled):
+        except CurveAcquisitionCancelled, InspectorCancelled:
             update(
                 status="cancelled",
                 phase="已取消",

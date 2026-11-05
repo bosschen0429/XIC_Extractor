@@ -89,7 +89,7 @@ def build_scoring_context_factory(
                 active_trace_source = MS1_MORPHOLOGY_AREA_SOURCE
                 morphology_trace_method = MS1_MORPHOLOGY_TRACE_METHOD
                 morphology_trace_window_points = morphology_window_points
-            except (TypeError, ValueError, FloatingPointError):
+            except TypeError, ValueError, FloatingPointError:
                 active_intensity_values = intensity_values
 
         def builder(candidate: PeakCandidate) -> ScoringContext:
