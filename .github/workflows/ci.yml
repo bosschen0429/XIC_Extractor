@@ -174,8 +174,12 @@ jobs:
           Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
   python-tests:
-    name: Python tests (3.15, Linux)
+    name: Python tests (3.15, Linux, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     timeout-minutes: 30
     env:
       OPENBLAS_NUM_THREADS: "1"
@@ -226,7 +230,7 @@ jobs:
             Write-Output '::notice title=Python tests not run::No affected test files; this is not a passing test run.'
             exit 0
           }
-          uv run --no-sync python -m pytest -m $markers -n 4 --dist worksteal -q --tb=short --durations=10 @testTargets
+          uv run --no-sync python -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $markers -n 4 --dist worksteal -q --tb=short --durations=10 @testTargets
           $testExitCode = $LASTEXITCODE
           if ($selectedSubset -and $testExitCode -eq 5) {
             Write-Output '::notice title=Python tests not run::No selected tests belong to the Linux lane.'
@@ -242,7 +246,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -266,9 +270,11 @@ jobs:
         working-directory: repo-3.15-browser
         run: |
           $markerExpression = "not current_repository_census and not serial_ci"
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            $baseSha = "${{ github.event.pull_request.base.sha }}"
-            $headSha = "${{ github.event.pull_request.head.sha }}"
+          # A push applies the PR's relevance rule to the pushed range, so a
+          # merge whose PR skipped this lane does not run it again on master.
+          $baseSha = "${{ github.event.pull_request.base.sha || github.event.before }}"
+          $headSha = "${{ github.event.pull_request.head.sha || github.sha }}"
+          if ($baseSha -notmatch '^0*$') {
             $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $markerExpression = $plan[0]
@@ -306,7 +312,7 @@ jobs:
           $browserMarkers = "($markerExpression) and browser_e2e"
           # Separate Windows VMs own disjoint cases; don't concentrate concurrent
           # Chromium/loopback traffic on one VM. Every matrix result is required.
-          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.browser_sharding --browser-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10
+          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append

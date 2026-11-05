@@ -150,8 +150,11 @@ def test_change_the_derivation_cannot_place_runs_every_test(
     assert _select(selection_repo, "selpkg/core.py", changed) is None
 
 
-def test_selection_owner_change_runs_every_test() -> None:
-    assert select_test_files(["tools/testing/test_selection.py"]) is None
+@pytest.mark.parametrize(
+    "owner", ["tools/testing/test_selection.py", "tools/testing/test_sharding.py"]
+)
+def test_selection_owner_change_runs_every_test(owner: str) -> None:
+    assert select_test_files([owner]) is None
 
 
 def test_selection_prefers_uv_runner_when_pytest_is_not_importable(
@@ -356,7 +359,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tests/inspector_fixtures.py", {"browser_e2e"}),
         ("tests/workbench_http.py", {"browser_e2e"}),
         ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
-        ("tools/testing/browser_sharding.py", {"packaging_build", "browser_e2e"}),
+        ("tools/testing/test_sharding.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
@@ -434,6 +437,60 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     assert "tools.testing.test_selection --ci-plan" in workflow
     for pattern in test_selection.RELEVANCE_RULES.values():
         assert pattern.pattern[:30] not in workflow
+
+
+# PowerShell stand-ins for the expensive child commands of a CI step. The step
+# itself still owns ordering, argument quoting and exit codes.
+_CI_COMMAND_FAKES = r"""
+$ErrorActionPreference = 'Stop'
+function .\.venv\Scripts\python.exe {
+    ConvertTo-Json -InputObject @($args | ForEach-Object { [string]$_ }) -Compress |
+        Add-Content -LiteralPath $env:XIC_CI_TEST_CALLS
+    $global:LASTEXITCODE = 0
+    if ($args[1] -eq 'tools.testing.test_selection') {
+        $env:XIC_CI_TEST_PLAN -split "`n" | Where-Object { $_ } | Write-Output
+    } elseif ($args[1] -eq 'playwright') {
+        if ($env:XIC_CI_TEST_FAILED_PHASE -eq 'browser_install') {
+            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
+        }
+    } elseif ($args[1] -eq 'pytest') {
+        $pytestArgs = $args | Select-Object -Skip 2
+        $phase = if ($pytestArgs -match 'and windows_only') { 'windows' }
+            elseif ($pytestArgs -match 'and browser_e2e') { 'browser' }
+            elseif ($pytestArgs -contains '-n') { 'parallel' } else { 'serial' }
+        if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
+            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
+        }
+    }
+}
+function uv {
+    if (($args[0..2] -join ' ') -ne 'run --no-sync python') {
+        throw 'Unexpected uv invocation'
+    }
+    $pythonArgs = @($args | Select-Object -Skip 3)
+    & .\.venv\Scripts\python.exe @pythonArgs
+}
+"""
+
+_PUSH_RANGE_BASE = "${{ github.event.pull_request.base.sha || github.event.before }}"
+_PUSH_RANGE_HEAD = "${{ github.event.pull_request.head.sha || github.sha }}"
+
+
+def _render_ci_step(run: str, event: str, *, before: str = "before") -> str:
+    pushed = event == "push"
+    expressions = {
+        _PUSH_RANGE_BASE: before if pushed else "base",
+        _PUSH_RANGE_HEAD: "after" if pushed else "head",
+        "${{ github.event.pull_request.base.sha }}": "base",
+        "${{ github.event.pull_request.head.sha }}": "head",
+        "${{ github.event_name }}": event,
+        "${{ matrix.shard }}": "1",
+        "${{ strategy.job-total }}": "2",
+    }
+    for expression, value in expressions.items():
+        run = run.replace(expression, value)
+    assert "${{" not in run, run
+    return run
 
 
 @pytest.mark.parametrize(
@@ -551,36 +608,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
     # Run the actual workflow control flow; only the expensive child commands
     # are replaced. PowerShell still owns ordering, argument quoting and exit.
-    script = r"""
-$ErrorActionPreference = 'Stop'
-function .\.venv\Scripts\python.exe {
-    ConvertTo-Json -InputObject @($args | ForEach-Object { [string]$_ }) -Compress |
-        Add-Content -LiteralPath $env:XIC_CI_TEST_CALLS
-    $global:LASTEXITCODE = 0
-    if ($args[1] -eq 'tools.testing.test_selection') {
-        $env:XIC_CI_TEST_PLAN -split "`n" | Where-Object { $_ } | Write-Output
-    } elseif ($args[1] -eq 'playwright') {
-        if ($env:XIC_CI_TEST_FAILED_PHASE -eq 'browser_install') {
-            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
-        }
-    } elseif ($args[1] -eq 'pytest') {
-        $pytestArgs = $args | Select-Object -Skip 2
-        $phase = if ($pytestArgs -match 'and windows_only') { 'windows' }
-            elseif ($pytestArgs -match 'and browser_e2e') { 'browser' }
-            elseif ($pytestArgs -contains '-n') { 'parallel' } else { 'serial' }
-        if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
-            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
-        }
-    }
-}
-function uv {
-    if (($args[0..2] -join ' ') -ne 'run --no-sync python') {
-        throw 'Unexpected uv invocation'
-    }
-    $pythonArgs = @($args | Select-Object -Skip 3)
-    & .\.venv\Scripts\python.exe @pythonArgs
-}
-"""
     results = []
     for index, step in enumerate(steps):
         if step.get("name") == "Browser test":
@@ -594,11 +621,7 @@ function uv {
                 continue
             monkeypatch.setenv("XIC_BROWSER_MARKERS", outputs["marker_expression"])
 
-        actual_script = script + step["run"].replace(
-            "${{ github.event_name }}", event
-        ).replace("${{ github.event.pull_request.base.sha }}", "base").replace(
-            "${{ github.event.pull_request.head.sha }}", "head"
-        ).replace("${{ matrix.shard }}", "1").replace("${{ strategy.job-total }}", "2")
+        actual_script = _CI_COMMAND_FAKES + _render_ci_step(step["run"], event)
         script_path = tmp_path / f"ci-step-{index}.ps1"
         script_path.write_text(actual_script, encoding="utf-8")
         results.append(
@@ -640,6 +663,8 @@ function uv {
         assert call[call.index("-n") + 1] == workers
         assert call[len(call) - len(selected_files) :] == selected_files
     linux_call = ordinary_calls[1]
+    assert linux_call[linux_call.index("-p") + 1] == "tools.testing.test_sharding"
+    assert linux_call[linux_call.index("--test-shard") + 1] == "1/2"
     assert linux_call[linux_call.index("--dist") + 1] == "worksteal"
     windows_expression, linux_expression = (
         Expression.compile(call[call.index("-m", 2) + 1]) for call in ordinary_calls
@@ -651,9 +676,8 @@ function uv {
             for call in pytest_calls
             if "-m" in call[2:] and "and browser_e2e" in call[call.index("-m", 2) + 1]
         )
-        assert browser[browser.index("-n") + 1] == "0"
-        assert browser[browser.index("-p") + 1] == "tools.testing.browser_sharding"
-        assert browser[browser.index("--browser-shard") + 1] == "1/2"
+        assert browser[browser.index("-p") + 1] == "tools.testing.test_sharding"
+        assert browser[browser.index("--test-shard") + 1] == "1/2"
         assert not any(arg.startswith("tests/") for arg in browser)
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
@@ -690,6 +714,66 @@ function uv {
 
 
 @pytest.mark.parametrize(
+    ("before", "changed", "required"),
+    [
+        ("before", ("README.md",), "false"),
+        ("before", ("xic_workbench/server.py",), "true"),
+        # A new branch has no pushed range; everything stays selected.
+        ("0" * 40, ("README.md",), "true"),
+    ],
+)
+def test_push_browser_lane_follows_the_pushed_range(
+    tmp_path, monkeypatch, before, changed, required
+):
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required to exercise the CI steps")
+    jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
+    step = next(
+        s for s in jobs["browser"]["steps"] if s.get("name") == "Plan browser coverage"
+    )
+    selection = " and ".join(
+        [
+            test_selection.CI_BASE_MARKER_EXPRESSION,
+            *(f"not {m}" for m in test_selection.irrelevant_markers(changed)),
+        ]
+    )
+    calls_path = tmp_path / "calls.jsonl"
+    output_path = tmp_path / "outputs.txt"
+    monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
+    monkeypatch.setenv("XIC_CI_TEST_PLAN", f"{selection}\nALL")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.txt"))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
+    (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
+    script_path = tmp_path / "plan.ps1"
+    script_path.write_text(
+        _CI_COMMAND_FAKES + _render_ci_step(step["run"], "push", before=before),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    outputs = dict(
+        line.split("=", 1) for line in output_path.read_text("utf-8-sig").splitlines()
+    )
+    assert outputs["required"] == required
+    planned = calls_path.exists()
+    assert planned == (before != "0" * 40)
+    if planned:
+        call = json.loads(calls_path.read_text("utf-8-sig").splitlines()[0])
+        assert call[call.index("--base") + 1 : call.index("--base") + 4] == [
+            "before",
+            "--head",
+            "after",
+        ]
+
+
+@pytest.mark.parametrize(
     "failed_lane,result",
     [(None, "success")]
     + [
@@ -710,10 +794,6 @@ def test_ci_required_check_rejects_any_unsuccessful_lane(
     assert set(gate["needs"]) == {"python-tests", "browser", "windows-integration"}
     assert gate["if"] == "${{ always() }}"
     assert jobs["browser"]["runs-on"] == "windows-latest"
-    assert jobs["browser"]["strategy"] == {
-        "fail-fast": False,
-        "matrix": {"shard": [1, 2]},
-    }
     assert "needs" not in jobs["browser"]
     monkeypatch.setenv(
         "TEST_LANE_RESULTS",

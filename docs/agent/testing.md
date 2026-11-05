@@ -135,11 +135,13 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. The browser lane runs on dedicated GitHub-hosted Windows
 VMs, independently of the scientific and packaging tests. Relevance selects the
-lane; a selected lane runs every browser test exactly once across two independent
-Windows VMs, with one process per VM. The `tools.testing.browser_sharding` pytest
-plugin splits sorted browser node IDs; adding a browser case needs no registry.
+lane on PRs and on master pushes, each judged by its own changed range, so a
+merge whose PR skipped the lane does not run it again on master. A selected lane
+runs every browser test exactly once across three independent Windows VMs, with
+one process per VM. The `tools.testing.test_sharding` pytest plugin splits the
+sorted node IDs left after marker selection; adding a case needs no registry.
 Each case keeps its own browser context, loopback server, config and evidence
-directory. Every shard must succeed, and one failure does not cancel the other.
+directory. Every shard must succeed, and one failure does not cancel the others.
 CI installs only the locked Chromium headless
 shell already used by the launch fixture, not an unused headed browser.
 The required `test (Python 3.12)`
@@ -161,8 +163,7 @@ Request failures are diagnostic, since navigation/download can intentionally
 abort requests. Workbench console errors and page exceptions fail tests;
 Inspector contexts preserve their page-exception gate and record console errors
 as diagnostics.
-`tools.testing.test_selection` owns
-change relevance; master runs the lane.
+`tools.testing.test_selection` owns change relevance.
 
 ## RAW And Scientific Validation
 
@@ -177,8 +178,9 @@ suite, including fake-reader, PowerShell release-script, embedded-JavaScript and
 through `PYTHONNET_RUNTIME=coreclr`; it requires neither RAW nor a browser.
 Windows integration runs only `windows_only` cases (Windows DLL search and file
 locking) in one process, followed by the relevant serial packaging builds.
-Linux's four workers use work stealing rather than keeping a whole slow test
-file on one worker.
+Linux splits its cases across two VMs with the same sharding plugin; each VM's
+four workers use work stealing rather than keeping a whole slow test file on one
+worker.
 Both jobs use the same affected-test plan on PRs; master runs their complete,
 disjoint portions. Browser checks retain their separate Windows VMs, and the
 census runs once in lint. The required `test (Python 3.12)` name is retained only

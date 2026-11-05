@@ -40,7 +40,7 @@ FIRST_PARTY_PACKAGES = (
 # Inputs that configure every test session. A change here runs the whole suite.
 FULL_RUN_INPUTS = re.compile(
     r"^(pyproject\.toml|uv\.lock|(.*/)?conftest\.py"
-    r"|tools/testing/test_selection\.py)$"
+    r"|tools/testing/(test_selection|test_sharding)\.py)$"
 )
 # Text files a register-reading test can open; one that lists a changed path
 # links that path to the tests reading it.
@@ -66,7 +66,7 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         # Shared test-support modules (fixtures, fakes, browser diagnostics)
         # can feed browser journeys; any change to them runs the browser lane.
         r"|tests/(?!test_)[^/]+\.py$"
-        r"|tools/testing/(test_selection|browser_sharding)\.py$"
+        r"|tools/testing/(test_selection|test_sharding)\.py$"
         r"|\.github/workflows/ci\.yml$"
         r"|pyproject\.toml$|uv\.lock$)"
     ),
