@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
+from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
@@ -13,7 +14,6 @@ from xic_extractor.alignment.backfill.peak_fact_provenance import (
     BackfillPeakFactProvenanceBatch,
     run_profile_row,
 )
-from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     deserialize_signal_processing_profile,
@@ -179,14 +179,13 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         timer=_Timer([0.0, 1.0] * 200),
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
         matrix,
         metadata={},
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
+        production_decisions=finalized_writer_decisions(matrix),
         timing_recorder=recorder,
     )
 
@@ -225,12 +224,11 @@ def test_writer_instrumentation_preserves_output_bytes(
         emit_alignment_status_matrix=False,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
     writer_args = (matrix,)
     writer_kwargs = {
         "metadata": {},
-        "alignment_config": config,
-        "production_decisions": build_production_decisions(matrix, config),
+        "production_decisions": finalized_writer_decisions(matrix),
     }
     pipeline_outputs_module.write_outputs_atomic(
         baseline_outputs,
@@ -297,11 +295,10 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
             ),
         ),
     )
-    config = AlignmentConfig()
-    decisions = build_production_decisions(matrix, config)
+    AlignmentConfig()
+    decisions = finalized_writer_decisions(matrix)
     writer_kwargs = {
         "metadata": {},
-        "alignment_config": config,
         "production_decisions": replace(
             decisions,
             rows={
@@ -340,15 +337,14 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         run_metadata_json=output_dir / "alignment_run_metadata.json",
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
     profile = SignalProcessingProfile(window_points=21)
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
         matrix,
         metadata={},
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
+        production_decisions=finalized_writer_decisions(matrix),
         backfill_peak_fact_provenance=BackfillPeakFactProvenanceBatch(
             (run_profile_row(profile),)
         ),
@@ -387,15 +383,14 @@ def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"prior output")
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
 
     with pytest.raises(ValueError, match="does not match the typed provenance batch"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             matrix,
             metadata={"owner_backfill_peak_fact_provenance_row_count": "0"},
-            alignment_config=config,
-            production_decisions=build_production_decisions(matrix, config),
+            production_decisions=finalized_writer_decisions(matrix),
         )
 
     assert all(
@@ -440,15 +435,14 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
         fail_later_writer,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
 
     with pytest.raises(RuntimeError, match="injected status writer failure"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             matrix,
             metadata={},
-            alignment_config=config,
-            production_decisions=build_production_decisions(matrix, config),
+            production_decisions=finalized_writer_decisions(matrix),
         )
 
     assert nested_temp_attempts == []

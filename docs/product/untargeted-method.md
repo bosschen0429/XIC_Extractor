@@ -23,7 +23,7 @@ results. Published features are not, by themselves, identified compounds.
   Untargeted's distinguishing search behavior is that every group qualifying
   under the configured method remains eligible for its projection, whereas
   Targeted retains only configured `TargetKey` rows.
-- Product-facing `Matrix` output stays conservative. Backfill-only (`rescue_only`), ambiguous,
+- Product-facing `Matrix` output stays conservative. Backfill-only, ambiguous,
   diagnostic, and review-only evidence belongs in Review/Audit surfaces until a
   writer path is explicitly contracted; see [Writer Authority](decision-policy.md#writer-authority).
 - Untargeted projection derives a typed `UntargetRowKey` from each finalized

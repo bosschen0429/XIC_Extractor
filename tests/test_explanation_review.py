@@ -1169,7 +1169,6 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     write_alignment_review_tsv(
         review,
         writer.matrix,
-        alignment_config=config,
         production_decisions=writer.production_decisions,
     )
     with review.open(encoding="utf-8-sig", newline="") as stream:

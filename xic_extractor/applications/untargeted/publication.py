@@ -114,7 +114,6 @@ def publish_untargeted_outputs(
             outputs,
             completed.application_result,
             metadata=metadata,
-            alignment_config=inputs.alignment_config,
             timing_recorder=timing_recorder,
             consume_child=_explanation_sink(explanation),
             ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,

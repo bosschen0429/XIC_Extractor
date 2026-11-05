@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal
 
-from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.untargeted_finalized_matrix import (
+        FinalizedUntargetMatrixRow,
+    )
     from xic_extractor.peak_detection.hypotheses import IntegrationResult
 else:
     IntegrationResult = Any
@@ -21,14 +23,6 @@ CellStatus = Literal[
     "ambiguous_ms1_owner",
     "duplicate_assigned",
 ]
-
-
-class AlignmentRowLike(Protocol):
-    @property
-    def neutral_loss_tag(self) -> str: ...
-
-    @property
-    def has_anchor(self) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -79,7 +73,7 @@ class AlignedCell:
 
 @dataclass(frozen=True)
 class AlignmentMatrix:
-    clusters: tuple[AlignmentCluster | AlignmentRowLike, ...]
+    clusters: tuple[FinalizedUntargetMatrixRow, ...]
     cells: tuple[AlignedCell, ...]
     sample_order: tuple[str, ...]
 
@@ -89,9 +83,3 @@ def cells_by_cluster(matrix: AlignmentMatrix) -> dict[str, tuple[AlignedCell, ..
     for cell in matrix.cells:
         grouped.setdefault(cell.cluster_id, []).append(cell)
     return {cluster_id: tuple(cells) for cluster_id, cells in grouped.items()}
-
-
-def row_id(row: Any) -> str:
-    if hasattr(row, "feature_id"):
-        return str(row.feature_id)
-    return str(row.cluster_id)

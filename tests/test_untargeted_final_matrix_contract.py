@@ -1,12 +1,14 @@
 import csv
 from pathlib import Path
-from types import SimpleNamespace
+from typing import Literal
 
-from xic_extractor.alignment.config import AlignmentConfig
+from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    FinalizedUntargetMatrixRow,
 )
 from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_matrix_tsv,
@@ -33,9 +35,15 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     matrix = AlignmentMatrix(
         clusters=(
             _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-            _feature("FAM_PROVISIONAL", evidence="", has_anchor=False),
-            _feature("FAM002", evidence="", has_anchor=False),
-            _feature("FAM003", evidence="owner_complete_link;owner_count=2"),
+            _feature(
+                "FAM_PROVISIONAL", evidence="", has_anchor=False, destination="archive"
+            ),
+            _feature("FAM002", evidence="", has_anchor=False, destination="archive"),
+            _feature(
+                "FAM003",
+                evidence="owner_complete_link;owner_count=2",
+                destination="archive",
+            ),
         ),
         sample_order=("s1", "s2", "s3"),
         cells=(
@@ -92,10 +100,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
 
 
 def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        AlignmentConfig(),
-    )
+    return finalized_writer_decisions(matrix)
 
 
 def _feature(
@@ -104,20 +109,20 @@ def _feature(
     evidence: str,
     has_anchor: bool = True,
     group_hypothesis_id: str = "",
-) -> SimpleNamespace:
-    return SimpleNamespace(
+    destination: Literal["matrix", "archive"] = "matrix",
+) -> FinalizedUntargetMatrixRow:
+    return FinalizedUntargetMatrixRow(
         feature_id=feature_id,
-        neutral_loss_tag="DNA_dR",
+        group_hypothesis_id=group_hypothesis_id,
+        destination=destination,
         family_center_mz=500.123,
         family_center_rt=8.49,
+        physical_peak_keys=("OWN-s1-000001",),
         family_product_mz=384.076,
         family_observed_neutral_loss_da=116.047,
+        neutral_loss_tag="DNA_dR",
         has_anchor=has_anchor,
-        event_cluster_ids=("OWN-s1-000001",),
-        event_member_count=1,
-        evidence=evidence,
-        review_only=False,
-        group_hypothesis_id=group_hypothesis_id,
+        evidence_status=evidence,
     )
 
 

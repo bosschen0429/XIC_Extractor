@@ -269,7 +269,6 @@ Persisted and public exceptions retain their exact spelling:
 | `owner_backfill_peak_fact_provenance_row_count`, `owner_backfill_peak_fact_provenance_tsv`, `owner_backfill_evaluation_coverage` | Metadata and public run/output fields |
 | `owner_finalized_cell_decision`, `owner_finalized`, `owner_rehydrated` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
-| `rescue_quantifiable`, `rescued_cell_*`, `cross_mode_rescue_*` | Existing quality, diagnostic TSV/JSON, and decision-record keys |
 | `ms1_feature_nl_rescued` | Discovery NL evidence state, not a Backfill cell status |
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection

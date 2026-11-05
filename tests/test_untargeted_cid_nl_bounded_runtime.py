@@ -1059,7 +1059,6 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     write_alignment_matrix_tsv(
         matrix_path,
         writer.matrix,
-        alignment_config=config,
         production_decisions=writer.production_decisions,
     )
     report = write_alignment_explanation(
@@ -1269,7 +1268,6 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         write_alignment_matrix_tsv(
             matrix,
             writer.matrix,
-            alignment_config=config,
             production_decisions=writer.production_decisions,
         )
         report = write_alignment_explanation(

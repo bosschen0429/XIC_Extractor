@@ -1509,7 +1509,6 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         write(
             path,
             writer.matrix,
-            alignment_config=config,
             production_decisions=writer.production_decisions,
         )
     original = matrix.read_bytes()
@@ -1703,7 +1702,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             ),
             writer.matrix,
             metadata={},
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             production_decisions=writer.production_decisions,
         )
         required = (

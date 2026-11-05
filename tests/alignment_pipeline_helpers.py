@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,10 +11,19 @@ from xic_extractor.alignment.cross_sample.identity_models import (
 )
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
+)
+from xic_extractor.alignment.production_decisions import (
+    BackfillTier,
+    ProductionCellDecision,
+    ProductionDecisionSet,
+    ProductionRowDecision,
+    ProductionStatus,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    FinalizedUntargetMatrixRow,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
@@ -215,17 +225,18 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
     }
 
 
-def cluster(cluster_id: str = "ALN000001") -> AlignmentCluster:
-    return AlignmentCluster(
-        cluster_id=cluster_id,
+def cluster(cluster_id: str = "ALN000001") -> FinalizedUntargetMatrixRow:
+    return FinalizedUntargetMatrixRow(
+        feature_id=cluster_id,
+        group_hypothesis_id=cluster_id,
+        destination="matrix",
+        family_center_mz=500.0,
+        family_center_rt=8.5,
+        physical_peak_keys=(),
+        family_product_mz=384.0,
+        family_observed_neutral_loss_da=116.0,
         neutral_loss_tag="DNA_dR",
-        cluster_center_mz=500.0,
-        cluster_center_rt=8.5,
-        cluster_product_mz=384.0,
-        cluster_observed_neutral_loss_da=116.0,
         has_anchor=True,
-        members=(),
-        anchor_members=(),
     )
 
 
@@ -387,4 +398,99 @@ def _owner(
             physical_peaks=(physical_peak,),
         ),
         is_provisional=is_provisional,
+    )
+
+
+_OWNER_NO_WRITE_VARIANT = {
+    "detected": "not_quantifiable",
+    "backfilled": "not_quantifiable",
+    "absent": "searched_no_observation",
+    "unchecked": "not_searched",
+    "ambiguous_ms1_owner": "unresolved",
+    "duplicate_assigned": "rejected_observation",
+}
+
+
+def finalized_writer_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
+    """Writer inputs shaped like the finalized Untargeted owner's decisions.
+
+    A detected or backfilled cell with a finite positive area is numeric; every
+    other cell is a no-write decision. Row inclusion follows ``destination``.
+    """
+
+    cells_by_row: dict[str, list[AlignedCell]] = {}
+    for item in matrix.cells:
+        cells_by_row.setdefault(item.cluster_id, []).append(item)
+    cell_decisions = {}
+    row_decisions = {}
+    for row in matrix.clusters:
+        row_cells = tuple(cells_by_row.get(row.feature_id, ()))
+        decisions = tuple(
+            _writer_cell_decision(row.feature_id, item) for item in row_cells
+        )
+        for decision in decisions:
+            cell_decisions[(decision.feature_id, decision.sample_stem)] = decision
+        numeric_count = sum(item.write_matrix_value for item in decisions)
+        accepted_backfill = sum(
+            item.production_status == "accepted_backfill" for item in decisions
+        )
+        row_decisions[row.feature_id] = ProductionRowDecision(
+            feature_id=row.feature_id,
+            include_in_primary_matrix=row.destination == "matrix",
+            identity_decision=(
+                "finalized_matrix"
+                if row.destination == "matrix"
+                else "finalized_archive"
+            ),
+            identity_confidence="owner_finalized",
+            primary_evidence="completed_untarget_batch",
+            identity_reason="test_route",
+            quantifiable_detected_count=sum(
+                item.write_matrix_value and item.raw_status == "detected"
+                for item in decisions
+            ),
+            quantifiable_backfill_count=accepted_backfill,
+            accepted_cell_count=numeric_count,
+            detected_count=sum(item.status == "detected" for item in row_cells),
+            accepted_backfill_count=accepted_backfill,
+            review_backfill_count=0,
+            duplicate_assigned_count=sum(
+                item.status == "duplicate_assigned" for item in row_cells
+            ),
+            ambiguous_ms1_owner_count=sum(
+                item.status == "ambiguous_ms1_owner" for item in row_cells
+            ),
+            row_flags=(f"finalized_route:{row.destination}",),
+        )
+    return ProductionDecisionSet(cells=cell_decisions, rows=row_decisions)
+
+
+def _writer_cell_decision(feature_id: str, item: AlignedCell) -> ProductionCellDecision:
+    # The owner selects the primary area from the chosen integration when present.
+    area = item.matrix_area if item.selected_integration is not None else item.area
+    write = (
+        item.status in {"detected", "backfilled"}
+        and isinstance(area, (int, float))
+        and not isinstance(area, bool)
+        and math.isfinite(area)
+        and area > 0
+    )
+    if write and item.status == "detected":
+        production_status: ProductionStatus = "detected"
+        backfill_tier: BackfillTier = ""
+    elif write:
+        production_status = "accepted_backfill"
+        backfill_tier = "accepted_backfill"
+    else:
+        production_status = "blank"
+        backfill_tier = ""
+    return ProductionCellDecision(
+        feature_id=feature_id,
+        sample_stem=item.sample_stem,
+        raw_status=item.status,
+        production_status=production_status,
+        backfill_tier=backfill_tier,
+        write_matrix_value=write,
+        matrix_value=float(area) if write else None,
+        blank_reason="" if write else _OWNER_NO_WRITE_VARIANT[item.status],
     )

@@ -29,7 +29,6 @@ from xic_extractor.alignment.backfill.scope import (
     REQUEST_PLAN_VERSION,
 )
 from xic_extractor.alignment.config import (
-    AlignmentConfig,
     BackfillXicBackend,
 )
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -221,7 +220,6 @@ def write_completed_untargeted_outputs_atomic(
     completed: FinalizedUntargetBatchApplicationResult,
     *,
     metadata: dict[str, str],
-    alignment_config: AlignmentConfig,
     timing_recorder: TimingRecorder,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -253,7 +251,6 @@ def write_completed_untargeted_outputs_atomic(
                 ),
                 sample_order=completed_untarget_batch_sample_order(completed),
                 metadata=metadata,
-                alignment_config=alignment_config,
                 timing_recorder=timing_recorder,
             )
         assert writer_inputs is not None
@@ -261,7 +258,6 @@ def write_completed_untargeted_outputs_atomic(
             outputs,
             writer_inputs.matrix,
             metadata=metadata,
-            alignment_config=alignment_config,
             backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
             production_decisions=writer_inputs.production_decisions,
             timing_recorder=timing_recorder,
@@ -274,7 +270,6 @@ def write_outputs_atomic(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
-    alignment_config: AlignmentConfig,
     backfill_peak_fact_provenance: BackfillPeakFactProvenanceBatch = (
         EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
     ),
@@ -305,7 +300,6 @@ def write_outputs_atomic(
                 lambda path: write_alignment_matrix_tsv(
                     path,
                     matrix,
-                    alignment_config=alignment_config,
                     production_decisions=production_decisions,
                 ),
             ),
@@ -317,7 +311,6 @@ def write_outputs_atomic(
                 lambda path: write_alignment_review_tsv(
                     path,
                     matrix,
-                    alignment_config=alignment_config,
                     production_decisions=production_decisions,
                 ),
             ),
@@ -394,7 +387,6 @@ def write_streamed_untargeted_outputs_atomic(
     *,
     sample_order: tuple[str, ...],
     metadata: dict[str, str],
-    alignment_config: AlignmentConfig,
     timing_recorder: TimingRecorder,
 ) -> int:
     """Render finalized rows once, then use the existing publication transaction."""
@@ -424,7 +416,6 @@ def write_streamed_untargeted_outputs_atomic(
             {name: temp_paths[path] for name, path in row_paths.items()},
             batches,
             sample_order=sample_order,
-            alignment_config=alignment_config,
         )
         if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
             _write_backfill_peak_fact_provenance_temp(

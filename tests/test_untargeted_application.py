@@ -575,7 +575,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_matrix_tsv(
             matrix_path,
             writer.matrix,
-            alignment_config=config,
             production_decisions=writer.production_decisions,
         )
         matrix_bytes = matrix_path.read_bytes()
