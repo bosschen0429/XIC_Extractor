@@ -130,7 +130,7 @@ def _build_candidate(
         raw_apex_intensity=peak.intensity,
         raw_apex_index=raw_apex_idx,
         prominence=prominence,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         source_apex_rank=source_apex_rank,
     )
 

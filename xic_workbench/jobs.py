@@ -190,16 +190,13 @@ class AnalysisJobs:
         from xic_extractor.configuration.execution_profile import (
             resolve_execution_profile,
         )
-        from xic_workbench.discovery_config_io import (
-            read_legacy_roles,
-            write_discovery_config,
-        )
         from xic_workbench.samples import (
             apply_raw_chronology,
             read_batch_samples,
             sample_annotations_path,
         )
         from xic_workbench.untargeted import UntargetedRun, parse_request
+        from xic_workbench.untargeted_config import write_untargeted_config
 
         if (
             values.get("raw_dir")
@@ -207,13 +204,11 @@ class AnalysisJobs:
             and values.get("mode", "full") in {"full", "align_only"}
         ):
             raw_dir = Path(values["raw_dir"])
-            legacy = read_legacy_roles(raw_dir, config_dir=self.config_dir)
             # A folder's confirmed metadata decides the run, whatever rows the
             # page still holds; without annotations the alignment owner resolves
             # default metadata.
             if sample_annotations_path(self.config_dir, raw_dir).is_file() or (
-                values.get("samples") is None
-                and (values.get("sequence_source") or legacy)
+                values.get("samples") is None and values.get("sequence_source")
             ):
                 values["samples"] = read_batch_samples(
                     self.config_dir,
@@ -222,7 +217,6 @@ class AnalysisJobs:
                     sequence_source=Path(values["sequence_source"])
                     if values.get("sequence_source")
                     else None,
-                    legacy_roles=legacy,
                 )["samples"]
             elif isinstance(values.get("samples"), list):
                 values["samples"] = apply_raw_chronology(
@@ -245,7 +239,7 @@ class AnalysisJobs:
             request, progress=self._progress, should_cancel=self._cancel.is_set
         )
         write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
-        write_discovery_config(values, config_dir=self.config_dir)
+        write_untargeted_config(values, config_dir=self.config_dir)
         return runner
 
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
@@ -272,7 +266,6 @@ class AnalysisJobs:
             }
             return result
         if kind == "samples":
-            from xic_workbench.discovery_config_io import read_legacy_roles
             from xic_workbench.samples import read_batch_samples
 
             result = read_batch_samples(
@@ -286,9 +279,6 @@ class AnalysisJobs:
                 read_headers=False,
                 progress=self._progress,
                 should_cancel=self._cancel.is_set,
-                legacy_roles=read_legacy_roles(
-                    Path(values["raw_dir"]), config_dir=self.config_dir
-                ),
             )
             result["input_paths"] = {
                 key: str(values.get(key) or "")

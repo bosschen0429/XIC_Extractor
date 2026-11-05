@@ -74,7 +74,7 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
     path = config.output_csv.with_suffix(".xlsx")
     write_excel_from_run_output(
         config,
-        [replace(_target("WithNL"), sample_applicability="rna_containing")],
+        [_target("WithNL")],
         _run_output(with_diagnostics=False),
         output_path=path,
     )
@@ -87,8 +87,7 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
         ("SampleB", "qc", "1"),
     ]
     assert wb["Sample Context"].sheet_state == "hidden"
-    assert wb["Targets"]["L1"].value == "Sample applicability"
-    assert wb["Targets"]["L2"].value == "rna_containing"
+    assert wb["Targets"]["A2"].value == "WithNL"
     wb.close()
 
 

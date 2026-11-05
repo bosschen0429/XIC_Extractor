@@ -217,8 +217,6 @@ def display_measurement_reason(
     """Explain a finished result: its decisive evidence, then other concerns."""
     exclusions = sorted(reasons(row, "Projection Exclusion Reasons"))
     if exclusions:
-        if any(r.startswith("target_sample_applicability:") for r in exclusions):
-            return "已排除：此目標不適用這個樣本。"
         return f"已排除：{reason_text(exclusions[0])}。"
     conflicts = reasons(row, "Projection Conflict Reasons")
     if conflicts:

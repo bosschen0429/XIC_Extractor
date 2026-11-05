@@ -2,7 +2,7 @@ import csv
 
 import pytest
 
-from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS
+from xic_extractor.configuration.csv_io import TARGET_FIELDS
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError
@@ -43,7 +43,7 @@ def _write_valid_config(config_dir):
             for key, value in CANONICAL_SETTINGS_DEFAULTS.items()
         )
     with (config_dir / "targets.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=TARGET_WRITE_FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=TARGET_FIELDS)
         writer.writeheader()
         writer.writerow(_target_row())
 
@@ -178,7 +178,6 @@ def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
         ("method", "unknown"),
         ("role", "standard"),
         ("label", ""),
-        ("sample_applicability", "invalid"),
     ],
 )
 def test_invalid_target_intent_is_rejected(key, value):
@@ -209,11 +208,10 @@ def test_target_relationships_and_metadata():
         label="analyte",
         role="analyte",
         istd_pair="ISTD",
-        sample_applicability="rna_containing",
         note="retain",
     )
     parsed = parse_target_rows([standard, analyte])
-    assert parsed[1].sample_applicability == "rna_containing"
+    assert parsed[1].istd_pair == "ISTD"
     unpaired = parse_target_rows([dict(analyte, istd_pair="")])
     assert unpaired[0].istd_pair == ""
     assert not unpaired[0].is_istd

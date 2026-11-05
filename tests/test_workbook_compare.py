@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from scripts.compare_workbooks import compare_workbooks
+from tools.diagnostics.compare_workbooks import compare_workbooks
 
 
 def test_compare_workbooks_accepts_compact_layout(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def _write_workbook(
             ws.append(["elapsed_seconds", elapsed_seconds])
             ws.append(["output_path", output_path])
             ws.append(["target_config_hash", target_config_hash])
-            ws.append(["resolver_mode", "legacy_savgol"])
+            ws.append(["resolver_mode", "savgol"])
     if include_score_breakdown:
         ws = wb.create_sheet("Score Breakdown")
         ws.append(["Sample", "Target", "Score"])

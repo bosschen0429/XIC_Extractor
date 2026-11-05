@@ -84,7 +84,6 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "中性丟失質量偏差的警示門檻與上限。",
         "ppm",
     ),
-    ("Targets", "Sample applicability", "目標適用的樣本範圍；空白＝不限制。", ""),
     (
         "Run Metadata",
         "Key / 說明 / Value",

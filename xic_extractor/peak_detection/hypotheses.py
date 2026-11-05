@@ -52,11 +52,7 @@ class PeakHypothesisAuthorityError(ValueError):
 
 @dataclass(frozen=True)
 class EvidenceVector:
-    """Audit evidence attached to a peak hypothesis.
-
-    The legacy CWT fields mirror `PeakCandidate` audit-presence flags only
-    and are not interpretable as CWT scale or ridge metrics.
-    """
+    """Audit evidence attached to a peak hypothesis."""
 
     raw_score: int | None = None
     support_labels: tuple[str, ...] = ()
@@ -95,8 +91,6 @@ class EvidenceVector:
     nearest_product_base_ratio: float | None = None
     nearest_product_mz: float | None = None
     rt_prior_min: float | None = None
-    cwt_best_scale: float | None = None
-    cwt_ridge_persistence: float | None = None
     boundary_score: float | None = None
     baseline_score: float | None = None
     common: CommonEvidence | None = None
@@ -504,8 +498,6 @@ def _evidence_from_candidate(
             evidence.nearest_product_mz if evidence is not None else None
         ),
         rt_prior_min=score.prior_rt if score is not None else None,
-        cwt_best_scale=candidate.cwt_best_scale,
-        cwt_ridge_persistence=candidate.cwt_ridge_persistence,
         common=common,
         decision_semantics=semantics,
     )

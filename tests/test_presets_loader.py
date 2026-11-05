@@ -30,16 +30,6 @@ def test_list_presets_works_outside_repo_cwd(
     monkeypatch.chdir(tmp_path)
 
     assert "dna_dr" in list_presets()
-    assert "dna_dr_product_ready" in list_presets()
-
-
-def test_load_builtin_dna_dr_product_ready_preset_stays_sample_universe_safe() -> None:
-    preset = load_preset("dna_dr_product_ready")
-
-    assert preset.name == "DNA dR Owner Backfill (compat)"
-    assert preset.combine_mode == "single"
-    assert preset.tags[0].name == "DNA_dR"
-    assert preset.alignment_overrides == {}
 
 
 def test_existing_path_toml_rejects_retired_owner_backend_option(
@@ -138,5 +128,5 @@ preferred_ppm = 10.0
 
 
 def test_missing_builtin_error_lists_available_presets() -> None:
-    with pytest.raises(PresetError, match="dna_dr_product_ready"):
+    with pytest.raises(PresetError, match="dna_dr"):
         load_preset("missing")

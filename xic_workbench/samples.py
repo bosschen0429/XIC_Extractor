@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES, discover_raw_files
 from xic_extractor.raw_reader import read_analysis_set
@@ -23,7 +23,6 @@ from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_SCHEMA_VERSION,
     SAMPLE_ROLES,
     SampleMetadata,
-    SampleRole,
     is_sample_metadata_source,
     load_and_match_sample_metadata,
     load_sample_metadata,
@@ -87,7 +86,6 @@ def read_batch_samples(
     dll_dir: Path | None,
     sequence_source: Path | None = None,
     import_sequence: bool = False,
-    legacy_roles: dict[str, str] | None = None,
     read_headers: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
@@ -105,7 +103,6 @@ def read_batch_samples(
         raw_dir,
         dll_dir=dll_dir,
         sequence_source=sequence_source if importing else saved if confirmed else None,
-        custom_roles=None if confirmed else legacy_roles,
         read_headers=read_headers,
         progress=progress,
         should_cancel=should_cancel,
@@ -425,7 +422,6 @@ def load_samples(
     *,
     dll_dir: Path | None = None,
     sequence_source: Path | None = None,
-    custom_roles: dict[str, str] | None = None,
     read_headers: bool = True,
     include_context: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
@@ -513,20 +509,6 @@ def load_samples(
     if sequence_source:
         summary["sequence_source"] = str(Path(sequence_source))
 
-    overrides = custom_roles or {}
-    invalid_roles = sorted(set(overrides.values()) - SAMPLE_ROLES)
-    if invalid_roles:
-        raise ValueError(f"unsupported sample role: {invalid_roles[0]}")
-    rows = tuple(
-        replace(
-            row,
-            sample_role=cast(
-                SampleRole,
-                overrides.get(row.raw_stem, row.sample_role),
-            ),
-        )
-        for row in rows
-    )
     summary["role_counts"] = {
         role: sum(row.sample_role == role for row in rows)
         for role in ROLE_CHOICES

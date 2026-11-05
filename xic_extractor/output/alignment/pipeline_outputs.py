@@ -152,10 +152,6 @@ def alignment_metadata(
     selected_family_count: int = 0,
     selected_family_source: str = "",
     request_plan_version: str = REQUEST_PLAN_VERSION,
-    audit_evidence_mode: str = "full",
-    requested_audit_evidence_mode: str = "auto",
-    heavy_audit_enabled: bool = True,
-    audit_evidence_mode_reason: str = "",
     scope_warning: str = "",
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
@@ -191,10 +187,6 @@ def alignment_metadata(
         "selected_family_source": selected_family_source,
         "require_discovery_owner_closure": "TRUE",
         "request_plan_version": request_plan_version,
-        "audit_evidence_mode": audit_evidence_mode,
-        "requested_audit_evidence_mode": requested_audit_evidence_mode,
-        "heavy_audit_enabled": str(heavy_audit_enabled),
-        "audit_evidence_mode_reason": audit_evidence_mode_reason,
         "scope_warning": scope_warning,
         "feature_id_policy": "report_scoped_measured_member_order",
         "matrix_split_evaluation_status": "complete_no_product_ready_split",

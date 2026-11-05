@@ -7,9 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 if __package__ in {None, ""}:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.validation_harness_core import (
+from tools.diagnostics.targeted_validation_suites import (
     DEFAULT_FULL_TISSUE_DIR,
     DEFAULT_TISSUE_VALIDATION_DIR,
     SUITE_CHOICES,

@@ -21,7 +21,7 @@ def test_hypothesis_id_is_deterministic() -> None:
         8.1234567,
         left=8.001234,
         right=8.654321,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
     )
 
     first = hypothesis_audit_id(
@@ -38,11 +38,11 @@ def test_hypothesis_id_is_deterministic() -> None:
     )
 
     assert first == second
-    assert first == ("SampleA|Analyte|savgol|legacy_savgol|8.12346|8.00123|8.65432")
+    assert first == ("SampleA|Analyte|savgol|savgol|8.12346|8.00123|8.65432")
 
 
 def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
-    selected = _candidate(8.5, area=5000.0, proposal_sources=("legacy_savgol",))
+    selected = _candidate(8.5, area=5000.0, proposal_sources=("savgol",))
     rejected = _candidate(8.9, area=900.0, proposal_sources=("local_minimum",))
     result = PeakDetectionResult(
         status="OK",
@@ -72,7 +72,7 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     )
 
     assert [hypothesis.audit.selected for hypothesis in hypotheses] == [True, False]
-    assert hypotheses[0].audit.proposal_sources == ("legacy_savgol",)
+    assert hypotheses[0].audit.proposal_sources == ("savgol",)
     assert hypotheses[0].evidence.ms2_present is True
     assert hypotheses[0].evidence.nl_match is True
     assert hypotheses[0].evidence.raw_score == 92
@@ -114,14 +114,12 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         left=8.25,
         right=8.75,
         area=1234.0,
-        proposal_sources=("legacy_savgol", "centwave_cwt"),
+        proposal_sources=("savgol",),
         quality_flags=("low_trace_continuity",),
         region_scan_count=8,
         region_duration_min=0.5,
         region_edge_ratio=0.82,
         region_trace_continuity=0.75,
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.6,
     )
     score = PeakCandidateScore(
         candidate=selected,
@@ -130,7 +128,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         support_labels=(
             "strict_nl_ok",
             "ms2_trace_strong",
-            "cwt_same_apex_support",
+            "shape_clean",
         ),
         concern_labels=("trace_quality_review",),
         cap_labels=("rt_window_cap",),
@@ -187,7 +185,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     assert evidence.support_labels == (
         "strict_nl_ok",
         "ms2_trace_strong",
-        "cwt_same_apex_support",
+        "shape_clean",
     )
     assert evidence.concern_labels == ("trace_quality_review",)
     assert evidence.cap_labels == ("rt_window_cap",)
@@ -212,8 +210,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     assert evidence.nearest_product_base_ratio == 0.18
     assert evidence.nearest_product_mz == 123.456
     assert evidence.rt_prior_min == 8.45
-    assert evidence.cwt_best_scale == 4.0
-    assert evidence.cwt_ridge_persistence == 0.6
 
     assert evidence.common is not None
     assert evidence.common.ms1_apex_rt_min == 8.5
@@ -230,10 +226,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
 
     assert evidence.decision_semantics is not None
     assert evidence.decision_semantics.decision_class == "review"
-    assert evidence.decision_semantics.support_reasons == (
-        "candidate_aligned_ms2_nl",
-        "cwt_boundary_morphology_context",
-    )
+    assert evidence.decision_semantics.support_reasons == ("candidate_aligned_ms2_nl",)
     assert "targeted_rt_conflict" in evidence.decision_semantics.conflict_reasons
     assert "targeted_rt_review" in evidence.decision_semantics.review_reasons
 
@@ -358,14 +351,12 @@ def _candidate(
     left: float | None = None,
     right: float | None = None,
     area: float = 1000.0,
-    proposal_sources: tuple[str, ...] = ("legacy_savgol",),
+    proposal_sources: tuple[str, ...] = ("savgol",),
     quality_flags: tuple[str, ...] = (),
     region_scan_count: int | None = None,
     region_duration_min: float | None = None,
     region_edge_ratio: float | None = None,
     region_trace_continuity: float | None = None,
-    cwt_best_scale: float | None = None,
-    cwt_ridge_persistence: float | None = None,
 ) -> PeakCandidate:
     peak_start = rt - 0.2 if left is None else left
     peak_end = rt + 0.2 if right is None else right
@@ -391,8 +382,6 @@ def _candidate(
         region_duration_min=region_duration_min,
         region_edge_ratio=region_edge_ratio,
         region_trace_continuity=region_trace_continuity,
-        cwt_best_scale=cwt_best_scale,
-        cwt_ridge_persistence=cwt_ridge_persistence,
         proposal_sources=proposal_sources,
         source_apex_rank=1,
     )

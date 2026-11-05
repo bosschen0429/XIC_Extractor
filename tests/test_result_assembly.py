@@ -817,22 +817,6 @@ def test_istd_raw_hard_quality_flag_with_product_support_stays_counted() -> None
     assert "trace_morphology_review" in projection.review_reasons
 
 
-def test_rna_containing_strict_nl_target_downgrades_targeted_rt_conflict() -> None:
-    result = _result_with_targeted_projection_semantics(
-        target=_target(sample_applicability="rna_containing"),
-        sample_name="TumorBC2304_DNAandRNA",
-        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
-        conflict_reasons=("targeted_rt_conflict",),
-    )
-
-    projection = result.targeted_product_projection
-    assert projection is not None
-    assert projection.product_state == "detected_clean"
-    assert projection.counted_detection is True
-    assert "targeted_rt_conflict" not in projection.conflict_reasons
-    assert "targeted_rt_review" not in projection.review_reasons
-
-
 def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(),
@@ -854,12 +838,12 @@ def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
 @pytest.mark.parametrize(
     "cid_nl_tag,neutral_loss_da", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
 )
-def test_targeted_configured_targets_ignore_sample_name_and_legacy_applicability(
+def test_targeted_configured_targets_ignore_sample_name(
     sample_name, cid_nl_tag, neutral_loss_da
 ) -> None:
     result = _result_with_targeted_projection_semantics(
         target=replace(
-            _target(sample_applicability="rna_containing"),
+            _target(),
             cid_nl_tag=cid_nl_tag,
             neutral_loss_da=neutral_loss_da,
         ),
@@ -884,7 +868,6 @@ class _Config:
 def _target(
     *,
     is_istd: bool = False,
-    sample_applicability: str = "all",
 ) -> Target:
     return Target(
         label="ISTD" if is_istd else "Analyte",
@@ -897,7 +880,6 @@ def _target(
         nl_ppm_max=50.0,
         is_istd=is_istd,
         istd_pair="ISTD",
-        sample_applicability=sample_applicability,
     )
 
 

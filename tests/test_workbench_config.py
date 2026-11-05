@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from xic_workbench import config_io, discovery_config_io
+from xic_workbench import config_io, untargeted_config
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 
 
@@ -14,7 +14,7 @@ def test_blank_discovery_preset_uses_default_without_rewriting_config(tmp_path, 
     original = json.dumps({"preset": preset})
     path.write_text(original, encoding="utf-8")
 
-    config = discovery_config_io.read_discovery_config(config_dir=tmp_path)
+    config = untargeted_config.read_untargeted_config(config_dir=tmp_path)
 
     assert config["preset"] == "dna_dr"
     assert path.read_text(encoding="utf-8") == original
@@ -24,49 +24,49 @@ def test_missing_discovery_preset_is_not_replaced_with_default(tmp_path):
     from xic_extractor.presets import PresetError, load_preset
 
     missing = str(tmp_path / "missing.toml")
-    discovery_config_io.write_discovery_config({"preset": missing}, config_dir=tmp_path)
-    config = discovery_config_io.read_discovery_config(config_dir=tmp_path)
+    untargeted_config.write_untargeted_config({"preset": missing}, config_dir=tmp_path)
+    config = untargeted_config.read_untargeted_config(config_dir=tmp_path)
 
     assert config["preset"] == missing
     with pytest.raises(PresetError, match="preset file not found"):
         load_preset(config["preset"])
 
 
-def test_read_discovery_config_defaults_output_to_repo_output(
+def test_read_untargeted_config_defaults_output_to_repo_output(
     monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(discovery_config_io, "ROOT", tmp_path)
-    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(untargeted_config, "ROOT", tmp_path)
+    monkeypatch.setattr(untargeted_config, "CONFIG_DIR", tmp_path / "config")
 
-    config = discovery_config_io.read_discovery_config()
+    config = untargeted_config.read_untargeted_config()
 
     assert config["output_dir"] == str(tmp_path / "output")
 
 
-def test_read_discovery_config_blank_output_falls_back_to_default(
+def test_read_untargeted_config_blank_output_falls_back_to_default(
     monkeypatch, tmp_path
 ) -> None:
-    monkeypatch.setattr(discovery_config_io, "ROOT", tmp_path)
-    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
-    discovery_config_io.write_discovery_config(
+    monkeypatch.setattr(untargeted_config, "ROOT", tmp_path)
+    monkeypatch.setattr(untargeted_config, "CONFIG_DIR", tmp_path / "config")
+    untargeted_config.write_untargeted_config(
         {"raw_dir": "R", "dll_dir": "D", "output_dir": ""}
     )
 
-    config = discovery_config_io.read_discovery_config()
+    config = untargeted_config.read_untargeted_config()
 
     assert config["output_dir"] == str(tmp_path / "output")
     assert config["raw_dir"] == "R"
 
 
-def test_read_discovery_config_preserves_custom_output(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(discovery_config_io, "ROOT", tmp_path)
-    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
+def test_read_untargeted_config_preserves_custom_output(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(untargeted_config, "ROOT", tmp_path)
+    monkeypatch.setattr(untargeted_config, "CONFIG_DIR", tmp_path / "config")
     custom = str(tmp_path / "my_out")
-    discovery_config_io.write_discovery_config(
+    untargeted_config.write_untargeted_config(
         {"raw_dir": "R", "dll_dir": "D", "output_dir": custom}
     )
 
-    config = discovery_config_io.read_discovery_config()
+    config = untargeted_config.read_untargeted_config()
 
     assert config["output_dir"] == custom
 
@@ -83,17 +83,17 @@ def test_target_rows_preserve_extra_metadata_order(tmp_path):
 
 
 def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
-    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(untargeted_config, "CONFIG_DIR", tmp_path / "config")
     monkeypatch.setattr(
-        discovery_config_io,
+        untargeted_config,
         "targets_template_path",
         lambda: tmp_path / "bundle" / "targets.csv",
     )
-    assert discovery_config_io.read_discovery_config()["targets_csv"] == str(
+    assert untargeted_config.read_untargeted_config()["targets_csv"] == str(
         tmp_path / "bundle" / "targets.csv"
     )
-    discovery_config_io.write_discovery_config({"targets_csv": ""})
-    assert discovery_config_io.read_discovery_config()["targets_csv"] == ""
+    untargeted_config.write_untargeted_config({"targets_csv": ""})
+    assert untargeted_config.read_untargeted_config()["targets_csv"] == ""
 
 
 def test_invalid_targeted_values_do_not_block_workspace_or_untargeted_dll(tmp_path):
@@ -139,28 +139,10 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
     assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "shared-dll"
     payload = json.loads(path.read_text())
     assert "dll_dir" not in payload
-    # Legacy roles belong to the folder they were saved for.
+    # Sample roles belong to confirmed sample metadata, not workflow controls.
     assert "custom_roles" not in payload
     assert payload["sequence_source"] == "sequence.csv"
     assert payload["raw_dir"] == "new-batch"
-
-
-def test_untargeted_save_keeps_legacy_roles_for_their_own_folder(tmp_path):
-    from xic_workbench.discovery_config_io import read_legacy_roles
-
-    path = tmp_path / "discovery_gui.json"
-    path.write_text(
-        json.dumps({"raw_dir": str(tmp_path / "batch"), "custom_roles": {"A": "qc"}}),
-        encoding="utf-8",
-    )
-    workspace = AnalysisWorkspace(tmp_path, {})
-    try:
-        workspace.action("untargeted/save", {"raw_dir": str(tmp_path / "batch")})
-    finally:
-        workspace.jobs.close()
-
-    assert read_legacy_roles(tmp_path / "batch", config_dir=tmp_path) == {"A": "qc"}
-    assert read_legacy_roles(tmp_path / "other", config_dir=tmp_path) == {}
 
 
 def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp_path):
@@ -212,7 +194,7 @@ def test_configuration_reads_are_read_only_and_discovery_does_not_parse_targeted
     assert "ms2_precursor_tol_da" not in config_io.read_settings(config_dir=tmp_path)
     assert config_io.read_preferences(config_dir=tmp_path)["theme"] == "dark"
     assert (
-        discovery_config_io.read_discovery_config(config_dir=tmp_path)["raw_dir"]
+        untargeted_config.read_untargeted_config(config_dir=tmp_path)["raw_dir"]
         == "batch"
     )
     assert {name: (tmp_path / name).read_bytes() for name in paths} == before
@@ -273,7 +255,7 @@ def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_
     assert (isolated_config_dir / "workspace.json").is_file()
     assert config_io.read_settings()["parallel_workers"] == "3"
     assert load_execution_profile().parallel_workers == 3
-    assert discovery_config_io.read_discovery_config()["raw_dir"] == "test-raws"
+    assert untargeted_config.read_untargeted_config()["raw_dir"] == "test-raws"
 
 
 @pytest.mark.parametrize("launch_override", [False, True])

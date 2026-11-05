@@ -31,20 +31,6 @@ from xic_extractor.untargeted_execution.input_planning import (
 
 
 @dataclass(frozen=True, slots=True)
-class RetainedAlignmentOptions:
-    """Accepted advanced overrides for the retained single-provider route."""
-
-    audit_evidence_mode: str = "auto"
-
-    def __post_init__(self) -> None:
-        if self.audit_evidence_mode not in {"auto", "none"}:
-            raise ValueError(
-                "pure CID-NL retained route does not support legacy Alignment "
-                "options: audit_evidence_mode"
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class UntargetedRequest:
     """Complete Alignment intent; canonical configs retain their existing owners.
 
@@ -70,7 +56,6 @@ class UntargetedRequest:
     publication: UntargetedPublicationPolicy = field(
         default_factory=UntargetedPublicationPolicy
     )
-    legacy: RetainedAlignmentOptions = field(default_factory=RetainedAlignmentOptions)
 
     def resolve_processing_profile(self) -> SignalProcessingProfile:
         """Resolve request dependencies at the formal application entry."""

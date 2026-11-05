@@ -1,12 +1,9 @@
-from dataclasses import replace
-
 import numpy as np
 import pytest
 
 from xic_extractor.peak_detection.candidate_scoring import (
     score_candidate,
 )
-from xic_extractor.peak_detection.hypotheses import EvidenceVector
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.scoring_models import (
     ScoringContext,
@@ -234,113 +231,6 @@ def test_score_candidate_records_moderate_ms2_trace_support() -> None:
     assert "ms2_trace_moderate" in scored.evidence_score.support_labels
     assert scored.evidence_facts is not None
     assert scored.evidence_facts.chemical.ms2_trace_strength == "moderate"
-
-
-def test_score_candidate_records_same_apex_cwt_support() -> None:
-    cand = replace(
-        _make_candidate(apex_rt=10.0, apex_intensity=1000),
-        proposal_sources=("legacy_savgol", "centwave_cwt"),
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.5,
-    )
-    x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
-    ctx = ScoringContext(
-        rt_array=x,
-        intensity_array=y,
-        signal_quality=measure_signal_quality(
-            x, y, baseline=np.full_like(y, 5.0), apex_index=100
-        ),
-        apex_index=100,
-        half_width_ratio=1.0,
-        fwhm_ratio=1.0,
-        ms2_present=True,
-        nl_match=True,
-        rt_prior=10.0,
-        rt_prior_sigma=0.1,
-        rt_min=9.0,
-        rt_max=11.0,
-    )
-
-    scored = score_candidate(cand, ctx, prior_rt=10.0)
-
-    assert "cwt_same_apex_support" in scored.evidence_score.support_labels
-    assert scored.evidence_score.positive_points >= 5
-
-
-def test_peak_candidate_documents_legacy_cwt_metric_semantics() -> None:
-    assert PeakCandidate.__doc__ is not None
-    peak_candidate_doc = " ".join(PeakCandidate.__doc__.split())
-    assert "audit-presence flags" in PeakCandidate.__doc__
-    assert "not interpretable as CWT scale or ridge metrics" in peak_candidate_doc
-    assert EvidenceVector.__doc__ is not None
-    evidence_vector_doc = " ".join(EvidenceVector.__doc__.split())
-    assert "audit-presence flags" in EvidenceVector.__doc__
-    assert "not interpretable as CWT scale or ridge metrics" in evidence_vector_doc
-
-
-def test_cwt_only_candidate_does_not_receive_same_apex_support_bonus() -> None:
-    cand = replace(
-        _make_candidate(apex_rt=10.0, apex_intensity=1000),
-        proposal_sources=("centwave_cwt",),
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.5,
-    )
-    x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
-    ctx = ScoringContext(
-        rt_array=x,
-        intensity_array=y,
-        signal_quality=measure_signal_quality(
-            x, y, baseline=np.full_like(y, 5.0), apex_index=100
-        ),
-        apex_index=100,
-        half_width_ratio=1.0,
-        fwhm_ratio=1.0,
-        ms2_present=True,
-        nl_match=True,
-        rt_prior=10.0,
-        rt_prior_sigma=0.1,
-        rt_min=9.0,
-        rt_max=11.0,
-    )
-
-    scored = score_candidate(cand, ctx, prior_rt=10.0)
-
-    assert "cwt_same_apex_support" not in scored.evidence_score.support_labels
-    assert "cwt_same_apex_support" not in scored.evidence_score.concern_labels
-
-
-def test_cwt_support_requires_chemical_evidence_when_nl_is_required() -> None:
-    cand = replace(
-        _make_candidate(apex_rt=10.0, apex_intensity=1000),
-        proposal_sources=("legacy_savgol", "centwave_cwt"),
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.5,
-    )
-    x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
-    ctx = ScoringContext(
-        rt_array=x,
-        intensity_array=y,
-        signal_quality=measure_signal_quality(
-            x, y, baseline=np.full_like(y, 5.0), apex_index=100
-        ),
-        apex_index=100,
-        half_width_ratio=1.0,
-        fwhm_ratio=1.0,
-        ms2_present=True,
-        nl_match=False,
-        rt_prior=10.0,
-        rt_prior_sigma=0.1,
-        rt_min=9.0,
-        rt_max=11.0,
-    )
-
-    scored = score_candidate(cand, ctx, prior_rt=10.0)
-
-    assert "cwt_same_apex_support" not in scored.evidence_score.support_labels
-    assert "cwt_same_apex_support" not in scored.evidence_score.concern_labels
 
 
 def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
@@ -764,46 +654,6 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
     assert "trace_quality_cap" not in scored.evidence_score.cap_labels
     assert "trace_morphology_conflict" in scored.reason
     assert "cap: MEDIUM due to trace quality" not in scored.reason
-
-
-def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
-    cand = replace(
-        _make_flagged_candidate(
-            apex_rt=10.0,
-            apex_intensity=1000.0,
-            quality_flags=("low_trace_continuity", "poor_edge_recovery"),
-        ),
-        proposal_sources=("local_minimum", "centwave_cwt"),
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.5,
-    )
-    x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
-    ctx = ScoringContext(
-        rt_array=x,
-        intensity_array=y,
-        signal_quality=measure_signal_quality(
-            x, y, baseline=np.full_like(y, 5.0), apex_index=100
-        ),
-        apex_index=100,
-        half_width_ratio=1.0,
-        fwhm_ratio=1.0,
-        ms2_present=True,
-        nl_match=True,
-        rt_prior=10.0,
-        rt_prior_sigma=0.1,
-        rt_min=9.0,
-        rt_max=11.0,
-    )
-
-    scored = score_candidate(cand, ctx, prior_rt=10.0)
-
-    assert "cwt_same_apex_support" in scored.evidence_score.support_labels
-    assert "low_trace_continuity" in scored.evidence_score.concern_labels
-    assert "poor_edge_recovery" in scored.evidence_score.concern_labels
-    assert "trace_quality_cap" not in scored.evidence_score.cap_labels
-    assert "cap: MEDIUM due to trace quality" not in scored.reason
-    assert "cwt_boundary_morphology_context" in scored.reason
 
 
 def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags() -> (

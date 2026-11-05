@@ -5,7 +5,7 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from scripts.targeted_manual_validation import (
+from tools.diagnostics.targeted_manual_validation import (
     ManualTruthRow,
     ProgramPeakRow,
     read_manual_truth,
@@ -221,7 +221,7 @@ def test_write_validation_workbook_contains_required_sheets(tmp_path: Path) -> N
 
 
 def test_write_settings_csv_preserves_staging_config_contract(tmp_path: Path) -> None:
-    import scripts.targeted_manual_validation as module
+    import tools.diagnostics.targeted_manual_validation as module
 
     settings_csv = tmp_path / "settings.csv"
 
@@ -328,7 +328,7 @@ def test_write_validation_workbook_lists_per_target_failures(tmp_path: Path) -> 
 def test_run_cases_executes_each_case_once_with_current_config(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import scripts.targeted_manual_validation as module
+    import tools.diagnostics.targeted_manual_validation as module
 
     cases = [
         module.ManualValidationCase(
@@ -357,7 +357,7 @@ def test_run_cases_executes_each_case_once_with_current_config(
 
 
 def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) -> None:
-    import scripts.targeted_manual_validation as module
+    import tools.diagnostics.targeted_manual_validation as module
 
     manual_workbook = tmp_path / "manual.xlsx"
     _write_manual_workbook(manual_workbook)
@@ -415,7 +415,7 @@ def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) 
 def test_main_applies_parallel_overrides_to_one_current_run(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import scripts.targeted_manual_validation as module
+    import tools.diagnostics.targeted_manual_validation as module
 
     manual_workbook = tmp_path / "manual.xlsx"
     _write_manual_workbook(manual_workbook)
@@ -479,7 +479,7 @@ def test_script_file_exposes_cli_help() -> None:
     completed = subprocess.run(
         [
             sys.executable,
-            "scripts/targeted_manual_validation.py",
+            "tools/diagnostics/targeted_manual_validation.py",
             "--help",
         ],
         text=True,

@@ -13,7 +13,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.configuration.targeted_identification import IdentificationMethod
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
-    normalize_resolver_mode,
 )
 
 
@@ -60,9 +59,6 @@ class ExtractionConfig:
             "mass_recalibration",
             resolve_mass_recalibration(self.mass_recalibration),
         )
-        object.__setattr__(
-            self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
-        )
         resolve_signal_processing_profile(
             signal_processing_method=self.signal_processing_method,
             signal_processing_window_points=self.signal_processing_window_points,
@@ -81,8 +77,6 @@ class Target:
     nl_ppm_max: float | None
     is_istd: bool
     istd_pair: str
-    # Legacy method metadata; Targeted never gates targets by sample name.
-    sample_applicability: str = "all"
     expected_rt_min: float | None = None
     cid_nl_tag: str = ""
     method_name: str = ""

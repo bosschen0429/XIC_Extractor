@@ -41,24 +41,9 @@ def test_hard_quality_flags_suppress_equivalent_legacy_flags() -> None:
 
 
 def test_trace_quality_cap_policy_distinguishes_blocking_and_soft_flags() -> None:
+    assert trace_quality_cap_required(("low_scan_support",)) is True
     assert (
-        trace_quality_cap_required(
-            ("low_scan_support",),
-            has_cwt_same_apex_support=True,
-        )
+        trace_quality_cap_required(("low_trace_continuity", "poor_edge_recovery"))
         is True
     )
-    assert (
-        trace_quality_cap_required(
-            ("low_trace_continuity", "poor_edge_recovery"),
-            has_cwt_same_apex_support=False,
-        )
-        is True
-    )
-    assert (
-        trace_quality_cap_required(
-            ("low_trace_continuity", "poor_edge_recovery"),
-            has_cwt_same_apex_support=True,
-        )
-        is False
-    )
+    assert trace_quality_cap_required(("low_trace_continuity",)) is False

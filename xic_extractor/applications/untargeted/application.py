@@ -84,7 +84,6 @@ def run_untargeted_application(
             "owner_backfill_superwindow_span_factor": 2,
             "output_level": request.publication.output_level,
             "backfill_scope": "full-audit",
-            "requested_audit_evidence_mode": request.legacy.audit_evidence_mode,
             "require_discovery_owner_closure": True,
         },
     )
@@ -119,10 +118,6 @@ def run_untargeted_application(
         peak_config=request.peak_config,
         backfill_scope="full-audit",
         output_scope="full-audit",
-        audit_evidence_mode="none",
-        requested_audit_evidence_mode=request.legacy.audit_evidence_mode,
-        heavy_audit_enabled=False,
-        audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
         signal_processing_profile=signal_processing_profile,
         owner_backfill_peak_fact_provenance_row_count=len(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows

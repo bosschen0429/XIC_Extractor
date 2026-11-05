@@ -23,7 +23,6 @@ from xic_extractor.precursor_evidence import (
     supports_direct_nl,
 )
 from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
-from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.physical_fact_record import (
@@ -190,9 +189,6 @@ class DiscoverySettings:
             self,
             "mass_recalibration",
             resolve_mass_recalibration(self.mass_recalibration),
-        )
-        object.__setattr__(
-            self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
         )
         profiles = self.neutral_loss_profiles
         # The singular field also aliases profiles[0] after normalization.

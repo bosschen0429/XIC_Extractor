@@ -40,7 +40,6 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
         assert (
             loaded["targets"][1]["future_annotation"] == targets[1]["future_annotation"]
         )
-        assert loaded["targets"][1]["sample_applicability"] == "rna_containing"
         status, saved_b, _ = request(
             "/api/targeted/method/save",
             {

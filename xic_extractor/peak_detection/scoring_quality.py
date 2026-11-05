@@ -69,15 +69,11 @@ def has_adap_like_quality_flags(raw_flags: Sequence[object]) -> bool:
     return any(is_adap_like_quality_flag(flag) for flag in raw_flags)
 
 
-def trace_quality_cap_required(
-    active_trace_flags: Sequence[str],
-    *,
-    has_cwt_same_apex_support: bool,
-) -> bool:
+def trace_quality_cap_required(active_trace_flags: Sequence[str]) -> bool:
     flags = set(active_trace_flags)
     if flags & _TRACE_CAP_BLOCKING_FLAGS:
         return True
-    return len(flags) >= 2 and not has_cwt_same_apex_support
+    return len(flags) >= 2
 
 
 def _suppressed_legacy_flags(flags: tuple[str, ...]) -> set[str]:

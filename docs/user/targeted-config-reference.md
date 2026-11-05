@@ -34,7 +34,6 @@ policy and actual resource allocation.
 | `method` | Blank selects MS1 only with the shared 20 ppm precursor tolerance; `dR`, `R`, or `MeR` selects a shared built-in CID-NL recipe; any other value names a custom identification method. Older tables call this column `cid_nl_tag`; it is read as `method` |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
-| `sample_applicability` | Legacy metadata: `all` (default) or `rna_containing`; retained when reading older methods, but does not restrict Targeted analysis |
 
 Additional descriptive metadata is retained. Retired scientific fields such as
 `rt_min`, `rt_max`, `ppm_tol`, `neutral_loss_da`, `nl_ppm_warn`, `nl_ppm_max`, and

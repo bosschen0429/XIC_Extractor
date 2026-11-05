@@ -7,11 +7,6 @@ RESOLVER_MODES: tuple[str, ...] = (
 CANONICAL_RESOLVER_MODE = "local_minimum"
 
 
-def normalize_resolver_mode(value: str) -> str:
-    """Accept the saved-settings alias; new effective settings use savgol."""
-    return "savgol" if value == "legacy_savgol" else value
-
-
 ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
     "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "
     "Targeted uses the canonical signal-processing profile."

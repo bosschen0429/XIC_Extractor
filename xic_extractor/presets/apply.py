@@ -18,7 +18,7 @@ from xic_extractor.presets.recipe_models import (
     BoundCidNlRecipe,
     CidNlRecipeRoute,
 )
-from xic_extractor.settings_schema import RESOLVER_MODES, normalize_resolver_mode
+from xic_extractor.settings_schema import RESOLVER_MODES
 
 if TYPE_CHECKING:
     from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
@@ -361,10 +361,7 @@ def _validate_discovery_tuning(
 
     if "resolver_mode" in tuning:
         resolver_mode = tuning["resolver_mode"]
-        if (
-            not isinstance(resolver_mode, str)
-            or normalize_resolver_mode(resolver_mode) not in RESOLVER_MODES
-        ):
+        if not isinstance(resolver_mode, str) or resolver_mode not in RESOLVER_MODES:
             modes = ", ".join(RESOLVER_MODES)
             raise PresetError(f"resolver_mode must be one of: {modes}")
 

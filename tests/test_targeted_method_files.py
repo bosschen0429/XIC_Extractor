@@ -49,7 +49,6 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
     assert dict(loaded.settings) == dict(saved.settings) == {"strategy": "cid-nl"}
     assert loaded.targets == method.targets
     assert loaded.targets[1].istd_pair == "standard"
-    assert loaded.targets[1].sample_applicability == "rna_containing"
     assert loaded.target_rows[1]["note"] == "方法 A"
     assert loaded.target_rows[1]["method"] == tag
     assert (loaded.targets[1].neutral_loss_da is None) == (tag == "")
@@ -276,7 +275,6 @@ def test_target_table_preserves_precision_text_and_metadata(tmp_path):
     assert loaded[0]["mz"] == table[0]["mz"]
     assert loaded[0]["note"] == "=not a formula"
     assert loaded[1]["paired_rt_relation"] == table[1]["paired_rt_relation"]
-    assert loaded[1]["sample_applicability"] == "rna_containing"
 
 
 @pytest.mark.parametrize(

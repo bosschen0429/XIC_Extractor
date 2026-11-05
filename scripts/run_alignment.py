@@ -28,7 +28,6 @@ from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
-    RetainedAlignmentOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
     validate_retained_processing_profile,
@@ -115,11 +114,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     peak_config_nl_min_intensity_ratio = (
         recipe.discovery_settings.nl_min_intensity_ratio
     )
-    if preset.name == "DNA dR Owner Backfill (compat)":
-        print(
-            "Preset readiness authority: not_evaluated "
-            "(historical compatibility name only)"
-        )
     try:
         execution = UntargetedExecutionPolicy(
             raw_workers=args.raw_workers,
@@ -128,7 +122,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             acquisition_cache_dir=args.acquisition_cache_dir,
             max_partition_jobs=args.max_partition_jobs,
         )
-        legacy = RetainedAlignmentOptions()
         validate_retained_processing_profile(signal_processing_profile)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -241,7 +234,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             targets_csv=args.targets_csv,
             known_istd_reference=known_istd_reference,
             execution=execution,
-            legacy=legacy,
             publication=UntargetedPublicationPolicy(
                 output_level=args.output_level,
                 emit_alignment_cells=args.emit_alignment_cells,

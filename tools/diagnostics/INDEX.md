@@ -28,7 +28,7 @@ workflow owner rather than chaining similarly named commands.
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
-| Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
+| Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping`, then `tools.diagnostics.grouping_experiment replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
@@ -193,6 +193,45 @@ scoring, or values.
 ---
 
 ## Targeted Benchmarks & Reviews
+
+### `targeted_validation.py`
+
+**Purpose**: Run Targeted real-data validation suites and workbook comparisons.
+**Topic group**: `targeted_validation.py` + `_suites`, `_run` (3 files)
+**Status note**: Tissue suites and the parallel benchmark share `_run`, which
+executes the canonical finalized Targeted application through publication.
+Manual-2RAW delegates to the separate manual measurement calibration tool;
+its acquisition RT/area comparison is not full application acceptance.
+
+---
+
+### `targeted_parallel_benchmark.py`
+
+**Purpose**: Compare serial/process scheduling for complete Targeted application runs.
+**Topic group**: `targeted_parallel_benchmark.py` (single-file)
+**Status note**: Uses the shared Targeted validation run owner and compares its
+published workbooks. Elapsed time includes finalization and publication, not
+only acquisition.
+
+---
+
+### `targeted_manual_validation.py`
+
+**Purpose**: Compare acquired peak RT/area against supplied manual measurements.
+**Topic group**: `targeted_manual_validation.py` (single-file)
+**Status note**: Resolver/acquisition calibration with an external manual
+reference; it does not substitute for finalized Targeted workbook validation.
+
+---
+
+### `compare_workbooks.py`
+
+**Purpose**: Compare all workbook sheets with an explicit numeric tolerance.
+**Topic group**: `compare_workbooks.py` (single-file)
+**Status note**: Shared workbook regression oracle for Targeted validation and
+operator comparisons. Dynamic metadata handling belongs to this comparator.
+
+---
 
 ### `targeted_istd_benchmark.py`
 

@@ -337,7 +337,7 @@ def test_strict_selector_demotes_late_small_peak_when_anchor_aligned_area_exists
     late_small_context_peak = _candidate(
         10.80,
         area=6_500.0,
-        proposal_sources=("local_minimum", "chrom_peak_segment", "centwave_cwt"),
+        proposal_sources=("local_minimum", "chrom_peak_segment", "local_minimum"),
     )
     anchor_score = _scored_with_facts(
         anchor_aligned_area,

@@ -281,9 +281,7 @@ isolation-inferred precursor can reach a declared CID-NL target's precursor
 tolerance (`targeted_ms2_precursor_scope`); every other MS2 event in the
 acquisition range still counts toward the search receipt's scanned events.
 
-Sample applicability
-controls inclusion, not permission to replace the selected candidate. A
-hypothesis is an evidence representation, not a competing selection owner.
+A hypothesis is an evidence representation, not a competing selection owner.
 The physical owner may withdraw an unavailable measurement, but does not
 substitute another candidate.
 

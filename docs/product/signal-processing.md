@@ -286,7 +286,7 @@ selected physical component supplies the integration bounds.
 - If a focused query clips the peak, Targeted NL acquisition can restore the
   configured target window once; the same physical owner evaluates the new
   trace. The writer never extends bounds.
-- CWT, local-minimum, derivative and alternate boundary proposals remain
+- Local-minimum, derivative and alternate boundary proposals remain
   diagnostic or model-selection evidence. Boundary review annotations do not
   replace the retained integration or establish chemical absence.
 - Do not integrate every positive residual in a broad RT context.

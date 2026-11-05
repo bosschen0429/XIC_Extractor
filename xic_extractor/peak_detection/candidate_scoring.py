@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import math
-from typing import Any, cast
-
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
@@ -41,9 +38,6 @@ from xic_extractor.peak_detection.scoring_quality import (
     trace_quality_cap_required,
     trace_quality_severities,
 )
-
-CWT_PROPOSAL_SOURCE = "centwave_cwt"
-CWT_SAME_APEX_SUPPORT_POINTS = 5
 
 
 def score_candidate(
@@ -197,17 +191,6 @@ def _evidence_from_context(
     if not has_adap_like_quality_flags(tuple(candidate.quality_flags)):
         positive.append(EvidenceSignal("trace_clean", 10))
 
-    has_cwt_same_apex_support = has_same_apex_cwt_support(
-        candidate
-    ) and _has_cwt_chemical_support(ctx)
-    if has_cwt_same_apex_support:
-        positive.append(
-            EvidenceSignal(
-                "cwt_same_apex_support",
-                CWT_SAME_APEX_SUPPORT_POINTS,
-            )
-        )
-
     trace_evidence = {
         "low scan support": ("low_scan_support", 15),
         "low trace continuity": ("low_trace_continuity", 10),
@@ -220,10 +203,7 @@ def _evidence_from_context(
         evidence_label, points = trace_evidence[label]
         negative.append(EvidenceSignal(evidence_label, points))
         active_trace_flags.append(evidence_label)
-    if trace_quality_cap_required(
-        active_trace_flags,
-        has_cwt_same_apex_support=has_cwt_same_apex_support,
-    ):
+    if trace_quality_cap_required(active_trace_flags):
         caps.append("trace_quality_cap")
 
     if quality_penalty > 0:
@@ -246,31 +226,6 @@ def _is_sparse_apex_fallback_ms2(candidate: PeakCandidate, ctx: ScoringContext) 
     return (trigger_count is not None and trigger_count <= 2) or (
         strict_count is not None and strict_count <= 2
     )
-
-
-def _has_cwt_chemical_support(ctx: ScoringContext) -> bool:
-    if not ctx.neutral_loss_required:
-        return True
-    return ctx.ms2_present and ctx.nl_match
-
-
-def has_same_apex_cwt_support(candidate: PeakCandidate) -> bool:
-    sources = {str(source) for source in candidate.proposal_sources}
-    if CWT_PROPOSAL_SOURCE not in sources:
-        return False
-    if not sources.difference({CWT_PROPOSAL_SOURCE}):
-        return False
-    return positive_finite_legacy_cwt_presence_metric(
-        candidate.cwt_best_scale
-    ) or positive_finite_legacy_cwt_presence_metric(candidate.cwt_ridge_persistence)
-
-
-def positive_finite_legacy_cwt_presence_metric(value: object) -> bool:
-    try:
-        metric = float(cast(Any, value))
-    except (TypeError, ValueError):
-        return False
-    return math.isfinite(metric) and metric > 0
 
 
 def candidate_score_summary(scored_candidate: ScoredCandidate) -> PeakCandidateScore:

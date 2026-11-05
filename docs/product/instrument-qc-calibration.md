@@ -36,9 +36,6 @@ activation contract promotes a correction or gate.
   qualified ordinary bootstrap correspondences for the frozen production map;
   diagnostics and grouping experiments reuse that owner. Its support and
   bounded-landmark rules are owned by [Alignment](alignment.md).
-- `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
-  visualizing measured ISTD RT drift. The observed ISTD trend does not justify
-  inferring, correcting, or gating other-feature RT behavior.
 - A future RT-trajectory sensitivity packet must not assume one batch-wide
   monotonic shift. The packet must:
   - permit feature-specific directions and adjacent-injection jumps;
@@ -58,7 +55,6 @@ activation contract promotes a correction or gate.
 | --- | --- |
 | Instrument QC trend TSV/workbook | Clean-standard and biological QC review surface |
 | `run_instrument_qc.py` method-document outputs | Sequence manifest, injection-order projection, and additive sample metadata |
-| `add_istd_rt_trend.py` visualization | Direct ISTD drift review; not an other-feature RT model |
 | HCD audit TSV/JSON/workbook sheet | Product-ion audit evidence |
 
 ## Boundaries

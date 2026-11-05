@@ -32,13 +32,7 @@ class PeakResult:
 
 @dataclass(frozen=True)
 class PeakCandidate:
-    """Detected peak candidate.
-
-    The legacy CWT fields `cwt_best_scale` and `cwt_ridge_persistence`
-    are audit-presence flags only. Their numeric values are
-    reverse-engineered from non-CWT decisions and are not interpretable as
-    CWT scale or ridge metrics.
-    """
+    """Detected peak candidate."""
 
     peak: PeakResult
     selection_apex_rt: float
@@ -53,8 +47,6 @@ class PeakCandidate:
     region_duration_min: float | None = None
     region_edge_ratio: float | None = None
     region_trace_continuity: float | None = None
-    cwt_best_scale: float | None = None
-    cwt_ridge_persistence: float | None = None
     proposal_sources: tuple[str, ...] = ()
     source_apex_rank: int | None = None
     merge_note: str = ""

@@ -14,7 +14,6 @@ from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
-    RetainedAlignmentOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
 )
@@ -338,9 +337,6 @@ class UntargetedRun:
                 publication=UntargetedPublicationPolicy(
                     output_level="machine",
                     emit_alignment_explanation=True,
-                ),
-                legacy=RetainedAlignmentOptions(
-                    audit_evidence_mode="none",
                 ),
             ),
             UntargetedExecutionContext(should_cancel=self.should_cancel),

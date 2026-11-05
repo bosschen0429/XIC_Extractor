@@ -110,9 +110,7 @@ Backfill-expansion keys; no replacement publication choice is exposed.
 | `savgol` | Savitzky-Golay smoothing and prominence-based candidate resolver |
 | `local_minimum` | Local-minimum candidate resolver |
 
-Saved `legacy_savgol` input is normalized to `savgol` before candidate search
-and export. The emitted `legacy_savgol` proposal-source label stays stable
-because retained peak identities use it.
+The `savgol` proposal-source label identifies Savitzky-Golay candidates.
 
 ## Delta Mass Parameters
 
