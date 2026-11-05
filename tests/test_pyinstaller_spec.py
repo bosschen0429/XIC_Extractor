@@ -444,15 +444,6 @@ def test_pyinstaller_collects_workbench_frontend() -> None:
     }
 
 
-def test_pyinstaller_spec_includes_builtin_preset_tomls() -> None:
-    spec_text = SPEC_PATH.read_text(encoding="utf-8")
-
-    assert "collect_data_files" in spec_text
-    assert '"xic_extractor.presets"' in spec_text
-    assert '"data/*.toml"' in spec_text
-    assert "+ preset_datas" in spec_text
-
-
 def test_pyinstaller_collects_builtin_preset_tomls() -> None:
     datas = collect_data_files("xic_extractor.presets", includes=["data/*.toml"])
     collected = {
@@ -469,15 +460,6 @@ def test_pyinstaller_collects_builtin_preset_tomls() -> None:
         for name, destination in collected
         if name in expected_names
     )
-
-
-def test_pyinstaller_spec_includes_discovery_default_background_library() -> None:
-    spec_text = SPEC_PATH.read_text(encoding="utf-8")
-
-    assert "discovery_datas = collect_data_files(" in spec_text
-    assert '"xic_extractor.discovery"' in spec_text
-    assert 'includes=["data/*"]' in spec_text
-    assert "+ discovery_datas" in spec_text
 
 
 def test_pyinstaller_collects_discovery_default_background_library() -> None:

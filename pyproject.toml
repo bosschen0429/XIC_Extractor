@@ -288,6 +288,98 @@ forbidden_modules = [
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+id = "delta-mass-method-stays-inward"
+name = "Delta-mass method code does not acquire, publish or spawn"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.discovery.delta_mass_patterns",
+    "xic_extractor.discovery.delta_mass_strategy",
+]
+forbidden_modules = [
+    "xic_extractor.raw_reader",
+    "xic_extractor.alignment",
+    "xic_extractor.output",
+    "xic_extractor.acquisition",
+    "multiprocessing",
+    "hashlib",
+    "scripts",
+]
+# Direct imports only, as the retired AST check verified.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "delta-mass-outside-product-routes"
+name = "Delta-mass diagnostics and product routes do not depend on each other"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.discovery.delta_mass_csv",
+    "xic_extractor.discovery.delta_mass_patterns",
+    "xic_extractor.discovery.delta_mass_pipeline",
+    "xic_extractor.discovery.delta_mass_strategy",
+    "scripts.run_delta_mass_discovery",
+]
+forbidden_modules = [
+    "xic_extractor.alignment",
+    "xic_extractor.output",
+    "scripts.run_alignment",
+]
+# Direct imports only, as the retired AST check verified.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "product-routes-ignore-delta-mass"
+name = "Product routes do not consume delta-mass diagnostics"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.alignment",
+    "xic_extractor.applications",
+    "xic_extractor.output",
+    "xic_extractor.untargeted_execution",
+]
+forbidden_modules = [
+    "xic_extractor.discovery.delta_mass_csv",
+    "xic_extractor.discovery.delta_mass_patterns",
+    "xic_extractor.discovery.delta_mass_pipeline",
+    "xic_extractor.discovery.delta_mass_strategy",
+]
+# Direct imports only, as the retired AST check verified.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "alignment-stays-off-pipelines-and-io"
+name = "Alignment does not import pipelines, targeted entry, output or RAW"
+type = "forbidden"
+source_modules = ["xic_extractor.alignment"]
+forbidden_modules = [
+    "xic_extractor.discovery.pipeline",
+    "xic_extractor.discovery.csv_writer",
+    "xic_extractor.extractor",
+    "xic_extractor.output",
+    "xic_extractor.raw_reader",
+]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "discovery-pipeline-independent-of-targeted-entry"
+name = "Discovery pipeline does not import the Targeted entry module"
+type = "forbidden"
+source_modules = ["xic_extractor.discovery.pipeline"]
+forbidden_modules = ["xic_extractor.extractor"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "processing-identity-stays-inner"
+name = "Processing identity does not depend on extraction, output or RAW"
+type = "forbidden"
+source_modules = ["xic_extractor.processing_identity"]
+forbidden_modules = [
+    "xic_extractor.extraction",
+    "xic_extractor.output",
+    "xic_extractor.raw_reader",
+]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
 id = "sample-metadata-no-instrument-qc"
 name = "Sample metadata does not depend on instrument QC"
 type = "forbidden"

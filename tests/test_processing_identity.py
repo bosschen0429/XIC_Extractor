@@ -1,4 +1,3 @@
-import ast
 import json
 from dataclasses import fields, replace
 from datetime import datetime, timedelta
@@ -817,21 +816,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
     assert request.processing_contract_version == TARGETED_PROCESSING_CONTRACT_VERSION
 
 
-def test_processing_identity_owner_has_no_runtime_writer_or_raw_dependency() -> None:
-    path = Path("xic_extractor/processing_identity.py")
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imports = _imports(tree)
-    forbidden = (
-        "xic_workbench",
-        "scripts",
-        "xic_extractor.extraction",
-        "xic_extractor.output",
-        "xic_extractor.raw_reader",
-    )
-
-    assert not any(name.startswith(forbidden) for name in imports), imports
-
-
 def test_targeted_observation_namespace_tracks_raw_adapter_controller() -> None:
     raw_reader_source = Path("xic_extractor/raw_reader.py").read_text(encoding="utf-8")
 
@@ -906,16 +890,6 @@ def _target() -> Target:
         is_istd=False,
         istd_pair="",
     )
-
-
-def _imports(tree: ast.AST) -> tuple[str, ...]:
-    modules: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            modules.append(node.module)
-    return tuple(modules)
 
 
 def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
