@@ -1485,6 +1485,17 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     from xic_workbench import acquisition
 
     calls = []
+    detail_entered, release_detail = threading.Event(), threading.Event()
+    detail = ReviewWorkspace.detail
+
+    def held_detail(workspace, item_id):
+        result = detail(workspace, item_id)
+        if sample_count == 6 and result["item"]["group_id"] == "a-complete":
+            detail_entered.set()
+            assert release_detail.wait(HANDSHAKE_TIMEOUT_S)
+        return result
+
+    monkeypatch.setattr(ReviewWorkspace, "detail", held_detail)
 
     def acquire(report, output, *, sample_ids, **kwargs):
         calls.append(sample_ids)
@@ -1510,6 +1521,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    selected_view = None
     if sample_count > 1:
         page.get_by_role("button", name="查看全部矩陣群組").click()
         _wait_for_curve_report(page, inline=True)
@@ -1518,13 +1530,25 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
                 "[data-inspector-id='svg-raw'] polyline"
             )
         ).to_have_count(sample_count)
-        page.locator("#item-list button").filter(has_text="6 / 6").click()
+        previous_view = page.locator("#recorded-review").get_attribute("data-view-id")
+        try:
+            with page.expect_response("**/api/detail") as selected:
+                page.locator("#item-list button").filter(has_text="6 / 6").click()
+                assert detail_entered.wait(HANDSHAKE_TIMEOUT_S)
+                expect(page.locator("#recorded-review")).to_have_attribute(
+                    "data-view-id", previous_view
+                )
+                release_detail.set()
+            selected_view = selected.value.json()["view_id"]
+        finally:
+            release_detail.set()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
     saved = page.locator("#recorded-review")
-    # The acquisition controls appear before the saved view's async mount.
-    expect(saved).to_have_attribute("data-view-id", re.compile(r".+"))
+    # A nonempty ID can still belong to the previous selection. Bind this
+    # stability assertion to the selected detail response, not an old mount.
+    expect(saved).to_have_attribute("data-view-id", selected_view or re.compile(r".+"))
     recorded = saved.get_attribute("data-view-id")
     review = _wait_for_curve_report(page, inline=True)
     expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
