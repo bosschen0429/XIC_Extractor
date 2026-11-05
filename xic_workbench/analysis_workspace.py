@@ -46,9 +46,9 @@ class AnalysisWorkspace:
             read_settings,
             read_targets,
         )
-        from xic_workbench.discovery_config_io import read_discovery_config
         from xic_workbench.methods import list_methods
         from xic_workbench.targeted import method_summary, setting_fields
+        from xic_workbench.untargeted_config import read_untargeted_config
 
         raw = read_settings(config_dir=self.config_dir)
         overrides = {}
@@ -79,7 +79,7 @@ class AnalysisWorkspace:
             settings["dll_dir"] = reader["installed_dir"]
             reader = {**reader, "dll_dir": reader["installed_dir"], "dll_errors": []}
             warnings.append("RawFileReader：已使用本機已安裝的版本，不需重新下載。")
-        discovery = read_discovery_config(config_dir=self.config_dir)
+        discovery = read_untargeted_config(config_dir=self.config_dir)
         discovery["dll_dir"] = settings.get("dll_dir", "")
         if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
             discovery["raw_dir"] = self.defaults["raw_dir"]
@@ -378,11 +378,11 @@ class AnalysisWorkspace:
             }
         if action == "untargeted/save":
             from xic_workbench.config_io import write_dll_dir
-            from xic_workbench.discovery_config_io import write_discovery_config
+            from xic_workbench.untargeted_config import write_untargeted_config
 
             if "dll_dir" in values:
                 write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
-            write_discovery_config(values, config_dir=self.config_dir)
+            write_untargeted_config(values, config_dir=self.config_dir)
             return {"message": "批次與方法設定已儲存。"}
         if action == "method":
             from xic_workbench.methods import method_details

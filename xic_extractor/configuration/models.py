@@ -13,7 +13,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.configuration.targeted_identification import IdentificationMethod
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
-    normalize_resolver_mode,
 )
 
 
@@ -59,9 +58,6 @@ class ExtractionConfig:
             self,
             "mass_recalibration",
             resolve_mass_recalibration(self.mass_recalibration),
-        )
-        object.__setattr__(
-            self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
         )
         resolve_signal_processing_profile(
             signal_processing_method=self.signal_processing_method,

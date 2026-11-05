@@ -1,4 +1,4 @@
-"""Qt-free persistence for the local Untargeted workbench."""
+"""Persist the local Workbench Untargeted workflow controls."""
 
 from __future__ import annotations
 
@@ -58,38 +58,18 @@ def _with_runtime_defaults(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def read_discovery_config(*, config_dir: Path | None = None) -> dict[str, Any]:
+def read_untargeted_config(*, config_dir: Path | None = None) -> dict[str, Any]:
     directory = _runtime_dir(config_dir)
     payload = _read_json_object(directory / CONFIG_NAME)
     config = _with_runtime_defaults(_merge_known_keys(payload))
     return config
 
 
-def write_discovery_config(
+def write_untargeted_config(
     config: Mapping[str, Any], *, config_dir: Path | None = None
 ) -> None:
     destination = _runtime_dir(config_dir)
     path = destination / CONFIG_NAME
     existing = _read_json_object(path)
     merged = _merge_known_keys({**existing, **config})
-    if existing.get("custom_roles") and merged["raw_dir"] == existing.get("raw_dir"):
-        merged["custom_roles"] = existing["custom_roles"]
     _write_json_object(path, merged)
-
-
-def read_legacy_roles(
-    raw_dir: Path, *, config_dir: Path | None = None
-) -> dict[str, str]:
-    """Roles saved before per-folder sample metadata, for their own RAW folder.
-
-    They seed that folder until its sample metadata is confirmed and are
-    dropped once a save names another folder.
-    """
-    payload = _read_json_object(_runtime_dir(config_dir) / CONFIG_NAME)
-    roles = payload.get("custom_roles")
-    saved_dir = str(payload.get("raw_dir") or "").strip()
-    if not isinstance(roles, dict) or not saved_dir:
-        return {}
-    if Path(saved_dir).resolve() != Path(raw_dir).resolve():
-        return {}
-    return {str(stem): str(role) for stem, role in roles.items()}

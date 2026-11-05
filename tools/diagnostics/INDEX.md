@@ -28,7 +28,7 @@ workflow owner rather than chaining similarly named commands.
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
-| Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
+| Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping`, then `tools.diagnostics.grouping_experiment replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |

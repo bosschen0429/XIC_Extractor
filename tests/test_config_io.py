@@ -90,7 +90,7 @@ def test_retired_setting_is_rejected_without_changing_work(tmp_path):
     write_settings({"dll_dir": "original-dll"}, config_dir=tmp_path)
     before = (tmp_path / "workspace.json").read_bytes()
     with pytest.raises(ConfigError, match="resolver_mode"):
-        write_settings({"resolver_mode": "legacy_savgol"}, config_dir=tmp_path)
+        write_settings({"resolver_mode": "savgol"}, config_dir=tmp_path)
     assert (tmp_path / "workspace.json").read_bytes() == before
 
 

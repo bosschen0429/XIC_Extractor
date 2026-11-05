@@ -21,7 +21,7 @@ def test_hypothesis_id_is_deterministic() -> None:
         8.1234567,
         left=8.001234,
         right=8.654321,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
     )
 
     first = hypothesis_audit_id(
@@ -38,11 +38,11 @@ def test_hypothesis_id_is_deterministic() -> None:
     )
 
     assert first == second
-    assert first == ("SampleA|Analyte|savgol|legacy_savgol|8.12346|8.00123|8.65432")
+    assert first == ("SampleA|Analyte|savgol|savgol|8.12346|8.00123|8.65432")
 
 
 def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
-    selected = _candidate(8.5, area=5000.0, proposal_sources=("legacy_savgol",))
+    selected = _candidate(8.5, area=5000.0, proposal_sources=("savgol",))
     rejected = _candidate(8.9, area=900.0, proposal_sources=("local_minimum",))
     result = PeakDetectionResult(
         status="OK",
@@ -72,7 +72,7 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     )
 
     assert [hypothesis.audit.selected for hypothesis in hypotheses] == [True, False]
-    assert hypotheses[0].audit.proposal_sources == ("legacy_savgol",)
+    assert hypotheses[0].audit.proposal_sources == ("savgol",)
     assert hypotheses[0].evidence.ms2_present is True
     assert hypotheses[0].evidence.nl_match is True
     assert hypotheses[0].evidence.raw_score == 92
@@ -114,7 +114,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         left=8.25,
         right=8.75,
         area=1234.0,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         quality_flags=("low_trace_continuity",),
         region_scan_count=8,
         region_duration_min=0.5,
@@ -351,7 +351,7 @@ def _candidate(
     left: float | None = None,
     right: float | None = None,
     area: float = 1000.0,
-    proposal_sources: tuple[str, ...] = ("legacy_savgol",),
+    proposal_sources: tuple[str, ...] = ("savgol",),
     quality_flags: tuple[str, ...] = (),
     region_scan_count: int | None = None,
     region_duration_min: float | None = None,

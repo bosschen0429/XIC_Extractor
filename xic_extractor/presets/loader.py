@@ -15,7 +15,6 @@ from xic_extractor.presets.models import (
     PresetError,
     PresetTag,
 )
-from xic_extractor.settings_schema import normalize_resolver_mode
 
 _BUILTIN_PACKAGE = "xic_extractor.presets.data"
 _BUILTIN_PRESETS = (
@@ -354,11 +353,7 @@ def _parse_discovery_overrides(
         allowed_keys,
         label="[discovery]",
     )
-    overrides = dict(table)
-    resolver_mode = overrides.get("resolver_mode")
-    if isinstance(resolver_mode, str):
-        overrides["resolver_mode"] = normalize_resolver_mode(resolver_mode)
-    return overrides
+    return dict(table)
 
 
 def _parse_alignment_overrides(value: Any) -> dict[str, object]:

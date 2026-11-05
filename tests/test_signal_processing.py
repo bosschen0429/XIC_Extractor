@@ -80,6 +80,18 @@ def test_clean_gaussian_peak_returns_raw_apex_and_area() -> None:
     assert result.n_prominent_peaks == 1
 
 
+def test_savgol_candidates_use_current_source_name_and_reject_old_mode() -> None:
+    from xic_extractor.peak_detection.candidate_search import find_peak_candidates
+
+    rt = np.linspace(8.0, 10.0, 401)
+    intensity = _gaussian(rt, center=9.0, sigma=0.08, height=1000.0)
+    result = find_peak_candidates(rt, intensity, _config(resolver_mode="savgol"))
+    assert len(result.candidates) == 1
+    assert result.candidates[0].proposal_sources == ("savgol",)
+    with pytest.raises(ValueError, match="unsupported resolver mode"):
+        find_peak_candidates(rt, intensity, _config(resolver_mode="legacy_savgol"))
+
+
 def test_noisy_peak_recovers_raw_area_within_noise_tolerance() -> None:
     # Hard-shape oracle: a peak in real noise (S/N ~20) must still report a raw
     # area close to the true Gaussian integral. The S/N is chosen so the
@@ -733,11 +745,11 @@ def test_preferred_rt_relaxed_search_candidate_preserves_provenance(
 
     far_candidate = _candidate_for_provenance(
         9.50,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
     )
     recovered_candidate = _candidate_for_provenance(
         8.95,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
     )
     calls = 0
 
@@ -776,17 +788,17 @@ def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
 
     near_candidate = _candidate_for_provenance(
         8.95,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=20.0,
     )
     strong_far_candidate = _candidate_for_provenance(
         9.50,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=2000.0,
     )
     recovered_duplicate = _candidate_for_provenance(
         8.95,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=20.0,
     )
     calls = 0
@@ -824,7 +836,7 @@ def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
     ]
     assert len(recovered_rows) == 1
     assert recovered_rows[0].proposal_sources == (
-        "legacy_savgol",
+        "savgol",
         "preferred_rt_recovery",
     )
 
@@ -836,12 +848,12 @@ def test_selection_reference_rt_is_empty_when_preferred_rt_is_not_used(
 
     weak_near_candidate = _candidate_for_provenance(
         8.95,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=1.0,
     )
     strong_far_candidate = _candidate_for_provenance(
         9.50,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=100.0,
     )
     monkeypatch.setattr(
@@ -874,12 +886,12 @@ def test_selection_reference_rt_records_preferred_rt_when_it_controls_selection(
 
     near_candidate = _candidate_for_provenance(
         8.95,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=30.0,
     )
     strong_far_candidate = _candidate_for_provenance(
         9.50,
-        proposal_sources=("legacy_savgol",),
+        proposal_sources=("savgol",),
         selection_apex_intensity=100.0,
     )
     monkeypatch.setattr(

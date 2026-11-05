@@ -62,7 +62,7 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
         destination,
         discovery_overrides={
             "rt_max": 42.5,
-            "resolver_mode": "legacy_savgol",
+            "resolver_mode": "savgol",
         },
     )
 
@@ -70,7 +70,7 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
         original,
         explicit_tuning_overrides={
             "rt_max": 42.5,
-            "resolver_mode": "legacy_savgol",
+            "resolver_mode": "savgol",
         },
     )
     assert apply_to_discovery(reloaded) == expected
@@ -228,33 +228,19 @@ def test_invalid_export_preserves_existing_destination(
     assert destination.read_bytes() == previous
 
 
-@pytest.mark.parametrize("resolver_mode", ["savgol", "legacy_savgol"])
-def test_resolver_input_exports_only_canonical_savgol(
-    tmp_path: Path, resolver_mode: str
-) -> None:
-    """Remove the alias case only after existing user presets have migrated."""
+def test_resolver_alias_is_rejected_without_overwriting_preset(tmp_path: Path) -> None:
     original = load_preset("dna_dr")
-    settings = apply_to_discovery(
-        original, explicit_tuning_overrides={"resolver_mode": resolver_mode}
-    )
-    assert settings.resolver_mode == "savgol"
-    reloaded = save_preset(
-        original,
-        tmp_path / "savgol.toml",
-        discovery_overrides={"resolver_mode": resolver_mode},
-    )
-    parsed = tomllib.loads((tmp_path / "savgol.toml").read_text(encoding="utf-8"))
-    assert parsed["discovery"]["resolver_mode"] == "savgol"
-    assert apply_to_discovery(reloaded) == settings
-    # Exercise saved user input through the TOML loader, not only apply overrides.
-    saved_text = (tmp_path / "savgol.toml").read_text(encoding="utf-8")
-    (tmp_path / "savgol.toml").write_text(
-        saved_text.replace(
-            'resolver_mode = "savgol"', f'resolver_mode = "{resolver_mode}"'
-        ),
-        encoding="utf-8",
-    )
-    assert (
-        load_preset(tmp_path / "savgol.toml").discovery_overrides["resolver_mode"]
-        == "savgol"
-    )
+    destination = tmp_path / "method.toml"
+    save_preset(original, destination)
+    previous = destination.read_bytes()
+    with pytest.raises(PresetError, match="resolver_mode"):
+        save_preset(
+            original,
+            destination,
+            discovery_overrides={"resolver_mode": "legacy_savgol"},
+        )
+    assert destination.read_bytes() == previous
+    with pytest.raises(PresetError, match="resolver_mode"):
+        apply_to_discovery(
+            original, explicit_tuning_overrides={"resolver_mode": "legacy_savgol"}
+        )

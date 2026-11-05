@@ -83,7 +83,7 @@ def test_decision_semantics_maps_coherent_multievidence_to_accepted() -> None:
                 "trace_clean",
                 "shape_clean",
             ),
-            proposal_sources=("legacy_savgol",),
+            proposal_sources=("savgol",),
             ms2_present=True,
             nl_match=True,
             raw_score=95,

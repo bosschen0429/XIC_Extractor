@@ -12,17 +12,17 @@ from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import load_preset
 from xic_extractor.raw_reader import RawSampleHeader
-from xic_workbench.discovery_config_io import (
-    read_discovery_config,
-    write_discovery_config,
-)
 from xic_workbench.methods import list_methods, method_details, save_method
 from xic_workbench.samples import export_samples, from_payload, load_samples
 from xic_workbench.untargeted import UntargetedRun, parse_request
+from xic_workbench.untargeted_config import (
+    read_untargeted_config,
+    write_untargeted_config,
+)
 
 
 def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
-    write_discovery_config(
+    write_untargeted_config(
         {
             "mode": "align_only",
             "backfill_enabled": False,
@@ -34,7 +34,7 @@ def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
         config_dir=tmp_path,
     )
 
-    restored = read_discovery_config(config_dir=tmp_path)
+    restored = read_untargeted_config(config_dir=tmp_path)
 
     assert restored["mode"] == "align_only"
     assert restored["backfill_enabled"] is False
@@ -87,7 +87,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
                     "Alpha",
                     "Sample-A",
                     "2",
-                    "study_sample",
+                    "pooled_qc",
                     "B1",
                     "P1",
                     "plasma",
@@ -115,7 +115,6 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
         raw_dir,
         dll_dir=tmp_path,
         sequence_source=sequence,
-        custom_roles={"Sample-A": "pooled_qc"},
     )
 
     assert [row["raw_stem"] for row in result["samples"]] == ["Sample-A", "Sample-B"]
@@ -136,7 +135,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
     assert result["summary"]["raw_count"] == 2
 
 
-def test_samples_use_raw_header_order_and_preserve_sequence_and_role_overrides(
+def test_samples_use_raw_header_chronology_and_sequence_roles(
     tmp_path, monkeypatch
 ) -> None:
     raw_dir = tmp_path / "raws"
@@ -192,7 +191,6 @@ def test_samples_use_raw_header_order_and_preserve_sequence_and_role_overrides(
         raw_dir,
         dll_dir=dll_dir,
         sequence_source=sequence,
-        custom_roles={"Sample-B": "pooled_qc"},
     )
 
     assert [row["raw_stem"] for row in result["samples"]] == [
@@ -205,7 +203,7 @@ def test_samples_use_raw_header_order_and_preserve_sequence_and_role_overrides(
         "Header Alpha",
     ]
     assert [row["sample_role"] for row in result["samples"]] == [
-        "pooled_qc",
+        "blank",
         "qc",
     ]
     assert result["samples"][1]["prep_batch_id"] == "P1"

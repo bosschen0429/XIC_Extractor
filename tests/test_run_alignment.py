@@ -496,7 +496,7 @@ name = "NL116"
 value = 116.0474
 
 [discovery]
-resolver_mode = "legacy_savgol"
+resolver_mode = "savgol"
 nl_min_intensity_ratio = 0.37
 """.strip(),
         encoding="utf-8",

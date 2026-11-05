@@ -216,47 +216,6 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
 
 def read_alignment_matrix(path: Path) -> AlignmentMatrixData:
     rows = list(read_tsv_required(path, ()))
-    if rows and "feature_id" not in rows[0]:
-        return _read_clean_alignment_matrix(path, rows)
-    return _read_legacy_alignment_matrix(path, rows)
-
-
-def _read_legacy_alignment_matrix(
-    path: Path,
-    rows: list[dict[str, str]],
-) -> AlignmentMatrixData:
-    _require_fields(rows, ("feature_id",), path)
-    metadata_columns = {
-        "feature_id",
-        "neutral_loss_tag",
-        "family_center_mz",
-        "family_center_rt",
-        "family_product_mz",
-        "family_observed_neutral_loss_da",
-    }
-    fieldnames = set(rows[0])
-    sample_columns = sorted(fieldnames - metadata_columns)
-    sample_column_pairs = _sample_column_pairs(sample_columns)
-    matrix: dict[str, dict[str, float]] = {}
-    normalized_samples = frozenset(sample for _column, sample in sample_column_pairs)
-    for row in rows:
-        family_id = row["feature_id"]
-        values: dict[str, float] = {}
-        for column, sample in sample_column_pairs:
-            area = _float_value(row.get(column))
-            if area is not None and area > 0:
-                values[sample] = area
-        matrix[family_id] = values
-    return AlignmentMatrixData(
-        areas_by_family=matrix,
-        sample_stems=normalized_samples,
-    )
-
-
-def _read_clean_alignment_matrix(
-    path: Path,
-    rows: list[dict[str, str]],
-) -> AlignmentMatrixData:
     _require_fields(rows, ("Mz", "RT"), path)
     identity_path = path.with_name("alignment_review.tsv")
     identity_rows = list(read_tsv_required(identity_path, ()))

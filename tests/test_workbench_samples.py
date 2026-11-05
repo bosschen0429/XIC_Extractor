@@ -164,22 +164,20 @@ def test_confirmed_annotations_are_the_folder_source_until_reimported(
     assert saved["Liver_A1"].sample_role == "blank"
 
 
-def test_legacy_roles_apply_only_before_annotations_are_confirmed(
+def test_confirmed_sample_metadata_preserves_qc_and_blank_roles(
     tmp_path, monkeypatch
 ) -> None:
     config = tmp_path / "config"
     raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "S2"))
-
-    legacy = read_batch_samples(
-        config, raw_dir, dll_dir=tmp_path, legacy_roles={"S1": "pooled_qc"}
-    )
-    assert legacy["samples"][0]["sample_role"] == "pooled_qc"
-
-    save_batch_samples(config, raw_dir, legacy["samples"])
-    rows = read_batch_samples(
-        config, raw_dir, dll_dir=tmp_path, legacy_roles={"S1": "blank"}
-    )["samples"]
-    assert rows[0]["sample_role"] == "pooled_qc"
+    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    rows[0]["sample_role"] = "pooled_qc"
+    rows[1]["sample_role"] = "blank"
+    save_batch_samples(config, raw_dir, rows)
+    restored = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    assert [(row["raw_stem"], row["sample_role"]) for row in restored] == [
+        ("S1", "pooled_qc"),
+        ("S2", "blank"),
+    ]
 
 
 def test_read_offers_naming_suggestions_without_applying_them(

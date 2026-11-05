@@ -4,6 +4,7 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook
 
 from tools.diagnostics import targeted_istd_benchmark as benchmark
@@ -388,18 +389,19 @@ def test_alignment_matrix_normalizes_sample_columns_once(
     _write_tsv(
         matrix_path,
         [
-            _matrix_row("FAM001", (10.0, 100.0), samples=("QC_1", "S2")),
-            _matrix_row("FAM002", (20.0, 200.0), samples=("QC_1", "S2")),
-            _matrix_row("FAM003", (30.0, 300.0), samples=("QC_1", "S2")),
+            {"Mz": 100, "RT": 1, "QC_1": 10.0, "S2": 100.0},
+            {"Mz": 200, "RT": 2, "QC_1": 20.0, "S2": 200.0},
+            {"Mz": 300, "RT": 3, "QC_1": 30.0, "S2": 300.0},
         ],
-        (
-            "feature_id",
-            "neutral_loss_tag",
-            "family_center_mz",
-            "family_center_rt",
-            "QC_1",
-            "S2",
-        ),
+        ("Mz", "RT", "QC_1", "S2"),
+    )
+    _write_tsv(
+        tmp_path / "alignment_review.tsv",
+        [
+            {"feature_id": f"FAM{index:03}", "matrix_row_index": index}
+            for index in (1, 2, 3)
+        ],
+        ("feature_id", "matrix_row_index"),
     )
     normalized: list[str] = []
     original_normalize = loaders._normalize_sample_id
@@ -1025,3 +1027,12 @@ def _write_tsv(
         writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def test_matrix_reader_rejects_obsolete_feature_id_matrix(tmp_path):
+    from tools.diagnostics.targeted_istd_benchmark_loaders import read_alignment_matrix
+
+    path = tmp_path / "alignment_matrix.tsv"
+    path.write_text("feature_id\tS1\nF1\t100\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Mz"):
+        read_alignment_matrix(path)

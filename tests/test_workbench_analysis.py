@@ -271,7 +271,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         "schema_version\tsample_name\traw_stem\tinjection_order\t"
         "sample_role\tbatch_id\tprep_batch_id\tmatrix_type\tgroup\t"
         "excluded\texclusion_reason\n"
-        "sample_metadata\tAlpha\tSample-A\t\tstudy_sample\tB1\tP1\t"
+        "sample_metadata\tAlpha\tSample-A\t\tpooled_qc\tB1\tP1\t"
         "plasma\tcase\tfalse\t\n",
         encoding="utf-8",
     )
@@ -289,14 +289,6 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
             return {"published_paths": []}
 
     monkeypatch.setattr(untargeted, "UntargetedRun", Run)
-    # Roles saved for this folder before per-folder sample metadata existed.
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config" / "discovery_gui.json").write_text(
-        json.dumps(
-            {"raw_dir": str(raw_dir), "custom_roles": {"Sample-A": "pooled_qc"}}
-        ),
-        encoding="utf-8",
-    )
     jobs = AnalysisJobs(tmp_path / "config")
     try:
         jobs.start(
