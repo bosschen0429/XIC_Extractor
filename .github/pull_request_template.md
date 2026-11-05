@@ -11,7 +11,9 @@ tree, Mermaid, or a diff of that shape, each beside one or two sentences. -->
 
 <!-- Before and after. Screenshots for visual changes; otherwise the exact check
 that fails before and passes after, or the observed output. Do not invent a
-failing baseline; distinguish manual review from execution and keep gaps visible. -->
+failing baseline; distinguish manual review from execution and keep gaps visible.
+Reconcile current acceptance using docs/agent/delivery.md#acceptance-review;
+link applicable results and name required checks that remain unrun or failed. -->
 
 ## Merge Danger
 

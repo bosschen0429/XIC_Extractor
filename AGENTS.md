@@ -15,7 +15,7 @@ rules own general operating defaults.
 | Owner boundary, persisted schema, runtime lifecycle, write authority, public contract | [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md); [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary moves |
 | UI styling or theme roles | [UI Presentation](docs/architecture-contract.md#ui-presentation) |
 | Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
-| Issue scope, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
+| Issue scope, implementation completion, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
 | Current-format Untargeted output as test input | Regenerate with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; older runs under `output/` are not current-format input |
 | Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/agent/diagnostic-ledger.md) before repeating evidence |
 | Docs, skills, hooks, rules or agent config | [`codex-operating-system.md`](docs/agent/codex-operating-system.md) |
@@ -48,4 +48,5 @@ rules own general operating defaults.
 - **Evidence:** report the Evidence label and the method's actual oracle.
   Passing tests prove regression coverage, not scientific or production
   readiness.
-- **Merge:** hosted checks on the final remote SHA decide merge readiness.
+- **Merge:** acceptance evidence and hosted checks on the final remote SHA
+  must both be satisfied; see [Acceptance Review](docs/agent/delivery.md#acceptance-review).
