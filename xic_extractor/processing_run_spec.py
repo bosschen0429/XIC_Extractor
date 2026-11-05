@@ -253,17 +253,7 @@ class ProcessingRunSpec:
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"duplicate ProcessingRunSpec {field}")
-        if not (
-            isinstance(
-                self.discovery_method,
-                (CidNlDiscoveryMethodSpec, DiscoveryMethodSpec),
-            )
-            or (
-                hasattr(self.discovery_method, "settings")
-                and hasattr(self.discovery_method, "method")
-                and hasattr(self.discovery_method, "schema_version")
-            )
-        ):
+        if not isinstance(self.discovery_method, DiscoveryMethodSpec):
             raise TypeError("discovery_method must be a DiscoveryMethodSpec")
         if isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
             if (
@@ -559,8 +549,6 @@ def _method_content(
             },
         }
         return content
-    if hasattr(method, "to_content_dict"):
-        return dict(method.to_content_dict())
     settings_val = method.settings
     if isinstance(settings_val, GenericMethodSettings):
         settings_dict = settings_val.to_dict()

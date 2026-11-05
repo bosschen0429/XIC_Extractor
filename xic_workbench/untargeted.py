@@ -28,7 +28,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -47,22 +47,6 @@ from xic_workbench.samples import from_payload as samples_from_payload
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
 _MODES = frozenset({"full", "discovery_only", "align_only"})
-_SUMMARY_ALIGNMENT_ATTRS = (
-    "review_tsv",
-    "matrix_tsv",
-    "cells_tsv",
-    "run_metadata_json",
-)
-_PUBLISHED_OUTPUT_ATTRS = (
-    "review_tsv",
-    "matrix_tsv",
-    "owner_backfill_peak_fact_provenance_tsv",
-    "backfill_cell_evidence_tsv",
-    "cells_tsv",
-    "backfill_seed_audit_tsv",
-    "status_matrix_tsv",
-    "run_metadata_json",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,13 +230,7 @@ class UntargetedRun:
                 done, total_steps, f"Discovery: {sample}"
             ),
         )
-        index_path = Path(
-            getattr(
-                batch_outputs,
-                "batch_index_csv",
-                request.output_dir / "discovery_batch_index.csv",
-            )
-        )
+        index_path = batch_outputs.batch_index_csv
         self._retain_discovery_outputs(batch_outputs, index_path)
         self._raise_if_cancelled("Untargeted run cancelled after Discovery")
         if not request.alignment_enabled:
@@ -371,19 +349,20 @@ class UntargetedRun:
         self.stage = "Alignment 結果摘要"
         return outputs
 
-    def _retain_discovery_outputs(self, outputs: Any, index_path: Path) -> None:
+    def _retain_discovery_outputs(
+        self, outputs: DiscoveryBatchOutputs, index_path: Path
+    ) -> None:
         found: list[tuple[str, Path]] = []
         if index_path.is_file():
             found.append(("Discovery batch index", index_path))
-        for item in getattr(outputs, "per_sample", ()):
-            for label, attr in (
-                ("Discovery 候選", "candidates_csv"),
-                ("Discovery review", "review_csv"),
-                ("Discovery physical facts", "physical_facts_json"),
+        for item in outputs.per_sample:
+            for label, path in (
+                ("Discovery 候選", item.candidates_csv),
+                ("Discovery review", item.review_csv),
+                ("Discovery physical facts", item.physical_facts_json),
             ):
-                value = getattr(item, attr, None)
-                if value is not None and Path(value).is_file():
-                    found.append((label, Path(value)))
+                if Path(path).is_file():
+                    found.append((label, Path(path)))
         self.available_outputs = tuple(found)
 
     def _alignment_runtime(self) -> BoundCidNlRecipe:
@@ -456,31 +435,48 @@ class UntargetedRun:
             raise InterruptedError(message)
 
 
-def _alignment_summary(outputs: Any) -> dict[str, Any]:
+def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
     alignment_outputs = {
-        attr: str(value)
-        for attr in _SUMMARY_ALIGNMENT_ATTRS
-        if (value := getattr(outputs, attr, None)) is not None
+        name: str(path)
+        for name, path in (
+            ("review_tsv", outputs.review_tsv),
+            ("matrix_tsv", outputs.matrix_tsv),
+            ("cells_tsv", outputs.cells_tsv),
+            ("run_metadata_json", outputs.run_metadata_json),
+        )
+        if path is not None
     }
-    matrix = getattr(outputs, "matrix_tsv", None)
     return {
         "alignment_outputs": alignment_outputs,
-        "matrix_tsv": str(matrix) if matrix is not None else None,
+        "matrix_tsv": alignment_outputs.get("matrix_tsv"),
         "run_metadata_json": alignment_outputs.get("run_metadata_json"),
-        "evidence": getattr(outputs, "evidence", None),
+        "evidence": outputs.evidence,
     }
 
 
-def _alignment_available_outputs(outputs: Any) -> tuple[tuple[str, Path], ...]:
-    found: list[tuple[str, Path]] = []
-    for attr in _PUBLISHED_OUTPUT_ATTRS:
-        value = getattr(outputs, attr, None)
-        if value is not None and Path(value).is_file():
-            found.append((f"Alignment {attr}", Path(value)))
-    evidence = getattr(outputs, "evidence", None)
-    report_path = getattr(evidence, "report_path", None)
-    if report_path is not None and Path(report_path).is_file():
-        found.append(("Alignment review evidence", Path(report_path)))
+def _alignment_available_outputs(
+    outputs: AlignmentRunOutputs,
+) -> tuple[tuple[str, Path], ...]:
+    published = (
+        ("review_tsv", outputs.review_tsv),
+        ("matrix_tsv", outputs.matrix_tsv),
+        (
+            "owner_backfill_peak_fact_provenance_tsv",
+            outputs.owner_backfill_peak_fact_provenance_tsv,
+        ),
+        ("backfill_cell_evidence_tsv", outputs.backfill_cell_evidence_tsv),
+        ("cells_tsv", outputs.cells_tsv),
+        ("backfill_seed_audit_tsv", outputs.backfill_seed_audit_tsv),
+        ("status_matrix_tsv", outputs.status_matrix_tsv),
+        ("run_metadata_json", outputs.run_metadata_json),
+    )
+    found = [
+        (f"Alignment {name}", Path(path))
+        for name, path in published
+        if path is not None and Path(path).is_file()
+    ]
+    if outputs.evidence is not None and Path(outputs.evidence.report_path).is_file():
+        found.append(("Alignment review evidence", Path(outputs.evidence.report_path)))
     return tuple(found)
 
 

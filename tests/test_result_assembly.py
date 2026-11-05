@@ -908,6 +908,9 @@ def test_targeted_configured_targets_ignore_sample_name_and_legacy_applicability
 
 class _Config:
     resolver_mode = "local_minimum"
+    baseline_integration_method = "asls"
+    count_no_ms2_as_detected = False
+    ms1_morphology_smoothing_window_points = 15
 
 
 def _target(

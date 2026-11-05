@@ -15,6 +15,10 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     INITIAL_GROUPING_POLICY,
     UNLISTED_PAIR_DISPOSITION,
 )
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
 from xic_extractor.alignment_explanation.review import review_cell, review_record
 from xic_extractor.alignment_explanation.writer import (
@@ -382,7 +386,7 @@ def prepare_alignment_explanation(
         for record in phase_items(
             "discovery_physical",
             (
-                getattr(completed, "discovery_physical_records", ())
+                completed.discovery_physical_records
                 if full_audit or curve_mz_ranges
                 else ()
             ),
@@ -435,7 +439,7 @@ def prepare_alignment_explanation(
                 related=related,
             )
 
-        capture_evidence = getattr(completed, "capture_evidence", ())
+        capture_evidence = completed.capture_evidence
         for evidence in phase_items(
             "capture_evidence",
             capture_evidence if full_audit or curve_mz_ranges else (),
@@ -615,7 +619,11 @@ def prepare_alignment_explanation(
                     for member in group.member_subjects
                 ],
             }
-            inference_basis = getattr(group, "inference_basis", None)
+            inference_basis = (
+                group.inference_basis
+                if isinstance(group, CrossSamplePeakGroupHypothesis)
+                else None
+            )
             if stage == "initial_groups" and inference_basis is not None:
                 group_payload["inference_basis"] = asdict(inference_basis)
                 group_payload["inference_decisions"] = [
@@ -641,8 +649,8 @@ def prepare_alignment_explanation(
                     "trace_group_id",
                     "variant",
                 )
-                hypothesis = getattr(terminal, "hypothesis", None)
-                if hypothesis is not None:
+                if isinstance(terminal, ObservedSearchSubject):
+                    hypothesis = terminal.hypothesis
                     physical_ids = tuple(
                         locate(ref.content) for ref in hypothesis.peak_observation_refs
                     )

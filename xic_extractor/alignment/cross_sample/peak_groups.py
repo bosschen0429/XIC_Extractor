@@ -232,7 +232,7 @@ def _hypothesis_from_owner_group(
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
     is_singleton = len(group) == 1
-    has_definitive = any(not getattr(owner, "is_provisional", False) for owner in group)
+    has_definitive = any(not owner.is_provisional for owner in group)
     has_anchor = has_definitive or not is_singleton
     unsupported_singleton = is_singleton and not has_definitive
     effective_review_only = review_only or unsupported_singleton

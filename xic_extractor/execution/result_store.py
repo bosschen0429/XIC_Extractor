@@ -8,12 +8,19 @@ import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Protocol
 
 from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
 PRESERVED_INDEX_NAME = "partition-index.pickle"
+
+
+class StreamingPartitionPayload(Protocol):
+    """Dataclass metadata whose ``children`` are streamed beside it."""
+
+    @property
+    def children(self) -> object: ...
 
 
 class _PartitionWriter:
@@ -196,7 +203,7 @@ class StreamedResultStore:
     def append_children(
         self,
         partition_key: str,
-        metadata_payload: object,
+        metadata_payload: StreamingPartitionPayload,
         children: Iterable[object],
         before_publish: Callable[[], None] | None = None,
         retain_memory: bool = False,
@@ -205,8 +212,6 @@ class StreamedResultStore:
 
         if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
             raise TypeError("partition payload requires a dataclass result")
-        if not hasattr(metadata_payload, "children"):
-            raise TypeError("streaming partition payload requires children")
         if metadata_payload.children != ():
             raise ValueError("streaming metadata payload must have empty children")
         return self._append_payload(

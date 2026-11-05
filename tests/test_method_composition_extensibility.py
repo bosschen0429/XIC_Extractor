@@ -25,6 +25,7 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets import PresetTag, load_preset
+from xic_extractor.presets.apply import bind_cid_nl_recipe
 from xic_extractor.processing_run_spec import (
     GenericDiscoveryMethodSpec,
     GenericMethodSettings,
@@ -82,16 +83,8 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
     assert deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
 
 
-def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():
-    # Builtin single-tag preset
+def test_is_supported_alignment_discovery_accepts_single_and_multi_tag_settings():
     dna_dr = load_preset("dna_dr")
-    assert is_supported_alignment_discovery(dna_dr) is True
-
-    # Builtin composite Pt pattern + CID-NL preset
-    pt_composite = load_preset("pt_pattern_cid_nl_dr")
-    assert is_supported_alignment_discovery(pt_composite) is True
-
-    # Multi-tag neutral loss preset (union or intersection)
     multi_tag = replace(
         dna_dr,
         name="Multi NL",
@@ -101,9 +94,10 @@ def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():
             PresetTag(strategy="neutral_loss", name="R", value=132.0423),
         ),
     )
-    assert is_supported_alignment_discovery(multi_tag) is True
+    for preset in (dna_dr, multi_tag):
+        recipe = bind_cid_nl_recipe(preset, "align_only")
+        assert is_supported_alignment_discovery(recipe.discovery_settings) is True
 
-    # DiscoverySettings
     settings = DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile(
             tag="DNA_dR",
@@ -111,18 +105,6 @@ def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():
         )
     )
     assert is_supported_alignment_discovery(settings) is True
-
-    # DiscoveryMethodSpec
-    custom_spec = MockDeltaMassDiscoveryMethodSpec()
-    assert is_supported_alignment_discovery(custom_spec) is True
-
-    # Unsupported strategy
-    unsupported = replace(
-        dna_dr,
-        name="Unsupported",
-        tags=(PresetTag(strategy="future_quantum_orbitrap", name="Q", value=999.0),),
-    )
-    assert is_supported_alignment_discovery(unsupported) is False
 
 
 def test_run_alignment_script_resolves_supported_preset():

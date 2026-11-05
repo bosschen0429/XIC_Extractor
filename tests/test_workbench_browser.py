@@ -322,6 +322,7 @@ def fake_runs(monkeypatch, tmp_path):
             self.stage = "Browser fake analysis"
             self.output_dir = tmp_path / "results"
             self.available_outputs = ()
+            self.sample_summary = None
 
         def execute(self):
             self.progress(1, 2, "Browser fake progress")

@@ -58,16 +58,6 @@ class Ms1MorphologyMetrics:
     area_source: str
 
 
-def configured_morphology_window_points(config: object) -> int:
-    return int(
-        getattr(
-            config,
-            "ms1_morphology_smoothing_window_points",
-            DEFAULT_GAUSSIAN15_WINDOW_POINTS,
-        )
-    )
-
-
 def gaussian15_morphology_trace(
     residual: np.ndarray,
     *,

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
+
+if TYPE_CHECKING:
+    from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 MISSING_MS1_MORPHOLOGY_AREA = "missing_ms1_morphology_area"
 MISSING_ASLS_PRIMARY_AREA = MISSING_MS1_MORPHOLOGY_AREA
@@ -33,7 +36,7 @@ class PrimaryMatrixAreaDecision:
 
 
 def primary_matrix_area_from_integration(
-    integration: Any | None,
+    integration: IntegrationResult | None,
 ) -> PrimaryMatrixAreaDecision:
     if integration is None:
         return PrimaryMatrixAreaDecision(
@@ -41,22 +44,22 @@ def primary_matrix_area_from_integration(
             source="",
             reason=MISSING_MS1_MORPHOLOGY_AREA,
         )
-    area_source = getattr(integration, "ms1_morphology_area_source", "")
+    area_source = integration.ms1_morphology_area_source
     if area_source in PRIMARY_MATRIX_AREA_SOURCES:
-        morphology_area = _valid_area(getattr(integration, "area_ms1_morphology", None))
+        morphology_area = _valid_area(integration.area_ms1_morphology)
         if morphology_area is not None:
             return PrimaryMatrixAreaDecision(
                 value=morphology_area,
                 source=area_source,
                 reason="",
             )
-    if getattr(integration, "baseline_type", "") != "asls":
+    if integration.baseline_type != "asls":
         return PrimaryMatrixAreaDecision(
             value=None,
             source="",
             reason=MISSING_MS1_MORPHOLOGY_AREA,
         )
-    area = _valid_area(getattr(integration, "area_baseline_corrected", None))
+    area = _valid_area(integration.area_baseline_corrected)
     if area is None:
         return PrimaryMatrixAreaDecision(
             value=None,

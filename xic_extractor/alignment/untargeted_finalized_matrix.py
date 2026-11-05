@@ -38,6 +38,9 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.cell_decision.owner import (
         ProductionCellDecision as OwnerProductionCellDecision,
     )
+    from xic_extractor.alignment.projection.untarget.matrix import (
+        UntargetRowDecisionCounts,
+    )
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
@@ -599,11 +602,11 @@ def _writer_row_decision(
     row: FinalizedUntargetMatrixRow,
     cells: tuple[AlignedCell, ...],
     decisions: tuple[ProductionCellDecision, ...],
-    owner_counts: object,
+    owner_counts: UntargetRowDecisionCounts,
     route_reason: str,
 ) -> ProductionRowDecision:
     numeric_count = sum(item.write_matrix_value for item in decisions)
-    if getattr(owner_counts, "numeric_cells", None) != numeric_count:
+    if owner_counts.numeric_cells != numeric_count:
         raise ValueError("writer row count crossed finalized owner decisions")
     detected_count = sum(cell.status == "detected" for cell in cells)
     accepted_backfill_count = sum(

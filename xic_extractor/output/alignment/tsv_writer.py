@@ -28,6 +28,7 @@ from xic_extractor.alignment.owner_group_delivery import (
     delivery_group_projection,
 )
 from xic_extractor.alignment.production_decisions import (
+    ProductionCellDecision,
     ProductionDecisionSet,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
@@ -661,13 +662,14 @@ def _cell_mentions_backfill(cell: AlignedCell) -> bool:
     return any("backfill" in str(value).lower() for value in values)
 
 
-def _include_backfill_evidence_cell(cell: AlignedCell, decision: Any) -> bool:
+def _include_backfill_evidence_cell(
+    cell: AlignedCell, decision: ProductionCellDecision
+) -> bool:
     if cell.status in {"detected", "backfilled"}:
         return True
-    if getattr(decision, "write_matrix_value", False):
+    if decision.write_matrix_value:
         return True
-    production_status = str(getattr(decision, "production_status", ""))
-    return production_status in {
+    return decision.production_status in {
         "detected",
         "accepted_backfill",
         "review_backfill",

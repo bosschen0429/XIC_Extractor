@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from tests.raw_header_fakes import install_raw_sample_headers
+from xic_extractor.discovery.models import DiscoveryBatchOutputs
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import load_preset
 from xic_extractor.raw_reader import RawSampleHeader
 from xic_workbench.discovery_config_io import (
@@ -457,11 +459,9 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
 
     def align(request, context=None):
         captured.update(request=request, context=context)
-        return SimpleNamespace(
+        return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
-            cells_tsv=None,
-            run_metadata_json=None,
             evidence=locator,
         )
 
@@ -506,18 +506,14 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     monkeypatch.setattr(
         module,
         "run_discovery_batch",
-        lambda *_args, **_kwargs: SimpleNamespace(batch_index_csv=index),
+        lambda *_args, **_kwargs: DiscoveryBatchOutputs(
+            batch_index_csv=index, per_sample=()
+        ),
     )
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
-        lambda request, context=None, **_kwargs: SimpleNamespace(
-            review_tsv=None,
-            matrix_tsv=None,
-            cells_tsv=None,
-            run_metadata_json=None,
-            evidence=None,
-        ),
+        lambda request, context=None, **_kwargs: AlignmentRunOutputs(),
     )
     progress = []
     summary = UntargetedRun(

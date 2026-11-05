@@ -59,7 +59,7 @@ class AnalysisJobs:
                     job["stage"] = self._runner.stage
                     if job["kind"] == "targeted":
                         job["sample_summary"] = copy.deepcopy(
-                            getattr(self._runner, "sample_summary", None)
+                            self._runner.sample_summary
                         )
                     job["output_dir"] = str(self._runner.output_dir)
                     job["available_outputs"] = [

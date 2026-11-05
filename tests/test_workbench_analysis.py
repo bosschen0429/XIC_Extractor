@@ -120,6 +120,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
             self.stage = "讀取指定 RAW"
             self.output_dir = tmp_path / "output"
             self.available_outputs = ()
+            self.sample_summary = None
             self.progress = progress
             self.should_cancel = should_cancel
 
@@ -652,6 +653,7 @@ def test_completed_analysis_keeps_its_own_review_locations(tmp_path, monkeypatch
         stage = "done"
         output_dir = tmp_path
         available_outputs = ()
+        sample_summary = None
 
         def __init__(self, *args, **kwargs):
             pass

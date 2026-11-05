@@ -477,7 +477,9 @@ def prepare_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    if hasattr(source, "select_items"):
+    from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+
+    if isinstance(source, (IndexedCidNlSource, TargetedWorkbookSource)):
         try:
             (
                 selected_items,

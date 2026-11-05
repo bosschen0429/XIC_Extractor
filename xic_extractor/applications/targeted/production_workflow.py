@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
 from xic_extractor.alignment.completion import (
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
@@ -289,7 +290,7 @@ def _build_publication_output(
             "finalized Targeted sample population contains duplicate RAW identities"
         )
 
-    decisions: dict[tuple[str, str], Any] = {}
+    decisions: dict[tuple[str, str], ProductionCellDecision] = {}
     target_ids_by_label: dict[str, str] = {}
     targets_by_label: dict[str, Target] = {}
     backfills = {}
@@ -380,18 +381,14 @@ def _build_publication_output(
             no_write_reason = (
                 ""
                 if render_decision.variant == "numeric"
-                else getattr(
-                    render_decision,
-                    "no_write_reason",
-                    f"finalized_{render_decision.variant}",
-                )
+                else f"finalized_{render_decision.variant}"
             )
             cell = _RenderCell(
                 extraction=extraction,
                 target=targets_by_label[target_label],
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
-                evidence=getattr(render_decision, "evidence", None),
+                evidence=render_decision.evidence,
                 backfill_supported=(
                     backfill_decision is not None
                     and backfill_decision.matched_candidate is not None

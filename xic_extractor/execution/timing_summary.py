@@ -3,8 +3,12 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from xic_extractor.tabular_io import text_value
+
+if TYPE_CHECKING:
+    from xic_extractor.execution.timing import TimingRecord
 
 
 @dataclass(frozen=True)
@@ -16,7 +20,7 @@ class TimingRecordView:
 
 
 def summarize_timing_records(
-    records: Iterable[object],
+    records: Iterable[TimingRecord],
     *,
     exclusive_elapsed: Iterable[float | None] | None = None,
     measurement_observations: Iterable[Mapping[str, object]] = (),
@@ -333,19 +337,12 @@ def _int_metric(metrics: Mapping[str, object], field: str) -> int:
         return 0
 
 
-def _record_view(record: object) -> TimingRecordView:
-    if isinstance(record, Mapping):
-        return TimingRecordView(
-            stage=text_value(record.get("stage")),
-            elapsed_sec=_float_value(record.get("elapsed_sec")),
-            sample_stem=text_value(record.get("sample_stem")),
-            metrics=_mapping_or_empty(record.get("metrics")),
-        )
+def _record_view(record: TimingRecord) -> TimingRecordView:
     return TimingRecordView(
-        stage=text_value(getattr(record, "stage", "")),
-        elapsed_sec=_float_value(getattr(record, "elapsed_sec", 0.0)),
-        sample_stem=text_value(getattr(record, "sample_stem", "")),
-        metrics=_mapping_or_empty(getattr(record, "metrics", {})),
+        stage=text_value(record.stage),
+        elapsed_sec=_float_value(record.elapsed_sec),
+        sample_stem=text_value(record.sample_stem),
+        metrics=_mapping_or_empty(record.metrics),
     )
 
 

@@ -98,6 +98,8 @@ def test_alignment_primary_matrix_area_rejects_invalid_observed_censored_area(
 ) -> None:
     decision = primary_matrix_area_from_integration(
         SimpleNamespace(
+            baseline_type="",
+            area_baseline_corrected=None,
             area_ms1_morphology=area,
             ms1_morphology_area_source=(
                 "trapezoid_counts_seconds_on_observed_censored_signal"
@@ -113,6 +115,8 @@ def test_alignment_primary_matrix_area_rejects_invalid_observed_censored_area(
 def test_alignment_primary_matrix_area_rejects_unknown_positive_area_source() -> None:
     decision = primary_matrix_area_from_integration(
         SimpleNamespace(
+            baseline_type="",
+            area_baseline_corrected=None,
             area_ms1_morphology=900.0,
             ms1_morphology_area_source="unknown_signal",
         )

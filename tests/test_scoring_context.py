@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -17,6 +16,7 @@ from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
+from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     MS1_MORPHOLOGY_AREA_SOURCE,
@@ -266,7 +266,7 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
     candidate_with_nl = _candidate(apex_index=3, apex_rt=10.1, intensity=70.0)
     candidate_without_nl = _candidate(apex_index=4, apex_rt=10.2, intensity=100.0)
 
-    def _candidate_ms2_evidence(candidate: SimpleNamespace) -> CandidateMS2Evidence:
+    def _candidate_ms2_evidence(candidate: PeakCandidate) -> CandidateMS2Evidence:
         return CandidateMS2Evidence(
             ms2_present=True,
             nl_match=candidate is candidate_with_nl,
@@ -337,14 +337,23 @@ def _target(*, label: str, is_istd: bool, istd_pair: str) -> Target:
     )
 
 
-def _candidate(*, apex_index: int, apex_rt: float, intensity: float) -> SimpleNamespace:
-    return SimpleNamespace(
-        physical_segment=None,
-        peak=SimpleNamespace(peak_start=apex_rt - 0.3, peak_end=apex_rt + 0.3),
-        selection_apex_index=apex_index,
+def _candidate(*, apex_index: int, apex_rt: float, intensity: float) -> PeakCandidate:
+    return PeakCandidate(
+        peak=PeakResult(
+            rt=apex_rt,
+            intensity=intensity,
+            intensity_smoothed=intensity,
+            area=0.0,
+            peak_start=apex_rt - 0.3,
+            peak_end=apex_rt + 0.3,
+        ),
         selection_apex_rt=apex_rt,
         selection_apex_intensity=intensity,
-        quality_flags=(),
+        selection_apex_index=apex_index,
+        raw_apex_rt=apex_rt,
+        raw_apex_intensity=intensity,
+        raw_apex_index=apex_index,
+        prominence=intensity,
     )
 
 

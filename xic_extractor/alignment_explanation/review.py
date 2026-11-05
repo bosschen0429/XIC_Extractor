@@ -7,7 +7,13 @@ import math
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
+    from xic_extractor.alignment.cell_observation.observations import (
+        FinalGroupCellObservation,
+    )
 
 REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
 
@@ -277,9 +283,10 @@ def decode_row_evidence(
     return result
 
 
-def review_cell(decision: Any) -> dict[str, Any]:
+def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     """Project the decision owner and its effective observations without hashing."""
-    evidence = decision.evidence
+    # Review rows are built only for Untargeted final-group cells.
+    evidence = cast("FinalGroupCellObservation", decision.evidence)
     cells = evidence.effective_cells
     stages = {
         cell.peak_observation.capture_stage
@@ -309,8 +316,8 @@ def review_cell(decision: Any) -> dict[str, Any]:
     return {
         "sample_key": (decision.subject.canonical_sample.identity.sample_key),
         "variant": decision.variant,
-        "value": getattr(decision, "value", None),
-        "source": getattr(decision, "source", None),
+        "value": decision.value,
+        "source": decision.source,
         "evidence_states": evidence.evidence_states,
         "reason_codes": sorted(
             {reason for cell in cells for reason in cell.content.reason_codes}

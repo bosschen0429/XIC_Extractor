@@ -6,7 +6,6 @@ import numpy as np
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidatesResult
 from xic_extractor.peak_detection.selection import select_candidate
-from xic_extractor.settings_schema import CANONICAL_RESOLVER_MODE
 
 PREFERRED_RT_RELAXED_PROMINENCE_FRACTION: float = 0.2
 PREFERRED_RT_RELAXED_MIN_PROMINENCE_RATIO: float = 0.01
@@ -124,7 +123,7 @@ def _relaxed_search_parameters(
     ):
         return None
 
-    resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
+    resolver_mode = config.resolver_mode
     if resolver_mode == "local_minimum":
         relaxed_config = relaxed_local_minimum_config(config)
         if relaxed_config == config:

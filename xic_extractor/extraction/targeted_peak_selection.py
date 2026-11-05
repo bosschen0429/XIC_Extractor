@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
@@ -17,7 +17,10 @@ from xic_extractor.evidence.neutral_loss import (
     MS2ProductEvidence,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
-from xic_extractor.extraction.scoring_factory import selected_candidate
+from xic_extractor.extraction.scoring_factory import (
+    ScoringContextBuilder,
+    selected_candidate,
+)
 from xic_extractor.extraction.targeted_peak_evidence import (
     build_targeted_peak_evidence,
     targeted_trigger_events,
@@ -44,9 +47,6 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
 )
-from xic_extractor.peak_detection.ms1_morphology import (
-    configured_morphology_window_points,
-)
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
 )
@@ -66,7 +66,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
@@ -191,7 +190,7 @@ class TargetedCandidateAssessment:
         *,
         selected_segment: PhysicalSegment | None,
         competing_region_count: int,
-        scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
+        scoring_context_builder: ScoringContextBuilder | None,
         istd_confidence_note: str | None,
         paired_istd_anchor_rt: float | None,
     ) -> PeakDetectionResult:
@@ -254,7 +253,7 @@ class TargetedCandidateAssessment:
         self,
         peak_result: PeakDetectionResult,
         *,
-        scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
+        scoring_context_builder: ScoringContextBuilder | None,
     ) -> ExtractionResult:
         selection = select_targeted_peak(
             config=self.config,
@@ -473,16 +472,11 @@ def build_production_peak_hypotheses(
         intensity=intensity,
         trace_group=trace_group,
         baseline_integration_method=cast(
-            BaselineMethod,
-            getattr(config, "baseline_integration_method", "asls"),
+            BaselineMethod, config.baseline_integration_method
         ),
-        count_no_ms2_as_detected=getattr(
-            config,
-            "count_no_ms2_as_detected",
-            False,
-        ),
+        count_no_ms2_as_detected=config.count_no_ms2_as_detected,
         ms1_morphology_smoothing_window_points=(
-            configured_morphology_window_points(config)
+            config.ms1_morphology_smoothing_window_points
         ),
     )
     return _with_final_selected_result_evidence(hypotheses, peak_result)
