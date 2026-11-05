@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from xic_extractor.alignment.matrix import (
@@ -106,7 +105,7 @@ def _matrix_review_projection(
     product_cells: tuple[ProductCellAssignment, ...],
 ) -> dict[str, object]:
     mz = float(cluster.family_center_mz)
-    rt, _ = _center_rt(cluster, product_cells)
+    rt = float(cluster.family_center_rt)
     return {
         "feature_id": cluster.feature_id,
         "matrix_row_index": matrix_row_index,
@@ -157,29 +156,3 @@ def _float_identity_value(value: object, *, name: str) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     raise ValueError(f"{name} must be numeric")
-
-
-def _center_rt(
-    cluster: FinalizedUntargetMatrixRow,
-    product_cells: tuple[ProductCellAssignment, ...],
-) -> tuple[float, str]:
-    if type(cluster) is FinalizedUntargetMatrixRow:
-        return cluster.family_center_rt, cluster.center_rt_basis
-    weighted_sum = 0.0
-    weight_sum = 0.0
-    for cell, decision in product_cells:
-        if cell.apex_rt is None or decision.matrix_value is None:
-            continue
-        if not math.isfinite(cell.apex_rt):
-            continue
-        weight = decision.matrix_value
-        if not math.isfinite(weight) or weight <= 0:
-            continue
-        weighted_sum += cell.apex_rt * weight
-        weight_sum += weight
-    if weight_sum > 0:
-        return weighted_sum / weight_sum, "accepted_cell_area_weighted_apex_rt"
-    return (
-        float(cluster.family_center_rt),
-        "source_family_center_rt",
-    )
