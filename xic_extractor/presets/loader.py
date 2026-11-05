@@ -20,7 +20,6 @@ from xic_extractor.settings_schema import normalize_resolver_mode
 _BUILTIN_PACKAGE = "xic_extractor.presets.data"
 _BUILTIN_PRESETS = (
     "dna_dr",
-    "dna_dr_product_ready",
     "rna_ribose",
     "rna_mer",
     "pt_pattern",

@@ -56,7 +56,7 @@ def test_cid_nl_preset_filter_matches_the_package_binder() -> None:
 
     assert filtered
     assert "dna_dr" in filtered
-    assert "dna_dr_product_ready" in filtered
+    assert "dna_dr" in filtered
     assert "pt_pattern" not in filtered
     assert "pt_pattern_cid_nl_dr" not in filtered
     for name in filtered:
@@ -103,14 +103,6 @@ def test_apply_to_discovery_merges_preset_then_explicit_tuning() -> None:
 
 def test_apply_to_alignment_returns_default_config() -> None:
     preset = load_preset("dna_dr")
-
-    alignment_config = apply_to_alignment(preset)
-
-    assert alignment_config == AlignmentConfig()
-
-
-def test_apply_to_alignment_returns_product_ready_config() -> None:
-    preset = load_preset("dna_dr_product_ready")
 
     alignment_config = apply_to_alignment(preset)
 
@@ -190,7 +182,7 @@ def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
 
 def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:
     recipe = bind_cid_nl_recipe(
-        load_preset("dna_dr_product_ready"),
+        load_preset("dna_dr"),
         "align_only",
         recipe_overrides={
             "rt_max": 20.0,

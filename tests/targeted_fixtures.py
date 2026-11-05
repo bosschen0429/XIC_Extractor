@@ -23,7 +23,6 @@ def targeted_rows():
             "label": "analyte",
             "istd_pair": "standard",
             "paired_rt_relation": "istd_not_later_than_pair",
-            "sample_applicability": "rna_containing",
             "note": "方法 A",
         },
     ]

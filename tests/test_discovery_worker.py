@@ -152,7 +152,7 @@ def test_single_file_discovery_only_summary_and_run_spec(
 
 
 @pytest.mark.parametrize("mode", ["align_only", "full"])
-def test_alignment_modes_apply_product_ready_runtime(
+def test_alignment_modes_apply_default_runtime(
     mode: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -193,7 +193,7 @@ def test_alignment_modes_apply_product_ready_runtime(
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
     request = DiscoveryRequest(
         mode=mode,  # type: ignore[arg-type]
-        preset="dna_dr_product_ready",
+        preset="dna_dr",
         tuning_overrides={
             "nl_tolerance_ppm": 15.0,
             "nl_min_intensity_ratio": 0.02,
@@ -226,7 +226,6 @@ def test_alignment_modes_apply_product_ready_runtime(
         captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
         is False
     )
-    assert captured_alignment["request"].legacy.audit_evidence_mode == "none"
     assert captured_alignment["request"].publication.emit_alignment_explanation is True
     assert captured_alignment["request"].publication.explanation_full_audit is False
     assert captured_alignment["request"].publication.explanation_curve_mz_ranges == ()
@@ -257,7 +256,7 @@ def test_alignment_interruption_propagates_from_execute(
 
     request = DiscoveryRequest(
         mode="align_only",
-        preset="dna_dr_product_ready",
+        preset="dna_dr",
         tuning_overrides={},
         raw_dir=tmp_path / "raw",
         raw_file=None,

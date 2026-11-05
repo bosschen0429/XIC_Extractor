@@ -40,22 +40,20 @@ def test_selection_decision_projects_accepted_typed_semantics() -> None:
 def test_selection_decision_projects_review_and_source_context() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            support_labels=("cwt_same_apex_support",),
+            support_labels=("shape_clean",),
             concern_labels=("rt_prior_far",),
             cap_labels=("rt_window_cap",),
             reason="decision: review",
             quality_flags=("low_trace_continuity",),
             rt_prior_min=8.45,
-            cwt_best_scale=4.0,
             region_trace_continuity=0.72,
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="review",
-                support_reasons=("cwt_boundary_morphology_context",),
                 conflict_reasons=("targeted_rt_conflict",),
                 review_reasons=("targeted_rt_review",),
             ),
         ),
-        proposal_sources=("centwave_cwt",),
+        proposal_sources=("local_minimum",),
     )
 
     decision = selection_decision_from_hypothesis(hypothesis)
@@ -64,7 +62,6 @@ def test_selection_decision_projects_review_and_source_context() -> None:
     assert decision.conflict_reasons == ("targeted_rt_conflict",)
     assert decision.review_reasons == ("targeted_rt_review",)
     assert "role_aware_rt" in decision.evidence_sources
-    assert "cwt_boundary_morphology_context" in decision.evidence_sources
     assert "trace_morphology" in decision.evidence_sources
 
 

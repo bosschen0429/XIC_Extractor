@@ -12,7 +12,6 @@ from zipfile import BadZipFile
 
 from xic_extractor.configuration.csv_io import (
     TARGET_FIELDS,
-    TARGET_WRITE_FIELDS,
     normalize_target_header,
     normalize_target_row,
 )
@@ -236,9 +235,7 @@ def save_target_table(rows: Sequence[Mapping[str, str]], path: Path) -> None:
 
 
 def _target_fields(rows: Sequence[Mapping[str, str]]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys([*TARGET_WRITE_FIELDS, *(key for row in rows for key in row)])
-    )
+    return tuple(dict.fromkeys([*TARGET_FIELDS, *(key for row in rows for key in row)]))
 
 
 def _save_workbook(path: Path, tables: Mapping, reader) -> None:

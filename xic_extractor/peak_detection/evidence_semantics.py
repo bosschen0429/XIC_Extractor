@@ -11,7 +11,6 @@ _HARD_LOCAL_CONCERN_LABELS = {
     "shape_poor",
 }
 _CHROM_PEAK_SEGMENT_SOURCE = "chrom_peak_segment"
-_CWT_PROPOSAL_SOURCE = "centwave_cwt"
 
 EvidenceSource = Literal[
     "targeted_peak",
@@ -82,9 +81,7 @@ def classify_evidence_consistency(signals: EvidenceSignalSet) -> tuple[str, ...]
     labels: list[str] = []
     has_shape_context = (
         "shape_clean" in support
-        or _CWT_PROPOSAL_SOURCE in sources
         or _CHROM_PEAK_SEGMENT_SOURCE in sources
-        or "cwt_same_apex_support" in support
         or "chrom_peak_segment_context" in support
     )
     hard_quality_flags = quality_flags - _SOFT_TRACE_QUALITY_FLAGS
@@ -146,14 +143,6 @@ def decision_semantics_from_signal_set(
     exclusion_reasons = _decision_exclusion_reasons(concerns, caps)
     ambiguity_reasons = _decision_ambiguity_reasons(signals, concerns)
 
-    if (
-        "cwt_boundary_morphology_context" in support_reasons
-        and len(support_reasons) == 1
-    ):
-        review_reasons = _append_unique(
-            review_reasons,
-            "cwt_requires_correlated_evidence",
-        )
     if "chrom_peak_segment_context" in support_reasons and len(support_reasons) == 1:
         review_reasons = _append_unique(
             review_reasons,
@@ -199,8 +188,6 @@ def _decision_support_reasons(
         reasons.append("role_aware_rt_support")
     if "paired_area_ratio_plausible" in support:
         reasons.append("paired_area_ratio_support")
-    if _CWT_PROPOSAL_SOURCE in sources or "cwt_same_apex_support" in support:
-        reasons.append("cwt_boundary_morphology_context")
     if _CHROM_PEAK_SEGMENT_SOURCE in sources:
         reasons.append("chrom_peak_segment_context")
     return tuple(reasons)

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from scripts.compare_workbooks import compare_workbooks
+from tools.diagnostics.compare_workbooks import compare_workbooks
 
 
 def test_compare_workbooks_accepts_compact_layout(tmp_path: Path) -> None:

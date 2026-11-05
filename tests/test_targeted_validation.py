@@ -3,8 +3,8 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from scripts.compare_workbooks import WorkbookCompareResult
-from scripts.validation_harness import (
+from tools.diagnostics.compare_workbooks import WorkbookCompareResult
+from tools.diagnostics.targeted_validation import (
     DEFAULT_FULL_TISSUE_DIR,
     DEFAULT_TISSUE_VALIDATION_DIR,
     ValidationRunSpec,
@@ -12,6 +12,9 @@ from scripts.validation_harness import (
     command_to_powershell,
     main,
     run_validation_specs,
+)
+from xic_extractor.applications.targeted.output_boundary import (
+    TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.raw_reader import RawReaderError
@@ -21,7 +24,7 @@ def test_validation_harness_defaults_use_env_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import scripts.validation_harness_core as core
+    import tools.diagnostics.targeted_validation_suites as core
 
     manual_root = tmp_path / "manual_truth"
     validation_root = tmp_path / "validation_fixture_cohort"
@@ -50,7 +53,7 @@ def test_validation_harness_defaults_fall_back_to_repo_placeholders(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import scripts.validation_harness_core as core
+    import tools.diagnostics.targeted_validation_suites as core
 
     with monkeypatch.context() as env:
         env.delenv("XIC_MANUAL_2RAW_ROOT", raising=False)
@@ -106,7 +109,7 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
     assert specs[2].requires_confirmation is True
 
     manual_command = command_to_powershell(specs[0].command)
-    assert "scripts\\targeted_manual_validation.py" in manual_command
+    assert "tools\\diagnostics\\targeted_manual_validation.py" in manual_command
     assert "--parallel-mode process" in manual_command
     assert "--parallel-workers 4" in manual_command
 
@@ -356,9 +359,10 @@ def test_run_validation_specs_records_baseline_path_errors_without_traceback(
     [
         (ConfigError("settings.csv missing"), "settings.csv missing"),
         (RawReaderError("pythonnet is not installed"), "pythonnet is not installed"),
+        (TargetedOutputBoundaryError("publication rejected"), "publication rejected"),
     ],
 )
-def test_run_validation_specs_records_extraction_setup_errors_without_traceback(
+def test_run_validation_specs_records_run_errors_without_traceback(
     tmp_path: Path,
     error: Exception,
     expected_message: str,

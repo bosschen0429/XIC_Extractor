@@ -29,7 +29,7 @@ def test_save_builtin_neutral_loss_preset_roundtrips(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "preset_name",
-    ("dna_dr", "dna_dr_product_ready", "pt_pattern", "pt_pattern_cid_nl_dr"),
+    ("dna_dr", "pt_pattern", "pt_pattern_cid_nl_dr"),
 )
 def test_all_builtin_presets_roundtrip_their_existing_owner_settings(
     tmp_path: Path,

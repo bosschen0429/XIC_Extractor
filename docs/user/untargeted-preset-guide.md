@@ -49,7 +49,6 @@ Presets do not expose a public workflow graph or `[workflow]` TOML section.
 | `dna_dr` | DNA dR | CID neutral loss | 116.0474 | 2'-deoxyribose neutral-loss discovery |
 | `rna_ribose` | R | CID neutral loss | 132.0423 | Ribose neutral-loss starting method |
 | `rna_mer` | MeR | CID neutral loss | 146.0579 | MeR neutral-loss starting method |
-| `dna_dr_product_ready` | DNA dR Owner Backfill (compat) | CID neutral loss | 116.0474 | Historical compatibility profile; pure CID-NL execution uses the retained batch, and the preset ID is not a readiness assertion |
 
 The GUI starting list contains only dR, R, and MeR. Other CLI presets retain
 their existing support; GUI editing currently accepts only pure CID-NL methods.
@@ -133,22 +132,6 @@ owner-build XIC backend; `owner_build_xic_backend` is not accepted.
 All former `standard_peak_backfill*` and `backfill_expansion*` alignment keys
 are retired from normal presets. Supplying one is an error; there is no ignored
 compatibility mode or replacement publication choice.
-
----
-
-## Preset Comparison
-
-| Parameter | `dna_dr` | `dna_dr_product_ready` |
-| --- | --- | --- |
-| NL mass | 116.0474 Da | 116.0474 Da |
-| Discovery overrides | none | none |
-| Owner Backfill | yes | yes |
-| Standard Peak product route | retired | retired |
-| XIC backend | raw (default) | raw-super-window |
-
-`dna_dr_product_ready` differs from `dna_dr` only by the
-`raw-super-window` Owner Build backend. Its historical name does not run a
-readiness checker or confer publication authority.
 
 ---
 

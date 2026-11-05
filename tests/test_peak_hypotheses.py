@@ -114,14 +114,12 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         left=8.25,
         right=8.75,
         area=1234.0,
-        proposal_sources=("legacy_savgol", "centwave_cwt"),
+        proposal_sources=("legacy_savgol",),
         quality_flags=("low_trace_continuity",),
         region_scan_count=8,
         region_duration_min=0.5,
         region_edge_ratio=0.82,
         region_trace_continuity=0.75,
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.6,
     )
     score = PeakCandidateScore(
         candidate=selected,
@@ -130,7 +128,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         support_labels=(
             "strict_nl_ok",
             "ms2_trace_strong",
-            "cwt_same_apex_support",
+            "shape_clean",
         ),
         concern_labels=("trace_quality_review",),
         cap_labels=("rt_window_cap",),
@@ -187,7 +185,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     assert evidence.support_labels == (
         "strict_nl_ok",
         "ms2_trace_strong",
-        "cwt_same_apex_support",
+        "shape_clean",
     )
     assert evidence.concern_labels == ("trace_quality_review",)
     assert evidence.cap_labels == ("rt_window_cap",)
@@ -212,8 +210,6 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
     assert evidence.nearest_product_base_ratio == 0.18
     assert evidence.nearest_product_mz == 123.456
     assert evidence.rt_prior_min == 8.45
-    assert evidence.cwt_best_scale == 4.0
-    assert evidence.cwt_ridge_persistence == 0.6
 
     assert evidence.common is not None
     assert evidence.common.ms1_apex_rt_min == 8.5
@@ -230,10 +226,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
 
     assert evidence.decision_semantics is not None
     assert evidence.decision_semantics.decision_class == "review"
-    assert evidence.decision_semantics.support_reasons == (
-        "candidate_aligned_ms2_nl",
-        "cwt_boundary_morphology_context",
-    )
+    assert evidence.decision_semantics.support_reasons == ("candidate_aligned_ms2_nl",)
     assert "targeted_rt_conflict" in evidence.decision_semantics.conflict_reasons
     assert "targeted_rt_review" in evidence.decision_semantics.review_reasons
 
@@ -364,8 +357,6 @@ def _candidate(
     region_duration_min: float | None = None,
     region_edge_ratio: float | None = None,
     region_trace_continuity: float | None = None,
-    cwt_best_scale: float | None = None,
-    cwt_ridge_persistence: float | None = None,
 ) -> PeakCandidate:
     peak_start = rt - 0.2 if left is None else left
     peak_end = rt + 0.2 if right is None else right
@@ -391,8 +382,6 @@ def _candidate(
         region_duration_min=region_duration_min,
         region_edge_ratio=region_edge_ratio,
         region_trace_continuity=region_trace_continuity,
-        cwt_best_scale=cwt_best_scale,
-        cwt_ridge_persistence=cwt_ridge_persistence,
         proposal_sources=proposal_sources,
         source_apex_rank=1,
     )

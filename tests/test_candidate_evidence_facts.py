@@ -360,10 +360,8 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
     intensity = np.asarray([100.0, 500.0, 1000.0, 520.0, 120.0])
     candidate = _candidate(
         8.5,
-        proposal_sources=("local_minimum", "centwave_cwt"),
+        proposal_sources=("local_minimum",),
         quality_flags=("low_trace_continuity",),
-        cwt_best_scale=4.0,
-        cwt_ridge_persistence=0.6,
     )
     ctx = ScoringContext(
         rt_array=rt,
@@ -400,7 +398,7 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
     )
 
     assert facts.facts_version == "candidate_evidence_facts"
-    assert facts.candidate_id.startswith("local_minimum;centwave_cwt|8.50000")
+    assert facts.candidate_id.startswith("local_minimum|8.50000")
     assert facts.abundance == candidate.peak.area
     assert facts.trace.local_sn_quality == "strong"
     assert facts.trace.active_trace_source == "gaussian15_positive_asls_residual"
@@ -417,9 +415,6 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
     assert facts.rt.rt_prior_delta_min == 0.05
     assert facts.rt.rt_prior_status == "close"
     assert facts.rt.window_status == "inside"
-
-    assert facts.boundary.cwt_same_apex_observed is True
-    assert facts.boundary.cwt_best_scale == 4.0
 
 
 def test_candidate_evidence_facts_preserve_gaussian15_ms1_peak_group_scope() -> None:
@@ -678,8 +673,6 @@ def _candidate(
     *,
     proposal_sources: tuple[str, ...] = ("local_minimum",),
     quality_flags: tuple[str, ...] = (),
-    cwt_best_scale: float | None = None,
-    cwt_ridge_persistence: float | None = None,
 ) -> PeakCandidate:
     peak = PeakResult(
         rt=rt,
@@ -703,7 +696,5 @@ def _candidate(
         region_duration_min=0.2,
         region_edge_ratio=0.8,
         region_trace_continuity=0.9,
-        cwt_best_scale=cwt_best_scale,
-        cwt_ridge_persistence=cwt_ridge_persistence,
         proposal_sources=proposal_sources,
     )

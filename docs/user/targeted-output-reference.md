@@ -133,5 +133,5 @@ a past decision.
 A nonempty supplied `Sample Context` is a hidden technical sheet. It preserves
 the input table used for sample roles/order rather than requiring an external
 sidecar. It is not a new decision or evidence of scientific readiness. An empty
-input adds no sheet. `Targets` retains legacy `Sample applicability` metadata (not an analysis gate); `Run Metadata` includes the
+input adds no sheet. `Run Metadata` includes the
 actual method settings, not a link to a separate manifest.

@@ -118,5 +118,4 @@ def _target() -> Target:
         nl_ppm_max=40.0,
         is_istd=False,
         istd_pair="",
-        sample_applicability="all",
     )

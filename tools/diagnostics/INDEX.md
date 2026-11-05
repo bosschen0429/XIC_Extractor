@@ -194,6 +194,45 @@ scoring, or values.
 
 ## Targeted Benchmarks & Reviews
 
+### `targeted_validation.py`
+
+**Purpose**: Run Targeted real-data validation suites and workbook comparisons.
+**Topic group**: `targeted_validation.py` + `_suites`, `_run` (3 files)
+**Status note**: Tissue suites and the parallel benchmark share `_run`, which
+executes the canonical finalized Targeted application through publication.
+Manual-2RAW delegates to the separate manual measurement calibration tool;
+its acquisition RT/area comparison is not full application acceptance.
+
+---
+
+### `targeted_parallel_benchmark.py`
+
+**Purpose**: Compare serial/process scheduling for complete Targeted application runs.
+**Topic group**: `targeted_parallel_benchmark.py` (single-file)
+**Status note**: Uses the shared Targeted validation run owner and compares its
+published workbooks. Elapsed time includes finalization and publication, not
+only acquisition.
+
+---
+
+### `targeted_manual_validation.py`
+
+**Purpose**: Compare acquired peak RT/area against supplied manual measurements.
+**Topic group**: `targeted_manual_validation.py` (single-file)
+**Status note**: Resolver/acquisition calibration with an external manual
+reference; it does not substitute for finalized Targeted workbook validation.
+
+---
+
+### `compare_workbooks.py`
+
+**Purpose**: Compare all workbook sheets with an explicit numeric tolerance.
+**Topic group**: `compare_workbooks.py` (single-file)
+**Status note**: Shared workbook regression oracle for Targeted validation and
+operator comparisons. Dynamic metadata handling belongs to this comparator.
+
+---
+
 ### `targeted_istd_benchmark.py`
 
 **Purpose**: Run strict targeted ISTD benchmark for untargeted alignment.

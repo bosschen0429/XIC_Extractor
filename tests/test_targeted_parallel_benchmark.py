@@ -4,13 +4,39 @@ from pathlib import Path
 
 import pytest
 
-from scripts.benchmark_parallel import (
-    _run_extraction_once,
+from tools.diagnostics.compare_workbooks import WorkbookCompareResult
+from tools.diagnostics.targeted_parallel_benchmark import (
     build_run_specs,
     run_benchmark,
 )
-from scripts.compare_workbooks import WorkbookCompareResult
-from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.applications.targeted.output_boundary import (
+    TargetedOutputBoundaryError,
+)
+
+
+def test_parallel_benchmark_reports_publication_rejection(
+    tmp_path, monkeypatch, capsys
+):
+    from tools.diagnostics import targeted_parallel_benchmark as benchmark
+
+    def fail(**_kwargs):
+        raise TargetedOutputBoundaryError("finalized output unavailable")
+
+    monkeypatch.setattr(benchmark, "run_benchmark", fail)
+    result = benchmark.main(
+        [
+            "--base-dir",
+            str(tmp_path),
+            "--data-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--workers",
+            "1",
+        ]
+    )
+    assert result == 2
+    assert capsys.readouterr().err.strip() == "finalized output unavailable"
 
 
 def test_build_run_specs_uses_expected_mode_worker_matrix_and_output_dirs(
@@ -140,102 +166,11 @@ def test_run_benchmark_writes_summary_csv(tmp_path: Path) -> None:
     assert "XIC Results!R2C3: 1 != 2" in summary
 
 
-def test_run_extraction_once_applies_data_dir_override_before_validation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_dir = tmp_path / "config"
-    validation_dir = tmp_path / "validation"
-    dll_dir = tmp_path / "dll"
-    validation_dir.mkdir()
-    dll_dir.mkdir()
-    _write_benchmark_settings(
-        config_dir,
-        data_dir=tmp_path / "placeholder_missing",
-        dll_dir=dll_dir,
-    )
-    _write_benchmark_targets(config_dir)
-    captured_configs: list[ExtractionConfig] = []
-    captured: dict[str, object] = {}
-
-    def fake_run(config, targets, *, model_selection_expected_diff_approvals=None):
-        captured_configs.append(config)
-        captured["targets"] = targets
-        captured["approvals"] = model_selection_expected_diff_approvals
-        return object()
-
-    monkeypatch.setattr("scripts.benchmark_parallel.extractor.acquire", fake_run)
-    monkeypatch.setattr(
-        "scripts.benchmark_parallel.write_excel_from_run_output",
-        lambda _config, _targets, _output, *, output_path: output_path,
-    )
-
-    workbook_path = _run_extraction_once(
-        base_dir=tmp_path,
-        data_dir=validation_dir,
-        mode="serial",
-        workers=1,
-        output_dir=tmp_path / "out",
-    )
-
-    assert captured_configs[0].data_dir == validation_dir
-    assert captured["approvals"] is None
-    assert workbook_path == tmp_path / "out" / "xic_results_serial_w1.xlsx"
-
-
-def test_run_extraction_once_applies_additional_settings_overrides(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_dir = tmp_path / "config"
-    validation_dir = tmp_path / "validation"
-    dll_dir = tmp_path / "dll"
-    validation_dir.mkdir()
-    dll_dir.mkdir()
-    _write_benchmark_settings(
-        config_dir,
-        data_dir=tmp_path / "placeholder_missing",
-        dll_dir=dll_dir,
-    )
-    _write_benchmark_targets(config_dir)
-    captured_configs: list[ExtractionConfig] = []
-    captured: dict[str, object] = {}
-
-    def fake_run(config, targets, *, model_selection_expected_diff_approvals=None):
-        captured_configs.append(config)
-        captured["order"] = config.injection_order_source.read_bytes()
-        captured["targets"] = targets
-        captured["approvals"] = model_selection_expected_diff_approvals
-        return object()
-
-    monkeypatch.setattr("scripts.benchmark_parallel.extractor.acquire", fake_run)
-    monkeypatch.setattr(
-        "scripts.benchmark_parallel.write_excel_from_run_output",
-        lambda _config, _targets, _output, *, output_path: output_path,
-    )
-
-    order = b"Sample_Name,Injection_Order\nSampleA,1\n"
-    (tmp_path / "order.csv").write_bytes(order)
-    _run_extraction_once(
-        base_dir=tmp_path,
-        data_dir=validation_dir,
-        mode="process",
-        workers=4,
-        output_dir=tmp_path / "out",
-        settings_overrides={"injection_order_source": str(tmp_path / "order.csv")},
-    )
-
-    assert captured_configs[0].data_dir == validation_dir
-    assert captured["order"] == order
-    assert not captured_configs[0].injection_order_source.exists()
-    assert captured_configs[0].parallel_mode == "process"
-    assert captured_configs[0].parallel_workers == 4
-    assert captured["approvals"] is None
-
-
 def test_benchmark_parallel_script_help_runs_from_documented_path() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     completed = subprocess.run(
-        [sys.executable, "scripts/benchmark_parallel.py", "--help"],
+        [sys.executable, "tools/diagnostics/targeted_parallel_benchmark.py", "--help"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -243,14 +178,17 @@ def test_benchmark_parallel_script_help_runs_from_documented_path() -> None:
     )
 
     assert completed.returncode == 0
-    assert "Benchmark serial and process RAW extraction modes." in completed.stdout
+    assert (
+        "Benchmark serial and process finalized Targeted application runs."
+        in completed.stdout
+    )
 
 
 @pytest.mark.parametrize("workers", ["0", "bad"])
 def test_benchmark_parallel_rejects_invalid_workers(
     tmp_path: Path, workers: str
 ) -> None:
-    import scripts.benchmark_parallel as module
+    import tools.diagnostics.targeted_parallel_benchmark as module
 
     with pytest.raises(SystemExit) as exc_info:
         module.main(["--data-dir", str(tmp_path), "--workers", workers])
@@ -261,31 +199,3 @@ def test_benchmark_parallel_rejects_invalid_workers(
 def _fake_timer():
     values = iter([0.0, 1.0, 1.0, 3.0, 3.0, 6.0])
     return lambda: next(values)
-
-
-def _write_benchmark_settings(
-    config_dir: Path, *, data_dir: Path, dll_dir: Path
-) -> None:
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(
-        config_dir, settings={"data_dir": str(data_dir), "dll_dir": str(dll_dir)}
-    )
-
-
-def _write_benchmark_targets(config_dir: Path) -> None:
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(
-        config_dir,
-        targets=[
-            dict(
-                label="ISTD",
-                mz="258.1085",
-                expected_rt_min="9",
-                cid_nl_tag="dR",
-                role="istd",
-                istd_pair="",
-            )
-        ],
-    )

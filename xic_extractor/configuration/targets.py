@@ -9,7 +9,6 @@ from xic_extractor.configuration.cid_nl_profile import (
 )
 from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
-    OPTIONAL_TARGET_METADATA_FIELDS,
     TARGET_FIELDS,
     _read_target_rows,
     normalize_target_row,
@@ -26,8 +25,6 @@ from xic_extractor.configuration.targeted_identification import (
 )
 
 LOGGER = logging.getLogger(__name__)
-
-SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
 def _read_targets(path: Path, *, identification_methods=None) -> list[Target]:
@@ -115,10 +112,7 @@ def _parse_target_row(
             row[retired[0]],
             "unsupported target schema; use expected_rt_min, method and role",
         )
-    values = {
-        field: str(row.get(field, "")).strip()
-        for field in (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
-    }
+    values = {field: str(row.get(field, "")).strip() for field in TARGET_FIELDS}
     label = values["label"]
     if not label:
         raise _config_error(path, row_number, "label", label, "must not be empty")
@@ -192,38 +186,7 @@ def _parse_target_row(
         cid_nl_tag=tag,
         method_name=chosen if method else "",
         identification_method=method,
-        sample_applicability=_parse_target_metadata_enum(
-            path,
-            row_number,
-            "sample_applicability",
-            values["sample_applicability"],
-            SAMPLE_APPLICABILITIES,
-            default="all",
-        ),
     )
-
-
-def _parse_target_metadata_enum(
-    path: Path,
-    row_number: int,
-    field: str,
-    value: str,
-    allowed: frozenset[str],
-    *,
-    default: str,
-) -> str:
-    normalized = value.strip().lower()
-    if normalized == "":
-        return default
-    if normalized not in allowed:
-        raise _config_error(
-            path,
-            row_number,
-            field,
-            value,
-            f"must be one of {', '.join(sorted(allowed))} or blank",
-        )
-    return normalized
 
 
 def read_targets(path: Path) -> tuple[Target, ...]:

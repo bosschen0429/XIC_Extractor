@@ -24,9 +24,8 @@ TARGETS_HEADERS = (
     "Expected product m/z",
     "NL ppm warn",
     "NL ppm max",
-    "Sample applicability",
 )
-_TEXT = frozenset({"Label", "Role", "ISTD Pair", "Sample applicability"})
+_TEXT = frozenset({"Label", "Role", "ISTD Pair"})
 _FORMATS = {
     "m/z": "0.0000",
     "Expected product m/z": "0.0000",
@@ -62,7 +61,6 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
             expected_product,
             target.nl_ppm_warn,
             target.nl_ppm_max,
-            target.sample_applicability,
         ) + (
             tuple(_excel_text(value) for value in (target.method_name,))
             if method_headers

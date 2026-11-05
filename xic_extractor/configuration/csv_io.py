@@ -21,8 +21,6 @@ LEGACY_TARGET_FIELDS = (
     "delta_mass_method",
     "quant_position",
 )
-OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
-TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
 
@@ -138,9 +136,7 @@ def write_config_snapshot(
 ) -> None:
     """Write machine-owned run inputs, not user-editable method documents."""
     fields = tuple(
-        dict.fromkeys(
-            [*TARGET_WRITE_FIELDS, *(key for row in target_rows for key in row)]
-        )
+        dict.fromkeys([*TARGET_FIELDS, *(key for row in target_rows for key in row)])
     )
     tables = (
         (

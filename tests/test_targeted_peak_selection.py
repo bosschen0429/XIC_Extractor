@@ -1,4 +1,3 @@
-import inspect
 from dataclasses import replace
 
 import numpy as np
@@ -197,9 +196,7 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     )
 
     config = _config(tmp_path)
-    target = replace(
-        _target(sample_applicability="rna_containing"), rt_min=7.0, rt_max=10.5
-    )
+    target = replace(_target(), rt_min=7.0, rt_max=10.5)
     rt = np.linspace(7.0, 10.5, 701)
     intensity = 30.0 + scale * (
         1000.0 * np.exp(-0.5 * ((rt - (8.0 + shift)) / 0.08) ** 2)
@@ -425,15 +422,6 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
         )
 
 
-def test_production_handoff_runtime_has_no_cwt_audit_dependency() -> None:
-    source = inspect.getsource(targeted_peak_selection)
-
-    assert "add_cwt_proposals_for_audit" not in source
-    assert "peak_candidate_table" not in source
-    assert "peak_candidate_boundaries" not in source
-    assert "peak_candidate_audit" not in source
-
-
 def _config(tmp_path) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path,
@@ -450,7 +438,7 @@ def _config(tmp_path) -> ExtractionConfig:
     )
 
 
-def _target(*, sample_applicability: str = "all") -> Target:
+def _target() -> Target:
     return Target(
         label="Analyte",
         mz=258.1085,
@@ -462,7 +450,6 @@ def _target(*, sample_applicability: str = "all") -> Target:
         nl_ppm_max=50.0,
         is_istd=False,
         istd_pair="ISTD",
-        sample_applicability=sample_applicability,
     )
 
 

@@ -100,9 +100,6 @@ class RtEvidenceFacts:
 @dataclass(frozen=True)
 class BoundaryEvidenceFacts:
     proposal_sources: tuple[str, ...] = ()
-    cwt_same_apex_observed: bool = False
-    cwt_best_scale: float | None = None
-    cwt_ridge_persistence: float | None = None
     chrom_peak_segment_present: bool = False
     boundary_sources: tuple[str, ...] = ("candidate_interval",)
 
@@ -265,11 +262,6 @@ def _signal_set_from_facts(
         concerns.append("hard_quality_flag")
         caps.append("hard_quality_flag_cap")
 
-    if facts.boundary.cwt_same_apex_observed and (
-        not chemical.neutral_loss_required or bool(chemical.nl_match)
-    ):
-        support.append("cwt_same_apex_support")
-
     ms2_present_for_semantics = (
         facts.chemical.ms2_present if facts.chemical.neutral_loss_required else None
     )
@@ -429,17 +421,8 @@ def _boundary_facts(candidate: PeakCandidate) -> BoundaryEvidenceFacts:
     proposal_sources = tuple(
         dict.fromkeys(str(source) for source in candidate.proposal_sources)
     )
-    cwt_best_scale = candidate.cwt_best_scale
-    cwt_ridge_persistence = candidate.cwt_ridge_persistence
     return BoundaryEvidenceFacts(
         proposal_sources=proposal_sources,
-        cwt_same_apex_observed=(
-            cwt_best_scale is not None
-            or cwt_ridge_persistence is not None
-            or "centwave_cwt" in proposal_sources
-        ),
-        cwt_best_scale=cwt_best_scale,
-        cwt_ridge_persistence=cwt_ridge_persistence,
         chrom_peak_segment_present="chrom_peak_segment" in proposal_sources,
     )
 

@@ -37,24 +37,6 @@ def test_consistency_classifier_splits_nl_dropout_from_conflict() -> None:
     )
 
 
-def test_consistency_classifier_allows_cwt_as_shape_context_but_not_chemistry() -> None:
-    labels = classify_evidence_consistency(
-        EvidenceSignalSet(
-            support_labels=("local_sn_strong", "trace_clean"),
-            concern_labels=("nl_fail",),
-            proposal_sources=("centwave_cwt", "local_minimum"),
-            ms2_present=True,
-            nl_match=False,
-            raw_score=20,
-        )
-    )
-
-    assert labels == (
-        "ms1_coherent",
-        "plausible_nl_dropout",
-    )
-
-
 def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry() -> None:
     labels = classify_evidence_consistency(
         EvidenceSignalSet(
@@ -64,25 +46,6 @@ def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry() -> No
             ms2_present=True,
             nl_match=False,
             raw_score=20,
-        )
-    )
-
-    assert labels == (
-        "ms1_coherent",
-        "plausible_nl_dropout",
-    )
-
-
-def test_consistency_soft_trace_flags_are_context_warning_with_cwt() -> None:
-    labels = classify_evidence_consistency(
-        EvidenceSignalSet(
-            support_labels=("local_sn_strong", "cwt_same_apex_support"),
-            concern_labels=("nl_fail", "low_trace_continuity"),
-            proposal_sources=("centwave_cwt", "local_minimum"),
-            quality_flags=("low_trace_continuity",),
-            ms2_present=True,
-            nl_match=False,
-            raw_score=35,
         )
     )
 
@@ -118,9 +81,9 @@ def test_decision_semantics_maps_coherent_multievidence_to_accepted() -> None:
                 "rt_prior_close",
                 "local_sn_strong",
                 "trace_clean",
-                "cwt_same_apex_support",
+                "shape_clean",
             ),
-            proposal_sources=("legacy_savgol", "centwave_cwt"),
+            proposal_sources=("legacy_savgol",),
             ms2_present=True,
             nl_match=True,
             raw_score=95,
@@ -133,7 +96,6 @@ def test_decision_semantics_maps_coherent_multievidence_to_accepted() -> None:
         "ms1_coherent",
         "candidate_aligned_ms2_nl",
         "role_aware_rt_support",
-        "cwt_boundary_morphology_context",
     )
     assert decision.conflict_reasons == ()
     assert decision.not_counted_reasons == ()
@@ -250,18 +212,6 @@ def test_decision_semantics_does_not_let_medium_caps_force_not_counted() -> None
     assert "trace_morphology_conflict" in decision.conflict_reasons
     assert decision.review_reasons == ("trace_morphology_review",)
     assert decision.not_counted_reasons == ()
-
-
-def test_decision_semantics_keeps_cwt_as_context_not_standalone_authority() -> None:
-    decision = decision_semantics_from_signal_set(
-        EvidenceSignalSet(
-            proposal_sources=("centwave_cwt",),
-        )
-    )
-
-    assert decision.decision_class == "review"
-    assert decision.support_reasons == ("cwt_boundary_morphology_context",)
-    assert decision.review_reasons == ("cwt_requires_correlated_evidence",)
 
 
 def test_decision_chrom_segment_is_context_not_standalone_authority() -> None:

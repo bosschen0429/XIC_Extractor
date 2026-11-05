@@ -270,8 +270,6 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         exclusions = row.get("Projection Exclusion Reasons", "")
         if "file_error" in exclusions:
             return "RAW 處理失敗"
-        if "target_sample_applicability:" in exclusions:
-            return "不適用此樣本"
         return "已依規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
         return "證據衝突，身分未定"

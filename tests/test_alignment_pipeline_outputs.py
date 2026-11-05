@@ -96,35 +96,6 @@ def test_alignment_metadata_records_backfill_scope() -> None:
     assert metadata["scope_warning"] == "diagnostic_only_incomplete_scope"
 
 
-def test_alignment_metadata_records_audit_evidence_mode() -> None:
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
-        output_level="validation",
-        peak_config=_peak_config(),
-        backfill_scope="production-equivalent",
-        output_scope="production-equivalent",
-        audit_evidence_mode="none",
-        requested_audit_evidence_mode="auto",
-        heavy_audit_enabled=False,
-        audit_evidence_mode_reason="production_equivalent_default_no_audit",
-    )
-
-    assert metadata["audit_evidence_mode"] == "none"
-    assert metadata["requested_audit_evidence_mode"] == "auto"
-    assert metadata["heavy_audit_enabled"] == "False"
-    assert (
-        metadata["request_plan_version"]
-        == "alignment-parity-scoped-owner-backfill-request-plan"
-    )
-    assert (
-        metadata["audit_evidence_mode_reason"]
-        == "production_equivalent_default_no_audit"
-    )
-
-
 def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     tmp_path: Path,
 ) -> None:

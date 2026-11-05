@@ -5,8 +5,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from scripts.benchmark_parallel import _run_extraction_once
-from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
+from tools.diagnostics.compare_workbooks import WorkbookCompareResult, compare_workbooks
+from tools.diagnostics.targeted_validation_run import run_targeted_case
+from xic_extractor.applications.targeted.output_boundary import (
+    TargetedOutputBoundaryError,
+)
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.tabular_io import write_delimited_rows
@@ -115,7 +118,7 @@ def build_validation_specs(
                     output_path=(
                         output_dir / f"xic_results_{parallel_mode}_w{workers}.xlsx"
                     ),
-                    command=_harness_command(
+                    command=_validation_command(
                         suite_name=suite_name,
                         base_dir=base_dir,
                         output_root=output_root,
@@ -145,7 +148,7 @@ def build_validation_specs(
                         output_dir / f"xic_results_{parallel_mode}_w{workers}.xlsx"
                     ),
                     command=(
-                        *_harness_command(
+                        *_validation_command(
                             suite_name=suite_name,
                             base_dir=base_dir,
                             output_root=output_root,
@@ -207,7 +210,7 @@ def run_validation_specs(
     output_root: Path,
     run_id: str,
     baseline_root: Path | None = None,
-    extraction_runner: ExtractionRunner = _run_extraction_once,
+    extraction_runner: ExtractionRunner = run_targeted_case,
     manual_validation_runner: ManualValidationRunner | None = None,
     comparer: Comparer = compare_workbooks,
 ) -> list[ValidationRunResult]:
@@ -291,7 +294,13 @@ def _run_one_spec(
                 )
         else:
             raise ValueError(f"Unknown validation kind: {spec.kind}")
-    except (ConfigError, OSError, RawReaderError, ValueError) as exc:
+    except (
+        ConfigError,
+        OSError,
+        RawReaderError,
+        TargetedOutputBoundaryError,
+        ValueError,
+    ) as exc:
         return ValidationRunResult(
             suite=spec.name,
             kind=spec.kind,
@@ -340,7 +349,7 @@ def _manual_2raw_command(
         "uv",
         "run",
         "python",
-        r"scripts\targeted_manual_validation.py",
+        r"tools\diagnostics\targeted_manual_validation.py",
         "--manual-workbook",
         str(DEFAULT_MANUAL_WORKBOOK),
         "--nosplit-raw",
@@ -360,7 +369,7 @@ def _manual_2raw_command(
     )
 
 
-def _harness_command(
+def _validation_command(
     *,
     suite_name: str,
     base_dir: Path,
@@ -375,7 +384,7 @@ def _harness_command(
         "uv",
         "run",
         "python",
-        r"scripts\validation_harness.py",
+        r"tools\diagnostics\targeted_validation.py",
         "--suite",
         suite_name,
         "--base-dir",
@@ -472,7 +481,7 @@ def _write_validation_summary(
 
 
 def _run_manual_validation_command(argv: Sequence[str]) -> int:
-    from scripts import targeted_manual_validation
+    from tools.diagnostics import targeted_manual_validation
 
     return targeted_manual_validation.main(argv)
 

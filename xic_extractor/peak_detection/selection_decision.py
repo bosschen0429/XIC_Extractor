@@ -113,13 +113,6 @@ def _evidence_sources(hypothesis: PeakHypothesis) -> tuple[str, ...]:
     if evidence.rt_prior_min is not None or any("rt" in reason for reason in reasons):
         sources.append("role_aware_rt")
     if (
-        evidence.cwt_best_scale is not None
-        or evidence.cwt_ridge_persistence is not None
-        or "centwave_cwt" in hypothesis.audit.proposal_sources
-        or "cwt_boundary_morphology_context" in reasons
-    ):
-        sources.append("cwt_boundary_morphology_context")
-    if (
         "chrom_peak_segment" in hypothesis.audit.proposal_sources
         or "chrom_peak_segment_context" in reasons
     ):

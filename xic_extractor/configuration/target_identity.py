@@ -306,7 +306,6 @@ def _validate_target(target: Target) -> None:
         "method": target.method_name or target.cid_nl_tag,
         "role": "istd" if target.is_istd else "analyte",
         "istd_pair": target.istd_pair,
-        "sample_applicability": target.sample_applicability,
     }
     try:
         parsed = _parse_target_row(

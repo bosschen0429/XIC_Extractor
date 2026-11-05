@@ -244,7 +244,7 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
 - Targeted selection consumes the selected physical answer from
   `physical_peak_candidate_adapter.answer_selected_physical_candidate`, which owns
   candidate-to-segment binding and reuse of prepared evaluations.
-  `candidate_scoring` owns CWT support and score summaries.
+  `candidate_scoring` owns evidence scoring and score summaries.
 
 ## Module Naming
 
