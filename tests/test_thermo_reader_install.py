@@ -96,6 +96,7 @@ def test_tampered_download_leaves_the_existing_install_untouched(
     assert (target / "Reader.dll").read_bytes() == b"working"
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(os.name != "nt", reason="Windows denies replacing an open DLL")
 @pytest.mark.parametrize("installed_reader", [b"reader", b"outdated"])
 def test_reinstall_handles_dlls_in_use_on_windows(tmp_path, packages, installed_reader):

@@ -253,6 +253,7 @@ PACKAGING_SOURCE_DIRECTORIES = (
 )
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows DLL search order")
 def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path):
     from PyInstaller.depend.bindepend import resolve_library_path
@@ -761,7 +762,7 @@ def _build_workflow_script(step_id: str) -> str:
     return textwrap.dedent(step.split("        run: |\n", 1)[1])
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell release workflow")
 @pytest.mark.parametrize(
     "case",
     ("release", "wrong_version", "expression_tag", "branch", "expression_branch"),
@@ -779,6 +780,10 @@ def test_package_metadata_treats_git_refs_as_data(tmp_path, case):
     is_tag = case not in {"branch", "expression_branch"}
     ref = f"refs/{'tags' if is_tag else 'heads'}/{ref_name}"
     source = _build_workflow_script("meta")
+    # Run the Windows workflow's shell logic with this OS's test interpreter.
+    source = source.replace(
+        r".\.venv\Scripts\python.exe", "'" + sys.executable.replace("'", "''") + "'"
+    )
     # Model Actions' source interpolation so the regression reaches the shell.
     source = source.replace("${{ github.ref }}", ref).replace(
         "${{ github.ref_name }}", ref_name
@@ -814,7 +819,7 @@ def test_package_metadata_treats_git_refs_as_data(tmp_path, case):
         assert not output.exists()
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell release workflow")
 @pytest.mark.parametrize(
     ("runs", "accepted"),
     (
@@ -860,7 +865,7 @@ function Invoke-RestMethod {
     assert (completed.returncode == 0) is accepted, completed.stderr
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell release workflow")
 @pytest.mark.parametrize(
     ("outcome", "accepted"),
     (("success", True), ("nonzero", False), ("timeout", False), ("failed", False)),

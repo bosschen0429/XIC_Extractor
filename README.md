@@ -46,9 +46,10 @@ uv run xic-workbench
 
 `uv` finds or downloads Python 3.15 automatically. If an older `uv` cannot find
 that version, update `uv` first. Windows release packages and all CI lanes use
-the same locked Python 3.15 dependency stack. Linux runs the non-browser,
-non-build compatibility tests in CI; this does not yet claim full Linux analysis
-or desktop-package support. See [testing](docs/agent/testing.md).
+the same locked Python 3.15 dependency stack. Linux owns ordinary CI tests;
+Windows retains OS/.NET integration, browser and packaging checks. This does not
+yet claim full Linux analysis or desktop-package support. See
+[testing](docs/agent/testing.md).
 
 The command opens a local browser workspace for analysis and result review.
 On later launches, double-click `launch_gui.vbs` for a console-free start, or

@@ -136,9 +136,9 @@ CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. The browser lane runs on its own GitHub-hosted Windows
 VM, independently of the scientific and packaging tests. Relevance selects the
 lane; a selected lane runs every browser test. The required `test (Python 3.12)`
-check succeeds only when both the Python and browser jobs succeed. Failures,
-cancellations, and skipped jobs fail that check. Browser deadlines are hang
-watchdogs: CI sets
+check succeeds only when the Linux Python, Windows integration and browser jobs
+succeed. Failures, cancellations, and skipped jobs fail that check. Browser
+deadlines are hang watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
 while local runs keep Playwright's defaults. Browser failures retain
 `browser-trace.zip` and `browser-events.json` in unique directories under ignored
@@ -164,15 +164,17 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 85RAW runs are validation evidence only when the active Issue and method owner
 require them.
 
-The primary Windows test, browser and release-build lanes use Python 3.15.
-The Linux compatibility lane uses the same locked Python 3.15 stack with Node.js
-for embedded-JavaScript checks, but without RAW, .NET, or a browser. It runs the
-ordinary suite, including fake-reader tests; `requires_dotnet` marks the cases
-that call a real managed runtime. OS-specific tests retain their platform guards;
-optional host-tool checks report skips when unavailable. Browser, build, census,
-and serial coverage remain in the existing dedicated lanes. The
-required check retains its `test (Python 3.12)` name for branch protection and
-also requires the Linux compatibility lane to succeed.
+All runtime lanes use the same locked Python 3.15 stack. Linux owns the ordinary
+suite, including fake-reader, PowerShell release-script and embedded-JavaScript
+checks, without RAW, .NET or a browser. Windows integration runs only
+`windows_only` cases (Windows DLL search and file locking) and `requires_dotnet`
+cases (real managed calls), followed by the relevant serial packaging builds.
+Both jobs use the same affected-test plan on PRs; master runs their complete,
+disjoint portions. Browser checks retain their separate Windows VM, and the
+census runs once in lint. The required `test (Python 3.12)` name is retained only
+for branch protection: it aggregates these three test lanes and runs no 3.12
+interpreter. Default pytest contains no private-RAW-path tests; use the explicit
+configured RAW validation runner for RAW-backed evidence.
 
 Use the method-specific acceptance check when RAW-backed evidence is needed.
 The runner owns input checks and run metadata; tests do not require a separate

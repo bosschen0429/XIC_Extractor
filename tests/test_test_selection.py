@@ -475,6 +475,16 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
         ),
         ("push", (), None, "parallel", 11, 11),
         ("push", (), None, "parallel", 5, 5),
+        ("push", (), None, "windows", 11, 11),
+        ("push", (), None, "windows", 5, 5),
+        (
+            "pull_request",
+            ("tests/test_readme.py",),
+            ("tests/test_readme.py",),
+            "windows",
+            5,
+            0,
+        ),
         ("push", (), None, "browser", 12, 12),
         ("push", (), None, "browser", 5, 5),
         ("push", (), None, "browser_install", 14, 14),
@@ -501,7 +511,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
 ) -> None:
     pwsh = shutil.which("pwsh")
     if pwsh is None:
-        pytest.skip("PowerShell is required to exercise the Windows CI step")
+        pytest.skip("PowerShell is required to exercise the CI steps")
 
     workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))
     steps = [
@@ -509,6 +519,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
             step for step in workflow["jobs"][job]["steps"] if step.get("name") == name
         )
         for job, name in (
+            ("windows-integration", "Test"),
             ("python-tests", "Test"),
             ("browser", "Plan browser coverage"),
             ("browser", "Browser test"),
@@ -553,12 +564,20 @@ function .\.venv\Scripts\python.exe {
         }
     } elseif ($args[1] -eq 'pytest') {
         $pytestArgs = $args | Select-Object -Skip 2
-        $phase = if ($pytestArgs -contains '4') { 'parallel' }
+        $phase = if ($pytestArgs -match 'windows_only or requires_dotnet') { 'windows' }
+            elseif ($pytestArgs -contains '4') { 'parallel' }
             elseif ($pytestArgs -contains '-m') { 'browser' } else { 'serial' }
         if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
             $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
         }
     }
+}
+function uv {
+    if (($args[0..2] -join ' ') -ne 'run --no-sync python') {
+        throw 'Unexpected uv invocation'
+    }
+    $pythonArgs = @($args | Select-Object -Skip 3)
+    & .\.venv\Scripts\python.exe @pythonArgs
 }
 """
     results = []
@@ -601,7 +620,7 @@ function .\.venv\Scripts\python.exe {
     browser_selected = "not browser_e2e" not in selection
     packaging_selected = "not packaging_build" not in selection
     browser_ran = browser_selected and failed_phase != "browser_install"
-    assert len(pytest_calls) == runs_selection + browser_ran + packaging_selected
+    assert len(pytest_calls) == 2 * runs_selection + browser_ran + packaging_selected
     assert any(call[:2] == ["-m", "playwright"] for call in calls) == browser_selected
     if packaging_selected:
         serial = next(call for call in pytest_calls if "-n" not in call)
@@ -609,11 +628,15 @@ function .\.venv\Scripts\python.exe {
     if not runs_selection:
         return
 
-    parallel = pytest_calls[0]
-    assert parallel[parallel.index("-n") + 1] == "4"
+    parallel_calls = [call for call in pytest_calls if "4" in call]
+    assert len(parallel_calls) == 2
     selected_files = list(files or ())
-    assert parallel[len(parallel) - len(selected_files) :] == selected_files
-    parallel_expression = Expression.compile(parallel[parallel.index("-m", 2) + 1])
+    for call in parallel_calls:
+        assert call[call.index("-n") + 1] == "4"
+        assert call[len(call) - len(selected_files) :] == selected_files
+    windows_expression, linux_expression = (
+        Expression.compile(call[call.index("-m", 2) + 1]) for call in parallel_calls
+    )
     browser_expression = None
     if browser_ran:
         browser = next(call for call in pytest_calls if "0" in call)
@@ -629,22 +652,27 @@ function .\.venv\Scripts\python.exe {
         "packaging_build",
         "current_repository_census",
         "serial_ci",
+        "windows_only",
+        "requires_dotnet",
     )
     for flags in itertools.product((False, True), repeat=len(markers)):
         marked = {
             marker for marker, enabled in zip(markers, flags, strict=True) if enabled
         }
-        in_parallel = parallel_expression.evaluate(marked.__contains__)
+        in_windows = windows_expression.evaluate(marked.__contains__)
+        in_linux = linux_expression.evaluate(marked.__contains__)
         in_browser = (
             browser_expression.evaluate(marked.__contains__)
             if browser_expression is not None
             else False
         )
         if failed_phase != "browser_install":
-            assert int(in_parallel) + int(in_browser) == int(
+            assert int(in_windows) + int(in_linux) + int(in_browser) == int(
                 selected_expression.evaluate(marked.__contains__)
             ), marked
-        assert not (in_parallel and "browser_e2e" in marked)
+        assert not (in_linux and marked & {"windows_only", "requires_dotnet"})
+        assert not (in_windows and not marked & {"windows_only", "requires_dotnet"})
+        assert not ((in_windows or in_linux) and "browser_e2e" in marked)
         assert not (in_browser and "browser_e2e" not in marked)
 
 
@@ -653,7 +681,7 @@ function .\.venv\Scripts\python.exe {
     [(None, "success")]
     + [
         (lane, result)
-        for lane in ("python-tests", "browser", "compatibility")
+        for lane in ("python-tests", "browser", "windows-integration")
         for result in ("failure", "cancelled", "skipped")
     ],
 )
@@ -666,7 +694,7 @@ def test_ci_required_check_rejects_any_unsuccessful_lane(
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     gate = jobs["test"]
     assert gate["name"] == "test (Python 3.12)"
-    assert set(gate["needs"]) == {"python-tests", "browser", "compatibility"}
+    assert set(gate["needs"]) == {"python-tests", "browser", "windows-integration"}
     assert gate["if"] == "${{ always() }}"
     assert jobs["browser"]["runs-on"] == "windows-latest"
     assert "needs" not in jobs["browser"]

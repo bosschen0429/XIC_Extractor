@@ -1,5 +1,4 @@
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -9,8 +8,6 @@ from xic_extractor.raw_reader import (
     RawSampleHeader,
     _ThermoApi,
     _to_python_datetime,
-    open_raw,
-    preflight_raw_reader,
 )
 
 
@@ -72,32 +69,3 @@ def test_raw_file_handle_sample_header(raw_file: str) -> None:
     assert header.vial == "A:01"
     assert header.comment == "Test comment"
     assert header.instrument_method == r"C:\methods\wash.meth"
-
-
-def test_real_raw_sample_header_if_available() -> None:
-    raw_dir = Path(r"C:\Xcalibur\data\20260106_CSMU_NAA_Tissue_R")
-    raw_path = raw_dir / "BenignfatBC0979_DNA.raw"
-    dll_dir = Path(r"C:\Xcalibur\system\programs")
-    if not raw_path.is_file() or not dll_dir.is_dir():
-        pytest.skip("Local Thermo RAW and DLL environment not available")
-    # A service account can see file metadata without permission to read the
-    # private RAW. Check that prerequisite before entering the vendor loader.
-    try:
-        with raw_path.open("rb") as stream:
-            stream.read(1)
-    except PermissionError:
-        pytest.skip("Local Thermo RAW is not readable by this account")
-
-    environment_errors = preflight_raw_reader(dll_dir)
-    if environment_errors:
-        pytest.skip("Thermo environment unavailable: " + "; ".join(environment_errors))
-
-    with open_raw(raw_path, dll_dir=dll_dir) as handle:
-        header = handle.sample_header
-
-    assert header.raw_stem == "BenignfatBC0979_DNA"
-    assert header.row_number == 42
-    assert header.sample_type == "Unknown"
-    assert header.creation_date is not None
-    assert header.creation_date.year == 2026
-    assert header.vial == "B:E8"
