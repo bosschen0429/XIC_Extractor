@@ -197,18 +197,24 @@ def test_dll_readiness_follows_validation_not_just_a_nonempty_path(workbench, tm
     from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
     page = workbench
-    item = page.locator("#target-checklist li").filter(
-        has_text="RawFileReader DLL 資料夾"
-    )
+    item = page.locator("#target-checklist li").filter(has_text="RAW 讀取環境")
     expect(item).not_to_have_class("ok")
     valid = tmp_path / "valid-reader"
     valid.mkdir()
     for name in EXPECTED_THERMO_DLLS:
         (valid / name).write_bytes(b"test assembly")
-    page.locator("#t-dll_dir").fill(str(valid))
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        str(valid),
+    )
     expect(item).to_have_class("ok")
     expect(page.locator("#reader-setup-dll")).to_be_hidden()
-    page.locator("#t-dll_dir").fill(str(tmp_path / "not-installed"))
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        str(tmp_path / "not-installed"),
+    )
     expect(item).not_to_have_class("ok")
     expect(item).to_have_class("todo")
     expect(page.locator("#reader-setup-dll")).to_be_visible()
@@ -246,13 +252,13 @@ def test_real_browser_reload_and_multiple_tabs_retire_only_after_last_close(
             first = context.new_page()
             first.on("pageerror", lambda error: browser_errors.append(str(error)))
             first.goto(url)
-            expect(first.locator("#t-dll_dir")).to_be_visible()
+            expect(first.locator("#t-data_dir")).to_be_visible()
             first.reload()
-            expect(first.locator("#t-dll_dir")).to_be_visible()
+            expect(first.locator("#t-data_dir")).to_be_visible()
             second = context.new_page()
             second.on("pageerror", lambda error: browser_errors.append(str(error)))
             second.goto(url)
-            expect(second.locator("#t-dll_dir")).to_be_visible()
+            expect(second.locator("#t-data_dir")).to_be_visible()
             first.close()
             assert process.poll() is None
             assert _request(url, "/api/review")[0] == 200
@@ -385,6 +391,20 @@ def _view(page, name):
     expect(page.locator(f"#workspace-{name}")).to_be_visible()
 
 
+def _set_reader_path(page, value):
+    # Machine setup is a precondition here, not the user-facing analysis journey.
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        value,
+    )
+
+
+def _open_results(page):
+    page.locator("#open-result").click()
+    expect(page.locator("#analysis-result")).to_be_visible()
+
+
 def _start(page, kind):
     page.locator(f"button[form={kind}-form][type=submit]").click()
 
@@ -456,7 +476,7 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 
     monkeypatch.setattr(server, "choose_path", choose)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     field = page.locator("#source")
     field.fill("previous-selection")
     name = "選擇結果資料夾" if kind == "folder" else "選擇結果檔案"
@@ -477,9 +497,9 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 
 def test_navigation_and_theme_survive_reload(workbench):
     page = workbench
-    for view in ("untargeted", "curation", "review", "targeted"):
+    for view in ("untargeted", "targeted"):
         _view(page, view)
-        for other in {"targeted", "untargeted", "curation", "review"} - {view}:
+        for other in {"targeted", "untargeted"} - {view}:
             expect(page.locator(f"#workspace-{other}")).to_be_hidden()
     _view(page, "untargeted")
     initial = page.locator("html").get_attribute("data-theme")
@@ -491,31 +511,42 @@ def test_navigation_and_theme_survive_reload(workbench):
     expect(page.locator("#workspace-untargeted")).to_be_visible()
 
 
-def test_untargeted_module_switches_persist_and_follow_mode(workbench):
+def test_untargeted_only_submits_complete_analysis(workbench, config_dir):
     page = workbench
-    _view(page, "untargeted")
-    batch = page.locator("input[name=u-mode][value=discovery_batch]")
-    backfill = page.locator("#u-backfill-enabled")
-    expect(page.locator("input[name=u-mode][value=full]")).to_be_checked()
-    expect(backfill).to_be_checked()
-    backfill.uncheck()
-    batch.check()
-    expect(backfill).to_be_hidden()
-    with page.expect_response(
-        lambda response: response.url.endswith("/api/untargeted/save")
-    ):
-        page.locator("#untargeted-save").click()
+    draft = config_dir / "discovery_gui.json"
+    draft.write_text(
+        json.dumps(
+            {
+                "mode": "align_only",
+                "alignment_enabled": False,
+                "backfill_enabled": False,
+                "discovery_batch_index": "missing.csv",
+            }
+        )
+    )
     page.reload()
-    # Batch Discovery persists as a full run without Alignment.
-    expect(batch).to_be_checked()
-    expect(backfill).to_be_hidden()
-    page.locator("input[name=u-mode][value=align_only]").check()
-    expect(backfill).to_be_enabled()
-    expect(backfill).not_to_be_checked()
-    page.locator("input[name=u-mode][value=discovery_only]").check()
-    expect(backfill).to_be_hidden()
-    page.locator("input[name=u-mode][value=full]").check()
-    expect(backfill).to_be_enabled()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    _view(page, "untargeted")
+    for selector in (
+        "input[name=u-mode]",
+        "#u-backfill-enabled",
+        "#u-discovery_batch_index",
+        "#u-raw_file",
+    ):
+        expect(page.locator(selector)).to_have_count(0)
+    with page.expect_request("**/api/untargeted/save") as sent:
+        page.locator("#untargeted-save").click()
+    retired = {
+        "mode",
+        "backfill_enabled",
+        "alignment_enabled",
+        "raw_file",
+        "discovery_batch_index",
+        "execution_profile",
+    }
+    assert not retired & sent.value.post_data_json.keys()
+    expect(page.locator("#toasts")).to_contain_text("已儲存")
+    assert not retired & json.loads(draft.read_text()).keys()
 
 
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
@@ -712,8 +743,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
         expect(cell).to_have_css("text-align", "center")
-    expect(page.locator("#t-parallel_workers")).to_be_visible()
-    page.locator("#t-parallel_workers").fill("2")
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
     page.locator("#target-edit").click()
     expect(page.locator("#target-editor")).to_be_visible()
     editor_cells = page.locator(
@@ -739,8 +769,8 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     expect(
         page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True)
     ).to_have_value(tag)
-    assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
-    expect(page.locator("#t-parallel_workers")).to_have_value("2")
+    assert read_settings(config_dir=config_dir)["parallel_workers"] == ""
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
 
 
 @pytest.mark.parametrize("theme,mode", [("light", "all"), ("dark", "any")])
@@ -993,10 +1023,8 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     fake_runs, workbench, config_dir, tmp_path
 ):
     page = workbench
-    labels = page.locator("#targeted-data .path-line > label")
-    expect(labels).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
-    )
+    labels = page.locator("#targeted-data .path-line:visible > label")
+    expect(labels).to_have_text(["RAW 資料夾", "結果存放位置"])
     # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
@@ -1005,20 +1033,32 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#t-output_dir")).to_have_value(
         str(config_dir.parent / "output")
     )
+    # A location that does not exist yet is created by the run, not an error.
     chosen = tmp_path / "chosen-output"
     page.locator("#t-output_dir").fill(str(chosen))
+    page.locator("#t-output_dir").press("Tab")
+    expect(page.locator("#t-output_dir")).to_have_attribute("aria-invalid", "false")
     _start(page, "targeted")
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake progress"
     )
-    assert fake_runs.output_dirs == [chosen]
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
+    # Each run writes its own new folder inside the location; none is reused.
+    _start(page, "targeted")
+    for _ in range(100):
+        if len(fake_runs.output_dirs) == 2:
+            break
+        page.wait_for_timeout(50)
+    first, second = fake_runs.output_dirs
+    assert first.parent == second.parent == chosen
+    assert first != second
+    assert re.fullmatch(r"\d{8}_\d{6}_targeted(_.+)?", first.name)
     page.reload()
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
     expect(page.locator("#untargeted-paths .path-line:visible > label")).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
+        ["RAW 資料夾", "結果存放位置"]
     )
 
 
@@ -1045,28 +1085,13 @@ def test_empty_targeted_run_explains_where_to_add_a_target(workbench):
     assert requests == []
 
 
-@pytest.mark.parametrize(
-    ("mode", "input_label"),
-    [
-        ("full", "RAW 資料夾"),
-        ("discovery_only", "單一 RAW"),
-        ("align_only", "Discovery batch index"),
-    ],
-)
-def test_readiness_lists_mode_inputs_without_blocking_submit(
-    workbench, mode, input_label
-):
+def test_readiness_lists_analysis_inputs_without_blocking_submit(workbench):
     page = workbench
     _view(page, "untargeted")
-    page.locator(f"input[name=u-mode][value={mode}]").check()
     checklist = page.locator("#untargeted-checklist")
-    expect(checklist.locator("li.todo").filter(has_text=input_label)).to_have_count(1)
-    expect(checklist).to_contain_text("RawFileReader DLL")
-    expect(checklist).to_contain_text("輸出資料夾")
-    for label in {"RAW 資料夾", "單一 RAW", "Discovery batch index"} - (
-        {input_label, "RAW 資料夾"} if mode == "align_only" else {input_label}
-    ):
-        expect(checklist).not_to_contain_text(label)
+    expect(checklist).to_contain_text("RAW 資料夾")
+    expect(checklist).to_contain_text("RAW 讀取環境")
+    expect(checklist).to_contain_text("結果存放位置")
     expect(page.locator("button[form=untargeted-form][type=submit]")).to_be_enabled()
 
 
@@ -1120,9 +1145,7 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
     page = workbench
     if kind == "untargeted":
         _view(page, kind)
-        page.locator("input[name=u-mode][value=discovery_only]").check()
-        page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
-        page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+        page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))
         page.locator("#u-output_dir").fill(str(tmp_path / "results"))
     _start(page, kind)
     expect(page.locator("#analysis-job-message")).to_contain_text(
@@ -1212,7 +1235,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
             else None
         ),
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1267,7 +1290,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
 
     page = workbench
     report, _ = create_nearest_review_batch(tmp_path)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1337,7 +1360,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                     (kind, identity, json.dumps(payload)),
                 )
                 link_report_record(connection, ("C1", "S1", kind, identity))
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(25)
@@ -1398,7 +1421,7 @@ def test_review_download_survives_reload_and_keeps_original_product(
     else:
         source, product = create_review_batch(tmp_path)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(source))
     page.locator("#open-form button[type=submit]").click()
     link = page.get_by_role(
@@ -1421,7 +1444,7 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
 
     report, _ = create_review_batch(tmp_path)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1482,7 +1505,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
         if sample_count == 1
         else create_review_batch(tmp_path, sample_count=sample_count)[0]
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(db))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1556,7 +1579,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     opened = []
     _install_distinct_curve_raws(monkeypatch, opened)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1629,7 +1652,7 @@ def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(
     install_targeted_raws(monkeypatch, raw_dir, {"S1": 13000})
     path = write_rare_detection_workbook(tmp_path / "nd.xlsx")
     original = path.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(path))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1682,7 +1705,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
         (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.raw")
     workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1799,7 +1822,7 @@ def cached_paired_curves(workbench, tmp_path, monkeypatch):
             else None
         ),
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1984,7 +2007,7 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
@@ -2092,7 +2115,7 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
     book.close()
     original = path.read_bytes()
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Custom target").click()
@@ -2115,7 +2138,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2139,7 +2162,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     _view(page, "targeted")
     page.go_back()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#target-attention")).to_be_checked()
     page.go_forward()
     expect(page.locator("#workspace-targeted")).to_be_visible()
@@ -2170,7 +2193,7 @@ def test_review_history_restores_server_query_before_loading_xic(
     raw_dir = tmp_path / "review-raw"
     install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000}, pair_scale=1000)
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -2181,8 +2204,8 @@ def test_review_history_restores_server_query_before_loading_xic(
         "button", name="看 S3 的 Analyte XIC", exact=True
     )
     expect(analyte_xic).to_be_visible()
-    _view(page, "targeted")
-    _view(page, "review")
+    _view(page, "untargeted")
+    _open_results(page)
     page.locator("#target-id").select_option("ISTD")
     try:
         if query_pending:
@@ -2195,11 +2218,11 @@ def test_review_history_restores_server_query_before_loading_xic(
                 )
             ).to_be_visible()
         page.go_back()
-        expect(page.locator("#workspace-targeted")).to_be_visible()
+        expect(page.locator("#workspace-untargeted")).to_be_visible()
         page.go_back()
     finally:
         release.set()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     expect(page.locator("#load-curves")).to_be_enabled()
     with page.expect_response("**/api/curves") as response:
@@ -2214,15 +2237,15 @@ def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path)
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     _view(page, "targeted")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#back-to-overview").click()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#targeted-overview")).to_be_visible()
     page.go_forward()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
@@ -2236,7 +2259,7 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
     page = workbench
     page.set_viewport_size({"width": 1280, "height": 480})
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2261,7 +2284,7 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview .overview-actions .primary").click()
@@ -2325,8 +2348,11 @@ def test_sample_restore_is_bound_to_current_inputs(
             if changed_input == "sequence_source"
             else f"#u-{changed_input}"
         )
-        page.locator(selector).fill(str(tmp_path / "new_source"))
-        page.locator(selector).press("Tab")
+        if changed_input == "dll_dir":
+            _set_reader_path(page, str(tmp_path / "new_source"))
+        else:
+            page.locator(selector).fill(str(tmp_path / "new_source"))
+            page.locator(selector).press("Tab")
         with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
             page.locator("#untargeted-save").click()
     page.reload()
@@ -2460,20 +2486,22 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
     fake_runs.release.set()
     page.locator("#t-data_dir").fill(str(raw_dir))
-    page.locator("#t-dll_dir").fill(str(tmp_path))
+    _set_reader_path(page, str(tmp_path))
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
     _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
+    # The finished run opens its result; the next batch is edited on setup.
+    expect(page.locator("#analysis-result")).to_be_visible()
+    page.locator("#result-back").click()
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
-    page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
+    _set_reader_path(page, str(tmp_path / "next-dll"))
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
     assert (
         Path(pending.value.path()).read_bytes()
         == fake_runs.targeted_workbook.read_bytes()
     )
-    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
-    expect(page.get_by_role("link", name="下載結果 XLSX", exact=True)).to_be_visible()
     expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
     expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2614,7 +2642,7 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
             route.continue_()
 
     page.route("**/api/views/*", delay_first_view)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2655,7 +2683,7 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000, "S4": 300})
     workbook = write_rare_detection_workbook(tmp_path / "offline-saved.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -2742,7 +2770,7 @@ def role_review(workbench, tmp_path):
     book.save(workbook)
     book.close()
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Alpha").click()
@@ -2821,22 +2849,22 @@ def test_targeted_role_history_and_reset_restore_available_targets(role_review):
     expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     page.locator("#target-id").select_option("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
-    _view(page, "targeted")
-    _view(page, "review")
+    _view(page, "untargeted")
+    _open_results(page)
     role.select_option("ISTD")
     expect(titles).to_have_text(["Gamma"])
     page.go_back()
-    expect(page.locator("#workspace-targeted")).to_be_visible()
+    expect(page.locator("#workspace-untargeted")).to_be_visible()
     page.go_back()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("Analyte")
     expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     expect(page.locator("#target-id")).to_have_value("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
     page.go_forward()
-    expect(page.locator("#workspace-targeted")).to_be_visible()
+    expect(page.locator("#workspace-untargeted")).to_be_visible()
     page.go_forward()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("ISTD")
     expect(names).to_have_text(["全部目標", "Gamma"])
     expect(page.locator("#target-id")).to_have_value("")
@@ -2867,7 +2895,7 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2881,7 +2909,7 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
     expect(page.locator("#selection")).to_be_hidden()
-    _view(page, "targeted")
+    _view(page, "untargeted")
     page.go_back()
     expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     expect(page.locator("#target-id")).to_have_value("ISTD")
@@ -2925,7 +2953,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page = workbench
     report, matrix = create_nearest_review_batch(tmp_path)
     original = [path.read_bytes() for path in (report, matrix)]
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -2970,7 +2998,7 @@ def test_zero_result_history_discards_pending_query_feedback(
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero-history.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2983,7 +3011,7 @@ def test_zero_result_history_discards_pending_query_feedback(
     with page.expect_request("**/api/query"):
         page.locator("#target-id").select_option("Analyte")
     expect(empty.locator("h2")).to_have_text("正在查詢結果…")
-    _view(page, "targeted")
+    _view(page, "untargeted")
     page.go_back()
     expected_http_error = (
         "Failed to load resource: the server responded with a status of "
@@ -3074,7 +3102,6 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
@@ -3261,7 +3288,6 @@ def test_collaborator_table_and_earlier_batches_apply_after_preview(
 
     # A new batch named the same way reuses the confirmed batch by name.
     _view(page, "untargeted")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     second = tmp_path / "second"
     _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
     page.locator("#u-raw_dir").fill(str(second))
@@ -3352,7 +3378,7 @@ def test_group_colours_match_between_samples_and_inspector(
     assert colour(row.locator(".group-swatch")) == tumor
     page.keyboard.press("Escape")
     workbook = _grouped_workbook(tmp_path / "saved.xlsx", groups)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3409,6 +3435,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
 
     # The next batch is another folder, saved as the current settings; the
     # exclusion still goes to the run's folder with the run's annotations.
+    page.locator("#result-back").click()
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     page.locator("#t-injection_order_source").fill("")
     with page.expect_response(lambda r: r.url.endswith("/api/targeted/save")):
@@ -3468,7 +3495,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     assert exported_rows["TumorBC102_DNA"].excluded is True
 
     # With that folder loaded, a later exclusion updates the step at once.
-    _view(page, "review")
+    _open_results(page)
     review.get_by_role("button", name="標記排除 NormalBC101_DNA", exact=True).click()
     page.locator("#exclude-reason").fill("hemolysed")
     with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
@@ -3480,7 +3507,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
 def test_a_result_opened_without_its_run_offers_no_exclusion(workbench, tmp_path):
     page = workbench
     workbook = _grouped_workbook(tmp_path / "manual.xlsx", {"S1": "", "S2": ""})
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form").evaluate("form => form.requestSubmit()")
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3500,7 +3527,6 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
 
@@ -3533,7 +3559,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
 
 
 def test_matrix_curation_from_a_run_and_from_an_existing_folder(
-    workbench, fake_runs, config_dir, tmp_path
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
     from tests.test_matrix_curation import (
         alignment_output,
@@ -3552,17 +3578,17 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
         "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
     }
     _view(page, "untargeted")
-    page.locator("input[name=u-mode][value=discovery_only]").check()
-    page.locator("#u-raw_file").fill(str(tmp_path / "fake.raw"))
-    page.locator("#u-dll_dir").fill(str(tmp_path / "dll"))
+    page.locator("#u-raw_dir").fill(str(tmp_path / "raw"))
     page.locator("#u-output_dir").fill(str(run_output))
     _start(page, "untargeted")
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
 
     # After a run only the threshold is needed: folder and samples come along.
-    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
-    expect(page.locator("#workspace-curation")).to_be_visible()
+    page.locator("#untargeted-result").get_by_role(
+        "button", name="選用：整理矩陣"
+    ).click()
+    expect(page.locator("#result-curation")).to_be_visible()
     expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
     step = page.locator("#curation-step-finite_fraction")
     expect(step).to_be_enabled()
@@ -3574,8 +3600,37 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     )
     expect(page.locator("#curation-source")).to_contain_text("內標清單")
     page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
+    from xic_workbench import matrix_curation
+
+    preview = matrix_curation.preview_curation
+    released = threading.Event()
+    entered = threading.Event()
+
+    def slow_preview(*args, **kwargs):
+        entered.set()
+        assert released.wait(HANDSHAKE_TIMEOUT_S)
+        return preview(*args, **kwargs)
+
+    monkeypatch.setattr(matrix_curation, "preview_curation", slow_preview)
+    page.locator("#curation-preview-refresh").click()
+    try:
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        expect(page.locator("#curation-preview")).to_contain_text("正在計算")
+        # A pending preview must not hold the server's mutable-workspace lock.
+        with page.expect_response("**/api/preferences"):
+            page.locator("#theme-toggle").click()
+        expect(
+            page.locator("#curation-finite_fraction-min_finite_fraction")
+        ).to_be_enabled()
+    finally:
+        released.set()
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
+    expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
+    expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
+    # Curation runs from the result page, so its job feedback is shown there.
+    expect(page.locator("#analysis-result #analysis-job")).to_be_visible()
     result = page.locator("#curation-result")
     expect(result).to_contain_text("2保留 feature")
     expect(result).to_contain_text("4原始 feature")
@@ -3587,7 +3642,10 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # An existing folder without sample data names the reason; choosing a
     # sample file makes the step available, and the last threshold returns.
     page.reload()
-    expect(page.locator("#workspace-curation")).to_be_visible()
+    page.locator("#untargeted-result").get_by_role(
+        "button", name="選用：整理矩陣"
+    ).click()
+    expect(page.locator("#result-curation")).to_be_visible()
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
     page.locator("#curation-source_dir").press("Tab")
@@ -3601,7 +3659,217 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-finite_fraction-min_finite_fraction")).to_have_value(
         "0.6"
     )
+    page.locator("#curation-preview-refresh").click()
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
+    expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
+    expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
     expect(result).to_contain_text(str(existing))
     assert len(list(existing.glob("matrix_curation_*"))) == 1
+
+
+@pytest.mark.parametrize(
+    "kind,field", [("targeted", "t-data_dir"), ("untargeted", "u-raw_dir")]
+)
+def test_path_errors_and_automatic_sample_summary(workbench, tmp_path, kind, field):
+    page = workbench
+    _view(page, kind)
+    path = page.locator(f"#{field}")
+    path.fill(str(tmp_path / "missing"))
+    path.dispatch_event("change")
+    # Users read what is wrong, not the operating system's exception text.
+    expect(page.locator(f"#{field}-problem")).to_have_text("找不到這個資料夾")
+    checklist = "#target-checklist" if kind == "targeted" else "#untargeted-checklist"
+    expect(page.locator(checklist)).to_contain_text("找不到這個資料夾")
+    expect(page.locator(checklist)).not_to_contain_text("Error")
+    expect(path).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
+    expect(page.locator("#t-dll_dir")).not_to_be_visible()
+    expect(page.locator("#u-dll_dir")).not_to_be_visible()
+    raw = tmp_path / "sample-input"
+    raw.mkdir()
+    (raw / "sample.raw").touch()
+    path.fill(str(raw))
+    path.dispatch_event("change")
+    prefix = "t-" if kind == "targeted" else ""
+    expect(page.locator(f"#{prefix}samples-summary")).to_contain_text(
+        "RAW 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    expect(path).to_have_attribute("aria-invalid", "false")
+
+
+@pytest.mark.parametrize("kind", ["targeted", "untargeted"])
+@pytest.mark.parametrize("fresh", [True, False])
+def test_results_stay_in_analysis_page_without_raw(
+    workbench, fake_runs, tmp_path, kind, fresh
+):
+    from tests.inspector_fixtures import create_review_batch
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    if kind == "targeted":
+        source = artifact = write_rare_detection_workbook(tmp_path / "saved.xlsx")
+        fake_runs.targeted_workbook = source
+    else:
+        source, artifact = create_review_batch(tmp_path)
+        fake_runs.result = {
+            "evidence": {"report_path": str(source)},
+            "matrix_tsv": str(artifact),
+        }
+    expect(page.locator(".topbar [data-view]")).to_have_count(2)
+    _view(page, kind)
+    if fresh:
+        fake_runs.release.set()
+        _start(page, kind)
+        _wait_for_analysis_status(page, "已完成")
+    else:
+        page.locator("#open-result").click()
+        page.locator("#source").fill(str(source))
+        page.locator("#open-form button[type=submit]").click()
+    # The result replaces the setup form instead of hanging under it.
+    expect(page.locator("#analysis-result")).to_be_visible()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    expect(page.locator("#analysis-root")).to_be_hidden()
+    expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
+    # The start shortcut belongs to setup; on a result it starts nothing.
+    started = len(fake_runs.requests)
+    page.keyboard.press("Control+Enter")
+    page.wait_for_timeout(500)
+    assert len(fake_runs.requests) == started
+    if kind == "untargeted":
+        expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
+        expect(page.locator("#result-curation")).to_be_visible()
+        expect(page.locator("#result-curation")).not_to_have_attribute("open", "")
+    else:
+        expect(page.locator("#result-curation")).not_to_be_visible()
+    before = page.locator("#targeted-overview").text_content()
+    # Editing the next analysis happens on its setup; returning shows the
+    # same saved result.
+    page.locator("#result-back").click()
+    expect(page.locator(f"#workspace-{kind}")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_hidden()
+    field = "#t-output_dir" if kind == "targeted" else "#u-output_dir"
+    page.locator(field).fill(str(tmp_path / "next-analysis"))
+    page.go_back()
+    expect(page.locator("#analysis-result")).to_be_visible()
+    expect(page.locator("#targeted-overview")).to_have_text(before)
+    with page.expect_download() as pending:
+        page.locator("#result-download").click()
+    assert Path(pending.value.path()).read_bytes() == artifact.read_bytes()
+
+
+def test_sample_refresh_keeps_the_latest_action_when_sequence_blurs(
+    workbench, config_dir, tmp_path
+):
+    page = workbench
+    batch = tmp_path / "confirmed-batch"
+    _placeholder_batch(batch, ("A", "B", "C", "D"))
+    save_batch_samples(
+        config_dir,
+        batch,
+        [
+            {
+                "sample_name": name,
+                "raw_stem": name,
+                "sample_role": "study_sample",
+                "group": name,
+                "excluded": False,
+                "exclusion_reason": "",
+            }
+            for name in ("A", "B", "C", "D")
+        ],
+    )
+    _view(page, "untargeted")
+    page.locator("#u-raw_dir").fill(str(batch))
+    page.locator("#u-raw_dir").press("Tab")
+    # Force the previously intermittent order by an observable completion,
+    # not a sleep: the automatic preview has populated the summary first.
+    expect(page.locator("#samples-count")).to_have_text("4 個樣本")
+    page.locator("#sequence-source").fill(str(tmp_path / "unrelated.docx"))
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-count")).to_have_text("4 個樣本")
+    expect(page.locator("#samples-source")).to_contain_text("已確認的樣品資訊")
+
+
+def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
+    workbench, config_dir, tmp_path
+):
+    page = workbench
+    batch = tmp_path / "confirmed-batch"
+    _placeholder_batch(batch, ("A", "B"))
+
+    def save_group(group):
+        save_batch_samples(
+            config_dir,
+            batch,
+            [
+                {
+                    "sample_name": name,
+                    "raw_stem": name,
+                    "sample_role": "study_sample",
+                    "group": group,
+                    "excluded": False,
+                    "exclusion_reason": "",
+                }
+                for name in ("A", "B")
+            ],
+        )
+
+    save_group("Older")
+    pending = []
+
+    def hold_preview(route):
+        response = route.fetch()
+        assert {row["group"] for row in response.json()["samples"]} == {"Older"}
+        pending.append((route, response))
+        page.evaluate("window.previewHeld = true")
+
+    page.route("**/api/samples/preview", hold_preview)
+    _view(page, "untargeted")
+    with page.expect_request("**/api/samples/preview"):
+        page.locator("#u-raw_dir").fill(str(batch))
+        page.locator("#u-raw_dir").press("Tab")
+    page.wait_for_function("window.previewHeld === true")
+    save_group("Latest")
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    with page.expect_response("**/api/samples/preview") as released:
+        route, response = pending.pop()
+        route.fulfill(response=response)
+    released.value.finished()
+    # Observe the render after the released response, not an earlier DOM snapshot.
+    page.evaluate("() => new Promise(requestAnimationFrame)")
+    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    expect(page.locator("#role-summary")).not_to_contain_text("Older")
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_narrow_path_error_leaves_a_usable_input(workbench, tmp_path, theme):
+    page = workbench
+    page.set_viewport_size({"width": 760, "height": 950})
+    if theme == "dark":
+        page.locator("#theme-toggle").click()
+    path = page.locator("#t-data_dir")
+    path.fill(str(tmp_path / ("missing-folder-" * 12)))
+    path.press("Tab")
+    expect(page.locator("#t-data_dir-problem")).to_have_text("找不到這個資料夾")
+    assert (
+        path.bounding_box()["width"]
+        > page.locator('[data-browse="t-data_dir"]').bounding_box()["width"]
+    )
+    overflow = page.evaluate("""() => [...document.querySelectorAll('body *')]
+        .filter(node => node.getBoundingClientRect().right > innerWidth)
+        .map(node => ({tag: node.tagName, id: node.id, cls: node.className,
+                       right: node.getBoundingClientRect().right})).slice(0, 12)""")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (
+        overflow
+    )
+
+
+def test_folder_picker_automatically_lists_samples(workbench, tmp_path, monkeypatch):
+    batch = tmp_path / "picked"
+    _placeholder_batch(batch, ("A", "B"))
+    monkeypatch.setattr("xic_workbench.server.choose_path", lambda *args: str(batch))
+    workbench.locator('[data-browse="t-data_dir"]').click()
+    expect(workbench.locator("#t-samples-count")).to_have_text("2 個樣本")

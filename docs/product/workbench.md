@@ -13,7 +13,19 @@ owns command arguments.
 
 The HTML workbench is the primary human surface; script CLIs remain
 reproducible automation and diagnostic surfaces. Both call the same application
-and scientific owners, so a result does not depend on which route started it.
+and scientific owners, so the same effective request has the same scientific
+behavior. The GUI runs complete Untargeted analysis with Backfill enabled;
+single-RAW Discovery, Alignment-only and disabling Backfill remain CLI uses.
+Worker counts come from the shared execution profile, not saved GUI settings.
+
+The page shows either the setup of the next analysis or one opened result,
+never both. A finished run opens its result, with overview, review and
+downloads; **返回設定** returns to setup. Opening existing results uses that same
+result view without RAW or DLL access. Each GUI run writes a new
+`<date>_<time>_<kind>_<RAW folder>` folder under the chosen result location, so
+no run overwrites another.
+Matrix curation is optional and previews the existing owner's decisions before
+writing a separate matrix; it never overwrites the original matrix.
 
 ## Review does not change results
 

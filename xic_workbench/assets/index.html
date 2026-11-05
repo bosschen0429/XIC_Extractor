@@ -175,18 +175,9 @@
         >
           <svg class="icon"><use href="#i-spectrum" /></svg>Untargeted
         </button>
-        <button
-          type="button"
-          data-view="curation"
-          title="矩陣整理（Ctrl+3）"
-        >
-          <svg class="icon"><use href="#i-sliders" /></svg>矩陣整理
-        </button>
-        <button type="button" data-view="review" title="結果檢閱（Ctrl+4）">
-          <svg class="icon"><use href="#i-review" /></svg>結果檢閱
-        </button>
       </nav>
       <div class="topbar-actions">
+        <button type="button" id="open-result">開啟既有結果</button>
         <button
           type="button"
           id="activity"
@@ -275,9 +266,15 @@
         </details>
       </div>
     </section>
+
     <div id="analysis-root"></div>
 
-    <main id="workspace-review" class="page review-page">
+    <section id="analysis-result" class="page review-page" hidden>
+      <nav class="result-nav" aria-label="結果">
+        <button type="button" id="result-back" class="ghost back-link">
+          <svg class="icon"><use href="#i-chevron-right" /></svg>返回設定
+        </button>
+      </nav>
       <section class="source-card source-bar" id="source-card">
         <div class="source-summary">
           <span class="source-glyph" aria-hidden="true"
@@ -296,7 +293,7 @@
           </div>
         </div>
         <details id="source-settings" open>
-          <summary>位置</summary>
+          <summary>結果位置與曲線來源</summary>
           <form id="open-form" class="path-line">
             <label for="source">結果</label
             ><input
@@ -328,6 +325,8 @@
               </button></span
             >
           </form>
+          <p class="subtle">開啟與下載保存的結果不需要 RAW 或 DLL；只有讀取新曲線時需要。</p>
+
           <div class="path-line">
             <label for="raw-dir">RAW</label
             ><input
@@ -574,7 +573,7 @@
           </div>
         </section>
       </section>
-    </main>
+    </section>
 
     <dialog id="xic-dialog" class="xic-dialog" aria-labelledby="xic-title">
       <header class="xic-heading">
@@ -659,8 +658,6 @@
         <div class="shortcut-list">
           <span><kbd>Ctrl</kbd> <kbd>1</kbd></span><span>Targeted 分析</span>
           <span><kbd>Ctrl</kbd> <kbd>2</kbd></span><span>Untargeted 分析</span>
-          <span><kbd>Ctrl</kbd> <kbd>3</kbd></span><span>矩陣整理</span>
-          <span><kbd>Ctrl</kbd> <kbd>4</kbd></span><span>結果檢閱</span>
           <span><kbd>Ctrl</kbd> <kbd>Enter</kbd></span
           ><span>開始目前頁面的分析</span>
           <span><kbd>Ctrl</kbd> <kbd>S</kbd></span

@@ -53,54 +53,16 @@ def test_profile_rejects_invalid_worker_counts(
         )
 
 
-@pytest.mark.parametrize(
-    "saved,expected",
-    [({"parallel_workers": "5"}, 5), ({}, 8), ({"parallel_workers": ""}, 8)],
-)
-def test_profile_reads_application_state(monkeypatch, tmp_path, saved, expected):
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    monkeypatch.setattr(execution_settings, "runtime_root", lambda: tmp_path)
+def test_worker_counts_are_internal_unless_a_caller_overrides(monkeypatch):
+    # No saved setting takes part: the machine decides, an explicit CLI value wins.
     monkeypatch.setattr(execution_settings.os, "cpu_count", lambda: 9)
-    save_workspace(tmp_path / "config", settings=saved)
-    assert execution_settings.load_execution_profile().parallel_workers == expected
 
-
-def test_explicit_override_bypasses_invalid_saved_worker(monkeypatch, tmp_path):
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    monkeypatch.setattr(execution_settings, "runtime_root", lambda: tmp_path)
-    save_workspace(tmp_path / "config", settings={"parallel_workers": "invalid"})
-    assert (
-        execution_settings.load_execution_profile(parallel_workers=3).parallel_workers
-        == 3
+    assert execution_settings.load_execution_profile() == (
+        execution_settings.ExecutionProfile(8, 4)
     )
-
-
-@pytest.mark.parametrize("frozen", [False, True])
-def test_default_settings_resolve_from_development_or_executable_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, frozen: bool
-) -> None:
-    runtime_root = tmp_path / ("bundle" if frozen else "checkout")
-    config_dir = runtime_root / "config"
-    config_dir.mkdir(parents=True)
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    (runtime_root / "pyproject.toml").touch()
-    save_workspace(config_dir, settings={"parallel_workers": "7"})
-    from xic_extractor.configuration import paths
-
-    # This test exercises root selection itself, within its disposable checkout.
-    monkeypatch.setattr(execution_settings, "runtime_root", paths.runtime_root)
-    monkeypatch.setattr(paths.sys, "frozen", frozen, raising=False)
-    monkeypatch.setattr(paths.sys, "executable", str(runtime_root / "xic.exe"))
-    monkeypatch.setattr(
-        paths,
-        "_PACKAGE_PARENT",
-        runtime_root,
-    )
-
-    assert execution_settings.load_execution_profile().parallel_workers == 7
+    assert execution_settings.load_execution_profile(
+        parallel_workers=3, alignment_workers=2
+    ) == execution_settings.ExecutionProfile(3, 2)
 
 
 def test_extraction_config_default_factory_uses_shared_parallel_budget(

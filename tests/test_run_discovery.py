@@ -150,9 +150,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     captured = {}
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(isolated_config_dir, settings={"parallel_workers": "1"})
 
     def _fake_run_discovery_batch(
         raw_paths,
@@ -197,6 +194,8 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
             str(dll_dir),
             "--output-dir",
             str(output_dir),
+            "--max-workers",
+            "1",
         ]
     )
 

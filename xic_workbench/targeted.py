@@ -233,16 +233,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         },
     ),
     ("dll_dir", "RawFileReader DLL 資料夾", "folder", {}),
-    (
-        "parallel_workers",
-        "平行處理數",
-        "number",
-        {
-            "min": 1,
-            "step": 1,
-            "placeholder": "自動（CPU 核心數 − 1）",
-        },
-    ),
 )
 
 

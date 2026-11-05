@@ -13,20 +13,22 @@ input to downstream analysis, not a normalized or batch-corrected result.
 1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
    checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
    to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
-2. Select **Untargeted Discovery**.
-3. Choose a run mode.
-4. Set RAW input and output directory. Reader setup supplies the shared DLL directory.
-5. Import the Word **上機資訊** to match file names and injection order. Check
+2. Select **Untargeted**. The GUI always runs the complete analysis with Backfill.
+3. Set the RAW folder. **結果存放位置** has a default; each run creates its own
+   `<date>_<time>_untargeted_<RAW folder>` folder there, so earlier results are
+   never overwritten. Reader setup supplies the shared DLL directory.
+4. Import the Word **上機資訊** to match file names and injection order. Check
    unmatched or ambiguous entries; alphabetical file order is not injection order.
-6. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
+5. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
    then choose or drop an XLSX, CSV or TSV file. Only `role=istd` rows are used;
    the preview shows method-compatible standards and skipped rows. A dR method
    uses dR standards, not R standards such as `[13C,15N2]-8-oxo-Guo`. Incompatible
    standards are marked not applicable, not ND; changing the method refreshes
    this selection.
-7. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
+6. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
    or custom NL tags and their combination. Apply the method to the current run.
-8. Press **開始執行** and start review from the output directory.
+7. Press **開始 Untargeted 分析**. The finished run opens its result; **返回設定**
+   goes back to the setup of the next analysis.
 
 The GUI stores local Untargeted settings in `config/discovery_gui.json`. This is
 machine-local state and should stay untracked.

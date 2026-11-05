@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.applications.untargeted.publication import (
@@ -28,7 +28,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoverySettings
-from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -44,33 +44,18 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.methods import preset_from_payload
 from xic_workbench.samples import from_payload as samples_from_payload
 
-DiscoveryMode = Literal["full", "discovery_only", "align_only"]
-_MODES = frozenset({"full", "discovery_only", "align_only"})
-
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryRequest:
-    mode: DiscoveryMode
     preset: str
     tuning_overrides: dict[str, Any]
     raw_dir: Path | None
-    raw_file: Path | None
     dll_dir: Path
     output_dir: Path
-    discovery_batch_index: Path | None
     targets_csv: Path | None = None
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     preset_snapshot: Preset | None = None
     execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
-    alignment_enabled: bool = True
-    backfill_enabled: bool = True
-
-    def __post_init__(self) -> None:
-        for name in ("alignment_enabled", "backfill_enabled"):
-            if type(getattr(self, name)) is not bool:
-                raise TypeError(f"{name} must be a boolean")
-        if self.mode == "align_only" and not self.alignment_enabled:
-            raise ValueError("align_only requires alignment_enabled")
 
 
 def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
@@ -85,28 +70,19 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
     if not isinstance(values, dict):
         raise TypeError("Untargeted request must be an object")
     allowed = {
-        "mode",
         "preset",
         "overrides",
         "raw_dir",
-        "raw_file",
         "dll_dir",
         "output_dir",
-        "discovery_batch_index",
         "targets_csv",
         "sequence_source",
         "samples",
         "preset_snapshot",
-        "execution_profile",
-        "alignment_enabled",
-        "backfill_enabled",
     }
     unknown = sorted(set(values) - allowed)
     if unknown:
         raise ValueError(f"unsupported Untargeted request field: {unknown[0]}")
-    mode = values.get("mode", "full")
-    if mode not in _MODES:
-        raise ValueError(f"unsupported Untargeted mode: {mode!r}")
     preset = _text(values.get("preset", "dna_dr"), "preset")
     overrides = values.get("overrides", {})
     if not isinstance(overrides, dict):
@@ -116,38 +92,17 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         preset_from_payload(snapshot_value) if snapshot_value is not None else None
     )
     bound_preset = snapshot or load_preset(preset)
-    bind_cid_nl_recipe(bound_preset, mode, recipe_overrides=overrides)
-
-    profile_value = values.get("execution_profile")
-    if profile_value is None:
-        profile = ExecutionProfile()
-    elif isinstance(profile_value, dict):
-        profile_unknown = sorted(
-            set(profile_value) - {"parallel_workers", "alignment_workers"}
-        )
-        if profile_unknown:
-            raise ValueError(
-                f"unsupported execution_profile field: {profile_unknown[0]}"
-            )
-        profile = ExecutionProfile(**profile_value)
-    else:
-        raise TypeError("execution_profile must be an object")
+    bind_cid_nl_recipe(bound_preset, "full", recipe_overrides=overrides)
 
     return DiscoveryRequest(
-        mode=mode,
         preset=preset,
         tuning_overrides=dict(overrides),
         raw_dir=_optional_path(values.get("raw_dir")),
-        raw_file=_optional_path(values.get("raw_file")),
         dll_dir=Path(_text(values.get("dll_dir"), "DLL directory")),
         output_dir=Path(_text(values.get("output_dir"), "output directory")),
-        discovery_batch_index=_optional_path(values.get("discovery_batch_index")),
         targets_csv=_optional_path(values.get("targets_csv")),
         sample_metadata=samples_from_payload(values.get("samples")),
         preset_snapshot=bound_preset,
-        execution_profile=profile,
-        alignment_enabled=values.get("alignment_enabled", True),
-        backfill_enabled=values.get("backfill_enabled", True),
     )
 
 
@@ -163,9 +118,7 @@ class UntargetedRun:
     ) -> None:
         # Persisted scientific inputs must not be re-read from an active locator
         # after dispatch. RAW acquisition remains live and is not a byte snapshot.
-        if request.targets_csv is not None and not (
-            request.mode == "full" and not request.alignment_enabled
-        ):
+        if request.targets_csv is not None:
             receipt_dir = request.output_dir / ".run_inputs" / uuid.uuid4().hex
             contents = request.targets_csv.read_bytes()
             receipt_dir.mkdir(parents=True)
@@ -183,23 +136,13 @@ class UntargetedRun:
 
     def execute(self) -> dict[str, Any]:
         self._raise_if_cancelled("Untargeted run cancelled before start")
-        if self.request.mode == "full":
-            summary = self._run_full()
-        elif self.request.mode == "discovery_only":
-            summary = self._run_discovery_only()
-        else:
-            summary = self._run_align_only()
+        summary = self._run_full()
         summary["published_paths"] = [
             str(path) for path in _ordered_existing_paths(self.available_outputs)
         ]
-        alignment_run = (
-            self.request.mode != "discovery_only" and self.request.alignment_enabled
-        )
         summary["modules"] = {
-            "alignment": "completed" if alignment_run else "not_run",
-            "backfill": "enabled"
-            if alignment_run and self.request.backfill_enabled
-            else "not_run",
+            "alignment": "completed",
+            "backfill": "enabled",
         }
         return summary
 
@@ -209,7 +152,7 @@ class UntargetedRun:
         raw_paths = self._raw_paths(request.raw_dir)
         if request.raw_dir is None or not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
-        total_steps = len(raw_paths) + int(request.alignment_enabled)
+        total_steps = len(raw_paths) + 1
         self.progress(0, total_steps, "Discovery...")
         self.stage = "Discovery 設定"
         settings = self._build_settings()
@@ -232,82 +175,10 @@ class UntargetedRun:
         index_path = batch_outputs.batch_index_csv
         self._retain_discovery_outputs(batch_outputs, index_path)
         self._raise_if_cancelled("Untargeted run cancelled after Discovery")
-        if not request.alignment_enabled:
-            self.progress(total_steps, total_steps, "完成（未執行 Alignment）")
-            return self._discovery_summary(index_path)
         self.progress(len(raw_paths), total_steps, "Alignment...")
         outputs = self._run_alignment(index_path=index_path, raw_dir=request.raw_dir)
         self.progress(total_steps, total_steps, "完成")
         summary = self._discovery_summary(index_path)
-        summary.update(_alignment_summary(outputs))
-        return summary
-
-    def _run_discovery_only(self) -> dict[str, Any]:
-        request = self.request
-        if request.raw_file is None:
-            raise ValueError("discovery-only 需要單一 RAW 檔")
-        self.progress(0, 1, "Discovery...")
-        self.stage = "Discovery 設定"
-        settings = self._build_settings()
-        run_spec = compile_discovery_processing_run_spec(
-            (request.raw_file,), discovery_settings=settings
-        )
-        self.stage = "Discovery 擷取與結果發布"
-        outputs = run_discovery(
-            request.raw_file,
-            output_dir=request.output_dir,
-            settings=settings,
-            dll_dir=request.dll_dir,
-            run_spec=run_spec,
-            should_cancel=self.should_cancel,
-        )
-        self.available_outputs = tuple(
-            (label, Path(path))
-            for label, path in (
-                ("Discovery 候選", outputs.candidates_csv),
-                ("Discovery review", outputs.review_csv),
-            )
-            if Path(path).is_file()
-        )
-        self._raise_if_cancelled("Untargeted run cancelled after Discovery")
-        self.stage = "Discovery 結果摘要"
-        self.progress(1, 1, "完成")
-        return {
-            "mode": "discovery_only",
-            "output_dir": str(request.output_dir),
-            "sample_count": 1,
-            "candidate_counts": _read_review_counts(Path(outputs.review_csv)),
-            "discovery_candidates_csv": str(outputs.candidates_csv),
-            "discovery_review_csv": str(outputs.review_csv),
-            "discovery_batch_index": None,
-            "alignment_outputs": {},
-            "matrix_tsv": None,
-            "evidence": None,
-        }
-
-    def _run_align_only(self) -> dict[str, Any]:
-        request = self.request
-        self.stage = "讀取 Discovery batch index"
-        index_path = request.discovery_batch_index
-        if index_path is None:
-            raise ValueError("align-only 需要既有的 discovery_batch_index.csv")
-        if request.raw_dir is None:
-            raise ValueError("align-only 需要 raw_dir 來定位 RAW 檔案")
-        counts, sample_count = _read_batch_counts(index_path)
-        self.progress(0, 1, "Alignment...")
-        outputs = self._run_alignment(index_path=index_path, raw_dir=request.raw_dir)
-        self.progress(1, 1, "完成")
-        summary: dict[str, Any] = {
-            "mode": "align_only",
-            "output_dir": str(request.output_dir),
-            "sample_count": sample_count,
-            "candidate_counts": counts,
-            "discovery_candidates_csv": None,
-            "discovery_review_csv": None,
-            "discovery_batch_index": str(index_path),
-            "alignment_outputs": {},
-            "matrix_tsv": None,
-        }
         summary.update(_alignment_summary(outputs))
         return summary
 
@@ -323,9 +194,7 @@ class UntargetedRun:
                 raw_dir=raw_dir,
                 dll_dir=request.dll_dir,
                 output_dir=request.output_dir,
-                alignment_config=replace(
-                    recipe.alignment_config, backfill_enabled=request.backfill_enabled
-                ),
+                alignment_config=recipe.alignment_config,
                 peak_config=self._alignment_peak_config(recipe.discovery_settings),
                 discovery_settings=recipe.discovery_settings,
                 sample_metadata=request.sample_metadata,
@@ -366,7 +235,7 @@ class UntargetedRun:
             preset = self.request.preset_snapshot or load_preset(self.request.preset)
             self._recipe_binding = bind_cid_nl_recipe(
                 preset,
-                self.request.mode,
+                "full",
                 recipe_overrides=self.request.tuning_overrides,
             )
         return self._recipe_binding
@@ -414,7 +283,6 @@ class UntargetedRun:
     def _discovery_summary(self, index_path: Path) -> dict[str, Any]:
         counts, sample_count = _read_batch_counts(index_path)
         return {
-            "mode": self.request.mode,
             "output_dir": str(self.request.output_dir),
             "sample_count": sample_count,
             "candidate_counts": counts,
@@ -432,6 +300,13 @@ class UntargetedRun:
 
 
 def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
+    from xic_inspector.api import read_evidence_summary
+    from xic_inspector.sources.untargeted_overview import review_overview
+
+    overview = None
+    if outputs.evidence is not None:
+        path = Path(outputs.evidence.report_path)
+        overview, _rows = review_overview(path, read_evidence_summary(path))
     alignment_outputs = {
         name: str(path)
         for name, path in (
@@ -443,6 +318,7 @@ def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
         if path is not None
     }
     return {
+        "overview": overview,
         "alignment_outputs": alignment_outputs,
         "matrix_tsv": alignment_outputs.get("matrix_tsv"),
         "run_metadata_json": alignment_outputs.get("run_metadata_json"),
@@ -502,19 +378,6 @@ def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
             totals["LOW"] += _int_csv_value(row, "low_count")
             totals["total"] += _int_csv_value(row, "candidate_count")
     return totals, sample_count
-
-
-def _read_review_counts(review_path: Path) -> dict[str, int] | None:
-    if not review_path.exists():
-        return None
-    totals = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "total": 0}
-    with review_path.open(newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            priority = (row.get("review_priority") or "").upper()
-            if priority in {"HIGH", "MEDIUM", "LOW"}:
-                totals[priority] += 1
-            totals["total"] += 1
-    return totals
 
 
 def _int_csv_value(row: Mapping[str, str | None], key: str) -> int:

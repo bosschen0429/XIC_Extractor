@@ -27,6 +27,41 @@ def json_value(value: Any) -> Any:
     return value
 
 
+def _validate_path(value: str, kind: Any) -> dict[str, Any]:
+    """Explain an unusable path in the user's terms, not the OS exception text."""
+    folder = kind in {"folder", "output"}
+    noun = "資料夾" if folder else "檔案"
+    if not value.strip():
+        return {"usable": False, "message": "尚未選擇路徑"}
+    path = Path(value).expanduser()
+    if kind == "output" and not path.exists():
+        # Each run creates its folder here, so only the nearest parent matters.
+        parent = next((p for p in path.parents if p.exists()), None)
+        if parent is not None and parent.is_dir():
+            return {"usable": True, "message": "開始分析時建立"}
+        return {"usable": False, "message": "無法在這裡建立資料夾"}
+    if folder and path.is_file():
+        return {"usable": False, "message": "這是檔案，請選擇資料夾"}
+    if not folder and path.is_dir():
+        return {"usable": False, "message": "這是資料夾，請選擇檔案"}
+    try:
+        if folder:
+            with os.scandir(path) as entries:
+                next(entries, None)
+        else:
+            with path.open("rb") as stream:
+                stream.read(1)
+    except FileNotFoundError:
+        message = f"找不到這個{noun}"
+    except PermissionError:
+        message = f"沒有讀取這個{noun}的權限"
+    except OSError:
+        message = f"無法讀取這個{noun}"
+    else:
+        return {"usable": True, "message": "可讀取"}
+    return {"usable": False, "message": message}
+
+
 class AnalysisWorkspace:
     def __init__(self, config_dir: Path, defaults: dict[str, str]) -> None:
         self.config_dir = config_dir
@@ -195,6 +230,8 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
+        if action == "paths/validate":
+            return _validate_path(str(values.get("path", "")), values.get("kind"))
         if action == "targeted/method/validate":
             from xic_extractor.configuration.targeted_identification import (
                 identification_methods_payload,

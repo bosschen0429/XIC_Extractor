@@ -44,15 +44,10 @@ def _run_test_environment(
 
 def test_default_application_settings_never_resolve_to_the_checkout():
     """Local config/ holds the developer's own ignored settings, not test input."""
-    from xic_extractor.configuration import execution_profile
     from xic_workbench import config_io, untargeted_config
 
     checkout_config = (Path(config_io.__file__).parents[1] / "config").resolve()
-    defaults = (
-        config_io.CONFIG_DIR,
-        untargeted_config.CONFIG_DIR,
-        execution_profile.runtime_root() / "config",
-    )
+    defaults = (config_io.CONFIG_DIR, untargeted_config.CONFIG_DIR)
 
     assert all(Path(d).resolve() != checkout_config for d in defaults)
 

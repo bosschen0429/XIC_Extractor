@@ -73,7 +73,7 @@ def write_application_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
     """Admit only machine/resources; invalid scientific drafts must not block this."""
-    if any(key not in {"dll_dir", "parallel_workers"} for key in settings):
+    if any(key not in {"dll_dir"} for key in settings):
         raise ConfigError("應用設定只接受本機與執行資源，不能修改方法或批次。")
     values, _parsed, _warnings = resolve_settings(settings)
     selected = {key: values[key] for key in settings}

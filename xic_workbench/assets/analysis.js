@@ -7,6 +7,8 @@
     targets: [],
     identificationMethods: {},
     sampleSets: { targeted: null, untargeted: null },
+    sampleRevisions: { targeted: 0, untargeted: 0 },
+    sampleJobAction: null,
     pendingExclusions: new Set(),
     editing: "untargeted",
     method: null,
@@ -41,11 +43,12 @@
     system_suitability: "系統適用性",
     unknown: "未指定",
   };
+  // The location holds every run; each analysis writes a new folder inside it.
+  const OUTPUT_LABEL = "結果存放位置";
+  const OUTPUT_HELP = "每次分析會在這裡新建一個資料夾（日期時間_類型_RAW 資料夾名），不覆蓋舊結果。";
   const pathFields = [
     ["raw_dir", "RAW 資料夾", "folder"],
-    ["raw_file", "單一 RAW", "raw"],
-    ["discovery_batch_index", "Discovery batch index", "csv"],
-    ["output_dir", "輸出資料夾", "folder"],
+    ["output_dir", OUTPUT_LABEL, "folder", OUTPUT_HELP],
     ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
   ];
   const jobLabels = {
@@ -62,7 +65,7 @@
     curation: "矩陣整理",
     inspector: "Inspector 匯出",
   };
-  const jobPage = { targeted: "targeted", curation: "curation" };
+  const jobPage = { targeted: "targeted", curation: "untargeted" };
   const resultIds = {
     targeted: "target-result",
     untargeted: "untargeted-result",
@@ -85,7 +88,7 @@
       rawDir: "u-raw_dir",
       dll: "u-dll_dir",
       output: "u-output_dir",
-      step: 4,
+      step: 3,
     },
   };
   const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
@@ -158,7 +161,7 @@
       .querySelectorAll("[data-analysis-idle]")
       .forEach((node) => (node.disabled = isBusy() ||
         (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
-    moduleFields();
+    if ($("curation-export")) $("curation-export").disabled = isBusy() || !state.curation?.previewRequest;
     document.dispatchEvent(
       new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
     );
@@ -198,28 +201,59 @@
     }
     checklist("targeted");
   }
-  function selectView(view, persist = true) {
-    if (persist && view !== state.view) window.XicUi.navigation.push();
-    state.view = view;
-    document.body.dataset.view = view;
-    for (const name of ["targeted", "untargeted", "curation", "review"])
-      $(`workspace-${name}`).hidden = name !== view;
+  // The page shows either the next analysis's setup or one opened result,
+  // never a result appended under an unrelated setup form.
+  const showingResult = () => document.body.dataset.mode === "result";
+  // A reload returns to the result it showed; a new window starts at setup.
+  const reloadedOnResult = (() => {
+    try { return sessionStorage.getItem("xic-mode") === "result"; }
+    catch { return false; }
+  })();
+  function showMode(mode) {
+    document.body.dataset.mode = mode;
+    try { sessionStorage.setItem("xic-mode", mode); } catch { /* per-tab convenience only */ }
+    $("analysis-root").hidden = mode === "result";
+    $("analysis-result").hidden = mode !== "result";
+    // The job card follows the visible page, so feedback is never hidden.
+    if (state.config) renderJob();
     document
-      .querySelectorAll("[data-view]")
+      .querySelectorAll(".view-tabs [data-view]")
       .forEach((node) =>
         node.setAttribute(
           "aria-current",
-          node.dataset.view === view ? "page" : "false",
+          mode === "setup" && node.dataset.view === state.view ? "page" : "false",
         ),
       );
-    const slot = document.querySelector(`[data-job-slot="${view}"]`);
-    if (slot) slot.append($("analysis-job"));
-    if (state.config) renderJob();
+  }
+  function showResult() {
+    if (!showingResult()) window.XicUi.navigation.push();
+    showMode("result");
+    window.scrollTo(0, 0);
+  }
+  // The restored result and the setup views boot independently; resume only
+  // once both are ready so the boot view selection does not undo it.
+  function resumeResult() {
+    if (!reloadedOnResult || state.resumedResult || !state.booted || !state.restoredResult)
+      return;
+    state.resumedResult = true;
+    showMode("result");
+  }
+  function selectView(view, persist = true) {
+    if (persist && (view !== state.view || showingResult()))
+      window.XicUi.navigation.push();
+    state.view = view;
+    document.body.dataset.view = view;
+    for (const name of ["targeted", "untargeted"])
+      $(`workspace-${name}`).hidden = name !== view;
+    showMode("setup");
     if (persist) act(() => api("/api/preferences", { view }));
   }
   window.XicUi.navigation.register("workspace", {
-    capture: () => state.view,
-    restore: view => selectView(view, false),
+    capture: () => ({ view: state.view, mode: document.body.dataset.mode }),
+    restore: (saved) => {
+      selectView(saved.view, false);
+      showMode(saved.mode || "setup");
+    },
   });
 
   // Form fields
@@ -334,6 +368,38 @@
     wrap.append(title, input, browse);
     if (help) wrap.append(el("small", help, "field-help"));
     container.append(wrap);
+    if (key === "dll_dir") wrap.hidden = true;
+    const problem = el("small", "", "field-help");
+    problem.id = `${input.id}-problem`;
+    problem.setAttribute("role", "status");
+    input.setAttribute("aria-describedby", problem.id);
+    wrap.append(problem);
+    const validate = async () => {
+      const value = input.value.trim();
+      delete input.dataset.validatedPath;
+      problem.textContent = value ? "檢查路徑中…" : "";
+      const result = await api("/api/paths/validate", {
+        path: value,
+        kind: key === "output_dir" ? "output" : kind,
+      });
+      if (input.value.trim() !== value) return false;
+      input.dataset.validatedPath = result.usable ? value : "";
+      problem.textContent = result.usable ? "" : result.message;
+      input.setAttribute("aria-invalid", String(!result.usable));
+      checklist(prefix === "t-" ? "targeted" : "untargeted");
+      return result.usable;
+    };
+    input.addEventListener("input", () => {
+      delete input.dataset.validatedPath;
+      checklist(prefix === "t-" ? "targeted" : "untargeted");
+    });
+    input.addEventListener("change", () => act(async () => {
+      const page = prefix === "t-" ? "targeted" : "untargeted";
+      const action = ["data_dir", "raw_dir"].includes(key) ? sampleAction(page) : null;
+      if (await validate() && action && currentSampleAction(action))
+        await previewSamples(page, action);
+    }));
+    if (input.value && key !== "dll_dir") act(validate);
     return input;
   }
 
@@ -343,31 +409,27 @@
   }
   function pathItem(label, id, missing) {
     const value = $(id)?.value.trim() || "";
-    const usable = value && !isTemplatePath(value);
+    const usable = value && $(id)?.dataset.validatedPath === value;
     return checkItem(
       usable ? "ok" : "todo",
       label,
-      usable ? pathTail(value) : missing,
+      usable ? pathTail(value) : (value ? ($(`${id}-problem`)?.textContent || "尚未驗證") : missing),
       id,
       usable,
     );
   }
-  function readerItem(id) {
-    const item = pathItem("RawFileReader DLL 資料夾", id, "尚未選擇資料夾");
-    if (item.tone !== "ok") return item;
+  function readerItem() {
     const reader = state.config.thermo_reader;
-    if (reader.dll_dir.trim() !== $(id).value.trim())
-      return checkItem("info", item.label, "尚未驗證", id);
-    return reader.dll_errors.length
-      ? checkItem("todo", item.label, "DLL 尚未備妥", id)
-      : item;
+    const ready = !reader.dll_errors.length && !reader.dotnet_errors.length;
+    return checkItem(ready ? "ok" : "todo", "RAW 讀取環境",
+      ready ? "已備妥" : "需要修復讀取環境", "reader-setup");
   }
   function checklist(kind) {
     if (!state.config) return;
     const items = [];
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "t-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem(OUTPUT_LABEL, "t-output_dir", "尚未選擇位置"));
       items.push(readerItem("t-dll_dir"));
       const istd = state.targets.filter(
         (row) => row.role === "istd",
@@ -384,20 +446,8 @@
       );
       items.push(...sampleItems("targeted"));
     } else {
-      const mode = currentMode();
-      if (mode === "discovery_only")
-        items.push(pathItem("單一 RAW", "u-raw_file", "尚未選擇 RAW 檔"));
-      if (mode === "align_only")
-        items.push(
-          pathItem(
-            "Discovery batch index",
-            "u-discovery_batch_index",
-            "尚未選擇既有 Discovery 結果",
-          ),
-        );
-      if (mode !== "discovery_only")
-        items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
+      items.push(pathItem(OUTPUT_LABEL, "u-output_dir", "尚未選擇位置"));
       items.push(readerItem("u-dll_dir"));
       const preset = $("u-preset");
       items.push(
@@ -408,7 +458,7 @@
           "u-preset",
         ),
       );
-      if (mode !== "discovery_only") items.push(...sampleItems("untargeted"));
+      items.push(...sampleItems("untargeted"));
     }
     const list = $(`${kind === "targeted" ? "target" : "untargeted"}-checklist`);
     list.replaceChildren(
@@ -529,23 +579,19 @@
   function renderSettings(values) {
     const data = $("targeted-data");
     const method = $("targeted-settings");
-    const execution = $("targeted-execution");
     const outputDir = $("t-output_dir")?.value ?? state.config.targeted_output_dir;
-    for (const panel of [data, method, execution]) panel.replaceChildren();
+    for (const panel of [data, method]) panel.replaceChildren();
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "目標清單決定名稱、m/z、預期 RT、辨認方法與 ISTD 配對；其餘沿用平台共用策略。", "settings-notice"), note);
-    const grid = el("div", undefined, "settings-grid");
-    execution.append(grid);
     // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
     for (const spec of state.config.targeted_form.settings) {
       if (spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
       if (!["folder", "file"].includes(spec.kind)) {
-        grid.append(field(spec, values[spec.key], "t-"));
         continue;
       }
       if (spec.scope === "environment")
-        pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+        pathField(data, "output_dir", OUTPUT_LABEL, "folder", outputDir, "t-", OUTPUT_HELP);
       if (spec.key === "injection_order_source") {
         const value = String(values[spec.key] || "");
         $(samplePages.targeted.sequence).value = isTemplatePath(value) ? "" : value;
@@ -962,47 +1008,9 @@
   }
 
   // Untargeted
-  // "Batch Discovery" is the full run without its Alignment stage; the
-  // saved run state keeps that as mode "full" with Alignment disabled.
-  function currentChoice() {
-    return (
-      document.querySelector('input[name="u-mode"]:checked')?.value || "full"
-    );
-  }
-  function currentMode() {
-    const choice = currentChoice();
-    return choice === "discovery_batch" ? "full" : choice;
-  }
-  function alignmentRuns() {
-    return ["full", "align_only"].includes(currentChoice());
-  }
-  function setMode(value) {
-    const input = document.querySelector(
-      `input[name="u-mode"][value="${value}"]`,
-    );
-    (input || document.querySelector('input[name="u-mode"]')).checked = true;
-  }
-  function moduleFields() {
-    const alignment = alignmentRuns();
-    $("u-backfill-enabled").parentElement.hidden = !alignment;
-    $("u-backfill-enabled").disabled = isBusy() || !alignment;
-    $("istd-path-field").parentElement.hidden = !alignment;
-  }
-  function modeFields() {
-    const mode = currentMode();
-    moduleFields();
-    $("u-raw_dir-row").hidden = mode === "discovery_only";
-    $("u-raw_file-row").hidden = mode !== "discovery_only";
-    $("u-discovery_batch_index-row").hidden = mode !== "align_only";
-    $("sample-section").hidden = mode === "discovery_only";
-    checklist("untargeted");
-  }
   function untargetedValues() {
     const values = {
       ...state.config.untargeted,
-      mode: currentMode(),
-      alignment_enabled: alignmentRuns(),
-      backfill_enabled: $("u-backfill-enabled").checked,
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
@@ -1243,7 +1251,17 @@
     renderGroupCards(page);
     checklist(page);
   }
-  function applySampleResult(page, result) {
+  // Revisions belong to user actions, including the validation before a preview.
+  // A completed request may update only the display it still owns.
+  function sampleAction(page, advance = true) {
+    if (advance) state.sampleRevisions[page] += 1;
+    return {page, revisions: {...state.sampleRevisions}};
+  }
+  function currentSampleAction(action) {
+    return action && state.sampleRevisions[action.page] === action.revisions[action.page];
+  }
+  function applySampleResult(page, result, action) {
+    if (!currentSampleAction(action)) return false;
     state.sampleSets[page] = {
       rows: result.samples,
       overview: result.overview || null,
@@ -1252,19 +1270,23 @@
     };
     renderSampleSummary(result.summary, sampleId(page, "samples"));
     renderRoleSummary(page);
-    if (result.summary?.confirmed) mirrorSamples(page);
+    if (result.summary?.confirmed) mirrorSamples(page, action);
     if (state.editing === page && $("sample-editor").open) renderSamples();
+    return true;
   }
   // The other flow on the same folder shows the same confirmed rows.
-  function mirrorSamples(page) {
+  function mirrorSamples(page, action) {
     const rawDir = $(samplePages[page].rawDir).value;
     for (const [other, spec] of Object.entries(samplePages))
-      if (other !== page && $(spec.rawDir).value === rawDir) {
+      if (other !== page && $(spec.rawDir).value === rawDir &&
+          state.sampleRevisions[other] === action.revisions[other]) {
+        state.sampleRevisions[other] += 1;
         state.sampleSets[other] = state.sampleSets[page];
         renderRoleSummary(other);
       }
   }
   function clearSamples(page) {
+    sampleAction(page);
     state.sampleSets[page] = emptySamples();
     $(sampleId(page, "samples-summary")).textContent = "";
     $(sampleId(page, "samples-conflicts")).hidden = true;
@@ -1763,15 +1785,24 @@
     const set = state.sampleSets[page];
     if (!set.rows.length) return;
     const rawDir = $(samplePages[page].rawDir).value;
+    const action = sampleAction(page);
     const saved = await api("/api/samples/save", {
       raw_dir: rawDir,
       samples: set.rows,
     });
+    if (!currentSampleAction(action)) return;
     set.overview = saved.overview;
     set.source = "confirmed";
-    mirrorSamples(page);
+    mirrorSamples(page, action);
     renderRoleSummary(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
+  }
+  async function previewSamples(page, action) {
+    const spec = samplePages[page];
+    const values = {raw_dir: $(spec.rawDir).value, sequence_source: $(spec.sequence).value};
+    const result = await api("/api/samples/preview", values);
+    if ($(spec.rawDir).value !== values.raw_dir || $(spec.sequence).value !== values.sequence_source) return;
+    applySampleResult(page, result, action);
   }
   async function scanSamples(page, importSequence = false) {
     const spec = samplePages[page];
@@ -1790,7 +1821,9 @@
     if (kind === "targeted" && !values.targets.length)
       throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
     if (kind === "untargeted") await saveUntargeted(true);
+    const action = kind === "samples" ? sampleAction(values.page) : null;
     state.analysis = await api("/api/analysis/start", { kind, values });
+    if (action) state.sampleJobAction = {jobId: state.analysis.job.job_id, action};
     if (kind === "targeted") {
       state.config.settings = { ...values.settings };
       state.config.targeted_method = await api("/api/targeted/method", {});
@@ -1830,7 +1863,16 @@
     $("target-samples-review").hidden = !sampleSummary;
     if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
-    card.hidden = !job || pageOf(job) !== state.view;
+    // Curation starts from a result; every other job belongs to a setup page.
+    // A hidden card leaves completion and failure to the toast below.
+    const onResult = showingResult();
+    const slot = document.querySelector(
+      `[data-job-slot="${onResult ? "curation" : state.view}"]`,
+    );
+    if (slot && card.parentElement !== slot) slot.append(card);
+    card.hidden =
+      !job ||
+      (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
     lock();
     renderActivity();
     if (!job) return;
@@ -1900,9 +1942,12 @@
       if (job.kind === "samples") {
         const result = state.analysis.results.samples;
         const page = result.page || "untargeted";
-        applySampleResult(page, result);
-        if (page === "untargeted") dirty("untargeted");
-        done(`已讀取 ${result.samples.length} 個樣本。`);
+        const action = state.sampleJobAction?.jobId === job.job_id
+          ? state.sampleJobAction.action : null;
+        if (applySampleResult(page, result, action)) {
+          if (page === "untargeted") dirty("untargeted");
+          done(`已讀取 ${result.samples.length} 個樣本。`);
+        }
       } else if (job.kind === "curation")
         done(`矩陣整理完成：${state.analysis.results.curation.output_dir}`);
       else if (job.kind === "inspector") {
@@ -1912,6 +1957,9 @@
       } else {
         dirty(job.kind, false);
         done(`${jobNames[job.kind]}完成，結果已列在下方。`);
+        const result = state.analysis.results[job.kind];
+        const source = result.excel_path || result.evidence?.path || result.evidence?.report_path;
+        if (source && (job.kind === "untargeted" || result.artifacts?.some(item => item.path === source))) openReview(source, result.review_paths);
       }
     } else if (card.hidden)
       status(
@@ -1986,7 +2034,7 @@
     container.replaceChildren(head);
     const artifacts = el("div", undefined, "artifact-list");
     for (const artifact of result.artifacts || []) {
-      const label = artifact.path === result.excel_path ? "下載結果 XLSX"
+      const label = artifact.path === result.excel_path ? artifact.name
         : artifact.path === result.matrix_tsv ? "下載矩陣 TSV" : artifact.name;
       artifacts.append(artifactLink(artifact, label));
     }
@@ -2019,13 +2067,9 @@
       const { container, artifacts } = resultBase("untargeted", result);
       const metrics = el("div", undefined, "result-metrics");
       metric(metrics, result.sample_count, "樣本");
-      for (const [key, label] of [
-        ["total", "候選"],
-        ["HIGH", "HIGH"],
-        ["MEDIUM", "MEDIUM"],
-        ["LOW", "LOW"],
-      ])
-        metric(metrics, result.candidate_counts?.[key], label);
+      metric(metrics, result.overview?.matrix_count, "最終矩陣群組");
+      metric(metrics, result.overview?.complete_count, "全部樣本有量值的群組");
+      metric(metrics, result.overview?.unresolved_count, "含未解決定量的群組");
       container.append(metrics);
       const actions = el("div", undefined, "button-row");
       const evidence = result.evidence?.path || result.evidence?.report_path;
@@ -2041,20 +2085,13 @@
             "download",
           ),
         );
-      } else
-        container.append(
-          el(
-            "p",
-            "Discovery-only 會輸出候選與檢閱表；跨樣本檢閱需完成 Alignment。",
-            "subtle",
-          ),
-        );
+      }
       if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
         actions.prepend(
           button(
-            "整理矩陣",
+            "選用：整理矩陣",
             () => openCuration(result.output_dir, result.samples),
-            "primary",
+            "",
             "sliders",
           ),
         );
@@ -2071,7 +2108,6 @@
     }
   }
   function openReview(source, reviewPaths) {
-    selectView("review");
     document.dispatchEvent(
       new CustomEvent("xic:open-review", { detail: { source, reviewPaths } }),
     );
@@ -2084,13 +2120,17 @@
     $("curation-source_dir").value = sourceDir;
     $("curation-sample_metadata").value = "";
     $("curation-istd").value = "";
-    selectView("curation");
+    showResult();
+    $("result-curation").hidden = false;
+    $("result-curation").open = true;
+    $("result-curation").scrollIntoView({behavior: "smooth"});
     return detectCuration();
   }
   function curationPreferences() {
     return state.config.preferences.matrix_curation?.steps || {};
   }
   async function detectCuration() {
+    invalidateCurationPreview();
     const request = (state.curation.request += 1);
     const sourceDir = $("curation-source_dir").value.trim();
     state.curation.detection = null;
@@ -2212,7 +2252,7 @@
     }
     lock();
   }
-  async function startCuration() {
+  function curationRequest() {
     const detection = state.curation.detection;
     if (!detection) throw new Error("請先選擇可讀取的 Alignment 輸出資料夾。");
     const steps = {};
@@ -2233,18 +2273,62 @@
     }
     if (!Object.keys(steps).length)
       throw new Error("請至少啟用一個可用的整理步驟。");
-    state.config.preferences = await api("/api/preferences", {
-      matrix_curation: { steps: remembered },
-    });
     const sourceDir = detection.source_dir;
-    await startJob("curation", {
+    return { remembered, values: {
       source_dir: sourceDir,
       sample_metadata_path: $("curation-sample_metadata").value.trim(),
       istd_path: $("curation-istd").value.trim(),
-      samples:
-        sourceDir === state.curation.runSource ? state.curation.samples : null,
+      samples: sourceDir === state.curation.runSource ? state.curation.samples : null,
       steps,
-    });
+    }};
+  }
+  function invalidateCurationPreview() {
+    state.curation.previewRequest = null;
+    $("curation-preview").textContent = "設定已變更，請更新預覽。";
+    lock();
+  }
+  async function previewCuration() {
+    if (state.curation.previewBusy) return;
+    const {values} = curationRequest();
+    const submitted = JSON.stringify(values);
+    state.curation.previewBusy = true;
+    state.curation.previewRequest = null;
+    $("curation-preview-refresh").disabled = true;
+    $("curation-preview").textContent = "正在計算預覽；仍可修改設定或檢閱結果。";
+    lock();
+    try {
+      const preview = await api("/api/matrix-curation/preview", values);
+      if (JSON.stringify(curationRequest().values) !== submitted) return;
+      const host = $("curation-preview");
+      host.replaceChildren(el("p", `原始 ${preview.feature_count} 列 → 保留 ${preview.kept} 列、移除 ${preview.removed} 列。`));
+      host.append(el("p", preview.istd_count ? `本次 ${preview.istd_count} 個內標，保護 ${preview.protected} 列。` : "本次沒有 ISTD 保護。"));
+      const table = el("table");
+      const head = el("tr");
+      for (const name of ["步驟", "保留", "移除", "ISTD 保護", "無法判定"]) head.append(el("th", name));
+      table.append(head);
+      for (const step of preview.steps) {
+        const row = el("tr");
+        for (const value of [step.label, step.kept, step.removed, step.protected, step.undetermined]) row.append(el("td", String(value)));
+        table.append(row);
+        if (step.eligible_sample_count != null)
+          host.append(el("p", `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值（僅計未排除的 study_sample）；這是數值可用率，不是偵測率。`));
+      }
+      host.append(table);
+      for (const step of state.curation.detection.steps.filter(step => step.unavailable_reason))
+        host.append(el("p", `${step.label}：未執行，${preview.feature_count} 列無法判定；${step.unavailable_reason}`, "subtle"));
+      state.curation.previewRequest = submitted;
+    } finally {
+      state.curation.previewBusy = false;
+      $("curation-preview-refresh").disabled = false;
+      lock();
+    }
+  }
+  async function startCuration() {
+    const {values, remembered} = curationRequest();
+    if (JSON.stringify(values) !== state.curation.previewRequest)
+      throw new Error("請先更新預覽，確認保留與移除列數。");
+    state.config.preferences = await api("/api/preferences", {matrix_curation: {steps: remembered}});
+    await startJob("curation", values);
   }
   async function openInspectorExport(source) {
     state.exportSource = source;
@@ -2412,6 +2496,8 @@
   function setDllDir(value) {
     readerValidation++;
     clearTimeout(readerTimer);
+    if (state.config.settings.dll_dir !== value)
+      for (const page of Object.keys(samplePages)) clearSamples(page);
     state.config.settings.dll_dir = value;
     state.config.untargeted.dll_dir = value;
     for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
@@ -2660,7 +2746,6 @@
       $("target-import-preview").close();
       $("target-import-status").textContent = `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
     };
-    $("u-mode").addEventListener("change", modeFields);
     $("u-preset").onchange = () =>
       act(async () => {
         await loadMethod($("u-preset").value);
@@ -2714,6 +2799,8 @@
         }
       });
     for (const [page, spec] of Object.entries(samplePages)) {
+      for (const part of ["samples-refresh", "samples-import"])
+        $(sampleId(page, part)).addEventListener("pointerdown", () => sampleAction(page));
       $(sampleId(page, "samples-refresh")).onclick = () =>
         act(() => scanSamples(page));
       $(sampleId(page, "samples-import")).onclick = () =>
@@ -2742,7 +2829,7 @@
       $(sampleId(page, "samples-carry")).onclick = () =>
         act(() => openAnnotations(page, "carry"));
       // A different 上機資訊 makes the loaded rows stale until read again.
-      $(spec.sequence).addEventListener("change", () => clearSamples(page));
+      $(spec.sequence).addEventListener("input", () => clearSamples(page));
     }
     $("sample-filter").oninput = renderSamples;
     // Pending marks without a reason never outlive the editor.
@@ -2762,6 +2849,7 @@
       for (const [page, spec] of Object.entries(samplePages)) {
         const set = state.sampleSets[page];
         if (!set.rows.length || $(spec.rawDir).value !== raw_dir) continue;
+        sampleAction(page);
         state.sampleSets[page] = {
           ...set,
           rows: samples,
@@ -2816,10 +2904,9 @@
     for (const id of ["untargeted-new", "untargeted-clear"])
       $(id).onclick = () =>
         act(async () => {
-          for (const key of ["raw_dir", "raw_file", "discovery_batch_index"])
+          for (const key of ["raw_dir"])
             $(`u-${key}`).value = "";
           sampleRawDir = "";
-          $("u-output_dir").value = "";
           $("sequence-source").value = "";
           clearSamples("untargeted");
           $("untargeted-result").hidden = true;
@@ -2831,22 +2918,13 @@
           dirty("untargeted");
         });
     let sampleRawDir = $("u-raw_dir").value;
-    $("u-raw_dir").addEventListener("change", () => {
+    $("u-raw_dir").addEventListener("input", () => {
       const nextRawDir = $("u-raw_dir").value;
       if (nextRawDir === sampleRawDir) return;
       sampleRawDir = nextRawDir;
       $("sequence-source").value = "";
       state.config.untargeted.sequence_source = "";
       clearSamples("untargeted");
-      const name = $("u-raw_dir")
-        .value.replace(/\\/g, "/")
-        .replace(/\/$/, "")
-        .split("/")
-        .pop();
-      const current = $("u-output_dir").value.replace(/\\/g, "/");
-      if (name && (!current || /\/output(?:\/[^/]+)?$/.test(current)))
-        $("u-output_dir").value =
-          `${current ? current.replace(/(\/output)(?:\/[^/]+)?$/, "$1") : `${state.config.config_dir}/../output`}/${name}`;
       dirty("untargeted");
     });
     $("sequence-source").addEventListener("change", () => dirty("untargeted"));
@@ -2936,6 +3014,34 @@
         applyThemeButton();
         await api("/api/preferences", { theme });
       });
+    $("open-result").onclick = () => {
+      showResult();
+      $("source-settings").open = true;
+      $("source").focus();
+    };
+    $("result-back").onclick = () => selectView(state.view);
+    // A result restored at startup is ready behind 開啟既有結果; only an
+    // explicit open, or reloading the tab that showed it, switches to it.
+    const prepareResult = (page) => {
+      $("result-curation").open = false;
+      $("result-curation").hidden = page.overview?.kind !== "untargeted";
+      $("result-curation").ontoggle = () => {
+        if (!$("result-curation").open) return;
+        const folder = page.source.replace(/[\\/][^\\/]+$/, "");
+        if (state.curation.runSource !== folder) act(() => openCuration(folder, null));
+      };
+    };
+    document.addEventListener("xic:result-restored", (event) => {
+      prepareResult(event.detail);
+      state.restoredResult = true;
+      resumeResult();
+    });
+    document.addEventListener("xic:result-opened", (event) => {
+      prepareResult(event.detail);
+      showResult();
+    });
+    $("curation-preview-refresh").onclick = () => act(previewCuration);
+    $("curation-form").addEventListener("input", invalidateCurationPreview);
     $("about-workspace").onclick = () => $("about-dialog").showModal();
     $("shutdown-workspace").onclick = () => act(shutdown);
     document.addEventListener("xic:review-busy", (event) => {
@@ -2945,19 +3051,20 @@
     document.addEventListener("keydown", (event) => {
       if (!(event.ctrlKey || event.metaKey) || document.querySelector("dialog[open]"))
         return;
-      if (["1", "2", "3", "4"].includes(event.key)) {
+      if (["1", "2"].includes(event.key)) {
         event.preventDefault();
         selectView(
-          { 1: "targeted", 2: "untargeted", 3: "curation", 4: "review" }[
+          { 1: "targeted", 2: "untargeted" }[
             event.key
           ],
         );
       } else if (event.key === ".") {
         event.preventDefault();
         act(stopJob);
-      } else if (event.key === "Enter" && state.view !== "review") {
+      } else if (event.key === "Enter") {
         event.preventDefault();
-        if (!isBusy()) $(`${state.view}-form`).requestSubmit();
+        // Starting belongs to setup; a shown result never launches a hidden form.
+        if (!isBusy() && !showingResult()) $(`${state.view}-form`).requestSubmit();
       } else if (
         event.key.toLowerCase() === "s" &&
         ["targeted", "untargeted"].includes(state.view)
@@ -2983,6 +3090,7 @@
     const response = await fetch("/assets/analysis.html");
     if (!response.ok) throw new Error("分析頁面無法載入。");
     $("analysis-root").innerHTML = await response.text();
+    $("analysis-result").append($("result-curation"));
     mountSampleSteps();
     await api("/api/session");
     stopWindowTracking = ui.trackWindow();
@@ -2996,13 +3104,15 @@
     renderReaderSetup(state.config.thermo_reader);
     renderSettings(state.config.settings);
     renderTargetedMethods(state.config.targeted_methods || []);
-    for (const [key, label, kind] of pathFields)
+    for (const [key, label, kind, help] of pathFields)
       pathField(
         $("untargeted-paths"),
         key,
         label,
         kind,
         state.config.untargeted[key],
+        "u-",
+        help,
       );
     pathField(
       $("istd-path-field"),
@@ -3011,13 +3121,7 @@
       "targets",
       state.config.untargeted.targets_csv,
     ).placeholder = "留空不使用 · 可拖曳 XLSX、CSV、TSV 到這裡";
-    setMode(
-      state.config.untargeted.mode === "full" &&
-        state.config.untargeted.alignment_enabled === false
-        ? "discovery_batch"
-        : state.config.untargeted.mode,
-    );
-    $("u-backfill-enabled").checked = state.config.untargeted.backfill_enabled !== false;
+
     $("sequence-source").value = state.config.untargeted.sequence_source || "";
     for (const method of state.config.methods) {
       const option = el("option", method.display_name);
@@ -3040,11 +3144,14 @@
       status(error.message, true);
     }
     bind();
+    document.dispatchEvent(new CustomEvent("xic:results-ready"));
     targetCount();
     renderRoleSummary("targeted");
     renderRoleSummary("untargeted");
-    modeFields();
     state.analysis = state.config.analysis;
+    if (state.analysis.job?.kind === "samples")
+      state.sampleJobAction = {jobId: state.analysis.job.job_id,
+        action: sampleAction(pageOf(state.analysis.job), false)};
     const loadedSamples = state.analysis.results.samples;
     const loadedPage = loadedSamples?.page || "untargeted";
     const loadedSpec = samplePages[loadedPage];
@@ -3052,15 +3159,16 @@
         loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
         loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
         loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value)
-      applySampleResult(loadedPage, loadedSamples);
+      applySampleResult(loadedPage, loadedSamples, sampleAction(loadedPage, false));
     renderResults();
     selectView(
-      state.config.preferences.view ||
-        (state.config.review_source ? "review" : "targeted"),
+      ["targeted", "untargeted"].includes(state.config.preferences.view)
+        ? state.config.preferences.view : "targeted",
       false,
     );
     renderJob();
     state.booted = true;
+    resumeResult();
     checklist("targeted");
     checklist("untargeted");
     document.body.classList.remove("booting");

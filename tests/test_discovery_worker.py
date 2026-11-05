@@ -44,140 +44,59 @@ def _execute(
     ).execute()
 
 
-def test_align_only_summary_uses_existing_batch_index_counts(
+def _full_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    **fields: Any,
+) -> tuple[DiscoveryRequest, dict[str, Any]]:
+    """A one-RAW complete analysis whose Discovery stage is faked."""
     import xic_workbench.untargeted as module
 
-    index_path = tmp_path / "discovery_batch_index.csv"
-    index_path.write_text(
-        "\n".join(
-            [
-                "sample,high_count,medium_count,low_count,candidate_count",
-                "A.raw,1,2,3,6",
-                "B.raw,0,1,0,1",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    index_path = write_batch(tmp_path, ("A",))
     raw_dir = tmp_path / "raw"
-    output_dir = tmp_path / "out"
-    raw_dir.mkdir()
-    output_dir.mkdir()
-    monkeypatch.setattr(
-        module,
-        "run_untargeted_application",
-        lambda request, context=None, **_kwargs: _alignment_outputs(
-            matrix_tsv=output_dir / "alignment_matrix.tsv"
-        ),
-    )
-
-    summary = _execute(
-        DiscoveryRequest(
-            mode="align_only",
-            preset="dna_dr",
-            tuning_overrides={},
-            raw_dir=raw_dir,
-            raw_file=None,
-            dll_dir=tmp_path / "dll",
-            output_dir=output_dir,
-            discovery_batch_index=index_path,
-        )
-    )
-
-    assert summary["sample_count"] == 2
-    assert summary["candidate_counts"] == {
-        "HIGH": 1,
-        "MEDIUM": 3,
-        "LOW": 3,
-        "total": 7,
-    }
-    assert summary["discovery_batch_index"] == str(index_path)
-
-
-def test_single_file_discovery_only_summary_and_run_spec(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import xic_workbench.untargeted as module
-
-    raw_file = tmp_path / "Sample_A.raw"
-    raw_file.write_bytes(b"raw")
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-    candidates_csv = output_dir / "discovery_candidates.csv"
-    review_csv = output_dir / "discovery_review.csv"
-    candidates_csv.write_text("candidate_id\nc1\nc2\nc3\nc4\n", encoding="utf-8")
-    review_csv.write_text(
-        "review_priority,candidate_id\nHIGH,c1\nMEDIUM,c2\nLOW,c3\nLOW,c4\n",
-        encoding="utf-8",
-    )
-    captured: dict[str, Any] = {}
-
-    def fake_run_discovery(*_args: object, **kwargs: Any) -> SimpleNamespace:
-        captured.update(kwargs)
-        return SimpleNamespace(candidates_csv=candidates_csv, review_csv=review_csv)
-
-    monkeypatch.setattr(module, "run_discovery", fake_run_discovery)
-    summary = _execute(
-        DiscoveryRequest(
-            mode="discovery_only",
-            preset="dna_dr",
-            tuning_overrides={},
-            raw_dir=None,
-            raw_file=raw_file,
-            dll_dir=tmp_path / "dll",
-            output_dir=output_dir,
-            discovery_batch_index=None,
-        )
-    )
-
-    assert summary["candidate_counts"] == {
-        "HIGH": 1,
-        "MEDIUM": 1,
-        "LOW": 2,
-        "total": 4,
-    }
-    assert summary["published_paths"] == [str(candidates_csv), str(review_csv)]
-    run_spec = captured["run_spec"]
-    settings = captured["settings"]
-    assert captured["dll_dir"] == tmp_path / "dll"
-    assert run_spec.discovery_method.settings == settings
-    assert not settings.enable_blank_qualification
-    assert run_spec.acquisition_inputs[0].blank_library_sha256 is None
-    assert run_spec.acquisition_inputs[0].sample_stem == raw_file.stem
-    assert run_spec.signal_processing_profile.window_points == 9
-
-
-@pytest.mark.parametrize("mode", ["align_only", "full"])
-def test_alignment_modes_apply_default_runtime(
-    mode: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import xic_workbench.untargeted as module
-
-    index_path = tmp_path / "discovery_batch_index.csv"
-    index_path.write_text(
-        "sample,high_count,medium_count,low_count,candidate_count\nA.raw,1,0,0,1\n",
-        encoding="utf-8",
-    )
-    raw_dir = tmp_path / "raw"
-    output_dir = tmp_path / "out"
-    raw_dir.mkdir()
-    output_dir.mkdir()
+    raw_dir.mkdir(exist_ok=True)
     raw_path = raw_dir / "A.raw"
     raw_path.write_bytes(b"raw")
-    captured_alignment: dict[str, Any] = {}
     captured_discovery: dict[str, Any] = {}
+
+    def fake_run_discovery_batch(*_args: object, **kwargs: Any) -> SimpleNamespace:
+        captured_discovery.update(kwargs)
+        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(
         module,
         "read_analysis_set",
         lambda *_args: SimpleNamespace(raw_paths=(raw_path,)),
     )
+    monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
+    values: dict[str, Any] = {
+        "preset": "dna_dr",
+        "tuning_overrides": {},
+        "raw_dir": raw_dir,
+        "dll_dir": tmp_path / "dll",
+        "output_dir": tmp_path / "out",
+    }
+    values.update(fields)
+    return DiscoveryRequest(**values), captured_discovery
+
+
+def test_full_analysis_applies_default_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_workbench.untargeted as module
+
+    output_dir = tmp_path / "out"
+    request, captured_discovery = _full_request(
+        tmp_path,
+        monkeypatch,
+        tuning_overrides={
+            "nl_tolerance_ppm": 15.0,
+            "nl_min_intensity_ratio": 0.02,
+            "resolver_mode": "savgol",
+        },
+    )
+    captured_alignment: dict[str, Any] = {}
 
     def fake_run_alignment(request, context=None) -> _AlignmentRunOutputs:
         captured_alignment.update(request=request, context=context)
@@ -185,26 +104,7 @@ def test_alignment_modes_apply_default_runtime(
             matrix_tsv=output_dir / "alignment_matrix.tsv",
         )
 
-    def fake_run_discovery_batch(*_args: object, **kwargs: Any) -> SimpleNamespace:
-        captured_discovery.update(kwargs)
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
-
     monkeypatch.setattr(module, "run_untargeted_application", fake_run_alignment)
-    monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
-    request = DiscoveryRequest(
-        mode=mode,  # type: ignore[arg-type]
-        preset="dna_dr",
-        tuning_overrides={
-            "nl_tolerance_ppm": 15.0,
-            "nl_min_intensity_ratio": 0.02,
-            "resolver_mode": "savgol",
-        },
-        raw_dir=raw_dir,
-        raw_file=None,
-        dll_dir=tmp_path / "dll",
-        output_dir=output_dir,
-        discovery_batch_index=index_path if mode == "align_only" else None,
-    )
     progress: list[tuple[int, int, str]] = []
 
     summary = _execute(request, progress=progress)
@@ -234,18 +134,11 @@ def test_alignment_modes_apply_default_runtime(
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
     }
-    assert progress == (
-        [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
-        if mode == "full"
-        else [(0, 1, "Alignment..."), (1, 1, "完成")]
-    )
-    if mode == "full":
-        assert captured_discovery["max_workers"] == 1
-        run_spec = captured_discovery["run_spec"]
-        assert run_spec.discovery_method.settings is settings
-        assert run_spec.acquisition_inputs[0].sample_stem == "A"
-    else:
-        assert captured_discovery == {}
+    assert progress == [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
+    assert captured_discovery["max_workers"] == 1
+    run_spec = captured_discovery["run_spec"]
+    assert run_spec.discovery_method.settings is settings
+    assert run_spec.acquisition_inputs[0].sample_stem == "A"
 
 
 def test_alignment_interruption_propagates_from_execute(
@@ -254,16 +147,7 @@ def test_alignment_interruption_propagates_from_execute(
 ) -> None:
     import xic_workbench.untargeted as module
 
-    request = DiscoveryRequest(
-        mode="align_only",
-        preset="dna_dr",
-        tuning_overrides={},
-        raw_dir=tmp_path / "raw",
-        raw_file=None,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=write_batch(tmp_path, ("A",)),
-    )
+    request, _discovery = _full_request(tmp_path, monkeypatch)
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
@@ -290,9 +174,6 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
         '[[tag]]\nstrategy = "neutral_loss"\nname = "TEST"\nvalue = 100.0\n',
         encoding="utf-8",
     )
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    index = write_batch(tmp_path, ("A",))
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         module,
@@ -301,20 +182,17 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
             captured.update(request=request, context=context) or _alignment_outputs()
         ),
     )
-    request = DiscoveryRequest(
-        mode="align_only",
+    request, _discovery = _full_request(
+        tmp_path,
+        monkeypatch,
         preset=str(preset_path),
         preset_snapshot=load_preset(preset_path),
-        tuning_overrides={},
-        raw_dir=raw_dir,
-        raw_file=None,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=index,
     )
     preset_path.unlink()
 
     _execute(request)
+
+    assert "request" in captured
 
 
 def test_request_rejects_retired_standard_peak_route_before_discovery(
@@ -342,7 +220,6 @@ def test_request_rejects_retired_standard_peak_route_before_discovery(
     with pytest.raises(PresetError, match="diagnostic-only"):
         parse_request(
             {
-                "mode": "full",
                 "preset": str(preset_path),
                 "raw_dir": str(tmp_path / "raw"),
                 "dll_dir": str(tmp_path / "dll"),
@@ -357,16 +234,12 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
 ) -> None:
     import xic_workbench.untargeted as module
 
-    index_path = tmp_path / "discovery_batch_index.csv"
-    index_path.write_text("sample,candidate_count\nS1.raw,1\n", encoding="utf-8")
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
     targets_csv = tmp_path / "targets.csv"
     targets_csv.touch()
     sample_metadata = (
         SampleMetadata(
-            sample_name="S1",
-            raw_stem="S1",
+            sample_name="A",
+            raw_stem="A",
             injection_order=1,
             sample_role="qc",
             batch_id="Batch1",
@@ -379,20 +252,13 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
         return _alignment_outputs(matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv")
 
     monkeypatch.setattr(module, "run_untargeted_application", fake_run_alignment)
-    _execute(
-        DiscoveryRequest(
-            mode="align_only",
-            preset="dna_dr",
-            tuning_overrides={},
-            raw_dir=raw_dir,
-            raw_file=None,
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            discovery_batch_index=index_path,
-            targets_csv=targets_csv,
-            sample_metadata=sample_metadata,
-        )
+    request, _discovery = _full_request(
+        tmp_path,
+        monkeypatch,
+        targets_csv=targets_csv,
+        sample_metadata=sample_metadata,
     )
+    _execute(request)
 
     assert captured["request"].targets_csv != targets_csv
     assert captured["request"].targets_csv.read_bytes() == targets_csv.read_bytes()

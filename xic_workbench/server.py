@@ -309,6 +309,24 @@ def create_server(
                 ):
                     raise ValueError("請選擇資料夾或檔案類型。")
                 result = {"path": choose_path(kind, current)}
+            elif path == "/api/samples/preview":
+                from xic_workbench.samples import read_batch_samples
+
+                result = read_batch_samples(
+                    workspace.analysis.config_dir,
+                    Path(values["raw_dir"]),
+                    dll_dir=None,
+                    sequence_source=Path(values["sequence_source"])
+                    if values.get("sequence_source")
+                    else None,
+                    read_headers=False,
+                )
+            elif path == "/api/matrix-curation/preview":
+                from xic_workbench.matrix_curation import preview_curation
+
+                # Read-only computation runs on this HTTP request thread, without
+                # holding the mutable workspace lock or blocking status/queries.
+                result = preview_curation(workspace.analysis.config_dir, values)
             elif path == "/api/analysis/start":
                 if not isinstance(values.get("values"), dict):
                     raise ValueError("請提供分析設定。")
@@ -329,6 +347,7 @@ def create_server(
                 return
             elif path.removeprefix("/api/") in {
                 "preferences",
+                "paths/validate",
                 "targeted/save",
                 "targeted/method",
                 "targeted/method/save",
