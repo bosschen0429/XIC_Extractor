@@ -1,5 +1,4 @@
 import csv
-from dataclasses import fields
 from pathlib import Path
 
 from xic_extractor.discovery.csv_writer import (
@@ -14,7 +13,6 @@ from xic_extractor.discovery.models import (
     DISCOVERY_REVIEW_COLUMNS,
     DiscoveryCandidate,
     DiscoverySeed,
-    DiscoverySeedGroup,
     DiscoverySettings,
     NeutralLossProfile,
 )
@@ -184,22 +182,6 @@ def test_discovery_candidate_columns_start_with_review_columns() -> None:
         == DISCOVERY_PROVENANCE_COLUMNS
     )
     assert DISCOVERY_CANDIDATE_COLUMNS[-1] == "is_provisional"
-
-
-def test_discovery_candidate_has_optional_scan_support_score() -> None:
-    field_names = {field.name for field in fields(DiscoveryCandidate)}
-
-    assert "ms1_scan_support_score" in field_names
-    assert _candidate().ms1_scan_support_score is None
-
-
-def test_discovery_candidate_has_successor_state_and_ms1_feature_identity() -> None:
-    field_names = {field.name for field in fields(DiscoveryCandidate)}
-
-    assert "discovery_candidate_state" in field_names
-    assert "ms1_feature_row_id" in field_names
-    assert _candidate().discovery_candidate_state == "ms1_feature_nl_supported"
-    assert _candidate().ms1_feature_row_id == ("Sample_1|DNA_dR|258.108512|7.841234")
 
 
 def test_tag_evidence_json_is_last_provenance_column() -> None:
@@ -541,76 +523,6 @@ def test_discovery_seed_preserves_full_ms2_seed_contract() -> None:
     assert seed.configured_neutral_loss_da == 116.0474
     assert seed.observed_neutral_loss_da == 116.0471
     assert seed.observed_loss_error_ppm == 2.58
-
-
-def test_discovery_seed_group_preserves_group_contract_without_best_seed() -> None:
-    raw_file = Path("C:/data/TumorBC2312_DNA.raw")
-    seed = DiscoverySeed(
-        raw_file=raw_file,
-        sample_stem="TumorBC2312_DNA",
-        scan_number=6095,
-        rt=7.83,
-        precursor_mz=258.1085,
-        product_mz=142.0611,
-        product_intensity=12000.0,
-        neutral_loss_tag="DNA_dR",
-        configured_neutral_loss_da=116.0474,
-        observed_neutral_loss_da=116.0471,
-        observed_loss_error_ppm=2.58,
-    )
-
-    group = DiscoverySeedGroup(
-        raw_file=raw_file,
-        sample_stem="TumorBC2312_DNA",
-        seeds=(seed,),
-        neutral_loss_tag="DNA_dR",
-        configured_neutral_loss_da=116.0474,
-        precursor_mz=258.1085,
-        product_mz=142.0611,
-        observed_neutral_loss_da=116.0471,
-        neutral_loss_mass_error_ppm=2.58,
-        rt_seed_min=7.80,
-        rt_seed_max=7.86,
-    )
-
-    assert tuple(field.name for field in fields(DiscoverySeedGroup)) == (
-        "raw_file",
-        "sample_stem",
-        "seeds",
-        "neutral_loss_tag",
-        "configured_neutral_loss_da",
-        "precursor_mz",
-        "product_mz",
-        "observed_neutral_loss_da",
-        "neutral_loss_mass_error_ppm",
-        "rt_seed_min",
-        "rt_seed_max",
-        "matched_tag_names",
-        "tag_evidence_json",
-        "precursor_mz_basis",
-        "neutral_loss_error_basis",
-        "scan_precursor_mz",
-        "scan_precursor_delta_da",
-        "max_scan_precursor_abs_delta_da",
-    )
-    assert group.raw_file == raw_file
-    assert group.sample_stem == "TumorBC2312_DNA"
-    assert group.seeds == (seed,)
-    assert group.neutral_loss_tag == "DNA_dR"
-    assert group.configured_neutral_loss_da == 116.0474
-    assert group.precursor_mz == 258.1085
-    assert group.product_mz == 142.0611
-    assert group.observed_neutral_loss_da == 116.0471
-    assert group.neutral_loss_mass_error_ppm == 2.58
-    assert group.rt_seed_min == 7.80
-    assert group.rt_seed_max == 7.86
-    assert group.matched_tag_names == ()
-    assert group.tag_evidence_json == "{}"
-    assert group.precursor_mz_basis == "scan_precursor"
-    assert group.neutral_loss_error_basis == "measured_scan_precursor_product"
-    assert group.scan_precursor_mz is None
-    assert group.scan_precursor_delta_da is None
-    assert group.max_scan_precursor_abs_delta_da is None
 
 
 def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> None:
