@@ -3220,7 +3220,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             heavy_audit_enabled=False,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
@@ -4193,7 +4192,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 heavy_audit_enabled=False,
                 owner_backfill_peak_fact_provenance_row_count=1,
             ),
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             production_decisions=decisions,
         )
 
@@ -4347,7 +4345,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             heavy_audit_enabled=False,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )
     assert outputs.matrix_tsv is not None

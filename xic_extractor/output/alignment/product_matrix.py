@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Any
 
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,
     cells_by_cluster,
-    row_id,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     FinalizedUntargetMatrixRow,
@@ -41,12 +36,10 @@ class ProductMatrixRow:
 def build_product_matrix_rows(
     matrix: AlignmentMatrix,
     *,
-    alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
     source_candidate_owners: dict[str, str] | None = None,
 ) -> tuple[ProductMatrixRow, ...]:
-    config = alignment_config or AlignmentConfig()
-    decisions = production_decisions or build_production_decisions(matrix, config)
+    decisions = production_decisions
     grouped_cells = cells_by_cluster(matrix)
     rows: list[ProductMatrixRow] = []
     seen_source_candidates: dict[str, str] = (
@@ -54,7 +47,7 @@ def build_product_matrix_rows(
     )
 
     for cluster in matrix.clusters:
-        cluster_id = row_id(cluster)
+        cluster_id = cluster.feature_id
         row_decision = decisions.row(cluster_id)
         cluster_cells = grouped_cells.get(cluster_id, ())
         cluster_sample_stems = {cell.sample_stem for cell in cluster_cells}
@@ -94,35 +87,31 @@ def build_product_matrix_rows(
 def product_matrix_tsv_rows(
     matrix: AlignmentMatrix,
     *,
-    alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
 ) -> list[dict[str, object]]:
     return [
         {"Mz": row.mz, "RT": row.rt, **row.sample_values}
         for row in build_product_matrix_rows(
             matrix,
-            alignment_config=alignment_config,
             production_decisions=production_decisions,
         )
     ]
 
 
 def _matrix_review_projection(
-    cluster: Any,
+    cluster: FinalizedUntargetMatrixRow,
     *,
     matrix_row_index: int,
     product_cells: tuple[ProductCellAssignment, ...],
 ) -> dict[str, object]:
-    mz = _family_center_mz(cluster)
-    rt, _ = _center_rt(cluster, product_cells)
+    mz = float(cluster.family_center_mz)
+    rt = float(cluster.family_center_rt)
     return {
-        "feature_id": str(getattr(cluster, "feature_id", "")) or row_id(cluster),
+        "feature_id": cluster.feature_id,
         "matrix_row_index": matrix_row_index,
         "matrix_mz": mz,
         "matrix_rt": rt,
-        "center_mz_basis": str(
-            getattr(cluster, "center_mz_basis", "source_family_center_mz")
-        ),
+        "center_mz_basis": cluster.center_mz_basis,
         "accepted_cell_count": len(product_cells),
         MATRIX_ROW_BINDING_COLUMN: "",
     }
@@ -167,45 +156,3 @@ def _float_identity_value(value: object, *, name: str) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     raise ValueError(f"{name} must be numeric")
-
-
-def _family_center_mz(row: Any) -> float:
-    if hasattr(row, "family_center_mz"):
-        return float(row.family_center_mz)
-    if hasattr(row, "mz"):
-        return float(row.mz)
-    return float(row.cluster_center_mz)
-
-
-def _family_center_rt(row: Any) -> float:
-    if hasattr(row, "family_center_rt"):
-        return float(row.family_center_rt)
-    if hasattr(row, "rt"):
-        return float(row.rt)
-    return float(row.cluster_center_rt)
-
-
-def _center_rt(
-    cluster: Any,
-    product_cells: tuple[ProductCellAssignment, ...],
-) -> tuple[float, str]:
-    if type(cluster) is FinalizedUntargetMatrixRow:
-        return cluster.family_center_rt, cluster.center_rt_basis
-    weighted_sum = 0.0
-    weight_sum = 0.0
-    for cell, decision in product_cells:
-        if cell.apex_rt is None or decision.matrix_value is None:
-            continue
-        if not math.isfinite(cell.apex_rt):
-            continue
-        weight = decision.matrix_value
-        if not math.isfinite(weight) or weight <= 0:
-            continue
-        weighted_sum += cell.apex_rt * weight
-        weight_sum += weight
-    if weight_sum > 0:
-        return weighted_sum / weight_sum, "accepted_cell_area_weighted_apex_rt"
-    return (
-        _family_center_rt(cluster),
-        "source_family_center_rt",
-    )

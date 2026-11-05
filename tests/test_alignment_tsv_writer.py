@@ -1,18 +1,18 @@
 import csv
 import math
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TypeGuard
+from typing import Literal, TypeGuard
 
 import pytest
 
-from xic_extractor.alignment.config import AlignmentConfig
+from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.owner_group_delivery import GROUP_REVIEW_PROJECTION_COLUMNS
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    FinalizedUntargetMatrixRow,
 )
 from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
@@ -99,9 +99,9 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "membership_risk_flags": "",
         "membership_risks_json": "[]",
         "feature_id": "ALN000001",
-        "group_construction_role": "successor_constructor",
-        "group_delivery_role": "owner_aligned_feature_compatibility_facade",
-        "group_membership_source": "owner_aligned_feature_successor_projection",
+        "group_construction_role": "finalized_untargeted_cid_nl",
+        "group_delivery_role": "finalized_owner_projection",
+        "group_membership_source": "completed_untarget_batch",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
         "family_center_rt": "8.49",
@@ -109,7 +109,7 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "family_observed_neutral_loss_da": "116.047",
         "has_anchor": "TRUE",
         "event_cluster_count": "1",
-        "event_cluster_ids": "ALN000001",
+        "event_cluster_ids": "ALN000001#peak-0",
         "event_member_count": "1",
         "detected_count": "2",
         "absent_count": "1",
@@ -117,17 +117,17 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "present_rate": "0.75",
-        "identity_decision": "production_family",
-        "identity_confidence": "medium",
-        "primary_evidence": "multi_sample_detected",
-        "identity_reason": "multi_sample_detected",
+        "identity_decision": "finalized_matrix",
+        "identity_confidence": "owner_finalized",
+        "primary_evidence": "completed_untarget_batch",
+        "identity_reason": "test_route",
         "quantifiable_detected_count": "2",
         "quantifiable_backfill_count": "1",
         "accepted_cell_count": "3",
         "accepted_backfill_count": "1",
         "review_backfill_count": "0",
         "include_in_primary_matrix": "TRUE",
-        "row_flags": "",
+        "row_flags": "finalized_route:matrix",
         "representative_samples": "sample-a;sample-b;sample-d",
         "family_evidence": "",
         "warning": "",
@@ -274,46 +274,6 @@ def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
     assert rows[0]["detected_count"] == "1"
     assert rows[0]["present_rate"] == "0.333333"
     assert "1 ambiguous MS1 owner" in rows[0]["reason"]
-
-
-def test_write_alignment_review_tsv_reports_folded_clusters(tmp_path: Path):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                has_anchor=True,
-                member_count=2,
-                folded_cluster_ids=("ALN000002", "ALN000003"),
-                folded_member_count=5,
-                folded_sample_fill_count=1,
-                fold_evidence=(
-                    "cid_nl_only;max_mz_ppm=2;max_rt_sec=1;min_shared_detected=4"
-                ),
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=10.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "backfilled", area=20.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["event_cluster_count"] == "3"
-    assert rows[0]["event_cluster_ids"] == "ALN000001;ALN000002;ALN000003"
-    assert rows[0]["event_member_count"] == "7"
-    assert rows[0]["family_evidence"].startswith("cid_nl_only;")
-    assert rows[0]["reason"] == (
-        "anchor family; 2/2 present; 1 MS1 backfilled; merged 3 event clusters"
-    )
 
 
 def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: Path):
@@ -960,7 +920,7 @@ def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
     assert rows[0]["sample-c"] == "3.00000e+02"
 
 
-def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
+def test_write_alignment_matrix_tsv_excludes_archived_rows(
     tmp_path: Path,
 ):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
@@ -971,10 +931,15 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
                 cluster_id="ALN000001",
                 fold_evidence="owner_complete_link;owner_count=2",
             ),
-            _cluster(cluster_id="ALN000002", has_anchor=False, fold_evidence=""),
+            _cluster(
+                cluster_id="ALN000002",
+                has_anchor=False,
+                destination="archive",
+            ),
             _cluster(
                 cluster_id="ALN000003",
                 fold_evidence="owner_complete_link;owner_count=2",
+                destination="archive",
             ),
         ),
         cells=(
@@ -1051,7 +1016,7 @@ def test_write_alignment_review_tsv_maps_product_rows(
         "matrix_row_index": "1",
         "matrix_mz": "500.123",
         "matrix_rt": matrix_rows[0]["RT"],
-        "center_mz_basis": "source_family_center_mz",
+        "center_mz_basis": "cross_sample_owner_arithmetic_mean",
         "accepted_cell_count": "2",
     }
 
@@ -1107,7 +1072,7 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=False, fold_evidence=""),),
+        clusters=(_cluster(has_anchor=False, destination="archive"),),
         cells=(_cell("sample-a", "backfilled", area=200.0),),
         sample_order=("sample-a",),
     )
@@ -1120,67 +1085,17 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
         )
     )
 
-    assert rows[0]["identity_decision"] == "audit_family"
-    assert rows[0]["identity_confidence"] == "review"
-    assert rows[0]["primary_evidence"] == "none"
-    assert rows[0]["identity_reason"] == "rescue_only_blocked"
+    assert rows[0]["identity_decision"] == "finalized_archive"
+    assert rows[0]["identity_confidence"] == "owner_finalized"
+    assert rows[0]["primary_evidence"] == "completed_untarget_batch"
+    assert rows[0]["identity_reason"] == "test_route"
     assert rows[0]["quantifiable_detected_count"] == "0"
     assert rows[0]["quantifiable_backfill_count"] == "1"
-    assert rows[0]["accepted_cell_count"] == "0"
-    assert rows[0]["accepted_backfill_count"] == "0"
-    assert rows[0]["review_backfill_count"] == "1"
+    assert rows[0]["accepted_cell_count"] == "1"
+    assert rows[0]["accepted_backfill_count"] == "1"
+    assert rows[0]["review_backfill_count"] == "0"
     assert rows[0]["include_in_primary_matrix"] == "FALSE"
-    assert rows[0]["row_flags"] == "rescue_only;rescue_only_review"
-
-
-def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
-    tmp_path: Path,
-):
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_tsv,
-        write_alignment_review_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                fold_evidence="owner_complete_link;owner_count=1",
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "backfilled", area=90.0),
-            _cell("sample-c", "backfilled", area=80.0),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    review_rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-    matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert list(review_rows[0]) == REVIEW_COLUMNS
-    assert review_rows[0]["identity_decision"] == "provisional_discovery"
-    assert review_rows[0]["include_in_primary_matrix"] == "FALSE"
-    assert review_rows[0]["quantifiable_detected_count"] == "1"
-    assert review_rows[0]["quantifiable_backfill_count"] == "2"
-    assert set(review_rows[0]["row_flags"].split(";")) == {
-        "single_detected_seed",
-        "rescue_heavy",
-        "rescue_only_review",
-    }
-    assert matrix_rows == []
+    assert rows[0]["row_flags"] == "finalized_route:archive"
 
 
 def test_write_alignment_status_matrix_tsv_preserves_duplicate_assigned(
@@ -1491,14 +1406,8 @@ def test_private_write_tsv_accepts_generator_rows(tmp_path: Path) -> None:
     assert path.read_bytes() == b"name\tvalue\nrow-0\t0\nrow-1\t1\nrow-2\t2\n"
 
 
-def _production_decisions(
-    matrix: AlignmentMatrix,
-    alignment_config: AlignmentConfig | None = None,
-) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        alignment_config or AlignmentConfig(),
-    )
+def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
+    return finalized_writer_decisions(matrix)
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:
@@ -1514,28 +1423,23 @@ def _cluster(
     neutral_loss_tag: str = "DNA_dR",
     has_anchor: bool = True,
     member_count: int = 0,
-    folded_cluster_ids: tuple[str, ...] = (),
-    folded_member_count: int = 0,
-    folded_sample_fill_count: int = 0,
     fold_evidence: str = "",
-) -> AlignmentCluster:
-    return AlignmentCluster(
-        cluster_id=cluster_id,
-        neutral_loss_tag=neutral_loss_tag,
-        cluster_center_mz=center_mz,
-        cluster_center_rt=center_rt,
-        cluster_product_mz=384.076,
-        cluster_observed_neutral_loss_da=116.047,
-        has_anchor=has_anchor,
-        members=tuple(
-            SimpleNamespace(candidate_id=f"{cluster_id}#member-{index}")
-            for index in range(member_count)
+    destination: Literal["matrix", "archive"] = "matrix",
+) -> FinalizedUntargetMatrixRow:
+    return FinalizedUntargetMatrixRow(
+        feature_id=cluster_id,
+        group_hypothesis_id=cluster_id,
+        destination=destination,
+        family_center_mz=center_mz,
+        family_center_rt=center_rt,
+        physical_peak_keys=tuple(
+            f"{cluster_id}#peak-{index}" for index in range(member_count)
         ),
-        anchor_members=(),
-        folded_cluster_ids=folded_cluster_ids,
-        folded_member_count=folded_member_count,
-        folded_sample_fill_count=folded_sample_fill_count,
-        fold_evidence=fold_evidence,
+        family_product_mz=384.076,
+        family_observed_neutral_loss_da=116.047,
+        neutral_loss_tag=neutral_loss_tag,
+        has_anchor=has_anchor,
+        evidence_status=fold_evidence,
     )
 
 
@@ -1688,13 +1592,11 @@ def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path)
     first = write_alignment_matrix_tsv(
         tmp_path / "before.tsv",
         before,
-        alignment_config=AlignmentConfig(),
         production_decisions=_production_decisions(before),
     )
     second = write_alignment_matrix_tsv(
         tmp_path / "after.tsv",
         after,
-        alignment_config=AlignmentConfig(),
         production_decisions=_production_decisions(after),
     )
     assert first.read_bytes() == second.read_bytes()

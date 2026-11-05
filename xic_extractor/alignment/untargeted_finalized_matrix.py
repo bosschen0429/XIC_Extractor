@@ -13,11 +13,9 @@ from xic_extractor.alignment.cell_observation.observations import (
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,
-    AlignmentRowLike,
     CellStatus,
 )
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
-from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.production_decisions import (
     BackfillTier,
     ProductionCellDecision,
@@ -111,7 +109,7 @@ def project_completed_untarget_batch_writer_inputs(
 ) -> CompletedUntargetBatchWriterInputs:
     """Materialize writer inputs for consumers that require a complete matrix."""
 
-    rows: list[AlignmentCluster | AlignmentRowLike] = []
+    rows: list[FinalizedUntargetMatrixRow] = []
     cells: list[AlignedCell] = []
     cell_decisions = {}
     row_decisions = {}

@@ -71,7 +71,6 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         outputs,
         writer.matrix,
         metadata={},
-        alignment_config=config,
         production_decisions=writer.production_decisions,
     )
     write_alignment_explanation(

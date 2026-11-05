@@ -13,12 +13,10 @@ from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,
     cells_by_cluster,
-    row_id,
 )
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
@@ -33,6 +31,7 @@ from xic_extractor.alignment.production_decisions import (
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
+    FinalizedUntargetMatrixRow,
 )
 from xic_extractor.output.alignment.matrix_output_contract import (
     MATRIX_REVIEW_COLUMNS,
@@ -165,7 +164,6 @@ def write_alignment_tsv_row_batches(
     batches: Iterable[CompletedUntargetBatchWriterInputs],
     *,
     sample_order: tuple[str, ...],
-    alignment_config: AlignmentConfig,
 ) -> int:
     """Render finalized rows to their TSV consumers in one bounded pass."""
 
@@ -205,7 +203,6 @@ def write_alignment_tsv_row_batches(
             writer_row_count += len(matrix.clusters)
             products = build_product_matrix_rows(
                 matrix,
-                alignment_config=alignment_config,
                 production_decisions=decisions,
                 source_candidate_owners=source_candidate_owners,
             )
@@ -231,7 +228,6 @@ def write_alignment_tsv_row_batches(
                     _format_alignment_review_rows(
                         _review_rows(
                             matrix,
-                            alignment_config=alignment_config,
                             production_decisions=decisions,
                             matrix_projection=projection_by_feature,
                         )
@@ -252,13 +248,9 @@ def write_alignment_review_tsv(
     matrix: AlignmentMatrix,
     *,
     production_decisions: ProductionDecisionSet,
-    alignment_config: AlignmentConfig | None = None,
 ) -> Path:
     decisions = _require_production_decisions(production_decisions)
-    config = alignment_config or AlignmentConfig()
-    products = build_product_matrix_rows(
-        matrix, alignment_config=config, production_decisions=decisions
-    )
+    products = build_product_matrix_rows(matrix, production_decisions=decisions)
     table = serialize_public_matrix_table(
         (
             {"Mz": product.mz, "RT": product.rt, **product.sample_values}
@@ -283,7 +275,6 @@ def write_alignment_review_tsv(
         _format_alignment_review_rows(
             _review_rows(
                 matrix,
-                alignment_config=config,
                 production_decisions=decisions,
                 matrix_projection=projection,
             )
@@ -296,12 +287,10 @@ def write_alignment_matrix_tsv(
     matrix: AlignmentMatrix,
     *,
     production_decisions: ProductionDecisionSet,
-    alignment_config: AlignmentConfig | None = None,
 ) -> Path:
     decisions = _require_production_decisions(production_decisions)
     rows = product_matrix_tsv_rows(
         matrix,
-        alignment_config=alignment_config,
         production_decisions=decisions,
     )
     table = serialize_public_matrix_table(
@@ -327,7 +316,7 @@ def write_alignment_cells_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
 
 
 def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]:
-    clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
+    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
     for cell in matrix.cells:
         cluster = clusters_by_id[cell.cluster_id]
         quality = (
@@ -370,8 +359,8 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "scan_support_score": format_value(cell.scan_support_score),
             "source_candidate_id": cell.source_candidate_id or "",
             "neutral_loss_tag": cluster.neutral_loss_tag,
-            "family_center_mz": format_value(_family_center_mz(cluster)),
-            "family_center_rt": format_value(_family_center_rt(cluster)),
+            "family_center_mz": format_value(cluster.family_center_mz),
+            "family_center_rt": format_value(cluster.family_center_rt),
             "reason": cell.reason,
         }
 
@@ -396,7 +385,7 @@ def _backfill_cell_evidence_rows(
     production_decisions: ProductionDecisionSet,
 ) -> Iterable[tuple[object, ...]]:
     decisions = _require_production_decisions(production_decisions)
-    clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
+    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
 
     def rows() -> Iterable[tuple[object, ...]]:
@@ -434,8 +423,8 @@ def _backfill_cell_evidence_rows(
                 cell.gap_fill_reason,
                 cell.source_candidate_id or "",
                 cluster.neutral_loss_tag,
-                format_value(_family_center_mz(cluster)),
-                format_value(_family_center_rt(cluster)),
+                format_value(cluster.family_center_mz),
+                format_value(cluster.family_center_rt),
                 cell.reason,
                 format_value(cell.backfill_request_rt_min),
                 format_value(cell.backfill_request_rt_max),
@@ -448,7 +437,7 @@ def write_alignment_backfill_seed_audit_tsv(
     path: Path,
     matrix: AlignmentMatrix,
 ) -> Path:
-    clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
+    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
     rows: list[dict[str, object]] = []
     for cell in matrix.cells:
         if cell.status != "backfilled" or cell.backfill_seed_mz is None:
@@ -471,8 +460,8 @@ def write_alignment_backfill_seed_audit_tsv(
                 "peak_end_rt": cell.peak_end_rt,
                 "rt_delta_sec": cell.rt_delta_sec,
                 "neutral_loss_tag": cluster.neutral_loss_tag,
-                "family_center_mz": _family_center_mz(cluster),
-                "family_center_rt": _family_center_rt(cluster),
+                "family_center_mz": cluster.family_center_mz,
+                "family_center_rt": cluster.family_center_rt,
                 "backfill_seed_mz": cell.backfill_seed_mz,
                 "backfill_seed_rt": cell.backfill_seed_rt,
                 "backfill_request_rt_min": cell.backfill_request_rt_min,
@@ -499,14 +488,14 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
     rows: list[dict[str, object]] = []
     grouped_cells = cells_by_cluster(matrix)
     for cluster in matrix.clusters:
-        cluster_id = row_id(cluster)
+        cluster_id = cluster.feature_id
         cells = grouped_cells.get(cluster_id, ())
         cells_by_sample = {cell.sample_stem: cell for cell in cells}
         row: dict[str, object] = {
             "feature_id": delivery_feature_id(cluster),
             "neutral_loss_tag": cluster.neutral_loss_tag,
-            "family_center_mz": format_value(_family_center_mz(cluster)),
-            "family_center_rt": format_value(_family_center_rt(cluster)),
+            "family_center_mz": format_value(cluster.family_center_mz),
+            "family_center_rt": format_value(cluster.family_center_rt),
         }
         for sample_stem in matrix.sample_order:
             cell = cells_by_sample.get(sample_stem)
@@ -518,7 +507,6 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
 def _review_rows(
     matrix: AlignmentMatrix,
     *,
-    alignment_config: AlignmentConfig,
     production_decisions: ProductionDecisionSet,
     matrix_projection: Mapping[str, Mapping[str, object]],
 ) -> list[dict[str, object]]:
@@ -527,7 +515,7 @@ def _review_rows(
     sample_count = len(matrix.sample_order)
     decisions = production_decisions
     for cluster in matrix.clusters:
-        cluster_id = row_id(cluster)
+        cluster_id = cluster.feature_id
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
         raw_status_counts = Counter(
@@ -546,16 +534,16 @@ def _review_rows(
                 **delivery_group_projection(cluster),
                 **matrix_projection.get(delivery_feature_id(cluster), {}),
                 "neutral_loss_tag": cluster.neutral_loss_tag,
-                "family_center_mz": _family_center_mz(cluster),
-                "family_center_rt": _family_center_rt(cluster),
-                "family_product_mz": _family_product_mz(cluster),
+                "family_center_mz": cluster.family_center_mz,
+                "family_center_rt": cluster.family_center_rt,
+                "family_product_mz": cluster.family_product_mz,
                 "family_observed_neutral_loss_da": (
-                    _family_observed_neutral_loss_da(cluster)
+                    cluster.family_observed_neutral_loss_da
                 ),
                 "has_anchor": cluster.has_anchor,
-                "event_cluster_count": len(_event_cluster_ids(cluster)),
-                "event_cluster_ids": ";".join(_event_cluster_ids(cluster)),
-                "event_member_count": _event_member_count(cluster),
+                "event_cluster_count": len(cluster.event_cluster_ids),
+                "event_cluster_ids": ";".join(cluster.event_cluster_ids),
+                "event_member_count": cluster.event_member_count,
                 "detected_count": detected_count,
                 "absent_count": absent_count,
                 "unchecked_count": unchecked_count,
@@ -578,13 +566,13 @@ def _review_rows(
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
                 "membership_risk_status": "recorded"
-                if getattr(cluster, "membership_risks", ())
+                if cluster.membership_risks
                 else "not_recorded",
                 "membership_risk_flags": ";".join(
                     sorted(
                         {
                             flag
-                            for _, risk in getattr(cluster, "membership_risks", ())
+                            for _, risk in cluster.membership_risks
                             for flag in risk.risk_flags
                         }
                     )
@@ -592,13 +580,13 @@ def _review_rows(
                 "membership_risks_json": json.dumps(
                     [
                         {"sample_key": sample, **asdict(risk)}
-                        for sample, risk in getattr(cluster, "membership_risks", ())
+                        for sample, risk in cluster.membership_risks
                     ],
                     ensure_ascii=False,
                     allow_nan=False,
                 ),
                 "representative_samples": _representative_samples(cells, decisions),
-                "family_evidence": _family_evidence(cluster),
+                "family_evidence": cluster.evidence,
                 "warning": _warning(
                     cluster,
                     sample_count=sample_count,
@@ -626,7 +614,7 @@ def _backfill_evidence_family_ids(
     grouped_cells = cells_by_cluster(matrix)
     family_ids: set[str] = set()
     for cluster in matrix.clusters:
-        cluster_id = row_id(cluster)
+        cluster_id = cluster.feature_id
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
         if any(cell.status == "backfilled" for cell in cells):
@@ -729,7 +717,7 @@ def _cap_semicolon(values: list[str]) -> str:
 
 
 def _warning(
-    cluster: Any,
+    cluster: FinalizedUntargetMatrixRow,
     *,
     sample_count: int,
     detected_count: int,
@@ -748,7 +736,7 @@ def _warning(
 
 
 def _reason(
-    cluster: Any,
+    cluster: FinalizedUntargetMatrixRow,
     present_count: int,
     sample_count: int,
     backfilled_count: int,
@@ -761,7 +749,7 @@ def _reason(
         f"{present_count}/{sample_count} present",
         f"{backfilled_count} MS1 backfilled",
     ]
-    event_cluster_count = len(_event_cluster_ids(cluster))
+    event_cluster_count = len(cluster.event_cluster_ids)
     if event_cluster_count > 1:
         parts.append(f"merged {event_cluster_count} event clusters")
     if duplicate_assigned_count:
@@ -771,56 +759,14 @@ def _reason(
     return "; ".join(parts)
 
 
-def _family_center_mz(row: Any) -> float:
-    if hasattr(row, "family_center_mz"):
-        return row.family_center_mz
-    return row.cluster_center_mz
-
-
-def _family_center_rt(row: Any) -> float:
-    if hasattr(row, "family_center_rt"):
-        return row.family_center_rt
-    return row.cluster_center_rt
-
-
 def _rt_delta_sec(left_rt: float | None, right_rt: float | None) -> float | None:
     if left_rt is None or right_rt is None:
         return None
     return (left_rt - right_rt) * 60.0
 
 
-def _family_product_mz(row: Any) -> float:
-    if hasattr(row, "family_product_mz"):
-        return row.family_product_mz
-    return row.cluster_product_mz
-
-
-def _family_observed_neutral_loss_da(row: Any) -> float:
-    if hasattr(row, "family_observed_neutral_loss_da"):
-        return row.family_observed_neutral_loss_da
-    return row.cluster_observed_neutral_loss_da
-
-
-def _event_cluster_ids(row: Any) -> tuple[str, ...]:
-    if hasattr(row, "event_cluster_ids"):
-        return tuple(row.event_cluster_ids)
-    return (str(row.cluster_id), *tuple(row.folded_cluster_ids))
-
-
-def _event_member_count(row: Any) -> int:
-    if hasattr(row, "event_member_count"):
-        return int(row.event_member_count)
-    return len(row.members) + int(row.folded_member_count)
-
-
-def _family_evidence(row: Any) -> str:
-    if hasattr(row, "evidence"):
-        return str(row.evidence)
-    return str(row.fold_evidence)
-
-
-def _has_detected_owner_evidence(row: Any) -> bool:
-    evidence = _family_evidence(row)
+def _has_detected_owner_evidence(row: FinalizedUntargetMatrixRow) -> bool:
+    evidence = row.evidence
     return evidence == "single_sample_local_owner" or evidence.startswith(
         "owner_complete_link;"
     )

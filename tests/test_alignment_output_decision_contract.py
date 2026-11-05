@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
+from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.output.alignment.pipeline_outputs import output_paths
 from xic_extractor.output.alignment.tsv_writer import (
@@ -29,21 +29,19 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
         emit_alignment_status_matrix=False,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
 
     with pytest.raises(TypeError, match="production_decisions"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             matrix,
             metadata={},
-            alignment_config=config,
         )
     with pytest.raises(TypeError, match="production_decisions must be owner-minted"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             matrix,
             metadata={},
-            alignment_config=config,
             production_decisions=object(),  # type: ignore[arg-type]
         )
 
@@ -62,14 +60,13 @@ def test_matrix_only_output_plan_omits_unselected_provenance(
         emit_alignment_status_matrix=False,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
         matrix,
         metadata={},
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
+        production_decisions=finalized_writer_decisions(matrix),
     )
 
     assert outputs.matrix_tsv is not None
@@ -95,19 +92,17 @@ def test_activated_renderers_reject_wrong_decision_type_before_writes(
     relative_path: str,
 ) -> None:
     matrix = _matrix(("Sample_A", "Sample_B"))
-    config = AlignmentConfig()
+    AlignmentConfig()
     wrong_decisions = {}  # falsey input exercised the retired rebuild fallback
     renderers = {
         "review": lambda path: write_alignment_review_tsv(
             path,
             matrix,
-            alignment_config=config,
             production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
         "matrix": lambda path: write_alignment_matrix_tsv(
             path,
             matrix,
-            alignment_config=config,
             production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
         "backfill": lambda path: write_alignment_backfill_cell_evidence_tsv(
@@ -140,7 +135,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
         outputs,
         matrix,
         metadata={},
-        alignment_config=config,
         production_decisions=supplied,
     )
 
@@ -175,7 +169,6 @@ def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
         outputs,
         matrix,
         metadata={},
-        alignment_config=config,
         production_decisions=supplied,
     )
 
@@ -192,7 +185,7 @@ def _divergent_owner_decisions(
     *,
     write_matrix_value: bool = True,
 ) -> ProductionDecisionSet:
-    rebuilt = build_production_decisions(matrix, config)
+    rebuilt = finalized_writer_decisions(matrix)
     return ProductionDecisionSet(
         cells={
             key: replace(

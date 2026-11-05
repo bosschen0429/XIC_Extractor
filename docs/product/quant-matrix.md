@@ -126,8 +126,8 @@ and scored without a rerun. It does not establish production readiness by itself
 
 ## Verification
 
-- `tests/test_alignment_matrix.py`, `tests/test_alignment_matrix_identity.py`
-- `tests/test_alignment_cell_decision.py`, `tests/test_alignment_production_decisions.py`
+- `tests/test_alignment_matrix.py`
+- `tests/test_alignment_cell_decision.py`
 
 ## Pitfalls
 

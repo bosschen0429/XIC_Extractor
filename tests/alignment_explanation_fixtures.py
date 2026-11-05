@@ -145,7 +145,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     write_alignment_matrix_tsv(
         matrix,
         writer.matrix,
-        alignment_config=config,
         production_decisions=writer.production_decisions,
     )
     return completed, writer, candidates, matrix, config

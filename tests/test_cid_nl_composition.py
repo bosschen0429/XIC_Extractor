@@ -197,7 +197,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         write_alignment_matrix_tsv(
             destination,
             writer.matrix,
-            alignment_config=AlignmentConfig(),
             production_decisions=writer.production_decisions,
         )
         with destination.open(encoding="utf-8-sig", newline="") as handle:
@@ -223,7 +222,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     write_alignment_matrix_tsv(
         destination,
         writer.matrix,
-        alignment_config=AlignmentConfig(),
         production_decisions=writer.production_decisions,
     )
     with destination.open(encoding="utf-8-sig", newline="") as handle:

@@ -118,7 +118,7 @@ default runs.
 ---
 
 CLI reports and audits over alignment outputs (cells, families, owner
-decisions, RT calibration, matrix identity).
+decisions, RT calibration).
 
 
 ### `targeted_gt_alignment_audit.py`
@@ -126,20 +126,6 @@ decisions, RT calibration, matrix identity).
 **Purpose**: Audit untargeted alignment against targeted workbook GT.
 **Topic group**: `targeted_gt_alignment_audit.py` + `_io`, `_models`, `_analysis`, `_writers`, `_utils` (6 files)
 **Originating spec**: `retired-provenance:038bfb65fe90` + Workstream G in `retired-provenance:100307efc8fa`
-
----
-
-### `analyze_matrix_identity_blast_radius.py`
-
-**Purpose**: Analyze matrix identity blast radius for alignment outputs, including projected machine-decision role/action columns from existing review and cell artifacts.
-**Topic group**: `analyze_matrix_identity_blast_radius.py` (single-file)
-**Originating spec**: `retired-provenance:d35acbb67c99`; machine-decision projection columns from `retired-provenance:358af6f258e2`
-**Recent doc**: `retired-provenance:02679bb817de`; `retired-provenance:bcaa7dd85d0f`; `retired-provenance:cff688a35421`
-**Status note**: Machine-decision columns are `diagnostic_only` projection output, not a downstream `alignment_matrix.tsv` contract.
-**Cleanup note**: Blast-radius input assembly now builds the alignment matrix,
-current-review lookup, and per-family cell-row groups together, preserving
-cluster order, sorted sample order, row grouping order, TSV/JSON schemas, and
-benchmark join behavior.
 
 ---
 
