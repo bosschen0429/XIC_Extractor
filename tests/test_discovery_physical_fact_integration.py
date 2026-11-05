@@ -9,18 +9,18 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from tests.test_discovery_ms1_capture import (
+from tests.discovery_ms1_capture_fixtures import (
     _group,
     _multi_tag_settings,
     _seed,
 )
-from tests.test_discovery_ms1_capture import (
-    _OwnerBoundBatchRaw as _BatchRaw,
-)
-from tests.test_discovery_ms1_capture import (
+from tests.discovery_ms1_capture_fixtures import (
     _settings as _capture_settings,
 )
-from tests.test_discovery_pipeline import (
+from tests.discovery_physical_fact_integration_fixtures import (
+    _OwnerBoundBatchRaw,
+)
+from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _read_csv,
     _scan_event,
@@ -66,14 +66,6 @@ def _acquisition_totals(batches):
     return SimpleNamespace(
         **{name: sum(getattr(batch, name) for batch in batches) for name in names}
     )
-
-
-class _OwnerBoundBatchRaw(_BatchRaw):
-    def __init__(self, source, **kwargs) -> None:
-        super().__init__(source, **kwargs)
-        # Include baseline-return samples and context beyond both peak boundaries.
-        self.rt = np.linspace(7.4, 8.2, 81)
-        self.intensity = 100.0 * np.exp(-0.5 * ((self.rt - 7.8) / 0.06) ** 2)
 
 
 @pytest.mark.parametrize("parent_support", [True, False])
@@ -1358,7 +1350,7 @@ def test_discovery_publishes_physical_qualification(
     tmp_path: Path,
     trace_case: str,
 ) -> None:
-    from tests.test_physical_peak_evaluation_persistence import (
+    from tests.physical_peak_evaluation_persistence_fixtures import (
         _context_sensitive_trace,
         _overlapping_triplet_trace,
         _short_peak_with_separate_noise_hits,

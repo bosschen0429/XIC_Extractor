@@ -19,6 +19,9 @@ from tests.cid_nl_raw_fixture import (
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
+from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
+    _without_ms1_peak,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_bootstrap import (
     bootstrap_cid_nl_initial_population,
@@ -28,7 +31,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
 )
@@ -2497,21 +2499,6 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.backfill_input is not None
     assert result.acquisition.logical_xic_request_count == 2
     assert vendor_raw.chromatogram_request_counts == [2]
-
-
-def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
-    return replace(
-        candidate,
-        ms1_peak_found=False,
-        ms1_apex_rt=None,
-        ms1_area=None,
-        ms1_peak_rt_start=None,
-        ms1_peak_rt_end=None,
-        ms1_height=None,
-        ms1_seed_delta_min=None,
-        discovery_candidate_state="review_only_orphan_nl",
-        ms1_feature_row_id="",
-    )
 
 
 def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):

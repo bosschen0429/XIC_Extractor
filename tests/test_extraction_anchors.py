@@ -1,4 +1,4 @@
-from tests.test_result_assembly import _target
+from tests.result_assembly_fixtures import _target
 from xic_extractor.extraction.anchors import paired_anchor_mismatch_diagnostic
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 

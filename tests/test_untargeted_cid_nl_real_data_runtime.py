@@ -27,7 +27,7 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.processing_identity_no_raw_fixture import (
     build_targeted_processing_identity_raw_fixture,
 )
-from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
+from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
     acquire_trace_batch,

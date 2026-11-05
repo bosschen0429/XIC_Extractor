@@ -1102,7 +1102,7 @@ def test_steps_judge_independently_and_istd_overrides_their_conjunction(
 
 
 def test_same_compound_is_unavailable_without_the_run_explanation(tmp_path):
-    from tests.test_matrix_curation import _run
+    from tests.matrix_curation_fixtures import _run
     from xic_workbench.matrix_curation import describe_source
 
     source = _curation_folder(tmp_path / "alignment")
@@ -1125,8 +1125,8 @@ def test_same_compound_is_unavailable_without_the_run_explanation(tmp_path):
 
 
 def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch):
-    from tests.test_duplicate_quantification import publish_owner_run
-    from tests.test_matrix_curation import _run
+    from tests.duplicate_quantification_fixtures import publish_owner_run
+    from tests.matrix_curation_fixtures import _run
 
     source = publish_owner_run(tmp_path, monkeypatch, "machine")
     assert not (source / "alignment_backfill_cell_evidence.tsv").exists()

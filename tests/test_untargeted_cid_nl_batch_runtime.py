@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
-    _current_candidates,
     _FakeRaw,
     _peak_config,
     _settings,
@@ -15,6 +13,9 @@ from tests.cid_nl_raw_fixture import (
 from tests.cid_nl_runtime_fixtures import (
     build_discovery_receipts,
     install_runtime_raws,
+)
+from tests.untargeted_cid_nl_batch_runtime_fixtures import (
+    _nearby_subject_candidates,
 )
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
@@ -220,44 +221,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         raw_paths[1]: [[4]],
         raw_paths[2]: [[4]],
     }
-
-
-def _nearby_subject_candidates(
-    raw_path: Path,
-    *,
-    settings,
-    peak_config,
-    physical_records=None,
-) -> tuple[_FakeRaw, tuple[DiscoveryCandidate, ...]]:
-    first_raw = _FakeRaw((7.98,))
-    second_raw = _FakeRaw(
-        (7.98,),
-        scan_precursor_mz=500.004,
-        neutral_loss_das=(116.0474,),
-    )
-    second_raw.scans = (
-        replace(
-            second_raw.scans[0],
-            scan_number=first_raw.scans[0].scan_number + 1,
-        ),
-    )
-    candidates = tuple(
-        sorted(
-            (
-                _current_candidates(
-                    raw,
-                    raw_file=raw_path,
-                    settings=settings,
-                    physical_records=physical_records,
-                )[0]
-                for raw in (first_raw, second_raw)
-            ),
-            key=lambda item: item.candidate_id,
-        )
-    )
-    source_raw = _FakeRaw((7.98,))
-    source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
-    return source_raw, candidates
 
 
 def _subjects(

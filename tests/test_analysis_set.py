@@ -1,20 +1,19 @@
 from dataclasses import replace
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from tests.analysis_set_fixtures import (
+    header,
+)
 from xic_extractor.analysis_set import discover_raw_files, select_analysis_set
 from xic_extractor.injection_timeline import (
-    InjectionHeader,
     PerturbationPolicy,
     build_injection_timeline,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import stat_identity
 from xic_extractor.sample_metadata import SampleMetadata
-
-BASE = datetime(2026, 1, 1, 12)
 
 
 def test_batch_header_reads_overlap_without_changing_acquisition_order(
@@ -45,17 +44,6 @@ def test_batch_header_reads_overlap_without_changing_acquisition_order(
         ("B", 1),
         ("A", 2),
     ]
-
-
-def header(path: str, minute: float, *, source: str | None = None) -> InjectionHeader:
-    return InjectionHeader(
-        raw_path=path,
-        acquisition_source=source or f"D:/acquired/{Path(path).name}",
-        creation_date=BASE + timedelta(minutes=minute),
-        start_time_min=0,
-        end_time_min=10,
-        instrument_method="m.meth",
-    )
 
 
 def header_rows(headers, roles):
@@ -449,7 +437,7 @@ def test_selected_unreadable_header_reports_the_file_and_original_reason(
 def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
     from xic_extractor import raw_reader
 
     # Two batches in one root; the Word sequence covers the newer one only and

@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
 
+from tests.alignment_drift_evidence_fixtures import (
+    _known_reference_workbook,
+)
 from tests.alignment_explanation_fixtures import explanation_summary
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
@@ -29,7 +31,7 @@ def evaluate_owner_edge(left, right, *, config, **kwargs):
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
-    from tests.test_alignment_edge_scoring import _owner
+    from tests.alignment_edge_scoring_fixtures import _owner
     from xic_extractor.alignment.drift_evidence import (
         mint_known_istd_reference_from_measurements,
     )
@@ -99,7 +101,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
 
 
 def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence():
-    from tests.test_alignment_edge_scoring import _owner
+    from tests.alignment_edge_scoring_fixtures import _owner
 
     owner = _owner("measured", owner_apex_rt=8.0)
     raw = SampleRtFrame()
@@ -119,7 +121,7 @@ def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence()
 
 @pytest.mark.parametrize("shift", (0.0, 1.0))
 def test_frozen_coordinate_replaces_rt_evidence_without_an_extra_score(shift):
-    from tests.test_alignment_edge_scoring import _owner
+    from tests.alignment_edge_scoring_fixtures import _owner
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
@@ -145,36 +147,6 @@ def test_frozen_coordinate_replaces_rt_evidence_without_an_extra_score(shift):
     assert common.rt_basis == "drift_corrected"
     assert common.rt_drift_corrected_delta_sec == pytest.approx(0.6)
     assert common.rt_raw_delta_sec == pytest.approx(0.6 + shift * 60)
-
-
-def _known_reference_workbook(path: Path) -> Workbook:
-    workbook = Workbook()
-    targets = workbook.active
-    targets.title = "Targets"
-    targets.append(
-        [
-            "Label",
-            "Role",
-            "m/z",
-            "RT min",
-            "RT max",
-            "ppm tol",
-            "NL (Da)",
-            "NL ppm warn",
-            "NL ppm max",
-        ]
-    )
-    targets.append([" known ", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
-    results = workbook.create_sheet("XIC Results")
-    results.append(["SampleName", "Target", "Role", "RT", "Area"])
-    results.append([" early ", "analyte", "Analyte", 8, 1])
-    results.append([None, "known", "ISTD", 8, "not evidence"])
-    results.append(["late", "analyte", "Analyte", 9, 1])
-    results.append(["", "known", "ISTD", 9, -999])
-    results.append(["missing", "analyte", "Analyte", "ND", 1])
-    results.append([None, "known", "ISTD", "ND", 100])
-    workbook.save(path)
-    return workbook
 
 
 def test_known_reference_uses_declared_targets_rt_and_source_bytes(
@@ -293,7 +265,7 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 ) -> None:
     from dataclasses import replace
 
-    from tests.test_alignment_edge_scoring import _owner
+    from tests.alignment_edge_scoring_fixtures import _owner
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.applications.untargeted.istd_reference import (
         read_known_istd_reference,

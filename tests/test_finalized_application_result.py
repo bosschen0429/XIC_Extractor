@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import pytest
 
-from tests.test_target_pre_cell_projection import _finalized_case
-from tests.test_untargeted_matrix_projection import _completed_projection
+from tests.target_pre_cell_projection_fixtures import _finalized_case
+from tests.untargeted_matrix_projection_fixtures import _completed_projection
 from xic_extractor.alignment.cell_decision.owner import decide_target_cell_population
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,

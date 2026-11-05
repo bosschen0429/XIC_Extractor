@@ -1202,7 +1202,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     reference_args = []
     reference_path = tmp_path / "reference.xlsx"
     if reference_kind is not None:
-        from tests.test_alignment_drift_evidence import _known_reference_workbook
+        from tests.alignment_drift_evidence_fixtures import _known_reference_workbook
 
         reference_args = ["--known-istd-reference-workbook", str(reference_path)]
         if reference_kind in {"valid", "schema"}:

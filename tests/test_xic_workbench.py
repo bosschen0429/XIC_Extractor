@@ -597,7 +597,9 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
 def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path):
     from urllib.parse import quote
 
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     workbook = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
     report, matrix = create_review_batch(tmp_path)

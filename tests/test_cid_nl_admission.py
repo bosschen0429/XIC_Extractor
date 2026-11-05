@@ -6,7 +6,9 @@ import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
-from tests.test_physical_peak_evaluation_persistence import _overlapping_triplet_trace
+from tests.physical_peak_evaluation_persistence_fixtures import (
+    _overlapping_triplet_trace,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,

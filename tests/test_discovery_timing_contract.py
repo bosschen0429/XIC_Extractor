@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_discovery_ms1_capture import (
+from tests.discovery_ms1_capture_fixtures import (
     _group,
     _multi_tag_settings,
     _seed,
 )
-from tests.test_discovery_physical_fact_integration import _OwnerBoundBatchRaw
-from tests.test_discovery_pipeline import _settings
+from tests.discovery_physical_fact_integration_fixtures import _OwnerBoundBatchRaw
+from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.cross_sample.peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.alignment_pipeline_helpers import _owner
+from tests.cross_sample_association_lineage_fixtures import (
+    _CoverageContext,
+    _final_receipt,
+    _Fixture,
+)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
@@ -20,27 +24,21 @@ from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationContractError,
     build_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.cross_sample.grouping_result import (
-    CrossSampleGroupingResult,
-)
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
-from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
-    ProcessingOwnerReferences,
     build_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
 )
 from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
     SampleMetadata,
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
@@ -314,22 +312,6 @@ def test_predecessor_order_preserves_each_exact_association_population(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _CoverageContext:
-    processing_owners: ProcessingOwnerReferences
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
-    sample_order: tuple[str, ...]
-    raw_sample_stems: frozenset[str]
-    alignment_config: AlignmentConfig
-
-
-class _Fixture:
-    def __init__(self, context: _CoverageContext) -> None:
-        self.context = context
-        self.samples = {sample.lookup_token: sample for sample in self.context.samples}
-        self.members: dict[str, CrossSampleGroupMemberSubject] = {}
-
-
 def _coverage_context(
     tmp_path: Path,
     *,
@@ -435,42 +417,4 @@ def _coverage(
         group_identities=groups,
         samples=context.samples,
         positions=positions,
-    )
-
-
-def _final_receipt(
-    fixture: _Fixture,
-    *,
-    predecessors: tuple[CrossSampleGroupIdentity, ...],
-    successors: tuple[CrossSampleGroupIdentity, ...],
-) -> CrossSampleGroupingResult:
-    canonical_predecessors = tuple(
-        sorted(predecessors, key=lambda group: group.group_hypothesis_id)
-    )
-    canonical_successors = tuple(
-        sorted(successors, key=lambda group: group.group_hypothesis_id)
-    )
-    unchanged = {group.group_hypothesis_id for group in canonical_predecessors} == {
-        group.group_hypothesis_id for group in canonical_successors
-    }
-    application = CrossSamplePartitionTransition(
-        status="assessable",
-        predecessors=canonical_predecessors,
-        successors=canonical_successors,
-        lineage=(
-            ()
-            if unchanged
-            else cross_sample_owner._expected_cross_sample_lineage(
-                predecessors=canonical_predecessors,
-                successors=canonical_successors,
-            )
-        ),
-        reason=(
-            "unchanged_membership_no_lineage" if unchanged else "membership_changed"
-        ),
-    )
-    return CrossSampleGroupingResult(
-        processing_owners=fixture.context.processing_owners,
-        partition_transition=application,
-        rt_frame=SampleRtFrame(),
     )

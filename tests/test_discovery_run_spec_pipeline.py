@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.test_discovery_pipeline import (
+from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _read_csv,
     _scan_event,

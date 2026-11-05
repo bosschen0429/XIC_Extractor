@@ -16,14 +16,14 @@ from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
-from tests.test_discovery_pipeline import (
+from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
 )
-from tests.test_discovery_pipeline import (
+from tests.discovery_pipeline_fixtures import (
     _peak_config as _discovery_peak_config,
 )
-from tests.test_discovery_pipeline import (
+from tests.discovery_pipeline_fixtures import (
     _settings as _discovery_settings,
 )
 from xic_extractor.alignment import AlignmentConfig
@@ -514,7 +514,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     import gc
     import sqlite3
 
-    from tests.test_untargeted_cid_nl_bounded_runtime import _plan
+    from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
@@ -820,8 +820,8 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
 
 
 def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
+    from tests.alignment_drift_evidence_fixtures import _known_reference_workbook
     from tests.alignment_explanation_fixtures import run_alignment_fixture
-    from tests.test_alignment_drift_evidence import _known_reference_workbook
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
     )

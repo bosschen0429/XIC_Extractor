@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.targeted_fixtures import ScopedMs2WindowReader
-from tests.test_targeted_production_workflow import (
+from tests.targeted_production_workflow_fixtures import (
     production_case,
     with_method_universe,
 )

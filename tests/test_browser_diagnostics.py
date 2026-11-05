@@ -17,7 +17,7 @@ def test_teardown_errors_keep_browser_evidence_after_tmp_path_cleanup(tmp_path):
     probe.write_text(
         """
 import pytest
-from tests.test_workbench_browser import (
+from tests.workbench_browser_fixtures import (
     browser, browser_errors, config_dir, workbench, workbench_defaults,
 )
 pytest_plugins = ("tests.browser_diagnostics",)

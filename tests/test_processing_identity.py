@@ -732,7 +732,7 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
 def test_targeted_and_untargeted_read_one_sequence_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
     from xic_extractor import raw_reader
     from xic_workbench.samples import load_samples
 

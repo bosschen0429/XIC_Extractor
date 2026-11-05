@@ -416,7 +416,7 @@ def test_group_trend_cost_preserves_ninety_second_boundary(span_min):
 @pytest.mark.parametrize("direct", (False, True))
 def test_mixed_trajectory_retains_only_independent_raw_pairs(direct):
     from tests.alignment_pipeline_helpers import resolved_elution_context
-    from tests.test_window_feature_membership import _synthetic_owner
+    from tests.window_feature_membership_fixtures import _synthetic_owner
     from xic_extractor.alignment.peak_trajectories import resolve_peak_trajectories
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 

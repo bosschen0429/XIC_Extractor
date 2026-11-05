@@ -20,7 +20,7 @@ from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runt
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
+from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,

@@ -1,20 +1,14 @@
 import pytest
 
-from tests.alignment_explanation_fixtures import run_alignment_fixture
+from tests.duplicate_quantification_fixtures import (
+    publish_owner_run,
+)
 from xic_extractor.alignment_explanation.published_cells import (
     PublishedCell,
     read_published_cells,
 )
-from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_alignment_explanation,
-)
 from xic_extractor.diagnostics.duplicate_quantification import (
     summarize_duplicate_quantification,
-)
-from xic_extractor.output.alignment.output_levels import EXPLANATION_ARTIFACT_NAME
-from xic_extractor.output.alignment.pipeline_outputs import (
-    output_paths,
-    write_outputs_atomic,
 )
 
 
@@ -53,34 +47,6 @@ def test_duplicate_quantification_classifies_row_pairs_by_direct_detections():
         "view_duplicate": 1,
     }
     assert summary["cell_pair_kinds"] == {"BD": 3, "DD": 1}
-
-
-def publish_owner_run(tmp_path, monkeypatch, level):
-    """A published Alignment folder of one owner run, with its explanation."""
-    completed, writer, candidates, _, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    output_dir = tmp_path / "published"
-    outputs = output_paths(
-        output_dir,
-        output_level=level,
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-    write_outputs_atomic(
-        outputs,
-        writer.matrix,
-        metadata={},
-        production_decisions=writer.production_decisions,
-    )
-    write_alignment_explanation(
-        output_dir / EXPLANATION_ARTIFACT_NAME,
-        completed=completed,
-        candidates_by_sample=candidates,
-        matrix_path=outputs.matrix_tsv,
-        alignment_config=config,
-    )
-    return output_dir
 
 
 # Machine is what Workbench Untargeted publishes: no backfill ledger.

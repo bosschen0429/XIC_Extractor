@@ -3,7 +3,10 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from tests.targeted_peak_selection_fixtures import (
+    _config,
+)
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction import targeted_peak_selection
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
@@ -420,22 +423,6 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
             rt=rt,
             intensity=intensity,
         )
-
-
-def _config(tmp_path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_csv=tmp_path / "xic_results.csv",
-        diagnostics_csv=tmp_path / "diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.1,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        resolver_mode="local_minimum",
-    )
 
 
 def _target() -> Target:

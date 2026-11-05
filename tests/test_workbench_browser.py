@@ -8,35 +8,34 @@ import os
 import re
 import sqlite3
 import threading
-from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 from tests.inspector_fixtures import create_inspector_report, link_report_record
 from tests.raw_header_fakes import install_fake_raw_headers
+from tests.workbench_browser_fixtures import DEADLINE_SCALE as DEADLINE_SCALE
+from tests.workbench_browser_fixtures import browser as browser
+from tests.workbench_browser_fixtures import browser_errors as browser_errors
+from tests.workbench_browser_fixtures import config_dir as config_dir
+from tests.workbench_browser_fixtures import workbench as workbench
+from tests.workbench_browser_fixtures import workbench_defaults as workbench_defaults
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-from xic_workbench.config_io import read_settings, write_settings, write_targets
+from xic_workbench.config_io import read_settings, write_settings
 from xic_workbench.samples import (
     read_batch_samples,
     sample_annotations_path,
     save_batch_samples,
 )
-from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 pytestmark = pytest.mark.browser_e2e
 pytest_plugins = ("tests.browser_diagnostics",)
 
-# Deadlines are hang watchdogs, not latency requirements. Hosted CI VMs can
-# stall for several seconds at a time, so CI scales every browser wait by one
-# factor; local runs keep Playwright's defaults.
-DEADLINE_SCALE = int(os.environ.get("XIC_BROWSER_DEADLINE_SCALE", "1"))
 EXPECT_TIMEOUT_MS = 5_000 * DEADLINE_SCALE
-ACTION_TIMEOUT_MS = 10_000 * DEADLINE_SCALE
 # Background jobs include server work and polling before UI content is ready.
 # Keep content assertions at the expect deadline after this boundary.
 BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
@@ -44,100 +43,6 @@ BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
 HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
 
 expect.set_options(timeout=EXPECT_TIMEOUT_MS)
-
-
-@pytest.fixture(scope="module")
-def browser():
-    with sync_playwright() as playwright:
-        # CI leaves this unset and uses the browser pinned by uv.lock.
-        channel = os.environ.get("XIC_PLAYWRIGHT_CHANNEL")
-        browser = playwright.chromium.launch(
-            **({"channel": channel} if channel else {})
-        )
-        yield browser
-        browser.close()
-
-
-@pytest.fixture
-def config_dir(tmp_path):
-    config = tmp_path / "config"
-    config.mkdir()
-    write_settings(
-        {
-            **CANONICAL_SETTINGS_DEFAULTS,
-            "data_dir": str(tmp_path / "raw"),
-            "dll_dir": str(tmp_path / "dll"),
-        },
-        config_dir=config,
-    )
-    write_targets(
-        [
-            {
-                "label": "Browser target",
-                "mz": "500",
-                "expected_rt_min": "1.5",
-                "method": "dR",
-                "role": "istd",
-                "istd_pair": "",
-            }
-        ],
-        config_dir=config,
-    )
-    return config
-
-
-@pytest.fixture
-def browser_errors():
-    return []
-
-
-@pytest.fixture
-def workbench_defaults():
-    return {}
-
-
-@pytest.fixture
-def workbench(
-    browser,
-    config_dir,
-    browser_errors,
-    browser_diagnostics,
-    workbench_defaults,
-    monkeypatch,
-):
-    from xic_extractor import thermo_reader_install
-
-    monkeypatch.setattr(
-        thermo_reader_install,
-        "default_thermo_reader_dir",
-        lambda: config_dir.parent / "managed-reader",
-    )
-    with ExitStack() as cleanup:
-        workspace = ReviewWorkspace(config_dir=config_dir, defaults=workbench_defaults)
-        cleanup.callback(workspace.close)
-        server = create_server(workspace, port=0)
-        cleanup.callback(server.server_close)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        cleanup.callback(thread.join, timeout=5)
-        cleanup.callback(server.shutdown)
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
-        cleanup.callback(context.close)
-        # DOM snapshots carry the failure state; screencast frames add renderer load.
-        context.tracing.start(snapshots=True, sources=True)
-        cleanup.callback(
-            context.tracing.stop,
-            path=browser_diagnostics.directory / "browser-trace.zip",
-        )
-        page = context.new_page()
-        page.set_default_timeout(ACTION_TIMEOUT_MS)
-        browser_diagnostics.attach(page, browser_errors)
-        host, port = server.server_address
-        page.goto(f"http://{host}:{port}/")
-        expect(page.locator("body")).not_to_have_class("booting")
-        expect(page.locator("#t-data_dir")).to_be_visible()
-        yield page
-    assert not browser_errors, "Browser errors: " + "\n".join(browser_errors)
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -244,7 +149,7 @@ def test_existing_reader_can_be_selected_without_downloading_or_accepting_again(
 def test_real_browser_reload_and_multiple_tabs_retire_only_after_last_close(
     browser, config_dir, browser_errors
 ):
-    from tests.test_workbench_lifecycle import _launch, _request
+    from tests.workbench_lifecycle_fixtures import _launch, _request
 
     with _launch(config_dir) as (process, url):
         context = browser.new_context()
@@ -612,7 +517,7 @@ def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch)
 def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
     workbench, config_dir, tmp_path, monkeypatch, outcome
 ):
-    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
     from xic_extractor import sample_metadata
     from xic_workbench.samples import save_batch_samples
 
@@ -692,7 +597,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
 ):
     from types import SimpleNamespace
 
-    from tests.test_analysis_set import header
+    from tests.analysis_set_fixtures import header
     from xic_extractor.raw_reader import RawReaderError
 
     page = workbench
@@ -1747,7 +1652,9 @@ def test_review_download_survives_reload_and_keeps_original_product(
     workbench, tmp_path, targeted
 ):
     from tests.inspector_fixtures import create_review_batch
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     if targeted:
         source = product = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
@@ -1811,7 +1718,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 ):
     from dataclasses import replace
 
-    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
     from xic_inspector.sources.curve_bundle import CurveBundle, write_curve_bundle
     from xic_workbench import acquisition
 
@@ -1919,7 +1826,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
     workbench, config_dir, tmp_path, monkeypatch
 ):
-    from tests.test_explanation_review import (
+    from tests.explanation_review_fixtures import (
         _group_with_missing_apex_review,
         _install_distinct_curve_raws,
     )
@@ -2001,7 +1908,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(
     workbench, tmp_path, monkeypatch
 ):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -2036,7 +1943,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
 ):
     from contextlib import contextmanager
 
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -2159,7 +2066,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
 
 @pytest.fixture
 def cached_paired_curves(workbench, tmp_path, monkeypatch):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -2360,7 +2267,9 @@ def test_delayed_cached_curve_cannot_replace_current_sample_feedback(
 
 
 def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_path):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
@@ -2382,7 +2291,7 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
 def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_path):
     from openpyxl import Workbook
 
-    from tests.test_targeted_delta_mass import pattern
+    from tests.targeted_delta_mass_fixtures import pattern
     from xic_extractor.configuration.identification_method_table import (
         METHOD_TABLE_HEADERS,
         identification_method_rows,
@@ -2491,7 +2400,9 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
 
 
 def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
@@ -2529,7 +2440,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
 def test_review_history_restores_server_query_before_loading_xic(
     workbench, tmp_path, monkeypatch, query_pending
 ):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -2589,7 +2500,9 @@ def test_review_history_restores_server_query_before_loading_xic(
 
 
 def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
@@ -2608,7 +2521,7 @@ def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path)
 
 
 def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         write_rare_detection_workbook,
     )
 
@@ -2635,7 +2548,7 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
 
 
 def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp_path):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         write_rare_detection_workbook,
     )
 
@@ -2833,7 +2746,7 @@ def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
 def test_analysis_review_uses_run_paths_even_after_batch_edit(
     workbench, fake_runs, tmp_path, monkeypatch
 ):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -2991,7 +2904,9 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
 def test_delayed_review_payload_cannot_replace_newer_sample_selection(
     workbench, tmp_path
 ):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "delayed-view.xlsx")
@@ -3035,7 +2950,7 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
 def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     workbench, review_page, tmp_path, monkeypatch
 ):
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
@@ -3108,7 +3023,9 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
 def role_review(workbench, tmp_path):
     from openpyxl import load_workbook
 
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "role-groups.xlsx")
@@ -3251,7 +3168,9 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
     tmp_path,
     browser_errors,
 ):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero.xlsx")
@@ -3355,7 +3274,9 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
 def test_zero_result_history_discards_pending_query_feedback(
     workbench, tmp_path, browser_errors
 ):
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero-history.xlsx")
@@ -3940,7 +3861,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
 def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
-    from tests.test_matrix_curation import (
+    from tests.matrix_curation_fixtures import (
         alignment_output,
         sample_payload,
         sample_rows,
@@ -4084,7 +4005,9 @@ def test_results_stay_in_analysis_page_without_raw(
     workbench, fake_runs, tmp_path, kind, fresh
 ):
     from tests.inspector_fixtures import create_review_batch
-    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        write_rare_detection_workbook,
+    )
 
     page = workbench
     if kind == "targeted":
