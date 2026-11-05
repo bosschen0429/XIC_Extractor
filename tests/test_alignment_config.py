@@ -1,8 +1,6 @@
-import ast
 import importlib
 import math
 import sys
-from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -29,116 +27,6 @@ def test_alignment_public_type_hints_resolve_without_raw_reader_import():
 
     assert "selected_integration" in hints
     assert "xic_extractor.raw_reader" not in set(sys.modules) - before
-
-
-def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
-    alignment_dir = Path(__file__).parents[1] / "xic_extractor" / "alignment"
-    allowed_composition_imports = {
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.alignment",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.alignment."
-            "complete_untargeted_alignment",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.alignment."
-            "complete_untargeted_alignment",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.partition_composition",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.partition_composition."
-            "is_supported_alignment_discovery",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.alignment",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.alignment."
-            "complete_untargeted_alignment",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.partition_composition",
-        ),
-        (
-            "pipeline.py",
-            "xic_extractor.untargeted_execution.partition_composition."
-            "is_supported_alignment_discovery",
-        ),
-    }
-    banned_roots = (
-        "xic_workbench",
-        "scripts",
-        "xic_extractor.discovery.pipeline",
-        "xic_extractor.discovery.csv_writer",
-        "xic_extractor.extraction",
-        "xic_extractor.extractor",
-        "xic_extractor.output",
-    )
-
-    violations = []
-    for path in alignment_dir.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            for imported_name in _imported_module_names(node):
-                raw_reader_allowed = path.name in {
-                    "pipeline.py",
-                    "process_backend.py",
-                }
-                if (
-                    imported_name.startswith("xic_extractor.raw_reader")
-                    and not raw_reader_allowed
-                ):
-                    violations.append((path.name, imported_name))
-                elif (
-                    imported_name.startswith(banned_roots)
-                    and (
-                        path.name,
-                        imported_name,
-                    )
-                    not in allowed_composition_imports
-                ):
-                    violations.append((path.name, imported_name))
-
-    assert violations == []
-
-
-def test_import_boundary_detects_package_attribute_imports():
-    tree = ast.parse(
-        "from xic_extractor import extraction, extractor\n"
-        "from xic_extractor import raw_reader\n"
-    )
-    imported_names = [
-        imported_name
-        for node in ast.walk(tree)
-        for imported_name in _imported_module_names(node)
-    ]
-
-    assert "xic_extractor.extraction" in imported_names
-    assert "xic_extractor.extractor" in imported_names
-    assert "xic_extractor.raw_reader" in imported_names
-
-
-def _imported_module_names(node):
-    if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
-    if isinstance(node, ast.ImportFrom) and node.module:
-        imported_names = [node.module]
-        imported_names.extend(
-            f"{node.module}.{alias.name}" for alias in node.names if alias.name != "*"
-        )
-        return imported_names
-    return []
 
 
 def test_default_config_matches_alignment_contract():

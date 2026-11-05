@@ -610,14 +610,26 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "extraction-backends-delegate",
         "completed-evidence-readers-do-not-load-raw",
         "alignment-domain-models-stay-pure",
+        "delta-mass-method-stays-inward",
+        "delta-mass-outside-product-routes",
+        "product-routes-ignore-delta-mass",
+        "alignment-stays-off-pipelines-and-io",
+        "discovery-pipeline-independent-of-targeted-entry",
+        "processing-identity-stays-inner",
         "sample-metadata-no-instrument-qc",
         "grouping-and-cell-consume-method-answers",
+    }
+    direct_only = {
+        "alignment-domain-models-stay-pure",
+        "delta-mass-method-stays-inward",
+        "delta-mass-outside-product-routes",
+        "product-routes-ignore-delta-mass",
     }
     special = {
         "targeted-untargeted-independent",
         "main-chain-layers",
         "grouping-and-cell-consume-method-answers",
-        "alignment-domain-models-stay-pure",
+        *direct_only,
     }
     assert all(
         contract["type"] == "forbidden" and contract["allow_indirect_imports"] is False
@@ -628,10 +640,11 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
     assert method["type"] == "forbidden"
     assert method["allow_indirect_imports"] is True
     assert not method.get("ignore_imports")
-    # Shared configuration lazily reads workbooks, so only direct imports count.
-    domain_models = contracts["alignment-domain-models-stay-pure"]
-    assert domain_models["type"] == "forbidden"
-    assert domain_models["allow_indirect_imports"] is True
+    # Shared configuration and product applications reach these modules through
+    # legitimate indirect paths, so these contracts check direct imports only.
+    for contract_id in direct_only:
+        assert contracts[contract_id]["type"] == "forbidden"
+        assert contracts[contract_id]["allow_indirect_imports"] is True
     independence = contracts["targeted-untargeted-independent"]
     assert independence["type"] == "independence"
     assert independence["modules"] == [

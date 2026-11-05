@@ -1,4 +1,3 @@
-import ast
 import concurrent.futures
 import csv
 import math
@@ -1602,30 +1601,6 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     assert raw_open_rows[0]["value"] == 1
     assert raw_open_rows[0]["availability"] == "measured"
     assert raw.closed is True
-
-
-def test_pipeline_does_not_import_targeted_extractor_module() -> None:
-    pipeline_path = (
-        Path(__file__).resolve().parents[1]
-        / "xic_extractor"
-        / "discovery"
-        / "pipeline.py"
-    )
-    tree = ast.parse(pipeline_path.read_text(encoding="utf-8"))
-
-    imported_modules = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    imported_from_modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
-
-    assert "xic_extractor.extractor" not in imported_modules | imported_from_modules
 
 
 def test_owner_bound_discovery_projects_complete_ms1_measurements(

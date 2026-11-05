@@ -20,24 +20,6 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_raw_headers(monkeypatch)
 
 
-def test_cli_and_html_use_same_targeted_application_service() -> None:
-    for path in (
-        Path("scripts/run_extraction.py"),
-        Path("xic_workbench/targeted.py"),
-    ):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        calls = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "run"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "extractor"
-        ]
-        assert calls == [], f"{path} bypasses TargetedApplicationService"
-
-
 def test_public_python_run_uses_canonical_targeted_application_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

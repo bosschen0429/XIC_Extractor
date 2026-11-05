@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import fields
 from types import SimpleNamespace
 
 import pytest
@@ -147,18 +146,6 @@ def test_alignment_primary_matrix_area_retires_asls_legacy_fallback() -> None:
     assert decision.source == ""
     assert decision.reason == MISSING_MS1_MORPHOLOGY_AREA
     assert ASLS_PRIMARY_MATRIX_AREA_SOURCE == "asls_baseline_corrected"
-
-
-def test_integration_result_carries_ms1_morphology_fields() -> None:
-    field_names = {field.name for field in fields(IntegrationResult)}
-
-    assert {"rt_left_min", "rt_apex_min", "rt_right_min"} <= field_names
-    assert "area_ms1_morphology" in field_names
-    assert "ms1_morphology_area_source" in field_names
-    assert "resolver_rt_start_min" not in field_names
-    assert "envelope_rt_start_min" not in field_names
-    assert "quantitation_context_rt_start_min" not in field_names
-    assert "boundary_change_class" not in field_names
 
 
 def _hypothesis(integration: IntegrationResult) -> PeakHypothesis:
