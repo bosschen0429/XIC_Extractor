@@ -1192,10 +1192,37 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     expect(page.locator(f"#{prefix}samples-count")).to_have_text("1 個樣本")
     _expand_section(page, f"#{prefix}sample-tools")
     page.locator(f"#{prefix}samples-refresh").click()
+    expect(page.locator(f"#{prefix}samples-source")).to_contain_text(
+        "使用這個 RAW 資料夾已確認的樣品資訊"
+    )
     _wait_for_analysis_status(page, "已完成")
     fake_runs.release.set()
-    _start(page, kind)
-    _wait_for_analysis_status(page, "已完成")
+    # A completed sample read remains visible until the analysis start reply.
+    # Hold that handoff so this test cannot accidentally observe the old job.
+    entered, release_start = threading.Event(), threading.Event()
+    start_analysis = ReviewWorkspace.start_analysis
+
+    def held_start(workspace, job_kind, values):
+        if job_kind == kind:
+            entered.set()
+            assert release_start.wait(HANDSHAKE_TIMEOUT_S)
+        return start_analysis(workspace, job_kind, values)
+
+    monkeypatch.setattr(ReviewWorkspace, "start_analysis", held_start)
+    try:
+        _start(page, kind)
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        expect(page.locator("#analysis-job-title")).to_have_text(
+            "讀取樣本資訊 · 已完成"
+        )
+        assert not fake_runs.requests
+        with page.expect_response("**/api/analysis/start") as started:
+            release_start.set()
+        assert started.value.status == 202
+        assert started.value.json()["job"]["kind"] == kind
+    finally:
+        release_start.set()
+    _wait_for_analysis_status(page, f"{kind.capitalize()} 分析 · 已完成")
     if kind == "untargeted":
         samples = fake_runs.requests[-1].sample_metadata
         assert [(s.raw_stem, s.group, s.excluded) for s in samples] == [
