@@ -39,7 +39,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalResult,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
@@ -79,7 +78,7 @@ class PhysicalPeakCapture:
         adapter_namespace: str,
         profile: SignalProcessingProfile,
     ) -> None:
-        self._raw = RawSuperWindowSource(raw)
+        self._raw = raw
         self._capability = mint_trace_acquisition_capability(
             acquisition_source,
             adapter_namespace=adapter_namespace,

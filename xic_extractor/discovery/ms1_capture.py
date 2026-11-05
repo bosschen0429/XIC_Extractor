@@ -1,6 +1,6 @@
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -58,6 +58,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PhysicalSegment,
 )
+from xic_extractor.precursor_evidence import MS1MassWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.xic_models import XICRequest
 
@@ -69,6 +70,13 @@ _APEX_ION_SPREAD_PPM = 5.0
 # 13C spacing of a doubly charged ion. Product + loss assumes a singly charged
 # precursor, so an inferred ion read beside this isotope is not one.
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
+
+
+class DiscoveryMs1Source(BatchXICAdapter, MS1MassWindowSource, Protocol):
+    """RAW reader surface used by Discovery MS1 capture."""
+
+    def batch_xic_source(self) -> BatchXICAdapter:
+        """XIC adapter for physical capture; the reader chooses its read merging."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +150,7 @@ class _DiscoveryMs1AcquisitionResult:
 
 
 def capture_ms1_candidates(
-    raw: BatchXICAdapter,
+    raw: DiscoveryMs1Source,
     groups: Iterable[DiscoverySeedGroup],
     *,
     acquisition_source: AcquisitionSourceIdentity,
@@ -160,7 +168,7 @@ def capture_ms1_candidates(
         minimum_padding_min=PHYSICAL_CONTEXT_HALF_WINDOW_MIN,
     )
     physical_capture = PhysicalPeakCapture(
-        raw,
+        raw.batch_xic_source(),
         acquisition_source=acquisition_source,
         # Keep persisted acquisition coordinates compatible with current sidecars.
         adapter_namespace="xic_extractor.discovery.ms1_capture",
@@ -399,7 +407,7 @@ def _selection_subject_id(group: DiscoverySeedGroup) -> str:
 
 
 def _close_duplicate_physical_views(
-    raw: BatchXICAdapter,
+    raw: DiscoveryMs1Source,
     merged: candidate_merge.DiscoveryCandidateMergeResult,
     records: Sequence[DiscoveryPhysicalFactRecord],
     *,
@@ -411,9 +419,6 @@ def _close_duplicate_physical_views(
     group's peak. Only same-apex, overlapping windows need this reconciliation;
     centroid acquisition stays here, while the physical owner decides identity.
     """
-    read_windows = getattr(raw, "read_ms1_mass_windows", None)
-    if not callable(read_windows):
-        return merged
     proofs: dict[str, CidNlPhysicalProof] = {}
     buckets: dict[float, list[tuple[float, float, str]]] = {}
     for candidate, binding in zip(merged.candidates, merged.bindings, strict=True):
@@ -479,11 +484,13 @@ def _close_duplicate_physical_views(
     )
     if not requests:
         return merged
-    observations = dict(zip(requests, read_windows(requests), strict=True))
+    observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
     acquired_proofs = {}
     for candidate_id, windows in windows_by_id.items():
-        scans = tuple(observations[window] for window in windows)
-        if all(scan is not None for scan in scans):
+        scans = tuple(
+            scan for window in windows if (scan := observations[window]) is not None
+        )
+        if len(scans) == len(windows):
             acquired_proofs[candidate_id] = replace(
                 proofs[candidate_id], apex_centroids=scans
             )

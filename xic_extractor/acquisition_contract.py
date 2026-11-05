@@ -555,8 +555,8 @@ def _required_text(value: object, field: str) -> str:
     )
 
 
-def _adapter_chromatogram_call_count(adapter: object) -> int:
-    value = getattr(adapter, "raw_chromatogram_call_count", None)
+def _adapter_chromatogram_call_count(adapter: BatchXICAdapter) -> int:
+    value = adapter.raw_chromatogram_call_count
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise AcquisitionContractError(
             "adapter must expose a non-negative raw chromatogram call counter"

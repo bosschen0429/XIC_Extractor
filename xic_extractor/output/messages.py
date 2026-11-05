@@ -4,6 +4,7 @@ from typing import Literal, Protocol, cast
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 
 DiagnosticIssue = Literal[
     "BACKFILL_ACCEPTED",
@@ -53,6 +54,9 @@ class ExtractionResultLike(Protocol):
     @property
     def reason(self) -> str: ...
 
+    @property
+    def physical_evaluation(self) -> PhysicalPeakEvaluation | None: ...
+
 
 def build_diagnostic_records(
     sample_name: str,
@@ -62,7 +66,7 @@ def build_diagnostic_records(
 ) -> list[DiagnosticRecord]:
     records: list[DiagnosticRecord] = []
     if result.peak_result.status != "OK":
-        physical_evaluation = getattr(result, "physical_evaluation", None)
+        physical_evaluation = result.physical_evaluation
         peak_reason = (
             f"Physical peak {physical_evaluation.state}: {physical_evaluation.reason}"
             if physical_evaluation is not None

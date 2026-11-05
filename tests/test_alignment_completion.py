@@ -8,6 +8,7 @@ import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
 from xic_extractor.alignment.completion import (
+    CaptureWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     UntargetWorkflowAdapter,
@@ -52,7 +53,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     adapter_fields = {
         "capture_inputs": (
-            SimpleNamespace(candidate_id="candidate:a", trace=object()),
+            CaptureWorkflowArguments(candidate_id="candidate:a", trace=object()),
         ),
         "predecessor_cell_observations": (),
         "backfill_cell_observations": (),

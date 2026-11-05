@@ -7,6 +7,8 @@ from typing import Protocol
 
 import numpy as np
 
+from xic_extractor.acquisition.ms2_windows import MS2ScanSource
+
 
 class XICSource(Protocol):
     def extract_xic(
@@ -18,4 +20,8 @@ class XICSource(Protocol):
     ) -> tuple[np.ndarray, np.ndarray]: ...
 
 
-RawOpener = Callable[[Path], AbstractContextManager[XICSource]]
+class InstrumentQcRaw(XICSource, MS2ScanSource, Protocol):
+    """RAW reader surface for trend rows and their HCD audit."""
+
+
+RawOpener = Callable[[Path], AbstractContextManager[InstrumentQcRaw]]

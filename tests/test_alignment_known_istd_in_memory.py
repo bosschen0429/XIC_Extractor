@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
@@ -131,7 +132,7 @@ def test_untargeted_istd_uses_targeted_selection_for_multiple_supported_peaks(
     measured = {"S1": 8.1, "S2": 8.5}
     calls = []
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, sample):
             self.sample = sample
             self.apex = measured[sample]
@@ -351,7 +352,7 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
         ]
     )
 
-    class Raw:
+    class Raw(ScopedMs2WindowReader):
         def __init__(self, sample):
             self.sample = sample
             self.shift = int(sample[1:]) * 0.1

@@ -8,7 +8,6 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
@@ -222,25 +221,14 @@ def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
     return True
 
 
-def is_supported_alignment_discovery(settings: Any) -> bool:
+def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
     """Return whether settings select a supported discovery method for alignment."""
 
-    from xic_extractor.processing_run_spec import DiscoveryMethodSpec
-
-    if isinstance(settings, DiscoveryMethodSpec):
-        return True
-    if isinstance(settings, DiscoverySettings):
-        try:
-            CidNlDiscoveryMethodSpec(settings=settings)
-            return True
-        except (TypeError, ValueError):
-            return False
-    if hasattr(settings, "tags") and settings.tags:
-        return all(
-            getattr(tag, "strategy", None) in {"neutral_loss", "delta_mass"}
-            for tag in settings.tags
-        )
-    return False
+    try:
+        CidNlDiscoveryMethodSpec(settings=settings)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _physical_subject_candidate_fact(

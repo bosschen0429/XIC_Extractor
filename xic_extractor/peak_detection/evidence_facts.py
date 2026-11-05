@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -23,6 +23,10 @@ from xic_extractor.peak_detection.scoring_quality import (
     candidate_selection_quality_penalty,
     hard_quality_flags,
 )
+
+if TYPE_CHECKING:
+    from xic_extractor.peak_detection.models import PeakCandidate
+    from xic_extractor.peak_detection.scoring_models import ScoringContext
 
 EvidenceQuality = Literal["strong", "clean", "borderline", "poor", "unknown"]
 RtEvidenceStatus = Literal["missing", "close", "borderline", "far"]
@@ -62,8 +66,6 @@ class ChemicalEvidenceFacts:
     nl_match: bool | None = None
     nl_status: str = ""
     ms2_trace_strength: str = ""
-    loss_ppm: float | None = None
-    ms2_rt_delta_min: float | None = None
     trigger_scan_count: int | None = None
     strict_nl_scan_count: int | None = None
     ms1_peak_group_source: str = ""
@@ -75,7 +77,6 @@ class ChemicalEvidenceFacts:
     outside_ms1_peak_group_trigger_scan_count: int | None = None
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     alignment_source: str = ""
-    product_absence_reason: str = ""
     acquisition_opportunity: AcquisitionOpportunity = "not_observed"
 
 
@@ -122,8 +123,8 @@ class CandidateEvidenceFacts:
 
 
 def build_candidate_evidence_facts(
-    candidate: Any,
-    ctx: Any,
+    candidate: PeakCandidate,
+    ctx: ScoringContext,
     *,
     role: str = "",
     istd_pair: str = "",
@@ -137,7 +138,7 @@ def build_candidate_evidence_facts(
         area=_candidate_area(candidate),
         height=_candidate_height(candidate),
         trace=_trace_facts(candidate, ctx),
-        chemical=_chemical_facts(candidate, ctx),
+        chemical=_chemical_facts(ctx),
         rt=_rt_facts(
             candidate,
             ctx,
@@ -306,117 +307,80 @@ def _signal_set_from_facts(
     )
 
 
-def _trace_facts(candidate: Any, ctx: Any) -> TraceEvidenceFacts:
+def _trace_facts(candidate: PeakCandidate, ctx: ScoringContext) -> TraceEvidenceFacts:
     local_ratio, local_quality, baseline_method, noise_source = _local_sn_facts(ctx)
-    flags = tuple(
-        dict.fromkeys(str(flag) for flag in getattr(candidate, "quality_flags", ()))
-    )
+    flags = tuple(dict.fromkeys(str(flag) for flag in candidate.quality_flags))
     return TraceEvidenceFacts(
         local_sn_ratio=local_ratio,
         local_sn_quality=local_quality,
         baseline_method=baseline_method,
         noise_sigma=(
-            ctx.signal_quality.noise_sigma
-            if getattr(ctx, "signal_quality", None) is not None
-            else None
+            ctx.signal_quality.noise_sigma if ctx.signal_quality is not None else None
         ),
         noise_source=noise_source,
-        active_trace_source=str(getattr(ctx, "active_trace_source", "") or ""),
-        morphology_trace_method=str(getattr(ctx, "morphology_trace_method", "") or ""),
-        morphology_trace_window_points=getattr(
-            ctx,
-            "morphology_trace_window_points",
-            None,
-        ),
+        active_trace_source=ctx.active_trace_source,
+        morphology_trace_method=ctx.morphology_trace_method,
+        morphology_trace_window_points=ctx.morphology_trace_window_points,
         symmetry_quality=_severity_quality(
-            symmetry_severity(float(getattr(ctx, "half_width_ratio", math.nan)))[0],
+            symmetry_severity(float(ctx.half_width_ratio))[0],
             clean_label="clean",
         ),
         width_quality=_severity_quality(
-            peak_width_severity(getattr(ctx, "fwhm_ratio", None))[0],
+            peak_width_severity(ctx.fwhm_ratio)[0],
             clean_label="clean",
         ),
         noise_shape_quality=_severity_quality(
-            noise_shape_severity(np.asarray(getattr(ctx, "intensity_array", [])))[0],
+            noise_shape_severity(np.asarray(ctx.intensity_array))[0],
             clean_label="clean",
         ),
-        scan_count=getattr(candidate, "region_scan_count", None),
-        duration_min=getattr(candidate, "region_duration_min", None),
-        edge_ratio=getattr(candidate, "region_edge_ratio", None),
-        continuity=getattr(candidate, "region_trace_continuity", None),
+        scan_count=candidate.region_scan_count,
+        duration_min=candidate.region_duration_min,
+        edge_ratio=candidate.region_edge_ratio,
+        continuity=candidate.region_trace_continuity,
         quality_flags=flags,
         hard_quality_flags=hard_quality_flags(flags),
     )
 
 
-def _local_sn_facts(ctx: Any) -> tuple[float | None, EvidenceQuality, str, str]:
-    quality = getattr(ctx, "signal_quality", None)
+def _local_sn_facts(
+    ctx: ScoringContext,
+) -> tuple[float | None, EvidenceQuality, str, str]:
+    quality = ctx.signal_quality
     if quality is None:
         return None, "unknown", "", ""
     return (
         quality.signal_to_noise,
         quality.scoring_quality,
-        str(getattr(ctx, "baseline_method", "")),
+        ctx.baseline_method,
         "rt_weighted_three_point_residual_sigma",
     )
 
 
-def _chemical_facts(candidate: Any, ctx: Any) -> ChemicalEvidenceFacts:
-    ms2_present = bool(getattr(ctx, "ms2_present", False))
-    nl_match = bool(getattr(ctx, "nl_match", False))
-    neutral_loss_required = bool(getattr(ctx, "neutral_loss_required", True))
-    best_scan_rt = getattr(ctx, "best_ms2_scan_rt_min", None)
-    selected_rt = float(getattr(candidate, "selection_apex_rt", math.nan))
+def _chemical_facts(ctx: ScoringContext) -> ChemicalEvidenceFacts:
+    ms2_present = bool(ctx.ms2_present)
+    nl_match = bool(ctx.nl_match)
+    neutral_loss_required = bool(ctx.neutral_loss_required)
     return ChemicalEvidenceFacts(
         neutral_loss_required=neutral_loss_required,
         ms2_present=ms2_present,
         nl_match=nl_match,
         nl_status=_nl_status(neutral_loss_required, ms2_present, nl_match),
-        ms2_trace_strength=str(getattr(ctx, "ms2_trace_strength", "") or ""),
-        loss_ppm=_optional_float(getattr(ctx, "best_loss_ppm", None)),
-        ms2_rt_delta_min=(
-            abs(selected_rt - float(best_scan_rt))
-            if best_scan_rt is not None and _is_finite(selected_rt)
-            else None
+        ms2_trace_strength=str(ctx.ms2_trace_strength or ""),
+        trigger_scan_count=ctx.trigger_scan_count,
+        strict_nl_scan_count=ctx.strict_nl_scan_count,
+        ms1_peak_group_source=ctx.ms1_peak_group_source,
+        ms1_peak_group_rt_min=_optional_float(ctx.ms1_peak_group_rt_min),
+        ms1_peak_group_rt_max=_optional_float(ctx.ms1_peak_group_rt_max),
+        ms1_peak_group_trigger_scan_count=ctx.ms1_peak_group_trigger_scan_count,
+        ms1_peak_group_strict_nl_scan_count=ctx.ms1_peak_group_strict_nl_scan_count,
+        ms1_peak_group_strict_nl_event_count=ctx.ms1_peak_group_strict_nl_event_count,
+        outside_ms1_peak_group_trigger_scan_count=(
+            ctx.outside_ms1_peak_group_trigger_scan_count
         ),
-        trigger_scan_count=getattr(ctx, "trigger_scan_count", None),
-        strict_nl_scan_count=getattr(ctx, "strict_nl_scan_count", None),
-        ms1_peak_group_source=str(getattr(ctx, "ms1_peak_group_source", "") or ""),
-        ms1_peak_group_rt_min=_optional_float(
-            getattr(ctx, "ms1_peak_group_rt_min", None)
+        outside_ms1_peak_group_strict_nl_scan_count=(
+            ctx.outside_ms1_peak_group_strict_nl_scan_count
         ),
-        ms1_peak_group_rt_max=_optional_float(
-            getattr(ctx, "ms1_peak_group_rt_max", None)
-        ),
-        ms1_peak_group_trigger_scan_count=getattr(
-            ctx,
-            "ms1_peak_group_trigger_scan_count",
-            None,
-        ),
-        ms1_peak_group_strict_nl_scan_count=getattr(
-            ctx,
-            "ms1_peak_group_strict_nl_scan_count",
-            None,
-        ),
-        ms1_peak_group_strict_nl_event_count=getattr(
-            ctx,
-            "ms1_peak_group_strict_nl_event_count",
-            None,
-        ),
-        outside_ms1_peak_group_trigger_scan_count=getattr(
-            ctx,
-            "outside_ms1_peak_group_trigger_scan_count",
-            None,
-        ),
-        outside_ms1_peak_group_strict_nl_scan_count=getattr(
-            ctx,
-            "outside_ms1_peak_group_strict_nl_scan_count",
-            None,
-        ),
-        alignment_source=str(getattr(ctx, "ms2_alignment_source", "") or ""),
-        product_absence_reason=str(
-            getattr(ctx, "diagnostic_product_absence_reason", "") or ""
-        ),
+        alignment_source=str(ctx.ms2_alignment_source or ""),
         acquisition_opportunity=(
             "not_required"
             if not neutral_loss_required
@@ -428,15 +392,15 @@ def _chemical_facts(candidate: Any, ctx: Any) -> ChemicalEvidenceFacts:
 
 
 def _rt_facts(
-    candidate: Any,
-    ctx: Any,
+    candidate: PeakCandidate,
+    ctx: ScoringContext,
     *,
     role: str,
     istd_pair: str,
     paired_istd_anchor_rt_min: float | None,
 ) -> RtEvidenceFacts:
     selected_rt = float(candidate.selection_apex_rt)
-    rt_prior = getattr(ctx, "rt_prior", None)
+    rt_prior = ctx.rt_prior
     rt_prior_delta = (
         round(abs(selected_rt - float(rt_prior)), 10)
         if rt_prior is not None and _is_finite(float(rt_prior))
@@ -451,19 +415,19 @@ def _rt_facts(
     rt_severity = rt_prior_severity(
         selected_rt,
         rt_prior,
-        getattr(ctx, "rt_prior_sigma", None),
+        ctx.rt_prior_sigma,
     )[0]
     centrality_severity = rt_centrality_severity(
         selected_rt,
-        float(getattr(ctx, "rt_min", math.nan)),
-        float(getattr(ctx, "rt_max", math.nan)),
+        float(ctx.rt_min),
+        float(ctx.rt_max),
     )[0]
     return RtEvidenceFacts(
         selected_apex_rt_min=selected_rt,
-        rt_min=_optional_float(getattr(ctx, "rt_min", None)),
-        rt_max=_optional_float(getattr(ctx, "rt_max", None)),
+        rt_min=_optional_float(ctx.rt_min),
+        rt_max=_optional_float(ctx.rt_max),
         rt_prior_min=_optional_float(rt_prior),
-        rt_prior_sigma_min=_optional_float(getattr(ctx, "rt_prior_sigma", None)),
+        rt_prior_sigma_min=_optional_float(ctx.rt_prior_sigma),
         rt_prior_delta_min=rt_prior_delta,
         rt_prior_status=_rt_prior_status(rt_prior, rt_severity),
         window_status=_window_status(centrality_severity),
@@ -478,14 +442,12 @@ def _rt_facts(
     )
 
 
-def _boundary_facts(candidate: Any) -> BoundaryEvidenceFacts:
+def _boundary_facts(candidate: PeakCandidate) -> BoundaryEvidenceFacts:
     proposal_sources = tuple(
-        dict.fromkeys(
-            str(source) for source in getattr(candidate, "proposal_sources", ())
-        )
+        dict.fromkeys(str(source) for source in candidate.proposal_sources)
     )
-    cwt_best_scale = getattr(candidate, "cwt_best_scale", None)
-    cwt_ridge_persistence = getattr(candidate, "cwt_ridge_persistence", None)
+    cwt_best_scale = candidate.cwt_best_scale
+    cwt_ridge_persistence = candidate.cwt_ridge_persistence
     return BoundaryEvidenceFacts(
         proposal_sources=proposal_sources,
         cwt_same_apex_observed=(
@@ -499,14 +461,11 @@ def _boundary_facts(candidate: Any) -> BoundaryEvidenceFacts:
     )
 
 
-def _candidate_id(candidate: Any) -> str:
-    sources = ";".join(
-        str(source) for source in getattr(candidate, "proposal_sources", ())
-    )
+def _candidate_id(candidate: PeakCandidate) -> str:
+    sources = ";".join(str(source) for source in candidate.proposal_sources)
     selected_rt = float(candidate.selection_apex_rt)
-    peak = getattr(candidate, "peak", None)
-    peak_start = getattr(peak, "peak_start", selected_rt)
-    peak_end = getattr(peak, "peak_end", selected_rt)
+    peak_start = candidate.peak.peak_start
+    peak_end = candidate.peak.peak_end
     return "|".join(
         (
             sources,
@@ -517,34 +476,20 @@ def _candidate_id(candidate: Any) -> str:
     )
 
 
-def _candidate_abundance(candidate: Any) -> float:
+def _candidate_abundance(candidate: PeakCandidate) -> float:
     area = _candidate_area(candidate)
     if area > 0:
         return area
     return _candidate_height(candidate)
 
 
-def _candidate_area(candidate: Any) -> float:
-    peak = getattr(candidate, "peak", None)
-    value_source = getattr(peak, "area", None)
-    if value_source is None:
-        value_source = getattr(candidate, "peak_area", None)
-    if value_source is None:
-        value_source = getattr(candidate, "area", None)
-    if value_source is None:
-        return 0.0
-    try:
-        value = float(value_source)
-    except (TypeError, ValueError):
-        return 0.0
+def _candidate_area(candidate: PeakCandidate) -> float:
+    value = float(candidate.peak.area)
     return value if _is_finite(value) else 0.0
 
 
-def _candidate_height(candidate: Any) -> float:
-    try:
-        value = float(candidate.selection_apex_intensity)
-    except (TypeError, ValueError):
-        return 0.0
+def _candidate_height(candidate: PeakCandidate) -> float:
+    value = float(candidate.selection_apex_intensity)
     return value if _is_finite(value) else 0.0
 
 
@@ -609,13 +554,10 @@ def _worst_quality(*values: EvidenceQuality) -> EvidenceQuality:
     return max(values, key=lambda value: rank[value])
 
 
-def _optional_float(value: Any) -> float | None:
+def _optional_float(value: float | None) -> float | None:
     if value is None:
         return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
+    number = float(value)
     return number if _is_finite(number) else None
 
 

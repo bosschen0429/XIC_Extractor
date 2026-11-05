@@ -9,7 +9,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
-from xic_extractor.peak_detection.models import PeakCandidateScore
+from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidateScore
 from xic_extractor.peak_detection.peak_scoring_evidence import (
     ConfidenceCap,
     EvidenceSignal,
@@ -50,7 +50,7 @@ CWT_SAME_APEX_SUPPORT_POINTS = 5
 
 
 def score_candidate(
-    candidate: Any,
+    candidate: PeakCandidate,
     ctx: ScoringContext,
     prior_rt: float | None,
     istd_confidence_note: str | None = None,
@@ -128,7 +128,7 @@ def score_candidate(
 
 
 def _evidence_from_context(
-    candidate: Any,
+    candidate: PeakCandidate,
     ctx: ScoringContext,
     severities: list[tuple[int, str]],
     quality_penalty: int,
@@ -205,7 +205,7 @@ def _evidence_from_context(
     elif noise_shape == 2:
         negative.append(EvidenceSignal("noise_shape_poor", 20))
 
-    if not has_adap_like_quality_flags(tuple(getattr(candidate, "quality_flags", ()))):
+    if not has_adap_like_quality_flags(tuple(candidate.quality_flags)):
         positive.append(EvidenceSignal("trace_clean", 10))
 
     has_cwt_same_apex_support = has_same_apex_cwt_support(
@@ -244,10 +244,10 @@ def _evidence_from_context(
     return positive, negative, caps
 
 
-def _is_sparse_apex_fallback_ms2(candidate: Any, ctx: ScoringContext) -> bool:
+def _is_sparse_apex_fallback_ms2(candidate: PeakCandidate, ctx: ScoringContext) -> bool:
     if ctx.ms2_alignment_source != "apex_fallback":
         return False
-    flags = {str(flag) for flag in getattr(candidate, "quality_flags", ())}
+    flags = {str(flag) for flag in candidate.quality_flags}
     if "low_scan_support" not in flags:
         return False
     trigger_count = ctx.trigger_scan_count
@@ -265,17 +265,15 @@ def _has_cwt_chemical_support(ctx: ScoringContext) -> bool:
     return ctx.ms2_present and ctx.nl_match
 
 
-def has_same_apex_cwt_support(candidate: Any) -> bool:
-    sources = {str(source) for source in getattr(candidate, "proposal_sources", ())}
+def has_same_apex_cwt_support(candidate: PeakCandidate) -> bool:
+    sources = {str(source) for source in candidate.proposal_sources}
     if CWT_PROPOSAL_SOURCE not in sources:
         return False
     if not sources.difference({CWT_PROPOSAL_SOURCE}):
         return False
     return positive_finite_legacy_cwt_presence_metric(
-        getattr(candidate, "cwt_best_scale", None)
-    ) or positive_finite_legacy_cwt_presence_metric(
-        getattr(candidate, "cwt_ridge_persistence", None)
-    )
+        candidate.cwt_best_scale
+    ) or positive_finite_legacy_cwt_presence_metric(candidate.cwt_ridge_persistence)
 
 
 def positive_finite_legacy_cwt_presence_metric(value: object) -> bool:

@@ -25,7 +25,6 @@ from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureSettings,
     build_local_ms1_feature_table,
 )
-from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
 
@@ -81,7 +80,7 @@ def run_delta_mass_discovery(
     for raw_path in raw_paths:
         started = time.perf_counter()
         with open_raw(raw_path, dll_dir=dll_dir) as reader:
-            index = build_ms1_scan_index(reader, centroid=True)
+            index = reader.read_ms1_scan_index(centroid=True)
             intervals = np.diff([scan.rt for scan in index]) * 60
             interval = (
                 float(np.median(intervals[intervals > 0]))

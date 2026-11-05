@@ -208,6 +208,8 @@ def test_batch_trace_contract_requires_observed_backend_call_counter(
     )
 
     class UnobservableAdapter:
+        raw_chromatogram_call_count = None
+
         def extract_xic_many(self, requests):
             return tuple(
                 XICTrace.from_arrays(

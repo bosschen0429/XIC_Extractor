@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from xic_extractor.peak_detection.models import PeakCandidate
 
 _ADAP_LIKE_FLAG_LABELS = {
     "low_scan_support": "low scan support",
@@ -16,8 +19,8 @@ _ADAP_EQUIVALENT_LEGACY_FLAGS = {
 }
 
 
-def candidate_quality_penalty(candidate: Any) -> tuple[int, list[str]]:
-    raw_flags = getattr(candidate, "quality_flags", ())
+def candidate_quality_penalty(candidate: PeakCandidate) -> tuple[int, list[str]]:
+    raw_flags = candidate.quality_flags
     flags = tuple(dict.fromkeys(str(flag) for flag in raw_flags))
     if not flags:
         return 0, []
@@ -30,16 +33,16 @@ def candidate_quality_penalty(candidate: Any) -> tuple[int, list[str]]:
     return penalty, notes
 
 
-def trace_quality_severities(candidate: Any) -> tuple[tuple[int, str], ...]:
-    flags = {str(flag) for flag in getattr(candidate, "quality_flags", ())}
+def trace_quality_severities(candidate: PeakCandidate) -> tuple[tuple[int, str], ...]:
+    flags = {str(flag) for flag in candidate.quality_flags}
     return tuple(
         (1 if flag in flags else 0, label)
         for flag, label in _ADAP_LIKE_FLAG_LABELS.items()
     )
 
 
-def candidate_selection_quality_penalty(candidate: Any) -> float:
-    raw_flags = getattr(candidate, "quality_flags", ())
+def candidate_selection_quality_penalty(candidate: PeakCandidate) -> float:
+    raw_flags = candidate.quality_flags
     flags = tuple(dict.fromkeys(str(flag) for flag in raw_flags))
     weighted_flags = [flag for flag in flags if flag in _ADAP_LIKE_FLAG_LABELS]
     return min(

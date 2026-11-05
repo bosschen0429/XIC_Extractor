@@ -2,8 +2,9 @@
 
 import math
 from bisect import bisect_left
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 from xic_extractor.configuration.cid_nl_profile import (
     DEFAULT_CID_NL_MASS_POLICY,
@@ -42,6 +43,13 @@ class Ms1PrecursorObservation:
             not math.isfinite(mz) or mz <= 0 for mz in self.centroid_mzs
         ):
             raise ValueError("parent MS1 centroids must be positive finite masses")
+
+
+class MS1MassWindowSource(Protocol):
+    def read_ms1_mass_windows(
+        self, requests: Sequence[tuple[int, float, float]]
+    ) -> tuple[Ms1PrecursorObservation | None, ...]:
+        """One observation per (parent MS1 scan, m/z low, m/z high) request."""
 
 
 @dataclass(frozen=True, slots=True)

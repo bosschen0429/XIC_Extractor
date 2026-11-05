@@ -17,6 +17,7 @@ from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
 )
+from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.csv_reader import (
@@ -1866,6 +1867,16 @@ class _OwnerBoundFakeRawHandle:
     def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
         return None
 
+    raw_open_receipt = None
+    mass_recalibration_result = MassRecalibrationResult("none")
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
+    def batch_xic_source(self):
+        return self
+
     def __init__(
         self,
         source: AcquisitionSourceIdentity,
@@ -1914,6 +1925,16 @@ class _OwnerBoundFakeRawHandle:
 class _FakeRawHandle:
     def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
         return None
+
+    raw_open_receipt = None
+    mass_recalibration_result = MassRecalibrationResult("none")
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
+    def batch_xic_source(self):
+        return self
 
     def __init__(
         self,

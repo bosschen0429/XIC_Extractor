@@ -25,7 +25,7 @@ class MS1ScanReadError(RuntimeError):
 
 
 def build_ms1_scan_index(
-    source: Any,
+    raw: Any,
     *,
     first_scan_number: int | None = None,
     last_scan_number: int | None = None,
@@ -35,8 +35,8 @@ def build_ms1_scan_index(
 
     The default retains stored scan samples for existing trace consumers.
     Profile samples must not be interpreted as independent mass peaks.
+    ``raw`` is the vendor RAW file object owned by ``RawFileHandle``.
     """
-    raw = raw_file(source)
     if first_scan_number is None:
         first_scan = int(raw.RunHeaderEx.FirstSpectrum)
     else:
@@ -82,10 +82,6 @@ def build_ms1_scan_index(
     except ValueError as exc:
         raise MS1ScanReadError(f"failed to build MS1 scan index: {exc}") from exc
     return result
-
-
-def raw_file(source: Any) -> Any:
-    return getattr(source, "_raw_file", source)
 
 
 def _scan_arrays(

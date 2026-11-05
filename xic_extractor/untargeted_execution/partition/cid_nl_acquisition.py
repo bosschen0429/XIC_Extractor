@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Protocol
 
 import numpy as np
 
+from xic_extractor.acquisition.ms2_windows import MS2ScanSource
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     BatchXICAdapter,
@@ -45,6 +45,7 @@ from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
+    StrictSeedReceiptRaw,
     read_complete_discovery_scan_seeds,
     read_parent_ms1_observations,
     resolve_discovery_scan_events,
@@ -104,12 +105,12 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
+from xic_extractor.precursor_evidence import MS1MassWindowSource
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import (
-    Ms2ScanEvent,
     RawReaderError,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -131,14 +132,14 @@ class CidNlAcquisitionError(ValueError):
     """Raised when real observations cannot close one Untargeted subject."""
 
 
-class CidNlRawSource(BatchXICAdapter, Protocol):
+class CidNlRawSource(
+    BatchXICAdapter,
+    MS2ScanSource,
+    StrictSeedReceiptRaw,
+    MS1MassWindowSource,
+    Protocol,
+):
     def acquisition_rt_bounds(self) -> tuple[float, float]: ...
-
-    def iter_ms2_scans(
-        self,
-        rt_min: float,
-        rt_max: float,
-    ) -> Iterator[Ms2ScanEvent]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -500,7 +501,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     )
     if not capture_candidates:
         return None
-    _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -647,7 +647,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
             ),
         )
     )
-    _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -817,7 +816,6 @@ def adapt_current_discovery_sample_subject(
         raise CidNlAcquisitionError(
             "bounded subject universe requires an owner-opened RAW adapter"
         )
-    _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -1073,7 +1071,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             raise CidNlAcquisitionError(
                 "backfill requires owner-opened RAW or preacquired traces"
             )
-        _validate_raw_adapter(raw)
         try:
             bound_raw = require_owner_bound_untargeted_raw(raw, source)
         except RawReaderError as exc:
@@ -1806,12 +1803,6 @@ def _validate_inputs(**values: object) -> None:
         raise CidNlAcquisitionError(
             "peak_config requires canonical asls baseline integration"
         )
-
-
-def _validate_raw_adapter(raw: object) -> None:
-    for method in ("extract_xic_many", "scan_window_for_request", "iter_ms2_scans"):
-        if not callable(getattr(raw, method, None)):
-            raise CidNlAcquisitionError(f"raw adapter lacks {method}")
 
 
 def _validate_physical_candidate_receipt(

@@ -68,6 +68,12 @@ class DiscoveryRawHandle(CidNlSearchSource, Protocol):
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity: ...
 
+    @property
+    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None: ...
+
+    @property
+    def mass_recalibration_result(self) -> MassRecalibrationResult: ...
+
 
 RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
 
@@ -476,9 +482,7 @@ def _acquire_discovery_sample(
                 physical_work_manifest=acquisition_result.physical_work_manifest,
                 physical_evaluations=acquisition_result.physical_evaluations,
                 physical_bindings=acquisition_result.physical_bindings,
-                mass_recalibration_result=getattr(
-                    raw, "mass_recalibration_result", MassRecalibrationResult("none")
-                ),
+                mass_recalibration_result=raw.mass_recalibration_result,
             )
         finally:
             if not completed:
@@ -515,9 +519,9 @@ def _owner_bound_acquisition_source(
 
 
 def _owner_bound_raw_open_receipt(
-    raw: object,
+    raw: DiscoveryRawHandle,
 ) -> RawAcquisitionSessionReceipt | None:
-    receipt = getattr(raw, "raw_open_receipt", None)
+    receipt = raw.raw_open_receipt
     if receipt is None:
         return None
     if not isinstance(receipt, RawAcquisitionSessionReceipt):

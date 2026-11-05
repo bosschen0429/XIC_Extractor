@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import (
@@ -38,6 +38,7 @@ from xic_extractor.peak_detection.traces import Trace
 if TYPE_CHECKING:
     from xic_extractor.evidence.targeted_identification import MethodCandidateEvidence
     from xic_extractor.extraction.result_models import ExtractionResult
+    from xic_extractor.extraction.scoring_factory import ScoringContextBuilder
 
 TARGETED_ACQUISITION_TRACE_SOURCE = (
     "xic_extractor.targeted_production_workflow:retained-acquisition"
@@ -84,7 +85,7 @@ def build_extraction_result(
     candidate_ms2_evidence: CandidateMS2Evidence | None,
     target: Target,
     candidate: PeakCandidate | None,
-    scoring_context_builder: Any | None,
+    scoring_context_builder: ScoringContextBuilder | None,
     selected_hypothesis: PeakHypothesis | None = None,
     selection_decision: PeakHypothesisSelectionDecision | None = None,
     acquisition_trace: Trace | None = None,
@@ -115,9 +116,7 @@ def build_extraction_result(
     quality_flags: tuple[str, ...] = ()
     if candidate is not None:
         quality_penalty, _ = candidate_quality_penalty(candidate)
-        quality_flags = tuple(
-            str(flag) for flag in getattr(candidate, "quality_flags", ())
-        )
+        quality_flags = tuple(str(flag) for flag in candidate.quality_flags)
 
     result = result_models.ExtractionResult(
         peak_result=peak_result,
@@ -129,8 +128,16 @@ def build_extraction_result(
         confidence=_result_confidence(peak_result, resolved_selection_decision),
         reason=_result_reason(peak_result, resolved_selection_decision),
         severities=peak_result.severities,
-        prior_rt=getattr(scoring_context_builder, "rt_prior", None),
-        prior_source=getattr(scoring_context_builder, "prior_source", ""),
+        prior_rt=(
+            None
+            if scoring_context_builder is None
+            else scoring_context_builder.rt_prior
+        ),
+        prior_source=(
+            ""
+            if scoring_context_builder is None
+            else scoring_context_builder.prior_source
+        ),
         quality_penalty=quality_penalty,
         quality_flags=_result_quality_flags(quality_flags, selected_hypothesis),
         score_breakdown=peak_result.score_breakdown,

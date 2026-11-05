@@ -22,7 +22,7 @@ from xic_extractor.precursor_evidence import (
 )
 
 
-class MS2ScanSource(Protocol):
+class AcquisitionSpanMS2Source(Protocol):
     def iter_ms2_scans(
         self, rt_min: float | None, rt_max: float | None
     ) -> Iterator[Ms2ScanEvent]:
@@ -30,7 +30,7 @@ class MS2ScanSource(Protocol):
 
 
 def collect_strict_nl_seeds(
-    raw: MS2ScanSource,
+    raw: AcquisitionSpanMS2Source,
     *,
     raw_file: Path,
     settings: DiscoverySettings,

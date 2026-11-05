@@ -6,23 +6,26 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from xic_extractor.acquisition_contract import BatchXICAdapter
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_capture import (
+    DiscoveryMs1Source,
     _DiscoveryMs1AcquisitionResult,
     _DiscoveryMs1Measurements,
     capture_ms1_candidates,
 )
-from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
+from xic_extractor.discovery.ms2_seeds import (
+    AcquisitionSpanMS2Source,
+    collect_strict_nl_seeds,
+)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 
 
-class CidNlSearchSource(BatchXICAdapter, MS2ScanSource, Protocol):
+class CidNlSearchSource(DiscoveryMs1Source, AcquisitionSpanMS2Source, Protocol):
     def ms1_centroid_mz(
         self, rt: float, mz_min: float, mz_max: float
     ) -> float | None: ...

@@ -321,8 +321,8 @@ def _capture_workflow_input(
         candidate_id=item.candidate_id,
         trace=item.trace,
     )
-    owner_observation = getattr(item, "owner_observation", None)
-    owner_hypothesis = getattr(item, "owner_hypothesis", None)
+    owner_observation = item.owner_observation
+    owner_hypothesis = item.owner_hypothesis
     if owner_observation is None or capture.selected_hypothesis is None:
         return capture
     assert owner_hypothesis is not None
@@ -336,8 +336,8 @@ def _capture_workflow_input(
 def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
     memberships: dict[str, str] = {}
     for binding in scope.capture_bindings:
-        candidate_id = getattr(binding, "candidate_id", None)
-        subject_id = getattr(binding, "method_subject_id", None)
+        candidate_id = binding.candidate_id
+        subject_id = binding.method_subject_id
         if not isinstance(candidate_id, str) or not isinstance(subject_id, str):
             raise AlignmentWorkflowContractError(
                 "Untarget batch capture membership is incomplete"

@@ -2,6 +2,7 @@
 
 import pytest
 
+from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targeted_identification import (
     parse_identification_methods,
@@ -207,7 +208,7 @@ def test_cid_and_pair_use_the_same_peak_and_keep_acquired_failures(
     )
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
-    class CidRaw(PatternRaw):
+    class CidRaw(ScopedMs2WindowReader, PatternRaw):
         ms2_calls = 0
 
         def iter_ms2_scans(self, rt_min, rt_max):

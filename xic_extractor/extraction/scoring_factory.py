@@ -10,7 +10,6 @@ from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResu
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
-    configured_morphology_window_points,
     gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResult
@@ -19,7 +18,7 @@ from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
 from xic_extractor.peak_detection.signal_quality import candidate_signal_quality
 
 
-class _ScoringContextBuilder(Protocol):
+class ScoringContextBuilder(Protocol):
     rt_prior: float
     prior_source: str
 
@@ -29,7 +28,7 @@ class _ScoringContextBuilder(Protocol):
 def build_scoring_context_factory(
     *,
     config: ExtractionConfig,
-) -> Callable[..., Callable[[PeakCandidate], ScoringContext]]:
+) -> Callable[..., ScoringContextBuilder]:
     def _factory(
         *,
         target: Target,
@@ -44,7 +43,7 @@ def build_scoring_context_factory(
             [PeakCandidate], CandidateMS2Evidence | None
         ]
         | None = None,
-    ) -> Callable[[PeakCandidate], ScoringContext]:
+    ) -> ScoringContextBuilder:
         # Expected RT is an identity prior, not a peak-generation or confidence window.
         rt_prior = (
             target_reference_rt
@@ -75,7 +74,7 @@ def build_scoring_context_factory(
             if prepared_result.baseline_unclipped is not None
             else None
         )
-        morphology_window_points = configured_morphology_window_points(config)
+        morphology_window_points = config.ms1_morphology_smoothing_window_points
         active_intensity_values = intensity_values
         active_trace_source = "raw"
         morphology_trace_method = ""
@@ -218,7 +217,7 @@ def build_scoring_context_factory(
                 morphology_trace_window_points=morphology_trace_window_points,
             )
 
-        context_builder = cast(_ScoringContextBuilder, builder)
+        context_builder = cast(ScoringContextBuilder, builder)
         context_builder.rt_prior = rt_prior
         context_builder.prior_source = prior_source
         return context_builder
@@ -255,7 +254,7 @@ def is_credible_istd_peak(peak_result: PeakDetectionResult) -> bool:
     candidate = selected_candidate(peak_result)
     if candidate is None:
         return False
-    flags = tuple(str(flag) for flag in getattr(candidate, "quality_flags", ()))
+    flags = tuple(str(flag) for flag in candidate.quality_flags)
     return not hard_quality_flags(flags)
 
 

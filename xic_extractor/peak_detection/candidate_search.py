@@ -14,7 +14,6 @@ from xic_extractor.peak_detection.savgol import (
 )
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
-    CANONICAL_RESOLVER_MODE,
     RESOLVER_MODES,
 )
 
@@ -31,7 +30,7 @@ def find_peak_candidates(
     ] = find_peak_candidates_local_minimum,
     savgol_finder: Callable[..., PeakCandidatesResult] = (find_peak_candidates_savgol),
 ) -> PeakCandidatesResult:
-    resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
+    resolver_mode = config.resolver_mode
     if resolver_mode == "local_minimum":
         return local_minimum_finder(rt, intensity, config)
     if resolver_mode == "arbitrated":

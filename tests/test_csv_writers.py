@@ -476,6 +476,9 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
 
 class _Config:
     resolver_mode = "local_minimum"
+    baseline_integration_method = "asls"
+    count_no_ms2_as_detected = False
+    ms1_morphology_smoothing_window_points = 15
 
 
 def _selected_hypothesis_with_integration(

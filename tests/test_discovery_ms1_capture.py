@@ -33,6 +33,7 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
@@ -1351,6 +1352,13 @@ class _OwnerBoundBatchRaw:
             return 100, 200
         return 300, 400
 
+    def batch_xic_source(self):
+        return self
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
 
 class _ScanGridRaw:
     """Owner-bound RAW with one scan per 0.01 min whose readings never change."""
@@ -1379,6 +1387,13 @@ class _ScanGridRaw:
     def retention_time_for_scan(self, scan_number: int) -> float:
         return scan_number / 100
 
+    def batch_xic_source(self):
+        return RawSuperWindowSource(self)
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
+
 
 class _FakeRaw:
     """Owner-bound RAW returning one fixed trace for every request."""
@@ -1405,6 +1420,13 @@ class _FakeRaw:
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return 0, max(len(self.rt) - 1, 0)
+
+    def batch_xic_source(self):
+        return self
+
+    def read_ms1_mass_windows(self, requests):
+        """This fake records no parent-MS1 centroids."""
+        return (None,) * len(requests)
 
 
 def _candidates_from_raw(
