@@ -329,6 +329,7 @@ def create_server(
                 return
             elif path.removeprefix("/api/") in {
                 "preferences",
+                "paths/validate",
                 "targeted/save",
                 "targeted/method",
                 "targeted/method/save",

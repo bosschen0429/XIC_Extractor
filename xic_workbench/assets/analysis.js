@@ -334,6 +334,33 @@
     wrap.append(title, input, browse);
     if (help) wrap.append(el("small", help, "field-help"));
     container.append(wrap);
+    if (key === "dll_dir") wrap.hidden = true;
+    const problem = el("small", "", "field-help");
+    problem.id = `${input.id}-problem`;
+    problem.setAttribute("role", "status");
+    input.setAttribute("aria-describedby", problem.id);
+    wrap.append(problem);
+    const validate = async () => {
+      const value = input.value.trim();
+      delete input.dataset.validatedPath;
+      problem.textContent = value ? "檢查路徑中…" : "";
+      const result = await api("/api/paths/validate", {path: value, kind});
+      if (input.value.trim() !== value) return false;
+      input.dataset.validatedPath = result.usable ? value : "";
+      problem.textContent = result.usable ? "" : result.message;
+      input.setAttribute("aria-invalid", String(!result.usable));
+      checklist(prefix === "t-" ? "targeted" : "untargeted");
+      return result.usable;
+    };
+    input.addEventListener("input", () => {
+      delete input.dataset.validatedPath;
+      checklist(prefix === "t-" ? "targeted" : "untargeted");
+    });
+    input.addEventListener("change", () => act(async () => {
+      if (await validate() && ["data_dir", "raw_dir"].includes(key))
+        await scanSamples(prefix === "t-" ? "targeted" : "untargeted");
+    }));
+    if (input.value && key !== "dll_dir") act(validate);
     return input;
   }
 
@@ -343,24 +370,20 @@
   }
   function pathItem(label, id, missing) {
     const value = $(id)?.value.trim() || "";
-    const usable = value && !isTemplatePath(value);
+    const usable = value && $(id)?.dataset.validatedPath === value;
     return checkItem(
       usable ? "ok" : "todo",
       label,
-      usable ? pathTail(value) : missing,
+      usable ? pathTail(value) : (value ? ($(`${id}-problem`)?.textContent || "尚未驗證") : missing),
       id,
       usable,
     );
   }
-  function readerItem(id) {
-    const item = pathItem("RawFileReader DLL 資料夾", id, "尚未選擇資料夾");
-    if (item.tone !== "ok") return item;
+  function readerItem() {
     const reader = state.config.thermo_reader;
-    if (reader.dll_dir.trim() !== $(id).value.trim())
-      return checkItem("info", item.label, "尚未驗證", id);
-    return reader.dll_errors.length
-      ? checkItem("todo", item.label, "DLL 尚未備妥", id)
-      : item;
+    const ready = !reader.dll_errors.length && !reader.dotnet_errors.length;
+    return checkItem(ready ? "ok" : "todo", "RAW 讀取環境",
+      ready ? "已備妥" : "需要修復讀取環境", "reader-setup");
   }
   function checklist(kind) {
     if (!state.config) return;
@@ -529,19 +552,15 @@
   function renderSettings(values) {
     const data = $("targeted-data");
     const method = $("targeted-settings");
-    const execution = $("targeted-execution");
     const outputDir = $("t-output_dir")?.value ?? state.config.targeted_output_dir;
-    for (const panel of [data, method, execution]) panel.replaceChildren();
+    for (const panel of [data, method]) panel.replaceChildren();
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "目標清單決定名稱、m/z、預期 RT、辨認方法與 ISTD 配對；其餘沿用平台共用策略。", "settings-notice"), note);
-    const grid = el("div", undefined, "settings-grid");
-    execution.append(grid);
     // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
     for (const spec of state.config.targeted_form.settings) {
       if (spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
       if (!["folder", "file"].includes(spec.kind)) {
-        grid.append(field(spec, values[spec.key], "t-"));
         continue;
       }
       if (spec.scope === "environment")
@@ -2019,13 +2038,9 @@
       const { container, artifacts } = resultBase("untargeted", result);
       const metrics = el("div", undefined, "result-metrics");
       metric(metrics, result.sample_count, "樣本");
-      for (const [key, label] of [
-        ["total", "候選"],
-        ["HIGH", "HIGH"],
-        ["MEDIUM", "MEDIUM"],
-        ["LOW", "LOW"],
-      ])
-        metric(metrics, result.candidate_counts?.[key], label);
+      metric(metrics, result.overview?.matrix_count, "最終矩陣群組");
+      metric(metrics, result.overview?.complete_count, "全部樣本有量值的群組");
+      metric(metrics, result.overview?.unresolved_count, "含未解決定量的群組");
       container.append(metrics);
       const actions = el("div", undefined, "button-row");
       const evidence = result.evidence?.path || result.evidence?.report_path;

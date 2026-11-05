@@ -197,18 +197,24 @@ def test_dll_readiness_follows_validation_not_just_a_nonempty_path(workbench, tm
     from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
     page = workbench
-    item = page.locator("#target-checklist li").filter(
-        has_text="RawFileReader DLL 資料夾"
-    )
+    item = page.locator("#target-checklist li").filter(has_text="RAW 讀取環境")
     expect(item).not_to_have_class("ok")
     valid = tmp_path / "valid-reader"
     valid.mkdir()
     for name in EXPECTED_THERMO_DLLS:
         (valid / name).write_bytes(b"test assembly")
-    page.locator("#t-dll_dir").fill(str(valid))
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        str(valid),
+    )
     expect(item).to_have_class("ok")
     expect(page.locator("#reader-setup-dll")).to_be_hidden()
-    page.locator("#t-dll_dir").fill(str(tmp_path / "not-installed"))
+    page.locator("#t-dll_dir").evaluate(
+        "(node, value) => {node.value = value; "
+        "node.dispatchEvent(new Event('input', {bubbles: true}));}",
+        str(tmp_path / "not-installed"),
+    )
     expect(item).not_to_have_class("ok")
     expect(item).to_have_class("todo")
     expect(page.locator("#reader-setup-dll")).to_be_visible()
@@ -712,8 +718,7 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
         expect(cell).to_have_css("text-align", "center")
-    expect(page.locator("#t-parallel_workers")).to_be_visible()
-    page.locator("#t-parallel_workers").fill("2")
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
     page.locator("#target-edit").click()
     expect(page.locator("#target-editor")).to_be_visible()
     editor_cells = page.locator(
@@ -739,8 +744,8 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     expect(
         page.get_by_role("combobox", name="辨認方法（第 1 列）", exact=True)
     ).to_have_value(tag)
-    assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
-    expect(page.locator("#t-parallel_workers")).to_have_value("2")
+    assert read_settings(config_dir=config_dir)["parallel_workers"] == ""
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
 
 
 @pytest.mark.parametrize("theme,mode", [("light", "all"), ("dark", "any")])
@@ -3605,3 +3610,29 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     _wait_for_analysis_status(page, "已完成")
     expect(result).to_contain_text(str(existing))
     assert len(list(existing.glob("matrix_curation_*"))) == 1
+
+
+@pytest.mark.parametrize(
+    "kind,field", [("targeted", "t-data_dir"), ("untargeted", "u-raw_dir")]
+)
+def test_path_errors_and_automatic_sample_summary(workbench, tmp_path, kind, field):
+    page = workbench
+    _view(page, kind)
+    path = page.locator(f"#{field}")
+    path.fill(str(tmp_path / "missing"))
+    path.dispatch_event("change")
+    expect(page.locator(f"#{field}-problem")).to_contain_text("路徑不存在或無法讀取")
+    expect(path).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#t-parallel_workers")).to_have_count(0)
+    expect(page.locator("#t-dll_dir")).not_to_be_visible()
+    expect(page.locator("#u-dll_dir")).not_to_be_visible()
+    raw = tmp_path / "sample-input"
+    raw.mkdir()
+    (raw / "sample.raw").touch()
+    path.fill(str(raw))
+    path.dispatch_event("change")
+    prefix = "t-" if kind == "targeted" else ""
+    expect(page.locator(f"#{prefix}samples-summary")).to_contain_text(
+        "RAW 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    expect(path).to_have_attribute("aria-invalid", "false")

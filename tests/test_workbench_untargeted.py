@@ -450,8 +450,11 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     matrix = output / "alignment_matrix.tsv"
     review = output / "alignment_review.tsv"
     evidence = output / "alignment_explanation.sqlite"
-    for path in (matrix, review, evidence):
+    for path in (matrix, review):
         path.write_text("x", encoding="utf-8")
+    from tests.inspector_fixtures import create_review_batch
+
+    evidence, _fixture_matrix = create_review_batch(output)
     locator = SimpleNamespace(report_path=evidence)
     captured = {}
 
@@ -471,6 +474,9 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     assert captured["request"].publication.emit_alignment_explanation is True
     assert captured["request"].alignment_config.backfill_enabled is backfill_enabled
     assert captured["request"].publication.explanation_full_audit is False
+    assert summary["overview"]["matrix_count"] == 3
+    assert summary["overview"]["complete_count"] == 1
+    assert summary["overview"]["unresolved_count"] == 1
     assert summary["evidence"] is locator
     assert summary["published_paths"] == [
         str(review),

@@ -195,6 +195,20 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
+        if action == "paths/validate":
+            path = Path(str(values.get("path", ""))).expanduser()
+            try:
+                if not str(values.get("path", "")).strip():
+                    raise ValueError("尚未選擇路徑")
+                if values.get("kind") == "folder":
+                    with os.scandir(path) as entries:
+                        next(entries, None)
+                else:
+                    with path.open("rb") as stream:
+                        stream.read(1)
+            except (OSError, ValueError) as exc:
+                return {"usable": False, "message": f"路徑不存在或無法讀取：{exc}"}
+            return {"usable": True, "message": "可讀取"}
         if action == "targeted/method/validate":
             from xic_extractor.configuration.targeted_identification import (
                 identification_methods_payload,

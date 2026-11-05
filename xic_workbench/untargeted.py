@@ -432,6 +432,13 @@ class UntargetedRun:
 
 
 def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
+    from xic_inspector.api import read_evidence_summary
+    from xic_inspector.sources.untargeted_overview import review_overview
+
+    overview = None
+    if outputs.evidence is not None:
+        path = Path(outputs.evidence.report_path)
+        overview, _rows = review_overview(path, read_evidence_summary(path))
     alignment_outputs = {
         name: str(path)
         for name, path in (
@@ -443,6 +450,7 @@ def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:
         if path is not None
     }
     return {
+        "overview": overview,
         "alignment_outputs": alignment_outputs,
         "matrix_tsv": alignment_outputs.get("matrix_tsv"),
         "run_metadata_json": alignment_outputs.get("run_metadata_json"),

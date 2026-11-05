@@ -13,7 +13,6 @@ from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 STATE_NAME = "workspace.json"
 _SECTION = {
     "dll_dir": "application",
-    "parallel_workers": "application",
     "data_dir": "batch",
     "injection_order_source": "batch",
 }
@@ -35,6 +34,8 @@ def read_workspace(config_dir: Path) -> dict:
             "targets",
         }:
             raise ValueError("unsupported workspace schema")
+        if isinstance(state.get("application"), dict):
+            state["application"].pop("parallel_workers", None)
         for section in ("application", "batch"):
             values = state[section]
             if not isinstance(values, dict) or any(
@@ -82,6 +83,8 @@ def save_workspace(
     if identification_methods is not None:
         state["identification_methods"] = identification_methods
     for key, value in (settings or {}).items():
+        if key == "parallel_workers":
+            continue
         if key not in _SECTION:
             raise ConfigError(f"不支援工作設定：{key}")
         state[_SECTION[key]][key] = value
