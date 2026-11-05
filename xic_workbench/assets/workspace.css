@@ -960,6 +960,41 @@ th.num {
   margin: 0 auto;
   padding: 20px var(--gutter) 64px;
 }
+.result-nav {
+  margin: -8px 0 12px;
+}
+.back-link {
+  min-height: 30px;
+  padding: 4px 10px 4px 6px;
+  font-size: 13px;
+}
+/* Optional curation reads as one more result card, not loose text. */
+#result-curation {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+#result-curation > summary {
+  width: auto;
+  max-width: none;
+  padding: 16px 22px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 550;
+  cursor: pointer;
+}
+#result-curation[open] {
+  padding: 0 22px 22px;
+}
+#result-curation[open] > summary {
+  margin: 0 -22px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.back-link .icon {
+  transform: rotate(180deg);
+}
 
 /* Review: source */
 .source-bar {

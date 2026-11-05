@@ -43,9 +43,12 @@
     system_suitability: "系統適用性",
     unknown: "未指定",
   };
+  // The location holds every run; each analysis writes a new folder inside it.
+  const OUTPUT_LABEL = "結果存放位置";
+  const OUTPUT_HELP = "每次分析會在這裡新建一個資料夾（日期時間_類型_RAW 資料夾名），不覆蓋舊結果。";
   const pathFields = [
     ["raw_dir", "RAW 資料夾", "folder"],
-    ["output_dir", "輸出資料夾", "folder"],
+    ["output_dir", OUTPUT_LABEL, "folder", OUTPUT_HELP],
     ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
   ];
   const jobLabels = {
@@ -198,28 +201,60 @@
     }
     checklist("targeted");
   }
+  // The page shows either the next analysis's setup or one opened result,
+  // never a result appended under an unrelated setup form.
+  const showingResult = () => document.body.dataset.mode === "result";
+  // A reload returns to the result it showed; a new window starts at setup.
+  const reloadedOnResult = (() => {
+    try { return sessionStorage.getItem("xic-mode") === "result"; }
+    catch { return false; }
+  })();
+  function showMode(mode) {
+    document.body.dataset.mode = mode;
+    try { sessionStorage.setItem("xic-mode", mode); } catch { /* per-tab convenience only */ }
+    $("analysis-root").hidden = mode === "result";
+    $("analysis-result").hidden = mode !== "result";
+    document
+      .querySelectorAll(".view-tabs [data-view]")
+      .forEach((node) =>
+        node.setAttribute(
+          "aria-current",
+          mode === "setup" && node.dataset.view === state.view ? "page" : "false",
+        ),
+      );
+  }
+  function showResult() {
+    if (!showingResult()) window.XicUi.navigation.push();
+    showMode("result");
+    window.scrollTo(0, 0);
+  }
+  // The restored result and the setup views boot independently; resume only
+  // once both are ready so the boot view selection does not undo it.
+  function resumeResult() {
+    if (!reloadedOnResult || state.resumedResult || !state.booted || !state.restoredResult)
+      return;
+    state.resumedResult = true;
+    showMode("result");
+  }
   function selectView(view, persist = true) {
-    if (persist && view !== state.view) window.XicUi.navigation.push();
+    if (persist && (view !== state.view || showingResult()))
+      window.XicUi.navigation.push();
     state.view = view;
     document.body.dataset.view = view;
     for (const name of ["targeted", "untargeted"])
       $(`workspace-${name}`).hidden = name !== view;
-    document
-      .querySelectorAll("[data-view]")
-      .forEach((node) =>
-        node.setAttribute(
-          "aria-current",
-          node.dataset.view === view ? "page" : "false",
-        ),
-      );
+    showMode("setup");
     const slot = document.querySelector(`[data-job-slot="${view}"]`);
     if (slot) slot.append($("analysis-job"));
     if (state.config) renderJob();
     if (persist) act(() => api("/api/preferences", { view }));
   }
   window.XicUi.navigation.register("workspace", {
-    capture: () => state.view,
-    restore: view => selectView(view, false),
+    capture: () => ({ view: state.view, mode: document.body.dataset.mode }),
+    restore: (saved) => {
+      selectView(saved.view, false);
+      showMode(saved.mode || "setup");
+    },
   });
 
   // Form fields
@@ -344,7 +379,10 @@
       const value = input.value.trim();
       delete input.dataset.validatedPath;
       problem.textContent = value ? "檢查路徑中…" : "";
-      const result = await api("/api/paths/validate", {path: value, kind});
+      const result = await api("/api/paths/validate", {
+        path: value,
+        kind: key === "output_dir" ? "output" : kind,
+      });
       if (input.value.trim() !== value) return false;
       input.dataset.validatedPath = result.usable ? value : "";
       problem.textContent = result.usable ? "" : result.message;
@@ -392,7 +430,7 @@
     const items = [];
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "t-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem(OUTPUT_LABEL, "t-output_dir", "尚未選擇位置"));
       items.push(readerItem("t-dll_dir"));
       const istd = state.targets.filter(
         (row) => row.role === "istd",
@@ -410,7 +448,7 @@
       items.push(...sampleItems("targeted"));
     } else {
       items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem(OUTPUT_LABEL, "u-output_dir", "尚未選擇位置"));
       items.push(readerItem("u-dll_dir"));
       const preset = $("u-preset");
       items.push(
@@ -554,7 +592,7 @@
         continue;
       }
       if (spec.scope === "environment")
-        pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+        pathField(data, "output_dir", OUTPUT_LABEL, "folder", outputDir, "t-", OUTPUT_HELP);
       if (spec.key === "injection_order_source") {
         const value = String(values[spec.key] || "");
         $(samplePages.targeted.sequence).value = isTemplatePath(value) ? "" : value;
@@ -2074,7 +2112,7 @@
     $("curation-source_dir").value = sourceDir;
     $("curation-sample_metadata").value = "";
     $("curation-istd").value = "";
-    $("analysis-result").hidden = false;
+    showResult();
     $("result-curation").hidden = false;
     $("result-curation").open = true;
     $("result-curation").scrollIntoView({behavior: "smooth"});
@@ -2861,7 +2899,6 @@
           for (const key of ["raw_dir"])
             $(`u-${key}`).value = "";
           sampleRawDir = "";
-          $("u-output_dir").value = "";
           $("sequence-source").value = "";
           clearSamples("untargeted");
           $("untargeted-result").hidden = true;
@@ -2880,15 +2917,6 @@
       $("sequence-source").value = "";
       state.config.untargeted.sequence_source = "";
       clearSamples("untargeted");
-      const name = $("u-raw_dir")
-        .value.replace(/\\/g, "/")
-        .replace(/\/$/, "")
-        .split("/")
-        .pop();
-      const current = $("u-output_dir").value.replace(/\\/g, "/");
-      if (name && (!current || /\/output(?:\/[^/]+)?$/.test(current)))
-        $("u-output_dir").value =
-          `${current ? current.replace(/(\/output)(?:\/[^/]+)?$/, "$1") : `${state.config.config_dir}/../output`}/${name}`;
       dirty("untargeted");
     });
     $("sequence-source").addEventListener("change", () => dirty("untargeted"));
@@ -2979,15 +3007,14 @@
         await api("/api/preferences", { theme });
       });
     $("open-result").onclick = () => {
-      window.XicUi.navigation.push();
-      $("analysis-result").hidden = false;
+      showResult();
       $("source-settings").open = true;
-      $("analysis-result").scrollIntoView({behavior: "smooth"});
       $("source").focus();
     };
-    document.addEventListener("xic:result-opened", (event) => {
-      const page = event.detail;
-      $("analysis-result").hidden = false;
+    $("result-back").onclick = () => selectView(state.view);
+    // A result restored at startup is ready behind 開啟既有結果; only an
+    // explicit open, or reloading the tab that showed it, switches to it.
+    const prepareResult = (page) => {
       $("result-curation").open = false;
       $("result-curation").hidden = page.overview?.kind !== "untargeted";
       $("result-curation").ontoggle = () => {
@@ -2995,7 +3022,15 @@
         const folder = page.source.replace(/[\\/][^\\/]+$/, "");
         if (state.curation.runSource !== folder) act(() => openCuration(folder, null));
       };
-      $("analysis-result").scrollIntoView({behavior: "smooth", block: "start"});
+    };
+    document.addEventListener("xic:result-restored", (event) => {
+      prepareResult(event.detail);
+      state.restoredResult = true;
+      resumeResult();
+    });
+    document.addEventListener("xic:result-opened", (event) => {
+      prepareResult(event.detail);
+      showResult();
     });
     $("curation-preview-refresh").onclick = () => act(previewCuration);
     $("curation-form").addEventListener("input", invalidateCurationPreview);
@@ -3060,13 +3095,15 @@
     renderReaderSetup(state.config.thermo_reader);
     renderSettings(state.config.settings);
     renderTargetedMethods(state.config.targeted_methods || []);
-    for (const [key, label, kind] of pathFields)
+    for (const [key, label, kind, help] of pathFields)
       pathField(
         $("untargeted-paths"),
         key,
         label,
         kind,
         state.config.untargeted[key],
+        "u-",
+        help,
       );
     pathField(
       $("istd-path-field"),
@@ -3122,6 +3159,7 @@
     );
     renderJob();
     state.booted = true;
+    resumeResult();
     checklist("targeted");
     checklist("untargeted");
     document.body.classList.remove("booting");

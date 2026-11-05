@@ -623,6 +623,12 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.path-line:has(input[aria-invalid="true"]) > small.field-help {
+  color: var(--warn);
+}
+.path-line input[aria-invalid="true"] {
+  border-color: var(--warn);
+}
 @media (max-width: 860px) {
   .path-line > small.field-help { grid-column: 1 / -1; }
 }
@@ -1013,7 +1019,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (max-width: 760px) {
+/* Same breakpoint as .path-line, which also moves its label onto its own row. */
+@media (max-width: 860px) {
   .analysis-page .target-method-row {
     grid-template-columns: minmax(0, 1fr) 120px;
   }

@@ -1024,7 +1024,7 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
 ):
     page = workbench
     labels = page.locator("#targeted-data .path-line:visible > label")
-    expect(labels).to_have_text(["RAW 資料夾", "輸出資料夾"])
+    expect(labels).to_have_text(["RAW 資料夾", "結果存放位置"])
     # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
@@ -1033,20 +1033,32 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#t-output_dir")).to_have_value(
         str(config_dir.parent / "output")
     )
+    # A location that does not exist yet is created by the run, not an error.
     chosen = tmp_path / "chosen-output"
     page.locator("#t-output_dir").fill(str(chosen))
+    page.locator("#t-output_dir").press("Tab")
+    expect(page.locator("#t-output_dir")).to_have_attribute("aria-invalid", "false")
     _start(page, "targeted")
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake progress"
     )
-    assert fake_runs.output_dirs == [chosen]
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
+    # Each run writes its own new folder inside the location; none is reused.
+    _start(page, "targeted")
+    for _ in range(100):
+        if len(fake_runs.output_dirs) == 2:
+            break
+        page.wait_for_timeout(50)
+    first, second = fake_runs.output_dirs
+    assert first.parent == second.parent == chosen
+    assert first != second
+    assert re.fullmatch(r"\d{8}_\d{6}_targeted(_.+)?", first.name)
     page.reload()
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
     expect(page.locator("#untargeted-paths .path-line:visible > label")).to_have_text(
-        ["RAW 資料夾", "輸出資料夾"]
+        ["RAW 資料夾", "結果存放位置"]
     )
 
 
@@ -1079,7 +1091,7 @@ def test_readiness_lists_analysis_inputs_without_blocking_submit(workbench):
     checklist = page.locator("#untargeted-checklist")
     expect(checklist).to_contain_text("RAW 資料夾")
     expect(checklist).to_contain_text("RAW 讀取環境")
-    expect(checklist).to_contain_text("輸出資料夾")
+    expect(checklist).to_contain_text("結果存放位置")
     expect(page.locator("button[form=untargeted-form][type=submit]")).to_be_enabled()
 
 
@@ -2478,16 +2490,18 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
     _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
+    # The finished run opens its result; the next batch is edited on setup.
+    expect(page.locator("#analysis-result")).to_be_visible()
+    page.locator("#result-back").click()
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     _set_reader_path(page, str(tmp_path / "next-dll"))
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
     assert (
         Path(pending.value.path()).read_bytes()
         == fake_runs.targeted_workbook.read_bytes()
     )
-    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
-    expect(page.get_by_role("link", name="下載結果 XLSX", exact=True)).to_be_visible()
     expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
     expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3421,6 +3435,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
 
     # The next batch is another folder, saved as the current settings; the
     # exclusion still goes to the run's folder with the run's annotations.
+    page.locator("#result-back").click()
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     page.locator("#t-injection_order_source").fill("")
     with page.expect_response(lambda r: r.url.endswith("/api/targeted/save")):
@@ -3661,7 +3676,11 @@ def test_path_errors_and_automatic_sample_summary(workbench, tmp_path, kind, fie
     path = page.locator(f"#{field}")
     path.fill(str(tmp_path / "missing"))
     path.dispatch_event("change")
-    expect(page.locator(f"#{field}-problem")).to_contain_text("路徑不存在或無法讀取")
+    # Users read what is wrong, not the operating system's exception text.
+    expect(page.locator(f"#{field}-problem")).to_have_text("找不到這個資料夾")
+    checklist = "#target-checklist" if kind == "targeted" else "#untargeted-checklist"
+    expect(page.locator(checklist)).to_contain_text("找不到這個資料夾")
+    expect(page.locator(checklist)).not_to_contain_text("Error")
     expect(path).to_have_attribute("aria-invalid", "true")
     expect(page.locator("#t-parallel_workers")).to_have_count(0)
     expect(page.locator("#t-dll_dir")).not_to_be_visible()
@@ -3706,9 +3725,10 @@ def test_results_stay_in_analysis_page_without_raw(
         page.locator("#open-result").click()
         page.locator("#source").fill(str(source))
         page.locator("#open-form button[type=submit]").click()
+    # The result replaces the setup form instead of hanging under it.
     expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#targeted-overview")).to_be_visible()
-    expect(page.locator(f"#workspace-{kind}")).to_be_visible()
+    expect(page.locator("#analysis-root")).to_be_hidden()
     expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
     if kind == "untargeted":
         expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
@@ -3717,8 +3737,15 @@ def test_results_stay_in_analysis_page_without_raw(
     else:
         expect(page.locator("#result-curation")).not_to_be_visible()
     before = page.locator("#targeted-overview").text_content()
+    # Editing the next analysis happens on its setup; returning shows the
+    # same saved result.
+    page.locator("#result-back").click()
+    expect(page.locator(f"#workspace-{kind}")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_hidden()
     field = "#t-output_dir" if kind == "targeted" else "#u-output_dir"
     page.locator(field).fill(str(tmp_path / "next-analysis"))
+    page.go_back()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#targeted-overview")).to_have_text(before)
     with page.expect_download() as pending:
         page.locator("#result-download").click()
@@ -3819,7 +3846,7 @@ def test_narrow_path_error_leaves_a_usable_input(workbench, tmp_path, theme):
     path = page.locator("#t-data_dir")
     path.fill(str(tmp_path / ("missing-folder-" * 12)))
     path.press("Tab")
-    expect(page.locator("#t-data_dir-problem")).to_contain_text("路徑不存在或無法讀取")
+    expect(page.locator("#t-data_dir-problem")).to_have_text("找不到這個資料夾")
     assert (
         path.bounding_box()["width"]
         > page.locator('[data-browse="t-data_dir"]').bounding_box()["width"]

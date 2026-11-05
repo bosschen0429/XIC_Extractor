@@ -721,3 +721,34 @@ def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
         assert (rows["S1"].excluded, rows["S1"].group) == (True, "New")
     finally:
         jobs.close()
+
+
+def test_each_analysis_writes_a_new_folder_inside_the_chosen_location(tmp_path):
+    from xic_workbench.jobs import new_run_folder
+
+    root = tmp_path / "results" / "not-yet-created"
+    first = new_run_folder(root, "untargeted", str(tmp_path / "batch-A") + "\\")
+    # Two runs started within the same second still never share a folder.
+    second = new_run_folder(root, "untargeted", str(tmp_path / "batch-A"))
+    assert first.parent == second.parent == root
+    assert first != second and first.is_dir() and second.is_dir()
+    assert first.name.endswith("_untargeted_batch-A")
+    assert second.name == f"{first.name}_2"
+
+
+def test_result_location_may_be_created_by_the_run(tmp_path):
+    from xic_workbench.analysis_workspace import _validate_path
+
+    def validate(path, kind):
+        return _validate_path(str(path), kind)
+
+    (tmp_path / "file.txt").write_text("x", encoding="utf-8")
+
+    assert validate(tmp_path / "new" / "deeper", "output")["usable"] is True
+    assert validate(tmp_path / "missing", "folder") == {
+        "usable": False,
+        "message": "找不到這個資料夾",
+    }
+    is_file = validate(tmp_path / "file.txt", "folder")
+    assert is_file["message"] == "這是檔案，請選擇資料夾"
+    assert validate(tmp_path / "file.txt" / "child", "output")["usable"] is False

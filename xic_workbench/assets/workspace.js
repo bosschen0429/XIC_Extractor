@@ -1265,7 +1265,7 @@ window.XicUi = (() => {
     action(openBatch, "正在讀取分析結果…");
   });
   document.addEventListener("xic:results-ready", () => {
-    if (state.page) document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: state.page}));
+    if (state.page) document.dispatchEvent(new CustomEvent("xic:result-restored", {detail: state.page}));
   });
   document.addEventListener("xic:analysis-busy", (event) => {
     if (state.analysisBusy === event.detail) return;
@@ -1281,7 +1281,7 @@ window.XicUi = (() => {
     if (review.page) {
       $("source").value = review.page.source;
       renderPage(review.page);
-      document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: review.page}));
+      document.dispatchEvent(new CustomEvent("xic:result-restored", {detail: review.page}));
       if (review.job) state.samples = new Set(review.job.sample_ids);
       if (review.page.overview) showTargetedOverview();
       else if (review.detail) restoreDetail(review.detail);

@@ -18,12 +18,13 @@ Excel workbook, read from batch summary to the individual results needing attent
 4. For a new method, import targets or choose **檢視與編輯** to open the full-height target table.
    **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
 5. Press **開始 Targeted 分析** in the run panel.
-6. Start review from the generated workbook in `output/`.
+6. The finished run opens its result. Each run writes a new
+   `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed results while retaining
 targets, DLL, and the selected strategy. The environment section remains available
-for machine-path corrections. Editing settings after a
-completed run labels the displayed results as previous results.
+for machine-path corrections. Settings edited after a run apply to the next
+analysis only; an opened result keeps the settings it ran with.
 
 The GUI and CLI use the same Targeted pipeline and `config/workspace.json` current
 work state. A fresh workspace has no selected targets. Download the method or

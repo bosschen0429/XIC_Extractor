@@ -13,6 +13,27 @@ from typing import Any
 from xic_workbench.workspace import WorkspaceBusy
 
 
+def new_run_folder(root: Path, kind: str, raw_dir: str) -> Path:
+    """Give each analysis its own folder under the chosen location.
+
+    Earlier results are never overwritten; the name sorts by start time and
+    says which analysis of which RAW folder produced it.
+    """
+    name = Path(raw_dir.strip().rstrip("\\/")).name if raw_dir.strip() else ""
+    parts = (time.strftime("%Y%m%d_%H%M%S"), kind, name)
+    base = "_".join(part for part in parts if part)
+    root.mkdir(parents=True, exist_ok=True)
+    attempt = 1
+    while True:
+        folder = root / (base if attempt == 1 else f"{base}_{attempt}")
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            attempt += 1
+            continue
+        return folder
+
+
 class AnalysisJobs:
     """Retain observable job state while application owners execute and publish."""
 
@@ -78,6 +99,7 @@ class AnalysisJobs:
             self._runner = None
             values = copy.deepcopy(values)
             if kind == "targeted":
+                from xic_extractor.configuration.loader import default_output_dir
                 from xic_workbench.config_io import (
                     write_preferences,
                     write_work,
@@ -90,14 +112,20 @@ class AnalysisJobs:
                     config_dir=self.config_dir,
                     identification_methods=values.get("identification_methods"),
                 )
-                output_dir = values.get("output_dir") or None
-                if output_dir is not None:
+                output_root = str(values.get("output_dir") or "").strip()
+                if output_root:
                     write_preferences(
-                        {"targeted_output_dir": output_dir}, config_dir=self.config_dir
+                        {"targeted_output_dir": output_root}, config_dir=self.config_dir
                     )
                 from xic_workbench.samples import sample_annotations_path
 
                 data_dir = str(values["settings"].get("data_dir") or "").strip()
+                root = (
+                    Path(output_root)
+                    if output_root
+                    else default_output_dir(self.config_dir)
+                )
+                output_dir = new_run_folder(root, kind, data_dir)
                 annotations = (
                     sample_annotations_path(self.config_dir, Path(data_dir))
                     if data_dir
@@ -105,7 +133,7 @@ class AnalysisJobs:
                 )
                 self._runner = TargetedRun(
                     self.config_dir,
-                    output_dir=Path(output_dir) if output_dir else None,
+                    output_dir=output_dir,
                     sample_annotations=annotations
                     if annotations is not None and annotations.is_file()
                     else None,
@@ -215,7 +243,17 @@ class AnalysisJobs:
                 values["samples"] = apply_raw_chronology(
                     values["samples"], raw_dir=raw_dir, dll_dir=Path(values["dll_dir"])
                 )
-        request = parse_request(values)
+        from xic_extractor.configuration.loader import default_output_dir
+
+        # The saved setting stays the location; this run writes a new folder in it.
+        output_root = str(values.get("output_dir") or "").strip()
+        root = Path(output_root) if output_root else default_output_dir(self.config_dir)
+        run_dir = new_run_folder(root, "untargeted", str(values.get("raw_dir") or ""))
+        try:
+            request = parse_request({**values, "output_dir": str(run_dir)})
+        except Exception:
+            run_dir.rmdir()
+            raise
         from xic_workbench.config_io import write_dll_dir
 
         runner = UntargetedRun(
