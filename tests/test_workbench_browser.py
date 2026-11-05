@@ -1023,10 +1023,8 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     fake_runs, workbench, config_dir, tmp_path
 ):
     page = workbench
-    labels = page.locator("#targeted-data .path-line > label")
-    expect(labels).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
-    )
+    labels = page.locator("#targeted-data .path-line:visible > label")
+    expect(labels).to_have_text(["RAW 資料夾", "輸出資料夾"])
     # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
@@ -1048,7 +1046,7 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
     expect(page.locator("#untargeted-paths .path-line:visible > label")).to_have_text(
-        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
+        ["RAW 資料夾", "輸出資料夾"]
     )
 
 
@@ -2194,7 +2192,7 @@ def test_review_history_restores_server_query_before_loading_xic(
         "button", name="看 S3 的 Analyte XIC", exact=True
     )
     expect(analyte_xic).to_be_visible()
-    _view(page, "targeted")
+    _view(page, "untargeted")
     _open_results(page)
     page.locator("#target-id").select_option("ISTD")
     try:
@@ -2208,7 +2206,7 @@ def test_review_history_restores_server_query_before_loading_xic(
                 )
             ).to_be_visible()
         page.go_back()
-        expect(page.locator("#workspace-targeted")).to_be_visible()
+        expect(page.locator("#workspace-untargeted")).to_be_visible()
         page.go_back()
     finally:
         release.set()
@@ -2338,8 +2336,11 @@ def test_sample_restore_is_bound_to_current_inputs(
             if changed_input == "sequence_source"
             else f"#u-{changed_input}"
         )
-        page.locator(selector).fill(str(tmp_path / "new_source"))
-        page.locator(selector).press("Tab")
+        if changed_input == "dll_dir":
+            _set_reader_path(page, str(tmp_path / "new_source"))
+        else:
+            page.locator(selector).fill(str(tmp_path / "new_source"))
+            page.locator(selector).press("Tab")
         with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
             page.locator("#untargeted-save").click()
     page.reload()
@@ -2834,12 +2835,12 @@ def test_targeted_role_history_and_reset_restore_available_targets(role_review):
     expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     page.locator("#target-id").select_option("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
-    _view(page, "targeted")
+    _view(page, "untargeted")
     _open_results(page)
     role.select_option("ISTD")
     expect(titles).to_have_text(["Gamma"])
     page.go_back()
-    expect(page.locator("#workspace-targeted")).to_be_visible()
+    expect(page.locator("#workspace-untargeted")).to_be_visible()
     page.go_back()
     expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("Analyte")
@@ -2847,7 +2848,7 @@ def test_targeted_role_history_and_reset_restore_available_targets(role_review):
     expect(page.locator("#target-id")).to_have_value("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
     page.go_forward()
-    expect(page.locator("#workspace-targeted")).to_be_visible()
+    expect(page.locator("#workspace-untargeted")).to_be_visible()
     page.go_forward()
     expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("ISTD")
@@ -2894,7 +2895,7 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
     expect(page.locator("#selection")).to_be_hidden()
-    _view(page, "targeted")
+    _view(page, "untargeted")
     page.go_back()
     expect(empty.locator("h2")).to_have_text("沒有符合的結果")
     expect(page.locator("#target-id")).to_have_value("ISTD")
@@ -2996,7 +2997,7 @@ def test_zero_result_history_discards_pending_query_feedback(
     with page.expect_request("**/api/query"):
         page.locator("#target-id").select_option("Analyte")
     expect(empty.locator("h2")).to_have_text("正在查詢結果…")
-    _view(page, "targeted")
+    _view(page, "untargeted")
     page.go_back()
     expected_http_error = (
         "Failed to load resource: the server responded with a status of "

@@ -127,6 +127,7 @@ class ReviewWorkspace:
                 "istd",
                 "targets/import",
                 "thermo-reader/status",
+                "paths/validate",
             }:
                 if self.analysis.jobs.busy:
                     raise WorkspaceBusy("分析仍在執行；完成或停止後才能修改設定。")

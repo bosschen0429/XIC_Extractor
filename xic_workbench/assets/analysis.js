@@ -356,7 +356,7 @@
     });
     input.addEventListener("change", () => act(async () => {
       if (await validate() && ["data_dir", "raw_dir"].includes(key))
-        await scanSamples(prefix === "t-" ? "targeted" : "untargeted");
+        await previewSamples(prefix === "t-" ? "targeted" : "untargeted");
     }));
     if (input.value && key !== "dll_dir") act(validate);
     return input;
@@ -1740,6 +1740,13 @@
     renderRoleSummary(page);
     if (state.editing === page && $("sample-editor").open) renderSamples();
   }
+  async function previewSamples(page) {
+    const spec = samplePages[page];
+    const values = {raw_dir: $(spec.rawDir).value, sequence_source: $(spec.sequence).value};
+    const result = await api("/api/samples/preview", values);
+    if ($(spec.rawDir).value !== values.raw_dir || $(spec.sequence).value !== values.sequence_source) return;
+    applySampleResult(page, result);
+  }
   async function scanSamples(page, importSequence = false) {
     const spec = samplePages[page];
     await startJob("samples", {
@@ -1881,7 +1888,7 @@
         done(`${jobNames[job.kind]}完成，結果已列在下方。`);
         const result = state.analysis.results[job.kind];
         const source = result.excel_path || result.evidence?.path || result.evidence?.report_path;
-        if (source) openReview(source, result.review_paths);
+        if (source && (job.kind === "untargeted" || result.artifacts?.some(item => item.path === source))) openReview(source, result.review_paths);
       }
     } else if (card.hidden)
       status(
@@ -1956,7 +1963,7 @@
     container.replaceChildren(head);
     const artifacts = el("div", undefined, "artifact-list");
     for (const artifact of result.artifacts || []) {
-      const label = artifact.path === result.excel_path ? "下載結果 XLSX"
+      const label = artifact.path === result.excel_path ? artifact.name
         : artifact.path === result.matrix_tsv ? "下載矩陣 TSV" : artifact.name;
       artifacts.append(artifactLink(artifact, label));
     }
@@ -2942,6 +2949,7 @@
         await api("/api/preferences", { theme });
       });
     $("open-result").onclick = () => {
+      window.XicUi.navigation.push();
       $("analysis-result").hidden = false;
       $("source-settings").open = true;
       $("analysis-result").scrollIntoView({behavior: "smooth"});
