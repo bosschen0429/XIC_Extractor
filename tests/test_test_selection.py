@@ -565,8 +565,8 @@ function .\.venv\Scripts\python.exe {
     } elseif ($args[1] -eq 'pytest') {
         $pytestArgs = $args | Select-Object -Skip 2
         $phase = if ($pytestArgs -match 'and windows_only') { 'windows' }
-            elseif ($pytestArgs -contains '4') { 'parallel' }
-            elseif ($pytestArgs -contains '-m') { 'browser' } else { 'serial' }
+            elseif ($pytestArgs -match 'and browser_e2e') { 'browser' }
+            elseif ($pytestArgs -contains '-n') { 'parallel' } else { 'serial' }
         if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
             $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
         }
@@ -628,19 +628,30 @@ function uv {
     if not runs_selection:
         return
 
-    parallel_calls = [call for call in pytest_calls if "4" in call]
-    assert len(parallel_calls) == 2
+    ordinary_calls = [
+        call
+        for call in pytest_calls
+        if "-m" in call[2:] and "and browser_e2e" not in call[call.index("-m", 2) + 1]
+    ]
+    assert len(ordinary_calls) == 2
     selected_files = list(files or ())
-    for call in parallel_calls:
-        assert call[call.index("-n") + 1] == "4"
+    for call, workers in zip(ordinary_calls, ("0", "4"), strict=True):
+        assert call[call.index("-n") + 1] == workers
         assert call[len(call) - len(selected_files) :] == selected_files
+    linux_call = ordinary_calls[1]
+    assert linux_call[linux_call.index("--dist") + 1] == "worksteal"
     windows_expression, linux_expression = (
-        Expression.compile(call[call.index("-m", 2) + 1]) for call in parallel_calls
+        Expression.compile(call[call.index("-m", 2) + 1]) for call in ordinary_calls
     )
     browser_expression = None
     if browser_ran:
-        browser = next(call for call in pytest_calls if "0" in call)
-        assert browser[browser.index("-n") + 1] == "0"
+        browser = next(
+            call
+            for call in pytest_calls
+            if "-m" in call[2:] and "and browser_e2e" in call[call.index("-m", 2) + 1]
+        )
+        assert browser[browser.index("-n") + 1] == "2"
+        assert browser[browser.index("--dist") + 1] == "worksteal"
         assert not any(arg.startswith("tests/") for arg in browser)
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 

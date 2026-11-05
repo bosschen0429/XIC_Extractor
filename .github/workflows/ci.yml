@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.13.7"
@@ -55,6 +56,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.13.7"
@@ -80,6 +83,7 @@ jobs:
           fetch-depth: 0
           path: repo-3.15-tests
           submodules: false
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.13.7"
@@ -130,18 +134,18 @@ jobs:
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $runSelected = -not $selectedSubset -or $testTargets.Count -gt 0
           $started = Get-Date
-          $parallelStarted = Get-Date
-          $parallelMarkers = "($markerExpression) and windows_only and not browser_e2e"
-          $parallelExitCode = 0
+          $windowsStarted = Get-Date
+          $windowsMarkers = "($markerExpression) and windows_only and not browser_e2e"
+          $windowsExitCode = 0
           if ($runSelected) {
-            & .\.venv\Scripts\python.exe -m pytest -m $parallelMarkers -n 4 --dist loadfile -v --tb=short --durations=10 @testTargets
-            $parallelExitCode = $LASTEXITCODE
+            & .\.venv\Scripts\python.exe -m pytest -m $windowsMarkers -n 0 -v --tb=short --durations=10 @testTargets
+            $windowsExitCode = $LASTEXITCODE
             # Exit 5: the selected files hold no test these markers keep.
-            if ($selectedSubset -and $parallelExitCode -eq 5) { $parallelExitCode = 0 }
+            if ($selectedSubset -and $windowsExitCode -eq 5) { $windowsExitCode = 0 }
           }
-          $parallelElapsed = [math]::Round(((Get-Date) - $parallelStarted).TotalSeconds, 1)
+          $windowsElapsed = [math]::Round(((Get-Date) - $windowsStarted).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- windows_test_seconds=$windowsElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
           $serialTargets = @()
           if ($runPackagingBuild) {
@@ -159,7 +163,7 @@ jobs:
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
+          if ($windowsExitCode -ne 0) { exit $windowsExitCode }
           exit $serialExitCode
       - name: Runner load on failure
         # Name the processes and socket states behind a machine stall.
@@ -180,6 +184,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.13.7"
@@ -221,7 +226,7 @@ jobs:
             Write-Output '::notice title=Python tests not run::No affected test files; this is not a passing test run.'
             exit 0
           }
-          uv run --no-sync python -m pytest -m $markers -n 4 --dist loadfile -q --tb=short --durations=10 @testTargets
+          uv run --no-sync python -m pytest -m $markers -n 4 --dist worksteal -q --tb=short --durations=10 @testTargets
           $testExitCode = $LASTEXITCODE
           if ($selectedSubset -and $testExitCode -eq 5) {
             Write-Output '::notice title=Python tests not run::No selected tests belong to the Linux lane.'
@@ -241,6 +246,7 @@ jobs:
           fetch-depth: 0
           path: repo-3.15-browser
           submodules: false
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.13.7"
@@ -285,7 +291,8 @@ jobs:
           $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = $env:XIC_BROWSER_MARKERS
           $started = Get-Date
-          & .\.venv\Scripts\python.exe -m playwright install chromium
+          # The launch fixture already uses headless shell, never headed Chromium.
+          & .\.venv\Scripts\python.exe -m playwright install --only-shell chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_install_seconds=$installElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -293,7 +300,9 @@ jobs:
           # Relevance decides whether to run; every relevant change gets the
           # complete lane. Zero collected tests is a failure, never a green gate.
           $browserMarkers = "($markerExpression) and browser_e2e"
-          & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10
+          # Match this private repository's two-core hosted VM; isolate each
+          # test's context, loopback server, config and failure artifacts.
+          & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 2 --dist worksteal -v --tb=short --durations=10
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
