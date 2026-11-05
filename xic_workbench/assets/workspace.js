@@ -970,6 +970,7 @@ window.XicUi = (() => {
     $("source-settings").open = false;
     if (page.overview) showTargetedOverview();
     else if (page.items.length) await selectItem(page.items[0]);
+    document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: page}));
   }
   function queryFields() {
     const nearest = nearestSearchMode();
@@ -1175,7 +1176,7 @@ window.XicUi = (() => {
   }
   $("back-to-overview").addEventListener("click", () => navigation.back(
     showTargetedOverview,
-    saved => saved.workspace === "review" && saved.review?.overview &&
+    saved => saved.review?.overview &&
       saved.review.page?.source === state.page?.source,
   ));
   $("reset-query").addEventListener("click", () =>
@@ -1258,8 +1259,13 @@ window.XicUi = (() => {
       $("raw-dir").value = event.detail.reviewPaths.raw_dir;
       $("dll-dir").value = event.detail.reviewPaths.dll_dir;
       state.runFolders.set(event.detail.source, { ...event.detail.reviewPaths });
+    } else {
+      $("raw-dir").value = "";
     }
     action(openBatch, "正在讀取分析結果…");
+  });
+  document.addEventListener("xic:results-ready", () => {
+    if (state.page) document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: state.page}));
   });
   document.addEventListener("xic:analysis-busy", (event) => {
     if (state.analysisBusy === event.detail) return;
@@ -1275,6 +1281,7 @@ window.XicUi = (() => {
     if (review.page) {
       $("source").value = review.page.source;
       renderPage(review.page);
+      document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: review.page}));
       if (review.job) state.samples = new Set(review.job.sample_ids);
       if (review.page.overview) showTargetedOverview();
       else if (review.detail) restoreDetail(review.detail);

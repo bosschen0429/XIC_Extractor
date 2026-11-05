@@ -391,6 +391,11 @@ def _view(page, name):
     expect(page.locator(f"#workspace-{name}")).to_be_visible()
 
 
+def _open_results(page):
+    page.locator("#open-result").click()
+    expect(page.locator("#analysis-result")).to_be_visible()
+
+
 def _start(page, kind):
     page.locator(f"button[form={kind}-form][type=submit]").click()
 
@@ -462,7 +467,7 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 
     monkeypatch.setattr(server, "choose_path", choose)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     field = page.locator("#source")
     field.fill("previous-selection")
     name = "選擇結果資料夾" if kind == "folder" else "選擇結果檔案"
@@ -483,9 +488,9 @@ def test_result_chooser_opens_batch_folders_and_report_files(
 
 def test_navigation_and_theme_survive_reload(workbench):
     page = workbench
-    for view in ("untargeted", "curation", "review", "targeted"):
+    for view in ("untargeted", "targeted"):
         _view(page, view)
-        for other in {"targeted", "untargeted", "curation", "review"} - {view}:
+        for other in {"targeted", "untargeted"} - {view}:
             expect(page.locator(f"#workspace-{other}")).to_be_hidden()
     _view(page, "untargeted")
     initial = page.locator("html").get_attribute("data-theme")
@@ -1211,7 +1216,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
             else None
         ),
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1266,7 +1271,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
 
     page = workbench
     report, _ = create_nearest_review_batch(tmp_path)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1336,7 +1341,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                     (kind, identity, json.dumps(payload)),
                 )
                 link_report_record(connection, ("C1", "S1", kind, identity))
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(25)
@@ -1397,7 +1402,7 @@ def test_review_download_survives_reload_and_keeps_original_product(
     else:
         source, product = create_review_batch(tmp_path)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(source))
     page.locator("#open-form button[type=submit]").click()
     link = page.get_by_role(
@@ -1420,7 +1425,7 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
 
     report, _ = create_review_batch(tmp_path)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -1481,7 +1486,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
         if sample_count == 1
         else create_review_batch(tmp_path, sample_count=sample_count)[0]
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(db))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1555,7 +1560,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     opened = []
     _install_distinct_curve_raws(monkeypatch, opened)
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1628,7 +1633,7 @@ def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(
     install_targeted_raws(monkeypatch, raw_dir, {"S1": 13000})
     path = write_rare_detection_workbook(tmp_path / "nd.xlsx")
     original = path.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(path))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1681,7 +1686,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
         (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.raw")
     workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1798,7 +1803,7 @@ def cached_paired_curves(workbench, tmp_path, monkeypatch):
             else None
         ),
     )
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -1983,7 +1988,7 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
@@ -2091,7 +2096,7 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
     book.close()
     original = path.read_bytes()
     page = workbench
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Custom target").click()
@@ -2114,7 +2119,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2138,7 +2143,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     _view(page, "targeted")
     page.go_back()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#target-attention")).to_be_checked()
     page.go_forward()
     expect(page.locator("#workspace-targeted")).to_be_visible()
@@ -2169,7 +2174,7 @@ def test_review_history_restores_server_query_before_loading_xic(
     raw_dir = tmp_path / "review-raw"
     install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000}, pair_scale=1000)
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -2181,7 +2186,7 @@ def test_review_history_restores_server_query_before_loading_xic(
     )
     expect(analyte_xic).to_be_visible()
     _view(page, "targeted")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#target-id").select_option("ISTD")
     try:
         if query_pending:
@@ -2198,7 +2203,7 @@ def test_review_history_restores_server_query_before_loading_xic(
         page.go_back()
     finally:
         release.set()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     expect(page.locator("#load-curves")).to_be_enabled()
     with page.expect_response("**/api/curves") as response:
@@ -2213,15 +2218,15 @@ def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path)
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     _view(page, "targeted")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#back-to-overview").click()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#targeted-overview")).to_be_visible()
     page.go_forward()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
@@ -2235,7 +2240,7 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
     page = workbench
     page.set_viewport_size({"width": 1280, "height": 480})
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2260,7 +2265,7 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview .overview-actions .primary").click()
@@ -2613,7 +2618,7 @@ def test_delayed_review_payload_cannot_replace_newer_sample_selection(
             route.continue_()
 
     page.route("**/api/views/*", delay_first_view)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2654,7 +2659,7 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000, "S4": 300})
     workbook = write_rare_detection_workbook(tmp_path / "offline-saved.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#raw-dir").fill(str(raw_dir))
     page.locator("#dll-dir").fill(str(tmp_path))
@@ -2741,7 +2746,7 @@ def role_review(workbench, tmp_path):
     book.save(workbook)
     book.close()
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Alpha").click()
@@ -2821,13 +2826,13 @@ def test_targeted_role_history_and_reset_restore_available_targets(role_review):
     page.locator("#target-id").select_option("Beta")
     expect(page.locator("#item-title")).to_contain_text("Beta")
     _view(page, "targeted")
-    _view(page, "review")
+    _open_results(page)
     role.select_option("ISTD")
     expect(titles).to_have_text(["Gamma"])
     page.go_back()
     expect(page.locator("#workspace-targeted")).to_be_visible()
     page.go_back()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("Analyte")
     expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
     expect(page.locator("#target-id")).to_have_value("Beta")
@@ -2835,7 +2840,7 @@ def test_targeted_role_history_and_reset_restore_available_targets(role_review):
     page.go_forward()
     expect(page.locator("#workspace-targeted")).to_be_visible()
     page.go_forward()
-    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#analysis-result")).to_be_visible()
     expect(role).to_have_value("ISTD")
     expect(names).to_have_text(["全部目標", "Gamma"])
     expect(page.locator("#target-id")).to_have_value("")
@@ -2866,7 +2871,7 @@ def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero.xlsx")
     original = workbook.read_bytes()
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -2924,7 +2929,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page = workbench
     report, matrix = create_nearest_review_batch(tmp_path)
     original = [path.read_bytes() for path in (report, matrix)]
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#raw-dir").fill("")
     page.locator("#open-form button[type=submit]").click()
@@ -2969,7 +2974,7 @@ def test_zero_result_history_discards_pending_query_feedback(
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "zero-history.xlsx")
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3351,7 +3356,7 @@ def test_group_colours_match_between_samples_and_inspector(
     assert colour(row.locator(".group-swatch")) == tumor
     page.keyboard.press("Escape")
     workbook = _grouped_workbook(tmp_path / "saved.xlsx", groups)
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3467,7 +3472,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     assert exported_rows["TumorBC102_DNA"].excluded is True
 
     # With that folder loaded, a later exclusion updates the step at once.
-    _view(page, "review")
+    _open_results(page)
     review.get_by_role("button", name="標記排除 NormalBC101_DNA", exact=True).click()
     page.locator("#exclude-reason").fill("hemolysed")
     with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
@@ -3479,7 +3484,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
 def test_a_result_opened_without_its_run_offers_no_exclusion(workbench, tmp_path):
     page = workbench
     workbook = _grouped_workbook(tmp_path / "manual.xlsx", {"S1": "", "S2": ""})
-    _view(page, "review")
+    _open_results(page)
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form").evaluate("form => form.requestSubmit()")
     page.locator("#targeted-overview td button", has_text="Analyte").click()
@@ -3560,7 +3565,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
 
     # After a run only the threshold is needed: folder and samples come along.
     page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
-    expect(page.locator("#workspace-curation")).to_be_visible()
+    expect(page.locator("#result-curation")).to_be_visible()
     expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
     step = page.locator("#curation-step-finite_fraction")
     expect(step).to_be_enabled()
@@ -3585,7 +3590,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # An existing folder without sample data names the reason; choosing a
     # sample file makes the step available, and the last threshold returns.
     page.reload()
-    expect(page.locator("#workspace-curation")).to_be_visible()
+    expect(page.locator("#result-curation")).to_be_visible()
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
     page.locator("#curation-source_dir").press("Tab")
@@ -3629,3 +3634,50 @@ def test_path_errors_and_automatic_sample_summary(workbench, tmp_path, kind, fie
         "RAW 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
     )
     expect(path).to_have_attribute("aria-invalid", "false")
+
+
+@pytest.mark.parametrize("kind", ["targeted", "untargeted"])
+@pytest.mark.parametrize("fresh", [True, False])
+def test_results_stay_in_analysis_page_without_raw(
+    workbench, fake_runs, tmp_path, kind, fresh
+):
+    from tests.inspector_fixtures import create_review_batch
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    if kind == "targeted":
+        source = artifact = write_rare_detection_workbook(tmp_path / "saved.xlsx")
+        fake_runs.targeted_workbook = source
+    else:
+        source, artifact = create_review_batch(tmp_path)
+        fake_runs.result = {
+            "evidence": {"report_path": str(source)},
+            "matrix_tsv": str(artifact),
+        }
+    expect(page.locator(".topbar [data-view]")).to_have_count(2)
+    _view(page, kind)
+    if fresh:
+        fake_runs.release.set()
+        _start(page, kind)
+        _wait_for_analysis_status(page, "已完成")
+    else:
+        page.locator("#open-result").click()
+        page.locator("#source").fill(str(source))
+        page.locator("#open-form button[type=submit]").click()
+    expect(page.locator("#analysis-result")).to_be_visible()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    expect(page.locator(f"#workspace-{kind}")).to_be_visible()
+    expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
+    if kind == "untargeted":
+        expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
+        expect(page.locator("#result-curation")).to_be_visible()
+        expect(page.locator("#result-curation")).not_to_have_attribute("open", "")
+    else:
+        expect(page.locator("#result-curation")).not_to_be_visible()
+    before = page.locator("#targeted-overview").text_content()
+    field = "#t-output_dir" if kind == "targeted" else "#u-output_dir"
+    page.locator(field).fill(str(tmp_path / "next-analysis"))
+    expect(page.locator("#targeted-overview")).to_have_text(before)
+    with page.expect_download() as pending:
+        page.locator("#result-download").click()
+    assert Path(pending.value.path()).read_bytes() == artifact.read_bytes()

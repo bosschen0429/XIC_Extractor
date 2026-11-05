@@ -60,7 +60,7 @@
     curation: "矩陣整理",
     inspector: "Inspector 匯出",
   };
-  const jobPage = { targeted: "targeted", curation: "curation" };
+  const jobPage = { targeted: "targeted", curation: "untargeted" };
   const resultIds = {
     targeted: "target-result",
     untargeted: "untargeted-result",
@@ -199,7 +199,7 @@
     if (persist && view !== state.view) window.XicUi.navigation.push();
     state.view = view;
     document.body.dataset.view = view;
-    for (const name of ["targeted", "untargeted", "curation", "review"])
+    for (const name of ["targeted", "untargeted"])
       $(`workspace-${name}`).hidden = name !== view;
     document
       .querySelectorAll("[data-view]")
@@ -1878,6 +1878,9 @@
       } else {
         dirty(job.kind, false);
         done(`${jobNames[job.kind]}完成，結果已列在下方。`);
+        const result = state.analysis.results[job.kind];
+        const source = result.excel_path || result.evidence?.path || result.evidence?.report_path;
+        if (source) openReview(source, result.review_paths);
       }
     } else if (card.hidden)
       status(
@@ -2007,9 +2010,9 @@
       if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
         actions.prepend(
           button(
-            "整理矩陣",
+            "選用：整理矩陣",
             () => openCuration(result.output_dir, result.samples),
-            "primary",
+            "",
             "sliders",
           ),
         );
@@ -2026,7 +2029,6 @@
     }
   }
   function openReview(source, reviewPaths) {
-    selectView("review");
     document.dispatchEvent(
       new CustomEvent("xic:open-review", { detail: { source, reviewPaths } }),
     );
@@ -2039,7 +2041,10 @@
     $("curation-source_dir").value = sourceDir;
     $("curation-sample_metadata").value = "";
     $("curation-istd").value = "";
-    selectView("curation");
+    $("analysis-result").hidden = false;
+    $("result-curation").hidden = false;
+    $("result-curation").open = true;
+    $("result-curation").scrollIntoView({behavior: "smooth"});
     return detectCuration();
   }
   function curationPreferences() {
@@ -2890,6 +2895,24 @@
         applyThemeButton();
         await api("/api/preferences", { theme });
       });
+    $("open-result").onclick = () => {
+      $("analysis-result").hidden = false;
+      $("source-settings").open = true;
+      $("analysis-result").scrollIntoView({behavior: "smooth"});
+      $("source").focus();
+    };
+    document.addEventListener("xic:result-opened", (event) => {
+      const page = event.detail;
+      $("analysis-result").hidden = false;
+      $("result-curation").open = false;
+      $("result-curation").hidden = page.overview?.kind !== "untargeted";
+      $("result-curation").ontoggle = () => {
+        if (!$("result-curation").open) return;
+        const folder = page.source.replace(/[\\/][^\\/]+$/, "");
+        if (state.curation.runSource !== folder) act(() => openCuration(folder, null));
+      };
+      $("analysis-result").scrollIntoView({behavior: "smooth", block: "start"});
+    });
     $("about-workspace").onclick = () => $("about-dialog").showModal();
     $("shutdown-workspace").onclick = () => act(shutdown);
     document.addEventListener("xic:review-busy", (event) => {
@@ -2899,17 +2922,17 @@
     document.addEventListener("keydown", (event) => {
       if (!(event.ctrlKey || event.metaKey) || document.querySelector("dialog[open]"))
         return;
-      if (["1", "2", "3", "4"].includes(event.key)) {
+      if (["1", "2"].includes(event.key)) {
         event.preventDefault();
         selectView(
-          { 1: "targeted", 2: "untargeted", 3: "curation", 4: "review" }[
+          { 1: "targeted", 2: "untargeted" }[
             event.key
           ],
         );
       } else if (event.key === ".") {
         event.preventDefault();
         act(stopJob);
-      } else if (event.key === "Enter" && state.view !== "review") {
+      } else if (event.key === "Enter") {
         event.preventDefault();
         if (!isBusy()) $(`${state.view}-form`).requestSubmit();
       } else if (
@@ -2937,6 +2960,7 @@
     const response = await fetch("/assets/analysis.html");
     if (!response.ok) throw new Error("分析頁面無法載入。");
     $("analysis-root").innerHTML = await response.text();
+    $("analysis-result").append($("result-curation"));
     mountSampleSteps();
     await api("/api/session");
     stopWindowTracking = ui.trackWindow();
@@ -2988,6 +3012,7 @@
       status(error.message, true);
     }
     bind();
+    document.dispatchEvent(new CustomEvent("xic:results-ready"));
     targetCount();
     renderRoleSummary("targeted");
     renderRoleSummary("untargeted");
@@ -3002,8 +3027,8 @@
       applySampleResult(loadedPage, loadedSamples);
     renderResults();
     selectView(
-      state.config.preferences.view ||
-        (state.config.review_source ? "review" : "targeted"),
+      ["targeted", "untargeted"].includes(state.config.preferences.view)
+        ? state.config.preferences.view : "targeted",
       false,
     );
     renderJob();

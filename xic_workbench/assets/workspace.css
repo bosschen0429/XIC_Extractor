@@ -568,7 +568,7 @@ body {
   --page-width: 1440px;
   --gutter: 24px;
 }
-body[data-view="review"] {
+body:has(#analysis-result:not([hidden])) {
   --page-width: 1760px;
 }
 .topbar {
