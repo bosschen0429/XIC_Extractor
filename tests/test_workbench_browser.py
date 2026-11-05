@@ -3629,6 +3629,8 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
+    # Curation runs from the result page, so its job feedback is shown there.
+    expect(page.locator("#analysis-result #analysis-job")).to_be_visible()
     result = page.locator("#curation-result")
     expect(result).to_contain_text("2保留 feature")
     expect(result).to_contain_text("4原始 feature")
@@ -3730,6 +3732,11 @@ def test_results_stay_in_analysis_page_without_raw(
     expect(page.locator("#targeted-overview")).to_be_visible()
     expect(page.locator("#analysis-root")).to_be_hidden()
     expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
+    # The start shortcut belongs to setup; on a result it starts nothing.
+    started = len(fake_runs.requests)
+    page.keyboard.press("Control+Enter")
+    page.wait_for_timeout(500)
+    assert len(fake_runs.requests) == started
     if kind == "untargeted":
         expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
         expect(page.locator("#result-curation")).to_be_visible()

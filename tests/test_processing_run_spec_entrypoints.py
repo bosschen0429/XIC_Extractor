@@ -105,14 +105,11 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         ),
     )
     request = DiscoveryRequest(
-        mode="full",
         preset="dna_dr",
         tuning_overrides={},
         raw_dir=raw_dir,
-        raw_file=None,
         dll_dir=dll_dir,
         output_dir=tmp_path / "full",
-        discovery_batch_index=None,
     )
     run = UntargetedRun(
         request, progress=lambda *_args: None, should_cancel=lambda: False
@@ -175,8 +172,9 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
 ) -> None:
     import xic_workbench.untargeted as workbench_module
 
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample")
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "sample.raw").write_bytes(b"sample")
     monkeypatch.setattr(
         "xic_extractor.discovery.processing_run_spec_adapter."
         "build_local_acquisition_source_identity",
@@ -184,16 +182,15 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
     )
     monkeypatch.setattr(
         workbench_module,
-        "run_discovery",
+        "run_discovery_batch",
         lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid preset"),
     )
 
     with pytest.raises(PresetError):
         parse_request(
             {
-                "mode": "discovery_only",
                 "preset": "pt_pattern",
-                "raw_file": str(raw_path),
+                "raw_dir": str(raw_dir),
                 "dll_dir": str(tmp_path / "dll"),
                 "output_dir": str(tmp_path / "out"),
             }

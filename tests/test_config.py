@@ -128,9 +128,6 @@ def test_targeted_and_discovery_use_system_budget_not_saved_worker_value(
     )
     write_settings({"parallel_workers": workers}, config_dir=config_dir)
     assert read_work_settings(config_dir=config_dir)["parallel_workers"] == ""
-    monkeypatch.setattr(
-        "xic_extractor.configuration.execution_profile.runtime_root", lambda: tmp_path
-    )
     prepared = prepare_targeted_config(config_dir)
     try:
         assert (

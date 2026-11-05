@@ -5,8 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from xic_extractor.configuration.paths import runtime_root
-
 DEFAULT_ALIGNMENT_WORKERS = 4
 # Thermo reads scale poorly across threads in one process; separate worker
 # processes run them in parallel (#470).
@@ -55,11 +53,8 @@ def load_execution_profile(
     parallel_workers: int | None = None,
     alignment_workers: int | None = None,
 ) -> ExecutionProfile:
-    from xic_extractor.configuration.workspace_state import read_workspace
-
-    settings = read_workspace(runtime_root() / "config")["application"]
+    """Worker counts come from the machine; only an explicit argument overrides."""
     return resolve_execution_profile(
-        settings,
         parallel_workers=parallel_workers,
         alignment_workers=alignment_workers,
     )

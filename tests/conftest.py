@@ -46,16 +46,12 @@ def isolated_config_dir(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     """Share one private config between Workbench and CLI within each test."""
-    from xic_extractor.configuration import execution_profile
     from xic_workbench import config_io, untargeted_config
 
     directory = tmp_path_factory.mktemp("isolated-runtime") / "config"
     directory.mkdir(parents=True)
     monkeypatch.setattr(config_io, "CONFIG_DIR", directory)
     monkeypatch.setattr(untargeted_config, "CONFIG_DIR", directory)
-    # Patch the runtime-root lookup used by the JSON execution-profile reader.
-    # Workbench and CLI now share this test's application settings, not repo state.
-    monkeypatch.setattr(execution_profile, "runtime_root", lambda: directory.parent)
     return directory
 
 

@@ -85,7 +85,6 @@ EXISTING_TEST_MODULE_IMPORTS = """
     test_workbench_browser test_xic_inspector_curve_bundle
     test_workbench_browser test_xic_inspector_targeted_workbook
     test_workbench_samples test_sample_metadata_sequence_parsing
-    test_workbench_untargeted test_discovery_pipeline
     test_xic_inspector_api test_xic_inspector_curve_bundle
     test_xic_inspector_browser test_explanation_review
     test_xic_inspector_browser test_workbench_browser

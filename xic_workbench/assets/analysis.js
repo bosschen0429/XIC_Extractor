@@ -214,6 +214,8 @@
     try { sessionStorage.setItem("xic-mode", mode); } catch { /* per-tab convenience only */ }
     $("analysis-root").hidden = mode === "result";
     $("analysis-result").hidden = mode !== "result";
+    // The job card follows the visible page, so feedback is never hidden.
+    if (state.config) renderJob();
     document
       .querySelectorAll(".view-tabs [data-view]")
       .forEach((node) =>
@@ -244,9 +246,6 @@
     for (const name of ["targeted", "untargeted"])
       $(`workspace-${name}`).hidden = name !== view;
     showMode("setup");
-    const slot = document.querySelector(`[data-job-slot="${view}"]`);
-    if (slot) slot.append($("analysis-job"));
-    if (state.config) renderJob();
     if (persist) act(() => api("/api/preferences", { view }));
   }
   window.XicUi.navigation.register("workspace", {
@@ -1864,7 +1863,16 @@
     $("target-samples-review").hidden = !sampleSummary;
     if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
-    card.hidden = !job || pageOf(job) !== state.view;
+    // Curation starts from a result; every other job belongs to a setup page.
+    // A hidden card leaves completion and failure to the toast below.
+    const onResult = showingResult();
+    const slot = document.querySelector(
+      `[data-job-slot="${onResult ? "curation" : state.view}"]`,
+    );
+    if (slot && card.parentElement !== slot) slot.append(card);
+    card.hidden =
+      !job ||
+      (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
     lock();
     renderActivity();
     if (!job) return;
@@ -3055,7 +3063,8 @@
         act(stopJob);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        if (!isBusy()) $(`${state.view}-form`).requestSubmit();
+        // Starting belongs to setup; a shown result never launches a hidden form.
+        if (!isBusy() && !showingResult()) $(`${state.view}-form`).requestSubmit();
       } else if (
         event.key.toLowerCase() === "s" &&
         ["targeted", "untargeted"].includes(state.view)

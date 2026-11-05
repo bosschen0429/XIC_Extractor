@@ -93,7 +93,10 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         ]
         receipt_dir = Path(receipts[0])
         assert not receipt_dir.exists()
-        assert request.config.output_csv.parent == tmp_path / "output"
+        # The dispatched run writes its own new folder under the result location.
+        run_folder = request.config.output_csv.parent
+        assert run_folder.parent == tmp_path / "output"
+        assert "_targeted" in run_folder.name
     finally:
         jobs.close()
 
