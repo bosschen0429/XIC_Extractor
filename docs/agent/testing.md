@@ -94,11 +94,18 @@ import graph and the paths tests and code name; a new test file needs no
 registration. Pull-request CI runs that selection, master runs every test, and
 anything the derivation cannot place runs every test.
 
-For a known failure or a bounded behavior, run its existing pytest file or node
-directly. When the affected tests are unclear, use the selector:
+For local changes, use the selector as the default validation entry point:
 
     .venv\Scripts\python.exe -m tools.testing.test_selection
-    .venv\Scripts\python.exe -m tools.testing.test_selection --all
+
+For a known failure or a bounded behavior, run its existing pytest file or node
+directly. Use the selector's `--all` option when intentionally broadening to all
+test files. Plain `pytest` without a target still collects the whole suite; it
+does not derive affected tests.
+
+Pytest's cache provider stays enabled, retaining state for `--lf` and `--ff`
+under ignored `.pytest_cache/`. This state is not an affected-test selection or
+a cache of imported test modules; default coverage remains unchanged.
 
 Use `--print` to inspect the marker expression and candidate files without
 running tests. Caller `-m` filters are included;

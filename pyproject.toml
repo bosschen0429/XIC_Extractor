@@ -51,7 +51,7 @@ exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-p no:cacheprovider --tb=short"
+addopts = "--tb=short"
 tmp_path_retention_policy = "failed"
 markers = [
     "requires_dotnet: exercises a real managed .NET runtime, not a fake RAW reader. Excluded from the portable compatibility lane; covered by the primary Windows test lane.",

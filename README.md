@@ -131,3 +131,8 @@ Start with the [repository layout](docs/project-layout.md#repository-tree)
 and [architecture reading guide](docs/architecture-contract.md#reading-the-code).
 Coding agents start at [AGENTS.md](AGENTS.md); developer worktree setup and
 validation use [Local Execution](docs/agent/local-execution.md#runner-and-environment).
+
+For local changes, run `.venv\Scripts\python.exe -m tools.testing.test_selection`
+by default. Known test files or failing nodes can be run directly; plain
+`pytest` without a target still collects the whole suite. See
+[test selection](docs/agent/testing.md#affected-test-selection).
