@@ -89,6 +89,7 @@ root_packages = [
     "xic_workbench",
 ]
 exclude_type_checking_imports = false
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "domain-no-outer-layer"
@@ -246,6 +247,45 @@ forbidden_modules = [
     "xic_extractor.output",
 ]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "extraction-backends-delegate"
+name = "Extraction backends do not orchestrate the pipeline or write outputs"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.extraction.serial_backend",
+    "xic_extractor.extraction.process_backend",
+]
+forbidden_modules = [
+    "xic_extractor.extraction.pipeline",
+    "xic_extractor.output.csv_writers",
+]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "completed-evidence-readers-do-not-load-raw"
+name = "Completed discovery CSV reader does not load RAW"
+type = "forbidden"
+source_modules = ["xic_extractor.discovery.csv_reader"]
+forbidden_modules = ["xic_extractor.raw_reader"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "alignment-domain-models-stay-pure"
+name = "Alignment ownership and edge scoring stay free of I/O"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.alignment.ownership_models",
+    "xic_extractor.alignment.edge_scoring",
+]
+forbidden_modules = [
+    "xic_extractor.output",
+    "xic_extractor.raw_reader",
+    "openpyxl",
+    "csv",
+]
+# Direct imports only: shared configuration lazily reads workbooks.
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "sample-metadata-no-instrument-qc"
