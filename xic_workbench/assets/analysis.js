@@ -14,7 +14,6 @@
     method: null,
     draft: null,
     analysis: { job: null, results: {} },
-    reviewBusy: false,
     importing: false,
     view: "targeted",
     dirty: { targeted: false, untargeted: false },
@@ -80,7 +79,7 @@
       rawDir: "t-data_dir",
       dll: "t-dll_dir",
       output: "t-output_dir",
-      step: 2,
+      step: 3,
     },
     untargeted: {
       prefix: "",
@@ -153,8 +152,15 @@
   function isRunning() {
     return ["running", "cancelling"].includes(state.analysis.job?.status);
   }
+  window.XicAnalysis = { get busy() { return isRunning(); } };
+  function setAnalysisState(analysis) {
+    const wasBusy = isRunning();
+    state.analysis = analysis;
+    if (wasBusy !== isRunning())
+      document.dispatchEvent(new CustomEvent("xic:analysis-busy"));
+  }
   function isBusy() {
-    return state.importing || state.reviewBusy || isRunning();
+    return state.importing || window.XicReview.busy || isRunning();
   }
   function lock() {
     document
@@ -162,9 +168,6 @@
       .forEach((node) => (node.disabled = isBusy() ||
         (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
     if ($("curation-export")) $("curation-export").disabled = isBusy() || !state.curation?.previewRequest;
-    document.dispatchEvent(
-      new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
-    );
   }
   let methodTimer;
   function dirty(kind, value = true) {
@@ -225,18 +228,19 @@
         ),
       );
   }
+  function prepareResult(page) {
+    $("result-curation").open = false;
+    $("result-curation").hidden = page.overview?.kind !== "untargeted";
+    $("result-curation").ontoggle = () => {
+      if (!$("result-curation").open) return;
+      const folder = page.source.replace(/[\\/][^\\/]+$/, "");
+      if (state.curation.runSource !== folder) act(() => openCuration(folder, null));
+    };
+  }
   function showResult() {
     if (!showingResult()) window.XicUi.navigation.push();
     showMode("result");
     window.scrollTo(0, 0);
-  }
-  // The restored result and the setup views boot independently; resume only
-  // once both are ready so the boot view selection does not undo it.
-  function resumeResult() {
-    if (!reloadedOnResult || state.resumedResult || !state.booted || !state.restoredResult)
-      return;
-    state.resumedResult = true;
-    showMode("result");
   }
   function selectView(view, persist = true) {
     if (persist && (view !== state.view || showingResult()))
@@ -1839,7 +1843,7 @@
     if (kind === "targeted" && !values.targets.length)
       throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
     const action = kind === "samples" ? sampleAction(values.page) : null;
-    state.analysis = await api("/api/analysis/start", { kind, values });
+    setAnalysisState(await api("/api/analysis/start", { kind, values }));
     if (kind === "untargeted") {
       state.config.untargeted = values;
       dirty("untargeted", false);
@@ -2476,9 +2480,9 @@
       danger: true,
     });
     if (!accepted) return;
-    state.analysis = await api("/api/analysis/cancel", {
+    setAnalysisState(await api("/api/analysis/cancel", {
       job_id: state.analysis.job.job_id,
-    });
+    }));
     renderJob();
   }
   function applyThemeButton() {
@@ -3036,20 +3040,6 @@
     $("result-back").onclick = () => selectView(state.view);
     // A result restored at startup is ready behind 開啟既有結果; only an
     // explicit open, or reloading the tab that showed it, switches to it.
-    const prepareResult = (page) => {
-      $("result-curation").open = false;
-      $("result-curation").hidden = page.overview?.kind !== "untargeted";
-      $("result-curation").ontoggle = () => {
-        if (!$("result-curation").open) return;
-        const folder = page.source.replace(/[\\/][^\\/]+$/, "");
-        if (state.curation.runSource !== folder) act(() => openCuration(folder, null));
-      };
-    };
-    document.addEventListener("xic:result-restored", (event) => {
-      prepareResult(event.detail);
-      state.restoredResult = true;
-      resumeResult();
-    });
     document.addEventListener("xic:result-opened", (event) => {
       prepareResult(event.detail);
       showResult();
@@ -3058,10 +3048,7 @@
     $("curation-form").addEventListener("input", invalidateCurationPreview);
     $("about-workspace").onclick = () => $("about-dialog").showModal();
     $("shutdown-workspace").onclick = () => act(shutdown);
-    document.addEventListener("xic:review-busy", (event) => {
-      state.reviewBusy = event.detail;
-      lock();
-    });
+    document.addEventListener("xic:review-busy", lock);
     document.addEventListener("keydown", (event) => {
       if (!(event.ctrlKey || event.metaKey) || document.querySelector("dialog[open]"))
         return;
@@ -3106,7 +3093,7 @@
     $("analysis-root").innerHTML = await response.text();
     $("analysis-result").append($("result-curation"));
     mountSampleSteps();
-    await api("/api/session");
+    await window.XicReview.session;
     stopWindowTracking = ui.trackWindow();
     state.config = await api("/api/config");
     state.targets = state.config.targets;
@@ -3158,11 +3145,10 @@
       status(error.message, true);
     }
     bind();
-    document.dispatchEvent(new CustomEvent("xic:results-ready"));
     targetCount();
     renderRoleSummary("targeted");
     renderRoleSummary("untargeted");
-    state.analysis = state.config.analysis;
+    setAnalysisState(state.config.analysis);
     if (state.analysis.job?.kind === "samples")
       state.sampleJobAction = {jobId: state.analysis.job.job_id,
         action: sampleAction(pageOf(state.analysis.job), false)};
@@ -3181,8 +3167,12 @@
       false,
     );
     renderJob();
+    const initialReview = await window.XicReview.ready;
+    if (initialReview?.page) {
+      prepareResult(initialReview.page);
+      if (reloadedOnResult || initialReview.opened) showMode("result");
+    }
     state.booted = true;
-    resumeResult();
     checklist("targeted");
     checklist("untargeted");
     document.body.classList.remove("booting");
@@ -3198,7 +3188,7 @@
       // requests and starve the user's query, report, and curve requests.
       polling = true;
       try {
-        state.analysis = await api("/api/analysis");
+        setAnalysisState(await api("/api/analysis"));
         state.offlineCount = 0;
         setOffline(false);
         renderJob();

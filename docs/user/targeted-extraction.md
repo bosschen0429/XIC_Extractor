@@ -12,13 +12,16 @@ Excel workbook, read from batch summary to the individual results needing attent
 1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
    checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
    to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
-2. Select **Targeted Extraction**.
-3. Select a saved method and press **載入清單**, or configure a method
-   for the first time. Set the new RAW data directory; the local DLL setting is retained.
-4. For a new method, import targets or choose **檢視與編輯** to open the full-height target table.
+2. Select **Targeted**.
+3. Set the RAW folder and result location. The local DLL setting is retained.
+4. Select a saved target list and press **載入清單**, import a list, or choose
+   **檢視與編輯** to open the full-height target table.
    **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
-5. Press **開始 Targeted 分析** in the run panel.
-6. The finished run opens its result. Each run writes a new
+5. Check the sample summary. **樣本匯入與分組工具** contains acquisition-information
+   import, collaborator tables, previous grouping and sample export; conflicts
+   and exclusion counts remain visible without opening the tools.
+6. Press **開始 Targeted 分析** in the run panel.
+7. The finished run opens its result. Each run writes a new
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed

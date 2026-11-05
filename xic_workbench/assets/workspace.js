@@ -160,9 +160,8 @@ window.XicUi = (() => {
     runFolders: new Map(),
     runFolder: null,
     page: null,
-    item: null,
+    get item() { return this.detail?.item ?? null; },
     detail: null,
-    recorded: null,
     curveView: null,
     curveCache: new Map(),
     curveRequestKey: null,
@@ -172,7 +171,6 @@ window.XicUi = (() => {
     job: null,
     samples: new Set(),
     filters: {},
-    analysisBusy: false,
   };
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
@@ -385,7 +383,7 @@ window.XicUi = (() => {
     validateNearestMz();
   }
   function controls() {
-    const busy = locked();
+    const busy = locked(), analysisBusy = window.XicAnalysis?.busy || false;
     document
       .querySelectorAll("[data-idle]")
       .forEach((element) => (element.disabled = busy));
@@ -399,7 +397,7 @@ window.XicUi = (() => {
           (element.disabled = busy || element.dataset.available !== "true"),
       );
     $("load-curves").disabled =
-      busy || state.analysisBusy || !state.item || state.samples.size === 0;
+      busy || analysisBusy || !state.item || state.samples.size === 0;
     const supported = document.querySelectorAll(
       '#sample-list input[data-available="true"]',
     ).length;
@@ -407,7 +405,7 @@ window.XicUi = (() => {
       ? ""
       : !supported
         ? "沒有樣本保留觀測座標，無法取得 XIC。"
-        : state.analysisBusy
+        : analysisBusy
           ? "分析執行中；完成後才能讀取 RAW。"
           : "";
     $("sample-count").textContent = `${state.samples.size} / ${supported}`;
@@ -425,16 +423,19 @@ window.XicUi = (() => {
     $("cancel").hidden = !state.job;
     $("cancel").disabled = state.job?.status === "cancelling";
     const sampleIndex = state.item?.curve_sample_ids.indexOf($("xic-sample").value) ?? -1;
-    $("xic-sample").disabled = busy || state.analysisBusy;
-    $("xic-previous").disabled = busy || state.analysisBusy || sampleIndex <= 0;
-    $("xic-next").disabled = busy || state.analysisBusy || sampleIndex < 0 || sampleIndex >= (state.item?.curve_sample_ids.length || 0) - 1;
+    $("xic-sample").disabled = busy || analysisBusy;
+    $("xic-previous").disabled = busy || analysisBusy || sampleIndex <= 0;
+    $("xic-next").disabled = busy || analysisBusy || sampleIndex < 0 || sampleIndex >= (state.item?.curve_sample_ids.length || 0) - 1;
     $("xic-cancel").hidden = !state.job;
     $("xic-cancel").disabled = state.job?.status === "cancelling";
-    $("xic-retry").disabled = busy || state.analysisBusy;
+    $("xic-retry").disabled = busy || analysisBusy;
     syncQueryMode();
-    document.dispatchEvent(
-      new CustomEvent("xic:review-busy", { detail: !!state.job }),
-    );
+  }
+  function setCurveJob(job) {
+    const wasBusy = !!state.job;
+    state.job = job;
+    if (wasBusy !== !!job)
+      document.dispatchEvent(new CustomEvent("xic:review-busy"));
   }
   async function action(work, message) {
     if (locked()) return;
@@ -442,7 +443,7 @@ window.XicUi = (() => {
     controls();
     if (message) status(message, "working");
     try {
-      await work();
+      return await work();
     } catch (error) {
       status(error.message, "error", "review", error.detail);
     } finally {
@@ -452,10 +453,9 @@ window.XicUi = (() => {
   }
   function clearSelection() {
     $("inline-curves").hidden = true;
+    $("curve-source-status").textContent = "";
     clearReview("inline-curve-review");
-    state.item = null;
     state.detail = null;
-    state.recorded = null;
     state.curveCache.clear();
     $("selection").hidden = true;
     $("selection-empty").hidden = false;
@@ -728,7 +728,9 @@ window.XicUi = (() => {
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
     $("target-id").value = selectedTarget;
-    document.querySelector(".acquisition-panel").hidden = targeted;
+    $("group-curve-settings").hidden = targeted;
+    $("sample-count").hidden = targeted;
+    $("targeted-curve-help").hidden = !targeted;
     $("ppm").closest("label").hidden = targeted;
     const selectedSample = $("target-sample").value;
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
@@ -827,7 +829,7 @@ window.XicUi = (() => {
       if (state.page.source_kind !== "targeted_workbook") {
         $("inline-curves").hidden = false;
         if (!state.samples.size) $("inline-curve-status").textContent = "沒有觀測座標，無法取得 XIC。";
-        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未設定 RAW 或 DLL 位置。";
+        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未讀取 RAW 曲線；需要時展開「RAW 曲線設定」。";
         else await startCurves();
       }
     }
@@ -838,8 +840,6 @@ window.XicUi = (() => {
     state.curveView = null;
     state.detail = detail;
     const item = detail.item;
-    state.item = detail.item;
-    state.recorded = detail.view_id;
     state.curveCache.clear();
     $("selection").hidden = false;
     $("selection-empty").hidden = true;
@@ -905,8 +905,8 @@ window.XicUi = (() => {
     status("");
   }
   function showRecorded() {
-    mountReview("recorded-review", state.recorded, "result");
-    $("download").href = `/reports/${state.recorded}.html?download=1`;
+    mountReview("recorded-review", state.detail.view_id, "result");
+    $("download").href = `/reports/${state.detail.view_id}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   async function showCurveView(view) {
@@ -1028,7 +1028,7 @@ window.XicUi = (() => {
   }
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
-      $("source-settings").open = true;
+      $("curve-settings").open = true;
       const rawMissing = !$("raw-dir").value.trim();
       const missing = $(rawMissing ? "raw-dir" : "dll-dir");
       // The click may come from far down the page; bring the field and the
@@ -1036,9 +1036,12 @@ window.XicUi = (() => {
       // runs, so focus waits until they are enabled again.
       missing.scrollIntoView({ block: "center" });
       setTimeout(() => missing.focus({ preventScroll: true }));
-      curveStatus(`看 XIC 需要讀取 RAW。請先選擇${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`, "error");
+      const message = `看 XIC 需要讀取 RAW。請先選擇${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`;
+      $("curve-source-status").textContent = message;
+      curveStatus(message, "error");
       return;
     }
+    $("curve-source-status").textContent = "";
     const targeted = state.page.source_kind === "targeted_workbook";
     $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
     $("xic-navigation").hidden = !targeted;
@@ -1063,7 +1066,7 @@ window.XicUi = (() => {
       ppm: Number($("ppm").value),
       padding_min: Number($("padding").value),
     };
-    const key = JSON.stringify([state.recorded, request]);
+    const key = JSON.stringify([state.detail.view_id, request]);
     state.curveRequestKey = key;
     if (state.curveCache.has(key)) {
       showCurveView({...state.curveCache.get(key)});
@@ -1073,7 +1076,7 @@ window.XicUi = (() => {
     clearReview("xic-review");
     const view = state.curveView = {id: null};
     try {
-      state.job = await api("/api/curves", request);
+      setCurveJob(await api("/api/curves", request));
       $("job-progress").hidden = false;
       updateProgress(state.job);
       controls();
@@ -1096,7 +1099,7 @@ window.XicUi = (() => {
     if (!state.job) return;
     try {
       const job = await api(`/api/jobs/${state.job.id}`);
-      state.job = job;
+      setCurveJob(job);
       updateProgress(job);
       if (["running", "cancelling"].includes(job.status)) {
         controls();
@@ -1112,7 +1115,7 @@ window.XicUi = (() => {
       } else {
         curveMessage(job.message, true, job.status === "failed" ? "error" : "", job.detail);
       }
-      state.job = null;
+      setCurveJob(null);
       if (!state.restoring && serverPage !== state.page) restoreQuery(state.page, state.filters);
       else controls();
     } catch (error) {
@@ -1201,7 +1204,7 @@ window.XicUi = (() => {
   async function cancelCurves() {
     if (!state.job) return;
     try {
-      state.job = await api(`/api/jobs/${state.job.id}/cancel`, {});
+      setCurveJob(await api(`/api/jobs/${state.job.id}/cancel`, {}));
       updateProgress(state.job);
       controls();
     } catch (error) {
@@ -1264,16 +1267,14 @@ window.XicUi = (() => {
     }
     action(openBatch, "正在讀取分析結果…");
   });
-  document.addEventListener("xic:results-ready", () => {
-    if (state.page) document.dispatchEvent(new CustomEvent("xic:result-restored", {detail: state.page}));
-  });
-  document.addEventListener("xic:analysis-busy", (event) => {
-    if (state.analysisBusy === event.detail) return;
-    state.analysisBusy = event.detail;
-    controls();
-  });
-  action(async () => {
-    const session = await api("/api/session");
+  document.addEventListener("xic:analysis-busy", controls);
+  window.XicReview = {
+    session: api("/api/session"),
+    get busy() { return !!state.job; },
+  };
+  // One initial read is shared with the setup page, regardless of load order.
+  window.XicReview.ready = action(async () => {
+    const session = await window.XicReview.session;
     $("source").value = session.defaults.source || "";
     $("raw-dir").value = session.defaults.raw_dir || "";
     $("dll-dir").value = session.defaults.dll_dir || "";
@@ -1281,17 +1282,17 @@ window.XicUi = (() => {
     if (review.page) {
       $("source").value = review.page.source;
       renderPage(review.page);
-      document.dispatchEvent(new CustomEvent("xic:result-restored", {detail: review.page}));
       if (review.job) state.samples = new Set(review.job.sample_ids);
       if (review.page.overview) showTargetedOverview();
       else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
-        state.job = review.job;
+        setCurveJob(review.job);
         state.curveView = {id: null};
         $("job-progress").hidden = false;
-        await pollJob(state.curveView);
+        pollJob(state.curveView);
       }
     } else if ($("source").value) await openBatch();
     else status("");
+    return { page: state.page, opened: !review.page && !!session.defaults.source };
   }, "正在連接本機工作區…");
 })();
