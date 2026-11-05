@@ -73,10 +73,8 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     from scripts import run_discovery as cli_module
     from tests.raw_header_fakes import install_fake_raw_headers
 
+    monkeypatch.setattr("os.cpu_count", lambda: 2)
     install_fake_raw_headers(monkeypatch)
-    from xic_extractor.configuration.workspace_state import save_workspace
-
-    save_workspace(isolated_config_dir, settings={"parallel_workers": "2"})
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "B.raw").write_bytes(b"second acquisition")
@@ -94,6 +92,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 
     def worker_batch(*_args, **kwargs):
         captured["workbench"] = kwargs["run_spec"]
+        captured["workbench_workers"] = kwargs["max_workers"]
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(workbench_module, "run_discovery_batch", worker_batch)
@@ -126,6 +125,8 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     assert (
         cli_module.main(
             [
+                "--max-workers",
+                "2",
                 "--raw-dir",
                 str(raw_dir),
                 "--dll-dir",
@@ -136,6 +137,8 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         )
         == 0
     )
+    # Different resource budgets must not change the scientific run spec.
+    assert captured["workbench_workers"] == 1
     assert captured["cli_workers"] == 2
 
     specs = tuple(cast(object, captured[key]) for key in ("workbench", "cli"))

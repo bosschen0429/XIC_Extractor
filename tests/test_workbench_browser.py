@@ -3873,3 +3873,30 @@ def test_folder_picker_automatically_lists_samples(workbench, tmp_path, monkeypa
     monkeypatch.setattr("xic_workbench.server.choose_path", lambda *args: str(batch))
     workbench.locator('[data-browse="t-data_dir"]').click()
     expect(workbench.locator("#t-samples-count")).to_have_text("2 個樣本")
+
+
+def test_startup_controls_wait_for_initial_method(workbench, monkeypatch):
+    from xic_workbench import methods
+
+    page = workbench
+    method_details = methods.method_details
+    entered, release = threading.Event(), threading.Event()
+
+    def held_method(*args, **kwargs):
+        entered.set()
+        assert release.wait(HANDSHAKE_TIMEOUT_S)
+        return method_details(*args, **kwargs)
+
+    monkeypatch.setattr(methods, "method_details", held_method)
+    page.reload()
+    try:
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        # A visible but not-yet-wired control must not accept keyboard focus.
+        theme = page.locator("#theme-toggle")
+        theme.focus()
+        expect(theme).not_to_be_focused()
+    finally:
+        release.set()
+    with page.expect_response("**/api/preferences"):
+        page.locator("#theme-toggle").click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")

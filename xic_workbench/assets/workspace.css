@@ -79,6 +79,10 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
+body.booting .topbar,
+body.booting #reader-setup {
+  opacity: 0.6;
+}
 body.booting main {
   visibility: hidden;
 }
