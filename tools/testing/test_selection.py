@@ -66,7 +66,8 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         # Shared test-support modules (fixtures, fakes, browser diagnostics)
         # can feed browser journeys; any change to them runs the browser lane.
         r"|tests/(?!test_)[^/]+\.py$"
-        r"|tools/testing/test_selection\.py$|\.github/workflows/ci\.yml$"
+        r"|tools/testing/(test_selection|browser_sharding)\.py$"
+        r"|\.github/workflows/ci\.yml$"
         r"|pyproject\.toml$|uv\.lock$)"
     ),
     # Include whole shipped package roots: an installed/frozen import can depend

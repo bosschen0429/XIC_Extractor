@@ -356,6 +356,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tests/inspector_fixtures.py", {"browser_e2e"}),
         ("tests/workbench_http.py", {"browser_e2e"}),
         ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
+        ("tools/testing/browser_sharding.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
@@ -597,7 +598,7 @@ function uv {
             "${{ github.event_name }}", event
         ).replace("${{ github.event.pull_request.base.sha }}", "base").replace(
             "${{ github.event.pull_request.head.sha }}", "head"
-        )
+        ).replace("${{ matrix.shard }}", "1").replace("${{ strategy.job-total }}", "2")
         script_path = tmp_path / f"ci-step-{index}.ps1"
         script_path.write_text(actual_script, encoding="utf-8")
         results.append(
@@ -650,8 +651,9 @@ function uv {
             for call in pytest_calls
             if "-m" in call[2:] and "and browser_e2e" in call[call.index("-m", 2) + 1]
         )
-        assert browser[browser.index("-n") + 1] == "2"
-        assert browser[browser.index("--dist") + 1] == "worksteal"
+        assert browser[browser.index("-n") + 1] == "0"
+        assert browser[browser.index("-p") + 1] == "tools.testing.browser_sharding"
+        assert browser[browser.index("--browser-shard") + 1] == "1/2"
         assert not any(arg.startswith("tests/") for arg in browser)
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
@@ -708,6 +710,10 @@ def test_ci_required_check_rejects_any_unsuccessful_lane(
     assert set(gate["needs"]) == {"python-tests", "browser", "windows-integration"}
     assert gate["if"] == "${{ always() }}"
     assert jobs["browser"]["runs-on"] == "windows-latest"
+    assert jobs["browser"]["strategy"] == {
+        "fail-fast": False,
+        "matrix": {"shard": [1, 2]},
+    }
     assert "needs" not in jobs["browser"]
     monkeypatch.setenv(
         "TEST_LANE_RESULTS",

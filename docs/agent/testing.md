@@ -133,11 +133,14 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. The browser lane runs on its own GitHub-hosted Windows
-VM, independently of the scientific and packaging tests. Relevance selects the
-lane; a selected lane runs every browser test with two xdist workers and
-`--dist worksteal`. Each case keeps its own browser context, loopback server,
-config and evidence directory. CI installs only the locked Chromium headless
+explicit local opt-in. The browser lane runs on dedicated GitHub-hosted Windows
+VMs, independently of the scientific and packaging tests. Relevance selects the
+lane; a selected lane runs every browser test exactly once across two independent
+Windows VMs, with one process per VM. The `tools.testing.browser_sharding` pytest
+plugin splits sorted browser node IDs; adding a browser case needs no registry.
+Each case keeps its own browser context, loopback server, config and evidence
+directory. Every shard must succeed, and one failure does not cancel the other.
+CI installs only the locked Chromium headless
 shell already used by the launch fixture, not an unused headed browser.
 The required `test (Python 3.12)`
 check succeeds only when the Linux Python, Windows integration and browser jobs
@@ -177,7 +180,7 @@ locking) in one process, followed by the relevant serial packaging builds.
 Linux's four workers use work stealing rather than keeping a whole slow test
 file on one worker.
 Both jobs use the same affected-test plan on PRs; master runs their complete,
-disjoint portions. Browser checks retain their separate Windows VM, and the
+disjoint portions. Browser checks retain their separate Windows VMs, and the
 census runs once in lint. The required `test (Python 3.12)` name is retained only
 for branch protection: it aggregates these three test lanes and runs no 3.12
 interpreter. Default pytest contains no private-RAW-path tests; use the explicit

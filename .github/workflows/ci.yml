@@ -235,10 +235,14 @@ jobs:
           exit $testExitCode
 
   browser:
-    name: Browser (Windows Chromium)
+    name: Browser (Windows Chromium, shard ${{ matrix.shard }})
     # A fresh pytest process still inherits the VM's Winsock/resource state.
     # Keep Chromium and loopback HTTP off the scientific/build-test machine.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -300,9 +304,9 @@ jobs:
           # Relevance decides whether to run; every relevant change gets the
           # complete lane. Zero collected tests is a failure, never a green gate.
           $browserMarkers = "($markerExpression) and browser_e2e"
-          # Match this private repository's two-core hosted VM; isolate each
-          # test's context, loopback server, config and failure artifacts.
-          & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 2 --dist worksteal -v --tb=short --durations=10
+          # Separate Windows VMs own disjoint cases; don't concentrate concurrent
+          # Chromium/loopback traffic on one VM. Every matrix result is required.
+          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.browser_sharding --browser-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -317,7 +321,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-browser-traces
+          name: workbench-browser-traces-${{ matrix.shard }}
           path: |
             repo-3.15-browser/tmp_runtime/**/browser-trace.zip
             repo-3.15-browser/output/browser-failures/**/browser-trace.zip
