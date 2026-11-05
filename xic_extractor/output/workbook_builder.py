@@ -44,11 +44,9 @@ def write_workbook_from_rows(
     *,
     diagnostics: list[dict[str, str]],
     output_path: Path,
-    require_projection: bool = True,
     identification_rows: list[dict] | None = None,
 ) -> Path:
-    if require_projection:
-        _require_product_projection(rows)
+    _require_product_projection(rows)
     review_rows = review_queue_rows(rows, diagnostics)
     overview = summarize_targeted_results(rows, review_rows)
     worklist = focus_worklist(overview, rows, review_rows, diagnostics)
@@ -140,7 +138,6 @@ def run_from_config(
     if not rows:
         print("CSV is empty.")
         return excel_path
-    require_projection = config.output_csv.with_name("xic_results_long.csv").exists()
 
     diagnostics = _read_diagnostics(config.diagnostics_csv)
     write_workbook_from_rows(
@@ -149,23 +146,14 @@ def run_from_config(
         rows,
         diagnostics=diagnostics,
         output_path=excel_path,
-        require_projection=require_projection,
     )
-    _print_summary(
-        excel_path,
-        rows,
-        config.count_no_ms2_as_detected,
-        require_projection=require_projection,
-    )
+    _print_summary(excel_path, rows)
     return excel_path
 
 
 def _print_summary(
     excel_path: Path,
     rows: list[dict[str, str]],
-    count_no_ms2_as_detected: bool,
-    *,
-    require_projection: bool = False,
 ) -> None:
     print(f"Saved : {excel_path}")
     sample_count = len({row.get("SampleName", "") for row in rows})
@@ -174,12 +162,7 @@ def _print_summary(
     for row in rows:
         by_target[row.get("Target", "")].append(row)
     for label, target_rows in by_target.items():
-        detected = sum(
-            is_accepted_row_detection(
-                row, count_no_ms2_as_detected, require_projection=require_projection
-            )
-            for row in target_rows
-        )
+        detected = sum(is_accepted_row_detection(row) for row in target_rows)
         print(f"  {label} counted detection: {detected}/{len(target_rows)}")
         counts = Counter(row.get("NL", "") for row in target_rows)
         if any(counts):

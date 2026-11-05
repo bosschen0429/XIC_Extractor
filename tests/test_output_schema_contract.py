@@ -16,14 +16,14 @@ def test_targeted_output_schema_versions_are_explicit() -> None:
 
 
 def test_long_schema_has_projection_columns() -> None:
-    assert len(LONG_HEADERS) == 27
+    assert len(LONG_HEADERS) == 25
     assert LONG_HEADERS[0] == "SampleName"
-    assert LONG_HEADERS[15] == "Reason"
+    assert LONG_HEADERS[14] == "Reason"
     assert LONG_HEADERS[9:11] == ("Int", "IntSmoothed")
     assert "Int" in LONG_ADVANCED_HEADERS
     assert "IntSmoothed" not in LONG_ADVANCED_HEADERS
-    assert LONG_HEADERS[-11:] == TARGETED_PRODUCT_PROJECTION_HEADERS
-    assert "Confidence" in LONG_ADVANCED_HEADERS
+    assert LONG_HEADERS[-10:] == TARGETED_PRODUCT_PROJECTION_HEADERS
+    assert "Confidence" not in LONG_ADVANCED_HEADERS
     assert set(TARGETED_PRODUCT_PROJECTION_HEADERS) <= LONG_ADVANCED_HEADERS
     assert "NL" in LONG_ADVANCED_HEADERS
     assert {"NL Evidence", "PeakStart", "PeakEnd", "Reason"}.isdisjoint(

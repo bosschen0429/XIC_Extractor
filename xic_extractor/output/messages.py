@@ -20,7 +20,6 @@ DiagnosticIssue = Literal[
     "NL_ANCHOR_FALLBACK",
     "ISTD_ANCHOR_MISSING",
     "ANCHOR_RT_MISMATCH",
-    "ISTD_CONFIDENCE",
     "TARGET_PAIR_RT_AUTO_RESELECTION_SKIPPED",
     "OFF_ISTD_POSITION",
     "PAIRED_ISTD_POSITION_REVIEW",
@@ -129,17 +128,7 @@ def build_ms2_diagnostic_records(
                 reason=_nl_reason(target, result, config),
             )
         )
-    if result.reported_rt is not None:
-        istd_confidence = _istd_confidence_diagnostic(sample_name, target, result)
-        if istd_confidence is not None:
-            records.append(istd_confidence)
     return records
-
-
-def istd_confidence_note(istd_confidence: str | None) -> str | None:
-    if istd_confidence in (None, "HIGH", "MEDIUM"):
-        return None
-    return f"ISTD anchor was {istd_confidence}"
 
 
 def _peak_reason(
@@ -302,46 +291,6 @@ def _tailing_reason(peak: PeakResult) -> str:
         f"Asymmetry ratio {ratio:.2f} (right/left half-width at 5% peak height, "
         f"USP limit 2.0); apex RT {peak.rt:.4f} min, "
         f"peak [{peak.peak_start:.4f}, {peak.peak_end:.4f}]"
-    )
-
-
-def _istd_confidence_diagnostic(
-    sample_name: str, target: Target, result: ExtractionResultLike
-) -> DiagnosticRecord | None:
-    if not target.is_istd:
-        return None
-
-    flags: list[str] = []
-    confidence = "HIGH"
-    evidence = result.candidate_ms2_evidence
-    status = (
-        evidence.nl_status
-        if evidence is not None
-        else (result.nl.status if result.nl is not None else None)
-    )
-    if status is not None:
-        if status == "NO_MS2":
-            flags.append("NO_MS2")
-            confidence = "MEDIUM"
-        elif status == "NL_FAIL":
-            flags.append("NL_FAIL")
-            confidence = "LOW"
-        elif status == "WARN":
-            flags.append("NL_WARN")
-            confidence = "MEDIUM"
-
-    if not flags:
-        return None
-
-    return DiagnosticRecord(
-        sample_name=sample_name,
-        target_label=target.label,
-        issue="ISTD_CONFIDENCE",
-        reason=(
-            f"ISTD confidence={confidence}; flags={','.join(flags)}; "
-            "MS1 peak retained because ISTD NL evidence is diagnostic support, "
-            "not a hard detection gate"
-        ),
     )
 
 

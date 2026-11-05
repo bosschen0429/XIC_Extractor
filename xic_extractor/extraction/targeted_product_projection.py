@@ -62,13 +62,9 @@ def project_targeted_result(
         and result.physical_evaluation.requires_overlap_review
     ):
         review = _merge_reasons(review, ("physical_shoulder_overlap",))
-    not_counted = _typed_not_counted_reasons(
-        _merge_reasons(
-            () if semantics is None else semantics.not_counted_reasons,
-            ()
-            if selection_decision is None
-            else selection_decision.not_counted_reasons,
-        )
+    not_counted = _merge_reasons(
+        () if semantics is None else semantics.not_counted_reasons,
+        () if selection_decision is None else selection_decision.not_counted_reasons,
     )
     exclusions: tuple[str, ...] = ()
     if selection_decision is not None:
@@ -80,7 +76,6 @@ def project_targeted_result(
                 "exclusion_reasons",
             ),
         )
-    nl_status = result.nl_token or ""
     if target.identification_method is not None:
         if result.selected_method_supported:
             support = _merge_reasons(support, ("identification_method_supported",))
@@ -100,19 +95,12 @@ def project_targeted_result(
         ),
         rt=result.reported_rt,
         area=result.reported_peak_area,
-        confidence=result.confidence,
-        nl_status=nl_status,
         cid_nl_supported=result.selected_cid_nl_supported,
         support_reasons=support,
         review_reasons=review,
         conflict_reasons=conflicts,
         not_counted_reasons=not_counted,
         exclusion_reasons=exclusions,
-        legacy_evidence={
-            "confidence": result.confidence,
-            "nl_status": nl_status,
-            "reason": result.reason,
-        },
     )
 
 
@@ -172,21 +160,6 @@ def _reported_interval_contains_rt(
     if start is None or end is None:
         return False
     return start <= reference_rt <= end
-
-
-def _typed_not_counted_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
-    legacy_compatibility_reasons = {
-        "legacy_review_only_projection",
-        "missing_ms2_compatibility_cap",
-        "zero_area_compatibility_cap",
-        "hard_quality_flag_compatibility_cap",
-        "paired_istd_rt_mismatch_policy",
-        "paired_istd_rt_mismatch_cap",
-        "anchor_mismatch_compatibility_cap",
-    }
-    return tuple(
-        reason for reason in reasons if reason not in legacy_compatibility_reasons
-    )
 
 
 _MISSING_DIRECT_NL_REVIEW = frozenset(
@@ -325,8 +298,6 @@ def build_targeted_product_projection(
     *,
     rt: float | None,
     area: float | None,
-    confidence: str,
-    nl_status: str,
     cid_nl_supported: bool = False,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
@@ -335,20 +306,13 @@ def build_targeted_product_projection(
     conflict_reasons: tuple[str, ...] = (),
     not_counted_reasons: tuple[str, ...] = (),
     exclusion_reasons: tuple[str, ...] = (),
-    legacy_evidence: dict[str, str] | None = None,
 ) -> TargetedProductProjection:
-    legacy = {
-        "confidence": confidence,
-        "nl_status": nl_status,
-        **(legacy_evidence or {}),
-    }
     support = _stable_reasons(support_reasons)
-    # RT priors and legacy scores describe how the peak was located, not an
+    # RT priors describe how the peak was located, not an
     # unresolved action. Keep them in the source evidence, not the product queue.
     context_only = {
         "targeted_rt_review",
         "paired_istd_rt_review",
-        "legacy_confidence_review",
         "backfill_identity_confirmed",
     }
     review = _stable_reasons(tuple(r for r in review_reasons if r not in context_only))
@@ -394,7 +358,6 @@ def build_targeted_product_projection(
             conflicts,
             not_counted,
             exclusions,
-            legacy,
         )
     if conflicts:
         return _projection(
@@ -406,7 +369,6 @@ def build_targeted_product_projection(
             conflicts,
             not_counted,
             exclusions,
-            legacy,
         )
     if missing_ms1:
         return _projection(
@@ -418,7 +380,6 @@ def build_targeted_product_projection(
             conflicts,
             ("missing_positive_ms1_peak",),
             exclusions,
-            legacy,
         )
 
     if backfill_supported and not context.is_istd:
@@ -461,7 +422,6 @@ def build_targeted_product_projection(
             conflicts,
             not_counted,
             exclusions,
-            legacy,
         )
 
     if review:
@@ -474,7 +434,6 @@ def build_targeted_product_projection(
             conflicts,
             (),
             exclusions,
-            legacy,
         )
     return _projection(
         "detected_clean",
@@ -485,7 +444,6 @@ def build_targeted_product_projection(
         conflicts,
         (),
         exclusions,
-        legacy,
     )
 
 
@@ -498,7 +456,6 @@ def _projection(
     conflict_reasons: tuple[str, ...],
     not_counted_reasons: tuple[str, ...],
     exclusion_reasons: tuple[str, ...],
-    legacy_evidence: dict[str, str],
 ) -> TargetedProductProjection:
     return TargetedProductProjection(
         product_state=product_state,
@@ -517,8 +474,6 @@ def _projection(
         conflict_reasons=conflict_reasons,
         not_counted_reasons=not_counted_reasons,
         exclusion_reasons=exclusion_reasons,
-        legacy_evidence=legacy_evidence,
-        legacy_authority_status="evidence_only",
     )
 
 

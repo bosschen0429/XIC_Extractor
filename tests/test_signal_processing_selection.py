@@ -77,8 +77,7 @@ def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
     assert result.status == "OK"
     assert result.peak is not None
     assert abs(result.peak.rt - 5.0) < 0.05
-    assert result.score_breakdown[:4] == (
-        ("Final Confidence", "HIGH"),
+    assert result.score_breakdown[:3] == (
         ("Caps", ""),
         ("Raw Score", "125"),
         (
@@ -228,7 +227,7 @@ def test_local_minimum_detects_broad_peak_without_preferred_rt_relaxed_search() 
     assert "too_broad" in result.candidates[0].quality_flags
 
 
-def test_local_minimum_flagged_candidate_scores_lower_confidence() -> None:
+def test_local_minimum_flagged_candidate_retains_quality_evidence() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     y = 320000 * np.exp(-(((rt - 9.0) / 0.30) ** 2))
     y += 500.0
@@ -268,7 +267,6 @@ def test_local_minimum_flagged_candidate_scores_lower_confidence() -> None:
 
     assert result.status == "OK"
     assert result.peak is not None
-    assert result.confidence == "LOW"
     assert result.reason is not None
     assert "hard_local_quality_conflict" in result.reason
 
@@ -299,13 +297,11 @@ def test_recovery_path_preserves_scoring_metadata() -> None:
         _cfg(),
         preferred_rt=9.03,
         scoring_context_builder=ctx_builder,
-        istd_confidence_note="ISTD anchor was LOW",
     )
 
     assert result.status == "OK"
     assert result.peak is not None
     assert result.peak.rt == pytest.approx(9.03, abs=0.02)
-    assert result.confidence is not None
     assert result.reason is not None
     assert len(result.severities) == 10
 
@@ -380,7 +376,7 @@ def test_scored_selection_ignores_tiny_preferred_rt_anchor_peak() -> None:
     assert result.peak.rt == pytest.approx(10.25, abs=0.02)
 
 
-def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
+def test_typed_recovery_selection_ignores_display_reason_monkeypatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rt = np.linspace(8.0, 10.0, 401)
@@ -402,26 +398,21 @@ def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
             rt_max=10.0,
         )
 
-    def _score_candidate(
-        candidate, ctx, prior_rt, istd_confidence_note=None, **evidence_context
-    ):
-        from xic_extractor.peak_detection.scoring_models import Confidence
+    def _score_candidate(candidate, ctx, prior_rt, **evidence_context):
 
-        confidence = (
-            Confidence.HIGH
+        display_reason = (
+            "irrelevant high score"
             if candidate.selection_apex_rt < 9.0
-            else Confidence.VERY_LOW
+            else "irrelevant low score"
         )
         return replace(
             score_candidate(
                 candidate,
                 ctx,
                 prior_rt,
-                istd_confidence_note,
                 **evidence_context,
             ),
-            confidence=confidence,
-            reason=confidence.value,
+            reason=display_reason,
         )
 
     monkeypatch.setattr(
@@ -517,15 +508,12 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
             rt_max=10.4,
         )
 
-    def _score_candidate(
-        candidate, ctx, prior_rt, istd_confidence_note=None, **evidence_context
-    ):
+    def _score_candidate(candidate, ctx, prior_rt, **evidence_context):
         observed_prior_rts.append(prior_rt)
         return score_candidate(
             candidate,
             ctx,
             prior_rt,
-            istd_confidence_note,
             **evidence_context,
         )
 
@@ -601,5 +589,4 @@ def test_find_peak_and_area_uses_paired_istd_anchor_in_typed_evidence() -> None:
     assert far_score.evidence_facts.rt.paired_istd_status == "far"
     assert far_score.evidence_facts.chemical.nl_match is False
     assert far_score.evidence_facts.area == far_score.candidate.peak.area
-    assert far_score.confidence == "VERY_LOW"
-    assert "paired_istd_rt_mismatch_policy" in far_score.reason
+    assert "paired_istd_rt_review" in far_score.reason

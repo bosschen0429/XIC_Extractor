@@ -32,7 +32,6 @@ WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "Role",
     "Group",
     "NL",
-    "Confidence",
     "Int",
     "PeakWidth",
 )
@@ -58,7 +57,6 @@ TARGETED_PRODUCT_PROJECTION_HEADERS: tuple[str, ...] = (
     "Projection Conflict Reasons",
     "Projection Not Counted Reasons",
     "Projection Exclusion Reasons",
-    "Legacy Authority Status",
     "Benchmark Eligibility State",
 )
 
@@ -80,7 +78,6 @@ LONG_COLUMNS: tuple[OutputColumn, ...] = (
     OutputColumn("PeakStart", description="integration start RT (min)"),
     OutputColumn("PeakEnd", description="integration end RT (min)"),
     OutputColumn("PeakWidth", advanced=True),
-    OutputColumn("Confidence", advanced=True),
     OutputColumn("Reason"),
     *(
         OutputColumn(header, advanced=True)

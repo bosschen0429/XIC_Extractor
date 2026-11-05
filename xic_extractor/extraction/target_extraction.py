@@ -38,7 +38,6 @@ from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
-    istd_confidence_note,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
@@ -152,7 +151,6 @@ def process_file(
             results: dict[str, ExtractionResult] = {}
             diagnostics: list[DiagnosticRecord] = []
             istd_shape_metrics_by_label: dict[str, tuple[float, float | None]] = {}
-            istd_confidence_by_label = {}
             istd_anchor_rts: dict[str, float] = {}
             for target in targets:
                 if not target.is_istd:
@@ -172,9 +170,6 @@ def process_file(
                     scoring_context_factory=scoring_context_factory,
                     shape_metrics_by_label=istd_shape_metrics_by_label,
                 )
-                confidence = results[target.label].peak_result.confidence
-                if confidence is not None:
-                    istd_confidence_by_label[target.label] = confidence
                 anchor_rt = credible_istd_anchor_rt(results.get(target.label))
                 if anchor_rt is not None:
                     istd_anchor_rts[target.label] = anchor_rt
@@ -212,9 +207,6 @@ def process_file(
                     diagnostics=diagnostics,
                     scoring_context_factory=scoring_context_factory,
                     defer_selection=defer_analyte_selection,
-                    istd_confidence_note=istd_confidence_note(
-                        istd_confidence_by_label.get(target.istd_pair)
-                    ),
                     istd_rt_in_this_sample=istd_anchor_rts.get(target.istd_pair),
                     paired_istd_fwhm=paired_istd_fwhm(
                         target,
@@ -249,7 +241,6 @@ def extract_one_target(
     results: dict[str, ExtractionResult],
     diagnostics: list[DiagnosticRecord],
     scoring_context_factory: Callable[..., Any] | None = None,
-    istd_confidence_note: str | None = None,
     istd_rt_in_this_sample: float | None = None,
     paired_istd_fwhm: float | None = None,
     shape_metrics_by_label: dict[str, tuple[float, float | None]] | None = None,
@@ -346,7 +337,6 @@ def extract_one_target(
     candidate_assessment = replace(
         candidate_assessment,
         paired_istd_fwhm=paired_istd_fwhm,
-        istd_confidence_note=istd_confidence_note,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
     if target.identification_method is not None:
@@ -397,7 +387,6 @@ def extract_one_target(
             selected_segment=selected_region.segment if selected_region else None,
             competing_region_count=len(context.competing_regions(population)),
             scoring_context_builder=scoring_context_builder,
-            istd_confidence_note=istd_confidence_note,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     paired_rejection = paired_anchor_mismatch_diagnostic(

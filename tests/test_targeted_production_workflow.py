@@ -288,11 +288,6 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
     assert first_final.selected_cid_nl_supported
     assert second_final.nl_token == "NO_MS2"
     assert not second_final.selected_cid_nl_supported
-    assert first_final.targeted_product_projection.legacy_evidence["nl_status"] == "OK"
-    assert (
-        second_final.targeted_product_projection.legacy_evidence["nl_status"]
-        == "NO_MS2"
-    )
     nl_records = [d for d in published.diagnostics if d.issue in {"NL_FAIL", "NO_MS2"}]
     assert [d.sample_name for d in nl_records] == ["SampleB"]
     assert "stale" not in nl_records[0].reason
@@ -1174,8 +1169,6 @@ def production_case(
                             TargetedProductContext(role="Analyte"),
                             rt=selected.integration.rt_apex_min,
                             area=selected.integration.area_raw_counts_seconds,
-                            confidence="HIGH",
-                            nl_status="OK",
                         ),
                     )
                 },

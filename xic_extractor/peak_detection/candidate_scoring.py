@@ -6,12 +6,10 @@ from typing import Any, cast
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
-    projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
 from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidateScore
 from xic_extractor.peak_detection.peak_scoring_evidence import (
-    ConfidenceCap,
     EvidenceSignal,
     score_evidence,
 )
@@ -35,7 +33,6 @@ from xic_extractor.peak_detection.scoring_metrics import (
 from xic_extractor.peak_detection.scoring_models import (
     ScoredCandidate,
     ScoringContext,
-    confidence_from_value,
 )
 from xic_extractor.peak_detection.scoring_quality import (
     candidate_quality_penalty,
@@ -53,7 +50,6 @@ def score_candidate(
     candidate: PeakCandidate,
     ctx: ScoringContext,
     prior_rt: float | None,
-    istd_confidence_note: str | None = None,
     *,
     evidence_role: str = "",
     istd_pair: str = "",
@@ -99,12 +95,8 @@ def score_candidate(
         evidence_facts,
         count_no_ms2_as_detected=ctx.count_no_ms2_as_detected,
     )
-    confidence = confidence_from_value(
-        projected_confidence_from_candidate_facts(evidence_facts, semantics)
-    )
     reason = projected_reason_from_candidate_facts(evidence_facts, semantics)
-    # Contextual reasons carry quality through facts; empty-context scoring
-    # also exposes the detailed legacy quality note to its current consumers.
+    # Empty-context scoring retains the detailed quality note for diagnostics.
     if (
         quality_notes
         and not evidence_role
@@ -112,12 +104,9 @@ def score_candidate(
         and paired_istd_anchor_rt is None
     ):
         reason = f"{reason}; {'; '.join(quality_notes)}"
-    if istd_confidence_note:
-        reason = f"{reason}; {istd_confidence_note}"
     return ScoredCandidate(
         candidate=candidate,
         severities=tuple(severities),
-        confidence=confidence,
         reason=reason,
         prior_rt=prior_rt,
         quality_penalty=quality_penalty,
@@ -132,10 +121,10 @@ def _evidence_from_context(
     ctx: ScoringContext,
     severities: list[tuple[int, str]],
     quality_penalty: int,
-) -> tuple[list[EvidenceSignal], list[EvidenceSignal], list[ConfidenceCap]]:
+) -> tuple[list[EvidenceSignal], list[EvidenceSignal], list[str]]:
     positive: list[EvidenceSignal] = []
     negative: list[EvidenceSignal] = []
-    caps: list[ConfidenceCap] = []
+    caps: list[str] = []
 
     if not ctx.neutral_loss_required:
         positive.append(EvidenceSignal("no_nl_required", 10))
@@ -152,10 +141,10 @@ def _evidence_from_context(
             negative.append(EvidenceSignal("ms2_trace_weak", 8))
     elif ctx.ms2_present and not ctx.nl_match:
         negative.append(EvidenceSignal("nl_fail", 45))
-        caps.append(ConfidenceCap("nl_fail_cap", "VERY_LOW"))
+        caps.append("nl_fail_cap")
     else:
         negative.append(EvidenceSignal("no_ms2", 25))
-        caps.append(ConfidenceCap("no_ms2_cap", "LOW"))
+        caps.append("no_ms2_cap")
 
     severity_by_label = {label: severity for severity, label in severities}
     rt_prior_close = False
@@ -178,7 +167,7 @@ def _evidence_from_context(
             outside_rt_window(candidate.selection_apex_rt, ctx.rt_min, ctx.rt_max)
             and not rt_prior_close
         ):
-            caps.append(ConfidenceCap("rt_window_cap", "VERY_LOW"))
+            caps.append("rt_window_cap")
 
     local_sn = severity_by_label[LABEL_LOCAL_SN]
     if local_sn == 0:
@@ -235,11 +224,11 @@ def _evidence_from_context(
         active_trace_flags,
         has_cwt_same_apex_support=has_cwt_same_apex_support,
     ):
-        caps.append(ConfidenceCap("trace_quality_cap", "MEDIUM"))
+        caps.append("trace_quality_cap")
 
     if quality_penalty > 0:
         negative.append(EvidenceSignal("hard_quality_flag", 25 * quality_penalty))
-        caps.append(ConfidenceCap("hard_quality_flag_cap", "MEDIUM"))
+        caps.append("hard_quality_flag_cap")
 
     return positive, negative, caps
 
@@ -288,7 +277,6 @@ def candidate_score_summary(scored_candidate: ScoredCandidate) -> PeakCandidateS
     evidence_score = scored_candidate.evidence_score
     return PeakCandidateScore(
         candidate=scored_candidate.candidate,
-        confidence=scored_candidate.confidence.value,
         reason=scored_candidate.reason,
         raw_score=evidence_score.raw_score if evidence_score is not None else None,
         support_labels=(

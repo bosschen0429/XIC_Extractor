@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from xic_extractor.peak_detection.decision_policy import (
+    DECISION_CLASS_RANK,
     DecisionRecord,
     DecisionTerm,
     decision_blockers,
@@ -21,6 +22,7 @@ _LOW_SCAN_STRONGER_CANDIDATE_EXTENDED_DISTANCE_MIN = 2.5
 _STRICT_ANCHOR_AREA_MIN_DISTANCE_ADVANTAGE_MIN = 0.25
 _PAIRED_ISTD_STRONG_CHROM_SEGMENT_DELTA_MAX_MIN = 0.25
 _TRACE_STRENGTH_RANK = {"strong": 0, "moderate": 1, "weak": 2, "none": 3, "": 3}
+_PAIRED_ISTD_MISMATCH_SELECTION_RANK = 2
 
 
 def select_candidate_by_evidence(
@@ -93,6 +95,24 @@ def candidate_selection_decision_record(
         else float(facts.quality_penalty)
     )
     gate_terms = decision_gate_terms(semantics)
+    # Paired-ISTD mismatch demotes localization, not counted detection. Keep
+    # that selection tier independent of the shared evidence decision class.
+    paired_istd_mismatch = (
+        facts.rt.paired_istd_status == "far"
+        and "candidate_aligned_ms2_nl" not in semantics.support_reasons
+    )
+    gate_terms = (
+        (
+            "selection_evidence_rank",
+            float(
+                max(
+                    DECISION_CLASS_RANK[semantics.decision_class],
+                    _PAIRED_ISTD_MISMATCH_SELECTION_RANK if paired_istd_mismatch else 0,
+                )
+            ),
+        ),
+        gate_terms[1],
+    )
     gate: tuple[DecisionTerm, ...]
     tie_break: tuple[DecisionTerm, ...]
     if strict_selection_rt and selection_rt is not None:

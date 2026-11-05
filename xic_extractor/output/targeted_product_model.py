@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 ProductState = Literal[
@@ -11,7 +11,6 @@ ProductState = Literal[
     "ambiguous",
 ]
 ReviewState = Literal["none", "flagged", "review_required"]
-LegacyAuthorityStatus = Literal["evidence_only", "diagnostic_only", "retired"]
 
 
 @dataclass(frozen=True)
@@ -38,6 +37,4 @@ class TargetedProductProjection:
     conflict_reasons: tuple[str, ...] = ()
     not_counted_reasons: tuple[str, ...] = ()
     exclusion_reasons: tuple[str, ...] = ()
-    legacy_evidence: dict[str, str] = field(default_factory=dict)
-    legacy_authority_status: LegacyAuthorityStatus = "evidence_only"
     benchmark_eligibility_state: str = ""

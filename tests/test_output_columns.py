@@ -64,7 +64,6 @@ def _fabricate_run_output() -> RunOutput:
         max_smoothed=500.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="HIGH",
         reason="all checks passed",
     )
     extraction_result = ExtractionResult(
@@ -73,7 +72,6 @@ def _fabricate_run_output() -> RunOutput:
         target_label="d3-5-hmdC",
         role="ISTD",
         istd_pair="",
-        confidence="VERY_LOW",
         reason="concerns: rt_prior (major); weak candidate: too_broad",
         severities=(
             (0, "symmetry"),
@@ -97,8 +95,6 @@ def _fabricate_run_output() -> RunOutput:
             ),
             support_reasons=("ms1_peak_present",),
             review_reasons=("fixture_quality_flag",),
-            legacy_evidence={"confidence": "VERY_LOW", "nl_status": ""},
-            legacy_authority_status="evidence_only",
         ),
     )
     file_result = FileResult(
@@ -137,12 +133,12 @@ def test_extractor_no_longer_exposes_test_only_xlsx_writer() -> None:
     assert not hasattr(extractor_module, "_write_xlsx")
 
 
-def test_main_sheet_has_confidence_and_reason(tmp_path: Path) -> None:
+def test_main_sheet_has_reason_without_confidence(tmp_path: Path) -> None:
     out = _write_workbook(tmp_path)
     wb = load_workbook(out, read_only=True)
     ws = wb["XIC Results"]
     headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    assert "Confidence" in headers
+    assert "Confidence" not in headers
     assert "Reason" in headers
 
 

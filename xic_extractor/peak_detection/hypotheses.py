@@ -19,7 +19,6 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     decision_semantics_from_candidate_facts,
-    projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
 from xic_extractor.peak_detection.evidence_semantics import (
@@ -46,14 +45,6 @@ from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
 
-_CONFIDENCE_RANK = {
-    "HIGH": 0,
-    "MEDIUM": 1,
-    "LOW": 2,
-    "VERY_LOW": 3,
-    "": 4,
-}
-
 
 class PeakHypothesisAuthorityError(ValueError):
     """Raised when diagnostic identity is passed to selection or product code."""
@@ -67,8 +58,6 @@ class EvidenceVector:
     and are not interpretable as CWT scale or ridge metrics.
     """
 
-    confidence: str = ""
-    projected_confidence: str = ""
     raw_score: int | None = None
     support_labels: tuple[str, ...] = ()
     concern_labels: tuple[str, ...] = ()
@@ -420,19 +409,12 @@ def _evidence_from_candidate(
             count_no_ms2_as_detected=count_no_ms2_as_detected,
         )
         if facts is not None
-        else _legacy_decision_semantics(
+        else _candidate_signal_semantics(
             candidate,
             score,
             common=common,
             count_no_ms2_as_detected=count_no_ms2_as_detected,
         )
-    )
-    projected_confidence = (
-        projected_confidence_from_candidate_facts(facts, semantics)
-        if facts is not None
-        else score.confidence
-        if score is not None
-        else ""
     )
     projected_reason = (
         projected_reason_from_candidate_facts(facts, semantics)
@@ -443,8 +425,6 @@ def _evidence_from_candidate(
     )
     best_ms2_scan_rt_min = evidence.best_scan_rt if evidence is not None else None
     return EvidenceVector(
-        confidence=score.confidence if score is not None else "",
-        projected_confidence=projected_confidence,
         raw_score=score.raw_score if score is not None else None,
         support_labels=score.support_labels if score is not None else (),
         concern_labels=score.concern_labels if score is not None else (),
@@ -576,13 +556,12 @@ def _common_evidence_from_peak_candidate(
             if candidate_ms2_evidence is not None
             else ""
         ),
-        confidence=score.confidence if score is not None else "",
         evidence_score=score.raw_score if score is not None else None,
         reason=score.reason if score is not None else "",
     )
 
 
-def _legacy_decision_semantics(
+def _candidate_signal_semantics(
     candidate: PeakCandidate,
     score: PeakCandidateScore | None,
     *,
@@ -598,7 +577,6 @@ def _legacy_decision_semantics(
             ms2_present=common.ms2_present,
             nl_match=common.nl_match,
             raw_score=score.raw_score if score is not None else None,
-            confidence=score.confidence if score is not None else "",
             cap_labels=score.cap_labels if score is not None else (),
             reason=score.reason if score is not None else "",
             count_no_ms2_as_detected=count_no_ms2_as_detected,
@@ -624,8 +602,6 @@ def _rejection_reason(
     selection_reference_rt: float | None,
 ) -> str:
     if score is not None and selected_score is not None:
-        if _confidence_rank(score) > _confidence_rank(selected_score):
-            return "lower_confidence"
         if _raw_score(score) < _raw_score(selected_score):
             return "lower_score"
         if (
@@ -638,10 +614,6 @@ def _rejection_reason(
         if score.quality_penalty > selected_score.quality_penalty:
             return "quality_penalty"
     return "non_selected_candidate"
-
-
-def _confidence_rank(score: PeakCandidateScore) -> int:
-    return _CONFIDENCE_RANK.get(score.confidence, 4)
 
 
 def _raw_score(score: PeakCandidateScore) -> int:

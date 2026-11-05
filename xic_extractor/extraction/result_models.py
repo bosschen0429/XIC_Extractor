@@ -52,7 +52,6 @@ class ExtractionResult:
     target_label: str = ""
     role: str = ""
     istd_pair: str = ""
-    confidence: str = ""
     reason: str = ""
     severities: tuple[tuple[int, str], ...] = ()
     prior_rt: float | None = None

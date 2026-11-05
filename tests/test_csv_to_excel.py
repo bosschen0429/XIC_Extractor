@@ -47,7 +47,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     assert records[0]["PeakWidth"] == 0.4
     assert ws["E2"].number_format == "0.00E+00"
     assert ws.freeze_panes == "C2"
-    assert ws.tables["TargetedResults"].ref == "A1:S4"
+    assert ws.tables["TargetedResults"].ref == "A1:R4"
     assert ws.auto_filter.ref is None
     wb.close()
 
@@ -119,7 +119,6 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
             "9.0",
             "10000",
             "NL_FAIL",
-            confidence="LOW",
             reason="concerns: nl_support (major); local_sn (minor)",
         ),
         _long_row(
@@ -128,7 +127,6 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
             "9.1",
             "11000",
             "OK",
-            confidence="MEDIUM",
             reason="all checks passed",
         ),
     ]
@@ -168,7 +166,6 @@ def test_review_queue_does_not_reopen_confirmed_results_from_diagnostic_history(
         "123",
         "NL_FAIL",
         role="ISTD",
-        confidence="LOW",
         counted_detection="TRUE",
         product_state="detected_clean",
     ) | {
@@ -187,7 +184,7 @@ def test_review_queue_does_not_reopen_confirmed_results_from_diagnostic_history(
     assert review_queue_rows([row], diagnostics) == []
 
 
-def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> None:
+def test_review_queue_clean_product_has_no_issue() -> None:
     rows = [
         _long_row(
             "Tumor_1",
@@ -195,7 +192,6 @@ def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> 
             "9.3",
             "40000",
             "OK",
-            confidence="VERY_LOW",
             reason="decision: detected_clean; support: ms1_peak_present",
             counted_detection="TRUE",
             product_state="detected_clean",
@@ -552,7 +548,6 @@ def test_review_queue_evidence_uses_short_tags() -> None:
             "17.177",
             "1850221.22",
             "NL_FAIL",
-            confidence="LOW",
             reason="concerns: rt_prior (major); weak candidate: too_broad",
         )
     ]
@@ -682,7 +677,6 @@ def _long_row(
     *,
     role: str = "Analyte",
     istd_pair: str = "",
-    confidence: str = "HIGH",
     reason: str = "all checks passed",
     counted_detection: str | None = None,
     product_state: str = "",
@@ -708,7 +702,6 @@ def _long_row(
         "PeakStart": "8.9",
         "PeakEnd": "9.3",
         "PeakWidth": "0.4000",
-        "Confidence": confidence,
         "Reason": reason,
     }
     if counted_detection is not None:
@@ -723,7 +716,6 @@ def _long_row(
                 "Projection Conflict Reasons": "",
                 "Projection Not Counted Reasons": "",
                 "Projection Exclusion Reasons": "",
-                "Legacy Authority Status": "evidence_only",
                 "Benchmark Eligibility State": "",
             }
         )

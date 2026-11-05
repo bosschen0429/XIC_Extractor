@@ -44,7 +44,7 @@ questions:
 - RT is contextual evidence, not a hard identity veto. It must not prove absence
   or override co-eluting, candidate-aligned MS1/MS2 evidence unless an explicit
   hard RT exclusion policy exists.
-- Large, reproducible or unmodeled RT shifts may trigger ambiguity or confidence
+- Large, reproducible or unmodeled RT shifts may trigger ambiguity or localization
   demotion, especially when inconsistent with ISTD transfer.
 - Cross-sample RT or m/z dispersion alone does not establish separate isomers,
   and lack of distinct peaks within a sample does not prove identity; inspect
@@ -99,7 +99,7 @@ serializes as chemical absence, zero or a selected value.
 Same-feature MS1 Backfill can be numeric without becoming a direct detection.
 An observed Target-local peak can likewise be numeric while its count policy is
 false. These conclusions use the shared value owner; a writer must not turn
-either accepted value into ND by inspecting count, confidence, or review. A
+either accepted value into ND by inspecting count or review. A
 TargetKey or matching search window alone does not mint Group membership or a
 Backfill receipt. Actual observation origins remain explicit rather than being
 renamed to imply an operation that did not run.
@@ -122,49 +122,39 @@ decisions retain their existing policy. The writer renders this no-write as
 blank numeric cells with an explicit not-quantifiable explanation, not zero or
 ND. It does not re-evaluate the signal.
 
-## Targeted Confidence / Reason / Counted Detection Precedence
+## Targeted Measurement / Reason / Counted Detection Precedence
 
-Targeted workbook rows present the retained RT, area, integration boundaries,
-`NL Evidence`, and a plain-language `Reason`. These displayed cells do not
-decide counted detections or numeric availability. The Targeted product
-projection supplies count/review policy. The finalized cell decision supplies
-the values. The following layers feed the displayed result:
-
-| Layer | Produces | Resolution point |
-| --- | --- | --- |
-| Candidate scoring | `peak_result.confidence` / `peak_result.reason` | `peak_detection/candidate_scoring.py` through `peak_detection/peak_selection.py:select_peak_and_area` |
-| Hypothesis selection | `selection_decision.projected_confidence` / `projected_reason` | `extraction/result_assembly.py:_result_confidence` and `_result_reason`, when a selection decision exists |
-| Stored result | resolved `result.confidence` / `result.reason` | `extraction/result_assembly.py:build_extraction_result` |
-| Targeted product projection | `product_state`, `counted_detection`, `projection_reason` | `extraction/result_assembly.py:_targeted_product_projection` |
-| Display resolution | workbook / CSV `Confidence` and `Reason` cells | `output/csv_writers.py:_display_confidence` and `_display_reason` |
+Targeted workbook rows present retained RT, area, integration boundaries,
+`NL Evidence`, and a plain-language `Reason`. The finalized cell decision owns
+numeric availability. The Targeted product projection is the single owner of
+counted detection and review; writers render its answer rather than deriving
+another grade from source evidence.
 
 Invariants:
 
-- Counted detection and detection summaries read `projection.counted_detection`
-  and `product_state`, not `Confidence`, neutral loss flags, scores, or caps.
-  CSV and workbook numeric columns render the retained finalized peak even
-  when `counted_detection` is false. The HTML summary median uses the retained numeric
-  population independently of its detection tally.
-- `_display_confidence` may demote projected rows to `VERY_LOW`; it must not
-  promote rows. If a row should read higher, fix the projection decision.
-- When a Targeted product projection exists, `_display_reason` describes the
-  retained MS1 measurement and its review reasons through
-  `display_measurement_reason`. Otherwise `_display_reason` uses the stored
-  `result.reason`. `projection.projection_reason` feeds the separate
-  `Projection Reason` column. The workbook preserves the CSV explanation.
+- Counted detection and summaries read `projection.counted_detection` and
+  `product_state`, not neutral loss flags, scores, or caps. CSV and workbook
+  numeric columns render the retained finalized peak even when counting is
+  false. The HTML summary median uses the retained numeric population
+  independently of its detection tally.
+- `_display_reason` describes the retained MS1 measurement and projection
+  review reasons through `display_measurement_reason`. Without a projection,
+  diagnostic rows use the stored `result.reason`. `projection.projection_reason`
+  feeds the separate `Projection Reason` column.
 - `NL Evidence` distinguishes observed support, no support within tolerance,
   no MS2 spectrum, and an unrequested check. Blank NL configuration is
   `Not requested`, not failed evidence.
-- Internal count/product/review codes, raw NL tokens, and confidence remain
-  available as advanced workbook columns. They do not replace the main
-  measurement and evidence explanation. Missing support or shape concerns do
-  not themselves establish that the declared target is absent; the user
-  interprets these facts.
-- New evidence sources must enter as typed evidence or selection context and be
-  reconciled by workflow projection; they must not create another direct display
-  or count authority.
-- `reproject_extraction_result` must preserve the same candidate scoring,
-  selection, projection, and display precedence as `build_extraction_result`.
+- Internal count/product/review codes and raw NL tokens remain advanced
+  evidence. They do not replace the main measurement and evidence explanation.
+  Missing support or shape concerns do not themselves establish absence.
+- Candidate evidence semantics describe support, conflicts and review context;
+  they do not assign a second Confidence grade. Paired-ISTD RT mismatch without
+  strict NL support demotes candidate localization in `candidate_selection`,
+  independently of counting. The finalized paired-position policy still applies.
+- New evidence sources enter as typed evidence or selection context and are
+  reconciled by workflow projection, not a direct display or count authority.
+- `reproject_extraction_result` preserves the same selection, projection, and
+  display precedence as `build_extraction_result`.
 
 ## Targeted Policy
 
@@ -179,8 +169,8 @@ generic evidence provider.
 | Required evidence | Selected candidate or explicit no-peak state, target identity, positive MS1 state when counted, and provenance-valid trace context |
 | Hard blockers | Invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, role-incoherent paired context |
 | Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, morphology, boundary assessability, local S/N |
-| Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
-| Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and Targeted output fields |
+| Tie-break | Typed chemical support, role/reference localization and selection evidence tier (including paired-ISTD mismatch demotion), then blocker count and measured ties: trace strength, quality, RT distance and abundance; diagnostic scores do not reselect the peak |
+| Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, reason, Review Queue routing, and Targeted output fields |
 
 Targeted policy may prioritize paired ISTD/standard RT context because the
 Targeted method declares that relationship ahead of time. That priority must
@@ -205,9 +195,6 @@ Targeted-specific rules to keep explicit:
 - Paired analyte support is a bundle: coherent MS1, role-aware RT context,
   paired-area support, same-peak support, and no hard quality blocker. No single
   paired fact is standalone product authority.
-- `legacy_review_only_projection` and legacy confidence labels are review or
-  compatibility context; they do not by themselves create a not-counted product
-  decision.
 
 ## Untargeted / Backfill Policy
 
@@ -261,8 +248,7 @@ Untargeted-specific rules to keep explicit:
 Score is allowed when it makes a bounded ranking decision easier to inspect:
 
 - rank candidates that already passed the same hard gates;
-- provide compatibility parity while legacy public outputs still expose score,
-  confidence, reason, or score breakdown;
+- describe source evidence in diagnostic reasons and score breakdowns;
 - calibrate thresholds for future policy, with expected-diff review before any
   public output changes;
 - summarize quality within a typed fact, such as shape similarity or MS2
@@ -287,16 +273,14 @@ tier instead of treating it as a universal weight.
 
 Names that contain `score` need extra care:
 
-- `raw_score`, `EvidenceScore.confidence`, support labels, concern labels, and
+- `raw_score`, support labels, concern labels, and
   cap labels are compatibility or audit projections unless wrapped by typed
   evidence semantics and an approved product policy.
 - Targeted selection consumes typed candidate facts through
-  `select_candidate_by_evidence`; public confidence and reason fields do not
+  `select_candidate_by_evidence`; displayed reason fields do not
   authorize a parallel selector.
 - Alignment `evidence_score` is a seed-quality score feature, not same-peak
   identity proof.
-- `legacy_peak_scoring_current_oracle` is a parity baseline, not a product
-  owner.
 
 ## Decision Record Requirements
 

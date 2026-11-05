@@ -71,7 +71,6 @@ _REASON_TEXT = {
     "trace_morphology_review": "XIC 峰形或連續性需檢查",
     "physical_shoulder_overlap": "有肩峰或重疊",
     "chrom_peak_segment_shoulder_review": "所選峰旁有肩峰",
-    "legacy_confidence_review": "信心分級偏低",
     "selected_envelope_split_supported": "有多個峰段，邊界需檢查",
     "selected_envelope_boundary_externalize": "峰或積分邊界未定",
     "missing_positive_ms1_peak": "沒有 MS1 峰",

@@ -50,9 +50,7 @@ from xic_extractor.peak_detection.signal_quality import SignalQuality
 from xic_extractor.precursor_evidence import PrecursorLossAssessment
 
 
-def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence() -> (
-    None
-):
+def test_build_extraction_result_retains_unscored_peak() -> None:
     target = _target()
     candidate = _candidate()
     peak_result = PeakDetectionResult(
@@ -83,14 +81,11 @@ def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence(
     )
 
     assert selected is not None
-    assert selected.evidence.confidence == ""
     assert result.selection_decision is not None
-    assert result.selection_decision.projected_confidence == "HIGH"
-    assert result.confidence == "HIGH"
     assert result.reason == ""
 
 
-def test_build_extraction_result_uses_typed_projection_when_confidence_stale() -> None:
+def test_build_extraction_result_uses_typed_evidence_reason() -> None:
     target = _target()
     candidate = _candidate(quality_flags=())
     typed_facts = _clean_typed_facts(candidate)
@@ -101,12 +96,10 @@ def test_build_extraction_result_uses_typed_projection_when_confidence_stale() -
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="VERY_LOW",
         reason="decision: review only, not counted; cap: VERY_LOW",
         candidate_scores=(
             PeakCandidateScore(
                 candidate=candidate,
-                confidence="HIGH",
                 reason="decision: detected",
                 raw_score=95,
                 evidence_facts=typed_facts,
@@ -133,15 +126,12 @@ def test_build_extraction_result_uses_typed_projection_when_confidence_stale() -
     )
 
     assert selected is not None
-    assert selected.evidence.confidence == "VERY_LOW"
     assert result.selection_decision is not None
-    assert result.selection_decision.projected_confidence == "HIGH"
     assert (
         result.selection_decision.projected_reason
         == "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl; "
         "role_aware_rt_support"
     )
-    assert result.confidence == "HIGH"
     assert result.reason == (
         "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl; "
         "role_aware_rt_support"
@@ -166,14 +156,9 @@ def test_build_extraction_result_uses_selection_decision_projection() -> None:
         selected_candidate_id=selected.hypothesis_id,
         trace_group_id=selected.trace_group_id,
         decision_class="review",
-        projected_confidence="MEDIUM",
         projected_reason="decision projection",
         review_reasons=("explicit_decision_projection",),
-        not_counted_reasons=(
-            "selected_envelope_boundary_defer",
-            "legacy_review_only_projection",
-        ),
-        legacy_projection_status="active_policy_remaining",
+        not_counted_reasons=("selected_envelope_boundary_defer",),
     )
 
     result = build_extraction_result(
@@ -188,7 +173,6 @@ def test_build_extraction_result_uses_selection_decision_projection() -> None:
     )
 
     assert result.selection_decision is decision
-    assert result.confidence == "MEDIUM"
     assert result.reason == "decision projection"
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.product_state == "not_counted"
@@ -196,10 +180,6 @@ def test_build_extraction_result_uses_selection_decision_projection() -> None:
     assert (
         "selected_envelope_boundary_defer"
         in result.targeted_product_projection.not_counted_reasons
-    )
-    assert (
-        "legacy_review_only_projection"
-        not in result.targeted_product_projection.not_counted_reasons
     )
 
 
@@ -367,13 +347,11 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="VERY_LOW",
         reason="decision: review only, not counted; cap: nl fail",
         severities=((3, "nl_support"),),
         candidate_scores=(
             PeakCandidateScore(
                 candidate=candidate,
-                confidence="VERY_LOW",
                 reason="decision: review only, not counted; cap: nl fail",
                 raw_score=10,
                 support_labels=("local_sn_strong", "shape_clean"),
@@ -404,7 +382,6 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert result.confidence == "VERY_LOW"
     assert result.nl_token == "NL_FAIL"
     assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
@@ -421,12 +398,10 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="HIGH",
         reason="decision: accepted",
         candidate_scores=(
             PeakCandidateScore(
                 candidate=candidate,
-                confidence="HIGH",
                 reason="decision: accepted",
                 raw_score=95,
                 support_labels=("local_sn_strong", "shape_clean"),
@@ -452,7 +427,6 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
             area_raw_counts_seconds=1234.5,
         ),
         evidence=EvidenceVector(
-            confidence="HIGH",
             reason="decision: accepted",
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="ambiguous",
@@ -550,7 +524,6 @@ def test_istd_nl_dropout_waits_for_backfill_even_when_ms1_coherent() -> None:
         conflict_reasons=("targeted_rt_conflict",),
         review_reasons=("plausible_nl_dropout_review",),
         nl_status="NL_FAIL",
-        confidence="VERY_LOW",
         reason="decision: review only, not counted; cap: VERY_LOW due to nl fail",
     )
 
@@ -752,14 +725,12 @@ def test_paired_analyte_reference_rt_without_istd_anchor_is_not_counted() -> Non
 
 
 @pytest.mark.parametrize("is_istd", [False, True])
-@pytest.mark.parametrize("confidence", ["HIGH", "LOW"])
-def test_confirmed_rt_drift_is_context_not_review(is_istd, confidence) -> None:
+def test_confirmed_rt_drift_is_context_not_review(is_istd) -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=is_istd),
         support_reasons=("candidate_aligned_ms2_nl",),
         conflict_reasons=("targeted_rt_conflict", "anchor_conflict"),
         review_reasons=("targeted_rt_review", "paired_istd_rt_review"),
-        confidence=confidence,
     )
     projection = result.targeted_product_projection
     assert projection is not None
@@ -783,8 +754,6 @@ def test_confirmed_backfill_resolves_dropout_review_but_not_quality(quality_revi
         TargetedProductContext(role="ISTD", neutral_loss_required=True),
         rt=9.1,
         area=1234.5,
-        confidence="LOW",
-        nl_status="NL_FAIL",
         backfill_supported=True,
         review_reasons=(
             "targeted_rt_review",
@@ -800,14 +769,13 @@ def test_confirmed_backfill_resolves_dropout_review_but_not_quality(quality_revi
     assert "cross_sample_backfill_identity" in projection.support_reasons
 
 
-def test_legacy_very_low_does_not_decide_product_not_counted() -> None:
+def test_display_reason_does_not_decide_counting() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
         conflict_reasons=(),
-        confidence="VERY_LOW",
-        reason="decision: review only, not counted; cap: legacy score",
-        not_counted_reasons=("legacy_review_only_projection",),
+        reason="diagnostic review note",
+        not_counted_reasons=(),
     )
 
     projection = result.targeted_product_projection
@@ -986,7 +954,6 @@ def _peak_result_with_candidate() -> PeakDetectionResult:
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence="LOW",
         reason="concerns: local_sn",
         severities=((1, "local_sn"),),
         score_breakdown=(("Raw Score", "41"),),
@@ -1000,7 +967,6 @@ def _result_with_targeted_projection_semantics(
     sample_name: str = "SampleA",
     support_reasons: tuple[str, ...],
     conflict_reasons: tuple[str, ...],
-    confidence: str = "HIGH",
     reason: str = "decision: accepted",
     review_reasons: tuple[str, ...] = (),
     not_counted_reasons: tuple[str, ...] = (),
@@ -1018,12 +984,10 @@ def _result_with_targeted_projection_semantics(
         max_smoothed=1200.0,
         n_prominent_peaks=1,
         candidates=(candidate,),
-        confidence=confidence,
         reason=reason,
         candidate_scores=(
             PeakCandidateScore(
                 candidate=candidate,
-                confidence=confidence,
                 reason=reason,
                 raw_score=95,
                 support_labels=("local_sn_strong", "shape_clean"),
@@ -1056,7 +1020,6 @@ def _result_with_targeted_projection_semantics(
             )
         ),
         evidence=EvidenceVector(
-            confidence=confidence,
             reason=reason,
             quality_flags=quality_flags,
             decision_semantics=EvidenceDecisionSemantics(
@@ -1159,13 +1122,11 @@ def _selected_hypothesis_with_integration(
         resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(
-            confidence="LOW",
             reason="selected spine",
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="review",
                 support_reasons=support_reasons,
                 review_reasons=("trace_morphology_review",),
-                compatibility_labels=("trace_quality_cap",),
             ),
         ),
         audit=AuditTrail(selected=selected),
@@ -1175,7 +1136,6 @@ def _selected_hypothesis_with_integration(
 def _score(candidate: PeakCandidate) -> PeakCandidateScore:
     return PeakCandidateScore(
         candidate=candidate,
-        confidence="LOW",
         reason="concerns: local_sn",
         raw_score=41,
         concern_labels=("local_sn",),
@@ -1210,7 +1170,6 @@ def test_method_supported_quantifiable_peak_reviews_shape_not_rt(
             "trace_morphology_conflict",
         ),
         quality_flags=("too_broad",),
-        confidence="VERY_LOW",
     )
     projection = result.targeted_product_projection
     assert projection is not None

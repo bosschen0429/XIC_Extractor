@@ -14,7 +14,6 @@ from xic_extractor.peak_detection.selection_decision import (
 def test_selection_decision_projects_accepted_typed_semantics() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            confidence="HIGH",
             raw_score=95,
             support_labels=("strict_nl_ok", "local_sn_strong"),
             reason="decision: accepted",
@@ -23,7 +22,6 @@ def test_selection_decision_projects_accepted_typed_semantics() -> None:
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="accepted",
                 support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
-                compatibility_labels=("strict_nl_ok", "local_sn_strong"),
             ),
         )
     )
@@ -33,21 +31,15 @@ def test_selection_decision_projects_accepted_typed_semantics() -> None:
     assert decision.selected_candidate_id == "SampleA|Analyte|selected"
     assert decision.trace_group_id == "SampleA|Analyte|trace"
     assert decision.decision_class == "accepted"
-    assert decision.projected_confidence == "HIGH"
     assert decision.projected_reason == "decision: accepted"
     assert decision.support_reasons == ("ms1_coherent", "candidate_aligned_ms2_nl")
-    assert decision.compatibility_labels == ("strict_nl_ok", "local_sn_strong")
-    assert decision.legacy_projection_status == "active_policy_remaining"
     assert decision.policy_source == "selected_hypothesis_decision"
-    assert decision.compatibility_oracle == "legacy_peak_scoring_current_oracle"
     assert "candidate_aligned_ms2_nl" in decision.evidence_sources
-    assert "legacy_compatibility_projection" in decision.evidence_sources
 
 
 def test_selection_decision_projects_review_and_source_context() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            confidence="MEDIUM",
             support_labels=("cwt_same_apex_support",),
             concern_labels=("rt_prior_far",),
             cap_labels=("rt_window_cap",),
@@ -61,10 +53,6 @@ def test_selection_decision_projects_review_and_source_context() -> None:
                 support_reasons=("cwt_boundary_morphology_context",),
                 conflict_reasons=("targeted_rt_conflict",),
                 review_reasons=("targeted_rt_review",),
-                compatibility_labels=(
-                    "cwt_same_apex_support",
-                    "rt_window_cap",
-                ),
             ),
         ),
         proposal_sources=("centwave_cwt",),
@@ -83,17 +71,11 @@ def test_selection_decision_projects_review_and_source_context() -> None:
 def test_selection_decision_projects_chrom_segment_source_context() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            confidence="HIGH",
             support_labels=("local_sn_strong", "trace_clean"),
             reason="decision: accepted",
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="accepted",
                 support_reasons=("ms1_coherent", "chrom_peak_segment_context"),
-                compatibility_labels=(
-                    "local_sn_strong",
-                    "trace_clean",
-                    "chrom_peak_segment",
-                ),
             ),
         ),
         proposal_sources=("local_minimum", "chrom_peak_segment"),
@@ -106,20 +88,15 @@ def test_selection_decision_projects_chrom_segment_source_context() -> None:
     assert "trace_morphology" in decision.evidence_sources
 
 
-def test_selection_decision_marks_successor_owned_no_ms2_policy() -> None:
+def test_selection_decision_retains_no_ms2_policy() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            confidence="VERY_LOW",
             reason="decision: review only, not counted",
             cap_labels=("no_ms2_cap",),
             decision_semantics=EvidenceDecisionSemantics(
                 decision_class="not_counted",
                 review_reasons=("missing_ms2_not_observed",),
-                not_counted_reasons=(
-                    "missing_ms2_policy_not_counted",
-                    "missing_ms2_compatibility_cap",
-                ),
-                compatibility_labels=("no_ms2_cap",),
+                not_counted_reasons=("missing_ms2_policy_not_counted",),
             ),
         )
     )
@@ -136,28 +113,20 @@ def test_selection_decision_marks_successor_owned_no_ms2_policy() -> None:
         n_points=10,
         max_smoothed=1200.0,
         n_prominent_peaks=1,
-        confidence="VERY_LOW",
         reason="decision: review only, not counted",
     )
 
     decision = selection_decision_from_hypothesis(hypothesis, peak_result=peak_result)
 
     assert decision.decision_class == "not_counted"
-    assert decision.projected_confidence == "VERY_LOW"
     assert decision.projected_reason == "decision: review only, not counted"
-    assert decision.not_counted_reasons == (
-        "missing_ms2_policy_not_counted",
-        "missing_ms2_compatibility_cap",
-    )
-    assert decision.legacy_projection_status == "successor_owned"
-    assert decision.compatibility_oracle == "successor_evidence_decision_semantics"
+    assert decision.not_counted_reasons == ("missing_ms2_policy_not_counted",)
     assert "candidate_aligned_ms2_nl" in decision.evidence_sources
 
 
 def test_selection_decision_falls_back_when_typed_semantics_are_missing() -> None:
     hypothesis = _hypothesis(
         evidence=EvidenceVector(
-            confidence="LOW",
             reason="legacy reason",
             support_labels=("strict_nl_ok",),
             cap_labels=("trace_quality_cap",),
@@ -168,11 +137,6 @@ def test_selection_decision_falls_back_when_typed_semantics_are_missing() -> Non
 
     assert decision.decision_class == "review"
     assert decision.review_reasons == ("insufficient_typed_evidence",)
-    assert decision.compatibility_labels == (
-        "strict_nl_ok",
-        "trace_quality_cap",
-        "local_minimum",
-    )
 
 
 def _hypothesis(

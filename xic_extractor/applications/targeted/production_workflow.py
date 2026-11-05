@@ -422,7 +422,7 @@ def _build_publication_output(
             *(
                 record
                 for record in acquisition_evidence.diagnostics
-                if record.issue not in {"NL_FAIL", "NO_MS2", "ISTD_CONFIDENCE"}
+                if record.issue not in {"NL_FAIL", "NO_MS2"}
             ),
             *(
                 record
@@ -584,7 +584,6 @@ def _finalized_extraction_result(
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
         captured_physical_evaluation=captured_physical_evaluation,
-        nl_status=extraction.nl_token or "",
     )
     if not no_write_reason:
         if (
@@ -639,7 +638,6 @@ def _finalized_extraction_result(
             peak=None,
             candidates=(),
             candidate_scores=(),
-            confidence=None,
             reason=no_write_reason,
         ),
         selected_hypothesis=None,
@@ -710,7 +708,6 @@ def _finalized_product_projection(
     evidence: object,
     value: float | None,
     no_write_reason: str,
-    nl_status: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
     captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
@@ -748,8 +745,6 @@ def _finalized_product_projection(
         ),
         rt=evidence.hypothesis.integration.rt_apex_min,
         area=value,
-        confidence=projection.legacy_evidence.get("confidence", ""),
-        nl_status=nl_status,
         cid_nl_supported=(
             evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         ),
@@ -760,7 +755,6 @@ def _finalized_product_projection(
         conflict_reasons=projection.conflict_reasons,
         not_counted_reasons=projection.not_counted_reasons,
         exclusion_reasons=projection.exclusion_reasons,
-        legacy_evidence={**projection.legacy_evidence, "nl_status": nl_status},
     )
 
 

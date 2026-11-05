@@ -2,10 +2,6 @@
 
 **Governing contracts:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`.
-**Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
-are navigation labels, not current source-of-truth links or retention reasons.
-Current governing owners live
-in the entry status text, `docs/product/` and `docs/architecture-contract.md`.
 
 ---
 
@@ -15,7 +11,7 @@ in the entry status text, `docs/product/` and `docs/architecture-contract.md`.
 > is genuinely new, list in your PR description which existing entries you
 > considered and why they are inadequate. This avoids the "agent A and
 > agent B independently solve the same problem with twin tools" failure
-> mode that the 2026-05-26 audit documented.
+> mode.
 >
 > This index is maintained as part of every PR that adds, removes, or
 > renames a diagnostic entry-point. The file is grouped by **purpose**, not
@@ -82,11 +78,8 @@ without RAW acquisition. It does not determine scientific readiness.
 See [Local Execution](../../docs/agent/local-execution.md#validation-scale)
 and [Presets](../../docs/product/presets.md#tissue-validation-defaults).
 
-Maintenance note: P2/P2b/P2c AsLS-vs-linear-edge gates were retired after the
-baseline decision closed. AsLS is the current production baseline integration
-method, and `linear_edge` is retired as a selectable baseline method. Do not add
-new diagnostics that compare against or fall back to linear-edge; use current
-AsLS/boundary/product contracts instead.
+AsLS is the production baseline integration method. Diagnostics use the current
+AsLS/boundary/product contracts, not linear-edge comparisons or fallbacks.
 
 ---
 
@@ -95,8 +88,7 @@ AsLS/boundary/product contracts instead.
 Compare evidence rows produced by parallel pipelines (targeted vs untargeted,
 spine vs cell) and shared-identity sidecars. The tools below share low-level
 diagnostic IO helpers where their schemas permit it, but keep separate row
-models because their output schemas are intentionally different; see
-`retired-provenance:9ac1510742f0` Cluster 1.
+models because their output schemas are intentionally different.
 
 ---
 
@@ -120,14 +112,6 @@ default runs.
 CLI reports and audits over alignment outputs (cells, families, owner
 decisions, RT calibration).
 
-
-### `targeted_gt_alignment_audit.py`
-
-**Purpose**: Audit untargeted alignment against targeted workbook GT.
-**Topic group**: `targeted_gt_alignment_audit.py` + `_io`, `_models`, `_analysis`, `_writers`, `_utils` (6 files)
-**Originating spec**: `retired-provenance:038bfb65fe90` + Workstream G in `retired-provenance:100307efc8fa`
-
----
 
 ### `alignment_health_packet.py`
 
@@ -214,8 +198,6 @@ scoring, or values.
 
 **Purpose**: Run strict targeted ISTD benchmark for untargeted alignment.
 **Topic group**: `targeted_istd_benchmark.py` + `_loaders`, `_matching`, `_models`, `_stats`, `_summary`, `_writers` (7 files; largest group)
-**Originating spec**: `retired-provenance:53a763b9ec7a`
-**Recent doc**: `retired-provenance:5162156a9766`
 **Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices bound through the `matrix_row_index` projection of `alignment_review.tsv`; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
 
 ---
@@ -274,7 +256,6 @@ are not daily).
 ### `instrument_qc_sequence_manifest.py`
 
 **Purpose**: Build docs-derived instrument QC sequence manifest.
-**Originating spec**: `retired-provenance:9b1b633f6f09`
 **Status note**: The `run_instrument_qc.py --method-doc` flow writes the sequence manifest, legacy `instrument_qc_injection_order.csv`, and additive `instrument_qc_sample_metadata.tsv` using `sample_metadata`. The sample-metadata sidecar projects matched RAW rows and raw-dir-only instrument-QC rows as metadata only; roles do not alter instrument-QC trend values or matrix outputs.
 
 ---
@@ -282,8 +263,6 @@ are not daily).
 ### `instrument_qc_sdolek_calibration.py`
 
 **Purpose**: Calibrate SDO/LEK instrument trends with method-doc order.
-**Originating spec**: `retired-provenance:77f7869271f4`
-**Recent doc**: `retired-provenance:b15c365ea97c`
 
 ---
 
@@ -425,9 +404,8 @@ evidence than an unactionable line-by-line pass over mechanical writer churn.
 ## Maintenance Notes
 
 - **Adding a new entry-point**: Append it to the matching group section, or
-  create a new group if none fit. Always populate Purpose / Topic group /
-  Originating spec — these are the minimum for an entry to be useful at
-  session start.
+  create a new group if none fit. Populate Purpose / Topic group and add a
+  Status note for current constraints or governing owners.
 - **Adding a new evidence-provider diagnostic**: The owning Issue names the
   package owner, reusable helper, evidence role, RAW/TSV call-cost model, public
   contract risk, validation tier, and stop rule. HCD-PI, Delta Mass, CID-NL, RT/iRT, MS1

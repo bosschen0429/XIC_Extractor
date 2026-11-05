@@ -35,7 +35,6 @@ def write_excel_from_run_output(
         rows,
         diagnostics=diagnostics,
         output_path=output_path,
-        require_projection=True,
         identification_rows=identification_evidence_rows(run_output, targets),
     )
 

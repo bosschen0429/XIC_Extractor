@@ -164,23 +164,6 @@ def decision_semantics_from_candidate_facts(
     return decision_semantics_from_signal_set(signals)
 
 
-def projected_confidence_from_candidate_facts(
-    facts: CandidateEvidenceFacts,
-    semantics: EvidenceDecisionSemantics | None = None,
-) -> str:
-    if semantics is None:
-        semantics = decision_semantics_from_candidate_facts(facts)
-    if semantics.decision_class in {"excluded", "not_counted", "ambiguous"}:
-        return "VERY_LOW"
-    if semantics.conflict_reasons:
-        return "LOW"
-    if semantics.review_reasons:
-        return "MEDIUM"
-    if semantics.decision_class == "accepted":
-        return "HIGH"
-    return "LOW"
-
-
 def projected_reason_from_candidate_facts(
     facts: CandidateEvidenceFacts,
     semantics: EvidenceDecisionSemantics | None = None,

@@ -31,7 +31,6 @@ _INFORMATIONAL_EVENTS = {
     "ANCHOR_MISMATCH",
     "NL_ANCHOR_FALLBACK",
     "ISTD_ANCHOR_MISSING",
-    "ISTD_CONFIDENCE",
     "BACKFILL_ACCEPTED",
 }
 
@@ -55,7 +54,7 @@ def review_queue_rows(
                 "Sample": row.get("SampleName", ""),
                 "Target": row.get("Target", ""),
                 "Role": row.get("Role", ""),
-                "Status": _review_status(issue, row.get("Confidence", "")),
+                "Status": _review_status(issue),
                 "Outcome": {
                     "TRUE": "已計入",
                     "FALSE": "未計入",
@@ -221,9 +220,6 @@ def _row_review_issue(row: dict[str, str]) -> str:
         return "NO_MS2"
     if nl.startswith("WARN_"):
         return "NL_WARN"
-    confidence = row.get("Confidence", "")
-    if confidence in {"LOW", "VERY_LOW"}:
-        return f"CONFIDENCE_{confidence}"
     return ""
 
 
@@ -242,17 +238,14 @@ def _review_priority(row: dict[str, str], issue: str) -> int:
         if issue in {"NO_MS2", "NL_WARN", "PRODUCT_NOT_COUNTED", "PROJECTION_FLAGGED"}:
             return 2
         return 3
-    confidence = row.get("Confidence", "")
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL", "FILE_ERROR", "NL_FAIL"}:
         return 1
-    if confidence == "VERY_LOW":
-        return 1
-    if issue in {"NO_MS2", "NL_WARN"} or confidence == "LOW":
+    if issue in {"NO_MS2", "NL_WARN"}:
         return 2
     return 3
 
 
-def _review_status(issue: str, confidence: str) -> str:
+def _review_status(issue: str) -> str:
     if issue in {
         "PROJECTION_CONFLICT",
         "PRODUCT_EXCLUDED",
@@ -264,7 +257,7 @@ def _review_status(issue: str, confidence: str) -> str:
         return "Check"
     if issue in {"NL_FAIL", "PEAK_NOT_FOUND", "NO_SIGNAL", "FILE_ERROR"}:
         return "Review"
-    if issue in {"NO_MS2", "NL_WARN"} or confidence in {"LOW", "VERY_LOW"}:
+    if issue in {"NO_MS2", "NL_WARN"}:
         return "Check"
     return "Info"
 
@@ -310,8 +303,6 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "RT 偏離定位提示"
     if issue == "NL_ANCHOR_FALLBACK":
         return "沒有 MS2 定位點，改用備用 RT 範圍"
-    if issue in {"ISTD_CONFIDENCE", "CONFIDENCE_LOW", "CONFIDENCE_VERY_LOW"}:
-        return "信心分級偏低"
     if issue == "PRODUCT_NOT_COUNTED":
         return "證據不足以計入"
     if issue == "PROJECTION_FLAGGED":
@@ -384,8 +375,6 @@ def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
         return "在 XIC 確認此峰"
     if issue == "PRODUCT_EXCLUDED":
         return "核對 Targets 的樣本適用範圍"
-    if row.get("Confidence") in {"LOW", "VERY_LOW"}:
-        return "在 XIC 看峰形、RT 與 ISTD"
     if issue == "MULTI_PEAK":
         return "在 XIC 比較候選峰"
     return "在 XIC 確認此峰"

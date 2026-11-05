@@ -141,6 +141,45 @@ def test_typed_selector_demotes_nl_fail_candidate_far_from_paired_istd() -> None
     assert selected.candidate is near_anchor
 
 
+def test_paired_istd_localization_demotion_precedes_review_blocker_count() -> None:
+    near = _candidate(10.2, area=100.0)
+    far = _candidate(11.25, area=5000.0)
+    near_facts = _facts(
+        near,
+        rt=10.2,
+        abundance=100.0,
+        ms2_trace_strength="weak",
+        shape_quality="poor",
+        nl_match=False,
+        paired_istd_delta_min=0.2,
+        paired_istd_status="close",
+    )
+    near_facts = replace(
+        near_facts,
+        rt=replace(near_facts.rt, rt_prior_status="far", window_status="outside"),
+    )
+    far_facts = _facts(
+        far,
+        rt=11.25,
+        abundance=5000.0,
+        ms2_trace_strength="weak",
+        shape_quality="clean",
+        nl_match=False,
+        paired_istd_delta_min=1.25,
+        paired_istd_status="far",
+    )
+    scored = [_scored_with_facts(far, far_facts), _scored_with_facts(near, near_facts)]
+    far_record = candidate_selection_decision_record(scored[0], scored)
+    near_record = candidate_selection_decision_record(scored[1], scored)
+
+    # Both are review evidence, not different product-counting classes. The
+    # near peak wins localization even with more independent review concerns.
+    assert far_record.decision_class == near_record.decision_class == "review"
+    assert len(near_record.blockers) > len(far_record.blockers)
+    for population in (scored, list(reversed(scored))):
+        assert select_candidate_by_evidence(population).candidate == near
+
+
 @pytest.mark.parametrize("hard_quality_conflict", [False, True])
 def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
     hard_quality_conflict: bool,
@@ -377,7 +416,7 @@ def test_typed_selection_decision_record_exposes_gate_support_and_projection() -
     assert record.projection_authority == "select_candidate_by_evidence"
     assert [name for name, _value in record.gate] == [
         "chemical_evidence_rank",
-        "decision_class_rank",
+        "selection_evidence_rank",
         "blocker_count",
     ]
     assert [name for name, _value in record.tie_break] == [
@@ -391,7 +430,7 @@ def test_typed_selection_decision_record_exposes_gate_support_and_projection() -
     assert not hasattr(record, "key")
     assert record.gate == (
         ("chemical_evidence_rank", 0.0),
-        ("decision_class_rank", 0.0),
+        ("selection_evidence_rank", 0.0),
         ("blocker_count", 0.0),
     )
     assert record.tie_break == (
@@ -476,14 +515,14 @@ def test_strict_decision_record_places_anchor_gate_before_tie_breaks() -> None:
     assert [name for name, _value in record.gate] == [
         "chemical_evidence_rank",
         "anchor_selection_completeness_rank",
-        "decision_class_rank",
+        "selection_evidence_rank",
         "blocker_count",
     ]
     assert record.tie_break[0][0] == "strict_anchor_area_demotion_rank"
     assert record.gate == (
         ("chemical_evidence_rank", 1.0),
         ("anchor_selection_completeness_rank", 0.0),
-        ("decision_class_rank", 1.0),
+        ("selection_evidence_rank", 1.0),
         ("blocker_count", 1.0),
     )
     assert record.tie_break[:3] == (
@@ -586,8 +625,6 @@ def _legacy_score(
         positive_points=0,
         negative_points=0,
         raw_score=raw_score,
-        score_confidence="HIGH",
-        confidence="HIGH",
         support_labels=support_labels,
         concern_labels=concern_labels,
         cap_labels=(),

@@ -41,7 +41,6 @@ def select_peak_and_area(
     preferred_rt: float | None = None,
     strict_preferred_rt: bool = False,
     scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None = None,
-    istd_confidence_note: str | None = None,
     evidence_role: str = "",
     istd_pair: str = "",
     paired_istd_anchor_rt: float | None = None,
@@ -65,7 +64,6 @@ def select_peak_and_area(
             strict_preferred_rt=strict_preferred_rt,
         )
     relaxed_candidate, relaxed_search_result = preferred_rt_recovery
-    chosen_confidence: str | None = None
     chosen_reason: str | None = None
     chosen_severities: tuple[tuple[int, str], ...] = ()
     chosen_score_breakdown: tuple[tuple[str, str], ...] = ()
@@ -110,7 +108,6 @@ def select_peak_and_area(
                         candidate,
                         context,
                         prior_rt=context.rt_prior,
-                        istd_confidence_note=istd_confidence_note,
                         evidence_role=evidence_role,
                         istd_pair=istd_pair,
                         paired_istd_anchor_rt=paired_istd_anchor_rt,
@@ -126,7 +123,6 @@ def select_peak_and_area(
                 strict_selection_rt=strict_preferred_rt,
             )
             best_candidate = chosen.candidate
-            chosen_confidence = chosen.confidence.value
             chosen_reason = chosen.reason
             chosen_severities = chosen.severities
             chosen_score_breakdown = score_breakdown_fields(chosen.evidence_score)
@@ -142,7 +138,6 @@ def select_peak_and_area(
         return output_flow.detection_success(
             result_for_output,
             best_candidate,
-            confidence=chosen_confidence,
             reason=chosen_reason,
             severities=chosen_severities,
             score_breakdown=chosen_score_breakdown,
@@ -162,7 +157,6 @@ def select_peak_and_area(
                 relaxed_candidate,
                 context,
                 prior_rt=context.rt_prior,
-                istd_confidence_note=istd_confidence_note,
                 evidence_role=evidence_role,
                 istd_pair=istd_pair,
                 paired_istd_anchor_rt=paired_istd_anchor_rt,
@@ -171,7 +165,6 @@ def select_peak_and_area(
             return output_flow.detection_success(
                 relaxed_search_result,
                 relaxed_candidate,
-                confidence=scored_relaxed_search.confidence.value,
                 reason=scored_relaxed_search.reason,
                 severities=scored_relaxed_search.severities,
                 score_breakdown=score_breakdown_fields(

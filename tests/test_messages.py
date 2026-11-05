@@ -9,9 +9,7 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.target_extraction import extract_one_target
 from xic_extractor.output.messages import (
-    DiagnosticRecord,
     build_diagnostic_records,
-    istd_confidence_note,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -246,45 +244,6 @@ def test_build_diagnostic_records_reports_product_probe_subcause() -> None:
     assert "nearest product m/z 179.1234" in records[0].reason
     assert "nearest observed-loss error 82.3 ppm" in records[0].reason
     assert "nearest product/base ratio 0.004" in records[0].reason
-
-
-def test_build_diagnostic_records_reports_istd_confidence() -> None:
-    result = ExtractionResult(
-        peak_result=PeakDetectionResult(
-            status="OK",
-            peak=PeakResult(
-                rt=9.0,
-                intensity=500.0,
-                intensity_smoothed=450.0,
-                area=100.0,
-                peak_start=8.9,
-                peak_end=9.2,
-            ),
-            n_points=12,
-            max_smoothed=450.0,
-            n_prominent_peaks=1,
-        ),
-        nl=NLResult("WARN", 18.0, 9.0, 2, 0, 2),
-        target_label="ISTD",
-    )
-
-    records = build_diagnostic_records(
-        "SampleA", _target("ISTD", is_istd=True), result, _config()
-    )
-
-    assert records == [
-        DiagnosticRecord(
-            sample_name="SampleA",
-            target_label="ISTD",
-            issue="ISTD_CONFIDENCE",
-            reason=(
-                "ISTD confidence=MEDIUM; flags=NL_WARN; "
-                "MS1 peak retained because ISTD NL evidence is diagnostic support, "
-                "not a hard detection gate"
-            ),
-        )
-    ]
-    assert istd_confidence_note("LOW") == "ISTD anchor was LOW"
 
 
 def test_extractor_re_exports_diagnostic_issue_for_legacy_imports() -> None:

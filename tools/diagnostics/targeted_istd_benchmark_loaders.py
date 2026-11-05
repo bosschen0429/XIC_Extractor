@@ -110,7 +110,6 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
                 "RT",
                 "Area",
                 "NL",
-                "Confidence",
                 "Reason",
             ),
             "XIC Results",
@@ -135,7 +134,6 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
                     rt=_float_value(row[cols["RT"]]),
                     area=_float_value(row[cols["Area"]]),
                     nl=_text(row[cols["NL"]]),
-                    confidence=_text(row[cols["Confidence"]]),
                     reason=_text(row[cols["Reason"]]),
                 )
             )

@@ -124,7 +124,6 @@ def test_decision_semantics_maps_coherent_multievidence_to_accepted() -> None:
             ms2_present=True,
             nl_match=True,
             raw_score=95,
-            confidence="HIGH",
             reason="decision: accepted",
         )
     )
@@ -153,7 +152,6 @@ def test_decision_semantics_projects_paired_area_ratio_support() -> None:
             ms2_present=True,
             nl_match=False,
             raw_score=95,
-            confidence="VERY_LOW",
             cap_labels=("nl_fail_cap",),
             reason="decision: review only, not counted",
         )
@@ -163,8 +161,7 @@ def test_decision_semantics_projects_paired_area_ratio_support() -> None:
     assert "paired_area_ratio_support" in decision.support_reasons
     assert "role_aware_rt_support" not in decision.support_reasons
     assert "plausible_nl_dropout_review" in decision.review_reasons
-    assert decision.decision_class == "not_counted"
-    assert decision.not_counted_reasons == ("legacy_review_only_projection",)
+    assert decision.decision_class == "review"
 
 
 def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review() -> (
@@ -183,7 +180,6 @@ def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review()
             ms2_present=True,
             nl_match=False,
             raw_score=95,
-            confidence="VERY_LOW",
             cap_labels=("nl_fail_cap",),
             reason="decision: review only, not counted",
         )
@@ -205,7 +201,6 @@ def test_decision_semantics_maps_no_ms2_cap_to_not_counted_without_exclusion() -
             ms2_present=False,
             nl_match=False,
             raw_score=55,
-            confidence="LOW",
             cap_labels=("no_ms2_cap",),
             reason="decision: accepted",
             count_no_ms2_as_detected=False,
@@ -214,10 +209,7 @@ def test_decision_semantics_maps_no_ms2_cap_to_not_counted_without_exclusion() -
 
     assert decision.decision_class == "not_counted"
     assert decision.review_reasons == ("missing_ms2_not_observed",)
-    assert decision.not_counted_reasons == (
-        "missing_ms2_policy_not_counted",
-        "missing_ms2_compatibility_cap",
-    )
+    assert decision.not_counted_reasons == ("missing_ms2_policy_not_counted",)
     assert decision.exclusion_reasons == ()
 
 
@@ -229,7 +221,6 @@ def test_decision_semantics_honors_count_no_ms2_as_detected_policy() -> None:
             ms2_present=False,
             nl_match=False,
             raw_score=55,
-            confidence="LOW",
             cap_labels=("no_ms2_cap",),
             reason="decision: review only, not counted",
             count_no_ms2_as_detected=True,
@@ -250,7 +241,6 @@ def test_decision_semantics_does_not_let_medium_caps_force_not_counted() -> None
             ms2_present=True,
             nl_match=True,
             raw_score=74,
-            confidence="MEDIUM",
             cap_labels=("hard_quality_flag_cap",),
             reason="decision: accepted; cap: MEDIUM due to hard quality flag",
         )
@@ -298,41 +288,33 @@ def test_decision_semantics_keeps_targeted_rt_conflict_as_review_not_exclusion()
             ms2_present=True,
             nl_match=True,
             raw_score=82,
-            confidence="VERY_LOW",
             cap_labels=("rt_window_cap",),
             reason="decision: review only, not counted",
         )
     )
 
-    assert decision.decision_class == "not_counted"
+    assert decision.decision_class == "review"
     assert "targeted_rt_conflict" in decision.conflict_reasons
     assert "targeted_rt_review" in decision.review_reasons
     assert decision.exclusion_reasons == ()
 
 
-def test_decision_semantics_anchor_mismatch_cap_without_strict_nl_is_not_counted() -> (
-    None
-):
+def test_decision_semantics_anchor_mismatch_is_localization_review() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "shape_clean", "trace_clean"),
             ms2_present=True,
             nl_match=True,
             raw_score=70,
-            confidence="VERY_LOW",
             cap_labels=("anchor_mismatch_cap",),
             reason="decision: review only, not counted",
         )
     )
 
-    assert decision.decision_class == "not_counted"
+    assert decision.decision_class == "review"
     assert decision.conflict_reasons == ("anchor_conflict",)
     assert decision.review_reasons == ("paired_istd_rt_review",)
-    assert decision.not_counted_reasons == (
-        "paired_istd_rt_mismatch_policy",
-        "paired_istd_rt_mismatch_cap",
-        "anchor_mismatch_compatibility_cap",
-    )
+    assert decision.not_counted_reasons == ()
     assert decision.exclusion_reasons == ()
 
 
@@ -348,23 +330,16 @@ def test_decision_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy() -> No
             ms2_present=True,
             nl_match=True,
             raw_score=70,
-            confidence="VERY_LOW",
             cap_labels=("anchor_mismatch_cap",),
             reason="decision: review only, not counted",
         )
     )
 
-    # Strict-NL support sets strict_nl_supported, so the paired-ISTD anchor
-    # not-counted policy is skipped; the row only stays not_counted via the
-    # legacy VERY_LOW projection.
-    assert decision.decision_class == "not_counted"
+    # Paired-ISTD localization remains review context, not a counting policy.
+    assert decision.decision_class == "review"
     assert "candidate_aligned_ms2_nl" in decision.support_reasons
     assert decision.conflict_reasons == ("anchor_conflict",)
-    assert "paired_istd_rt_mismatch_policy" not in decision.not_counted_reasons
-    assert decision.not_counted_reasons == (
-        "legacy_review_only_projection",
-        "anchor_mismatch_compatibility_cap",
-    )
+    assert decision.not_counted_reasons == ()
 
 
 def test_decision_semantics_unions_zero_area_and_hard_quality_caps() -> None:
@@ -375,19 +350,14 @@ def test_decision_semantics_unions_zero_area_and_hard_quality_caps() -> None:
             ms2_present=True,
             nl_match=True,
             raw_score=10,
-            confidence="VERY_LOW",
             cap_labels=("zero_area_cap", "hard_quality_flag_cap"),
             reason="decision: review only, not counted",
         )
     )
 
-    assert decision.decision_class == "not_counted"
+    assert decision.decision_class == "review"
     assert "hard_local_quality_conflict" in decision.conflict_reasons
-    assert decision.not_counted_reasons == (
-        "legacy_review_only_projection",
-        "zero_area_compatibility_cap",
-        "hard_quality_flag_compatibility_cap",
-    )
+    assert decision.not_counted_reasons == ()
 
 
 def test_decision_semantics_unions_anchor_mismatch_and_missing_ms2_policies() -> None:
@@ -398,7 +368,6 @@ def test_decision_semantics_unions_anchor_mismatch_and_missing_ms2_policies() ->
             ms2_present=False,
             nl_match=False,
             raw_score=40,
-            confidence="VERY_LOW",
             cap_labels=("anchor_mismatch_cap", "no_ms2_cap"),
             reason="decision: review only, not counted",
             count_no_ms2_as_detected=False,
@@ -406,12 +375,6 @@ def test_decision_semantics_unions_anchor_mismatch_and_missing_ms2_policies() ->
     )
 
     assert decision.decision_class == "not_counted"
-    assert decision.not_counted_reasons == (
-        "missing_ms2_policy_not_counted",
-        "missing_ms2_compatibility_cap",
-        "paired_istd_rt_mismatch_policy",
-        "paired_istd_rt_mismatch_cap",
-        "anchor_mismatch_compatibility_cap",
-    )
+    assert decision.not_counted_reasons == ("missing_ms2_policy_not_counted",)
     assert "missing_ms2_not_observed" in decision.review_reasons
     assert "paired_istd_rt_review" in decision.review_reasons
