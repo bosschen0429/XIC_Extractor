@@ -98,9 +98,13 @@ def run_untargeted_application(
         run_metadata_json=request.output_dir / "alignment_run_metadata.json",
     )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
+    if context.progress_callback:
+        context.progress_callback({"stage": "mass_recalibration"})
     mass_recalibration_by_sample = _prepare_mass_recalibration(
         request, batch, recorder, context
     )
+    if context.progress_callback:
+        context.progress_callback({"stage": "known_istd_reference"})
     resolved_known_istd_reference = _resolve_known_istd_reference(
         request, batch, recorder, mass_recalibration_by_sample
     )
@@ -169,6 +173,7 @@ def run_untargeted_application(
             raw_workers=request.execution.raw_workers,
             raw_worker_backend=request.execution.raw_worker_backend,
             should_cancel=context.should_cancel,
+            progress_callback=context.progress_callback,
             retain_partition_memory=False,
             retain_acquisition_cache=request.execution.retain_acquisition_cache,
             acquisition_cache_dir=request.execution.acquisition_cache_dir,
@@ -182,6 +187,8 @@ def run_untargeted_application(
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
+    if context.progress_callback:
+        context.progress_callback({"stage": "publish_matrix"})
     return publish_untargeted_outputs(
         completed,
         output_dir=request.output_dir,

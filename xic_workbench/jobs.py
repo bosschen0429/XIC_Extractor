@@ -267,9 +267,6 @@ class AnalysisJobs:
         if kind in {"targeted", "untargeted"}:
             result = self._runner.execute()
             inputs = values["settings"] if kind == "targeted" else values
-            if kind == "untargeted":
-                # Matrix curation starts from the samples this run used.
-                result["samples"] = values.get("samples")
             # Bind review acquisition to this run, not the next editable batch.
             result["review_paths"] = {
                 "raw_dir": str(

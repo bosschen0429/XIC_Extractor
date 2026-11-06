@@ -682,7 +682,12 @@ window.XicUi = (() => {
     }
     lead.append(heading, metrics);
     host.append(lead);
-    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 樣本未建立內標 RT 校正 · XIC 顯示原始時間，不代表內標未檢出`, "overview-unknown"));
+    if (summary.uncalibrated_count) {
+      const note = node("details", undefined, "overview-unknown");
+      note.append(node("summary", `XIC 使用原始 RT：${summary.uncalibrated_count} / ${summary.samples.length} 樣本沒有可用的內標校正曲線`));
+      note.append(node("p", "這是曲線顯示座標的提示，不代表內標未檢出，也不會改寫已發布的 Matrix 量值。可先依原始 RT 檢閱；若預期使用校正座標，請檢查本次分析方法與內標設定。"));
+      host.append(note);
+    }
     const table = node("table", undefined, "overview-table overview-coverage");
     const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的矩陣群組")); table.append(head);
     for (const sample of summary.samples) {

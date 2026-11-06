@@ -11,6 +11,7 @@ from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import load_preset
 from xic_extractor.raw_reader import RawSampleHeader
+from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_workbench.methods import list_methods, method_details, save_method
 from xic_workbench.samples import export_samples, from_payload, load_samples
 from xic_workbench.untargeted import UntargetedRun, parse_request
@@ -417,7 +418,14 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     raw = raw_dir / "A.raw"
     raw.touch()
     monkeypatch.setattr(
-        module, "read_analysis_set", lambda *_args: SimpleNamespace(raw_paths=(raw,))
+        module,
+        "read_analysis_set",
+        lambda *_args: SimpleNamespace(
+            raw_paths=(raw,),
+            sample_metadata=(
+                SampleMetadata("A", "A", sample_role="study_sample", group="case"),
+            ),
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -430,6 +438,9 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
 
     def align(request, context=None):
         captured.update(request=request, context=context)
+        context.progress_callback(
+            {"stage": "final_grouping", "completed": 2, "total": 4}
+        )
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
@@ -437,8 +448,11 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
         )
 
     monkeypatch.setattr(module, "run_untargeted_application", align)
+    progress = []
     summary = UntargetedRun(
-        parse_request(values), progress=lambda *_args: None, should_cancel=lambda: False
+        parse_request(values),
+        progress=lambda *args: progress.append(args),
+        should_cancel=lambda: False,
     ).execute()
 
     assert captured["request"].publication.emit_alignment_explanation is True
@@ -448,7 +462,14 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     assert summary["overview"]["complete_count"] == 1
     assert summary["overview"]["unresolved_count"] == 1
     assert summary["evidence"] is locator
+    assert (0, 0, "跨樣本特徵分組 · 2/4") in progress
+    saved = load_sample_metadata(output / "sample_metadata.tsv")
+    assert [(s.raw_stem, s.sample_role, s.group) for s in saved] == [
+        ("A", "study_sample", "case")
+    ]
+    assert summary["samples"][0]["group"] == "case"
     assert summary["published_paths"] == [
+        str(output / "sample_metadata.tsv"),
         str(batch),
         str(review),
         str(matrix),
@@ -476,7 +497,9 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(raw_paths=(raw,)),
+        lambda *_args: SimpleNamespace(
+            raw_paths=(raw,), sample_metadata=(SampleMetadata("A", "A"),)
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -496,7 +519,10 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
         progress=lambda *args: progress.append(args),
         should_cancel=lambda: False,
     ).execute()
-    assert summary["published_paths"] == [str(index)]
+    assert summary["published_paths"] == [
+        str(output / "sample_metadata.tsv"),
+        str(index),
+    ]
     assert progress[-1] == (2, 2, "完成")
 
     with pytest.raises(InterruptedError, match="cancelled"):
@@ -600,7 +626,6 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         callback(*args)
         assert jobs.state()["results"]["untargeted"] == {
             "method_ppm": 12.5,
-            "samples": None,
             "review_paths": {
                 "raw_dir": str(tmp_path / "raws"),
                 "dll_dir": str(tmp_path / "dll"),

@@ -6,7 +6,7 @@ import json
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,7 @@ from xic_extractor.matrix_curation.steps import (
     CurationStep,
     FeatureIdentity,
     SampleBinding,
+    StepResult,
     StepTable,
 )
 from xic_extractor.output.alignment.matrix_output_contract import matrix_review_rows
@@ -52,7 +53,7 @@ from xic_extractor.tabular_io import (
 )
 
 # A later step joins by adding itself here; the page and outputs follow.
-STEPS: tuple[CurationStep, ...] = (FINITE_FRACTION_STEP, SAME_COMPOUND_STEP)
+STEPS: tuple[CurationStep, ...] = (SAME_COMPOUND_STEP, FINITE_FRACTION_STEP)
 MATRIX_NAME = "alignment_matrix.tsv"
 REVIEW_NAME = "alignment_review.tsv"
 RUN_METADATA_NAME = "alignment_run_metadata.json"
@@ -190,11 +191,14 @@ def read_sample_metadata_file(path: Path) -> tuple[SampleMetadata, ...]:
 
 
 def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | None:
-    """Sample roles from the run's RAW headers, as Alignment reads them.
+    """The run's saved sample data, else its RAW-header roles.
 
     Used when no sample data was supplied; None when the RAW folder or the
     reader is not available on this computer.
     """
+    saved = source.source_dir / "sample_metadata.tsv"
+    if saved.is_file():
+        return read_sample_metadata_file(saved)
     if source.raw_dir is None or source.dll_dir is None:
         return None
     if not source.raw_dir.is_dir():
@@ -307,9 +311,8 @@ def prepare_matrix_curation(
 ) -> CurationEvaluation:
     """Evaluate once without writing; preview and export consume these decisions.
 
-    Each enabled step judges the original Matrix on its own. A feature is kept
-    when it is an internal standard or every enabled step keeps it. Sources are
-    never modified.
+    Remove supported derivative ions first, then filter the remaining features.
+    Internal standards remain protected at every step. Sources are never modified.
     """
     by_key = {step.key: step for step in STEPS}
     unknown = sorted(set(steps) - set(by_key))
@@ -372,18 +375,50 @@ def prepare_matrix_curation(
         features=features,
         cells=load_cell_evidence(source, features) if needs_cells else None,
     )
-    results = {
-        step.key: step.evaluate(matrix, parameters[step.key]) for step in enabled
-    }
     windows = tuple(istd_windows or ())
     istd_labels = [
         match_istd(feature.matrix_mz, feature.matrix_rt, windows)
         for feature in features
     ]
-    final_keep = [
-        bool(label) or all(results[step.key].keep[index] for step in enabled)
-        for index, label in enumerate(istd_labels)
-    ]
+    final_keep = [True] * len(features)
+    results = {}
+    stage_counts = {}
+    for step in enabled:
+        indexes = [index for index, keep in enumerate(final_keep) if keep]
+        remaining = replace(
+            matrix,
+            values=matrix.values[indexes],
+            features=tuple(features[index] for index in indexes),
+            cells=tuple(matrix.cells[index] for index in indexes)
+            if matrix.cells is not None
+            else None,
+        )
+        result = step.evaluate(remaining, parameters[step.key])
+        # Preserve source-row lineage without evaluating already removed ions.
+        skipped = {
+            column: "not_evaluated" if column.endswith("_decision") else ""
+            for column in result.columns
+        }
+        step_rows: list[Mapping[str, object]] = [skipped] * len(features)
+        keep_rows = [True] * len(features)
+        for index, step_row, keep in zip(
+            indexes, result.rows, result.keep, strict=True
+        ):
+            step_rows[index] = step_row
+            keep_rows[index] = keep
+            final_keep[index] = bool(istd_labels[index]) or keep
+        results[step.key] = StepResult(
+            result.columns,
+            tuple(step_rows),
+            tuple(keep_rows),
+            result.summary,
+            result.tables,
+        )
+        stage_counts[step.key] = {
+            "input_feature_count": len(indexes),
+            "kept_feature_count": sum(final_keep),
+            "removed_feature_count": len(indexes) - sum(final_keep),
+        }
 
     tables: dict[str, StepTable] = {}
     for step in enabled:
@@ -391,14 +426,9 @@ def prepare_matrix_curation(
     step_extras: dict[str, dict[str, Any]] = {}
     same_compound = results.get(SAME_COMPOUND_STEP.key)
     if same_compound is not None:
-        others = [step for step in enabled if step is not SAME_COMPOUND_STEP]
         group_review, empty_groups = group_outcome_review(
             same_compound,
             [feature.feature_id for feature in features],
-            [
-                all(results[step.key].keep[index] for step in others)
-                for index in range(len(features))
-            ],
             final_keep,
         )
         review = tables[SAME_COMPOUND_REVIEW_NAME]
@@ -467,9 +497,9 @@ def prepare_matrix_curation(
             {
                 "key": step.key,
                 "parameters": parameters[step.key],
-                "kept_feature_count": sum(results[step.key].keep),
                 **results[step.key].summary,
                 **step_extras.get(step.key, {}),
+                **stage_counts[step.key],
             }
             for step in enabled
         ],
@@ -497,15 +527,13 @@ def prepare_matrix_curation(
     protected = sum(bool(label) for label in istd_labels)
     for step in enabled:
         result = results[step.key]
-        kept = sum(
-            bool(label) or keep
-            for label, keep in zip(istd_labels, result.keep, strict=True)
-        )
+        counts = stage_counts[step.key]
         item = {
             "key": step.key,
             "label": step.label,
-            "kept": kept,
-            "removed": len(rows) - kept,
+            "input": counts["input_feature_count"],
+            "kept": counts["kept_feature_count"],
+            "removed": counts["removed_feature_count"],
             "protected": protected,
             "undetermined": sum(
                 row.get("same_compound_relation_undetermined") == "TRUE"

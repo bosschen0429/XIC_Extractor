@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -108,3 +108,4 @@ class UntargetedExecutionContext:
 
     timing_recorder: TimingRecorder | None = None
     should_cancel: Callable[[], bool] | None = None
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None

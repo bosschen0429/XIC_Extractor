@@ -574,7 +574,7 @@ def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
     if outcome == "success":
         expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
         expect(page.locator("#t-samples-summary")).to_contain_text("配對 2 個")
-        expect(page.locator("#t-samples-conflicts")).to_contain_text(
+        expect(page.locator("#t-samples-conflicts")).not_to_contain_text(
             "尚未讀取 RAW 檔頭"
         )
         assert load_sample_metadata(saved_path)[0].group == "Confirmed"
@@ -1095,7 +1095,7 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     _expand_section(page, f"#{prefix}sample-tools")
     page.locator(f"#{prefix}samples-refresh").click()
     expect(page.locator(f"#{prefix}samples-source")).to_contain_text(
-        "使用這個 RAW 資料夾已確認的樣品資訊"
+        "已沿用這個 RAW 資料夾確認的角色與排除設定"
     )
     _wait_for_analysis_status(page, "已完成")
     fake_runs.release.set()
@@ -1390,7 +1390,7 @@ def test_setup_orders_primary_choices_and_reveals_auxiliary_tools(workbench, kin
         [
             "資料與輸出",
             "目標清單" if kind == "targeted" else "分析方法",
-            "樣本與上機資訊",
+            "樣本角色",
         ]
     )
     prefix = "t-" if kind == "targeted" else ""
@@ -2043,7 +2043,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
     expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    expect(review.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
+    expect(review.locator(".tx-provenance")).to_contain_text("尚未比對是否為分析原檔")
     # The result table never navigates away; each ion has its own y scale.
     assert (
         page.locator("#recorded-review").evaluate(
@@ -3315,7 +3315,41 @@ def _placeholder_batch(raw_dir: Path, stems: tuple[str, ...]) -> None:
         os.utime(path, (1_767_000_000 + minute * 60,) * 2)
 
 
-def test_both_flows_confirm_groups_and_exclusions_before_a_run(
+def test_sample_save_preserves_in_progress_exclusion_reason(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("Tumor_A", "Normal_A"))
+    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config_dir, batch, rows)
+    _expand_section(page, "#t-sample-tools")
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("2 個樣本")
+    page.locator("#t-samples-edit").click()
+    pending = []
+    page.route("**/api/samples/save", lambda route: pending.append(route))
+    page.get_by_label("Tumor_A 角色", exact=True).select_option("pooled_qc")
+    page.get_by_label("Normal_A 排除", exact=True).check()
+    reason = page.get_by_label("Normal_A 排除原因", exact=True)
+    reason.fill("still typing")
+    assert len(pending) == 1
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        pending.pop().continue_()
+    expect(page.locator("#t-samples-source")).to_contain_text("確認的角色與排除設定")
+    expect(reason).to_have_value("still typing")
+    expect(reason).to_be_focused()
+    page.unroute("**/api/samples/save")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        reason.press("Tab")
+    saved = load_sample_metadata(sample_annotations_path(config_dir, batch))
+    by_stem = {row.raw_stem: row for row in saved}
+    assert by_stem["Tumor_A"].sample_role == "pooled_qc"
+    assert by_stem["Normal_A"].exclusion_reason == "still typing"
+
+
+def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
     page = workbench
@@ -3324,24 +3358,25 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _placeholder_batch(batch, ("TumorBC1_DNA", "TumorBC2_DNA", "NormalBC1_DNA", "QC_1"))
 
     # Targeted reads, edits and confirms the folder's sample metadata.
-    # Group editing consumes already confirmed roles, not preview filename guesses.
     rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
     save_batch_samples(config_dir, batch, rows)
     _expand_section(page, "#t-sample-tools")
     page.locator("#t-samples-refresh").click()
     expect(page.locator("#t-samples-count")).to_have_text("4 個樣本")
     checklist = page.locator("#target-checklist")
-    expect(checklist).to_contain_text("未標組別的研究樣本3 個，會歸到 Other")
+    expect(checklist).not_to_contain_text("組別")
+    expect(page.locator("#t-role-summary")).to_have_text("研究樣本 3QC 1")
+    expect(page.locator("#t-role-summary")).not_to_contain_text("Other")
+    expect(page.locator('[data-part="group-cards"]')).to_have_count(0)
+    expect(
+        page.locator('[data-part="samples-table"], [data-part="samples-carry"]')
+    ).to_have_count(0)
     page.locator("#t-samples-edit").click()
     editor = page.locator("#sample-editor")
-    for stem in ("TumorBC1_DNA", "TumorBC2_DNA"):
-        editor.get_by_label(f"選取 {stem}", exact=True).check()
-    page.locator("#sample-bulk-group").fill("Tumor")
+    expect(editor.get_by_role("columnheader", name="組別", exact=True)).to_have_count(0)
+    expect(page.locator("#sample-bulk-group")).to_have_count(0)
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-        page.locator("#sample-apply-group").click()
-    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-        editor.get_by_label("NormalBC1_DNA 組別", exact=True).fill(" normal ")
-        editor.get_by_label("NormalBC1_DNA 組別", exact=True).press("Tab")
+        editor.get_by_label("NormalBC1_DNA 角色", exact=True).select_option("blank")
     # A box checked without a reason never reaches a run: closing the editor
     # drops it, so the Untargeted payload stays as confirmed.
     editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
@@ -3363,8 +3398,7 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
         editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
     page.keyboard.press("Escape")
 
-    expect(checklist).to_contain_text("各組樣本數normal 1 · QC 1 · Tumor 1")
-    expect(checklist).to_contain_text("只有 1 個樣本的組別normal、Tumor")
+    expect(page.locator("#t-role-summary")).to_contain_text("Blank 1")
     expect(checklist).to_contain_text("排除的樣本1 個：clogged ×1")
     expect(checklist).not_to_contain_text("未標組別的研究樣本")
     expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
@@ -3372,8 +3406,8 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
         row.raw_stem: row
         for row in load_sample_metadata(sample_annotations_path(config_dir, batch))
     }
-    assert (saved["NormalBC1_DNA"].group, saved["TumorBC2_DNA"].excluded) == (
-        "normal",
+    assert (saved["NormalBC1_DNA"].sample_role, saved["TumorBC2_DNA"].excluded) == (
+        "blank",
         True,
     )
 
@@ -3387,10 +3421,10 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
-    expect(page.locator("#samples-source")).to_contain_text("已確認的樣品資訊")
+    expect(page.locator("#samples-source")).to_contain_text("確認的角色與排除設定")
     page.locator("#samples-edit").click()
     expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).to_be_checked()
-    expect(editor.get_by_label("TumorBC1_DNA 組別", exact=True)).to_have_value("Tumor")
+    expect(editor.get_by_label("NormalBC1_DNA 角色", exact=True)).to_have_value("blank")
     page.keyboard.press("Escape")
     expect(page.locator("#untargeted-checklist")).to_contain_text(
         "排除的樣本1 個：clogged ×1"
@@ -3408,187 +3442,6 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
     assert read_settings(config_dir=config_dir)["injection_order_source"] == ""
-
-
-def test_naming_cards_apply_rename_and_merge_without_overwriting_manual_groups(
-    workbench, config_dir, tmp_path, monkeypatch
-):
-    page = workbench
-    install_fake_raw_headers(monkeypatch)
-    batch = tmp_path / "raw"
-    _placeholder_batch(
-        batch,
-        (
-            "TumorBC101_DNA",
-            "TumorBC102_DNA",
-            "NormalBC101_DNA",
-            "NormalBC102_DNA",
-            "abnormal_A1",
-            "QC_1",
-        ),
-    )
-    # Group editing consumes already confirmed roles, not preview filename guesses.
-    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
-    save_batch_samples(config_dir, batch, rows)
-    _expand_section(page, "#t-sample-tools")
-    page.locator("#t-samples-refresh").click()
-    expect(page.locator("#t-samples-count")).to_have_text("6 個樣本")
-    cards = page.locator("#t-group-cards .group-card")
-    expect(cards).to_have_count(4)
-    # QC resolves by role, so its card waits in the collapsed section.
-    folded = page.locator("#t-group-cards .group-card-others .group-card")
-    expect(folded).to_have_count(1)
-    expect(folded).to_have_attribute("data-card", "QC")
-    expect(page.locator('#t-group-cards [data-card="Tumor DNA"]')).to_contain_text("×2")
-
-    def saved(action):
-        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-            action()
-
-    def groups():
-        rows = load_sample_metadata(sample_annotations_path(config_dir, batch))
-        return {row.raw_stem: row.group for row in rows}
-
-    # A hand-labelled row is kept unless the card is applied with overwrite.
-    page.locator("#t-samples-edit").click()
-    editor = page.locator("#sample-editor")
-    manual = editor.get_by_label("TumorBC102_DNA 組別", exact=True)
-    saved(lambda: (manual.fill("Manual"), manual.press("Tab")))
-    page.keyboard.press("Escape")
-    tumor = page.locator('#t-group-cards [data-card="Tumor DNA"]')
-    expect(tumor).to_contain_text("1 個尚未標組別 · 1 個已有其他組別")
-    saved(lambda: tumor.get_by_label("套用 Tumor DNA 到尚未標組別的樣本").click())
-    assert groups()["TumorBC101_DNA"] == "Tumor DNA"
-    assert groups()["TumorBC102_DNA"] == "Manual"
-    saved(lambda: tumor.get_by_label("以 Tumor DNA 覆蓋已標組別的樣本").click())
-    assert groups()["TumorBC102_DNA"] == "Tumor DNA"
-    expect(tumor).to_contain_text("已全部套用")
-
-    # Renaming changes the group name; rows the card wrote follow it.
-    normal = page.locator('#t-group-cards [data-card="Normal DNA"]')
-    name = normal.get_by_label("建議組別 Normal DNA 的名稱")
-    name.fill("Normal")
-    name.press("Tab")
-    normal = page.locator('#t-group-cards [data-card="Normal"]')
-    saved(lambda: normal.get_by_label("套用 Normal 到尚未標組別的樣本").click())
-    name = normal.get_by_label("建議組別 Normal 的名稱")
-    saved(lambda: (name.fill("Normal tissue"), name.press("Tab")))
-    assert groups()["NormalBC101_DNA"] == groups()["NormalBC102_DNA"] == "Normal tissue"
-
-    # Merging moves members; applying writes the target's name.
-    merge = page.locator('#t-group-cards [data-card="abnormal A1"]').get_by_label(
-        "把 abnormal A1 合併到"
-    )
-    merge.select_option("Normal tissue")
-    expect(cards).to_have_count(3)
-    merged = page.locator('#t-group-cards [data-card="Normal tissue"]')
-    expect(merged).to_contain_text("×3")
-    saved(lambda: merged.get_by_label("套用 Normal tissue 到尚未標組別的樣本").click())
-    assert groups()["abnormal_A1"] == "Normal tissue"
-
-
-def test_sample_name_words_select_whole_tokens(workbench, tmp_path, monkeypatch):
-    page = workbench
-    install_fake_raw_headers(monkeypatch)
-    _placeholder_batch(
-        tmp_path / "raw",
-        (
-            "TumorBC101_DNA",
-            "NormalBC101_DNA",
-            "NormalBC102_DNA",
-            "abnormal_A1",
-        ),
-    )
-    _expand_section(page, "#t-sample-tools")
-    page.locator("#t-samples-refresh").click()
-    expect(page.locator("#t-samples-count")).to_have_text("4 個樣本")
-    editor = page.locator("#sample-editor")
-    # Clicking a word selects whole-word matches only: abnormal is not normal.
-    page.locator("#t-samples-edit").click()
-    editor.locator("#sample-rows tr", has_text="NormalBC101_DNA").get_by_role(
-        "button", name="Normal", exact=True
-    ).click()
-    checked = editor.locator("#sample-rows input[data-sample]:checked")
-    expect(checked).to_have_count(2)
-    for stem in ("NormalBC101_DNA", "NormalBC102_DNA"):
-        expect(editor.get_by_label(f"選取 {stem}", exact=True)).to_be_checked()
-    expect(editor.get_by_label("選取 abnormal_A1", exact=True)).not_to_be_checked()
-    editor.locator("#sample-rows tr", has_text="TumorBC101_DNA").get_by_role(
-        "button", name="BC101", exact=True
-    ).click()
-    # A patient code selects that patient's Tumor and Normal injections.
-    expect(checked).to_have_count(2)
-    for stem in ("TumorBC101_DNA", "NormalBC101_DNA"):
-        expect(editor.get_by_label(f"選取 {stem}", exact=True)).to_be_checked()
-
-
-def test_collaborator_table_and_earlier_batches_apply_after_preview(
-    workbench, config_dir, tmp_path, monkeypatch
-):
-    page = workbench
-    install_fake_raw_headers(monkeypatch)
-    batch = tmp_path / "raw"
-    _placeholder_batch(batch, ("LiverA1", "LiverB1", "QC_1", "Dup_X", "DupX"))
-
-    def saved(action):
-        with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-            action()
-
-    def confirmed(folder):
-        rows = load_sample_metadata(sample_annotations_path(config_dir, folder))
-        return {row.raw_stem: row for row in rows}
-
-    _expand_section(page, "#t-sample-tools")
-    page.locator("#t-samples-refresh").click()
-    expect(page.locator("#t-samples-count")).to_have_text("5 個樣本")
-    page.locator("#t-samples-edit").click()
-    manual = page.get_by_label("LiverA1 組別", exact=True)
-    saved(lambda: (manual.fill("Manual"), manual.press("Tab")))
-    page.keyboard.press("Escape")
-
-    # A pasted collaborator table previews every match state before writing.
-    _expand_section(page, "#t-sample-tools")
-    page.locator("#t-samples-table").click()
-    dialog = page.locator("#annotation-dialog")
-    page.locator("#annotation-text").fill(
-        "Sample\tCondition\tExclude?\tWhy\n"
-        "Liver A1\tFibrosis\t\t\n"
-        "Liver B1\tHealthy\tyes\tclot\n"
-        "Dup X\tFibrosis\t\t\n"
-        "Kidney C1\tHealthy\t\t\n"
-    )
-    page.locator("#annotation-read").click()
-    expect(page.locator("#annotation-counts")).to_have_text(
-        "對到 2 個 RAW · 表格中沒對到 1 筆 · 有歧義 1 筆（不會套用）"
-    )
-    expect(page.locator("#annotation-col-group")).to_have_value("1")
-    expect(dialog.locator("#annotation-unmatched")).to_contain_text("Kidney C1")
-    expect(dialog.locator("#annotation-ambiguous")).to_contain_text("Dup X")
-    assert confirmed(batch)["LiverB1"].group == ""
-    saved(lambda: page.locator("#annotation-apply").click())
-    rows = confirmed(batch)
-    assert rows["LiverA1"].group == "Manual"
-    assert (rows["LiverB1"].group, rows["LiverB1"].excluded) == ("Healthy", True)
-    assert rows["LiverB1"].exclusion_reason == "clot"
-    assert rows["Dup_X"].group == rows["DupX"].group == ""
-
-    # A new batch named the same way reuses the confirmed batch by name.
-    _view(page, "untargeted")
-    second = tmp_path / "second"
-    _placeholder_batch(second, ("Liver-A1", "Liver-B1"))
-    page.locator("#u-raw_dir").fill(str(second))
-    page.locator("#u-raw_dir").press("Tab")
-    _expand_section(page, "#sample-tools")
-    page.locator("#samples-refresh").click()
-    expect(page.locator("#samples-count")).to_have_text("2 個樣本")
-    _expand_section(page, "#sample-tools")
-    page.locator("#samples-carry").click()
-    page.locator("#annotation-confirmed").select_option(label="raw")
-    expect(page.locator("#annotation-counts")).to_contain_text("對到 2 個 RAW")
-    saved(lambda: page.locator("#annotation-apply").click())
-    rows = confirmed(second)
-    assert rows["Liver-A1"].group == "Manual"
-    assert rows["Liver-B1"].excluded is True
 
 
 def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
@@ -3627,7 +3480,7 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
     return path
 
 
-def test_group_colours_match_between_samples_and_inspector(
+def test_legacy_groups_stay_in_inspector_but_not_analysis_setup(
     workbench, config_dir, tmp_path, monkeypatch
 ):
     from xic_workbench.samples import save_batch_samples
@@ -3656,16 +3509,17 @@ def test_group_colours_match_between_samples_and_inspector(
     def colour(locator):
         return locator.evaluate("node => getComputedStyle(node).backgroundColor")
 
-    chips = page.locator("#t-role-summary .group-chip")
-    tumor = colour(chips.filter(has_text="Tumor 2").locator(".group-swatch"))
-    normal = colour(chips.filter(has_text="Normal 1").locator(".group-swatch"))
-    assert tumor != normal
-    assert "rgba(0, 0, 0, 0)" not in (tumor, normal)
+    expect(page.locator("#t-role-summary .group-chip")).to_have_count(0)
+    expect(page.locator("#t-role-summary")).to_have_text("研究樣本 3")
     page.locator("#t-samples-edit").click()
-    row = page.locator("#sample-rows tr", has_text="TumorBC102_DNA")
-    expect(row.locator(".group-swatch")).to_be_visible()
-    assert colour(row.locator(".group-swatch")) == tumor
+    expect(
+        page.locator('#sample-editor input[list="sample-group-options"]')
+    ).to_have_count(0)
     page.keyboard.press("Escape")
+    assert {
+        row.raw_stem: row.group
+        for row in load_sample_metadata(sample_annotations_path(config_dir, batch))
+    } == groups
     workbook = _grouped_workbook(tmp_path / "saved.xlsx", groups)
     _open_results(page)
     page.locator("#source").fill(str(workbook))
@@ -3682,8 +3536,8 @@ def test_group_colours_match_between_samples_and_inspector(
             )
         palette = {}
         for sample, group in groups.items():
-            expected = colour(chips.filter(has_text=group).locator(".group-swatch"))
             cell = review.locator("tr", has_text=sample)
+            expected = colour(cell.locator(".sample-dot"))
             expect(cell.locator(".sample-group")).to_have_text(group)
             expect(cell.locator(".sample-dot")).to_be_visible()
             expect(cell.locator(".sample-dot")).to_have_css(
@@ -3844,7 +3698,7 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _view(page, "untargeted")
     expect(page.locator("#samples-count")).to_have_text("2 個樣本")
     expect(page.locator("#role-summary")).to_contain_text("排除 1")
-    expect(page.locator("#role-summary")).to_contain_text("New 1")
+    expect(page.locator("#role-summary")).to_contain_text("研究樣本 1")
     _start(page, "untargeted")
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake progress"
@@ -3860,7 +3714,6 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
 ):
     from tests.matrix_curation_fixtures import (
         alignment_output,
-        sample_payload,
         sample_rows,
     )
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
@@ -3869,7 +3722,9 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     page = workbench
     raw_dir = tmp_path / "run-raw"
     run_output = alignment_output(tmp_path / "results", raw_dir=raw_dir)
-    save_batch_samples(config_dir, raw_dir, sample_payload())
+    write_tsv(
+        run_output / "sample_metadata.tsv", sample_rows(), SAMPLE_METADATA_COLUMNS
+    )
     fake_runs.result = {
         "matrix_tsv": str(run_output / "alignment_matrix.tsv"),
         "alignment_outputs": {"review_tsv": str(run_output / "alignment_review.tsv")},
@@ -3887,6 +3742,14 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     ).click()
     expect(page.locator("#result-curation")).to_be_visible()
     expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
+    expect(page.locator("#curation-input-tools")).not_to_have_attribute("open", "")
+    expect(page.locator("#curation-sample_metadata")).to_be_hidden()
+    expect(page.locator("#curation-source")).to_contain_text(
+        "已沿用這次分析保存的樣本資訊"
+    )
+    expect(page.locator("#curation-steps .curation-step").first).to_contain_text(
+        "同化合物收斂"
+    )
     step = page.locator("#curation-step-finite_fraction")
     expect(step).to_be_enabled()
     expect(step).to_be_checked()
@@ -3943,11 +3806,12 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
         "button", name="選用：整理矩陣"
     ).click()
     expect(page.locator("#result-curation")).to_be_visible()
+    page.locator("#curation-input-tools > summary").click()
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
     page.locator("#curation-source_dir").press("Tab")
     expect(step).to_be_disabled()
-    expect(page.locator("#curation-steps")).to_contain_text("找不到樣本資料")
+    expect(page.locator("#curation-steps")).to_contain_text("找不到本次分析的樣本資訊")
     samples = tmp_path / "samples.tsv"
     write_tsv(samples, sample_rows(), SAMPLE_METADATA_COLUMNS)
     page.locator("#curation-sample_metadata").fill(str(samples))
@@ -4030,6 +3894,8 @@ def test_results_stay_in_analysis_page_without_raw(
     expect(page.locator("#analysis-result")).to_be_visible()
     expect(page.locator("#targeted-overview")).to_be_visible()
     expect(page.locator("#analysis-root")).to_be_hidden()
+    expect(page.locator("#batch-title")).to_be_focused()
+    expect(page.locator("#targeted-overview")).to_be_in_viewport()
     expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
     # The start shortcut belongs to setup; on a result it starts nothing.
     started = len(fake_runs.requests)
@@ -4090,7 +3956,7 @@ def test_sample_refresh_keeps_the_latest_action_when_sequence_blurs(
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
-    expect(page.locator("#samples-source")).to_contain_text("已確認的樣品資訊")
+    expect(page.locator("#samples-source")).to_contain_text("確認的角色與排除設定")
 
 
 def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
@@ -4100,7 +3966,7 @@ def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
     batch = tmp_path / "confirmed-batch"
     _placeholder_batch(batch, ("A", "B"))
 
-    def save_group(group):
+    def save_role(role):
         save_batch_samples(
             config_dir,
             batch,
@@ -4108,8 +3974,7 @@ def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
                 {
                     "sample_name": name,
                     "raw_stem": name,
-                    "sample_role": "study_sample",
-                    "group": group,
+                    "sample_role": role,
                     "excluded": False,
                     "exclusion_reason": "",
                 }
@@ -4117,12 +3982,12 @@ def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
             ],
         )
 
-    save_group("Older")
+    save_role("qc")
     pending = []
 
     def hold_preview(route):
         response = route.fetch()
-        assert {row["group"] for row in response.json()["samples"]} == {"Older"}
+        assert {row["sample_role"] for row in response.json()["samples"]} == {"qc"}
         pending.append((route, response))
         page.evaluate("window.previewHeld = true")
 
@@ -4132,17 +3997,17 @@ def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
         page.locator("#u-raw_dir").fill(str(batch))
         page.locator("#u-raw_dir").press("Tab")
     page.wait_for_function("window.previewHeld === true")
-    save_group("Latest")
+    save_role("study_sample")
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
-    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    expect(page.locator("#role-summary")).to_contain_text("研究樣本 2")
     with page.expect_response("**/api/samples/preview") as released:
         route, response = pending.pop()
         route.fulfill(response=response)
     released.value.finished()
     # Observe the render after the released response, not an earlier DOM snapshot.
     page.evaluate("() => new Promise(requestAnimationFrame)")
-    expect(page.locator("#role-summary")).to_contain_text("Latest 2")
+    expect(page.locator("#role-summary")).to_contain_text("研究樣本 2")
     expect(page.locator("#role-summary")).not_to_contain_text("Older")
 
 

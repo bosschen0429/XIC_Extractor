@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from xic_extractor.sample_metadata import SampleMetadata, SampleRole
 
-# Shared by sequence-conflict reporting and naming suggestions. Dates alone
+# Sequence-conflict reporting. Dates alone
 # are not sample codes; TumorBC2312_DNA contains BC2312.
 SAMPLE_CODE = re.compile(r"[A-Z]{1,3}\d{3,}")
 
@@ -35,14 +35,3 @@ def resolve_sample_group(
             return " ".join(metadata.group.split())
         sample_role = metadata.sample_role
     return "QC" if sample_role in {"qc", "pooled_qc"} else "Other"
-
-
-def suggest_sample_groups(names: Sequence[str]) -> dict[str, str]:
-    """Suggest labels from names without applying them to sample metadata."""
-    labels = []
-    for name in names:
-        value = re.sub(r"\.(raw|mzml)$", "", name.strip(), flags=re.IGNORECASE)
-        value = SAMPLE_CODE.sub("", value)
-        value = re.sub(r"[_-]\d+$", "", value)
-        labels.append(re.sub(r"[_\s-]+", " ", value).strip())
-    return dict(zip(names, canonicalize_sample_groups(labels), strict=True))

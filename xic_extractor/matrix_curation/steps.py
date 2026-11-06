@@ -60,7 +60,7 @@ class CurationInputs:
 
 @dataclass(frozen=True)
 class CurationMatrix:
-    """The original Matrix as every step sees it; no step sees another's result."""
+    """The remaining source rows entering one curation step; values are unchanged."""
 
     sample_binding: SampleBinding
     values: np.ndarray

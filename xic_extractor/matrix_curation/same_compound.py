@@ -1096,14 +1096,11 @@ REVIEW_NAME = "same_compound_review.tsv"
 def group_outcome_review(
     result: StepResult,
     feature_ids: Sequence[str],
-    kept_by_other_steps: Sequence[bool],
     final_keep: Sequence[bool],
 ) -> tuple[list[dict[str, object]], int]:
-    """Groups another step empties, and groups with no row left at all.
+    """Report ion families whose representative a later feature filter removes.
 
-    A representative dropped by another enabled step is not replaced by one of
-    its members; each such group whose removed member would pass those steps is
-    reviewed, so systematically lost adduct-forming compounds stay visible.
+    Removed derivatives are not tested again or promoted as replacements.
     """
     index_of = {feature: index for index, feature in enumerate(feature_ids)}
     groups: dict[int, list[int]] = defaultdict(list)
@@ -1117,13 +1114,11 @@ def group_outcome_review(
         group = groups[root]
         if not final_keep[root] and not any(final_keep[index] for index in group):
             empty += 1
-        passing = [index for index in group if kept_by_other_steps[index]]
-        if not kept_by_other_steps[root] and passing:
             review.append(
                 review_row(
-                    "representative_dropped_member_passes",
+                    "group_removed_by_feature_filter",
                     feature_ids[root],
-                    sorted(feature_ids[index] for index in passing),
+                    sorted(feature_ids[index] for index in group),
                 )
             )
     return review, empty

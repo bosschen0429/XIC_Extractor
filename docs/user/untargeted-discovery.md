@@ -21,9 +21,11 @@ input to downstream analysis, not a normalized or batch-corrected result.
    or custom NL tags and their combination. **套用至批次設定** updates the draft;
    **方法檔案工具** contains import and new-method actions. Parameters without a
    GUI control are retained.
-5. Check the sample summary. Open **樣本匯入與分組工具** to import **上機資訊**
-   or collaborator annotations and inspect unmatched or ambiguous entries.
-   Alphabetical file order is not injection order.
+5. Check sample roles and exclusions in **樣本明細**; statistical groups are
+   not inputs to this analysis. Roles and exclusions are shared with Targeted
+   and matrix curation. **上機資訊與樣本檔案（選用）** contains optional acquisition
+   information import and sample export. Alphabetical file order is not
+   injection order.
 6. Check the **內標** applicability summary below the samples. Choose or drop an
    XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and shared
    XLSX example. Only `role=istd` rows are used;

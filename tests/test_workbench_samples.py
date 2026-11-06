@@ -180,23 +180,6 @@ def test_confirmed_sample_metadata_preserves_qc_and_blank_roles(
     ]
 
 
-def test_read_offers_naming_suggestions_without_applying_them(
-    tmp_path, monkeypatch
-) -> None:
-    raw_dir = _raw_batch(
-        tmp_path, monkeypatch, ("TumorBC2312_DNA", "TumorBC2313_DNA", "QC_1")
-    )
-
-    result = read_batch_samples(tmp_path / "config", raw_dir, dll_dir=tmp_path)
-
-    assert result["group_suggestions"] == {
-        "TumorBC2312_DNA": "Tumor DNA",
-        "TumorBC2313_DNA": "Tumor DNA",
-        "QC_1": "QC",
-    }
-    assert all(row["group"] == "" for row in result["samples"])
-
-
 def test_overview_counts_analyzed_samples_by_group_key() -> None:
     rows = (
         SampleMetadata("a", "a", sample_role="study_sample", group="Tumor"),
@@ -264,101 +247,6 @@ def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
         "injection_order_source": str(annotations)
     }
     assert calls[1]["settings_overrides"] is None
-
-
-def test_collaborator_table_previews_matched_unmatched_and_ambiguous(
-    tmp_path,
-) -> None:
-    from openpyxl import Workbook
-
-    from xic_workbench.samples import preview_annotations
-
-    raw_stems = ["LiverA1", "LiverB1", "QC_1", "QC_2", "Dup_X", "DupX"]
-    pasted = (
-        "Sample\tCondition\tExclude?\tWhy\n"
-        "Liver A1\tFibrosis\t\t\n"
-        "Liver B1\tHealthy\tyes\tclot\n"
-        "Dup X\tFibrosis\t\t\n"
-        "Kidney C1\tHealthy\t\t\n"
-    )
-    columns = preview_annotations(raw_stems, text=pasted)
-    assert columns["columns"] == ["Sample", "Condition", "Exclude?", "Why"]
-    assert columns["guess"] == {"name": 0, "group": 1, "excluded": 2, "reason": 3}
-
-    preview = preview_annotations(raw_stems, text=pasted, columns=columns["guess"])
-    assert preview["matched"] == [
-        {
-            "raw_stem": "LiverA1",
-            "name": "Liver A1",
-            "group": "Fibrosis",
-            "excluded": False,
-            "exclusion_reason": "",
-        },
-        {
-            "raw_stem": "LiverB1",
-            "name": "Liver B1",
-            "group": "Healthy",
-            "excluded": True,
-            "exclusion_reason": "clot",
-        },
-    ]
-    assert preview["unmatched"] == ["Kidney C1"]
-    assert preview["ambiguous"] == ["Dup X"]
-
-    book = Workbook()
-    book.active.append(["File Name", "Group"])
-    book.active.append(["Liver A1", "Fibrosis"])
-    workbook = tmp_path / "collaborator.xlsx"
-    book.save(workbook)
-    from_file = preview_annotations(raw_stems, path=workbook)
-    assert from_file["guess"]["name"] == 0 and from_file["guess"]["group"] == 1
-    cohort = preview_annotations(raw_stems, text="Sample ID\tCohort\nLiver A1\t1\n")
-    assert cohort["guess"]["group"] == 1
-    matched = preview_annotations(
-        raw_stems, path=workbook, columns={"name": 0, "group": 1}
-    )["matched"]
-    assert [row["raw_stem"] for row in matched] == ["LiverA1"]
-
-
-def test_earlier_batch_metadata_carries_groups_by_sample_name(
-    tmp_path, monkeypatch
-) -> None:
-    from xic_workbench.samples import list_confirmed_annotations, preview_annotations
-
-    config = tmp_path / "config"
-    raw_dir = _raw_batch(tmp_path, monkeypatch, ("Tumor_A", "Normal_A"))
-    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    rows[0].update(group="Tumor")
-    rows[1].update(excluded=True, exclusion_reason="hemolysed")
-    saved = Path(save_batch_samples(config, raw_dir, rows)["path"])
-
-    preview = preview_annotations(["Tumor-A", "Normal-A", "New_B"], path=saved)
-    assert preview["kind"] == "metadata"
-    assert [(r["raw_stem"], r["group"], r["excluded"]) for r in preview["matched"]] == [
-        ("Tumor-A", "Tumor", False),
-        ("Normal-A", "", True),
-    ]
-    assert list_confirmed_annotations(config) == [{"path": str(saved), "name": "raws"}]
-
-
-def test_earlier_metadata_binds_its_own_raw_exactly(tmp_path, monkeypatch) -> None:
-    from xic_workbench.samples import preview_annotations
-
-    config = tmp_path / "config"
-    raw_dir = _raw_batch(tmp_path, monkeypatch, ("Dup_X", "DupX", "Other"))
-    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    rows[0].update(group="first")
-    rows[1].update(group="second")
-    saved = Path(save_batch_samples(config, raw_dir, rows)["path"])
-
-    preview = preview_annotations(["DupX", "Dup_X", "Other"], path=saved)
-
-    assert [(r["raw_stem"], r["group"]) for r in preview["matched"]] == [
-        ("DupX", "second"),
-        ("Dup_X", "first"),
-        ("Other", ""),
-    ]
-    assert preview["ambiguous"] == []
 
 
 def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> None:

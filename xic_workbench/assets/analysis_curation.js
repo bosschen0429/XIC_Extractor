@@ -18,16 +18,19 @@ import {
   ui,
 } from "./analysis_ui.js";
 
-export function openCuration(sourceDir, samples) {
+export function loadCurationSource(sourceDir, samples) {
   updateCuration({ runSource: sourceDir, samples: samples ?? null });
   $("curation-source_dir").value = sourceDir;
   $("curation-sample_metadata").value = "";
   $("curation-istd").value = "";
+  return detectCuration();
+}
+export function openCuration(sourceDir, samples) {
   showResult();
   $("result-curation").hidden = false;
   $("result-curation").open = true;
   $("result-curation").scrollIntoView({ behavior: "smooth" });
-  return detectCuration();
+  return loadCurationSource(sourceDir, samples);
 }
 function curationPreferences() {
   return state.config.preferences.matrix_curation?.steps || {};
@@ -80,10 +83,10 @@ function renderCuration(detection, error) {
       source ? "ok" : "todo",
       "樣本資料",
       !source
-        ? "找不到；需要時請在上方選擇樣本資料 TSV"
+        ? "尚無樣本資訊；請展開「改用其他來源」補充"
         : {
             file: `選擇的檔案 ${pathTail(source.label)}`,
-            run: source.label,
+            run: `${source.label}（${detection.sample_count} 個樣本，${detection.study_sample_count} 個未排除研究樣本）`,
             confirmed: "RAW 資料夾已確認的樣本資訊",
             raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
           }[source.kind],
@@ -93,7 +96,7 @@ function renderCuration(detection, error) {
       istd ? "ok" : "todo",
       "內標清單",
       !istd
-        ? "找不到；內標不受保護。需要時請在上方選擇目標清單"
+        ? "本次沒有宣告內標；若實際有使用，請展開「改用其他來源」補充"
         : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
     );
   }
@@ -111,7 +114,7 @@ function renderCuration(detection, error) {
     return;
   }
   const saved = curationPreferences();
-  for (const step of detection.steps) {
+  for (const [index, step] of detection.steps.entries()) {
     const remembered = saved[step.key] || {};
     const unavailable = Boolean(step.unavailable_reason);
     const block = el("div", undefined, "curation-step");
@@ -126,7 +129,7 @@ function renderCuration(detection, error) {
       input.dataset.analysisIdle = "";
       input.checked = remembered.enabled ?? true;
     }
-    toggle.append(input, el("span", step.label));
+    toggle.append(input, el("span", `${index + 1}. ${step.label}`));
     block.append(toggle, el("p", step.description, "subtle"));
     for (const parameter of step.parameters) {
       const field = el("label", undefined, "field");
@@ -225,13 +228,14 @@ async function previewCuration() {
     );
     const table = el("table");
     const head = el("tr");
-    for (const name of ["步驟", "保留", "移除", "ISTD 保護", "無法判定"])
+    for (const name of ["步驟", "輸入", "保留", "本步移除", "ISTD 保護", "無法判定"])
       head.append(el("th", name));
     table.append(head);
     for (const step of preview.steps) {
       const row = el("tr");
       for (const value of [
         step.label,
+        step.input,
         step.kept,
         step.removed,
         step.protected,
@@ -279,7 +283,7 @@ async function startCuration() {
 
 export function bindCuration() {
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "source_dir",
     "Alignment 輸出資料夾",
     "folder",
@@ -287,16 +291,16 @@ export function bindCuration() {
     "curation-",
   );
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "sample_metadata",
     "樣本資料 TSV（選填）",
     "samples",
     "",
     "curation-",
-    "只有找不到樣本資料，或要改用另一份時才需要選擇。",
+    "通常不需選擇：會沿用這次分析的角色、組別、注射順序與排除設定。",
   );
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "istd",
     "內標清單（選填）",
     "targets",

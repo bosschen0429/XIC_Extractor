@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,12 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.raw_sequence import read_analysis_set
-from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.sample_metadata import (
+    SAMPLE_METADATA_COLUMNS,
+    SAMPLE_METADATA_SCHEMA_VERSION,
+    SampleMetadata,
+)
+from xic_extractor.tabular_io import write_tsv
 from xic_workbench.methods import preset_from_payload
 from xic_workbench.samples import from_payload as samples_from_payload
 
@@ -133,6 +138,7 @@ class UntargetedRun:
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
         self.cancellation_reason = "使用者要求停止，本次 Untargeted 執行已停止。"
         self._recipe_binding: BoundCidNlRecipe | None = None
+        self.samples: tuple[SampleMetadata, ...] = ()
 
     def execute(self) -> dict[str, Any]:
         self._raise_if_cancelled("Untargeted run cancelled before start")
@@ -144,12 +150,13 @@ class UntargetedRun:
             "alignment": "completed",
             "backfill": "enabled",
         }
+        summary["samples"] = [asdict(row) for row in self.samples]
         return summary
 
     def _run_full(self) -> dict[str, Any]:
         request = self.request
         self.stage = "讀取 RAW 資料來源"
-        raw_paths = self._raw_paths(request.raw_dir)
+        raw_paths = self._prepare_samples(request.raw_dir)
         if request.raw_dir is None or not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
         total_steps = len(raw_paths) + 1
@@ -175,7 +182,7 @@ class UntargetedRun:
         index_path = batch_outputs.batch_index_csv
         self._retain_discovery_outputs(batch_outputs, index_path)
         self._raise_if_cancelled("Untargeted run cancelled after Discovery")
-        self.progress(len(raw_paths), total_steps, "Alignment...")
+        self.progress(0, 0, "Discovery 完成；準備跨樣本對齊與 Backfill")
         outputs = self._run_alignment(index_path=index_path, raw_dir=request.raw_dir)
         self.progress(total_steps, total_steps, "完成")
         summary = self._discovery_summary(index_path)
@@ -208,11 +215,36 @@ class UntargetedRun:
                     emit_alignment_explanation=True,
                 ),
             ),
-            UntargetedExecutionContext(should_cancel=self.should_cancel),
+            UntargetedExecutionContext(
+                should_cancel=self.should_cancel,
+                progress_callback=self._alignment_progress,
+            ),
         )
         self.available_outputs += _alignment_available_outputs(outputs)
         self.stage = "Alignment 結果摘要"
         return outputs
+
+    def _alignment_progress(self, event: Mapping[str, object]) -> None:
+        labels = {
+            "mass_recalibration": "確認 RAW 質量校正",
+            "known_istd_reference": "量測內標 RT 參考",
+            "alignment_inputs": "準備跨樣本觀察資料",
+            "partition_start": "讀取 RAW 與搜尋缺格（Backfill）",
+            "partition_compose": "整合樣本定量證據",
+            "partition_released": "已處理工作區塊",
+            "final_grouping": "跨樣本特徵分組",
+            "global_closure": "統整所有樣本與分組",
+            "batch_completed": "對齊與 Backfill 完成",
+            "publish_matrix": "寫入 Matrix 與檢閱資料",
+        }
+        label = labels.get(str(event.get("stage")))
+        if label is None:
+            return
+        self.stage = "Alignment 與 Backfill"
+        completed, total = event.get("completed"), event.get("total")
+        if isinstance(completed, int) and isinstance(total, int) and total:
+            label += f" · {completed}/{total}"
+        self.progress(0, 0, label)
 
     def _retain_discovery_outputs(
         self, outputs: DiscoveryBatchOutputs, index_path: Path
@@ -228,7 +260,7 @@ class UntargetedRun:
             ):
                 if Path(path).is_file():
                     found.append((label, Path(path)))
-        self.available_outputs = tuple(found)
+        self.available_outputs += tuple(found)
 
     def _alignment_runtime(self) -> BoundCidNlRecipe:
         if self._recipe_binding is None:
@@ -270,7 +302,7 @@ class UntargetedRun:
             mass_recalibration=settings.mass_recalibration,
         )
 
-    def _raw_paths(self, raw_dir: Path | None) -> tuple[Path, ...]:
+    def _prepare_samples(self, raw_dir: Path | None) -> tuple[Path, ...]:
         if raw_dir is None or not raw_dir.is_dir():
             return ()
         analysis_set = read_analysis_set(
@@ -278,6 +310,18 @@ class UntargetedRun:
             self.request.dll_dir,
             self.request.sample_metadata,
         )
+        self.samples = analysis_set.sample_metadata
+        sample_path = self.output_dir / "sample_metadata.tsv"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        write_tsv(
+            sample_path,
+            [
+                {"schema_version": SAMPLE_METADATA_SCHEMA_VERSION, **asdict(row)}
+                for row in self.samples
+            ],
+            SAMPLE_METADATA_COLUMNS,
+        )
+        self.available_outputs += (("本次分析的樣本資訊", sample_path),)
         return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
     def _discovery_summary(self, index_path: Path) -> dict[str, Any]:

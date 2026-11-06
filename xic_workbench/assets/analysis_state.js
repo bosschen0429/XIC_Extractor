@@ -3,7 +3,6 @@
 const emptySamples = () => ({
   rows: [],
   overview: null,
-  suggestions: {},
   source: "",
 });
 export const state = {
@@ -112,7 +111,6 @@ export function replaceSamples(page, result) {
   state.sampleSets[page] = {
     rows: result.samples,
     overview: result.overview || null,
-    suggestions: result.group_suggestions || {},
     source: result.summary?.annotation_source || "",
   };
 }
@@ -134,7 +132,6 @@ export function receiveConfirmedSamples(page, samples, overview) {
     rows: samples,
     overview,
     source: "confirmed",
-    cards: null,
   };
 }
 // Revisions belong to user actions, including validation before a preview.
@@ -148,71 +145,4 @@ export function currentSampleAction(action) {
     action &&
     state.sampleRevisions[action.page] === action.revisions[action.page]
   );
-}
-export function suggestionCards(set) {
-  if (set.cards) return set.cards;
-  const cards = new Map();
-  for (const row of set.rows) {
-    const label = set.suggestions[row.raw_stem];
-    if (!label) continue;
-    if (!cards.has(label)) cards.set(label, { label, members: [] });
-    cards.get(label).members.push(row.raw_stem);
-  }
-  set.cards = [...cards.values()].sort(
-    (a, b) => b.members.length - a.members.length,
-  );
-  return set.cards;
-}
-export function cardRows(set, card) {
-  const members = new Set(card.members);
-  return set.rows.filter((row) => members.has(row.raw_stem));
-}
-// Rows a card wrote keep following it; hand-labelled rows stay as they are.
-function relabelCard(page, card, label) {
-  let changed = false;
-  for (const row of cardRows(state.sampleSets[page], card))
-    if (row.group.trim() === card.label) {
-      row.group = label;
-      changed = true;
-    }
-  return changed;
-}
-export function renameSampleCard(page, card, label) {
-  const set = state.sampleSets[page];
-  const changed = relabelCard(page, card, label);
-  card.label = label;
-  const same = set.cards.find(
-    (other) => other !== card && other.label === label,
-  );
-  if (same) {
-    same.members.push(...card.members);
-    set.cards = set.cards.filter((other) => other !== card);
-  }
-  return changed;
-}
-export function mergeSampleCard(page, card, target) {
-  const set = state.sampleSets[page];
-  const changed = relabelCard(page, card, target.label);
-  target.members.push(...card.members);
-  set.cards = set.cards.filter((other) => other !== card);
-  return changed;
-}
-export function applySampleCard(page, card, overwrite) {
-  for (const row of cardRows(state.sampleSets[page], card))
-    if (overwrite || !row.group.trim()) row.group = card.label;
-}
-export function applySampleAnnotations(page, preview, overwrite, reason) {
-  const byStem = new Map(
-    state.sampleSets[page].rows.map((row) => [row.raw_stem, row]),
-  );
-  for (const match of preview.matched) {
-    const row = byStem.get(match.raw_stem);
-    if (!row) continue;
-    if (match.group && (overwrite || !row.group.trim()))
-      row.group = match.group;
-    if (match.excluded) {
-      row.excluded = true;
-      row.exclusion_reason = match.exclusion_reason || reason;
-    }
-  }
 }

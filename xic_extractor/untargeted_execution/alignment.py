@@ -472,6 +472,7 @@ def complete_untargeted_alignment(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     retain_partition_memory: bool = False,
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
@@ -481,6 +482,8 @@ def complete_untargeted_alignment(
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
+    if progress_callback:
+        progress_callback({"stage": "alignment_inputs"})
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=discovery_batch,
         candidates_by_sample=candidates_by_sample,
@@ -518,6 +521,7 @@ def complete_untargeted_alignment(
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
+                progress_callback=progress_callback,
                 retain_partition_memory=retain_partition_memory,
                 retain_acquisition_cache=retain_acquisition_cache,
                 acquisition_cache_dir=acquisition_cache_dir,
@@ -547,6 +551,7 @@ def execute_prepared_alignment(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     retain_partition_memory: bool = False,
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
@@ -579,6 +584,8 @@ def execute_prepared_alignment(
                     }
                 )
         recorder.heartbeat_event(event)
+        if progress_callback:
+            progress_callback(event)
 
     with (
         recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,

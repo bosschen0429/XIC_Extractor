@@ -17,9 +17,10 @@ Excel workbook, read from batch summary to the individual results needing attent
 4. Select a saved target list and press **載入清單**, import a list, or choose
    **檢視與編輯** to open the full-height target table.
    **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
-5. Check the sample summary. **樣本匯入與分組工具** contains acquisition-information
-   import, collaborator tables, previous grouping and sample export; conflicts
-   and exclusion counts remain visible without opening the tools.
+5. Check sample roles and exclusions in **樣本明細**. Statistical groups are
+   not required or edited here. **上機資訊與樣本檔案（選用）** contains optional
+   acquisition-information import and sample export. Confirmed roles and
+   exclusions are shared by both analysis workflows and matrix curation.
 6. Press **開始 Targeted 分析** in the run panel.
 7. The finished run opens its result. Each run writes a new
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
