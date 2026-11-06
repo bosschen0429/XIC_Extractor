@@ -29,12 +29,14 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
 )
 from xic_extractor.peak_detection.physical_peak_codec import (
     deserialize_physical_peak_evaluation,
+    rehydrate_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     evaluate_physical_peak,
     prepare_physical_signal,
+    scope_prepared_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
@@ -47,6 +49,68 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+
+
+def test_scoped_evaluation_replays_full_background_before_local_selection() -> None:
+    rt, raw = _context_sensitive_trace()
+    profile = SignalProcessingProfile()
+    full = prepare_physical_signal(rt, raw, profile=profile)
+    local_rt, local_raw = rt[10:38], raw[10:38]
+    scoped = scope_prepared_physical_signal(full, local_rt)
+    evaluation = evaluate_physical_peak(scoped, query_rt_min=0.575)
+    assert full.prepared is not None and scoped.prepared is not None
+    local_only = prepare_physical_signal(local_rt, local_raw, profile=profile)
+    assert local_only.prepared is not None
+    assert not np.allclose(scoped.prepared.baseline, local_only.prepared.baseline)
+
+    payload = serialize_physical_peak_evaluation(
+        local_rt, local_raw, profile=profile, evaluation=evaluation
+    )
+    restored_rt, restored_raw, _, restored = deserialize_physical_peak_evaluation(
+        payload
+    )
+    assert restored_rt == tuple(local_rt) and restored_raw == tuple(local_raw)
+    assert restored == evaluation
+    assert restored.preparation_context == full.projection
+    assert restored.retained_prepared_signal is not None
+    assert restored.retained_prepared_signal.baseline == full.prepared.baseline[10:38]
+    assert restored.retained_prepared_signal.smoothed == full.prepared.smoothed[10:38]
+
+
+def test_previous_physical_codec_requires_rerun() -> None:
+    rt, raw = _context_sensitive_trace()
+    evaluation = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw), query_rt_min=0.575
+    )
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=evaluation
+    ).replace(
+        b"full_context_local_scope_physical_peak_evaluation_persistence",
+        b"physical_peak_evaluation_persistence",
+        1,
+    )
+    with pytest.raises(ValueError, match="rerun"):
+        deserialize_physical_peak_evaluation(payload)
+
+
+def test_full_background_replay_still_binds_reacquired_local_intensity() -> None:
+    rt, raw = _context_sensitive_trace()
+    profile = SignalProcessingProfile()
+    local_rt, local_raw = rt[10:38], raw[10:38]
+    expected = evaluate_physical_peak(
+        scope_prepared_physical_signal(
+            prepare_physical_signal(rt, raw, profile=profile), local_rt
+        ),
+        query_rt_min=0.575,
+    )
+    changed_local_raw = local_raw.copy()
+    changed_local_raw[14] += 1.0
+    # Reacquisition supplies fresh local values even though the owner retains
+    # its full background input. Full replay must not ignore that caller input.
+    with pytest.raises(ValueError, match="RT/raw content"):
+        rehydrate_physical_peak_evaluation(
+            local_rt, changed_local_raw, profile=profile, expected=expected
+        )
 
 
 @pytest.mark.parametrize(

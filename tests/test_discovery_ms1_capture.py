@@ -85,7 +85,7 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
 
     assert first.work_ordinal == repeated.work_ordinal
     assert first.evaluation == repeated.evaluation
-    assert len(raw.requests) == 1
+    assert len(raw.requests) == 2
     facts = first.evaluation.facts
     assert facts is not None
     assert facts.apex_rt_min == pytest.approx(9.02)
@@ -180,6 +180,41 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
         assert receipt["precursor_mz"] == 500.0
 
 
+@pytest.mark.parametrize("masses,supported", [((500.001,), True), ((), False)])
+def test_inferred_parent_nl_survives_without_a_quantifiable_ms1_peak(
+    monkeypatch, masses, supported
+):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    seed = replace(
+        _seed(scan_number=10, rt=9.0),
+        precursor_mz_basis="product_plus_neutral_loss",
+        observed_loss_error_ppm=None,
+        scan_precursor_mz=500.5,
+        precursor_metadata=Ms2PrecursorMetadata(
+            master_scan_number=9,
+            charge=1,
+            isolation_width_da=1.6,
+            isolation_offset_da=0.0,
+        ),
+    )
+    raw = _FakeRaw(rt=np.linspace(8.6, 9.4, 161), intensity=np.zeros(161))
+    monkeypatch.setattr(
+        _FakeRaw,
+        "read_ms1_mass_windows",
+        lambda self, requests: (Ms1PrecursorObservation(9, 8.99, masses),),
+    )
+    candidate = _candidates_from_raw(raw, (_group((seed,)),), settings=_settings())[0]
+    assert candidate.has_precursor_nl_evidence is supported
+    assert not candidate.ms1_peak_found
+    assert candidate.ms1_area is None
+    assert candidate.discovery_candidate_state == "review_only_orphan_nl"
+    receipt = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]["10"]
+    assert receipt["ms1_precursor_observation"]["rt_min"] == 8.99
+    assert (receipt["precursor_verification"]["status"] == "compatible") is supported
+
+
 @pytest.mark.parametrize("padding", [0.15, 0.8])
 def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
     padding: float,
@@ -194,7 +229,7 @@ def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
         ),
     )
     expected_padding = max(0.60, padding)
-    assert raw.requests == [
+    assert raw.requests[:1] == [
         (
             group.precursor_mz,
             pytest.approx(7.80 - expected_padding),
@@ -202,6 +237,13 @@ def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
             12.0,
         )
     ]
+    width = 0.10 + 2 * expected_padding
+    assert raw.requests[1] == (
+        group.precursor_mz,
+        pytest.approx(max(0, 7.80 - expected_padding - width)),
+        pytest.approx(7.90 + expected_padding + width),
+        12.0,
+    )
     assert len(candidates) == 1
     assert candidates[0].ms1_peak_found
 
@@ -222,7 +264,8 @@ def test_capture_clamps_ms1_search_rt_min_to_zero() -> None:
             0.0,
             pytest.approx(0.65),
             20.0,
-        )
+        ),
+        (group.precursor_mz, 0.0, pytest.approx(1.30), 20.0),
     ]
     assert candidate.ms1_search_rt_min == 0.0
     assert candidate.ms1_search_rt_max == pytest.approx(0.65)
@@ -1072,14 +1115,14 @@ def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_wind
     runtime_metrics = _acquisition_totals(measurements.acquisition_batches)
     assert measurements.input_group_count == 4
     assert measurements.empty_group_count == 1
-    assert runtime_metrics.logical_xic_request_count == 2
-    assert runtime_metrics.xic_batch_count == 1
-    assert runtime_metrics.adapter_chromatogram_call_count == 2
-    assert runtime_metrics.trace_point_count == 42
+    assert runtime_metrics.logical_xic_request_count == 4
+    assert runtime_metrics.xic_batch_count == 2
+    assert runtime_metrics.adapter_chromatogram_call_count == 3
+    assert runtime_metrics.trace_point_count == 84
     assert measurements.exact_scan_window_count == 2
-    assert measurements.predicted_chunked_call_count == 2
+    assert measurements.predicted_chunked_call_count == 3
     assert measurements.batch_max_requests == 256
-    assert [len(batch) for batch in raw.request_batches] == [2]
+    assert [len(batch) for batch in raw.request_batches] == [2, 2]
     assert raw.request_batches[0][0] != raw.request_batches[0][1]
 
 
@@ -1114,13 +1157,13 @@ def test_owner_acquisition_batches_distinct_contexts_at_256(
     )
 
     metrics = _acquisition_totals(result.measurements.acquisition_batches)
-    assert [len(batch) for batch in raw.request_batches] == [256, 1]
-    assert metrics.logical_xic_request_count == 257
-    assert metrics.xic_batch_count == 2
-    assert metrics.adapter_chromatogram_call_count == 2
-    assert metrics.trace_point_count == 5397
+    assert [len(batch) for batch in raw.request_batches] == [256, 1, 256, 1]
+    assert metrics.logical_xic_request_count == 514
+    assert metrics.xic_batch_count == 4
+    assert metrics.adapter_chromatogram_call_count == 4
+    assert metrics.trace_point_count == 10794
     assert result.measurements.exact_scan_window_count == 1
-    assert result.measurements.predicted_chunked_call_count == 2
+    assert result.measurements.predicted_chunked_call_count == 4
     assert result.measurements.batch_max_requests == 256
 
 
@@ -1161,9 +1204,9 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     batches = result.measurements.acquisition_batches
     runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
-    assert runtime_metrics.logical_xic_request_count == 2
-    assert result.measurements.exact_scan_window_count == 2
-    assert runtime_metrics.adapter_chromatogram_call_count == 1
+    assert runtime_metrics.logical_xic_request_count == 4
+    assert result.measurements.exact_scan_window_count == 4
+    assert runtime_metrics.adapter_chromatogram_call_count == 2
     for item in acquired:
         exact = raw.exact_trace(item.coordinate.request)
         assert item.trace.rt.tolist() == exact.rt.tolist()

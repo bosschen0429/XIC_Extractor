@@ -13,7 +13,7 @@ from typing import Any, BinaryIO, Protocol
 
 import ijson
 
-_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
+_SCHEMA_VERSION = "full_context_local_scope_discovery_physical_fact_sidecar"
 _ROOT_KEYS = frozenset(
     {"schema_version", "run_spec", "sample", "work_manifest", "records"}
 )
@@ -258,7 +258,8 @@ class PhysicalFactSource:
         if header["schema_version"] != _SCHEMA_VERSION:
             spool_path.unlink(missing_ok=True)
             raise ValueError(
-                "unsupported Discovery physical fact sidecar schema_version"
+                "unsupported Discovery physical fact sidecar schema_version; "
+                "rerun analysis"
             )
         if not isinstance(header["run_spec"], dict) or not isinstance(
             header["sample"], dict

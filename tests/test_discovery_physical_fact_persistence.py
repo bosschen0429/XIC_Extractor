@@ -7,6 +7,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.discovery_physical_fact_persistence_fixtures import (
@@ -18,6 +19,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.physical_fact_persistence import (
+    DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
     deserialize_discovery_physical_fact_sidecar,
     read_discovery_physical_fact_records,
     read_discovery_physical_fact_sidecar,
@@ -32,6 +34,107 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     fingerprint_file_content,
 )
+
+
+def test_scoped_sidecar_preserves_native_full_acquisition_and_local_curves(tmp_path):
+    from tests.discovery_physical_fact_persistence_fixtures import _work
+    from tests.physical_peak_evaluation_persistence_fixtures import (
+        _context_sensitive_trace,
+    )
+    from xic_extractor.acquisition_contract import (
+        TraceCoordinateKind,
+        acquire_trace_batch,
+        mint_trace_acquisition_capability,
+    )
+    from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+        scope_prepared_physical_signal,
+    )
+    from xic_extractor.xic_models import XICRequest, XICTrace
+
+    _, spec, acquisition_input = _spec(tmp_path)
+    rt, raw = _context_sensitive_trace()
+
+    class Adapter:
+        raw_chromatogram_call_count = 0
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays(rt[mask], raw[mask])
+                for request in requests
+                for mask in [(rt >= request.rt_min) & (rt <= request.rt_max)]
+            )
+
+        def scan_window_for_request(self, request):
+            indices = np.flatnonzero((rt >= request.rt_min) & (rt <= request.rt_max))
+            return 1000 + int(indices[0]), 1000 + int(indices[-1])
+
+    capability = mint_trace_acquisition_capability(
+        acquisition_input.acquisition_source,
+        adapter_namespace="tests.full-context",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    full, local = acquire_trace_batch(
+        capability,
+        (
+            XICRequest(
+                mz=500.0, rt_min=float(rt[0]), rt_max=float(rt[-1]), ppm_tol=20.0
+            ),
+            XICRequest(
+                mz=500.0, rt_min=float(rt[10]), rt_max=float(rt[37]), ppm_tol=20.0
+            ),
+        ),
+        Adapter(),
+    ).traces
+    item = replace(
+        _work(0, acquisition_input, terminal="available", acquired_trace=local),
+        query_rt_min=0.575,
+        context_rt_start_min=float(rt[10]),
+        context_rt_end_min=float(rt[37]),
+    )
+    prepared = prepare_physical_signal(rt, raw, profile=spec.signal_processing_profile)
+    evaluation = evaluate_physical_peak(
+        scope_prepared_physical_signal(prepared, local.trace.rt),
+        query_rt_min=item.query_rt_min,
+        request_context_rt_start_min=item.context_rt_start_min,
+        request_context_rt_end_min=item.context_rt_end_min,
+    )
+    record = DiscoveryPhysicalFactRecord(
+        work_item=item,
+        acquired_trace=local,
+        preparation_acquired_trace=full,
+        evaluation=evaluation,
+    )
+    path = tmp_path / "scoped.json"
+    write_discovery_physical_fact_sidecar(
+        path,
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=(item,),
+        records=(record,),
+    )
+    replayed = read_discovery_physical_fact_sidecar(
+        path,
+        expected_run_spec=spec,
+        expected_acquisition_input=acquisition_input,
+        expected_work_manifest=(item,),
+    )[0]
+    direct = read_discovery_physical_fact_records(
+        path,
+        expected_run_spec=spec,
+        expected_acquisition_input=acquisition_input,
+    )[0]
+    for restored in (replayed, direct):
+        assert restored == record
+        assert restored.preparation_acquired_trace == full
+        assert restored.preparation_acquired_trace.coordinate.first_scan == 1000
+        assert restored.acquired_trace.coordinate.first_scan == 1010
+        assert (
+            restored.evaluation.retained_prepared_signal
+            == evaluation.retained_prepared_signal
+        )
 
 
 def _physical_index_jobs(tmp_path: Path, *, count: int):
@@ -282,9 +385,9 @@ def test_discovery_sidecar_rejects_duplicate_json_field(tmp_path: Path) -> None:
         records=records,
     ).decode("utf-8")
     duplicate = payload.replace(
-        '{"schema_version":"discovery_physical_fact_sidecar",',
-        '{"schema_version":"discovery_physical_fact_sidecar",'
-        '"schema_version":"discovery_physical_fact_sidecar",',
+        '{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",',
+        '{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
+        '"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",',
         1,
     )
 
@@ -295,6 +398,32 @@ def test_discovery_sidecar_rejects_duplicate_json_field(tmp_path: Path) -> None:
             expected_acquisition_input=acquisition_input,
             expected_work_manifest=manifest,
         )
+
+
+def test_previous_discovery_sidecar_requires_rerun_for_both_readers(tmp_path):
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    payload = serialize_discovery_physical_fact_sidecar(
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    ).replace(
+        DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION.encode(),
+        b"discovery_physical_fact_sidecar",
+        1,
+    )
+    with pytest.raises(ValueError, match="rerun"):
+        deserialize_discovery_physical_fact_sidecar(
+            payload,
+            expected_run_spec=spec,
+            expected_acquisition_input=acquisition_input,
+            expected_work_manifest=manifest,
+        )
+    path = tmp_path / "old.json"
+    path.write_bytes(payload)
+    with pytest.raises(ValueError, match="rerun"):
+        PhysicalFactSource(path)
 
 
 def test_discovery_sidecar_rejects_fully_resealed_different_run(tmp_path: Path) -> None:
@@ -438,7 +567,7 @@ def _physical_source_payload(
 ) -> bytes:
     return json.dumps(
         {
-            "schema_version": "discovery_physical_fact_sidecar",
+            "schema_version": DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
             "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
             "work_manifest": manifest
@@ -506,7 +635,7 @@ def test_physical_fact_source_recovers_unicode_nested_items_and_random_subset(
 
     with PhysicalFactSource(path) as source:
         assert source.header == {
-            "schema_version": "discovery_physical_fact_sidecar",
+            "schema_version": DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
             "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
         }
@@ -564,22 +693,22 @@ def test_physical_fact_source_retains_selected_records_without_hiding_visits(
 @pytest.mark.parametrize(
     "payload",
     (
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
-        b'"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
+        b'"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{"x":1,"x":2},"sample":{},'
         b'"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[{"x":1,"x":2}],'
         b'"records":[{}]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[],"extra":1}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"full_context_local_scope_discovery_physical_fact_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[{}],"records":[]}',
     ),
     ids=(

@@ -46,6 +46,12 @@ def curve_provenance():
         "profile": None,
         "physical_state": None,
         "physical_reason": None,
+        "preparation_context_rt_start_min": None,
+        "preparation_context_rt_end_min": None,
+        "preparation_context_point_count": None,
+        "local_scope_rt_start_min": None,
+        "local_scope_rt_end_min": None,
+        "local_scope_point_count": None,
     }
 
 

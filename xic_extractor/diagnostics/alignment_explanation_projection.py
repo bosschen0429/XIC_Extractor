@@ -137,13 +137,31 @@ def _emit_curve_payload(
         "profile": None,
         "physical_state": None,
         "physical_reason": None,
+        "preparation_context_rt_start_min": None,
+        "preparation_context_rt_end_min": None,
+        "preparation_context_point_count": None,
+        "local_scope_rt_start_min": None,
+        "local_scope_rt_end_min": None,
+        "local_scope_point_count": None,
         **(provenance or {}),
     }
     if evaluation is not None:
+        preparation_context = evaluation.preparation_context or evaluation.prepared
+        local_scope = evaluation.prepared
         actual.update(
             profile=asdict(evaluation.prepared.profile),
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
+            preparation_context_rt_start_min=(
+                preparation_context.rt[0] if preparation_context.rt else None
+            ),
+            preparation_context_rt_end_min=(
+                preparation_context.rt[-1] if preparation_context.rt else None
+            ),
+            preparation_context_point_count=preparation_context.trace_point_count,
+            local_scope_rt_start_min=(local_scope.rt[0] if local_scope.rt else None),
+            local_scope_rt_end_min=(local_scope.rt[-1] if local_scope.rt else None),
+            local_scope_point_count=local_scope.trace_point_count,
         )
     if prepared is not None:
         actual.update(

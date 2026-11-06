@@ -26,6 +26,60 @@ from xic_extractor.alignment_explanation.writer import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
+def test_inspector_retains_full_preparation_provenance_with_local_curves(tmp_path):
+    from types import SimpleNamespace
+
+    from tests.physical_peak_evaluation_persistence_fixtures import (
+        _context_sensitive_trace,
+    )
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
+        _emit_curve_payload,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+        scope_prepared_physical_signal,
+    )
+
+    rt, raw = _context_sensitive_trace()
+    prepared = prepare_physical_signal(rt, raw)
+    scoped = scope_prepared_physical_signal(prepared, rt[10:38])
+    evaluation = evaluate_physical_peak(scoped, query_rt_min=0.575)
+    trace = SimpleNamespace(
+        rt=rt[10:38],
+        intensity=raw[10:38],
+        mz=500.0,
+        rt_min=float(rt[10]),
+        rt_max=float(rt[37]),
+        ppm_tol=20.0,
+        acquisition_source_id="source-1",
+    )
+    with ExplanationReportWriter(tmp_path / "scoped.sqlite") as writer:
+        _emit_curve_payload(
+            writer,
+            None,
+            "S1",
+            candidate_id="C1",
+            trace=trace,
+            evaluation=evaluation,
+        )
+        report = writer.finalize(
+            explanation_summary({"samples": []}, review_only=False)
+        )
+    (curve,) = read_alignment_curves(report, record_ids=["C1"])
+    assert curve["curves"]["rt"] == list(rt[10:38])
+    assert curve["curves"]["raw"] == list(raw[10:38])
+    assert prepared.prepared is not None
+    assert curve["curves"]["baseline"] == list(prepared.prepared.baseline[10:38])
+    provenance = curve["provenance"]
+    assert provenance["preparation_context_rt_start_min"] == rt[0]
+    assert provenance["preparation_context_rt_end_min"] == rt[-1]
+    assert provenance["preparation_context_point_count"] == len(rt)
+    assert provenance["local_scope_rt_start_min"] == rt[10]
+    assert provenance["local_scope_rt_end_min"] == rt[37]
+    assert provenance["local_scope_point_count"] == 28
+
+
 def test_curve_payload_write_and_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.sqlite"

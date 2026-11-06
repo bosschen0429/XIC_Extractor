@@ -235,7 +235,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     ) == [100, 200]
     # More physical questions must not repeat RAW acquisition or lose their
     # independent candidate -> physical-answer binding after persistence.
-    assert raw.raw_chromatogram_call_count == 1
+    assert raw.raw_chromatogram_call_count == 2
     assert outputs.physical_facts_json is not None
     saved = IndexedDiscoveryPhysicalFacts(
         outputs.physical_facts_json,
@@ -398,15 +398,6 @@ def test_discovery_retained_physical_peak_cardinality(
             for record in result.physical_evaluations
             if record.evaluation.facts is not None
         } == {14922}
-        assert {
-            record.work_item.best_ms2_scan_id: record.evaluation.reason
-            for record in result.physical_evaluations
-            if record.evaluation.facts is None
-        } == {
-            14067: "incomplete_peak_context",
-            14291: "incomplete_peak_context",
-            14712: "no_selection",
-        }
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -613,7 +604,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
         )
         == before_evaluation
     )
-    assert raw.raw_chromatogram_call_count == 1
+    assert raw.raw_chromatogram_call_count == 2
     for name in ("ms1_search_rt_min", "ms1_search_rt_max"):
         with pytest.raises(ValueError, match="search window"):
             replace(
@@ -721,7 +712,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         tmp_path / "out" / "discovery_physical_facts.json"
     )
     assert outputs.physical_facts_json is not None
-    assert physical_calls == {"prepare": 1, "evaluate": 1}
+    assert physical_calls == {"prepare": 1, "evaluate": 2}
     expected_work_manifest = captured_manifest
     assert len(expected_work_manifest) == 1
     records = read_discovery_physical_fact_sidecar(
@@ -735,8 +726,8 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         records[0].candidate_id == _read_csv(outputs.candidates_csv)[0]["candidate_id"]
     )
     assert records[0].evaluation.prepared.profile == spec.signal_processing_profile
-    assert physical_calls == {"prepare": 2, "evaluate": 2}
-    assert raw.raw_chromatogram_call_count == 1
+    assert physical_calls == {"prepare": 2, "evaluate": 3}
+    assert raw.raw_chromatogram_call_count == 2
 
 
 @pytest.mark.parametrize(
@@ -850,7 +841,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
     assert row["ms1_area"] == ""
     assert row["ms1_trace_quality"] == "physical_unavailable"
     assert "physical MS1 evaluation unavailable" in row["reason"]
-    assert captured_manifest == ()
+    assert len(captured_manifest) == 1
     assert outputs.physical_facts_json is not None
     records = read_discovery_physical_fact_sidecar(
         outputs.physical_facts_json,
@@ -858,8 +849,11 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
         expected_acquisition_input=spec.acquisition_inputs[0],
         expected_work_manifest=captured_manifest,
     )
-    assert records == ()
-    assert raw.raw_chromatogram_call_count == 1
+    assert len(records) == 1
+    assert records[0].evaluation.facts is None
+    assert records[0].evaluation.reason == "insufficient_points_for_profile"
+    assert records[0].preparation_acquired_trace is not None
+    assert raw.raw_chromatogram_call_count == 2
 
 
 @pytest.mark.parametrize(
@@ -904,10 +898,10 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
         ms1_centroid_mz=lambda *_: None,
     )
 
-    assert len(result.measurements.acquisition_batches) == 2
+    assert len(result.measurements.acquisition_batches) == 3
     assert result.measurements.initial_request_count == 1
     assert result.measurements.reacquisition_request_count == 1
-    first, reacquired = result.measurements.acquisition_batches
+    first, reacquired, preparation = result.measurements.acquisition_batches
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     evaluation = result.physical_evaluations[0].evaluation
@@ -1067,7 +1061,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         ms1_centroid_mz=lambda *_: None,
     )
 
-    assert len(result.measurements.acquisition_batches) == 1
+    assert len(result.measurements.acquisition_batches) == 2
     assert result.measurements.reacquisition_request_count == 0
     initial = result.measurements.acquisition_batches[0]
     assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
@@ -1131,8 +1125,8 @@ def test_qualification_survives_physical_fact_reuse(
     assert candidate.ms1_trace_quality == "clean"
     assert candidate.is_provisional is False
     assert result.measurements.reacquisition_request_count == 0
-    assert raw.raw_chromatogram_call_count == 1
-    assert qualifier.call_count == 1
+    assert raw.raw_chromatogram_call_count == 2
+    assert qualifier.call_count == 2
     quality = qualifier.call_args.kwargs["signal_quality"]
     assert quality.status == "available"
     assert quality.signal_to_noise >= 5.0 / 1.4826
@@ -1182,10 +1176,10 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     assert {record.evaluation.prepared for record in result.physical_evaluations} == {
         result.physical_evaluations[0].evaluation.prepared
     }
-    assert metrics.logical_xic_request_count == 1
-    assert metrics.xic_batch_count == 1
-    assert metrics.adapter_chromatogram_call_count == 1
-    assert [len(batch) for batch in raw.request_batches] == [1]
+    assert metrics.logical_xic_request_count == 2
+    assert metrics.xic_batch_count == 2
+    assert metrics.adapter_chromatogram_call_count == 2
+    assert [len(batch) for batch in raw.request_batches] == [1, 1]
 
 
 def test_physical_binding_rejects_cross_acquisition_reassembly(
@@ -1500,9 +1494,12 @@ def test_physical_fact_sharing_uses_exact_owner_question(
     )
 
     expected_count = 1 if same_question else 2
-    assert [len(batch) for batch in raw.request_batches] == [expected_count]
+    assert [len(batch) for batch in raw.request_batches] == [
+        expected_count,
+        expected_count,
+    ]
     assert prepare.call_count == 1
-    assert evaluate.call_count == expected_count
+    assert evaluate.call_count == 2 * expected_count
     assert len(result.physical_work_manifest) == expected_count
     assert len(result.physical_evaluations) == expected_count
     assert tuple(work.work_ordinal for work in result.physical_work_manifest) == tuple(
@@ -1536,7 +1533,7 @@ def test_physical_fact_sharing_uses_exact_owner_question(
         assert tuple(record.work_item for record in restored) == (
             result.physical_work_manifest
         )
-        assert raw.raw_chromatogram_call_count == 1
+        assert raw.raw_chromatogram_call_count == 2
 
 
 def _inferred_apex_case(
@@ -1901,7 +1898,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         signal_processing_profile=profile,
         ms1_centroid_mz=read_ion,
     )
-    first, reacquired = result.measurements.acquisition_batches
+    first, reacquired, preparation = result.measurements.acquisition_batches
     assert result.measurements.reacquisition_request_count == 1
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points

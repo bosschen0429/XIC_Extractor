@@ -1188,7 +1188,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         )
         for output in discovery.per_sample
         if output.physical_facts_json is not None
-    } == {"sample-a": 2, "sample-b": 2}
+    } == {"sample-a": 3, "sample-b": 3}
     retained_inferred_areas = {}
     for acquisition, output in zip(
         spec.acquisition_inputs,
@@ -1204,7 +1204,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
                     expected_acquisition_input=acquisition,
                 )
             )
-            == 2
+            == 3
         )
         with output.candidates_csv.open(encoding="utf-8-sig", newline="") as handle:
             inferred = [

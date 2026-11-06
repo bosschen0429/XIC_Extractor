@@ -259,7 +259,11 @@ def _capture_physical_peak(
 
 
 def capture_reacquired_physical_peak(
-    *, scope: SearchScope, candidate_id: str, trace: Trace
+    *,
+    scope: SearchScope,
+    candidate_id: str,
+    trace: Trace,
+    shared_preparation: PhysicalPeakEvaluation | None = None,
 ) -> SampleLocalCapture:
     """Evaluate a changed acquisition question at the capture owner once."""
     binding = require_capture_binding(scope, candidate_id)
@@ -271,7 +275,7 @@ def capture_reacquired_physical_peak(
         )
     if not isinstance(trace, Trace):
         raise SampleLocalCaptureError("capture trace must be an owner trace")
-    if (
+    if shared_preparation is None and (
         trace.mz == binding.query_mz
         and (
             binding.physical_evaluation_mz is None
@@ -300,7 +304,19 @@ def capture_reacquired_physical_peak(
         ),
     )
     trace_group = _capture_trace_group(scope=scope, binding=binding, trace=trace)
-    prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
+    if shared_preparation is None:
+        prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
+    else:
+        # A shared trace already has owner-prepared background. Reusing its
+        # local arrays must preserve that full preparation, not fit local raw.
+        prepared = PreparedSignalResult(
+            projection=shared_preparation.prepared,
+            prepared=shared_preparation.retained_prepared_signal,
+            operations=shared_preparation.operations[:3],
+            trace_context_rt_start_min=shared_preparation.question.context_rt_start_min,
+            trace_context_rt_end_min=shared_preparation.question.context_rt_end_min,
+            preparation_context=shared_preparation.preparation_context,
+        )
     evaluation = evaluate_physical_peak(
         prepared,
         query_rt_min=binding.preferred_rt,

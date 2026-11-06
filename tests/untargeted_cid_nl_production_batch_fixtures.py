@@ -317,6 +317,22 @@ def _expected_retained_curve(
             physical_state=evaluation.state,
             physical_reason=evaluation.reason,
         )
+        # Preparation can span the full acquisition while the displayed curve
+        # remains the original local query. Both claims come from owner inputs.
+        for prefix, projection in (
+            (
+                "preparation_context",
+                evaluation.preparation_context or evaluation.prepared,
+            ),
+            ("local_scope", evaluation.prepared),
+        ):
+            provenance[f"{prefix}_rt_start_min"] = (
+                projection.rt[0] if projection.rt else None
+            )
+            provenance[f"{prefix}_rt_end_min"] = (
+                projection.rt[-1] if projection.rt else None
+            )
+            provenance[f"{prefix}_point_count"] = len(projection.rt)
     if signal is not None:
         provenance.update(
             profile_version=signal.profile.schema_version,
@@ -371,6 +387,12 @@ def _expected_retained_curve(
                     "profile",
                     "physical_state",
                     "physical_reason",
+                    "preparation_context_rt_start_min",
+                    "preparation_context_rt_end_min",
+                    "preparation_context_point_count",
+                    "local_scope_rt_start_min",
+                    "local_scope_rt_end_min",
+                    "local_scope_point_count",
                 )
             ),
             **provenance,

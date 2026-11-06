@@ -132,11 +132,12 @@ def publish_discovery_batch_sample(
 def _persisted_discovery_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> tuple[DiscoveryCandidate, ...]:
-    """Keep measured peaks for review independently of NL search eligibility."""
+    """Keep physical peaks and independently supported NL-only review."""
     return tuple(
         candidate
         for candidate in candidates
         if candidate.ms1_peak_found
+        or candidate.has_precursor_nl_evidence
         or candidate.precursor_mz_basis
         in {"scan_precursor", "scan_monoisotopic", "mixed"}
     )
@@ -146,12 +147,9 @@ def _persisted_physical_records(
     records: tuple[DiscoveryPhysicalFactRecord, ...],
     bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    """Retain measured peak evidence and compact persistence-local work indices."""
-    peak_bindings = tuple(
-        binding for binding in bindings if binding.candidate.ms1_peak_found
-    )
+    """Retain each published question, including its non-numeric answer."""
     used_work = {
-        ordinal for binding in peak_bindings for ordinal in binding.member_work_ordinals
+        ordinal for binding in bindings for ordinal in binding.member_work_ordinals
     }
     retained = tuple(
         record for record in records if record.work_item.work_ordinal in used_work
@@ -159,7 +157,7 @@ def _persisted_physical_records(
     work_indices = {
         record.work_item.work_ordinal: index for index, record in enumerate(retained)
     }
-    linked = bind_discovery_physical_record_evidence(retained, peak_bindings)
+    linked = bind_discovery_physical_record_evidence(retained, bindings)
     return tuple(
         replace(
             record,

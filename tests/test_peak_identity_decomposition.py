@@ -167,7 +167,9 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
 
     assert raw.requests == [
         (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
+        (500.0, pytest.approx(6.10), pytest.approx(9.70), 20.0),
         (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
+        (500.0, pytest.approx(6.30), pytest.approx(9.90), 20.0),
     ]
     assert first.ms1_peak_found and second.ms1_peak_found
     assert _discovery_ms1_peak_probe(first) == _discovery_ms1_peak_probe(second)

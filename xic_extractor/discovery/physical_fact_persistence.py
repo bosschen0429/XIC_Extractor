@@ -56,7 +56,9 @@ from xic_extractor.validation_primitives import (
     require_text,
 )
 
-DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
+DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = (
+    "full_context_local_scope_discovery_physical_fact_sidecar"
+)
 
 _ROOT_KEYS = (
     "schema_version",
@@ -90,6 +92,9 @@ _RECORD_KEYS = (
     "candidate_id",
     "selection_subject_id",
     "acquired_trace",
+    "preparation_acquired_trace",
+    "candidate_links",
+    "retained_prepared_signal",
     "physical_evaluation",
 )
 
@@ -145,6 +150,18 @@ def _restore_retained_signal(
         retained_prepared_signal=PreparedSignal(
             projection=evaluation.prepared, profile=profile, **arrays
         ),
+    )
+
+
+def _restore_preparation_acquired_trace(
+    record: Mapping[str, Any], acquired: AcquiredTrace
+) -> AcquiredTrace | None:
+    value = record["preparation_acquired_trace"]
+    if value is None:
+        return None
+    return deserialize_acquired_trace(
+        _canonical_json_bytes(_mapping(value, label="preparation_acquired_trace")),
+        expected_acquisition_source=acquired.coordinate.capability.acquisition_source,
     )
 
 
@@ -282,6 +299,13 @@ def serialize_discovery_physical_fact_sidecar(
                     "selection_subject_id": record.selection_subject_id,
                     "acquired_trace": json.loads(
                         serialize_acquired_trace(record.acquired_trace).decode("utf-8")
+                    ),
+                    "preparation_acquired_trace": (
+                        None
+                        if record.preparation_acquired_trace is None
+                        else json.loads(
+                            serialize_acquired_trace(record.preparation_acquired_trace)
+                        )
                     ),
                     "candidate_links": [
                         asdict(link) for link in record.candidate_links
@@ -533,7 +557,9 @@ def _read_discovery_physical_fact_records_direct(
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
-        raise ValueError("unsupported Discovery physical sidecar schema_version")
+        raise ValueError(
+            "unsupported Discovery physical sidecar schema_version; rerun analysis"
+        )
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
         _canonical_json_bytes(run_spec_value)
@@ -577,9 +603,7 @@ def restore_discovery_physical_fact_record(
     record = _mapping(raw_record, label="record")
     _require_keys(
         record,
-        _RECORD_KEYS[:3]
-        + ("candidate_links", "retained_prepared_signal")
-        + _RECORD_KEYS[3:],
+        _RECORD_KEYS,
         label="record",
     )
     if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
@@ -602,8 +626,13 @@ def restore_discovery_physical_fact_record(
         ("schema_version", "profile", "trace", "evaluation"),
         label="physical_evaluation",
     )
-    if phys_val["schema_version"] != "physical_peak_evaluation_persistence":
-        raise ValueError("unsupported physical evaluation persistence schema")
+    if (
+        phys_val["schema_version"]
+        != "full_context_local_scope_physical_peak_evaluation_persistence"
+    ):
+        raise ValueError(
+            "unsupported physical evaluation persistence schema; rerun analysis"
+        )
     profile_content = _mapping(phys_val["profile"], label="profile")
     profile = deserialize_signal_processing_profile(
         _canonical_json_bytes(profile_content)
@@ -628,6 +657,9 @@ def restore_discovery_physical_fact_record(
     restored = DiscoveryPhysicalFactRecord(
         work_item=item,
         acquired_trace=acquired,
+        preparation_acquired_trace=_restore_preparation_acquired_trace(
+            record, acquired
+        ),
         candidate_links=_restore_candidate_links(record, item.work_ordinal),
         evaluation=_restore_retained_signal(
             record,
@@ -683,7 +715,9 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
-        raise ValueError("unsupported Discovery physical sidecar schema_version")
+        raise ValueError(
+            "unsupported Discovery physical sidecar schema_version; rerun analysis"
+        )
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
         _canonical_json_bytes(run_spec_value)
@@ -714,9 +748,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         record = _mapping(raw_record, label="record")
         _require_keys(
             record,
-            _RECORD_KEYS[:3]
-            + ("candidate_links", "retained_prepared_signal")
-            + _RECORD_KEYS[3:],
+            _RECORD_KEYS,
             label="record",
         )
         if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
@@ -743,6 +775,9 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         restored = DiscoveryPhysicalFactRecord(
             work_item=item,
             acquired_trace=acquired,
+            preparation_acquired_trace=_restore_preparation_acquired_trace(
+                record, acquired
+            ),
             candidate_links=_restore_candidate_links(record, item.work_ordinal),
             evaluation=_restore_retained_signal(
                 record,

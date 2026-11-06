@@ -1,4 +1,4 @@
-"""Shared XIC context is a physical population, not per-question cropping."""
+"""Shared local populations use wider preparation, not wider selection."""
 
 from dataclasses import replace
 
@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_ms1_capture_fixtures import _FakeRaw, _gaussian, _seed, _settings
+from tests.discovery_ms1_capture_fixtures import (
+    BoundedScanRaw,
+    _FakeRaw,
+    _gaussian,
+    _seed,
+    _settings,
+)
 from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
@@ -15,37 +21,14 @@ from xic_extractor.acquisition.physical_capture import (
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
-from xic_extractor.xic_models import XICRequest, XICTrace
-
-
-class _BoundedRaw(_FakeRaw):
-    """Fixed acquired samples, with the actual requested scan window."""
-
-    def scan_window_for_request(self, request):
-        return (
-            int(np.searchsorted(self.rt, request.rt_min, side="left")),
-            int(np.searchsorted(self.rt, request.rt_max, side="right")) - 1,
-        )
-
-    def retention_time_for_scan(self, scan_number):
-        return float(self.rt[scan_number])
-
-    def extract_xic_many(self, requests):
-        super().extract_xic_many(requests)
-        return tuple(
-            XICTrace.from_arrays(
-                self.rt[left : right + 1], self.intensity[left : right + 1]
-            )
-            for request in requests
-            for left, right in (self.scan_window_for_request(request),)
-        )
+from xic_extractor.xic_models import XICRequest
 
 
 def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch):
     rt = np.linspace(4.0, 6.0, 801)
     intensity = _gaussian(rt, center=4.8, sigma=0.04, height=1000.0)
     intensity += _gaussian(rt, center=5.25, sigma=0.05, height=2000.0)
-    raw = _BoundedRaw(rt=rt, intensity=intensity)
+    raw = BoundedScanRaw(rt=rt, intensity=intensity)
     counts = {"prepare": 0, "enumerate": 0}
     prepare = physical_capture.prepare_physical_signal
     # This is the unchanged physical owner, not a substitute peak detector.
@@ -107,14 +90,19 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         replay.evaluation.facts.area_counts_seconds
         == left.evaluation.facts.area_counts_seconds
     )
-    assert counts == {"prepare": 1, "enumerate": 1}
+    # One local pass settles acquisition, then one wider preparation is shared
+    # by both NL questions and by the later reselect. Never per-NL preparation.
+    assert counts == {"prepare": 2, "enumerate": 2}
+    assert capture.preparation_request_count == 1
+    assert left.evaluation.preparation_context.rt[0] < left.evaluation.prepared.rt[0]
+    assert left.evaluation.preparation_context.rt[-1] > left.evaluation.prepared.rt[-1]
 
 
-def test_sparse_extension_reunites_contexts_without_repeating_extension():
+def test_sparse_extension_then_final_edge_repair_reunite_contexts_once():
     rt = np.linspace(3.0, 7.0, 81)
     intensity = _gaussian(rt, center=4.8, sigma=0.07, height=1000.0)
     intensity += _gaussian(rt, center=6.0, sigma=0.07, height=2000.0)
-    raw = _BoundedRaw(rt=rt, intensity=intensity)
+    raw = BoundedScanRaw(rt=rt, intensity=intensity)
     capture = PhysicalPeakCapture(
         RawSuperWindowSource(raw),
         acquisition_source=raw.acquisition_source,
@@ -128,16 +116,16 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
         )
     )
     assert capture.initial_request_count == 2
-    assert capture.reacquisition_request_count == 1
+    assert capture.reacquisition_request_count == 2
     assert left.search.request == right.search.request
     assert left.search.request.rt_min < 4.75
-    assert left.search.request.rt_max == 6.5
+    assert left.search.request.rt_max == pytest.approx(7.1)
     assert left.evaluation.segment_universe == right.evaluation.segment_universe
     assert right.evaluation.facts.apex_rt_min == pytest.approx(6.0)
-    # One bounded extension does not override the owner's remaining uncertainty
-    # or keep enlarging the population until an acceptable answer is obtained.
-    assert left.evaluation.reason == "incomplete_peak_context"
-    assert left.evaluation.facts is None
+    assert capture.preparation_request_count == 1
+    # Sparse acquisition and final-view edge settlement are each bounded once.
+    # Reusing that wider preparation closes the original 4.8-minute component.
+    assert left.evaluation.facts.apex_rt_min == pytest.approx(4.8)
 
 
 def test_nearby_xic_centers_and_ppm_are_not_collapsed():
@@ -191,7 +179,7 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
     )
     previous = None
     for groups in variants:
-        raw = _BoundedRaw(rt=rt, intensity=intensity)
+        raw = BoundedScanRaw(rt=rt, intensity=intensity)
         result = capture_ms1_candidates(
             raw,
             groups,

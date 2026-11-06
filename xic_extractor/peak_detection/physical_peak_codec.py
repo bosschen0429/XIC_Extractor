@@ -20,6 +20,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     _physical_vector,
     evaluate_physical_peak,
     prepare_physical_signal,
+    scope_prepared_physical_signal,
     validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -36,7 +37,9 @@ from xic_extractor.peak_detection.signal_quality import (
     SignalQualityStatus,
 )
 
-_PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"
+_PERSISTED_PHYSICAL_EVALUATION_SCHEMA = (
+    "full_context_local_scope_physical_peak_evaluation_persistence"
+)
 _PERSISTED_PHYSICAL_KEYS = (
     "schema_version",
     "profile",
@@ -48,6 +51,7 @@ _PERSISTED_EVALUATION_KEYS = (
     "state",
     "reason",
     "prepared",
+    "preparation_context",
     "segment_universe",
     "question",
     "answer",
@@ -134,11 +138,24 @@ def rehydrate_physical_peak_evaluation(
 ) -> PhysicalPeakEvaluation:
     if not isinstance(expected, PhysicalPeakEvaluation):
         raise TypeError("expected must be a PhysicalPeakEvaluation")
+    preparation_context = expected.preparation_context
+    if preparation_context is not None and (
+        not _same_trace_values(
+            _physical_vector(rt_values, field="rt_values"), expected.prepared.rt
+        )
+        or not _same_trace_values(
+            _physical_vector(intensity_values, field="intensity_values"),
+            expected.prepared.raw,
+        )
+    ):
+        raise ValueError("physical evaluation crosses RT/raw content")
     prepared_result = prepare_physical_signal(
-        rt_values,
-        intensity_values,
+        rt_values if preparation_context is None else preparation_context.rt,
+        intensity_values if preparation_context is None else preparation_context.raw,
         profile=profile,
     )
+    if preparation_context is not None:
+        prepared_result = scope_prepared_physical_signal(prepared_result, rt_values)
     actual = evaluate_physical_peak(
         prepared_result,
         query_rt_min=expected.question.query_rt_min,
@@ -223,7 +240,9 @@ def deserialize_physical_peak_evaluation(
     root = _physical_mapping(value, label="physical evaluation payload")
     _require_physical_keys(root, _PERSISTED_PHYSICAL_KEYS, label="physical payload")
     if root["schema_version"] != _PERSISTED_PHYSICAL_EVALUATION_SCHEMA:
-        raise ValueError("unsupported physical evaluation persistence schema")
+        raise ValueError(
+            "unsupported physical evaluation persistence schema; rerun analysis"
+        )
 
     profile_content = _physical_mapping(root["profile"], label="profile")
     profile = deserialize_signal_processing_profile(
@@ -302,6 +321,23 @@ def _physical_evaluation_payload(
             "state": prepared.state,
             "reason": prepared.reason,
         },
+        "preparation_context": (
+            None
+            if evaluation.preparation_context is None
+            else {
+                "schema_version": evaluation.preparation_context.schema_version,
+                "state": evaluation.preparation_context.state,
+                "reason": evaluation.preparation_context.reason,
+                "rt": [
+                    _physical_float_text(item)
+                    for item in evaluation.preparation_context.rt
+                ],
+                "raw": [
+                    _physical_float_text(item)
+                    for item in evaluation.preparation_context.raw
+                ],
+            }
+        ),
         "segment_universe": {
             "schema_version": universe.schema_version,
             "context_rt_start_min": _physical_float_text(universe.context_rt_start_min),
@@ -429,6 +465,38 @@ def physical_evaluation_from_payload(
         state=_physical_state(prepared_value["state"], field="prepared.state"),
         reason=_physical_text(prepared_value["reason"], field="prepared.reason"),
     )
+    preparation_context = None
+    if value["preparation_context"] is not None:
+        context = _physical_mapping(
+            value["preparation_context"], label="preparation_context"
+        )
+        _require_physical_keys(
+            context,
+            (*_PREPARED_PROJECTION_KEYS, "rt", "raw"),
+            label="preparation_context",
+        )
+        preparation_context = PreparedSignalProjection(
+            schema_version=_physical_text(
+                context["schema_version"], field="preparation_context.schema_version"
+            ),
+            profile=profile,
+            state=_physical_state(context["state"], field="preparation_context.state"),
+            reason=_physical_text(
+                context["reason"], field="preparation_context.reason"
+            ),
+            rt=tuple(
+                _physical_float_from_text(item, field="preparation_context.rt")
+                for item in _physical_list(
+                    context["rt"], label="preparation_context.rt"
+                )
+            ),
+            raw=tuple(
+                _physical_float_from_text(item, field="preparation_context.raw")
+                for item in _physical_list(
+                    context["raw"], label="preparation_context.raw"
+                )
+            ),
+        )
     universe_value = _physical_mapping(
         value["segment_universe"], label="segment_universe"
     )
@@ -559,6 +627,7 @@ def physical_evaluation_from_payload(
         state=_physical_state(value["state"], field="evaluation.state"),
         reason=_physical_text(value["reason"], field="evaluation.reason"),
         prepared=prepared,
+        preparation_context=preparation_context,
         segment_universe=universe,
         question=question,
         answer=answer,

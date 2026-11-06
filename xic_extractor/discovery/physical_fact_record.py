@@ -51,6 +51,7 @@ class DiscoveryPhysicalFactRecord:
     work_item: DiscoveryPhysicalWorkItem
     acquired_trace: AcquiredTrace
     evaluation: PhysicalPeakEvaluation
+    preparation_acquired_trace: AcquiredTrace | None = None
     candidate_links: tuple[DiscoveryPhysicalCandidateLink, ...] = field(
         default=(), compare=False
     )
@@ -62,6 +63,7 @@ class DiscoveryPhysicalFactRecord:
             self.work_item == other.work_item
             and self.acquired_trace == other.acquired_trace
             and self.evaluation == other.evaluation
+            and self.preparation_acquired_trace == other.preparation_acquired_trace
         )
 
     @property
@@ -124,6 +126,30 @@ def validate_discovery_physical_fact_record(
         or record.evaluation.prepared.raw != record.raw
     ):
         raise ValueError("physical evaluation crosses acquired trace content")
+    context = record.evaluation.preparation_context
+    preparation_acquired = record.preparation_acquired_trace
+    if context is None:
+        if preparation_acquired is not None:
+            raise ValueError("preparation acquisition requires preparation context")
+    else:
+        if not isinstance(preparation_acquired, AcquiredTrace):
+            raise TypeError("preparation_acquired_trace must be an AcquiredTrace")
+        coordinate = preparation_acquired.coordinate
+        local_coordinate = record.acquired_trace.coordinate
+        if (
+            coordinate.capability != local_coordinate.capability
+            or coordinate.request.mz != local_coordinate.request.mz
+            or coordinate.request.ppm_tol != local_coordinate.request.ppm_tol
+            or coordinate.request.rt_min > local_coordinate.request.rt_min
+            or coordinate.request.rt_max < local_coordinate.request.rt_max
+        ):
+            raise ValueError("preparation acquisition crosses local acquisition input")
+        if context.rt != tuple(
+            float(value) for value in preparation_acquired.trace.rt
+        ) or context.raw != tuple(
+            float(value) for value in preparation_acquired.trace.intensity
+        ):
+            raise ValueError("preparation context crosses acquired trace content")
 
 
 def validate_discovery_candidate_physical_binding(

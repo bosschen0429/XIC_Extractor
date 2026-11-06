@@ -172,7 +172,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         assert output.physical_facts_json is not None
         payload = json.loads(output.physical_facts_json.read_text(encoding="utf-8"))
         if surface == "facts":
-            assert len(payload["records"]) == len(payload["work_manifest"]) == 2
+            assert len(payload["records"]) == len(payload["work_manifest"]) == 3
         assert output.candidates_csv.read_bytes() == expected_path.read_bytes()
         assert {row["candidate_id"] for row in _read_csv(output.review_csv)} == {
             item.candidate_id for item in expected
@@ -188,15 +188,16 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             )
             == 3
         )
-        assert len(payload["records"]) == len(payload["work_manifest"]) == 2
+        assert len(payload["records"]) == len(payload["work_manifest"]) == 3
         records = read_discovery_physical_fact_records(
             output.physical_facts_json,
             expected_run_spec=spec,
             expected_acquisition_input=acquisition,
         )
         assert {record.candidate_id for record in records} == {
-            item.candidate_id for item in features
+            item.candidate_id for item in expected
         }
+        assert sum(record.evaluation.facts is None for record in records) == 1
         original_records = {
             record.candidate_id: record for record in physical["physical_evaluations"]
         }

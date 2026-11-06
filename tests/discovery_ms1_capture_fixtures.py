@@ -157,3 +157,26 @@ class _FakeRaw:
     def read_ms1_mass_windows(self, requests):
         """This fake records no parent-MS1 centroids."""
         return (None,) * len(requests)
+
+
+class BoundedScanRaw(_FakeRaw):
+    """Fixed acquired samples, with the actual requested scan window."""
+
+    def scan_window_for_request(self, request):
+        return (
+            int(np.searchsorted(self.rt, request.rt_min, side="left")),
+            int(np.searchsorted(self.rt, request.rt_max, side="right")) - 1,
+        )
+
+    def retention_time_for_scan(self, scan_number):
+        return float(self.rt[scan_number])
+
+    def extract_xic_many(self, requests):
+        super().extract_xic_many(requests)
+        return tuple(
+            XICTrace.from_arrays(
+                self.rt[left : right + 1], self.intensity[left : right + 1]
+            )
+            for request in requests
+            for left, right in (self.scan_window_for_request(request),)
+        )

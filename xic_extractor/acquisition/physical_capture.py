@@ -30,7 +30,9 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     enumerate_physical_segment_universe,
     mint_physical_peak_question,
+    physical_component_repair_bounds,
     prepare_physical_signal,
+    scope_prepared_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
@@ -62,6 +64,7 @@ class CapturedPhysicalPeak:
     acquired_trace: AcquiredTrace
     evaluation: PhysicalPeakEvaluation
     trace_quality: str
+    preparation_acquired_trace: AcquiredTrace | None = None
 
 
 class PhysicalPeakCapture:
@@ -93,10 +96,12 @@ class PhysicalPeakCapture:
             XICRequest, tuple[PreparedSignalResult, PhysicalSegmentUniverse]
         ] = {}
         self._results: dict[tuple[str, float, XICRequest], CapturedPhysicalPeak] = {}
+        self._preparation_universes: dict[XICRequest, PhysicalSegmentUniverse] = {}
         self._batches: list[TraceAcquisitionBatch] = []
         self._next_work_ordinal = 0
         self.initial_request_count = 0
         self.reacquisition_request_count = 0
+        self.preparation_request_count = 0
 
     @property
     def acquisition_batches(self) -> tuple[TraceAcquisitionBatch, ...]:
@@ -107,9 +112,9 @@ class PhysicalPeakCapture:
     ) -> tuple[CapturedPhysicalPeak, ...]:
         """Build shared peak populations before answering individual questions.
 
-        Only identical mass queries share signal. Overlapping local windows
-        form a common context; neither a question nor a later reselect crops it.
-        One bounded extension round applies to the entire affected population.
+        Overlapping identical mass queries share sparse-point repair, wider
+        preparation and local selection. One edge repair uses the final prepared
+        view; a known same-component closure can supply its required extent.
         """
         unique: dict[tuple[str, float, XICRequest], PhysicalPeakSearch] = {}
         for search in searches:
@@ -128,7 +133,13 @@ class PhysicalPeakCapture:
                     ordinals[key], replace(original, request=request), traces[request]
                 )
                 results[key] = result
-                expanded = _expanded_request(result, self._profile)
+                # Sparse acquisition can be settled before preparation. Edge
+                # completeness must instead be decided on the final background.
+                expanded = (
+                    _expanded_request(result, self._profile)
+                    if len(result.acquired_trace.trace.rt) < self._profile.window_points
+                    else None
+                )
                 if expanded is not None:
                     lower = min(lower, expanded.rt_min)
                     upper = max(upper, expanded.rt_max)
@@ -151,6 +162,100 @@ class PhysicalPeakCapture:
             if results[key].search.request != request:
                 results[key] = self._evaluate(
                     ordinals[key], replace(original, request=request), traces[request]
+                )
+        # Preparation is wider than the question, not permission to select a
+        # neighboring peak. Each settled local request gets one finite expansion;
+        # all NL questions on that request reuse its preparation and population.
+        preparation_requests = {
+            request: replace(
+                request,
+                rt_min=max(0.0, request.rt_min - (request.rt_max - request.rt_min)),
+                rt_max=request.rt_max + (request.rt_max - request.rt_min),
+            )
+            for request in final_contexts
+        }
+        background_requests = tuple(dict.fromkeys(preparation_requests.values()))
+        background_traces = dict(
+            zip(background_requests, self._acquire(background_requests), strict=True)
+        )
+        self.preparation_request_count = len(background_requests)
+        self._populations.clear()
+        for key, settled in results.items():
+            preparation_trace = background_traces[
+                preparation_requests[settled.search.request]
+            ]
+            results[key] = self._evaluate(
+                ordinals[key],
+                settled.search,
+                settled.acquired_trace,
+                preparation_acquired=preparation_trace,
+            )
+        edge_searches = {
+            key: replace(
+                result.search,
+                request=(
+                    self._edge_repair_request(result) or result.search.request
+                    if result.evaluation.reason == "incomplete_peak_context"
+                    else result.search.request
+                ),
+            )
+            for key, result in results.items()
+        }
+        edge_contexts = _shared_contexts(tuple(edge_searches.values()))
+        edge_request_by_search = {
+            search: request
+            for request, members in edge_contexts.items()
+            for search in members
+        }
+        repaired = {
+            key: edge_request_by_search[search]
+            for key, search in edge_searches.items()
+            if edge_request_by_search[search] != results[key].search.request
+        }
+        if repaired:
+            # Exactly one edge-repair round, now on the full-prepared local
+            # view. Keep its background fixed; do not widen complete/no-selection
+            # questions or repeatedly extend until a peak becomes acceptable.
+            repair_requests = tuple(dict.fromkeys(repaired.values()))
+            repair_traces = dict(
+                zip(repair_requests, self._acquire(repair_requests), strict=True)
+            )
+            self.reacquisition_request_count += len(repair_requests)
+            repair_preparation_requests = {}
+            for request in repair_requests:
+                sources = [
+                    preparation_requests[results[key].search.request]
+                    for key, repair_request in repaired.items()
+                    if repair_request == request
+                ]
+                # An edge extension may join two populations. Their common
+                # background covers both original preparations and is fitted
+                # once, not independently for their NL questions.
+                repair_preparation_requests[request] = replace(
+                    request,
+                    rt_min=min(source.rt_min for source in sources),
+                    rt_max=max(source.rt_max for source in sources),
+                )
+            missing_background = tuple(
+                dict.fromkeys(
+                    request
+                    for request in repair_preparation_requests.values()
+                    if request not in background_traces
+                )
+            )
+            background_traces.update(
+                zip(missing_background, self._acquire(missing_background), strict=True)
+            )
+            self.preparation_request_count += len(missing_background)
+            self._populations.clear()
+            for key, request in repaired.items():
+                results[key] = self._evaluate(
+                    ordinals[key],
+                    replace(results[key].search, request=request),
+                    repair_traces[request],
+                    preparation_acquired=background_traces[
+                        repair_preparation_requests[request]
+                    ],
                 )
         # Different input windows can now ask exactly the same final question.
         # Keep a single completed work item for that question, not two aliases.
@@ -181,7 +286,10 @@ class PhysicalPeakCapture:
         result = self._results.get(key)
         if result is None:
             result = self._evaluate(
-                self._next_work_ordinal, search, captured.acquired_trace
+                self._next_work_ordinal,
+                search,
+                captured.acquired_trace,
+                preparation_acquired=captured.preparation_acquired_trace,
             )
             self._next_work_ordinal += 1
             self._results[key] = result
@@ -197,24 +305,19 @@ class PhysicalPeakCapture:
         return tuple(traces)
 
     def _evaluate(
-        self, ordinal: int, search: PhysicalPeakSearch, acquired: AcquiredTrace
+        self,
+        ordinal: int,
+        search: PhysicalPeakSearch,
+        acquired: AcquiredTrace,
+        *,
+        preparation_acquired: AcquiredTrace | None = None,
     ) -> CapturedPhysicalPeak:
         rt, intensity = acquired.trace.rt, acquired.trace.intensity
         population = self._populations.get(search.request)
         if population is None:
-            cache_key = (
-                tuple(map(float, rt)),
-                tuple(map(float, intensity)),
-                self._profile,
-            )
-            prepared = self._prepared.get(cache_key)
-            if prepared is None:
-                prepared = prepare_physical_signal(
-                    rt,
-                    intensity,
-                    profile=self._profile,
-                )
-                self._prepared[cache_key] = prepared
+            prepared = self._prepare(preparation_acquired or acquired)
+            if preparation_acquired is not None:
+                prepared = scope_prepared_physical_signal(prepared, rt)
             universe = enumerate_physical_segment_universe(
                 prepared,
                 request_context_rt_start_min=search.request.rt_min,
@@ -237,6 +340,49 @@ class PhysicalPeakCapture:
             acquired_trace=acquired,
             evaluation=evaluation,
             trace_quality=_trace_quality(evaluation, rt, intensity),
+            preparation_acquired_trace=preparation_acquired,
+        )
+
+    def _prepare(self, acquired: AcquiredTrace) -> PreparedSignalResult:
+        trace = acquired.trace
+        key = (
+            tuple(map(float, trace.rt)),
+            tuple(map(float, trace.intensity)),
+            self._profile,
+        )
+        prepared = self._prepared.get(key)
+        if prepared is None:
+            prepared = prepare_physical_signal(
+                trace.rt, trace.intensity, profile=self._profile
+            )
+            self._prepared[key] = prepared
+        return prepared
+
+    def _edge_repair_request(self, captured: CapturedPhysicalPeak) -> XICRequest | None:
+        request = _expanded_request(captured, self._profile)
+        acquired = captured.preparation_acquired_trace
+        if request is None or acquired is None:
+            return request
+        full_request = acquired.coordinate.request
+        prepared = self._prepare(acquired)
+        universe = self._preparation_universes.get(full_request)
+        if universe is None:
+            universe = enumerate_physical_segment_universe(
+                prepared,
+                request_context_rt_start_min=full_request.rt_min,
+                request_context_rt_end_min=full_request.rt_max,
+                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+            )
+            self._preparation_universes[full_request] = universe
+        bounds = physical_component_repair_bounds(
+            captured.evaluation, prepared, universe
+        )
+        if bounds is None:
+            return request
+        return replace(
+            request,
+            rt_min=min(request.rt_min, bounds[0]),
+            rt_max=max(request.rt_max, bounds[1]),
         )
 
 

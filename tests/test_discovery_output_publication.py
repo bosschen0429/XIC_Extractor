@@ -29,10 +29,12 @@ from xic_extractor.execution.timing import TimingRecorder
         "rejected_noise_or_outside_rt",
     ),
 )
+@pytest.mark.parametrize("has_nl_evidence", (False, True))
 def test_discovery_publication_retains_only_used_candidate_states(
     tmp_path: Path,
     basis: str,
     state: str,
+    has_nl_evidence: bool,
 ) -> None:
     from tests.discovery_csv_fixtures import _candidate
     from tests.discovery_pipeline_fixtures import _read_csv
@@ -44,6 +46,7 @@ def test_discovery_publication_retains_only_used_candidate_states(
         precursor_mz_basis=basis,
         discovery_candidate_state=state,
         ms1_peak_found=feature_backed,
+        has_precursor_nl_evidence=has_nl_evidence,
     )
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"retained-states")
@@ -61,6 +64,7 @@ def test_discovery_publication_retains_only_used_candidate_states(
     expected_ids = (
         [candidate.candidate_id]
         if feature_backed
+        or has_nl_evidence
         or basis
         in {
             "scan_precursor",

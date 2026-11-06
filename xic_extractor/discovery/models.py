@@ -439,6 +439,9 @@ class DiscoveryCandidate:
     is_provisional: bool = False
     # Qualified MS1 ion reading; the original precursor remains the MS2 seed key.
     ms1_apex_mz: float | None = None
+    # Live method-owner fact for retaining NL-only review at publication.
+    # It is not same-peak support, Alignment admission, or a CSV field.
+    has_precursor_nl_evidence: bool = False
 
     @property
     def physical_mz(self) -> float:

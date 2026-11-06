@@ -198,6 +198,58 @@ def prepare_physical_signal(
     )
 
 
+def scope_prepared_physical_signal(
+    prepared_result: PreparedSignalResult,
+    local_rt_values: object,
+) -> PreparedSignalResult:
+    """Answer a local trace using background prepared on the complete context.
+
+    Only arrays are sliced here. Gaussian and AsLS are never recomputed on the
+    local raw samples, and segment enumeration still belongs to the caller's
+    local question. Preserve the preparation input for exact owner replay.
+    """
+    local_rt = _physical_vector(local_rt_values, field="local_rt_values")
+    full_rt = prepared_result.projection.rt
+    start = (
+        int(np.searchsorted(full_rt, local_rt[0]))
+        if local_rt and local_rt != full_rt
+        else 0
+    )
+    stop = start + len(local_rt)
+    if full_rt[start:stop] != local_rt:
+        raise ValueError("local trace must be an exact contiguous preparation slice")
+    projection = replace(
+        prepared_result.projection,
+        rt=local_rt,
+        raw=prepared_result.projection.raw[start:stop],
+    )
+    prepared = prepared_result.prepared
+    if prepared is not None:
+        prepared = replace(
+            prepared,
+            projection=projection,
+            **{
+                name: getattr(prepared, name)[start:stop]
+                for name in ("rt", "raw", "baseline", "smoothed", "positive_signal")
+            },
+        )
+    return replace(
+        prepared_result,
+        projection=projection,
+        prepared=prepared,
+        trace_context_rt_start_min=local_rt[0] if local_rt else None,
+        trace_context_rt_end_min=local_rt[-1] if local_rt else None,
+        baseline_unclipped=(
+            prepared_result.baseline_unclipped[start:stop]
+            if prepared_result.baseline_unclipped is not None
+            else None
+        ),
+        preparation_context=(
+            prepared_result.preparation_context or prepared_result.projection
+        ),
+    )
+
+
 def enumerate_physical_segment_universe(
     prepared_result: PreparedSignalResult,
     *,
@@ -816,6 +868,7 @@ def answer_physical_peak_question(
         integration=integration,
         operations=operations,
         retained_prepared_signal=prepared_result.prepared,
+        preparation_context=prepared_result.preparation_context,
     )
 
 
@@ -846,6 +899,52 @@ def evaluate_physical_peak(
         search_rt_window=search_rt_window,
     )
     return answer_physical_peak_question(prepared_result, universe, question)
+
+
+def physical_component_repair_bounds(
+    local_evaluation: PhysicalPeakEvaluation,
+    full_prepared: PreparedSignalResult,
+    full_universe: PhysicalSegmentUniverse,
+) -> tuple[float, float] | None:
+    """Locate observed closure of the same incomplete local component only.
+
+    This supplies acquisition extent, never a new selected peak or numeric
+    answer. A complete/no-selection local question cannot borrow an exterior
+    component; a different full-context apex cannot replace the local one.
+    """
+    local_segments = local_evaluation.question.admissible_segments
+    prepared = full_prepared.prepared
+    if (
+        local_evaluation.reason != "incomplete_peak_context"
+        or len(local_segments) != 1
+        or prepared is None
+    ):
+        return None
+    local_apex = local_segments[0].apex_rt_min
+    query = local_evaluation.question.query_rt_min
+    same_components = tuple(
+        segment
+        for segment in full_universe.segments
+        if segment.apex_rt_min == local_apex
+        and segment.left_rt_min <= query <= segment.right_rt_min
+    )
+    if len(same_components) != 1:
+        return None
+    component = same_components[0]
+    if _physical_segment_support_failure(
+        prepared,
+        component,
+        selection_policy_version=local_evaluation.question.selection_policy_version,
+    ):
+        return None
+    # Retain the observed exterior samples as context, not just a boundary that
+    # would itself land on the new local trace edge.
+    if component.start_index == 0 or component.end_index == len(prepared.rt):
+        return None
+    return (
+        prepared.rt[component.start_index - 1],
+        prepared.rt[component.end_index],
+    )
 
 
 def _physical_raw_descriptor_projection(
@@ -1018,6 +1117,22 @@ def validate_bounded_physical_peak_evaluation(
     if evaluation.operations not in allowed_operation_sequences:
         raise ValueError("physical evaluation operations are not canonical")
     validate_prepared_signal(evaluation.prepared)
+    context = evaluation.preparation_context
+    if context is not None:
+        validate_prepared_signal(context)
+        local = evaluation.prepared
+        start = (
+            int(np.searchsorted(context.rt, local.rt[0]))
+            if local.rt and local.rt != context.rt
+            else 0
+        )
+        stop = start + len(local.rt)
+        if (
+            context.profile != local.profile
+            or context.rt[start:stop] != local.rt
+            or context.raw[start:stop] != local.raw
+        ):
+            raise ValueError("local physical trace crosses its preparation context")
     validate_physical_segment_universe(evaluation.segment_universe)
     validate_physical_peak_question(evaluation.question)
     validate_physical_peak_answer(evaluation.answer)

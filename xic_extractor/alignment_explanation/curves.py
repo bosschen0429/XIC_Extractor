@@ -55,6 +55,12 @@ _PROVENANCE_KEYS = frozenset(
         "profile",
         "physical_state",
         "physical_reason",
+        "preparation_context_rt_start_min",
+        "preparation_context_rt_end_min",
+        "preparation_context_point_count",
+        "local_scope_rt_start_min",
+        "local_scope_rt_end_min",
+        "local_scope_point_count",
     }
 )
 

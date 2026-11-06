@@ -24,6 +24,24 @@ must not create positive peak signal. A selected interval reaching an acquired
 trace edge lacks observed boundary context and has no numeric physical answer
 (`incomplete_peak_context`); Discovery's bounded reacquisition can recover it.
 
+Discovery separates background preparation from the local NL question. After
+one bounded sparse-point repair when needed, it obtains one additional local
+window width on each side for the same mass query. AsLS and Gaussian use that
+full preparation context; their prepared arrays are then sliced back to the
+local acquired points before segment enumeration, selection and integration.
+One bounded edge repair uses this final prepared view, not an earlier local-only
+background fit. Complete and no-selection questions do not trigger that repair.
+Before that repair, a complete component already observed in the full preparation
+can supply its extent only when it has the same canonical apex and contains the
+same NL query as the incomplete local component. Otherwise the existing bounded
+extension applies; an exterior peak cannot become a new winner. The repair
+retains the prepared background; joining local populations shares their combined
+preparation context. A larger component outside the local scope cannot
+receive the NL query's area. The persisted result retains both preparation
+input and local scope for replay; the cropped Gaussian is not a new convolution
+of local raw data. NL evidence remains available for review when no local MS1
+peak is selected, with no numeric area rather than zero.
+
 ### Edge-reaching intervals
 
 Fresh boundaries stop at the first observed return to 10% of the canonical

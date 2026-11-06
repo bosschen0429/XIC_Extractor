@@ -729,9 +729,9 @@ def _reacquire_peak_observations(
         # peak would enter the universe twice and its MS2 events would compete
         # with a copy. Reading the peak on the trace that first selected it
         # yields the identical observation, which counts once.
-        first_trace = next(
+        first_view = next(
             (
-                kept_trace
+                (kept, kept_trace)
                 for kept, kept_trace in selected_traces
                 if (kept_trace.mz, kept_trace.rt_min, kept_trace.rt_max)
                 != (trace.mz, trace.rt_min, trace.rt_max)
@@ -739,11 +739,13 @@ def _reacquire_peak_observations(
             ),
             None,
         )
-        if first_trace is not None and binding.physical_evaluation is not None:
+        if first_view is not None and binding.physical_evaluation is not None:
+            kept_observation, first_trace = first_view
             shared = capture_owner.capture_reacquired_physical_peak(
                 scope=search_scope,
                 candidate_id=candidate.candidate_id,
                 trace=first_trace,
+                shared_preparation=kept_observation.physical_evaluation,
             )
             if shared.selected_hypothesis is not None:
                 shared_observation = capture_owner.mint_captured_peak_observation(

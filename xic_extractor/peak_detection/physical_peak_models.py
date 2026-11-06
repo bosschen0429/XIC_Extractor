@@ -92,6 +92,8 @@ class PreparedSignalResult:
     trace_context_rt_end_min: float | None = None
     # Live AsLS intermediate; excluded from prepared-signal persistence and identity.
     baseline_unclipped: tuple[float, ...] | None = None
+    # Full preparation input when this result is scoped to a local query trace.
+    preparation_context: PreparedSignalProjection | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +176,7 @@ class PhysicalPeakEvaluation:
     operations: tuple[PhysicalPeakOperation, ...]
     # Live owner intermediates for projection; not scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+    preparation_context: PreparedSignalProjection | None = None
 
     def __deepcopy__(self, memo: dict[int, object]) -> PhysicalPeakEvaluation:
         # The complete answer graph is frozen dataclasses, tuples and scalars.

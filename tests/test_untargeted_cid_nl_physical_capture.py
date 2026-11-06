@@ -52,7 +52,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
-    from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
@@ -108,7 +107,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         _settings(),
         neutral_loss_profile=None,
         seed_rt_gap_min=0.01,
-        # Retain two chemical hypotheses while their MS1 capture contexts overlap.
+        # Keep the chemical seed distinction; Discovery may merge shared peaks.
         product_mz_tolerance_ppm=1.0,
         rt_min=12.8,
         rt_max=13.4,
@@ -176,32 +175,20 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
-    # Different mass queries still require Alignment's comparison context.
-    # Identical queries already share their final context in Discovery.
-    assert len(discovery.candidates) == 2
-    legacy_records = tuple(
-        DiscoveryPhysicalFactRecord(
-            work_item=record.work_item,
-            acquired_trace=record.acquired_trace,
-            evaluation=evaluate_physical_peak(
-                prepare_physical_signal(
-                    record.acquired_trace.trace.rt,
-                    record.acquired_trace.trace.intensity,
-                    profile=profile,
-                ),
-                query_rt_min=record.evaluation.question.query_rt_min,
-                request_context_rt_start_min=(
-                    record.evaluation.question.context_rt_start_min
-                ),
-                request_context_rt_end_min=(
-                    record.evaluation.question.context_rt_end_min
-                ),
-                selection_policy_version="baseline_peak_contains_query",
-            ),
-        )
-        for record in (
-            binding.physical_fact_record for binding in discovery.physical_bindings
-        )
+    # Use current owner facts and candidate receipts together. Full-context
+    # Discovery legitimately merges the shifted seeds onto one physical peak.
+    records = tuple(
+        binding.physical_fact_record for binding in discovery.physical_bindings
+    )
+    assert len(records) == (1 if shifted_mass else 2)
+    assert {
+        scan for candidate in discovery.candidates for scan in candidate.seed_scan_ids
+    } == {scan.scan_number for scan in source_raw.scans}
+    # A measured-ion mass is an actual changed acquisition question, independent
+    # of incidental local-window edge differences between seed groups.
+    candidates = tuple(
+        replace(candidate, ms1_apex_mz=500.008 if shifted_mass else 500.005)
+        for candidate in discovery.candidates
     )
     owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     if not fresh_available:
@@ -219,50 +206,50 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.candidates,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=legacy_records,
+        physical_records=records,
     )
     assessment = result.assessment_input.assessment
-    if not shifted_mass:
-        assert assessment.content.method_result == (
-            "SUPPORT" if fresh_available else "REJECT"
-        )
-        assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
-    # Both candidates select the same MS1 peak, shifted traces included, so the
-    # universe holds that peak once.
+    assert assessment.content.method_result == (
+        "SUPPORT" if fresh_available else "REJECT"
+    )
+    assert len(assessment.individual_support_refs) == (
+        len(source_raw.scans) if fresh_available else 0
+    )
+    assert {ref.observation.scan_number for ref in assessment.evidence_refs} == {
+        scan.scan_number for scan in source_raw.scans
+    }
+    # Every candidate selects the same MS1 peak, so it enters the universe once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == 2
+    assert len(result.acquisition.traces) == len(
+        {candidate.physical_mz for candidate in candidates}
+    )
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
-    assert len(captures) == 2
-    # A candidate that selected an already selected peak on its own shifted
-    # trace reads that peak once more on the first trace.
-    shared_reads = 1 if shifted_mass and fresh_available else 0
-    assert evaluate.call_count == 2 + shared_reads
-    assert prepare.call_count == 2 + shared_reads
-    for record in legacy_records:
+    assert len(captures) == len(records)
+    # Each changed candidate question is evaluated once; exact source replay
+    # below must retain the full-context owner answer without another read.
+    assert evaluate.call_count == len(records)
+    assert prepare.call_count == len(records)
+    for record in records:
         candidate = next(
-            item
-            for item in discovery.candidates
-            if item.candidate_id == record.candidate_id
+            item for item in candidates if item.candidate_id == record.candidate_id
         )
         acquired = next(
             item
             for item in result.acquisition.traces
-            if item.coordinate.request.mz == candidate.precursor_mz
+            if item.coordinate.request.mz == candidate.physical_mz
         )
         assert (
             acquired.coordinate.request.ppm_tol == settings.precursor_mz_tolerance_ppm
         )
-        changed = acquired.coordinate.request.rt_min < record.work_item.xic_rt_min or (
-            acquired.coordinate.request.rt_max > record.work_item.xic_rt_max
-        )
+        changed = acquired.coordinate.request.mz != record.work_item.xic_mz
         changed_questions += changed
         expected = evaluate_physical_peak(
             prepare_physical_signal(
@@ -272,7 +259,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             request_context_rt_start_min=acquired.coordinate.request.rt_min,
             request_context_rt_end_min=acquired.coordinate.request.rt_max,
         )
-        assert (expected != record.evaluation) == changed
+        assert expected != record.evaluation
         capture = captures[record.candidate_id]
         assert capture.physical_evaluation == expected
         binding = next(
@@ -284,7 +271,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert binding.physical_evaluation is capture.physical_evaluation
         assert (
             binding.source_physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query"
+            == record.evaluation.question.selection_policy_version
         )
         assert (
             capture.physical_evaluation.question.selection_policy_version
@@ -324,7 +311,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert replay.physical_evaluation == record.evaluation
         assert (
             replay.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query"
+            == record.evaluation.question.selection_policy_version
         )
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
@@ -342,12 +329,16 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             == integration.area_baseline_corrected
         )
         assert observed.content.integration.rt_apex_min == integration.rt_apex_min
-    assert states == (["available"] * 2 if fresh_available else ["unavailable"] * 2)
-    assert changed_questions == 2
+    assert states == (
+        ["available"] * len(records)
+        if fresh_available
+        else ["unavailable"] * len(records)
+    )
+    assert changed_questions == len(records)
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
-        candidates=discovery.candidates,
+        candidates=candidates,
         settings=settings,
         raw=raw,
         signal_processing_profile=profile,
@@ -358,12 +349,12 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.candidates,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=legacy_records,
+        physical_records=records,
         _preacquired_traces=batch,
     )
     assert reused.acquisition is batch.acquisition
@@ -564,10 +555,31 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     assert capture.trace.rt_max == record.work_item.xic_rt_max
     assert capture.selected_hypothesis is not None
     assert record.evaluation.facts is not None
-    assert capture.selected_hypothesis.integration.area_baseline_corrected == (
-        pytest.approx(
-            record.evaluation.facts.area_counts_seconds / (1 + interference_abundance)
+    # Requantification has its own acquisition/preparation context. Its source
+    # signal is the isolated Gaussian, not the old wider-context area divided
+    # by abundance (AsLS is context-sensitive).
+    from math import erf, sqrt
+
+    mask = (source_raw.rt >= capture.trace.rt_min) & (
+        source_raw.rt <= capture.trace.rt_max
+    )
+    np.testing.assert_array_equal(capture.trace.intensity, source_raw.intensity[mask])
+    integration = capture.selected_hypothesis.integration
+    sigma_min = 0.035
+    gaussian_area = (
+        1000.0
+        * sigma_min
+        * sqrt(np.pi / 2.0)
+        * 60.0
+        * (
+            erf((integration.rt_right_min - 8.0) / (sqrt(2.0) * sigma_min))
+            - erf((integration.rt_left_min - 8.0) / (sqrt(2.0) * sigma_min))
         )
+    )
+    # Discrete trapezoids and the fitted baseline may reduce this analytic
+    # raw-Gaussian integral slightly; interference would increase it by 50%.
+    assert integration.area_baseline_corrected == pytest.approx(
+        gaussian_area, rel=0.005
     )
     assert candidate.precursor_mz == record.work_item.xic_mz == pytest.approx(500.016)
 

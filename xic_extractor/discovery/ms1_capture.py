@@ -96,6 +96,7 @@ class _DiscoveryMs1Measurements:
     acquisition_batches: tuple[TraceAcquisitionBatch, ...]
     initial_request_count: int = 0
     reacquisition_request_count: int = 0
+    preparation_request_count: int = 0
 
     def __post_init__(self) -> None:
         count_values = (
@@ -105,6 +106,7 @@ class _DiscoveryMs1Measurements:
             self.predicted_chunked_call_count,
             self.initial_request_count,
             self.reacquisition_request_count,
+            self.preparation_request_count,
         )
         if any(
             isinstance(value, bool) or not isinstance(value, int)
@@ -126,12 +128,14 @@ class _DiscoveryMs1Measurements:
         )
         if self.initial_request_count > nonempty_group_count:
             raise ValueError("Discovery MS1 acquisition request population is invalid")
-        if self.reacquisition_request_count > self.initial_request_count:
+        if self.reacquisition_request_count > 2 * self.initial_request_count:
             raise ValueError(
                 "Discovery MS1 reacquisition exceeds its initial population"
             )
         if logical_request_count != (
-            self.initial_request_count + self.reacquisition_request_count
+            self.initial_request_count
+            + self.reacquisition_request_count
+            + self.preparation_request_count
         ):
             raise ValueError("Discovery MS1 acquisition receipts are incomplete")
         if self.exact_scan_window_count > logical_request_count:
@@ -227,6 +231,7 @@ def capture_ms1_candidates(
         acquisition_batches=tuple(batches),
         initial_request_count=physical_capture.initial_request_count,
         reacquisition_request_count=physical_capture.reacquisition_request_count,
+        preparation_request_count=physical_capture.preparation_request_count,
     )
     if measurement_observer is not None:
         measurement_observer(measurements)
@@ -278,16 +283,15 @@ def capture_ms1_candidates(
             physical_indices.append(index)
     # Complete each source's method admission before merging. A valid neighbor
     # cannot lend NL or isotope eligibility to a rejected source wrapper.
-    retained_seeds = tuple(
+    method_seeds = tuple(
         seed
         for candidate, plan in zip(candidates, candidate_plans, strict=True)
-        if candidate.ms1_peak_found
         for seed in plan.group.seeds
     )
     measured = read_parent_ms1_observations(
-        raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
+        raw, method_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
     )
-    measured_by_seed = dict(zip(retained_seeds, measured, strict=True))
+    measured_by_seed = dict(zip(method_seeds, measured, strict=True))
     source_result = candidate_merge.DiscoveryCandidateMergeResult(
         candidates=tuple(candidates),
         bindings=tuple(
@@ -586,10 +590,22 @@ def _verify_precursor_evidence(
         merged.candidates, seed_groups, merged.bindings, strict=True
     ):
         bindings.append(binding)
-        if not candidate.ms1_peak_found:
-            verified.append(candidate)
-            continue
         seeds = [measured_by_seed[seed] for seed in original_seeds]
+        candidate = replace(
+            candidate,
+            has_precursor_nl_evidence=any(
+                seed.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+                for seed in seeds
+            ),
+        )
+        if not candidate.ms1_peak_found:
+            verified.append(
+                replace(
+                    candidate,
+                    tag_evidence_json=merge_seed_evidence(seeds, settings=settings),
+                )
+            )
+            continue
         if candidate.discovery_candidate_state in {
             "review_only_unresolved_peak_attribution",
             "review_only_ambiguous_coisolation",
@@ -845,6 +861,7 @@ def _cid_nl_physical_record(
         ),
         acquired_trace=acquired,
         evaluation=captured.evaluation,
+        preparation_acquired_trace=captured.preparation_acquired_trace,
     )
 
 
