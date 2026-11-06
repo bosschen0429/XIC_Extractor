@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.processing_run_spec_fixtures import (
+    _compile_paths,
+    _raws,
+    _settings,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -25,23 +30,6 @@ from xic_extractor.processing_run_spec import (
 )
 
 
-def _settings() -> DiscoverySettings:
-    return DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile(
-            tag="DNA_dR",
-            neutral_loss_da=116.0474,
-        )
-    )
-
-
-def _raws(tmp_path: Path) -> tuple[Path, Path]:
-    first = tmp_path / "A.raw"
-    second = tmp_path / "B.raw"
-    first.write_bytes(b"first acquisition")
-    second.write_bytes(b"second acquisition")
-    return first, second
-
-
 def _peak_config() -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=Path("raw"),
@@ -54,17 +42,6 @@ def _peak_config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-    )
-
-
-def _compile_paths(
-    raw_paths: tuple[Path, ...],
-    *,
-    settings: DiscoverySettings | None = None,
-):
-    return compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=settings or _settings(),
     )
 
 
@@ -661,12 +638,12 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
 ) -> None:
     import numpy as np
 
-    from tests.test_discovery_pipeline import (
+    from tests.discovery_pipeline_fixtures import (
         _OwnerBoundFakeRawHandle,
         _read_csv,
         _scan_event,
     )
-    from tests.test_discovery_pipeline import (
+    from tests.discovery_pipeline_fixtures import (
         _peak_config as pipeline_config,
     )
     from xic_extractor.discovery.pipeline import run_discovery_batch

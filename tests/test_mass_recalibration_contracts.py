@@ -242,7 +242,11 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
 
 
 def test_standalone_discovery_publishes_readable_probe_receipt(tmp_path):
-    from tests.test_discovery_pipeline import _FakeRawHandle, _run_discovery, _settings
+    from tests.discovery_pipeline_fixtures import (
+        _FakeRawHandle,
+        _run_discovery,
+        _settings,
+    )
     from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
     from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 

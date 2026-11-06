@@ -3,6 +3,9 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from tests.result_assembly_fixtures import (
+    _target,
+)
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -863,24 +866,6 @@ class _Config:
     baseline_integration_method = "asls"
     count_no_ms2_as_detected = False
     ms1_morphology_smoothing_window_points = 15
-
-
-def _target(
-    *,
-    is_istd: bool = False,
-) -> Target:
-    return Target(
-        label="ISTD" if is_istd else "Analyte",
-        mz=258.1085,
-        rt_min=8.0,
-        rt_max=9.0,
-        ppm_tol=20.0,
-        neutral_loss_da=116.0474,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=50.0,
-        is_istd=is_istd,
-        istd_pair="ISTD",
-    )
 
 
 def _candidate(quality_flags: tuple[str, ...] = ("too_broad",)) -> PeakCandidate:

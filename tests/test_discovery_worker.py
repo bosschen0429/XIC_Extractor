@@ -5,6 +5,9 @@ from typing import Any
 import pytest
 
 from tests.alignment_pipeline_helpers import write_batch
+from tests.discovery_worker_fixtures import (
+    _alignment_outputs,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.configuration.models import ExtractionConfig
@@ -14,14 +17,6 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 from xic_extractor.presets import PresetError, load_preset
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
-
-
-def _alignment_outputs(
-    **kwargs: Any,
-) -> _AlignmentRunOutputs:
-    return _AlignmentRunOutputs(
-        **kwargs,
-    )
 
 
 def _execute(

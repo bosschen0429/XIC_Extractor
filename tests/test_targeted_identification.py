@@ -137,7 +137,7 @@ def test_workbench_persists_definitions_and_row_methods(tmp_path):
 
 
 def extract_method(tmp_path, raw, definition, *, window=None, acquire_ms2=False):
-    from tests.test_targeted_peak_selection import _config
+    from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.extraction.target_extraction import extract_one_target
     from xic_extractor.ms2_scan_models import Ms2Window
 
@@ -161,7 +161,7 @@ def extract_method(tmp_path, raw, definition, *, window=None, acquire_ms2=False)
 
 
 def test_relative_pair_quantifies_quant_channel_and_reports_relative_ratio(tmp_path):
-    from tests.test_targeted_delta_mass import PatternRaw
+    from tests.targeted_delta_mass_fixtures import PatternRaw
 
     result = extract_method(tmp_path, PatternRaw(), method_definition(with_cid=False))
     assert result.selected_method_supported
@@ -179,7 +179,7 @@ def test_relative_pair_quantifies_quant_channel_and_reports_relative_ratio(tmp_p
 
 @pytest.mark.parametrize("mode,accepted", [("all", False), ("any", True)])
 def test_missing_ms2_is_separate_from_failed_condition(tmp_path, mode, accepted):
-    from tests.test_targeted_delta_mass import PatternRaw
+    from tests.targeted_delta_mass_fixtures import PatternRaw
 
     result = extract_method(tmp_path, PatternRaw(), method_definition(mode))
     evidence = result.method_candidate_evidence[0]
@@ -200,7 +200,7 @@ def test_cid_and_pair_use_the_same_peak_and_keep_acquired_failures(
 ):
     import numpy as np
 
-    from tests.test_targeted_delta_mass import PatternRaw
+    from tests.targeted_delta_mass_fixtures import PatternRaw
     from xic_extractor.ms2_scan_models import (
         Ms2PrecursorMetadata,
         Ms2Scan,
@@ -248,7 +248,7 @@ def test_cid_and_pair_use_the_same_peak_and_keep_acquired_failures(
 def test_conditions_on_different_peaks_cannot_satisfy_and(tmp_path, mode, accepted):
     import numpy as np
 
-    from tests.test_targeted_delta_mass import PatternRaw
+    from tests.targeted_delta_mass_fixtures import PatternRaw
 
     class SplitRaw(PatternRaw):
         def extract_xic(self, mz, start, end, ppm):

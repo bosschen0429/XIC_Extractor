@@ -13,13 +13,16 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from tests.search_scope_capture_fixtures import (
+    _capture_binding,
+    _peak_config,
+)
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -45,7 +48,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeAuthorizationError,
@@ -59,7 +61,6 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     resolve_request_acquisition_source,
 )
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
 def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
@@ -1374,43 +1375,3 @@ def test_observation_seam_does_not_accept_caller_hypothesis_override() -> None:
         "processing_owners",
         "sample",
     }
-
-
-def _capture_binding(
-    *,
-    candidate_id: str,
-    method_subject_id: str,
-    sample: ResolvedCanonicalSampleIdentity,
-    acquisition_source_id: str,
-    mz: float,
-    ppm_tol: float,
-    rt_min: float,
-    rt_max: float,
-) -> CaptureCandidateBinding:
-    return CaptureCandidateBinding(
-        candidate_id=candidate_id,
-        method_subject_id=method_subject_id,
-        sample_key=sample.identity.sample_key,
-        acquisition_source_id=acquisition_source_id,
-        query_mz=mz,
-        query_rt_min=rt_min,
-        query_rt_max=rt_max,
-        query_ppm_tol=ppm_tol,
-        preferred_rt=8.0,
-    )
-
-
-def _peak_config(tmp_path: Path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_csv=tmp_path / "unused.csv",
-        diagnostics_csv=tmp_path / "unused-diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        resolver_mode="local_minimum",
-    )

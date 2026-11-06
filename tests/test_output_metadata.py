@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from xic_extractor.configuration.models import ExtractionConfig
+from tests.output_metadata_fixtures import (
+    _config,
+)
 
 
 def test_app_version_reads_installed_distribution_version(
@@ -105,22 +107,3 @@ def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
     assert ws["C2"].border.bottom.style == "thin"
     assert ws.tables["TargetedRunMetadata"].ref == f"A1:C{ws.max_row}"
     assert ws.freeze_panes == "A2"
-
-
-def _config(output_dir: Path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_csv=output_dir / "xic_results.csv",
-        diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        smooth_window=17,
-        smooth_polyorder=3,
-        ms1_morphology_smoothing_window_points=21,
-        signal_processing_window_points=21,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.12,
-        ms2_precursor_tol_da=0.4,
-        nl_min_intensity_ratio=0.02,
-        resolver_mode="local_minimum",
-        target_config_hash="abc12345",
-    )

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.test_discovery_ms1_capture import (
+from tests.discovery_ms1_capture_fixtures import (
     _FakeRaw,
     _gaussian,
     _group,

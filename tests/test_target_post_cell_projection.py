@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_alignment_cell_decision import _numeric_peak
-from tests.test_target_pre_cell_projection import _finalized_case
+from tests.alignment_cell_decision_fixtures import _numeric_peak
+from tests.target_pre_cell_projection_fixtures import _finalized_case
 from xic_extractor.alignment.cell_decision.owner import (
     decide_target_cell_population,
 )
@@ -25,7 +25,7 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.cid_nl_peak",
+        "tests.cell_observations_fixtures.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -67,7 +67,7 @@ def test_disjoint_internal_groups_bind_one_fixed_target_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.cid_nl_peak",
+        "tests.cell_observations_fixtures.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(

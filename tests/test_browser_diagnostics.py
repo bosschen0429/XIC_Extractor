@@ -17,10 +17,25 @@ def test_teardown_errors_keep_browser_evidence_after_tmp_path_cleanup(tmp_path):
     probe.write_text(
         """
 import pytest
-from tests.test_workbench_browser import (
+from playwright.sync_api import expect
+from tests.workbench_browser_fixtures import (
     browser, browser_errors, config_dir, workbench, workbench_defaults,
 )
 pytest_plugins = ("tests.browser_diagnostics",)
+
+@pytest.fixture(scope="module", autouse=True)
+def assertion_timeouts():
+    configured = []
+    set_options = expect.set_options
+    def record_options(**options):
+        configured.append(options["timeout"])
+        set_options(**options)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(expect, "set_options", record_options)
+        yield configured
+
+def test_shared_browser_scales_assertion_deadline(browser, assertion_timeouts):
+    assert assertion_timeouts and assertion_timeouts[-1] == 15_000
 
 def test_transport(workbench):
     workbench.route("**/diagnostic-probe*", lambda route: route.abort("failed"))
@@ -81,7 +96,11 @@ def test_both_success(workbench, review_page):
         encoding="utf-8",
     )
     artifacts = tmp_path / "evidence"
-    env = {**os.environ, "XIC_BROWSER_ARTIFACT_DIR": str(artifacts)}
+    env = {
+        **os.environ,
+        "XIC_BROWSER_ARTIFACT_DIR": str(artifacts),
+        "XIC_BROWSER_DEADLINE_SCALE": "3",
+    }
     result = subprocess.run(
         [sys.executable, "-m", "pytest", str(probe), "-q", "--tb=short"],
         cwd=Path(__file__).resolve().parents[1],
@@ -91,7 +110,7 @@ def test_both_success(workbench, review_page):
         timeout=120,
     )
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "10 passed, 7 errors" in result.stdout, result.stdout + result.stderr
+    assert "11 passed, 7 errors" in result.stdout, result.stdout + result.stderr
     traces = sorted(artifacts.rglob("browser-trace.zip"))
     assert len(traces) == 8, result.stdout + result.stderr
     records = {}

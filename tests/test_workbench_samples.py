@@ -86,7 +86,7 @@ def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tm
 
 
 def test_sequence_preview_does_not_wait_for_raw_headers(tmp_path, monkeypatch):
-    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
 
     raw_dir = _raw_batch(tmp_path, monkeypatch, ("NormalBC001_DNA", "QC_Pool_1"))
     sequence = tmp_path / "sequence.docx"

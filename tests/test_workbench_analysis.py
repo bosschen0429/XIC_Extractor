@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +11,9 @@ import pytest
 from tests.inspector_fixtures import create_inspector_report
 from tests.raw_header_fakes import install_raw_sample_headers
 from tests.targeted_fixtures import targeted_rows as sample_target_rows
+from tests.workbench_analysis_fixtures import (
+    _terminal,
+)
 from tests.workbench_http import workbench_client
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.raw_reader import RawSampleHeader
@@ -19,14 +21,6 @@ from xic_inspector.api import SelectionRequest, prepare_report
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 from xic_workbench.jobs import AnalysisJobs
 from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
-
-
-def _terminal(jobs):
-    deadline = time.monotonic() + 5
-    while jobs.busy and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert not jobs.busy
-    return jobs.state()
 
 
 @pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])

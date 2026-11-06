@@ -9,7 +9,7 @@ from pathlib import Path
 
 from scripts.run_alignment import _parse_args, _resolve_preset
 from tests.alignment_explanation_fixtures import explanation_summary
-from tests.test_processing_run_spec import _compile_paths, _raws
+from tests.processing_run_spec_fixtures import _compile_paths, _raws
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
@@ -148,7 +148,7 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
 
 
 def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):
-    from tests.test_discovery_physical_fact_persistence import _population, _spec
+    from tests.discovery_physical_fact_persistence_fixtures import _population, _spec
     from xic_extractor.discovery.physical_fact_persistence import (
         read_discovery_physical_fact_sidecar,
         write_discovery_physical_fact_sidecar,

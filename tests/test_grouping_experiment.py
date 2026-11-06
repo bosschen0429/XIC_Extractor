@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
-from tests.test_untargeted_cid_nl_bounded_runtime import _plan
+from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
@@ -280,7 +280,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     tmp_path, monkeypatch
 ):
     import xic_extractor.untargeted_execution.partition.workers as workers
-    from tests.test_alignment_known_istd_in_memory import _make_target
+    from tests.alignment_known_istd_in_memory_fixtures import _make_target
     from xic_extractor.alignment.drift_evidence import (
         mint_known_istd_reference_from_measurements,
     )

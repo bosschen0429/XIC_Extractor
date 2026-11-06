@@ -5,41 +5,16 @@ import json
 import numpy as np
 import pytest
 
+from tests.targeted_delta_mass_fixtures import (
+    PatternRaw,
+    pattern,
+)
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targeted_method_files import (
     create_targeted_method,
     load_targeted_method,
     save_targeted_method,
 )
-
-
-def pattern():
-    return {
-        "combine_mode": "all",
-        "mz_tolerance_ppm": 12,
-        "conditions": [
-            {
-                "kind": "delta_mass",
-                "positions": [
-                    {
-                        "label": "light",
-                        "offset_mz": -2.0,
-                        "ratio_min": 0.1,
-                        "ratio_max": 10,
-                        "compare_shape": True,
-                    },
-                    {
-                        "label": "heavy",
-                        "offset_mz": 0.0,
-                        "ratio_min": 0.1,
-                        "ratio_max": 10,
-                    },
-                ],
-                "apex_floor_sec": 2,
-                "min_shape_r": 0.9,
-            }
-        ],
-    }
 
 
 def pattern_matches(result):
@@ -185,49 +160,10 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
     assert loaded["identification_methods"] == preview["identification_methods"]
 
 
-class PatternRaw:
-    """Independent analytic chromatograms; mass windows select actual channels."""
-
-    def __init__(
-        self, *, scale=1.0, partner_rt=2.0, partner_mz=300.0, partner_width=0.08
-    ):
-        self.rt = np.linspace(0, 4, 481)
-        self.scale = scale
-        self.partner_rt = partner_rt
-        self.partner_mz = partner_mz
-        self.partner_width = partner_width
-        self.requests = []
-
-    def acquisition_rt_bounds(self):
-        return 0.0, 4.0
-
-    def extract_xic(self, mz, start, end, ppm):
-        values = np.full(self.rt.shape, 100.0)
-        for mass, apex, height, width in [
-            (302.0, 2.0, 100_000.0, 0.08),
-            (self.partner_mz, self.partner_rt, 200_000.0, self.partner_width),
-        ]:
-            if abs(mass - mz) <= mz * ppm * 1e-6:
-                values += (
-                    self.scale * height * np.exp(-0.5 * ((self.rt - apex) / width) ** 2)
-                )
-        keep = (self.rt >= start) & (self.rt <= end)
-        return self.rt[keep], values[keep]
-
-    def extract_xic_many(self, requests):
-        from xic_extractor.xic_models import XICTrace
-
-        self.requests.extend(requests)
-        return tuple(
-            XICTrace.from_arrays(*self.extract_xic(r.mz, r.rt_min, r.rt_max, r.ppm_tol))
-            for r in requests
-        )
-
-
 def extract_pattern(
     tmp_path, raw, *, methods=None, row=None, defer=False, sample="sample"
 ):
-    from tests.test_targeted_peak_selection import _config
+    from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.extraction.target_extraction import extract_one_target
 
     target = create_targeted_method(
@@ -303,7 +239,7 @@ def test_coeluting_partner_with_incompatible_shape_is_not_counted(tmp_path):
 
 
 def test_batch_completion_preserves_sample_specific_delta_mass_areas(tmp_path):
-    from tests.test_targeted_peak_selection import _config
+    from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.extraction.result_models import FileResult, RunOutput
     from xic_extractor.extraction.targeted_batch_selection import (
         complete_targeted_candidate_batch,
@@ -334,7 +270,7 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
     from openpyxl import load_workbook
 
     from tests.raw_header_fakes import install_fake_raw_headers
-    from tests.test_targeted_peak_selection import _config
+    from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,

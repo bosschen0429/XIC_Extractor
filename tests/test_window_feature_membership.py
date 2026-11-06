@@ -10,6 +10,9 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import resolved_elution_context
+from tests.window_feature_membership_fixtures import (
+    _synthetic_owner,
+)
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
@@ -131,42 +134,6 @@ def _warp() -> BatchRtWarp:
             for sample, knots in _WARP_DATA["knots_by_sample"]
         ),
         _WARP_DATA["anchor_group_count"],
-    )
-
-
-def _synthetic_owner(
-    sample: str,
-    owner_id: str,
-    rt_min: float,
-    *,
-    precursor_mz: float = 500.0,
-    product_mz: float = 383.9526,
-) -> SampleLocalMS1Owner:
-    event = IdentityEvent(
-        candidate_id=owner_id,
-        sample_stem=sample,
-        raw_file=f"{sample}.raw",
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=precursor_mz,
-        product_mz=product_mz,
-        observed_neutral_loss_da=precursor_mz - product_mz,
-        seed_rt=rt_min,
-        evidence_score=90,
-        seed_event_count=3,
-    )
-    return SampleLocalMS1Owner(
-        owner_id=owner_id,
-        sample_stem=sample,
-        raw_file=f"{sample}.raw",
-        precursor_mz=precursor_mz,
-        owner_apex_rt=rt_min,
-        owner_peak_start_rt=rt_min - 0.05,
-        owner_peak_end_rt=rt_min + 0.05,
-        owner_area=1000.0,
-        owner_height=100.0,
-        primary_identity_event=event,
-        supporting_events=(),
-        assignment_reason="same_apex_window",
     )
 
 

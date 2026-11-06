@@ -11,9 +11,9 @@ from importlib.resources import files
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_workbench_browser import browser as browser
-from tests.test_xic_inspector_curve_bundle import _fixture_bundle
-from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+from tests.workbench_browser_fixtures import browser as browser
+from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
+from tests.xic_inspector_targeted_workbook_fixtures import write_rare_detection_workbook
 from xic_inspector.api import SelectionRequest, prepare_report
 from xic_inspector.rendering.html_builder import build_report_html
 from xic_inspector.sources.curve_bundle import (
@@ -845,7 +845,7 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
 ):
     from openpyxl import load_workbook
 
-    from tests.test_xic_inspector_targeted_workbook import (
+    from tests.xic_inspector_targeted_workbook_fixtures import (
         write_rare_detection_workbook,
     )
 
@@ -909,7 +909,7 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
 def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     review_page, tmp_path
 ):
-    from tests.test_explanation_review import _quality_review_report
+    from tests.explanation_review_fixtures import _quality_review_report
 
     report, matrix = _quality_review_report(tmp_path)
     before = matrix.read_bytes()
@@ -936,7 +936,7 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
 def test_measured_mz_readout_keeps_sample_values_and_missing_measurements(
     review_page, tmp_path
 ):
-    from tests.test_explanation_review import _quality_review_report
+    from tests.explanation_review_fixtures import _quality_review_report
 
     report, matrix = _quality_review_report(
         tmp_path, measured_mz_by_sample={"S1": 500.2010, "S2": None}
@@ -974,7 +974,7 @@ def test_measured_mz_readout_keeps_sample_values_and_missing_measurements(
 def test_accepted_competition_is_visible_only_on_its_sample(
     review_page, tmp_path, phase, flag
 ):
-    from tests.test_explanation_review import _competition_review_report
+    from tests.explanation_review_fixtures import _competition_review_report
 
     report, matrix = _competition_review_report(tmp_path, phase=phase, flag=flag)
     before = matrix.read_bytes()

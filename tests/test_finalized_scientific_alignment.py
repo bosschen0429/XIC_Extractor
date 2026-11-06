@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
-from tests.test_cell_observations import _owner_handoff
-from tests.test_cross_sample_association_lineage import _final_receipt
-from tests.test_search_scope_capture import _capture_binding, _peak_config
+from tests.cell_observations_fixtures import _owner_handoff
+from tests.cross_sample_association_lineage_fixtures import _final_receipt
+from tests.search_scope_capture_fixtures import _capture_binding, _peak_config
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
     FinalizedScientificAlignmentContractError,

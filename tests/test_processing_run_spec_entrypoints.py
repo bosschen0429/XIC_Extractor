@@ -11,8 +11,8 @@ import pytest
 from scripts.run_discovery import (
     compile_discovery_processing_run_spec as compile_cli_processing_run_spec,
 )
-from tests.test_discovery_worker import _alignment_outputs
-from tests.test_processing_run_spec import _raws, _settings
+from tests.discovery_worker_fixtures import _alignment_outputs
+from tests.processing_run_spec_fixtures import _raws, _settings
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -252,7 +252,7 @@ def test_adapter_rejects_invalid_method_before_fingerprinting(
 
 
 def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
-    from tests.test_discovery_pipeline import _FakeRawHandle, _settings
+    from tests.discovery_pipeline_fixtures import _FakeRawHandle, _settings
     from xic_extractor.discovery.pipeline import run_discovery
 
     raw_path = tmp_path / "Sample.raw"

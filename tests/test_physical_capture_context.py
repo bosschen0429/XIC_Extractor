@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.test_discovery_ms1_capture import _FakeRaw, _gaussian, _seed, _settings
+from tests.discovery_ms1_capture_fixtures import _FakeRaw, _gaussian, _seed, _settings
 from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,

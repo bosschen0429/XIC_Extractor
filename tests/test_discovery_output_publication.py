@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_discovery_pipeline import _settings
+from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.discovery.output_publication import (
     write_dual_csvs,
 )
@@ -34,8 +34,8 @@ def test_discovery_publication_retains_only_used_candidate_states(
     basis: str,
     state: str,
 ) -> None:
-    from tests.test_discovery_csv import _candidate
-    from tests.test_discovery_pipeline import _read_csv
+    from tests.discovery_csv_fixtures import _candidate
+    from tests.discovery_pipeline_fixtures import _read_csv
     from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
 
     feature_backed = state in MS1_FEATURE_BACKED_STATES

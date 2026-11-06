@@ -31,7 +31,7 @@ from tests.cid_nl_runtime_fixtures import (
     install_runtime_raw,
     install_runtime_raws,
 )
-from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
+from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,

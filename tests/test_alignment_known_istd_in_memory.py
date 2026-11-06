@@ -4,6 +4,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.alignment_known_istd_in_memory_fixtures import (
+    _make_target,
+)
 from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
@@ -12,25 +15,10 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
 )
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.targets import read_targets
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.xic_models import XICTrace
-
-
-def _make_target(label: str, is_istd: bool = True) -> Target:
-    return Target(
-        label=label,
-        mz=200.0,
-        rt_min=1.0,
-        rt_max=5.0,
-        ppm_tol=10.0,
-        neutral_loss_da=100.0,
-        nl_ppm_warn=10.0,
-        nl_ppm_max=20.0,
-        is_istd=is_istd,
-        istd_pair="",
-    )
 
 
 def test_mint_known_istd_reference_validates_inputs() -> None:
@@ -202,7 +190,7 @@ def test_untargeted_istd_uses_targeted_selection_for_multiple_supported_peaks(
 
 
 def test_istd_reference_preserves_targeted_anchor_rejection(tmp_path, monkeypatch):
-    from tests.test_target_extraction import _candidate, _peak_result
+    from tests.target_extraction_fixtures import _candidate, _peak_result
     from xic_extractor.extraction.result_models import ExtractionResult, FileResult
     from xic_extractor.output.targeted_product_model import TargetedProductProjection
 
@@ -259,7 +247,7 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
 ):
     from dataclasses import replace
 
-    from tests.test_target_extraction import _candidate, _peak_result
+    from tests.target_extraction_fixtures import _candidate, _peak_result
     from xic_extractor.extraction.result_models import (
         ExtractionResult,
         FileResult,

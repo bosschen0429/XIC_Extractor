@@ -5,7 +5,7 @@ from pathlib import Path
 import openpyxl
 
 from tests.raw_header_fakes import install_fake_raw_headers
-from tests.test_targeted_production_workflow import production_case
+from tests.targeted_production_workflow_fixtures import production_case
 from xic_extractor.extraction import pipeline, serial_backend
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
@@ -122,7 +122,7 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
     from scripts.run_discovery import _raw_paths_from_dir
     from tests.cid_nl_raw_fixture import _FakeRaw
     from tests.cid_nl_runtime_fixtures import install_runtime_raws
-    from tests.test_discovery_pipeline import (
+    from tests.discovery_pipeline_fixtures import (
         _OwnerBoundFakeRawHandle,
         _peak_config,
         _scan_event,

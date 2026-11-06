@@ -2416,7 +2416,7 @@ def test_nearest_mz_rejects_nonindexed_evidence_without_fallback(tmp_path):
 
 
 def test_nearest_mz_rejects_portable_curve_bundles(tmp_path):
-    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
     from xic_inspector.api import prepare_report
     from xic_inspector.sources.curve_bundle import write_curve_bundle
 
@@ -2453,7 +2453,7 @@ def test_target_role_rejects_untargeted_evidence(tmp_path):
 
 
 def test_target_role_rejects_portable_curve_bundles(tmp_path):
-    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
     from xic_inspector.api import prepare_report
     from xic_inspector.sources.curve_bundle import write_curve_bundle
 

@@ -11,11 +11,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
-from tests.processing_identity_no_raw_fixture import (
-    build_processing_identity_no_raw_fixture,
+from tests.alignment_cell_decision_fixtures import (
+    _numeric_peak,
 )
-from tests.test_cell_observations import (
+from tests.cell_observations_fixtures import (
     _coverage_for_groups,
     _final_receipt,
     _owner_handoff,
@@ -23,9 +22,13 @@ from tests.test_cell_observations import (
     _receipt_fixture,
     _support_assessment,
 )
-from tests.test_cid_nl_evidence_spine import _completed_receipt
-from tests.test_target_pre_cell_projection import _finalized_case
-from tests.test_untargeted_matrix_projection import (
+from tests.cid_nl_evidence_spine_fixtures import _completed_receipt
+from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
+from tests.target_pre_cell_projection_fixtures import _finalized_case
+from tests.untargeted_matrix_projection_fixtures import (
     _untarget_projection_inputs,
 )
 from xic_extractor.alignment.cell_decision import owner as decision_owner
@@ -54,16 +57,8 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.extraction.targeted_peak_hypotheses import (
-    build_targeted_peak_hypotheses,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
-)
-from xic_extractor.peak_detection.models import (
-    PeakCandidate,
-    PeakDetectionResult,
-    PeakResult,
 )
 from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
@@ -82,7 +77,7 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.cid_nl_peak",
+        "tests.cell_observations_fixtures.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -129,7 +124,7 @@ def test_target_fragmented_low_signal_keeps_evidence_without_numeric_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.cid_nl_peak",
+        "tests.cell_observations_fixtures.cid_nl_peak",
         _censored_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -243,7 +238,7 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
 
 def test_group_numeric_uses_real_primary_matrix_area(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "tests.test_untargeted_matrix_projection.cid_nl_peak", _numeric_peak
+        "tests.untargeted_matrix_projection_fixtures.cid_nl_peak", _numeric_peak
     )
     _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
     answers = decide_group_cell_population(alignment)
@@ -359,7 +354,7 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.cid_nl_peak",
+        "tests.cell_observations_fixtures.cid_nl_peak",
         _numeric_peak,
     )
     fixture = build_processing_identity_no_raw_fixture(
@@ -484,86 +479,6 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     assert (
         decision_owner._decide_group(not_searched, is_member=False)[0].variant
         == "not_searched"
-    )
-
-
-def _numeric_peak(
-    fixture: Any,
-    sample_stem: str,
-    *,
-    mz: float = PRECURSOR_MZ,
-    apex_rt: float = 8.0,
-    rt_left_min: float = 7.9,
-    rt_right_min: float = 8.1,
-    height: float = 500.0,
-) -> Any:
-    sample = fixture.sample(sample_stem)
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
-    trace = Trace.from_arrays(
-        sample_name=sample_stem,
-        mz=mz,
-        rt=(
-            rt_left_min - 0.1,
-            rt_left_min,
-            apex_rt,
-            rt_right_min,
-            rt_right_min + 0.1,
-        ),
-        intensity=(0.0, height / 10.0, height, height / 10.0, 0.0),
-        rt_min=rt_left_min - 0.1,
-        rt_max=rt_right_min + 0.1,
-        ppm_tol=10.0,
-        source="cell_decision_no_raw_fixture",
-        acquisition_source_id=source.acquisition_source_id,
-    )
-    peak = PeakResult(
-        rt=apex_rt,
-        intensity=height,
-        intensity_smoothed=height,
-        area=height * 6.6,
-        peak_start=rt_left_min,
-        peak_end=rt_right_min,
-    )
-    candidate = PeakCandidate(
-        peak=peak,
-        selection_apex_rt=apex_rt,
-        selection_apex_intensity=height,
-        selection_apex_index=2,
-        raw_apex_rt=apex_rt,
-        raw_apex_intensity=height,
-        raw_apex_index=2,
-        prominence=height * 0.9,
-        proposal_sources=("local_minimum",),
-    )
-    result = PeakDetectionResult(
-        status="OK",
-        peak=peak,
-        n_points=trace.scan_count,
-        max_smoothed=height,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-    )
-    integration = build_targeted_peak_hypotheses(
-        sample_name=trace.sample_name,
-        target_label="cell-decision-no-raw",
-        role="",
-        istd_pair="",
-        resolver_mode="local_minimum",
-        peak_result=result,
-        rt=trace.rt,
-        intensity=trace.intensity,
-        baseline_integration_method="asls",
-    )[0].integration
-    return mint_peak_observation_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        trace=trace,
-        integration=integration,
-        resolver_mode="local_minimum",
-        proposal_sources=("local_minimum",),
     )
 
 
