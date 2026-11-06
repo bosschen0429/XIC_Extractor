@@ -11,7 +11,7 @@ from pathlib import Path
 
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_workbench.server import create_server
+from xic_workbench.server import _ASSETS, create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 
@@ -59,13 +59,8 @@ def run_smoke(report_path: Path) -> int:
             return data
 
         config = json.loads(request("/api/config"))
-        for asset in (
-            "/",
-            "/assets/analysis.html",
-            "/assets/analysis.js",
-            "/assets/analysis.css",
-            "/assets/workspace.js",
-        ):
+        # Check every registered asset in the delivered app, including ES modules.
+        for asset in _ASSETS:
             if not request(asset):
                 raise RuntimeError(f"Empty frontend asset: {asset}")
         from xic_extractor.configuration.paths import targets_template_path
